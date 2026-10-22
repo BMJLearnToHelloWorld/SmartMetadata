@@ -50,16 +50,28 @@ export function requireToken(value: string | undefined, label: string): string {
  * `<#E::{entityType}::{fqn}>`.
  */
 export function toEntityLink(entityType: string, fqn: string): string {
-  return `<#E::${requireToken(entityType, 'entityType')}::${requireFqn(fqn)}>`;
+  return `<#E::${requireToken(entityType, 'entityType').toLowerCase()}::${requireFqn(fqn)}>`;
+}
+
+export function normalizeEntityLink(about: string): string {
+  const trimmed = about.trim();
+  if (!trimmed.startsWith('<#E::') || !trimmed.endsWith('>')) {
+    throw new Error('about must be a MessageParser entity link such as <#E::table::service.db.schema.table>');
+  }
+  const inner = trimmed.slice('<#E::'.length, -1);
+  const sep = inner.indexOf('::');
+  const entityType = sep === -1 ? '' : inner.slice(0, sep);
+  const rest = sep === -1 ? '' : inner.slice(sep + 2);
+  if (!/^\w+$/.test(entityType) || !rest) {
+    throw new Error('about must be a MessageParser entity link such as <#E::table::service.db.schema.table>');
+  }
+  return `<#E::${entityType.toLowerCase()}::${rest}>`;
 }
 
 export function resolveAbout(input: { about?: string; entityType?: string; fqn?: string }): string {
   const about = input.about?.trim();
   if (about) {
-    if (!about.startsWith('<#E::') || !about.endsWith('>')) {
-      throw new Error('about must be a MessageParser entity link such as <#E::table::service.db.schema.table>');
-    }
-    return about;
+    return normalizeEntityLink(about);
   }
   return toEntityLink(input.entityType ?? '', input.fqn ?? '');
 }

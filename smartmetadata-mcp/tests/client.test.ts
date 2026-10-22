@@ -55,11 +55,11 @@ describe('RestClient', () => {
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json');
 
     fetchImpl.mockResolvedValueOnce(jsonResponse({ name: 'orders' }));
-    await client.getByFqn('/v1/tables/name', 'svc.db.schema.orders', {
+    await client.getByFqn('/v1/tables/name', 'svc.db."Sales Schema".orders', {
       fields: 'owners,tags,columns,domains',
     });
     const [tableUrl] = fetchImpl.mock.calls[1] as [string, RequestInit];
-    expect(tableUrl).toContain('/v1/tables/name/svc.db.schema.orders');
+    expect(tableUrl).toContain(`/v1/tables/name/${encodeURIComponent('svc.db."Sales Schema".orders')}`);
     expect(tableUrl).toContain('fields=owners%2Ctags%2Ccolumns%2Cdomains');
   });
 

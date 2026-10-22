@@ -7,6 +7,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { RestClient } from '../src/client.js';
 import type { RuntimeConfig } from '../src/config.js';
@@ -32,9 +35,15 @@ describe('MCP server wiring', () => {
     expect(listRegisteredTools()).toEqual(TOOL_NAMES);
   });
 
-  it('constructs an official stdio-capable MCP server', () => {
+  it('constructs an official MCP server and the entrypoint binds stdio', () => {
     const server = createMcpServer(new RestClient(config, vi.fn()));
     expect(server).toBeTruthy();
+    const entry = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../src/index.ts'),
+      'utf8',
+    );
+    expect(entry).toContain('StdioServerTransport');
+    expect(entry).toContain('server.connect(transport)');
   });
 
   it('marks REST failures as tool errors', async () => {

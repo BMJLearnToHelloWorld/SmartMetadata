@@ -142,6 +142,19 @@ describe('create_conversation', () => {
     expect(created).toMatchObject({ id: 'c1' });
   });
 
+  it('lowercases entityType so ConversationResource can resolve the target', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 'c3' }));
+    await handlers(fetchImpl).create_conversation({
+      message: 'Please document this table',
+      entityType: 'Table',
+      fqn: 'svc.db.schema.orders',
+    });
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({
+      message: 'Please document this table',
+      about: '<#E::table::svc.db.schema.orders>',
+    });
+  });
+
   it('rejects an about value that is not a MessageParser link', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({}));
     await expect(
@@ -150,11 +163,11 @@ describe('create_conversation', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('accepts a caller-supplied about link', async () => {
+  it('accepts a caller-supplied about link and lowercases the type', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ id: 'c2' }));
     await handlers(fetchImpl).create_conversation({
       message: 'note',
-      about: '<#E::topic::kafka.orders>',
+      about: '<#E::TOPIC::kafka.orders>',
     });
     expect(JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({
       message: 'note',
