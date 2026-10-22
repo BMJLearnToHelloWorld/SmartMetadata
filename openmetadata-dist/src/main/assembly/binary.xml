@@ -28,6 +28,13 @@
             <unpack>false</unpack>
             <excludes>
                 <exclude>junit:junit</exclude>
+                <!-- Collate Community License modules: keep out of the shippable libs/ even if a
+                     profile or transitive edge reintroduces them. The Maven enforcer on this
+                     module and scripts/rebuild/check_ccl_free_dist.py are the other two gates.
+                     ADR:2026-10-22-shippable-dist-excludes-ccl-modules. -->
+                <exclude>org.open-metadata:openmetadata-ui</exclude>
+                <exclude>org.open-metadata:openmetadata-mcp</exclude>
+                <exclude>org.open-metadata:openmetadata-ui-core-components</exclude>
             </excludes>
         </dependencySet>
     </dependencySets>
