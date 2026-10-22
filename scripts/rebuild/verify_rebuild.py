@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -34,6 +35,22 @@ class Step:
 def npm_argv(*args: str) -> tuple[str, ...]:
     # Resolve at run time so ``--list`` works on hosts without Node.
     return ("npm", *args)
+
+
+def _tool_version(argv: tuple[str, ...]) -> str:
+    completed = subprocess.run(list(argv), check=False, capture_output=True, text=True)
+    printed = (completed.stdout or completed.stderr).strip()
+    return printed.splitlines()[0] if printed else "unavailable"
+
+
+def node_runtime_lines() -> list[str]:
+    """Report the Node that ``npm test`` will invoke (PATH after setup-node)."""
+    node = shutil.which("node") or "not-on-PATH"
+    npm = shutil.which("npm") or "not-on-PATH"
+    return [
+        f"  node: {_tool_version(('node', '-v'))} ({node})",
+        f"  npm: {_tool_version(('npm', '-v'))} ({npm})",
+    ]
 
 
 def install_steps() -> list[Step]:
@@ -174,6 +191,8 @@ def main(argv: list[str] | None = None) -> int:
     print("SmartMetadata rebuild verify (offline, no live catalog)")
     print(f"  repo: {REPO}")
     print(f"  steps: {', '.join(step.id for step in steps)}")
+    for line in node_runtime_lines():
+        print(line)
     if os.environ.get("CI"):
         print("  CI=1: still offline — live server/UI paths are Job C in docs/rebuild/VERIFY_RUNTIME.md")
 

@@ -20,7 +20,9 @@
 # (ADR:2026-10-22-rebuild-verify-is-offline).
 #
 # Job A verify-rebuild — required on pull_request + push to main (also
-# merge_group / workflow_dispatch). Offline; Node 20 + Python 3.10; no Docker.
+# merge_group / workflow_dispatch). Offline; Node 22 LTS + Python 3.10; no Docker.
+# Node 22 is required: smartmetadata-ui ships vite 8 / vitest 5 / undici 8
+# (engines >=22.22.2). Node 20 crashes vitest forks at undici decompress.bind.
 # Job B slim-dist — push to main + workflow_dispatch. Needs Java 21 (Temurin)
 # and Maven 3.8+ (`actions/setup-java` provides both). Optional on PRs because
 # a full `mvn -pl openmetadata-dist -am` is too slow for every change.
@@ -65,14 +67,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: |
             smartmetadata-ui/package-lock.json
             smartmetadata-mcp/package-lock.json
+
+      - name: Print Node used by npm
+        run: |
+          echo "which node=$(command -v node)"
+          node -v
+          npm -v
 
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
@@ -188,10 +196,10 @@ jobs:
           java-version: "21"
           distribution: temurin
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: |
             smartmetadata-ui/package-lock.json
