@@ -59,6 +59,12 @@ const selectedKeys = computed(() => {
   if (name === 'observability-alert') {
     return ['observability-alerts'];
   }
+  if (name === 'ingestion-service') {
+    return ['ingestion-services'];
+  }
+  if (name === 'ingestion-pipeline') {
+    return ['ingestion-pipelines'];
+  }
   return [name];
 });
 
@@ -80,13 +86,22 @@ watch(
     if (routeName.startsWith('observability-') && !openKeys.value.includes('observability')) {
       openKeys.value = [...openKeys.value, 'observability'];
     }
+    if (routeName.startsWith('ingestion-') && !openKeys.value.includes('ingestion')) {
+      openKeys.value = [...openKeys.value, 'ingestion'];
+    }
   },
   { immediate: true },
 );
 
 function onMenuClick({ key }: { key: string | number }): void {
   const name = String(key);
-  if (name === 'admin' || name === 'governance' || name === 'quality' || name === 'observability') {
+  if (
+    name === 'admin' ||
+    name === 'governance' ||
+    name === 'quality' ||
+    name === 'observability' ||
+    name === 'ingestion'
+  ) {
     return;
   }
   void router.push({ name });
@@ -134,6 +149,10 @@ async function onLogout(): Promise<void> {
         <Menu.SubMenu key="observability" title="Observability" data-testid="observability-nav">
           <Menu.Item key="observability-incidents">Incidents</Menu.Item>
           <Menu.Item key="observability-alerts">Alerts</Menu.Item>
+        </Menu.SubMenu>
+        <Menu.SubMenu key="ingestion" title="Ingestion" data-testid="ingestion-nav">
+          <Menu.Item key="ingestion-services">Services</Menu.Item>
+          <Menu.Item key="ingestion-pipelines">Pipelines</Menu.Item>
         </Menu.SubMenu>
         <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
           <Menu.Item key="admin-users">Users</Menu.Item>
