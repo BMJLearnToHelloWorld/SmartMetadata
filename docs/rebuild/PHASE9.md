@@ -90,7 +90,7 @@ conversations, and custom properties.
 - Collate AI Studio / chatbot threads (DROP)
 - Reactions, mention-only feeds, bulk task operations, suggestion apply
 - Defining new custom *property types* (server forbids that)
-- Phase 10 MCP; Phase 11 harden
+- Phase 10 MCP — **done in** [PHASE10.md](PHASE10.md); Phase 11 harden — **done in** [PHASE11.md](PHASE11.md)
 - Shipping the SPA inside `openmetadata-dist` (needs a new ADR)
 
 ## Residual risks and open questions

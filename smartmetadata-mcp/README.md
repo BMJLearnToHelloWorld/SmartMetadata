@@ -11,7 +11,8 @@ Transport default: **stdio** (JSON-RPC on stdin/stdout). That is the durable
 host contract used by Claude Desktop, Cursor, and other MCP clients. HTTP/SSE
 is not shipped in this MVP.
 
-See [docs/rebuild/PHASE10.md](../docs/rebuild/PHASE10.md) and
+See [docs/rebuild/PHASE10.md](../docs/rebuild/PHASE10.md),
+[docs/rebuild/PHASE11.md](../docs/rebuild/PHASE11.md), and
 ADR:2026-10-22-clean-room-mcp-is-a-standalone-apache-package.
 
 ## Install
@@ -85,4 +86,6 @@ Collate AI Studio tools are out of scope.
 cd smartmetadata-mcp && npm test
 python3 scripts/rebuild/check_ccl_free_mcp.py
 python3 scripts/rebuild/check_ccl_free_dist.py
+# or the aggregated offline matrix:
+make verify-rebuild
 ```

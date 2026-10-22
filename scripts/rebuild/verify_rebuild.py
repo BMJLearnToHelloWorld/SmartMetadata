@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Run the offline Phase 11 rebuild verification matrix.
+
+Runs the product-package tests and the three CCL-free gates plus the
+decision-record check. Does **not** start Docker, MySQL, Elasticsearch,
+Airflow, or a live catalog, and does not build ``openmetadata-dist`` unless
+``--require-tarball`` is passed.
+
+See ``docs/rebuild/PHASE11.md`` and
+ADR:2026-10-22-rebuild-verify-is-offline.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+PYTHON = sys.executable
+
+
+@dataclass(frozen=True)
+class Step:
+    id: str
+    argv: tuple[str, ...]
+    cwd: str | None = None
+
+
+def npm_argv(*args: str) -> tuple[str, ...]:
+    npm = shutil.which("npm")
+    if npm is None:
+        raise SystemExit("npm is required for smartmetadata-ui / smartmetadata-mcp steps")
+    return (npm, *args)
+
+
+def install_steps() -> list[Step]:
+    return [
+        Step(id="ui-install", argv=npm_argv("ci"), cwd="smartmetadata-ui"),
+        Step(
+            id="ingest-install",
+            argv=(PYTHON, "-m", "pip", "install", "-e", "smartmetadata-ingestion/[dev]"),
+        ),
+        Step(id="mcp-install", argv=npm_argv("ci"), cwd="smartmetadata-mcp"),
+    ]
+
+
+def verify_steps(*, require_tarball: bool = False) -> list[Step]:
+    dist_argv = [PYTHON, "scripts/rebuild/check_ccl_free_dist.py"]
+    if require_tarball:
+        dist_argv.append("--require-tarball")
+    return [
+        Step(id="ui-test", argv=npm_argv("test"), cwd="smartmetadata-ui"),
+        Step(id="ui-build", argv=npm_argv("run", "build"), cwd="smartmetadata-ui"),
+        Step(id="ingest-test", argv=(PYTHON, "-m", "pytest"), cwd="smartmetadata-ingestion"),
+        Step(
+            id="ccl-ingestion",
+            argv=(PYTHON, "scripts/rebuild/check_ccl_free_ingestion.py"),
+        ),
+        Step(id="mcp-test", argv=npm_argv("test"), cwd="smartmetadata-mcp"),
+        Step(id="mcp-build", argv=npm_argv("run", "build"), cwd="smartmetadata-mcp"),
+        Step(id="ccl-dist", argv=tuple(dist_argv)),
+        Step(id="ccl-mcp", argv=(PYTHON, "scripts/rebuild/check_ccl_free_mcp.py")),
+        Step(
+            id="decision-records",
+            argv=(PYTHON, "scripts/harness/check_decision_records.py"),
+        ),
+    ]
+
+
+def node_modules_ready(package_dir: Path) -> bool:
+    return (package_dir / "node_modules").is_dir()
+
+
+def ingestion_importable() -> bool:
+    probe = subprocess.run(
+        [PYTHON, "-c", "import smartmetadata_ingestion"],
+        check=False,
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
+def needed_install_steps() -> list[Step]:
+    needed: list[Step] = []
+    by_id = {step.id: step for step in install_steps()}
+    if not node_modules_ready(REPO / "smartmetadata-ui"):
+        needed.append(by_id["ui-install"])
+    if not ingestion_importable():
+        needed.append(by_id["ingest-install"])
+    if not node_modules_ready(REPO / "smartmetadata-mcp"):
+        needed.append(by_id["mcp-install"])
+    return needed
+
+
+def default_steps(*, install: bool | None = None, require_tarball: bool = False) -> list[Step]:
+    if install is True:
+        prefix = install_steps()
+    elif install is False:
+        prefix = []
+    else:
+        prefix = needed_install_steps()
+    return [*prefix, *verify_steps(require_tarball=require_tarball)]
+
+
+def run_step(step: Step, *, repo: Path) -> int:
+    cwd = repo / step.cwd if step.cwd else repo
+    printable = " ".join(step.argv)
+    print(f"==> {step.id}: {printable}", flush=True)
+    print(f"    cwd: {cwd}", flush=True)
+    completed = subprocess.run(list(step.argv), cwd=cwd, check=False)
+    if completed.returncode != 0:
+        print(f"==> {step.id} FAILED (exit {completed.returncode})", file=sys.stderr, flush=True)
+    else:
+        print(f"==> {step.id} ok", flush=True)
+    return completed.returncode
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    install = parser.add_mutually_exclusive_group()
+    install.add_argument(
+        "--install",
+        action="store_true",
+        help="always run ui/ingest/mcp install steps first",
+    )
+    install.add_argument(
+        "--skip-install",
+        action="store_true",
+        help="never run install steps (fail if packages are missing)",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="print the steps that would run and exit 0",
+    )
+    parser.add_argument(
+        "--require-tarball",
+        action="store_true",
+        help="fail the dist gate if openmetadata-dist/target/*.tar.gz is missing",
+    )
+    return parser.parse_args(argv)
+
+
+def selected_steps(args: argparse.Namespace) -> list[Step]:
+    if args.install:
+        install: bool | None = True
+    elif args.skip_install:
+        install = False
+    else:
+        install = None
+    return default_steps(install=install, require_tarball=args.require_tarball)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv if argv is not None else sys.argv[1:])
+    steps = selected_steps(args)
+    if args.list:
+        for step in steps:
+            where = step.cwd or "."
+            print(f"{step.id}\t{where}\t{' '.join(step.argv)}")
+        return 0
+
+    print("SmartMetadata rebuild verify (offline, no live catalog)")
+    print(f"  repo: {REPO}")
+    print(f"  steps: {', '.join(step.id for step in steps)}")
+    if os.environ.get("CI"):
+        print("  CI=1: still offline — live server/UI paths are in docs/rebuild/PHASE11.md")
+
+    failed: list[str] = []
+    for step in steps:
+        code = run_step(step, repo=REPO)
+        if code != 0:
+            failed.append(step.id)
+            print(
+                "See docs/rebuild/PHASE11.md. Live catalog / Docker / slim-dist are maintainer "
+                "checklist items, not this command.",
+                file=sys.stderr,
+            )
+            return code
+
+    print("Rebuild verify passed.")
+    print("  " + ", ".join(step.id for step in steps))
+    if failed:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

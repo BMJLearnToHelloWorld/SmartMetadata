@@ -8,6 +8,7 @@ It talks to documented `openmetadata-service` REST paths over HTTP.
 
 See [docs/rebuild/PHASE6.md](../docs/rebuild/PHASE6.md),
 [docs/rebuild/PHASE7.md](../docs/rebuild/PHASE7.md),
+[docs/rebuild/PHASE11.md](../docs/rebuild/PHASE11.md),
 ADR:2026-10-22-clean-room-ingestion-framework, and
 ADR:2026-10-22-ingestion-source-type-registry.
 
@@ -54,7 +55,8 @@ config is the raw password; the client Base64-encodes it for
 | `sinks/metadata_rest.py` | PUT service / database / schema / table / topic / lineage |
 | `jobs.py` | Profiler / DQ stubs only |
 
-Jobs run as a CLI process. Prefect/Airflow operators are Phase 8.
+Jobs run as a CLI process. Prefect/Airflow operators are still later
+(Phase 8 shipped catalog CRUD + CLI YAML only).
 
 ## Tests
 
@@ -62,4 +64,6 @@ Jobs run as a CLI process. Prefect/Airflow operators are Phase 8.
 cd smartmetadata-ingestion && python3 -m pytest
 python3 scripts/rebuild/check_ccl_free_ingestion.py
 python3 scripts/rebuild/check_ccl_free_dist.py
+# or the aggregated offline matrix:
+make verify-rebuild
 ```

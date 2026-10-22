@@ -83,7 +83,8 @@ artifacts re-enter the dependency tree.
 - No deletion of historical CCL source trees.
 - No OSS-feature parity UI, lineage graph, or collection console.
 - No GitHub Actions workflow edits (workflows are a supply-chain surface). Wire
-  `make check-ccl-free-dist` into CI when that is explicitly authorized.
+  `make verify-rebuild` (includes `check-ccl-free-dist`) into CI when that is
+  explicitly authorized — see [PHASE11.md](PHASE11.md).
 - No brand/NOTICE/trademark sweep, no secrets, no fake business logic.
 - Do not treat Ant Design + Less, MUI, or Webpack as the go-forward UI stack.
 
