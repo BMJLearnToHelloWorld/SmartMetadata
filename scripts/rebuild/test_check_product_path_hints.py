@@ -56,7 +56,11 @@ def complete_tree(root: Path) -> None:
     )
     write(
         root / "docker" / "run_local_docker_common.sh",
-        "require_ccl_ingestion_ack() {\n  :\n}\nI_UNDERSTAND_CCL_INGESTION\n",
+        "require_ccl_ingestion_ack() {\n  :\n}\n"
+        "I_UNDERSTAND_CCL_INGESTION\n"
+        '  if [[ $includeIngestion == "true" ]]; then\n'
+        "    require_ccl_ingestion_ack\n"
+        "  fi\n",
     )
     write(
         root / "README.md",
@@ -112,6 +116,39 @@ class ProductPathHintsContract(unittest.TestCase):
 
 
 class CclIngestionDockerAck(unittest.TestCase):
+    def _stub_bin(self, tmp: Path) -> tuple[Path, dict[str, str]]:
+        stub = tmp / "bin"
+        stub.mkdir()
+        log = tmp / "invoked.log"
+        for name in ("docker", "mvn", "make", "curl"):
+            script = stub / name
+            script.write_text(
+                f"#!/bin/bash\nprintf '%s ' '{name}' >> '{log}'\nprintf '%s\\n' \"$*\" >> '{log}'\nexit 0\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+        env = os.environ.copy()
+        env.pop("I_UNDERSTAND_CCL_INGESTION", None)
+        env["PATH"] = f"{stub}{os.pathsep}{env.get('PATH', '')}"
+        return log, env
+
+    def test_entry_point_refuses_without_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log, env = self._stub_bin(Path(tmp))
+            completed = subprocess.run(
+                ["bash", str(REPO / "docker" / "run_local_docker.sh"), "-i", "true", "-s", "true"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(REPO),
+                timeout=8,
+            )
+        self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("NOT the SmartMetadata product path", completed.stderr)
+        self.assertIn("I_UNDERSTAND_CCL_INGESTION", completed.stderr)
+        self.assertFalse(log.is_file(), log.read_text(encoding="utf-8") if log.is_file() else "")
+
     def test_refuses_without_env(self) -> None:
         env = os.environ.copy()
         env.pop("I_UNDERSTAND_CCL_INGESTION", None)

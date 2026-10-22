@@ -36,6 +36,9 @@ DOCKER_ACK_MARKERS = (
     "I_UNDERSTAND_CCL_INGESTION",
     "require_ccl_ingestion_ack",
 )
+DOCKER_CALL_SITE = (
+    'if [[ $includeIngestion == "true" ]]; then\n    require_ccl_ingestion_ack\n  fi'
+)
 
 
 def read_text(path: Path) -> str | None:
@@ -69,6 +72,10 @@ def check_repo(repo: Path) -> list[str]:
                 errors.append(
                     f"{DOCKER_COMMON} must require {marker} before -i true starts CCL ingestion"
                 )
+        if DOCKER_CALL_SITE not in docker_text:
+            errors.append(
+                f"{DOCKER_COMMON} must call require_ccl_ingestion_ack when includeIngestion is true"
+            )
 
     readme_text = read_text(repo / README)
     if readme_text is None:

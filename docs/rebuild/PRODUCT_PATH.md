@@ -42,7 +42,9 @@ Do **not** delete them in this hygiene pass (purge is a separate counsel ADR).
 
 - `./docker/run_local_docker.sh -i true` — starts the historical CCL ingestion
   container. The script warns and **refuses** unless
-  `I_UNDERSTAND_CCL_INGESTION=1`.
+  `I_UNDERSTAND_CCL_INGESTION=1`. Historical skills (`test-locally`,
+  `ui-pr-recording`, `connector-building`) that still use that flag must export
+  the env; they are the CCL reference stack, not a product demo.
 - Collate **quickstart** compose (`docker/docker-compose-quickstart/`, images
   under `docker.getcollate.io/openmetadata/…`).
 - Adding `openmetadata-ui` / `openmetadata-mcp` / ingestion back to

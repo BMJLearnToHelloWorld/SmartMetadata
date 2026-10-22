@@ -41,12 +41,13 @@ those services, use an isolated Compose stack with distinct container names, hos
 and volumes. A different project name alone is insufficient: the base Compose file pins names,
 ports, a subnet and a database bind mount. Do not stop another task's stack or delete its data.
 
-For an available default dev stack, from the repo root:
+For an available default dev stack, from the repo root. `-i true` is the CCL
+reference ingestion container, not the product path (`docs/rebuild/PRODUCT_PATH.md`):
 
 ```bash
 source env/bin/activate
 make generate
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r false
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r false
 docker compose -f docker/development/docker-compose.yml ps
 curl --fail --silent --show-error http://localhost:8585/api/v1/system/version
 ```

@@ -106,14 +106,17 @@ If containers are already running:
 
 ### Step 6: Build and Deploy
 
+This starts the historical CCL ingestion container, not the product path
+(`docs/rebuild/PRODUCT_PATH.md`). `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1`.
+
 **Full build**:
 ```bash
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
 ```
 
 **Fast rebuild** (ingestion-only):
 ```bash
-./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
 ```
 
 Tell the user which strategy was chosen and why. The build takes:
@@ -167,7 +170,7 @@ If the user reports issues, check these:
 grep -l "YourConnector" openmetadata-spec/src/main/resources/json/schema/entity/services/*Service.json
 
 # Need to rebuild without skip-maven
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
 ```
 
 **Test connection fails?**
@@ -196,5 +199,5 @@ cd docker/development && docker compose down -v && docker system prune -f
 # Format first, then rebuild
 make py_format
 mvn spotless:apply
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
 ```
