@@ -47,6 +47,10 @@ import PipelineDetailView from '@/views/ingestion/PipelineDetailView.vue';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 import ServiceDetailView from '@/views/ingestion/ServiceDetailView.vue';
 import ServicesListView from '@/views/ingestion/ServicesListView.vue';
+import ActivityFeedView from '@/views/collaboration/ActivityFeedView.vue';
+import AnnouncementsListView from '@/views/collaboration/AnnouncementsListView.vue';
+import TaskDetailView from '@/views/collaboration/TaskDetailView.vue';
+import TasksListView from '@/views/collaboration/TasksListView.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -186,6 +190,10 @@ export const router = createRouter({
           component: PipelineDetailView,
           props: true,
         },
+        { path: 'activity', name: 'activity', component: ActivityFeedView },
+        { path: 'tasks', name: 'tasks', component: TasksListView },
+        { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
+        { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
       ],
     },
   ],

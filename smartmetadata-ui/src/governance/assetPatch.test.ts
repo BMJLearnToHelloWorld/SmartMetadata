@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { descriptionPatch, domainsPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
 
 describe('asset governance patches', () => {
   it('builds a TagLabel with the schema-required keys', () => {
@@ -54,6 +54,12 @@ describe('asset governance patches', () => {
   it('patches domains as entity references of type domain', () => {
     expect(domainsPatch([], ['d1'])).toEqual([
       { op: 'replace', path: '/domains', value: [{ id: 'd1', type: 'domain' }] },
+    ]);
+  });
+
+  it('replaces the whole extension object for custom property values', () => {
+    expect(extensionPatch({ retentionDays: 7 }, { retentionDays: 30, stewardNote: 'ok' })).toEqual([
+      { op: 'replace', path: '/extension', value: { retentionDays: 30, stewardNote: 'ok' } },
     ]);
   });
 });

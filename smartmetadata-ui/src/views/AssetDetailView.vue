@@ -21,6 +21,9 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
+import { listEntityActivity } from '@/api/activity';
+import { createConversation, listConversations } from '@/api/conversations';
+import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, patchAsset } from '@/api/entities';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
@@ -31,8 +34,10 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
+import { toEntityLink } from '@/quality/entityLink';
 import type { AssetDetail } from '@/types/api';
+import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption } from '@/types/governance';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
 
@@ -53,8 +58,17 @@ const tableSample = ref<TableSampleData | null>(null);
 const topicSample = ref<TopicSampleData | null>(null);
 const tableProfile = ref<TableProfile | null>(null);
 const observabilityError = ref('');
+const activity = ref<ActivityEvent[]>([]);
+const conversations = ref<Conversation[]>([]);
+const collaborationError = ref('');
+const customProperties = ref<CustomPropertyDef[]>([]);
+const customPropsError = ref('');
 const editOpen = ref(false);
+const commentOpen = ref(false);
+const propsOpen = ref(false);
 const saving = ref(false);
+const commentMessage = ref('');
+const extensionForm = reactive<Record<string, string>>({});
 const editForm = reactive({
   description: '',
   ownerKeys: [] as string[],
@@ -84,6 +98,30 @@ const profileColumns = [
   { title: 'Max', dataIndex: 'max', key: 'max' },
 ];
 
+const activityColumns = [
+  { title: 'Type', dataIndex: 'eventType', key: 'eventType', width: 180 },
+  { title: 'Summary', key: 'summary' },
+];
+
+const conversationColumns = [
+  { title: 'Message', dataIndex: 'message', key: 'message' },
+  { title: 'Replies', dataIndex: 'replyCount', key: 'replyCount', width: 90 },
+];
+
+const customPropertyColumns = [
+  { title: 'Property', key: 'property' },
+  { title: 'Type', dataIndex: 'propertyType', key: 'propertyType', width: 140 },
+  { title: 'Value', key: 'value' },
+];
+
+function extensionValue(name: string): string {
+  const value = asset.value?.extension?.[name];
+  if (value === undefined || value === null) {
+    return '—';
+  }
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
@@ -100,9 +138,14 @@ async function load(): Promise<void> {
   topicSample.value = null;
   tableProfile.value = null;
   observabilityError.value = '';
+  activity.value = [];
+  conversations.value = [];
+  collaborationError.value = '';
+  customProperties.value = [];
+  customPropsError.value = '';
   try {
     asset.value = await fetchAssetDetail(props.entityType, decodedFqn.value);
-    await loadQuality();
+    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Failed to load asset';
   } finally {
@@ -145,6 +188,36 @@ async function loadQuality(): Promise<void> {
       topicSample.value = null;
       observabilityError.value = error instanceof Error ? error.message : 'Sample data unavailable';
     }
+  }
+}
+
+async function loadCollaboration(): Promise<void> {
+  if (!asset.value) {
+    return;
+  }
+  try {
+    const [activityPage, conversationPage] = await Promise.all([
+      listEntityActivity(props.entityType, asset.value.fullyQualifiedName),
+      listConversations({
+        entityLink: toEntityLink(props.entityType, asset.value.fullyQualifiedName),
+        limit: 20,
+      }),
+    ]);
+    activity.value = activityPage.data;
+    conversations.value = conversationPage.data;
+  } catch (error) {
+    activity.value = [];
+    conversations.value = [];
+    collaborationError.value = error instanceof Error ? error.message : 'Failed to load activity';
+  }
+}
+
+async function loadCustomProperties(): Promise<void> {
+  try {
+    customProperties.value = await listCustomProperties(props.entityType);
+  } catch (error) {
+    customProperties.value = [];
+    customPropsError.value = error instanceof Error ? error.message : 'Failed to load custom properties';
   }
 }
 
@@ -208,6 +281,74 @@ async function onSaveGovernance(): Promise<void> {
   }
 }
 
+function openComment(): void {
+  commentMessage.value = '';
+  commentOpen.value = true;
+}
+
+async function onCreateConversation(): Promise<void> {
+  if (!asset.value) {
+    return;
+  }
+  saving.value = true;
+  try {
+    await createConversation({
+      message: commentMessage.value.trim(),
+      about: toEntityLink(props.entityType, asset.value.fullyQualifiedName),
+    });
+    commentOpen.value = false;
+    message.success('Posted conversation');
+    await loadCollaboration();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : 'Create conversation failed');
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openCustomProperties(): void {
+  for (const key of Object.keys(extensionForm)) {
+    delete extensionForm[key];
+  }
+  for (const def of customProperties.value) {
+    const current = asset.value?.extension?.[def.name];
+    extensionForm[def.name] = current === undefined || current === null ? '' : String(current);
+  }
+  propsOpen.value = true;
+}
+
+async function onSaveCustomProperties(): Promise<void> {
+  if (!asset.value?.id) {
+    message.error('Cannot PATCH this asset without an entity id');
+    return;
+  }
+  saving.value = true;
+  try {
+    const next: Record<string, unknown> = { ...(asset.value.extension || {}) };
+    for (const def of customProperties.value) {
+      const typed = extensionForm[def.name]?.trim() ?? '';
+      if (!typed) {
+        delete next[def.name];
+        continue;
+      }
+      if (def.propertyType === 'integer' || def.propertyType === 'number') {
+        const parsed = Number(typed);
+        next[def.name] = Number.isFinite(parsed) ? parsed : typed;
+      } else {
+        next[def.name] = typed;
+      }
+    }
+    await patchAsset(props.entityType, asset.value.id, extensionPatch(asset.value.extension, next));
+    propsOpen.value = false;
+    message.success('Custom properties updated');
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : 'Update failed');
+  } finally {
+    saving.value = false;
+  }
+}
+
 watch(
   () => [props.entityType, props.fqn],
   () => {
@@ -243,6 +384,16 @@ onMounted(() => {
         </Button>
         <Button data-testid="edit-governance" :disabled="!asset?.id" @click="openEdit">
           Edit governance
+        </Button>
+        <Button data-testid="create-asset-conversation" :disabled="!asset" @click="openComment">
+          Post conversation
+        </Button>
+        <Button
+          data-testid="edit-custom-properties"
+          :disabled="!asset?.id || !customProperties.length"
+          @click="openCustomProperties"
+        >
+          Edit custom properties
         </Button>
       </Space>
       <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="detail__alert" />
@@ -280,6 +431,67 @@ onMounted(() => {
           row-key="name"
           :columns="schemaColumns"
           :data-source="asset.schemaRows"
+          :pagination="false"
+          size="small"
+        />
+        <Typography.Title :level="5" class="detail__schema-title">Custom properties</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          Definitions from GET /api/v1/metadata/types/name/{{ entityType }}/customProperties.
+          Values live on the entity <code>extension</code> object and are written with RFC 6902
+          PATCH.
+        </Typography.Paragraph>
+        <Alert v-if="customPropsError" type="warning" show-icon :message="customPropsError" class="detail__alert" />
+        <Table
+          row-key="name"
+          data-testid="asset-custom-properties-table"
+          :columns="customPropertyColumns"
+          :data-source="customProperties"
+          :pagination="false"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'property'">
+              {{ (record as CustomPropertyDef).displayName || (record as CustomPropertyDef).name }}
+            </template>
+            <template v-else-if="column.key === 'value'">
+              {{ extensionValue((record as CustomPropertyDef).name) }}
+            </template>
+          </template>
+        </Table>
+        <Typography.Title :level="5" class="detail__schema-title">Activity</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          GET /api/v1/activity/entity/{{ entityType }}/name/{fqn}
+        </Typography.Paragraph>
+        <Alert
+          v-if="collaborationError"
+          type="warning"
+          show-icon
+          :message="collaborationError"
+          class="detail__alert"
+        />
+        <Table
+          row-key="id"
+          data-testid="asset-activity-table"
+          :columns="activityColumns"
+          :data-source="activity"
+          :pagination="false"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'summary'">
+              {{ (record as ActivityEvent).summary || (record as ActivityEvent).fieldName || '—' }}
+            </template>
+          </template>
+        </Table>
+        <Typography.Title :level="5" class="detail__schema-title">Conversations</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          GET /api/v1/conversations?entityLink=&lt;#E::{{ entityType }}::{fqn}&gt;
+        </Typography.Paragraph>
+        <Table
+          row-key="id"
+          data-testid="asset-conversations-table"
+          :columns="conversationColumns"
+          :data-source="conversations"
           :pagination="false"
           size="small"
         />
@@ -436,6 +648,36 @@ onMounted(() => {
               {{ domain.displayName || domain.name }}
             </Select.Option>
           </Select>
+        </Form.Item>
+      </Form>
+    </Modal>
+    <Modal
+      v-model:open="commentOpen"
+      title="Post conversation on this asset"
+      :get-container="false"
+      :confirm-loading="saving"
+      @ok="onCreateConversation"
+    >
+      <Form layout="vertical">
+        <Form.Item label="Message" required>
+          <Input.TextArea v-model:value="commentMessage" data-testid="asset-conversation-message" :rows="3" />
+        </Form.Item>
+      </Form>
+    </Modal>
+    <Modal
+      v-model:open="propsOpen"
+      title="Edit custom properties"
+      :get-container="false"
+      :confirm-loading="saving"
+      @ok="onSaveCustomProperties"
+    >
+      <Form layout="vertical">
+        <Form.Item
+          v-for="def in customProperties"
+          :key="def.name"
+          :label="def.displayName || def.name"
+        >
+          <Input v-model:value="extensionForm[def.name]" :data-testid="`custom-prop-${def.name}`" />
         </Form.Item>
       </Form>
     </Modal>

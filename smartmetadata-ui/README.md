@@ -18,11 +18,15 @@ Phase 5: test definitions/cases/suites, asset DQ + profiler/sample, incidents,
 and event-subscription alerts.
 Phase 8: services + ingestion pipeline entities against Apache REST; jobs still
 run with `smartmetadata-ingest`.
-See `docs/rebuild/PHASE1.md`–`PHASE8.md`, ADR:2026-10-22-clean-room-vue-spa,
+Phase 9: activity feed, conversations, tasks, announcements, and custom
+property values. Persona landing is skipped.
+See `docs/rebuild/PHASE1.md`–`PHASE9.md`, ADR:2026-10-22-clean-room-vue-spa,
 ADR:2026-10-22-lineage-vue-flow-dagre,
 ADR:2026-10-22-asset-governance-uses-json-patch,
 ADR:2026-10-22-dq-entity-links-use-message-parser-format, and
-ADR:2026-10-22-ingestion-console-runs-via-cli.
+ADR:2026-10-22-ingestion-console-runs-via-cli,
+ADR:2026-10-22-collaboration-uses-activity-and-conversations, and
+ADR:2026-10-22-custom-property-values-use-extension-patch.
 
 ## Stack
 

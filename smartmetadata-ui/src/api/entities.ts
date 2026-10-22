@@ -125,6 +125,7 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     domains: mapOwners(body.domains),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
+    extension: asRecord(body.extension) || undefined,
   };
 }
 

@@ -70,4 +70,5 @@ export interface AssetDetail {
   domains: EntityRef[];
   schemaRows: SchemaRow[];
   schemaLabel: string;
+  extension?: Record<string, unknown>;
 }

@@ -53,3 +53,8 @@ export function domainsPatch(current: unknown, domainIds: string[]): JsonPatchOp
     domainIds.map((id) => entityRefValue(id, 'domain')),
   );
 }
+
+/** Custom property values live on the entity `extension` object. */
+export function extensionPatch(current: unknown, extension: Record<string, unknown>): JsonPatchOp[] {
+  return setFieldPatch('/extension', current, extension);
+}

@@ -33,11 +33,11 @@ describe('entityRoutes', () => {
   it('maps Phase 1 entity types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
-      fields: 'owners,tags,columns,domains',
+      fields: 'owners,tags,columns,domains,extension',
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
-      fields: 'owners,tags,domains',
+      fields: 'owners,tags,domains,extension',
     });
   });
 
