@@ -59,6 +59,19 @@ class LiveSmokeContract(unittest.TestCase):
                 smoke.HttpResult(200, "event: endpoint", {"Content-Type": "text/event-stream"})
             )
 
+    def test_mcp_unregistered_rejects_500(self) -> None:
+        smoke = load_smoke()
+        with self.assertRaises(smoke.SmokeError) as raised:
+            smoke.assert_mcp_unregistered(smoke.HttpResult(500, "IllegalStateException", {}))
+        self.assertIn("got 500", str(raised.exception))
+
+    def test_mcp_unregistered_rejects_spa_html(self) -> None:
+        smoke = load_smoke()
+        with self.assertRaises(smoke.SmokeError):
+            smoke.assert_mcp_unregistered(
+                smoke.HttpResult(200, "<html><div id='root'></div></html>", {"Content-Type": "text/html"})
+            )
+
     def test_root_is_not_official_product_ui(self) -> None:
         smoke = load_smoke()
         smoke.assert_root_is_not_product_ui(smoke.HttpResult(404, "Not Found", {}))

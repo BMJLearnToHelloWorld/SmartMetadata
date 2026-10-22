@@ -177,6 +177,10 @@ public class OpenMetadataAssetServlet extends AssetServlet {
    */
   protected void writeIndexHtml(HttpServletRequest req, HttpServletResponse resp, String cspNonce)
       throws IOException {
+    if (!IndexResource.uiAssetsAvailable()) {
+      resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+      return;
+    }
     // Normalise null → "" once so a subclass returning null doesn't NPE on `.isEmpty()` below.
     String variant = Objects.requireNonNullElse(etagVariant(req), "");
     String etag = withVariant(IndexResource.getIndexEtag(this.basePath), variant);
@@ -546,8 +550,12 @@ public class OpenMetadataAssetServlet extends AssetServlet {
       pathToCheck = requestUri.substring(normalizedBasePath.length());
     }
 
-    // API and OpenAPI routes should never be rewritten to index.html
-    if (pathToCheck.startsWith("/api/") || pathToCheck.startsWith("/openapi")) {
+    // API, OpenAPI, and the MCP servlet mount must never be rewritten to index.html.
+    // /mcp is registered only when the CCL openmetadata-mcp jar is on the classpath;
+    // otherwise the path must stay unregistered (404/405), not a SPA shell or a 500.
+    if (pathToCheck.startsWith("/api/")
+        || pathToCheck.startsWith("/openapi")
+        || isMcpEndpoint(pathToCheck)) {
       return false;
     }
 
@@ -570,5 +578,9 @@ public class OpenMetadataAssetServlet extends AssetServlet {
 
     String extension = fileName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
     return !STATIC_FILE_EXTENSIONS.contains(extension);
+  }
+
+  private static boolean isMcpEndpoint(String pathToCheck) {
+    return "/mcp".equals(pathToCheck) || pathToCheck.startsWith("/mcp/");
   }
 }

@@ -51,6 +51,10 @@ public class IndexResource {
     try (InputStream inputStream = IndexResource.class.getResourceAsStream("/assets/index.html")) {
       if (inputStream == null) {
         LOG.warn("UI assets not found on classpath. Running in no-ui mode.");
+        configProcessedHtml = null;
+        silentCallbackRawHtml = null;
+        ETAG_CACHE.invalidateAll();
+        SILENT_CALLBACK_ETAG_CACHE.invalidateAll();
         return;
       }
       rawIndexHtml =
@@ -225,9 +229,27 @@ public class IndexResource {
     ETAG_CACHE.invalidateAll();
   }
 
+  /**
+   * Slim dist ships no UI jar, so {@code /assets/index.html} is missing. Callers must 404 rather
+   * than throw — GET {@code /mcp} used to become HTTP 500 via the SPA fallback.
+   */
+  public static boolean uiAssetsAvailable() {
+    return configProcessedHtml != null;
+  }
+
+  static void clearUiAssetsForTesting() {
+    configProcessedHtml = null;
+    silentCallbackRawHtml = null;
+    ETAG_CACHE.invalidateAll();
+    SILENT_CALLBACK_ETAG_CACHE.invalidateAll();
+  }
+
   @GET
   @Produces(MediaType.TEXT_HTML)
   public Response getIndex(@Context HttpServletRequest request) {
+    if (!uiAssetsAvailable()) {
+      return Response.status(Response.Status.NOT_FOUND).build();
+    }
     final String cspNonce = (String) request.getAttribute(CspNonceHandler.CSP_NONCE_ATTRIBUTE);
     return Response.ok(getIndexFile(configuredBasePath, cspNonce)).build();
   }

@@ -805,6 +805,10 @@ public class OpenMetadataApplication extends Application<OpenMetadataApplication
       OpenMetadataApplicationConfig config,
       OMWebConfiguration webConfiguration,
       Environment environment) {
+    if (!IndexResource.uiAssetsAvailable()) {
+      LOG.info("Skipping asset servlet: no UI assets on classpath (slim / no-ui)");
+      return;
+    }
 
     LOG.info("Registering Asset Servlet with basePath: {}", config.getBasePath());
     LOG.info("Application Context Path: {}", environment.getApplicationContext().getContextPath());
@@ -1344,7 +1348,9 @@ public class OpenMetadataApplication extends Application<OpenMetadataApplication
     }
 
     OMErrorPageHandler eph = new OMErrorPageHandler(config.getWebConfiguration());
-    eph.addErrorPage(Response.Status.NOT_FOUND.getStatusCode(), "/");
+    if (IndexResource.uiAssetsAvailable()) {
+      eph.addErrorPage(Response.Status.NOT_FOUND.getStatusCode(), "/");
+    }
     environment.getApplicationContext().setErrorHandler(eph);
 
     CspNonceHandler cspNonceHandler = new CspNonceHandler();
