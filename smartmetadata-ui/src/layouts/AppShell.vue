@@ -17,6 +17,9 @@ const selectedKeys = computed(() => {
   if (name === 'asset') {
     return ['search'];
   }
+  if (name === 'lineage') {
+    return ['lineage-home'];
+  }
   if (name === 'admin-user') {
     return ['admin-users'];
   }
@@ -79,6 +82,7 @@ async function onLogout(): Promise<void> {
         @click="onMenuClick"
       >
         <Menu.Item key="search">Search</Menu.Item>
+        <Menu.Item key="lineage-home">Lineage</Menu.Item>
         <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
           <Menu.Item key="admin-users">Users</Menu.Item>
           <Menu.Item key="admin-teams">Teams</Menu.Item>

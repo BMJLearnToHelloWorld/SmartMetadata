@@ -11,11 +11,13 @@ JSON Schema.
 
 Phase 1: app shell, basic-auth login, global search, Table + Topic detail.
 Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware login.
-See `docs/rebuild/PHASE1.md`, `docs/rebuild/PHASE2.md`, and ADR:2026-10-22-clean-room-vue-spa.
+Phase 3: upstream/downstream lineage graph (Vue Flow + dagre) from `GET /v1/lineage/{entity}/name/{fqn}`.
+See `docs/rebuild/PHASE1.md`, `docs/rebuild/PHASE2.md`, `docs/rebuild/PHASE3.md`,
+ADR:2026-10-22-clean-room-vue-spa, and ADR:2026-10-22-lineage-vue-flow-dagre.
 
 ## Stack
 
-Vite · Vue 3 · TypeScript · Ant Design Vue · Vue Router · Pinia · Vitest
+Vite · Vue 3 · TypeScript · Ant Design Vue · Vue Router · Pinia · Vue Flow · dagre · Vitest
 
 ## Run against a slim Phase 0 server
 
