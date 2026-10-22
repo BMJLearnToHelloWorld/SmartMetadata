@@ -97,7 +97,8 @@ artifacts re-enter the dependency tree.
   *define* an `ingestion` service (Collate image / local CCL build). Default local run no longer
   starts it. Those files are historical reference until a later compose cleanup.
 - **MCP catalog entities and `McpApplication`** remain in the Apache spec/server. Without the CCL
-  jar the process logs `MCP module not found in classpath` and continues.
+  jar the process logs `MCP module not found in classpath` and continues. Agents use the
+  standalone Apache process in [PHASE10.md](PHASE10.md) (`smartmetadata-mcp/`), not the CCL jar.
 - **`openmetadata-airflow-apis/` and `openmetadata-ui-core-components`** are VERIFY for counsel;
   they are not in the shippable server tarball.
 - **`make generate` / `include ingestion/Makefile`** still exist for developers working in the

@@ -128,6 +128,14 @@ repos:
         files: ^(smartmetadata-ingestion/|scripts/rebuild/check_ccl_free_ingestion\.py)
         pass_filenames: false
         require_serial: true
+      - id: ccl-free-mcp
+        name: Clean-room MCP must not import official CCL MCP
+        description: Fails if smartmetadata-mcp depends on or mentions openmetadata-mcp. See docs/rebuild/PHASE10.md.
+        entry: python3 scripts/rebuild/check_ccl_free_mcp.py
+        language: system
+        files: ^(smartmetadata-mcp/|scripts/rebuild/check_ccl_free_mcp\.py)
+        pass_filenames: false
+        require_serial: true
       - id: java-impact-map
         name: Java impact map owns the code and ITs this branch adds
         description: Fails the push while the branch leaves Java code or ITs without an area in .github/java-tests/impact-map.json, empties a pattern or breaks a map rule. The message names the glob to add and the likely area.

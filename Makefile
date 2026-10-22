@@ -137,6 +137,22 @@ ingest_test:  ## Run SmartMetadata ingestion unit tests
 check-ccl-free-ingestion:  ## Fail if smartmetadata-ingestion imports or depends on CCL ingestion
 	python3 scripts/rebuild/check_ccl_free_ingestion.py
 
+.PHONY: mcp_install
+mcp_install:  ## Install the clean-room SmartMetadata MCP package
+	cd smartmetadata-mcp && npm install
+
+.PHONY: mcp_test
+mcp_test:  ## Run SmartMetadata MCP unit tests
+	cd smartmetadata-mcp && npm test
+
+.PHONY: mcp_build
+mcp_build:  ## Typecheck and build the SmartMetadata MCP server
+	cd smartmetadata-mcp && npm run build
+
+.PHONY: check-ccl-free-mcp
+check-ccl-free-mcp:  ## Fail if smartmetadata-mcp imports or depends on official CCL MCP
+	python3 scripts/rebuild/check_ccl_free_mcp.py
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a

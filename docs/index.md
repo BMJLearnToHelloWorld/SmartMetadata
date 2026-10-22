@@ -29,6 +29,7 @@ verdict cites an artifact that was checked to still exist):
 | `docs/rebuild/PHASE7.md` | Phase 7 clean-room connector batch: MySQL, Kafka/Confluent, Snowflake, `source.type` registry, example YAMLs | Extending `smartmetadata-ingestion/` with production-useful connectors without copying CCL `ingestion/` | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE8.md` | Phase 8 ingestion console: DatabaseService / MessagingService and IngestionPipeline CRUD in `smartmetadata-ui/`; CLI YAML mapping; no Airflow trigger | Operators managing services and pipeline entities without CCL UI or Airflow | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE9.md` | Phase 9 collaboration / long-tail UI: activity feed, conversations, tasks, announcements, custom property values; persona landing skipped | Extending the clean-room console with OSS Feed/Tasks and related APIs | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE10.md` | Phase 10 clean-room stdio MCP (`smartmetadata-mcp/`): JWT to Apache REST, OSS tools, CCL MCP stays out of dist | Adding an Apache agent MCP without shipping or importing `openmetadata-mcp` | 2026-10-22 | CURRENT |
 
 ## Start here — root guides (not under `docs/`)
 
