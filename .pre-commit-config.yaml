@@ -104,6 +104,14 @@ repos:
         language: system
         pass_filenames: false
         require_serial: true
+      - id: ccl-free-dist
+        name: Shippable dist must not depend on CCL modules
+        description: Fails if openmetadata-dist declares or packages openmetadata-ui, openmetadata-mcp, ui-core-components, or ingestion. See docs/rebuild/PHASE0.md.
+        entry: python3 scripts/rebuild/check_ccl_free_dist.py
+        language: system
+        files: ^(openmetadata-dist/|scripts/rebuild/check_ccl_free_dist\.py)
+        pass_filenames: false
+        require_serial: true
       - id: java-impact-map
         name: Java impact map owns the code and ITs this branch adds
         description: Fails the push while the branch leaves Java code or ITs without an area in .github/java-tests/impact-map.json, empties a pattern or breaks a map rule. The message names the glob to add and the likely area.

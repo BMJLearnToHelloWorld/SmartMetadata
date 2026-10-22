@@ -100,6 +100,15 @@ generate-reference-docs: generate-entity-index generate-api-reference  ## Regene
 harness-check:  ## Warn on harness decay (dead refs, doc sizes, rule globs, generated-doc freshness)
 	python3 scripts/harness/check_harness.py
 
+.PHONY: slim-dist
+slim-dist:  ## Build the CCL-free server distribution (no UI/MCP/ingestion)
+	mvn -DskipTests package -pl openmetadata-dist -am
+	python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball
+
+.PHONY: check-ccl-free-dist
+check-ccl-free-dist:  ## Fail if the shippable dist still depends on Collate Community License modules
+	python3 scripts/rebuild/check_ccl_free_dist.py
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a

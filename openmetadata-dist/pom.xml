@@ -26,17 +26,18 @@
   <artifactId>openmetadata-dist</artifactId>
   <packaging>pom</packaging>
   <name>OpenMetadata Distribution</name>
-  <description>OpenMetadata binary distribution</description>
+  <!-- Shippable server tarball: Apache-licensed service only.
+       Collate Community License modules (openmetadata-ui, openmetadata-mcp,
+       openmetadata-ui-core-components) and the Python ingestion tree stay
+       in-repo as reference-only and must not appear on this module's
+       dependency tree or in the assembled libs/. See docs/rebuild/PHASE0.md
+       and ADR:2026-10-22-shippable-dist-excludes-ccl-modules. -->
+  <description>CCL-free OpenMetadata server binary distribution (no UI, MCP, or ingestion)</description>
 
   <dependencies>
     <dependency>
       <groupId>org.open-metadata</groupId>
       <artifactId>openmetadata-service</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.open-metadata</groupId>
-      <artifactId>openmetadata-mcp</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>
@@ -45,6 +46,36 @@
     <final.Name>openmetadata</final.Name>
     <sonar.skip>true</sonar.skip>
   </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>ban-ccl-modules</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <phase>validate</phase>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <message>openmetadata-dist must not depend on Collate Community License modules. Product packaging is Apache server core only. See docs/rebuild/PHASE0.md and ADR:2026-10-22-shippable-dist-excludes-ccl-modules.</message>
+                  <excludes>
+                    <exclude>org.open-metadata:openmetadata-ui</exclude>
+                    <exclude>org.open-metadata:openmetadata-mcp</exclude>
+                    <exclude>org.open-metadata:openmetadata-ui-core-components</exclude>
+                  </excludes>
+                </bannedDependencies>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
   <profiles>
     <profile>
@@ -93,13 +124,7 @@
           </plugin>
         </plugins>
       </build>
-      <dependencies>
-        <dependency>
-          <groupId>org.open-metadata</groupId>
-          <artifactId>openmetadata-ui</artifactId>
-          <version>${project.version}</version>
-        </dependency>
-      </dependencies>
+      <!-- UI was a default-profile dependency here; it is CCL and must not ship. -->
     </profile>
     <profile>
       <id>rpm</id>
@@ -174,13 +199,7 @@
         </plugin>
       </plugins>
     </build>
-    <dependencies>
-      <dependency>
-        <groupId>org.open-metadata</groupId>
-        <artifactId>openmetadata-ui</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-    </dependencies>
+    <!-- UI was an rpm-profile dependency here; it is CCL and must not ship. -->
   </profile>
   <profile>
     <id>only-backend</id>

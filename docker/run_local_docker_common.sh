@@ -17,10 +17,10 @@ authorizationToken="eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0
 helpFunction() {
    echo ""
    echo "Usage: $0 -m mode -d database"
-   echo "\t-m Running mode: [ui, no-ui]. Default [ui]\n"
+   echo "\t-m Running mode: [ui, no-ui]. Default [no-ui]. The shippable dist no longer packages the CCL UI; both modes build the slim server.\n"
    echo "\t-d Database: [mysql, postgresql]. Default [mysql]\n"
    echo "\t-s Skip maven build: [true, false]. Default [false]\n"
-   echo "\t-i Include ingestion: [true, false]. Default [true]\n"
+   echo "\t-i Include ingestion: [true, false]. Default [false]. The CCL ingestion image is reference-only; not part of the product dist.\n"
    echo "\t-x Open JVM debug port on 5005: [true, false]. Default [false]\n"
    echo "\t-h For usage help\n"
    echo "\t-r For Cleaning DB Volumes. [true, false]. Default [true]\n"
@@ -373,10 +373,10 @@ run_local_docker_main() {
     esac
   done
 
-  mode="${mode:=ui}"
+  mode="${mode:=no-ui}"
   database="${database:=mysql}"
   skipMaven="${skipMaven:=false}"
-  includeIngestion="${includeIngestion:=true}"
+  includeIngestion="${includeIngestion:=false}"
   debugOM="${debugOM:=false}"
   cleanDbVolumes="${cleanDbVolumes:=true}"
   export APP_RUN_WAIT_TIMEOUT_SECONDS="${APP_RUN_WAIT_TIMEOUT_SECONDS:-300}"
@@ -396,13 +396,8 @@ run_local_docker_main() {
   fi
 
   if [[ $skipMaven == "false" ]]; then
-    if [[ $mode == "no-ui" ]]; then
-      echo "Maven Build - Skipping Tests and UI"
-      mvn -DskipTests -DonlyBackend clean package -pl !openmetadata-ui
-    else
-      echo "Maven Build - Skipping Tests"
-      mvn -DskipTests clean package
-    fi
+    echo "Maven Build - CCL-free server dist (no UI/MCP/ingestion on the classpath)"
+    mvn -DskipTests clean package -pl openmetadata-dist -am
   else
     echo "Skipping Maven Build"
   fi

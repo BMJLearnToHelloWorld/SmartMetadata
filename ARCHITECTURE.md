@@ -17,7 +17,10 @@ OpenMetadata is **one Java backend** (`openmetadata-service`, Dropwizard/JAX-RS)
 the same REST API*. Everything is typed by **904 JSON Schemas** in `openmetadata-spec`, from which the
 Java, Python, and TypeScript models are generated (Part 3). The backend is a **mid-graph hub**: the
 operator, MCP server, integration tests, and distribution all depend on it; it depends only on `common`,
-`openmetadata-spec`, and the shaded search clients.
+`openmetadata-spec`, and the shaded search clients. **SmartMetadata Phase 0** ships `openmetadata-dist`
+without UI, MCP, or ingestion (those trees stay in-repo as reference-only); see
+[docs/rebuild/PHASE0.md](docs/rebuild/PHASE0.md)
+(ADR:2026-10-22-shippable-dist-excludes-ccl-modules).
 
 **Path A — an API request** (e.g. `POST /v1/tables`). Enters `openmetadata-service` at
 `OpenMetadataApplication.java` (Jersey). A JAX-RS resource in `service/resources/**` (e.g.
@@ -59,13 +62,13 @@ Dependencies/dependents are the **measured Maven edges** (module POMs); `ui → 
 | `openmetadata-service` | The core backend: REST API, repositories, migrations runner, search, apps | `…/service/OpenMetadataApplication.java` | → `common`, `spec`, `es-deps`, `os-deps` · ← `k8s-operator`, `mcp`, `integration-tests`, `dist` | `service/resources/` |
 | `openmetadata-sdk` | Java client SDK for the API | `…/sdk/client/OpenMetadata.java` | → `spec` · ← `integration-tests` | `…/sdk/client/` |
 | `openmetadata-k8s-operator` | Kubernetes operator running OM jobs | `…/operator/OMJobOperatorApplication.java` | → `service` (provided) · ← `integration-tests` (test) | `…/operator/` |
-| `openmetadata-mcp` | MCP server exposing OM to agents | `…/mcp/` (e.g. `AuthEnrichedMcpContextExtractor.java`) | → `service` · ← `integration-tests`, `dist` | `…/mcp/` |
-| `openmetadata-integration-tests` | Backend API ITs (`*IT.java`, concurrent) | `src/test/java/org/openmetadata/it/tests/` | → `sdk`, `service`, `mcp`, `k8s` (test) · ← none | `…/it/tests/` |
-| `openmetadata-ui-core-components` | Canonical React component library (react-aria + `tw:`) | `…/ui/src/components/index.ts` | → none (Maven) · ← `ui` (via npm) | `…/ui/src/components/` |
-| `openmetadata-ui` | The React SPA | `…/ui/src/App.tsx` | → none (Maven); → `ui-core-components` (npm) · ← `dist` | `…/ui/src/components/` |
-| `openmetadata-dist` | Packaging/assembly of the shippable server | `openmetadata-dist/pom.xml` | → `service`, `mcp`, `ui` · ← none | the assembly pom |
+| `openmetadata-mcp` | MCP server exposing OM to agents (**CCL, reference-only, not shipped**) | `…/mcp/` (e.g. `AuthEnrichedMcpContextExtractor.java`) | → `service` · ← `integration-tests` (test) | `…/mcp/` |
+| `openmetadata-integration-tests` | Backend API ITs (`*IT.java`, concurrent) | `src/test/java/org/openmetadata/it/tests/` | → `sdk`, `service`, `mcp` (test), `k8s` (test) · ← none | `…/it/tests/` |
+| `openmetadata-ui-core-components` | Canonical React component library (react-aria + `tw:`) (**VERIFY license; not shipped**) | `…/ui/src/components/index.ts` | → none (Maven) · ← `ui` (via npm) | `…/ui/src/components/` |
+| `openmetadata-ui` | The React SPA (**CCL, reference-only, not shipped**) | `…/ui/src/App.tsx` | → none (Maven); → `ui-core-components` (npm) · ← none | `…/ui/src/components/` |
+| `openmetadata-dist` | Packaging/assembly of the shippable **CCL-free** server | `openmetadata-dist/pom.xml` | → `service` · ← none | the assembly pom |
 | `openmetadata-clients` | Published client artifacts | `openmetadata-clients/openmetadata-java-client/pom.xml` | → none · ← none (**isolated** in the Maven graph) | `openmetadata-java-client/` |
-| `ingestion/` (tree, not a Maven module) | Python framework + 120+ connectors; writes to the API | `ingestion/src/metadata/__main__.py` (`metadata` CLI) | consumes the backend REST API (Path B) | `…/ingestion/source/` |
+| `ingestion/` (tree, not a Maven module) | Python framework + 120+ connectors; writes to the API (**CCL, reference-only, not shipped**) | `ingestion/src/metadata/__main__.py` (`metadata` CLI) | consumes the backend REST API (Path B) | `…/ingestion/source/` |
 
 ### `openmetadata-service` internals (package = `…/service/`; 1,777 main `.java`)
 Intended flow (sampled, 08a Pass 2): **`resources/*Resource` → `jdbi3/*Repository` → `jdbi3/CollectionDAO`/`EntityDAO` → SQL.** But the packages are **not** acyclically layered (Part 3).
