@@ -49,7 +49,11 @@ export const useAuthStore = defineStore('auth', () => {
     };
     persistSession(window.localStorage, next);
     session.value = next;
-    await refreshUser();
+    try {
+      await refreshUser();
+    } catch {
+      // JWT is already stored; the profile call is not required to enter the app.
+    }
   }
 
   async function logout(): Promise<void> {

@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { authorizationHeader, loadSession } from '@/auth/token';
+import { authorizationHeader, clearSession, loadSession } from '@/auth/token';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -76,6 +76,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   const text = await response.text();
   if (!response.ok) {
+    if (response.status === 401 && options.auth !== false) {
+      clearSession(window.localStorage);
+    }
     throw new ApiError(response.status, text, readErrorMessage(text, response.status));
   }
   if (!text) {
