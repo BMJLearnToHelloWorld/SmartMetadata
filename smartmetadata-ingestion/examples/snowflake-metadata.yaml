@@ -1,0 +1,28 @@
+# Reference Snowflake metadata workflow. Secrets come from the environment, never from this file.
+workflow:
+  name: snowflake-metadata
+  type: metadata
+  failFast: false
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    type: jwt
+    jwtToken: ${OM_JWT}
+
+source:
+  type: snowflake
+  serviceName: warehouse
+  connection:
+    account: ${SNOWFLAKE_ACCOUNT}
+    username: ${SNOWFLAKE_USER}
+    password: ${SNOWFLAKE_PASSWORD}
+    warehouse: ${SNOWFLAKE_WAREHOUSE}
+    # Optional: restrict INFORMATION_SCHEMA to one database (empty = all visible).
+    database: ${SNOWFLAKE_DATABASE:-}
+    role: ${SNOWFLAKE_ROLE:-}
+  includeViewLineage: true
+  storeConnectionSecrets: false
+
+sink:
+  type: metadata-rest

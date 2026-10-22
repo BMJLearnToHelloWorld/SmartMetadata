@@ -12,9 +12,9 @@ from typing import Any
 
 import httpx
 import pytest
-
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import ProcessorConfig, SourceConfig
+from smartmetadata_ingestion.connectors.kafka import KafkaSource, SequenceTopicReader, TopicRow
 from smartmetadata_ingestion.connectors.postgres import (
     ColumnRow,
     PostgresSource,
@@ -101,6 +101,33 @@ def test_runner_collects_errors_unless_fail_fast(workflow_config) -> None:
             source=PostgresSource(workflow_config.source, reader=reader),
             sink=BoomSink(),
         )
+
+
+def test_runner_writes_kafka_topics(workflow_config) -> None:
+    workflow_config.source = SourceConfig(
+        type="kafka",
+        service_name="events",
+        connection={"bootstrapServers": "broker:9092"},
+    )
+    workflow_config.lineage = []
+    transport = RecordingTransport()
+    report = run_workflow(
+        workflow_config,
+        client=RestClient(workflow_config.server, transport=transport),
+        source=KafkaSource(
+            workflow_config.source,
+            reader=SequenceTopicReader([TopicRow(name="orders", partitions=2)]),
+        ),
+    )
+    assert report.ok()
+    assert report.succeeded == 2
+    paths = [call["path"] for call in transport.calls]
+    assert paths == [
+        "/api/v1/services/messagingServices",
+        "/api/v1/topics",
+    ]
+    assert '"serviceType":"Kafka"' in transport.calls[0]["body"]
+    assert '"partitions":2' in transport.calls[1]["body"].replace(" ", "")
 
 
 def test_drop_processor_skips_records(workflow_config) -> None:

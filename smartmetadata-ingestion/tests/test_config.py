@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from smartmetadata_ingestion.config import load_workflow_config
 from smartmetadata_ingestion.errors import WorkflowError
 
@@ -86,6 +85,25 @@ def test_login_auth_requires_email_and_password(tmp_path: Path) -> None:
     )
     with pytest.raises(WorkflowError, match="password"):
         load_workflow_config(path, environ={})
+
+
+def test_source_type_is_lowercased(tmp_path: Path) -> None:
+    path = tmp_path / "wf.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "workflow": {"name": "demo"},
+                "server": {
+                    "hostPort": "http://localhost:8585/api",
+                    "auth": {"type": "jwt", "jwtToken": "t"},
+                },
+                "source": {"type": "MySQL", "serviceName": "oltp"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_workflow_config(path, environ={})
+    assert config.source.type == "mysql"
 
 
 def test_rejects_unknown_suffix(tmp_path: Path) -> None:

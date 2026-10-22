@@ -1,0 +1,30 @@
+# Reference Kafka / Confluent metadata workflow. Secrets come from the environment.
+workflow:
+  name: kafka-topics
+  type: metadata
+  failFast: false
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    type: jwt
+    jwtToken: ${OM_JWT}
+
+source:
+  type: kafka
+  serviceName: events
+  connection:
+    # HTTP discovery (preferred for mocks and Confluent REST Proxy).
+    restProxyUrl: ${KAFKA_REST_PROXY_URL:-http://localhost:8082}
+    bootstrapServers: ${KAFKA_BOOTSTRAP:-localhost:9092}
+    schemaRegistryURL: ${SCHEMA_REGISTRY_URL:-http://localhost:8081}
+    # Optional REST / Schema Registry basic auth:
+    # username: ${KAFKA_REST_USER}
+    # password: ${KAFKA_REST_PASSWORD}
+    # basicAuthUserInfo: ${SCHEMA_REGISTRY_BASIC_AUTH}
+  # Empty includeTopics means "all non-internal topics".
+  includeTopics: []
+  storeConnectionSecrets: false
+
+sink:
+  type: metadata-rest

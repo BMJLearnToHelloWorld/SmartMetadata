@@ -23,9 +23,11 @@ from smartmetadata_ingestion.errors import RestError, WorkflowError
 
 LOGIN_PATH = "/v1/users/login"
 DATABASE_SERVICES_PATH = "/v1/services/databaseServices"
+MESSAGING_SERVICES_PATH = "/v1/services/messagingServices"
 DATABASES_PATH = "/v1/databases"
 SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
+TOPICS_PATH = "/v1/topics"
 LINEAGE_PATH = "/v1/lineage"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
@@ -158,6 +160,12 @@ class RestClient:
 
     def upsert_table(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", TABLES_PATH, json=payload))
+
+    def upsert_messaging_service(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", MESSAGING_SERVICES_PATH, json=payload))
+
+    def upsert_topic(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", TOPICS_PATH, json=payload))
 
     def put_lineage(
         self,

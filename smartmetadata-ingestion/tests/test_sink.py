@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import ProcessorConfig, SinkConfig
 from smartmetadata_ingestion.errors import WorkflowError
@@ -21,8 +20,10 @@ from smartmetadata_ingestion.records import (
     DatabaseServiceRecord,
     LineageEndpoint,
     LineageRecord,
+    MessagingServiceRecord,
     SchemaRecord,
     TableRecord,
+    TopicRecord,
 )
 from smartmetadata_ingestion.sinks.metadata_rest import MetadataRestSink, build_sink
 
@@ -71,9 +72,26 @@ def test_sink_sends_optional_fields(workflow_config) -> None:
             sql_query="SELECT 1",
         )
     )
+    sink.write(
+        MessagingServiceRecord(
+            name="events",
+            service_type="Kafka",
+            display_name="Events",
+        )
+    )
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=3,
+            message_schema={"schemaType": "Avro", "schemaText": "{}"},
+        )
+    )
     sink.flush()
     assert any("displayName" in body for body in bodies)
     assert any("sqlQuery" in body for body in bodies)
+    assert any("messageSchema" in body for body in bodies)
+    assert any('"partitions": 3' in body or '"partitions":3' in body for body in bodies)
     assert build_sink(workflow_config, client).written == []
 
 

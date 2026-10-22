@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import pytest
-
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.base import StaticSource, build_source, parse_static_record
 from smartmetadata_ingestion.errors import WorkflowError
@@ -63,6 +62,6 @@ def test_build_source_and_identity_processor(workflow_config) -> None:
 
 
 def test_build_source_rejects_unknown_type(workflow_config) -> None:
-    workflow_config.source.type = "snowflake"  # type: ignore[misc]
+    workflow_config.source.type = "oracle"
     with pytest.raises(WorkflowError, match="unsupported source"):
         build_source(workflow_config)

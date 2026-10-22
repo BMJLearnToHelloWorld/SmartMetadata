@@ -26,6 +26,7 @@ verdict cites an artifact that was checked to still exist):
 | `docs/rebuild/PHASE4.md` | Phase 4 governance parity: glossaries/terms, classifications/tags, domains/data products, asset description/owners/tags/domain PATCH | Extending the clean-room console with governance MVP | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE5.md` | Phase 5 quality/observability: test definitions/cases/suites, asset DQ + profiler/sample, incidents, event-subscription alerts | Extending the clean-room console with data quality and observability | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE6.md` | Phase 6 clean-room ingestion framework (`smartmetadata-ingestion/`): Source→Sink runner, httpx REST client, Postgres reference connector, CLI | Replacing CCL `ingestion/` with an Apache workflow that writes to `openmetadata-service` | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE7.md` | Phase 7 clean-room connector batch: MySQL, Kafka/Confluent, Snowflake, `source.type` registry, example YAMLs | Extending `smartmetadata-ingestion/` with production-useful connectors without copying CCL `ingestion/` | 2026-10-22 | CURRENT |
 
 ## Start here — root guides (not under `docs/`)
 

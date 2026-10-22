@@ -7,7 +7,6 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 
 import pytest
-
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.jobs import ProfilerJob, QualityJob
 

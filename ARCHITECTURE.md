@@ -38,6 +38,8 @@ resolved by `DefaultSourceLoader`); `connection.py` opens the source system; the
 (`ingestion/.../sink/metadata_rest.py`) **POSTs them to the backend REST API** — i.e. Path A. **Exit:**
 catalog rows created/updated. *A "Snowflake tables missing" bug lives in
 `ingestion/.../source/database/snowflake/{connection,metadata}.py`, not in the backend.*
+**SmartMetadata product Path B** is `smartmetadata-ingestion/` (Apache-2.0; Phase 6 runner + Phase 7
+connectors). The CCL `ingestion/` tree stays reference-only.
 
 **Path C — a search query.** The SPA issues it from `openmetadata-ui/.../src/rest/` → the backend
 `resources/search/SearchResource` → `service/search/` (294 files) → ES/OS via the **shaded** `es.*`/`os.*`

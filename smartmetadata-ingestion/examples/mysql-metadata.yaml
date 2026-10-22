@@ -1,0 +1,27 @@
+# Reference MySQL metadata workflow. Secrets come from the environment, never from this file.
+workflow:
+  name: mysql-metadata
+  type: metadata
+  failFast: false
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    type: jwt
+    jwtToken: ${OM_JWT}
+
+source:
+  type: mysql
+  serviceName: oltp
+  connection:
+    hostPort: ${MYSQL_HOSTPORT:-localhost:3306}
+    username: ${MYSQL_USER}
+    password: ${MYSQL_PASSWORD}
+    databaseName: ${MYSQL_DATABASE:-default}
+    # Optional: restrict information_schema to one MySQL schema/database.
+    # databaseSchema: ${MYSQL_SCHEMA}
+  includeViewLineage: true
+  storeConnectionSecrets: false
+
+sink:
+  type: metadata-rest

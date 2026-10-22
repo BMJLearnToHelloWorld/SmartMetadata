@@ -85,7 +85,7 @@ class WorkflowSettings(CamelModel):
 
 
 class SourceConfig(CamelModel):
-    type: Literal["postgres", "static"]
+    type: str
     service_name: str
     service_display_name: str | None = None
     connection: dict[str, Any] = Field(default_factory=dict)
@@ -93,9 +93,20 @@ class SourceConfig(CamelModel):
     exclude_schemas: list[str] = Field(
         default_factory=lambda: ["information_schema", "pg_catalog", "pg_toast"]
     )
+    include_databases: list[str] = Field(default_factory=list)
+    exclude_databases: list[str] = Field(default_factory=list)
+    include_topics: list[str] = Field(default_factory=list)
+    exclude_topics: list[str] = Field(default_factory=list)
     include_view_lineage: bool = False
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("type")
+    @classmethod
+    def normalize_type(cls, value: str) -> str:
+        if not value or not str(value).strip():
+            raise ValueError("source.type is required")
+        return str(value).strip().lower()
 
     @field_validator("service_name")
     @classmethod

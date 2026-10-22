@@ -21,6 +21,10 @@ def test_package_does_not_import_ccl_modules() -> None:
     importlib.import_module("smartmetadata_ingestion")
     importlib.import_module("smartmetadata_ingestion.cli")
     importlib.import_module("smartmetadata_ingestion.connectors.postgres")
+    importlib.import_module("smartmetadata_ingestion.connectors.mysql")
+    importlib.import_module("smartmetadata_ingestion.connectors.kafka")
+    importlib.import_module("smartmetadata_ingestion.connectors.snowflake")
+    importlib.import_module("smartmetadata_ingestion.connectors.registry")
     banned = {
         name
         for name in sys.modules
