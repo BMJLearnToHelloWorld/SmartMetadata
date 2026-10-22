@@ -1,0 +1,10 @@
+SmartMetadata Ingestion
+Copyright 2026 SmartMetadata authors
+
+This product is licensed under the Apache License, Version 2.0.
+
+This package is a clean-room replacement for the Collate Community License
+ingestion framework. It does not include, copy, transpile, or depend on
+`ingestion/`, `openmetadata-ingestion`, or `openmetadata-airflow-apis`.
+It talks to the Apache `openmetadata-service` REST API using documented
+paths only.

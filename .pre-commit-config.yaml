@@ -30,6 +30,14 @@ repos:
       - id: ruff-format
         files: ^(ingestion|openmetadata-airflow-apis)/
         args: ["--config", "ingestion/pyproject.toml"]
+      - id: ruff-check
+        name: ruff-check (smartmetadata-ingestion)
+        files: ^smartmetadata-ingestion/
+        args: ["--fix", "--config", "smartmetadata-ingestion/pyproject.toml"]
+      - id: ruff-format
+        name: ruff-format (smartmetadata-ingestion)
+        files: ^smartmetadata-ingestion/
+        args: ["--config", "smartmetadata-ingestion/pyproject.toml"]
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v2.5.1
     hooks:
@@ -110,6 +118,14 @@ repos:
         entry: python3 scripts/rebuild/check_ccl_free_dist.py
         language: system
         files: ^(openmetadata-dist/|scripts/rebuild/check_ccl_free_dist\.py)
+        pass_filenames: false
+        require_serial: true
+      - id: ccl-free-ingestion
+        name: Clean-room ingestion must not import CCL packages
+        description: Fails if smartmetadata-ingestion depends on or imports openmetadata-ingestion / metadata / openmetadata-airflow-apis. See docs/rebuild/PHASE6.md.
+        entry: python3 scripts/rebuild/check_ccl_free_ingestion.py
+        language: system
+        files: ^(smartmetadata-ingestion/|scripts/rebuild/check_ccl_free_ingestion\.py)
         pass_filenames: false
         require_serial: true
       - id: java-impact-map

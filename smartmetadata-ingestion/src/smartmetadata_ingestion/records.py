@@ -1,0 +1,101 @@
+# Copyright 2026 SmartMetadata authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+"""Workflow records produced by a Source and consumed by a Sink."""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Record(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+
+    def label(self) -> str:
+        return self.kind
+
+
+class DatabaseServiceRecord(Record):
+    kind: Literal["databaseService"] = "databaseService"
+    name: str
+    service_type: str
+    description: str | None = None
+    display_name: str | None = None
+    connection: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"databaseService:{self.name}"
+
+
+class DatabaseRecord(Record):
+    kind: Literal["database"] = "database"
+    name: str
+    service: str
+    description: str | None = None
+
+    def label(self) -> str:
+        return f"database:{self.service}.{self.name}"
+
+
+class SchemaRecord(Record):
+    kind: Literal["schema"] = "schema"
+    name: str
+    database: str
+    description: str | None = None
+
+    def label(self) -> str:
+        return f"schema:{self.database}.{self.name}"
+
+
+class ColumnRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    data_type: str
+    data_type_display: str | None = None
+    description: str | None = None
+    ordinal_position: int | None = None
+    data_length: int | None = None
+
+
+class TableRecord(Record):
+    kind: Literal["table"] = "table"
+    name: str
+    database_schema: str
+    columns: list[ColumnRecord] = Field(default_factory=list)
+    table_type: str = "Regular"
+    description: str | None = None
+
+    def label(self) -> str:
+        return f"table:{self.database_schema}.{self.name}"
+
+
+class LineageEndpoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    fqn: str
+
+
+class LineageRecord(Record):
+    kind: Literal["lineage"] = "lineage"
+    from_entity: LineageEndpoint
+    to_entity: LineageEndpoint
+    description: str | None = None
+    source: str = "Manual"
+    sql_query: str | None = None
+
+    def label(self) -> str:
+        return f"lineage:{self.from_entity.fqn}->{self.to_entity.fqn}"
+
+
+WorkflowRecord = DatabaseServiceRecord | DatabaseRecord | SchemaRecord | TableRecord | LineageRecord
