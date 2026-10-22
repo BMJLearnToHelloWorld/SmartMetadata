@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -64,6 +65,9 @@ class ServerConfig(CamelModel):
         host = value.strip().rstrip("/")
         if not host:
             raise ValueError("server.hostPort is required")
+        path = urlparse(host).path
+        if path in {"", "/"}:
+            return f"{host}/api"
         return host
 
     @field_validator("retry_attempts")

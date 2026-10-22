@@ -17,6 +17,25 @@ from smartmetadata_ingestion.config import load_workflow_config
 from smartmetadata_ingestion.errors import WorkflowError
 
 
+def test_host_port_appends_api_when_path_missing(tmp_path: Path) -> None:
+    path = tmp_path / "wf.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "workflow": {"name": "demo"},
+                "server": {
+                    "hostPort": "http://localhost:8585",
+                    "auth": {"type": "jwt", "jwtToken": "t"},
+                },
+                "source": {"type": "static", "serviceName": "demo"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_workflow_config(path, environ={})
+    assert config.server.host_port == "http://localhost:8585/api"
+
+
 def test_expands_env_and_defaults(tmp_path: Path) -> None:
     path = tmp_path / "wf.yaml"
     path.write_text(

@@ -44,9 +44,10 @@ export PG_DATABASE=analytics
 smartmetadata-ingest run --config smartmetadata-ingestion/examples/postgres-metadata.yaml
 ```
 
-Server: slim Apache stack from [PHASE0.md](PHASE0.md). API base defaults to
-`http://localhost:8585/api`. The write principal needs create/edit on
-database services, databases, schemas, tables, and lineage.
+Server: slim Apache stack from [PHASE0.md](PHASE0.md). `server.hostPort` is the
+API root. A bare origin such as `http://localhost:8585` is rewritten to
+`…/api`. The write principal needs create/edit on database services, databases,
+schemas, tables, and lineage.
 
 `source.storeConnectionSecrets` defaults to **false**. The catalog service
 entity stores host/user/database, not the source password.
