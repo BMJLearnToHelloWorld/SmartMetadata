@@ -4,6 +4,7 @@ This guide helps developers (and AI agents like Claude Code, Codex, Copilot) wri
 
 For environment setup, build commands, and coding standards, see [AGENTS.md](AGENTS.md).
 For connector-specific development, see [skills/README.md](skills/README.md).
+The CCL-free product path is [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md); do not treat `openmetadata-ui/`, `ingestion/`, or `openmetadata-mcp/` as shippable modules.
 
 ---
 

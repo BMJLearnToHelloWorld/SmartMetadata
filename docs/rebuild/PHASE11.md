@@ -27,7 +27,9 @@ ADR:2026-10-22-shippable-dist-excludes-ccl-modules still applies.
 | 10 | stdio MCP (JWT → Apache REST, OSS tools only) | `smartmetadata-mcp/` | Apache 2.0 |
 
 Historical `openmetadata-ui/`, `openmetadata-mcp/`, and `ingestion/` stay in git
-as **reference-only**. They are not product dependencies.
+as **reference-only**. They are not product dependencies. See
+[PRODUCT_PATH.md](PRODUCT_PATH.md)
+(ADR:2026-10-22-ccl-trees-stay-reference-only).
 
 ## Residual risks (do not treat as shipped)
 
@@ -43,7 +45,7 @@ These are accepted leftovers, not Phase 11 bugs.
 | **MCP is stdio only** | No HTTP/SSE transport; official `/mcp` stays unregistered | Point the MCP host at `node smartmetadata-mcp/dist/index.js` |
 | **SPA is not in `openmetadata-dist`** | Serving Vue from the Java process needs a new ADR | Static host or Vite dev proxy |
 | **Empty catalog** | Fresh migrate has login + empty search | Seed via API or `smartmetadata-ingest`, not CCL sample-data loaders |
-| **Compose still defines an ingestion service** | Historical reference (`docker/development/`, quickstart) | Default `./docker/run_local_docker.sh` does **not** start it. Do not ship `-i true` |
+| **Compose still defines an ingestion service** | Historical reference (`docker/development/`, quickstart) | Default `./docker/run_local_docker.sh` does **not** start it. `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1` |
 | **`openmetadata-airflow-apis/` and `ui-core-components`** | VERIFY for counsel; not in the tarball | Do not import either into product modules |
 | **ITs may pull CCL MCP on the test classpath** | `openmetadata-integration-tests` test-scoped `openmetadata-mcp` | Dist / runtime classpath still exclude it |
 
@@ -55,6 +57,7 @@ One command, no live catalog:
 make verify-rebuild
 # equivalent:
 python3 scripts/rebuild/test_verify_rebuild.py
+python3 scripts/rebuild/test_check_product_path_hints.py
 python3 scripts/rebuild/verify_rebuild.py
 ```
 
@@ -65,8 +68,9 @@ python3 scripts/rebuild/verify_rebuild.py
 3. `smartmetadata-mcp` `npm test` then `npm run build`
 4. `check_ccl_free_dist.py` (static pom + assembly; tarball scanned only if present)
 5. `check_ccl_free_mcp.py`
-6. `scripts/harness/check_decision_records.py`
-7. `scripts/rebuild/test_live_smoke.py` and `test_rebuild_workflows.py` (offline contracts; not live e2e)
+6. `check_product_path_hints.py` (docs + docker ack; does not re-scan dist)
+7. `scripts/harness/check_decision_records.py`
+8. `scripts/rebuild/test_live_smoke.py` and `test_rebuild_workflows.py` (offline contracts; not live e2e)
 
 Install steps (`npm ci` in the two Node packages, `pip install -e smartmetadata-ingestion/[dev]`)
 run automatically when `node_modules` or the Python package is missing. Force or skip:
@@ -113,7 +117,8 @@ with Docker. Full steps, OSS-capability mapping, and the three venues:
    start MySQL, Elasticsearch, or compose locally.
 
 Do **not** start `./docker/run_local_docker.sh -i true` or rely on the CCL
-`ingestion` compose service / official UI jar for a product demo.
+`ingestion` compose service / official UI jar for a product demo. That flag
+now requires `I_UNDERSTAND_CCL_INGESTION=1`.
 
 ## Production notes
 
@@ -215,7 +220,9 @@ Rebuild-map modules → shipped SmartMetadata surfaces. Collate-only stays DROP.
 ## Verification checklist
 
 1. `python3 scripts/rebuild/test_verify_rebuild.py`
-2. `make verify-rebuild` (or `python3 scripts/rebuild/verify_rebuild.py`)
-3. Confirm the three CCL gates print pass
-4. Confirm `check_decision_records.py` is in the same run
-5. Optional: `workflow_dispatch` Job C (see [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md))
+2. `python3 scripts/rebuild/test_check_product_path_hints.py`
+3. `make verify-rebuild` (or `python3 scripts/rebuild/verify_rebuild.py`)
+4. Confirm the three CCL gates and `check_product_path_hints.py` print pass
+5. Confirm `check_decision_records.py` and the live-smoke / rebuild-workflow
+   contracts are in the same run
+6. Optional: `workflow_dispatch` Job C (see [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md))

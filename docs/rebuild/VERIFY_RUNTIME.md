@@ -23,8 +23,9 @@ This workflow does **not** reuse Collate, official Playwright, or
 **Needs:** Node 20, Python 3.10. No Java, no Docker, no live catalog.
 
 **Asserts:** `smartmetadata-ui` test+build, `smartmetadata-ingestion` pytest,
-`smartmetadata-mcp` test+build, the three CCL-free gates, decision-record
-check, and the offline contracts for `live_smoke.py` / the rebuild workflow.
+`smartmetadata-mcp` test+build, the three CCL-free gates, product-path
+hints, decision-record check, and the offline contracts for `live_smoke.py`
+/ the rebuild workflow.
 
 Live e2e stays **out** of this target on purpose. A missing catalog must not
 flake the PR gate.

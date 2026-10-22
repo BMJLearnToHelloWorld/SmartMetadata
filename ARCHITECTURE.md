@@ -19,8 +19,10 @@ Java, Python, and TypeScript models are generated (Part 3). The backend is a **m
 operator, MCP server, integration tests, and distribution all depend on it; it depends only on `common`,
 `openmetadata-spec`, and the shaded search clients. **SmartMetadata Phase 0** ships `openmetadata-dist`
 without UI, MCP, or ingestion (those trees stay in-repo as reference-only); see
+[docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md) and
 [docs/rebuild/PHASE0.md](docs/rebuild/PHASE0.md)
-(ADR:2026-10-22-shippable-dist-excludes-ccl-modules).
+(ADR:2026-10-22-shippable-dist-excludes-ccl-modules,
+ADR:2026-10-22-ccl-trees-stay-reference-only).
 
 **Path A — an API request** (e.g. `POST /v1/tables`). Enters `openmetadata-service` at
 `OpenMetadataApplication.java` (Jersey). A JAX-RS resource in `service/resources/**` (e.g.

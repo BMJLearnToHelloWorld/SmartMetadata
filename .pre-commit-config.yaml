@@ -136,12 +136,20 @@ repos:
         files: ^(smartmetadata-mcp/|scripts/rebuild/check_ccl_free_mcp\.py)
         pass_filenames: false
         require_serial: true
+      - id: product-path-hints
+        name: Product-path misuse guards still present
+        description: Fails if PRODUCT_PATH.md, the docker I_UNDERSTAND_CCL_INGESTION ack, or the README pointer is missing. Does not re-scan openmetadata-dist (see ccl-free-dist).
+        entry: python3 scripts/rebuild/test_check_product_path_hints.py
+        language: system
+        files: ^(docs/rebuild/PRODUCT_PATH\.md|docs/decisions/2026-10-22-ccl-trees-stay-reference-only\.md|README\.md|docker/run_local_docker_common\.sh|scripts/rebuild/check_product_path_hints\.py|scripts/rebuild/test_check_product_path_hints\.py)
+        pass_filenames: false
+        require_serial: true
       - id: verify-rebuild-contract
         name: Offline rebuild verify runner still covers the Phase 11 matrix
         description: Fails if scripts/rebuild/verify_rebuild.py drops a required offline step. See docs/rebuild/PHASE11.md.
         entry: python3 scripts/rebuild/test_verify_rebuild.py
         language: system
-        files: ^(scripts/rebuild/verify_rebuild\.py|scripts/rebuild/test_verify_rebuild\.py)
+        files: ^(scripts/rebuild/verify_rebuild\.py|scripts/rebuild/test_verify_rebuild\.py|scripts/rebuild/check_product_path_hints\.py)
         pass_filenames: false
         require_serial: true
       - id: rebuild-ci-contract

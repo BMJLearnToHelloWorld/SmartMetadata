@@ -2,7 +2,9 @@
 
 Shippable SmartMetadata packaging no longer includes Collate Community License
 (CCL) modules. Historical CCL trees stay in git as **reference-only**. They are
-not copied into new product modules.
+not copied into new product modules. Product vs reference map:
+[PRODUCT_PATH.md](PRODUCT_PATH.md)
+(ADR:2026-10-22-ccl-trees-stay-reference-only).
 
 This is packaging isolation, not a rewrite.
 ADR:2026-10-22-shippable-dist-excludes-ccl-modules.
@@ -53,7 +55,8 @@ Local Docker wrapper now defaults to the slim path (no UI package, no ingestion 
 
 ```bash
 ./docker/run_local_docker.sh
-# historical CCL ingestion container: ./docker/run_local_docker.sh -i true
+# historical CCL ingestion (not a product demo):
+# I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -i true
 ```
 
 The server image `docker/development/Dockerfile` unpacks whatever tarball `openmetadata-dist`
@@ -97,7 +100,8 @@ artifacts re-enter the dependency tree.
   `/mcp` still pull the CCL module onto the *test* classpath. The server dist does not.
 - **Compose files** under `docker/docker-compose-quickstart/` and `docker/development/` still
   *define* an `ingestion` service (Collate image / local CCL build). Default local run no longer
-  starts it. Those files are historical reference until a later compose cleanup.
+  starts it. `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1`. Those files are historical
+  reference until a later compose cleanup. See [PRODUCT_PATH.md](PRODUCT_PATH.md).
 - **MCP catalog entities and `McpApplication`** remain in the Apache spec/server. Without the CCL
   jar the process logs `MCP module not found in classpath` and continues. Agents use the
   standalone Apache process in [PHASE10.md](PHASE10.md) (`smartmetadata-mcp/`), not the CCL jar.

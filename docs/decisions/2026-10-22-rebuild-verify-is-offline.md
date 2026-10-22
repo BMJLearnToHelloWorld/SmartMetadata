@@ -1,10 +1,10 @@
 # Rebuild verification is an offline matrix; a live catalog is maintainer-only
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (CI wiring authorized; live path is GHA Job C)
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (CI wiring authorized; live path is GHA Job C) · v3 2026-10-22 (product-path hints)
 - **Deciders:** SmartMetadata rebuild (Phase 11)
 - **Guard:** `scripts/rebuild/test_verify_rebuild.py` (pre-commit `verify-rebuild-contract`); `make verify-rebuild` (`scripts/rebuild/verify_rebuild.py`)
-- **Related:** `docs/rebuild/PHASE11.md`; `docs/rebuild/VERIFY_RUNTIME.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-rebuild-ci-is-a-separate-workflow
+- **Related:** `docs/rebuild/PHASE11.md`; `docs/rebuild/VERIFY_RUNTIME.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-rebuild-ci-is-a-separate-workflow; ADR:2026-10-22-ccl-trees-stay-reference-only
 
 ## Context
 
@@ -18,7 +18,9 @@ missing server would flake.
 
 - `make verify-rebuild` runs UI test+build, ingestion pytest, MCP test+build,
   `check_ccl_free_dist.py`, `check_ccl_free_ingestion.py`,
-  `check_ccl_free_mcp.py`, and `check_decision_records.py`.
+  `check_ccl_free_mcp.py`, `check_product_path_hints.py`,
+  `check_decision_records.py`, and the offline contracts for `live_smoke.py`
+  / the rebuild workflow.
 - It does not start Docker, the slim server, Vite `ui_dev`, Airflow, or a
   browser. `--require-tarball` is opt-in after `make slim-dist`.
 - The live path (slim server + SPA + ingest + MCP against a real catalog) is
@@ -41,3 +43,9 @@ ADR:2026-10-22-rebuild-ci-is-a-separate-workflow. The offline matrix and the
 rule that live e2e stays **out of** `make verify-rebuild` are unchanged. The
 live path is GitHub Actions Job C (service containers), not a contributor
 laptop Docker checklist.
+
+## Amendment (v3, 2026-10-22)
+
+`check_product_path_hints.py` joined the offline matrix. It asserts the
+product-path docs and docker `I_UNDERSTAND_CCL_INGESTION` ack still exist. It
+does not re-scan `openmetadata-dist` (that remains `check_ccl_free_dist.py`).
