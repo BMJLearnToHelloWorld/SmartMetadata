@@ -36,6 +36,7 @@ class ProductPrHygieneContract(unittest.TestCase):
         self.assertIn("has_issues", text)
         self.assertIn("Repository has GitHub issues disabled", text)
         self.assertIn("skip-pr-checks", text)
+        self.assertIn("labeled", text)
         self.assertIn(
             "ADR:2026-10-22-smartmetadata-prs-skip-collate-issue-and-label-gates",
             text,

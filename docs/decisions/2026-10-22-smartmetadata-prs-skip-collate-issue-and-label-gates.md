@@ -31,7 +31,8 @@ fork gate) remain the labels that make the **currently deployed** checks green.
 
 - **Linked-issue metadata:** skip when `GET /repos/{owner}/{repo}` reports
   `has_issues: false`. Keep the `skip-pr-checks` bypass for when issues are
-  later enabled.
+  later enabled. Listen for `labeled` so applying `skip-pr-checks` re-runs
+  the check (synchronize also re-runs it).
 - **`safe to test`:** require it only for **fork** `pull_request_target` PRs
   (`head.repo.full_name != github.repository`). Same-repo PRs skip
   `Wait for the labeler` and `Verify PR labels`.

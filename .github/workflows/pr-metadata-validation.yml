@@ -37,7 +37,7 @@ name: PR Metadata Validation
 # through the API — no untrusted checkout — so pull_request_target is safe here.
 on:
   pull_request_target:
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, edited, reopened, synchronize, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
       pr_number:
