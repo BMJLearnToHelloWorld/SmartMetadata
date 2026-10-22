@@ -13,8 +13,8 @@
  * generic page that shows fields already in the search document.
  */
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
-  table: { collection: 'tables', fields: 'owners,tags,columns' },
-  topic: { collection: 'topics', fields: 'owners,tags' },
+  table: { collection: 'tables', fields: 'owners,tags,columns,domains' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains' },
 };
 
 export function assetLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {
@@ -51,4 +51,12 @@ export function resolveDetailEndpoint(
 
 export function isDetailWired(entityType: string): boolean {
   return entityType in DETAIL_ENDPOINTS;
+}
+
+export function resolvePatchPath(entityType: string, id: string): string | null {
+  const spec = DETAIL_ENDPOINTS[entityType];
+  if (!spec || !id) {
+    return null;
+  }
+  return `/v1/${spec.collection}/${encodeURIComponent(id)}`;
 }

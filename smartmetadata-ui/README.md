@@ -12,8 +12,11 @@ JSON Schema.
 Phase 1: app shell, basic-auth login, global search, Table + Topic detail.
 Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware login.
 Phase 3: upstream/downstream lineage graph (Vue Flow + dagre) from `GET /v1/lineage/{entity}/name/{fqn}`.
-See `docs/rebuild/PHASE1.md`, `docs/rebuild/PHASE2.md`, `docs/rebuild/PHASE3.md`,
-ADR:2026-10-22-clean-room-vue-spa, and ADR:2026-10-22-lineage-vue-flow-dagre.
+Phase 4: glossaries/terms, classifications/tags, domains/data products, and
+asset description/owners/tags/domain PATCH.
+See `docs/rebuild/PHASE1.md`–`PHASE4.md`, ADR:2026-10-22-clean-room-vue-spa,
+ADR:2026-10-22-lineage-vue-flow-dagre, and
+ADR:2026-10-22-asset-governance-uses-json-patch.
 
 ## Stack
 

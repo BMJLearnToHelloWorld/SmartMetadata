@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { resolveDetailEndpoint } from '@/catalog/entityRoutes';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
+import { resolveDetailEndpoint, resolvePatchPath } from '@/catalog/entityRoutes';
 import type { AssetDetail, EntityRef, SchemaRow, TagRef } from '@/types/api';
 import { apiRequest } from './client';
 
@@ -28,20 +29,24 @@ function mapOwners(value: unknown): EntityRef[] {
     if (!rec) {
       return [];
     }
-    const name = asString(rec.displayName) || asString(rec.name);
-    return name
-      ? [
-          {
-            name,
-            displayName: asString(rec.displayName) || undefined,
-            type: asString(rec.type) || undefined,
-          },
-        ]
-      : [];
+    const name = asString(rec.displayName) || asString(rec.name) || asString(rec.fullyQualifiedName);
+    const id = asString(rec.id);
+    if (!name && !id) {
+      return [];
+    }
+    return [
+      {
+        id: id || undefined,
+        name: name || id,
+        displayName: asString(rec.displayName) || undefined,
+        type: asString(rec.type) || undefined,
+        fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+      },
+    ];
   });
 }
 
-function mapTags(value: unknown): TagRef[] {
+export function mapTags(value: unknown): TagRef[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -52,7 +57,16 @@ function mapTags(value: unknown): TagRef[] {
     }
     const tagFQN = asString(rec.tagFQN);
     const name = asString(rec.name) || tagFQN;
-    return name || tagFQN ? [{ tagFQN: tagFQN || name, name: name || tagFQN }] : [];
+    const source = asString(rec.source);
+    return name || tagFQN
+      ? [
+          {
+            tagFQN: tagFQN || name,
+            name: name || tagFQN,
+            source: source === 'Glossary' || source === 'Classification' ? source : undefined,
+          },
+        ]
+      : [];
   });
 }
 
@@ -108,7 +122,20 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     description: asString(body.description) || undefined,
     owners: mapOwners(body.owners),
     tags: mapTags(body.tags),
+    domains: mapOwners(body.domains),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
   };
+}
+
+export function patchAsset(entityType: string, id: string, patch: JsonPatchOp[]): Promise<unknown> {
+  const path = resolvePatchPath(entityType, id);
+  if (!path) {
+    throw new Error(`No Phase 4 patch endpoint for entity type "${entityType}"`);
+  }
+  return apiRequest(path, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
 }

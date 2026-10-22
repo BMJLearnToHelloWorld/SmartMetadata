@@ -33,6 +33,7 @@ export interface EntityRef {
 export interface TagRef {
   tagFQN: string;
   name: string;
+  source?: 'Classification' | 'Glossary';
 }
 
 export interface SearchHit {
@@ -66,6 +67,7 @@ export interface AssetDetail {
   description?: string;
   owners: EntityRef[];
   tags: TagRef[];
+  domains: EntityRef[];
   schemaRows: SchemaRow[];
   schemaLabel: string;
 }
