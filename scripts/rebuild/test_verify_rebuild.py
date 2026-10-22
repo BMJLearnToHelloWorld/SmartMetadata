@@ -7,6 +7,7 @@ Run with ``python3 -m pytest scripts/rebuild/test_verify_rebuild.py`` (or
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 import unittest
@@ -85,6 +86,20 @@ class VerifyRebuildContract(unittest.TestCase):
             argv=(sys.executable, "-c", "import sys; sys.exit(7)"),
         )
         self.assertEqual(verify.run_step(step, repo=Path(__file__).resolve().parents[2]), 7)
+
+    def test_ui_engines_require_node_22(self) -> None:
+        pkg_path = Path(__file__).resolve().parents[2] / "smartmetadata-ui" / "package.json"
+        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+        engines = pkg["engines"]["node"]
+        self.assertIn("22.22.2", engines)
+        self.assertNotEqual(engines, ">=20")
+
+    def test_node_runtime_lines_include_version(self) -> None:
+        verify = load_verify()
+        lines = "\n".join(verify.node_runtime_lines())
+        self.assertIn("node:", lines)
+        self.assertIn("npm:", lines)
+        self.assertRegex(lines, r"v\d+")
 
     def test_list_mode_exits_zero_without_running_npm(self) -> None:
         completed = subprocess.run(

@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.22.2"
   },
   "dependencies": {
     "@vue-flow/background": "^1.3.2",

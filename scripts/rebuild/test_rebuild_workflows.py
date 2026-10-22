@@ -47,6 +47,14 @@ class RebuildWorkflowContract(unittest.TestCase):
         self.assertIn("pull_request", text)
         self.assertIn("verify-rebuild:", text)
 
+    def test_job_a_pins_node_22_lts_and_prints_version(self) -> None:
+        """vite 8 / undici 8 cannot boot vitest forks on Node 20 (decompress.bind)."""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('node-version: "22"', text)
+        self.assertNotIn('node-version: "20"', text)
+        self.assertIn("node -v", text)
+        self.assertIn("actions/setup-node@v5", text)
+
     def test_job_b_builds_slim_dist_tarball(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("make slim-dist", text)

@@ -20,7 +20,9 @@ This workflow does **not** reuse Collate, official Playwright, or
 **Command:** `make verify-rebuild` (same as
 `python3 scripts/rebuild/verify_rebuild.py`).
 
-**Needs:** Node 20, Python 3.10. No Java, no Docker, no live catalog.
+**Needs:** Node 22 LTS (`>=22.22.2`; vite 8 / vitest 5 / undici 8), Python 3.10.
+No Java, no Docker, no live catalog. Job A prints `node -v` after
+`actions/setup-node` so the log shows the Node that `npm test` uses.
 
 **Asserts:** `smartmetadata-ui` test+build, `smartmetadata-ingestion` pytest,
 `smartmetadata-mcp` test+build, the three CCL-free gates, product-path
