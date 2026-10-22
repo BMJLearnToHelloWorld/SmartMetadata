@@ -284,8 +284,20 @@ jobs:
             --spa-url http://127.0.0.1:4173 \
             --token-out "$RUNNER_TEMP/om.jwt"
 
+      # Split from stdio smoke so a hang's GitHub step timestamp names the site.
+      # Run 39738288686 logged `npm ci` done + `tsc` banner, then silence until
+      # the 60-minute job cancel — tsc is silent on success, so a combined step
+      # could not prove whether tsc or live_smoke.py was still running.
+      - name: Build smartmetadata-mcp
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          (cd smartmetadata-mcp && npm ci && npm run build)
+          test -f smartmetadata-mcp/dist/index.js
+          echo "smartmetadata-mcp dist ready"
+
       - name: Optional MCP stdio search_entities
-        timeout-minutes: 5
+        timeout-minutes: 2
         env:
           # TODO: set repository secret OM_JWT to a bot PAT to override bootstrap login.
           OM_JWT_SECRET: ${{ secrets.OM_JWT }}
@@ -300,5 +312,5 @@ jobs:
           fi
           export OM_JWT
           OM_JWT="$(cat "$RUNNER_TEMP/om.jwt")"
-          (cd smartmetadata-mcp && npm ci && npm run build)
-          python3 scripts/rebuild/live_smoke.py --skip-login --mcp-command node smartmetadata-mcp/dist/index.js
+          # -u: CI stdout is a pipe; without it, prints stay buffered across a hang.
+          python3 -u scripts/rebuild/live_smoke.py --skip-login --mcp-command node smartmetadata-mcp/dist/index.js

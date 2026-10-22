@@ -64,7 +64,8 @@ preview, and runs `scripts/rebuild/live_smoke.py` (login → search → open
 asset). Optional MCP stdio `search_entities` uses the login JWT, or
 `${{ secrets.OM_JWT }}` when that repository secret is set. The stdio client
 speaks MCP NDJSON (not LSP `Content-Length`); `run_mcp_stdio` has a hard
-timeout and the Job C step has `timeout-minutes: 5`. Missing JWT skips with a
+timeout. Job C builds `smartmetadata-mcp` in its own timed step, then runs
+`python3 -u live_smoke.py` with `timeout-minutes: 2`. Missing JWT skips with a
 documented warning — a hang is never treated as success
 (ADR:2026-10-22-mcp-stdio-smoke-has-a-hard-timeout).
 
