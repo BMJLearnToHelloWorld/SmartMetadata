@@ -3,16 +3,54 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Layout, Menu, Input, Button, Space, Typography, message } from 'ant-design-vue';
+import { Button, Input, Layout, Menu, Space, Typography, message } from 'ant-design-vue';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-const selectedKeys = computed(() => (route.name === 'asset' ? ['search'] : [String(route.name ?? 'search')]));
+const selectedKeys = computed(() => {
+  const name = String(route.name ?? 'search');
+  if (name === 'asset') {
+    return ['search'];
+  }
+  if (name === 'admin-user') {
+    return ['admin-users'];
+  }
+  if (name === 'admin-team') {
+    return ['admin-teams'];
+  }
+  if (name === 'admin-role') {
+    return ['admin-roles'];
+  }
+  if (name === 'admin-bot') {
+    return ['admin-bots'];
+  }
+  return [name];
+});
+
+const openKeys = ref<string[]>([]);
+
+watch(
+  () => route.name,
+  (name) => {
+    if (String(name ?? '').startsWith('admin-') && !openKeys.value.includes('admin')) {
+      openKeys.value = [...openKeys.value, 'admin'];
+    }
+  },
+  { immediate: true },
+);
+
+function onMenuClick({ key }: { key: string | number }): void {
+  const name = String(key);
+  if (name === 'admin') {
+    return;
+  }
+  void router.push({ name });
+}
 
 function onSearch(value: string): void {
   void router.push({ name: 'search', query: value.trim() ? { q: value.trim() } : {} });
@@ -33,8 +71,21 @@ async function onLogout(): Promise<void> {
   <Layout class="shell">
     <Layout.Sider breakpoint="lg" collapsed-width="0" theme="dark" class="shell__sider">
       <div class="shell__brand">SmartMetadata</div>
-      <Menu theme="dark" mode="inline" :selected-keys="selectedKeys" @click="({ key }) => router.push({ name: String(key) })">
+      <Menu
+        theme="dark"
+        mode="inline"
+        :selected-keys="selectedKeys"
+        v-model:openKeys="openKeys"
+        @click="onMenuClick"
+      >
         <Menu.Item key="search">Search</Menu.Item>
+        <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
+          <Menu.Item key="admin-users">Users</Menu.Item>
+          <Menu.Item key="admin-teams">Teams</Menu.Item>
+          <Menu.Item key="admin-roles">Roles</Menu.Item>
+          <Menu.Item key="admin-bots">Bots</Menu.Item>
+          <Menu.Item key="admin-settings">Settings</Menu.Item>
+        </Menu.SubMenu>
       </Menu>
     </Layout.Sider>
     <Layout>

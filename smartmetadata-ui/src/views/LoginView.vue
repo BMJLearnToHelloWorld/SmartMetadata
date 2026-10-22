@@ -3,10 +3,13 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Card, Form, Input, Typography, Alert } from 'ant-design-vue';
+import { Alert, Button, Card, Form, Input, Typography } from 'ant-design-vue';
+import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
+import { fetchAuthConfig } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
+import type { AuthConfiguration } from '@/types/admin';
 
 const router = useRouter();
 const route = useRoute();
@@ -18,6 +21,20 @@ const form = reactive({
 });
 const submitting = ref(false);
 const errorMessage = ref('');
+const authConfig = ref<AuthConfiguration | null>(null);
+const authConfigError = ref('');
+
+const passwordLogin = computed(() => supportsPasswordLogin(authConfig.value?.provider));
+const ssoOnly = computed(() => isSsoOnlyProvider(authConfig.value?.provider));
+
+async function loadAuthConfig(): Promise<void> {
+  try {
+    authConfig.value = await fetchAuthConfig();
+  } catch (error) {
+    authConfigError.value =
+      error instanceof Error ? error.message : 'Could not read GET /api/v1/system/config/auth';
+  }
+}
 
 async function onSubmit(): Promise<void> {
   errorMessage.value = '';
@@ -32,6 +49,10 @@ async function onSubmit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+onMounted(() => {
+  void loadAuthConfig();
+});
 </script>
 
 <template>
@@ -43,6 +64,30 @@ async function onSubmit(): Promise<void> {
         required by <code>POST /api/v1/users/login</code>.
       </Typography.Paragraph>
       <Alert
+        v-if="authConfigError"
+        type="warning"
+        show-icon
+        :message="`Auth provider lookup failed (${authConfigError}). Showing the password form because stock servers use basic login.`"
+        class="login__error"
+      />
+      <Alert
+        v-if="ssoOnly"
+        data-testid="sso-only-message"
+        type="info"
+        show-icon
+        class="login__error"
+        :message="`This server is configured for ${ssoProviderLabel(authConfig?.provider, authConfig?.providerName)} authentication. Username/password login is not available.`"
+      >
+        <template #description>
+          <p>
+            The console does not invent an OIDC/SAML browser callback or client secret. Use a JWT from
+            your identity provider, or reconfigure the server for basic/LDAP login.
+          </p>
+          <p v-if="authConfig?.authority">Authority: {{ authConfig.authority }}</p>
+          <p v-if="authConfig?.callbackUrl">Callback URL advertised by the server: {{ authConfig.callbackUrl }}</p>
+        </template>
+      </Alert>
+      <Alert
         v-if="errorMessage"
         data-testid="login-error"
         type="error"
@@ -50,7 +95,7 @@ async function onSubmit(): Promise<void> {
         :message="errorMessage"
         class="login__error"
       />
-      <Form layout="vertical" :model="form" @finish="onSubmit">
+      <Form v-if="passwordLogin" layout="vertical" :model="form" @finish="onSubmit">
         <Form.Item label="Email" name="email" :rules="[{ required: true, message: 'Email is required' }]">
           <Input
             v-model:value="form.email"
