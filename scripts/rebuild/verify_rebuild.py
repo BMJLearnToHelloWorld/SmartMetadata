@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -32,10 +31,8 @@ class Step:
 
 
 def npm_argv(*args: str) -> tuple[str, ...]:
-    npm = shutil.which("npm")
-    if npm is None:
-        raise SystemExit("npm is required for smartmetadata-ui / smartmetadata-mcp steps")
-    return (npm, *args)
+    # Resolve at run time so ``--list`` works on hosts without Node.
+    return ("npm", *args)
 
 
 def install_steps() -> list[Step]:
