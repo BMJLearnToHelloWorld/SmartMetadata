@@ -62,7 +62,11 @@ asserts `GET /mcp` is unregistered and `GET /` is not the official UI, seeds
 one table via `smartmetadata-ingest`, serves `smartmetadata-ui` with Vite
 preview, and runs `scripts/rebuild/live_smoke.py` (login → search → open
 asset). Optional MCP stdio `search_entities` uses the login JWT, or
-`${{ secrets.OM_JWT }}` when that repository secret is set.
+`${{ secrets.OM_JWT }}` when that repository secret is set. The stdio client
+speaks MCP NDJSON (not LSP `Content-Length`); `run_mcp_stdio` has a hard
+timeout and the Job C step has `timeout-minutes: 5`. Missing JWT skips with a
+documented warning — a hang is never treated as success
+(ADR:2026-10-22-mcp-stdio-smoke-has-a-hard-timeout).
 
 ```text
 # TODO: add repository secret OM_JWT (bot JWT or PAT) to override bootstrap
@@ -102,7 +106,7 @@ actually hits. Empty-catalog leftovers stay residual, not Job C failures.
 | Official UI / MCP / `ingestion/` DROP | `GET /` is not the CCL UI; `GET /mcp` unregistered; tarball gate (Job B) |
 | Connector framework | `smartmetadata-ingest` static source against the live server; `${OM_JWT}` fail-closed |
 | First connectors | Example JWT configs still require `OM_JWT` (fail-closed). Live warehouse readers are not Job C. |
-| AI / MCP (stdio) | Optional `search_entities` over stdio when a JWT is available |
+| AI / MCP (stdio) | `search_entities` over stdio NDJSON when a JWT is available (hard timeout; skip only if the JWT file is empty) |
 | System admin, lineage, governance, quality, services, collaboration | Shipped in the SPA (Phases 2–9); not in this minimal smoke. Exercise against a remote catalog from a laptop if needed. |
 
 ## Local commands (no Docker)

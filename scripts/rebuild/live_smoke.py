@@ -7,7 +7,8 @@ that is proxying to a catalog that is already up.
 
 See ``docs/rebuild/VERIFY_RUNTIME.md``. Live e2e stays out of
 ``make verify-rebuild`` (ADR:2026-10-22-rebuild-verify-is-offline,
-ADR:2026-10-22-rebuild-ci-is-a-separate-workflow).
+ADR:2026-10-22-rebuild-ci-is-a-separate-workflow). MCP stdio uses NDJSON
+with a hard timeout (ADR:2026-10-22-mcp-stdio-smoke-has-a-hard-timeout).
 """
 
 from __future__ import annotations
@@ -16,9 +17,11 @@ import argparse
 import base64
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -237,27 +240,26 @@ def run_login_search(
 
 
 def encode_mcp_message(payload: dict[str, Any]) -> bytes:
-    body = json.dumps(payload).encode("utf-8")
-    return f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body
+    # MCP stdio is NDJSON (spec), not LSP Content-Length. A Content-Length
+    # frame is not valid JSON-RPC, so the server never replies and a blocking
+    # stdout.read() hangs until the Job C timeout.
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n"
 
 
 def decode_mcp_messages(buffer: bytes) -> tuple[list[dict[str, Any]], bytes]:
     messages: list[dict[str, Any]] = []
     while True:
-        header_end = buffer.find(b"\r\n\r\n")
-        if header_end < 0:
+        newline = buffer.find(b"\n")
+        if newline < 0:
             return messages, buffer
-        header = buffer[:header_end].decode("ascii", errors="replace")
-        match = re.search(r"Content-Length:\s*(\d+)", header, re.I)
-        if match is None:
-            raise SmokeError("MCP stdio message is missing Content-Length")
-        length = int(match.group(1))
-        start = header_end + 4
-        if len(buffer) < start + length:
-            return messages, buffer
-        raw = buffer[start : start + length]
-        messages.append(json.loads(raw.decode("utf-8")))
-        buffer = buffer[start + length :]
+        line = buffer[:newline].strip()
+        buffer = buffer[newline + 1 :]
+        if not line:
+            continue
+        try:
+            messages.append(json.loads(line.decode("utf-8")))
+        except json.JSONDecodeError as exc:
+            raise SmokeError(f"MCP stdio is not valid JSON-RPC: {line[:200]!r}") from exc
 
 
 def mcp_search_entities_messages() -> list[dict[str, Any]]:
@@ -282,6 +284,49 @@ def mcp_search_entities_messages() -> list[dict[str, Any]]:
     ]
 
 
+def _stop_mcp(proc: subprocess.Popen[bytes]) -> str:
+    if proc.poll() is None:
+        proc.kill()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+    stderr_text = ""
+    if proc.stderr is not None and not proc.stderr.closed:
+        try:
+            stderr_text = (proc.stderr.read() or b"").decode("utf-8", errors="replace")
+        except (OSError, ValueError):
+            stderr_text = ""
+        try:
+            proc.stderr.close()
+        except OSError:
+            pass
+    for stream in (proc.stdin, proc.stdout):
+        if stream is not None and not stream.closed:
+            try:
+                stream.close()
+            except OSError:
+                pass
+    return stderr_text
+
+
+def _pump_stdout(proc: subprocess.Popen[bytes], chunks: queue.Queue[bytes | None]) -> None:
+    stdout = proc.stdout
+    if stdout is None:
+        chunks.put(None)
+        return
+    try:
+        while True:
+            chunk = stdout.read(4096)
+            if not chunk:
+                chunks.put(None)
+                return
+            chunks.put(chunk)
+    except OSError:
+        chunks.put(None)
+
+
 def run_mcp_stdio(command: list[str], *, env: dict[str, str], timeout: int = 30) -> dict[str, Any]:
     jwt = env.get("OM_JWT", "").strip()
     if not jwt:
@@ -294,34 +339,62 @@ def run_mcp_stdio(command: list[str], *, env: dict[str, str], timeout: int = 30)
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=merged,
+        bufsize=0,
     )
     assert proc.stdin is not None
-    assert proc.stdout is not None
+    stdout_q: queue.Queue[bytes | None] = queue.Queue()
+    reader = threading.Thread(
+        target=_pump_stdout,
+        args=(proc, stdout_q),
+        name="mcp-stdio-stdout",
+        daemon=True,
+    )
+    reader.start()
     try:
-        for message in mcp_search_entities_messages():
-            proc.stdin.write(encode_mcp_message(message))
-            proc.stdin.flush()
+        try:
+            for message in mcp_search_entities_messages():
+                proc.stdin.write(encode_mcp_message(message))
+                proc.stdin.flush()
+        except BrokenPipeError as exc:
+            stderr = _stop_mcp(proc)
+            raise SmokeError(f"MCP process closed stdin before search_entities: {stderr[:400]}") from exc
         deadline = time.time() + timeout
         buffer = b""
-        while time.time() < deadline:
-            if proc.stdout.readable():
-                chunk = proc.stdout.read1(4096) if hasattr(proc.stdout, "read1") else proc.stdout.read(4096)
-                if chunk:
-                    buffer += chunk
-                messages, buffer = decode_mcp_messages(buffer)
-                for item in messages:
-                    if item.get("id") == 2:
-                        if item.get("error"):
-                            raise SmokeError(f"MCP search_entities error: {item['error']}")
-                        return item
-            if proc.poll() is not None and not buffer:
-                stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                stderr = _stop_mcp(proc)
+                detail = f": {stderr[:400]}" if stderr.strip() else ""
+                raise SmokeError(f"MCP stdio timed out waiting for search_entities{detail}")
+            try:
+                chunk = stdout_q.get(timeout=remaining)
+            except queue.Empty:
+                stderr = _stop_mcp(proc)
+                detail = f": {stderr[:400]}" if stderr.strip() else ""
+                raise SmokeError(f"MCP stdio timed out waiting for search_entities{detail}") from None
+            if chunk is None:
+                stderr = _stop_mcp(proc)
                 raise SmokeError(f"MCP process exited before search_entities: {stderr[:400]}")
-            time.sleep(0.05)
-        raise SmokeError("MCP stdio timed out waiting for search_entities")
+            buffer += chunk
+            messages, buffer = decode_mcp_messages(buffer)
+            for item in messages:
+                if item.get("id") == 1 and item.get("error"):
+                    raise SmokeError(f"MCP initialize error: {item['error']}")
+                if item.get("id") != 2:
+                    continue
+                if item.get("error"):
+                    raise SmokeError(f"MCP search_entities error: {item['error']}")
+                result = item.get("result")
+                if not isinstance(result, dict):
+                    raise SmokeError(f"MCP search_entities missing result: {item}")
+                if result.get("isError"):
+                    raise SmokeError(f"MCP search_entities tool error: {result}")
+                content = result.get("content")
+                if not content:
+                    raise SmokeError("MCP search_entities returned empty content")
+                return item
     finally:
-        proc.kill()
-        proc.wait(timeout=5)
+        _stop_mcp(proc)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -397,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.mcp_command:
             print(f"==> MCP stdio {' '.join(args.mcp_command)}")
             run_mcp_stdio(args.mcp_command, env=dict(os.environ))
+            print("MCP search_entities returned a JSON-RPC result")
         print("Live smoke passed (HTTP). Docker was not started by this script.")
         return 0
     except SmokeError as exc:

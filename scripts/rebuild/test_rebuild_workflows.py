@@ -87,6 +87,19 @@ class RebuildWorkflowContract(unittest.TestCase):
         self.assertIn("contents: read", text)
         self.assertNotIn("pull_request_target", text)
 
+    def test_mcp_stdio_step_fails_fast_and_skips_only_without_jwt(self) -> None:
+        """Job C hung ~56 min on blocking MCP stdio; the step must have a hard cap."""
+        text = WORKFLOW.read_text(encoding="utf-8")
+        marker = "- name: Optional MCP stdio search_entities"
+        start = text.index(marker)
+        rest = text[start + len(marker) :]
+        nxt = rest.find("\n      - name:")
+        step = text[start : start + len(marker) + (len(rest) if nxt < 0 else nxt)]
+        self.assertRegex(step, r"timeout-minutes:\s*[1-9]\d*")
+        self.assertNotIn("continue-on-error:", step)
+        self.assertIn("No JWT for MCP stdio", step)
+        self.assertIn("exit 0", step)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -285,7 +285,7 @@ jobs:
             --token-out "$RUNNER_TEMP/om.jwt"
 
       - name: Optional MCP stdio search_entities
-        continue-on-error: true
+        timeout-minutes: 5
         env:
           # TODO: set repository secret OM_JWT to a bot PAT to override bootstrap login.
           OM_JWT_SECRET: ${{ secrets.OM_JWT }}
@@ -295,7 +295,7 @@ jobs:
             printf '%s' "$OM_JWT_SECRET" > "$RUNNER_TEMP/om.jwt"
           fi
           if [ ! -s "$RUNNER_TEMP/om.jwt" ]; then
-            echo "::warning::No JWT for MCP stdio; skip. # TODO: set secret OM_JWT or rerun after login smoke writes the token file."
+            echo "::warning::No JWT for MCP stdio; skip. Login smoke writes this token file, or set secret OM_JWT."
             exit 0
           fi
           export OM_JWT
