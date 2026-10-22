@@ -1,0 +1,9 @@
+SmartMetadata MCP
+Copyright 2026 SmartMetadata authors
+
+This product is licensed under the Apache License, Version 2.0.
+
+This package is a clean-room MCP server. It does not include, copy,
+transpile, or depend on `openmetadata-mcp/`. It talks to the Apache
+`openmetadata-service` REST API using documented paths only and speaks
+the Model Context Protocol over stdio.
