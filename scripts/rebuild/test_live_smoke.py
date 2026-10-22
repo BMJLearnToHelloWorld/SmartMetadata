@@ -7,9 +7,12 @@ Offline only: no Docker, no live catalog. Run with
 from __future__ import annotations
 
 import base64
+import http.server
 import importlib.util
 import json
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -130,16 +133,144 @@ class LiveSmokeContract(unittest.TestCase):
         with self.assertRaises(smoke.SmokeError):
             smoke.asset_path("dashboard", "dash.one")
 
-    def test_mcp_stdio_frames_round_trip(self) -> None:
+    def test_mcp_stdio_frames_are_ndjson_not_lsp(self) -> None:
+        """MCP stdio is newline-delimited JSON-RPC, not LSP Content-Length."""
         smoke = load_smoke()
         payload = {"jsonrpc": "2.0", "id": 1, "method": "initialize"}
         framed = smoke.encode_mcp_message(payload)
-        self.assertTrue(framed.startswith(b"Content-Length:"))
+        self.assertTrue(framed.endswith(b"\n"))
+        self.assertNotIn(b"Content-Length", framed)
+        self.assertEqual(framed.count(b"\n"), 1)
         messages, rest = smoke.decode_mcp_messages(framed)
         self.assertEqual(rest, b"")
         self.assertEqual(messages, [payload])
         names = [item.get("method") for item in smoke.mcp_search_entities_messages()]
         self.assertEqual(names, ["initialize", "notifications/initialized", "tools/call"])
+
+    def test_run_mcp_stdio_times_out_when_child_never_replies(self) -> None:
+        """A silent MCP child must fail fast. Blocking stdout.read() hung Job C ~56 min."""
+        smoke = load_smoke()
+        silent = (
+            "import sys, time\n"
+            "sys.stderr.write('silent-mcp-child\\n')\n"
+            "sys.stderr.flush()\n"
+            "sys.stdin.read()\n"
+            "time.sleep(60)\n"
+        )
+        started = time.monotonic()
+        with self.assertRaises(smoke.SmokeError) as raised:
+            smoke.run_mcp_stdio(
+                [sys.executable, "-u", "-c", silent],
+                env={"OM_JWT": "tok"},
+                timeout=1,
+            )
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 8, f"stdio timeout did not fire; hung {elapsed:.1f}s")
+        self.assertIn("timed out", str(raised.exception).lower())
+
+    def test_run_mcp_stdio_search_entities_over_ndjson(self) -> None:
+        smoke = load_smoke()
+        fake = r"""
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":msg["id"],"result":{"protocolVersion":"2024-11-05"}}) + "\n")
+        sys.stdout.flush()
+    elif method == "tools/call":
+        payload = {"hits":{"hits":[{"_source":{"entityType":"table","fullyQualifiedName":"a.b.c.orders"}}]}}
+        result = {"content":[{"type":"text","text":json.dumps(payload)}]}
+        sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":msg["id"],"result":result}) + "\n")
+        sys.stdout.flush()
+"""
+        reply = smoke.run_mcp_stdio(
+            [sys.executable, "-u", "-c", fake],
+            env={"OM_JWT": "tok"},
+            timeout=5,
+        )
+        self.assertEqual(reply.get("id"), 2)
+        self.assertNotIn("error", reply)
+        text = reply["result"]["content"][0]["text"]
+        self.assertIn("a.b.c.orders", text)
+
+    def test_run_mcp_stdio_against_built_smartmetadata_mcp(self) -> None:
+        """Handshake + search_entities against the real stdio server (NDJSON, not LSP)."""
+        entry = Path(__file__).resolve().parents[2] / "smartmetadata-mcp" / "dist" / "index.js"
+        if not entry.is_file():
+            self.skipTest("smartmetadata-mcp dist not built")
+        smoke = load_smoke()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if "/v1/search/query" not in self.path:
+                    self.send_error(404)
+                    return
+                body = json.dumps(
+                    {
+                        "hits": {
+                            "hits": [
+                                {
+                                    "_source": {
+                                        "entityType": "table",
+                                        "fullyQualifiedName": "live.smoke.orders",
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            reply = smoke.run_mcp_stdio(
+                ["node", str(entry)],
+                env={
+                    "OM_JWT": "tok",
+                    "OM_API_URL": f"http://127.0.0.1:{httpd.server_address[1]}",
+                    "OM_TIMEOUT_MS": "3000",
+                },
+                timeout=8,
+            )
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+        self.assertEqual(reply.get("id"), 2)
+        self.assertIn("live.smoke.orders", reply["result"]["content"][0]["text"])
+
+    def test_run_mcp_stdio_fails_on_jsonrpc_error(self) -> None:
+        smoke = load_smoke()
+        fake = r"""
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    if msg.get("method") == "tools/call":
+        sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":msg["id"],"error":{"code":-32000,"message":"boom"}}) + "\n")
+        sys.stdout.flush()
+"""
+        with self.assertRaises(smoke.SmokeError) as raised:
+            smoke.run_mcp_stdio(
+                [sys.executable, "-u", "-c", fake],
+                env={"OM_JWT": "tok"},
+                timeout=5,
+            )
+        self.assertIn("boom", str(raised.exception))
 
     def test_run_login_search_uses_bearer_token(self) -> None:
         smoke = load_smoke()
