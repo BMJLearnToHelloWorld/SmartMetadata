@@ -43,6 +43,10 @@ import TestDefinitionDetailView from '@/views/quality/TestDefinitionDetailView.v
 import TestDefinitionsListView from '@/views/quality/TestDefinitionsListView.vue';
 import TestSuiteDetailView from '@/views/quality/TestSuiteDetailView.vue';
 import TestSuitesListView from '@/views/quality/TestSuitesListView.vue';
+import PipelineDetailView from '@/views/ingestion/PipelineDetailView.vue';
+import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
+import ServiceDetailView from '@/views/ingestion/ServiceDetailView.vue';
+import ServicesListView from '@/views/ingestion/ServicesListView.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -166,6 +170,20 @@ export const router = createRouter({
           path: 'observability/alerts/:id',
           name: 'observability-alert',
           component: AlertDetailView,
+          props: true,
+        },
+        { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
+        {
+          path: 'ingestion/services/:kind/:id',
+          name: 'ingestion-service',
+          component: ServiceDetailView,
+          props: true,
+        },
+        { path: 'ingestion/pipelines', name: 'ingestion-pipelines', component: PipelinesListView },
+        {
+          path: 'ingestion/pipelines/:id',
+          name: 'ingestion-pipeline',
+          component: PipelineDetailView,
           props: true,
         },
       ],

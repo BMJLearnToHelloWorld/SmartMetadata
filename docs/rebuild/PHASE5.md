@@ -90,7 +90,7 @@ detail linked tests.
 
 ## Non-goals (later phases)
 
-- Clean-room ingestion / connectors / Airflow (Phases 6–8)
+- Clean-room ingestion / connectors (Phases 6–7) and console (Phase 8)
 - Triggering profiler, quality, or Data Insights pipelines from this UI
 - Full Collate AI auto-DQ
 - Shipping the SPA inside `openmetadata-dist` (needs a new ADR)

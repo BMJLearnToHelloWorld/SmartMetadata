@@ -77,7 +77,8 @@ runner error collection / `failFast`; CLI report; CCL import gate.
 ## Non-goals (later phases)
 
 - Full connector catalog — first production batch is [PHASE7.md](PHASE7.md)
-- Ingestion console UI / Prefect/Airflow operators (Phase 8)
+- Ingestion console UI — **done in** [PHASE8.md](PHASE8.md) (catalog CRUD; CLI still runs the job)
+- Prefect / native Airflow operator (still later)
 - Profiler and DQ job execution (interfaces stubbed only)
 - Shipping the SPA in `openmetadata-dist`
 - MCP
@@ -98,7 +99,7 @@ runner error collection / `failFast`; CLI report; CCL import gate.
 
 ## Open questions (safest default already taken)
 
-1. **Orchestrator?** **CLI/process only.** Prefect/Airflow wait for Phase 8.
+1. **Orchestrator?** **CLI/process only.** Phase 8 did not add Prefect; it documents the same default.
 2. **Persist source passwords on the service entity?** **No**, unless
    `storeConnectionSecrets: true`.
 3. **Generate the REST client from OpenAPI?** **No** for MVP — a thin httpx

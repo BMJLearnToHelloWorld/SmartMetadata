@@ -34,7 +34,7 @@ Also:
 - **BigQuery**: Snowflake was chosen instead (clearer SQL `INFORMATION_SCHEMA`, lighter optional
   extra than `google-cloud-bigquery` + GCP auth).
 - Other OM catalog types (Redshift, Databricks, Airflow, …).
-- Ingestion console UI / Airflow / Prefect (Phase 8).
+- Ingestion console UI — **done in** [PHASE8.md](PHASE8.md). Prefect/Airflow operators still later.
 - Profiler / DQ execution engines.
 
 ## How to run
