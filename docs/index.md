@@ -20,6 +20,7 @@ verdict cites an artifact that was checked to still exist):
 | Doc | Purpose | Read when | Modified | Freshness |
 |---|---|---|---|---|
 | `docs/rebuild/PHASE0.md` | Phase 0 baseline: shippable `openmetadata-dist` excludes UI, MCP, and ingestion; how to build/run the slim server; verification; residual in-tree CCL trees; non-goals | Building or packaging the SmartMetadata server without Collate Community License modules | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE1.md` | Phase 1 clean-room Vue 3 + Ant Design Vue SPA (`smartmetadata-ui/`): login, search, table/topic detail; how to run against the slim server; manual verify; packaging non-goals | Building or running the product UI without Collate Community License frontend code | 2026-10-22 | CURRENT |
 
 ## Start here — root guides (not under `docs/`)
 

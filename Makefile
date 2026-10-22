@@ -109,6 +109,22 @@ slim-dist:  ## Build the CCL-free server distribution (no UI/MCP/ingestion)
 check-ccl-free-dist:  ## Fail if the shippable dist still depends on Collate Community License modules
 	python3 scripts/rebuild/check_ccl_free_dist.py
 
+.PHONY: ui_install
+ui_install:  ## Install SmartMetadata Vue UI dependencies
+	cd smartmetadata-ui && npm install
+
+.PHONY: ui_dev
+ui_dev:  ## Run the clean-room Vue UI with Vite (proxies /api to the slim server)
+	cd smartmetadata-ui && npm run dev
+
+.PHONY: ui_test
+ui_test:  ## Run SmartMetadata Vue UI unit tests
+	cd smartmetadata-ui && npm test
+
+.PHONY: ui_build
+ui_build:  ## Typecheck and build the SmartMetadata Vue SPA
+	cd smartmetadata-ui && npm run build
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a
