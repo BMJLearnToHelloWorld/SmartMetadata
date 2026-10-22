@@ -1,0 +1,29 @@
+# Reference metadata workflow. Secrets come from the environment, never from this file.
+workflow:
+  name: warehouse-metadata
+  type: metadata
+  failFast: false
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    # Prefer a bot JWT. Login is for local bootstrap only.
+    type: jwt
+    jwtToken: ${OM_JWT}
+
+source:
+  type: postgres
+  serviceName: warehouse
+  connection:
+    hostPort: ${PG_HOSTPORT:-localhost:5432}
+    username: ${PG_USER}
+    password: ${PG_PASSWORD}
+    database: ${PG_DATABASE}
+  includeSchemas:
+    - public
+  includeViewLineage: true
+  # Default false: do not persist source passwords on the catalog service entity.
+  storeConnectionSecrets: false
+
+sink:
+  type: metadata-rest

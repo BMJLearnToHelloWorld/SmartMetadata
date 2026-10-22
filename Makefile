@@ -125,6 +125,18 @@ ui_test:  ## Run SmartMetadata Vue UI unit tests
 ui_build:  ## Typecheck and build the SmartMetadata Vue SPA
 	cd smartmetadata-ui && npm run build
 
+.PHONY: ingest_install
+ingest_install:  ## Install the clean-room SmartMetadata ingestion package (editable + tests)
+	python3 -m pip install -e 'smartmetadata-ingestion/[dev]'
+
+.PHONY: ingest_test
+ingest_test:  ## Run SmartMetadata ingestion unit tests
+	cd smartmetadata-ingestion && python3 -m pytest
+
+.PHONY: check-ccl-free-ingestion
+check-ccl-free-ingestion:  ## Fail if smartmetadata-ingestion imports or depends on CCL ingestion
+	python3 scripts/rebuild/check_ccl_free_ingestion.py
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a

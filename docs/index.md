@@ -25,6 +25,7 @@ verdict cites an artifact that was checked to still exist):
 | `docs/rebuild/PHASE3.md` | Phase 3 clean-room lineage graph (Vue Flow + dagre) against `GET /v1/lineage/{entity}/name/{fqn}` | Extending the clean-room console with upstream/downstream lineage | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE4.md` | Phase 4 governance parity: glossaries/terms, classifications/tags, domains/data products, asset description/owners/tags/domain PATCH | Extending the clean-room console with governance MVP | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE5.md` | Phase 5 quality/observability: test definitions/cases/suites, asset DQ + profiler/sample, incidents, event-subscription alerts | Extending the clean-room console with data quality and observability | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE6.md` | Phase 6 clean-room ingestion framework (`smartmetadata-ingestion/`): Source→Sink runner, httpx REST client, Postgres reference connector, CLI | Replacing CCL `ingestion/` with an Apache workflow that writes to `openmetadata-service` | 2026-10-22 | CURRENT |
 
 ## Start here — root guides (not under `docs/`)
 

@@ -70,7 +70,7 @@ Dependencies/dependents are the **measured Maven edges** (module POMs); `ui → 
 | `openmetadata-clients` | Published client artifacts | `openmetadata-clients/openmetadata-java-client/pom.xml` | → none · ← none (**isolated** in the Maven graph) | `openmetadata-java-client/` |
 | `ingestion/` (tree, not a Maven module) | Python framework + 120+ connectors; writes to the API (**CCL, reference-only, not shipped**) | `ingestion/src/metadata/__main__.py` (`metadata` CLI) | consumes the backend REST API (Path B) | `…/ingestion/source/` |
 
-Product UI (not a Maven module, not in dist): `smartmetadata-ui/` is the clean-room Vue 3 + Ant Design Vue SPA (Apache-2.0). See `docs/rebuild/PHASE1.md` and `docs/rebuild/PHASE2.md`. Do not import `openmetadata-ui`.
+Product UI (not a Maven module, not in dist): `smartmetadata-ui/` is the clean-room Vue 3 + Ant Design Vue SPA (Apache-2.0). See `docs/rebuild/PHASE1.md` and `docs/rebuild/PHASE2.md`. Do not import `openmetadata-ui`. Product Path B (not a Maven module, not in dist): `smartmetadata-ingestion/` is the clean-room CLI (`smartmetadata-ingest`) that writes through the same REST API; see `docs/rebuild/PHASE6.md`. Do not import `ingestion/`.
 
 ### `openmetadata-service` internals (package = `…/service/`; 1,777 main `.java`)
 Intended flow (sampled, 08a Pass 2): **`resources/*Resource` → `jdbi3/*Repository` → `jdbi3/CollectionDAO`/`EntityDAO` → SQL.** But the packages are **not** acyclically layered (Part 3).
