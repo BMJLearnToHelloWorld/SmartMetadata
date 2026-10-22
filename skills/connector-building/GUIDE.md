@@ -191,10 +191,10 @@ Build everything and bring up a full local OpenMetadata stack:
 
 ```bash
 # Full build (first time or after Java/UI changes)
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
 
 # Fast rebuild (ingestion-only changes, ~2-3 minutes)
-./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
 ```
 
 Once services are up (~3-5 minutes):

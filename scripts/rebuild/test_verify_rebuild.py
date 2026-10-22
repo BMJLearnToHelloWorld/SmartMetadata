@@ -41,6 +41,7 @@ class VerifyRebuildContract(unittest.TestCase):
             "mcp-build",
             "ccl-dist",
             "ccl-mcp",
+            "product-path-hints",
             "decision-records",
             "live-smoke-contract",
             "rebuild-ci-contract",
@@ -52,6 +53,7 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("check_ccl_free_dist.py", joined)
         self.assertIn("check_ccl_free_ingestion.py", joined)
         self.assertIn("check_ccl_free_mcp.py", joined)
+        self.assertIn("check_product_path_hints.py", joined)
         self.assertIn("check_decision_records.py", joined)
 
     def test_default_matrix_does_not_start_a_live_catalog(self) -> None:
@@ -94,7 +96,10 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("ui-test", completed.stdout)
         self.assertIn("ccl-dist", completed.stdout)
+        self.assertIn("product-path-hints", completed.stdout)
         self.assertIn("decision-records", completed.stdout)
+        self.assertIn("live-smoke-contract", completed.stdout)
+        self.assertIn("rebuild-ci-contract", completed.stdout)
 
 
 if __name__ == "__main__":

@@ -226,14 +226,15 @@ Fix any issues it reports. Then verify the full checklist:
 
 Build everything and bring up a full local OpenMetadata stack with Docker:
 
-**Full build** (first time or after Java/UI changes):
+**Full build** (first time or after Java/UI changes). `-i true` is the CCL
+reference stack, not the product path (`docs/rebuild/PRODUCT_PATH.md`):
 ```bash
-./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
 ```
 
 **Fast rebuild** (ingestion-only changes, ~2-3 minutes):
 ```bash
-./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
 ```
 
 Once services are up (~3-5 minutes):

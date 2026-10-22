@@ -2,6 +2,11 @@
 
 ![Commit Activity](https://img.shields.io/github/commit-activity/m/open-metadata/OpenMetadata?style=for-the-badge) [![Release](https://img.shields.io/github/release/open-metadata/OpenMetadata/all.svg?style=for-the-badge)](https://github.com/open-metadata/OpenMetadata/releases)
 
+> **CCL-free product path:** `make slim-dist` plus `smartmetadata-ui/`, `smartmetadata-ingestion/`, and `smartmetadata-mcp/`.
+> Historical `openmetadata-ui/`, `ingestion/`, and `openmetadata-mcp/` stay in git as **reference-only**.
+> Do not demo the product with `./docker/run_local_docker.sh -i true` or Collate quickstart images.
+> See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).
+
 ## The Open Context Layer for AI
 
 **The largest and fastest-growing open-source project for AI context, data cataloging, and metadata management.**

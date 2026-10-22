@@ -109,6 +109,10 @@ slim-dist:  ## Build the CCL-free server distribution (no UI/MCP/ingestion)
 check-ccl-free-dist:  ## Fail if the shippable dist still depends on Collate Community License modules
 	python3 scripts/rebuild/check_ccl_free_dist.py
 
+.PHONY: check-product-path-hints
+check-product-path-hints:  ## Fail if product-path docs or the docker CCL ingestion ack are missing
+	python3 scripts/rebuild/check_product_path_hints.py
+
 .PHONY: ui_install
 ui_install:  ## Install SmartMetadata Vue UI dependencies
 	cd smartmetadata-ui && npm install
@@ -154,8 +158,9 @@ check-ccl-free-mcp:  ## Fail if smartmetadata-mcp imports or depends on official
 	python3 scripts/rebuild/check_ccl_free_mcp.py
 
 .PHONY: verify-rebuild
-verify-rebuild:  ## Offline Phase 11 matrix: UI/ingest/MCP tests + three CCL gates + decision records
+verify-rebuild:  ## Offline Phase 11 matrix: UI/ingest/MCP tests + CCL gates + product-path hints + decision records
 	python3 scripts/rebuild/test_verify_rebuild.py
+	python3 scripts/rebuild/test_check_product_path_hints.py
 	python3 scripts/rebuild/verify_rebuild.py $(ARGS)
 
 .PHONY: live-smoke

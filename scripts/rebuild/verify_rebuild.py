@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Run the offline Phase 11 rebuild verification matrix.
 
-Runs the product-package tests and the three CCL-free gates plus the
-decision-record check. Does **not** start Docker, MySQL, Elasticsearch,
-Airflow, or a live catalog, and does not build ``openmetadata-dist`` unless
-``--require-tarball`` is passed.
+Runs the product-package tests, the three CCL-free gates, the product-path
+hint check, and the decision-record check. Does **not** start Docker, MySQL,
+Elasticsearch, Airflow, or a live catalog, and does not build
+``openmetadata-dist`` unless ``--require-tarball`` is passed.
 
 See ``docs/rebuild/PHASE11.md``, ``docs/rebuild/VERIFY_RUNTIME.md``,
 ADR:2026-10-22-rebuild-verify-is-offline, and
@@ -63,6 +63,10 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
         Step(id="mcp-build", argv=npm_argv("run", "build"), cwd="smartmetadata-mcp"),
         Step(id="ccl-dist", argv=tuple(dist_argv)),
         Step(id="ccl-mcp", argv=(PYTHON, "scripts/rebuild/check_ccl_free_mcp.py")),
+        Step(
+            id="product-path-hints",
+            argv=(PYTHON, "scripts/rebuild/check_product_path_hints.py"),
+        ),
         Step(
             id="decision-records",
             argv=(PYTHON, "scripts/harness/check_decision_records.py"),
