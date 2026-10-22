@@ -9,8 +9,9 @@ Those trees remain reference-only for behavior. Contracts come from
 `openmetadata-service` JAX-RS resources, `docs/generated/api-reference.md`, and
 JSON Schema.
 
-Phase 1 scope: app shell, basic-auth login, global search, Table + Topic detail.
-See `docs/rebuild/PHASE1.md` and ADR:2026-10-22-clean-room-vue-spa.
+Phase 1: app shell, basic-auth login, global search, Table + Topic detail.
+Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware login.
+See `docs/rebuild/PHASE1.md`, `docs/rebuild/PHASE2.md`, and ADR:2026-10-22-clean-room-vue-spa.
 
 ## Stack
 

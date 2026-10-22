@@ -99,7 +99,7 @@ the Java server is deferred — see open questions.
 
 - Lineage graph / impact analysis
 - Ingestion / connector console
-- System admin (users, teams, roles, SSO config UI)
+- System admin (users, teams, roles, SSO config UI) — **done in** [PHASE2.md](PHASE2.md)
 - MCP, Context Center, DQ, glossary/classification editors
 - OIDC/SAML login (server supports them; this MVP is basic JWT login only)
 - Shipping the SPA inside `openmetadata-dist`
@@ -110,8 +110,8 @@ the Java server is deferred — see open questions.
   tables. Seed via API or an existing catalog; do not vendor CCL sample-data
   loaders into dist.
 - **Auth provider.** `POST /v1/users/login` is for basic/LDAP-style
-  username+password. A server configured only for OIDC will reject this form.
-  Phase 2+ should read `GET /api/v1/system/config/auth` and branch.
+  username+password. Phase 2 reads `GET /api/v1/system/config/auth` and hides
+  the form for OIDC/SAML — see [PHASE2.md](PHASE2.md).
 - **Token refresh.** `refreshToken` is stored when the server returns it.
   Phase 1 does not auto-refresh; a 401 on a data call shows the API error.
   The route guard only checks local presence of `accessToken`.
@@ -135,8 +135,9 @@ the Java server is deferred — see open questions.
 1. **Serve the SPA from the slim Java server?** Default: **no** — Vite dev now;
    static `dist/` later behind a proxy. Revisit only with an explicit packaging
    ADR that keeps CCL jars out of dist.
-2. **SSO in the same login page?** Default: **basic login only**. Do not
-   hardcode a fake OIDC callback.
+2. **SSO in the same login page?** Default: **basic/LDAP login only**, with a
+   clear OIDC/SAML message from auth config (Phase 2). Do not hardcode a fake
+   OIDC callback.
 3. **More entity types on detail?** Default: table + topic. Search still lists
    other `dataAsset` types.
 

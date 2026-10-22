@@ -43,6 +43,8 @@ export interface ApiRequestOptions {
   json?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
   auth?: boolean;
+  /** Defaults to application/json when `json` is set. Use for RFC 6902 patches. */
+  contentType?: string;
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -59,7 +61,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     Accept: 'application/json',
   };
   if (options.json !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    headers['Content-Type'] = options.contentType || 'application/json';
   }
   if (options.auth !== false) {
     const session = loadSession(window.localStorage);
@@ -68,8 +70,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     }
   }
 
+  const method = options.method ?? (options.json !== undefined ? 'POST' : 'GET');
   const response = await fetch(url.toString(), {
-    method: options.method ?? (options.json !== undefined ? 'POST' : 'GET'),
+    method,
     headers,
     body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
   });

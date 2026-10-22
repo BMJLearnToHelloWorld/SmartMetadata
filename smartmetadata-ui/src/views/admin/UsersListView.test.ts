@@ -1,0 +1,101 @@
+/**
+ * Copyright 2026 SmartMetadata authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ */
+import { flushPromises, mount } from '@vue/test-utils';
+import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import UsersListView from './UsersListView.vue';
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function mountUsers() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/admin/users', name: 'admin-users', component: UsersListView },
+      { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
+    ],
+  });
+  await router.push('/admin/users');
+  await router.isReady();
+  const wrapper = mount(UsersListView, {
+    global: {
+      plugins: [pinia, router, Antd],
+    },
+  });
+  await flushPromises();
+  return { wrapper, router };
+}
+
+describe('UsersListView', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/users?') || url.endsWith('/api/v1/users')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'u1',
+                name: 'alice',
+                displayName: 'Alice Admin',
+                email: 'alice@example.com',
+                isAdmin: true,
+                teams: [{ id: 't1', name: 'Engineering', type: 'team' }],
+                roles: [{ id: 'r1', name: 'Admin', type: 'role' }],
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/teams')) {
+          return jsonResponse({ data: [{ id: 't1', name: 'Engineering', teamType: 'Group' }], paging: {} });
+        }
+        if (url.includes('/api/v1/roles')) {
+          return jsonResponse({ data: [{ id: 'r1', name: 'Admin' }], paging: {} });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders users from GET /v1/users', async () => {
+    const { wrapper } = await mountUsers();
+    expect(wrapper.text()).toContain('Alice Admin');
+    expect(wrapper.text()).toContain('alice@example.com');
+    expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
+  });
+
+  it('opens user detail on name click', async () => {
+    const { wrapper, router } = await mountUsers();
+    const link = wrapper.find('[data-testid="user-row-u1"]');
+    expect(link.exists()).toBe(true);
+    await link.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-user');
+    expect(router.currentRoute.value.params.id).toBe('u1');
+  });
+});

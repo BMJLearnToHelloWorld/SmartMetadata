@@ -56,6 +56,12 @@ describe('LoginView', () => {
             headers: { 'Content-Type': 'application/json' },
           });
         }
+        if (url.includes('/api/v1/system/config/auth')) {
+          return new Response(JSON.stringify({ provider: 'basic' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -84,5 +90,30 @@ describe('LoginView', () => {
     const stored = JSON.parse(localStorage.getItem('sm.auth.v1') ?? 'null') as { accessToken?: string };
     expect(stored.accessToken).toBe('jwt-1');
     expect(router.currentRoute.value.name).toBe('search');
+  });
+
+  it('hides the password form and explains SSO when the server is OIDC-only', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/api/v1/system/config/auth')) {
+          return new Response(
+            JSON.stringify({
+              provider: 'okta',
+              providerName: 'Company Okta',
+              authority: 'https://example.okta.com',
+              callbackUrl: 'https://example.com/callback',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountLogin();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="sso-only-message"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Company Okta');
+    expect(wrapper.find('[data-testid="login-submit"]').exists()).toBe(false);
   });
 });

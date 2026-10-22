@@ -44,4 +44,24 @@ describe('apiRequest', () => {
     });
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeTruthy();
   });
+
+  it('sends JSON Patch with the RFC 6902 content type', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('PATCH');
+        expect((init?.headers as Record<string, string>)['Content-Type']).toBe(
+          'application/json-patch+json',
+        );
+        expect(JSON.parse(String(init?.body))).toEqual([{ op: 'replace', path: '/roles', value: [] }]);
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    await apiRequest('/v1/users/u1', {
+      method: 'PATCH',
+      json: [{ op: 'replace', path: '/roles', value: [] }],
+      contentType: 'application/json-patch+json',
+    });
+  });
 });
+
