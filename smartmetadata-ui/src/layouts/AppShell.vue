@@ -44,6 +44,21 @@ const selectedKeys = computed(() => {
   if (name === 'governance-data-product') {
     return ['governance-data-products'];
   }
+  if (name === 'quality-test-definition') {
+    return ['quality-test-definitions'];
+  }
+  if (name === 'quality-test-case') {
+    return ['quality-test-cases'];
+  }
+  if (name === 'quality-test-suite') {
+    return ['quality-test-suites'];
+  }
+  if (name === 'observability-incident') {
+    return ['observability-incidents'];
+  }
+  if (name === 'observability-alert') {
+    return ['observability-alerts'];
+  }
   return [name];
 });
 
@@ -59,13 +74,19 @@ watch(
     if (routeName.startsWith('governance-') && !openKeys.value.includes('governance')) {
       openKeys.value = [...openKeys.value, 'governance'];
     }
+    if (routeName.startsWith('quality-') && !openKeys.value.includes('quality')) {
+      openKeys.value = [...openKeys.value, 'quality'];
+    }
+    if (routeName.startsWith('observability-') && !openKeys.value.includes('observability')) {
+      openKeys.value = [...openKeys.value, 'observability'];
+    }
   },
   { immediate: true },
 );
 
 function onMenuClick({ key }: { key: string | number }): void {
   const name = String(key);
-  if (name === 'admin' || name === 'governance') {
+  if (name === 'admin' || name === 'governance' || name === 'quality' || name === 'observability') {
     return;
   }
   void router.push({ name });
@@ -104,6 +125,15 @@ async function onLogout(): Promise<void> {
           <Menu.Item key="governance-classifications">Classifications</Menu.Item>
           <Menu.Item key="governance-domains">Domains</Menu.Item>
           <Menu.Item key="governance-data-products">Data products</Menu.Item>
+        </Menu.SubMenu>
+        <Menu.SubMenu key="quality" title="Quality" data-testid="quality-nav">
+          <Menu.Item key="quality-test-definitions">Test definitions</Menu.Item>
+          <Menu.Item key="quality-test-cases">Test cases</Menu.Item>
+          <Menu.Item key="quality-test-suites">Test suites</Menu.Item>
+        </Menu.SubMenu>
+        <Menu.SubMenu key="observability" title="Observability" data-testid="observability-nav">
+          <Menu.Item key="observability-incidents">Incidents</Menu.Item>
+          <Menu.Item key="observability-alerts">Alerts</Menu.Item>
         </Menu.SubMenu>
         <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
           <Menu.Item key="admin-users">Users</Menu.Item>

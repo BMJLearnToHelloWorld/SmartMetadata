@@ -38,6 +38,12 @@ async function mountView() {
     routes: [
       { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
+      { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
+      {
+        path: '/quality/test-definitions/:id',
+        name: 'quality-test-definition',
+        component: { template: '<div>td</div>' },
+      },
     ],
   });
   await router.push('/assets/table/svc.db.schema.orders');
@@ -93,6 +99,28 @@ describe('AssetDetailView governance', () => {
         if (url.includes('/api/v1/domains')) {
           return jsonResponse({ data: [{ id: 'd1', name: 'Marketing' }] });
         }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'tc1',
+                name: 'row_count',
+                testDefinition: { id: 'td1', name: 'tableRowCountToBeBetween' },
+                testCaseResult: { testCaseStatus: 'Failed' },
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/sampleData')) {
+          return jsonResponse({ sampleData: { columns: ['id'], rows: [[1]] } });
+        }
+        if (url.includes('/tableProfile/latest')) {
+          return jsonResponse({
+            profile: { rowCount: 1, columnCount: 1 },
+            columns: [{ name: 'id', profile: { nullCount: 0 } }],
+          });
+        }
         if (init?.method === 'PATCH' && url.includes('/api/v1/tables/tbl-1')) {
           return jsonResponse({});
         }
@@ -114,6 +142,16 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Sensitive');
     expect(wrapper.text()).toContain('Marketing');
     expect(wrapper.find('[data-testid="edit-governance"]').exists()).toBe(true);
+  });
+
+  it('shows linked tests and latest status from GET /v1/dataQuality/testCases', async () => {
+    const { wrapper, router } = await mountView();
+    expect(wrapper.text()).toContain('row_count');
+    expect(wrapper.text()).toContain('Failed');
+    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="asset-test-tc1"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('quality-test-case');
   });
 
   it('PATCHes the table by id when governance is saved', async () => {

@@ -22,6 +22,8 @@ import {
   message,
 } from 'ant-design-vue';
 import { fetchAssetDetail, patchAsset } from '@/api/entities';
+import { getLatestTableProfile, getTableSampleData, getTopicSampleData } from '@/api/profiler';
+import { listTestCases } from '@/api/testCases';
 import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import {
   loadGovernanceCatalog,
@@ -32,6 +34,7 @@ import {
 import { descriptionPatch, domainsPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
 import type { AssetDetail } from '@/types/api';
 import type { AssetTagOption } from '@/types/governance';
+import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
 
 const props = defineProps<{
   entityType: string;
@@ -44,6 +47,12 @@ const loading = ref(false);
 const errorMessage = ref('');
 const asset = ref<AssetDetail | null>(null);
 const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const tests = ref<TestCase[]>([]);
+const testsError = ref('');
+const tableSample = ref<TableSampleData | null>(null);
+const topicSample = ref<TopicSampleData | null>(null);
+const tableProfile = ref<TableProfile | null>(null);
+const observabilityError = ref('');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -61,6 +70,20 @@ const schemaColumns = [
   { title: 'Description', dataIndex: 'description', key: 'description' },
 ];
 
+const testColumns = [
+  { title: 'Name', dataIndex: 'name', key: 'name' },
+  { title: 'Definition', key: 'testDefinition' },
+  { title: 'Latest status', key: 'status', width: 140 },
+];
+
+const profileColumns = [
+  { title: 'Column', dataIndex: 'name', key: 'name' },
+  { title: 'Nulls', dataIndex: 'nullCount', key: 'nullCount', width: 90 },
+  { title: 'Unique', dataIndex: 'uniqueCount', key: 'uniqueCount', width: 90 },
+  { title: 'Min', dataIndex: 'min', key: 'min' },
+  { title: 'Max', dataIndex: 'max', key: 'max' },
+];
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
@@ -71,12 +94,57 @@ async function load(): Promise<void> {
     loading.value = false;
     return;
   }
+  tests.value = [];
+  testsError.value = '';
+  tableSample.value = null;
+  topicSample.value = null;
+  tableProfile.value = null;
+  observabilityError.value = '';
   try {
     asset.value = await fetchAssetDetail(props.entityType, decodedFqn.value);
+    await loadQuality();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Failed to load asset';
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadQuality(): Promise<void> {
+  if (!asset.value) {
+    return;
+  }
+  try {
+    const page = await listTestCases({
+      entityFQN: asset.value.fullyQualifiedName,
+      includeAllTests: true,
+      limit: 50,
+    });
+    tests.value = page.data;
+  } catch (error) {
+    tests.value = [];
+    testsError.value = error instanceof Error ? error.message : 'Failed to load linked tests';
+  }
+  if (props.entityType === 'table' && asset.value.id) {
+    try {
+      tableSample.value = await getTableSampleData(asset.value.id);
+    } catch (error) {
+      tableSample.value = null;
+      observabilityError.value = error instanceof Error ? error.message : 'Sample data unavailable';
+    }
+    try {
+      tableProfile.value = await getLatestTableProfile(asset.value.fullyQualifiedName);
+    } catch {
+      tableProfile.value = null;
+    }
+  }
+  if (props.entityType === 'topic' && asset.value.id) {
+    try {
+      topicSample.value = await getTopicSampleData(asset.value.id);
+    } catch (error) {
+      topicSample.value = null;
+      observabilityError.value = error instanceof Error ? error.message : 'Sample data unavailable';
+    }
   }
 }
 
@@ -215,6 +283,126 @@ onMounted(() => {
           :pagination="false"
           size="small"
         />
+        <Typography.Title :level="5" class="detail__schema-title">Data quality tests</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          GET /api/v1/dataQuality/testCases?entityFQN=…&includeAllTests=true
+        </Typography.Paragraph>
+        <Alert v-if="testsError" type="warning" show-icon :message="testsError" class="detail__alert" />
+        <Table
+          row-key="id"
+          data-testid="asset-tests-table"
+          :columns="testColumns"
+          :data-source="tests"
+          :pagination="false"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'name'">
+              <a
+                href="#"
+                :data-testid="`asset-test-${(record as TestCase).id}`"
+                @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+              >
+                {{ (record as TestCase).displayName || (record as TestCase).name }}
+              </a>
+            </template>
+            <template v-else-if="column.key === 'testDefinition'">
+              <a
+                v-if="(record as TestCase).testDefinition?.id"
+                href="#"
+                @click.prevent="
+                  router.push({
+                    name: 'quality-test-definition',
+                    params: { id: (record as TestCase).testDefinition?.id },
+                  })
+                "
+              >
+                {{
+                  (record as TestCase).testDefinition?.fullyQualifiedName ||
+                  (record as TestCase).testDefinition?.name
+                }}
+              </a>
+              <span v-else>
+                {{ (record as TestCase).testDefinition?.name || '—' }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              {{
+                (record as TestCase).testCaseResult?.testCaseStatus ||
+                (record as TestCase).testCaseStatus ||
+                '—'
+              }}
+            </template>
+          </template>
+        </Table>
+        <template v-if="entityType === 'table'">
+          <Typography.Title :level="5" class="detail__schema-title">Latest profiler</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            GET /api/v1/tables/{fqn}/tableProfile/latest — empty when no profiler job has written
+            results. This UI does not trigger ingestion.
+          </Typography.Paragraph>
+          <Typography.Paragraph v-if="tableProfile">
+            rows {{ tableProfile.rowCount ?? '—' }} · columns {{ tableProfile.columnCount ?? '—' }}
+          </Typography.Paragraph>
+          <Table
+            row-key="name"
+            data-testid="asset-profile-table"
+            :columns="profileColumns"
+            :data-source="tableProfile?.columns ?? []"
+            :pagination="false"
+            size="small"
+          />
+          <Typography.Title :level="5" class="detail__schema-title">Sample data</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            GET /api/v1/tables/{id}/sampleData
+          </Typography.Paragraph>
+          <Alert
+            v-if="observabilityError && !tableSample"
+            type="warning"
+            show-icon
+            :message="observabilityError"
+            class="detail__alert"
+          />
+          <Table
+            v-if="tableSample"
+            data-testid="asset-sample-table"
+            row-key="__idx"
+            :columns="tableSample.columns.map((name) => ({ title: name, dataIndex: name, key: name }))"
+            :data-source="
+              tableSample.rows.map((row, index) => {
+                const record: Record<string, string | number> = { __idx: index };
+                tableSample.columns.forEach((name, col) => {
+                  record[name] = row[col] ?? '';
+                });
+                return record;
+              })
+            "
+            :pagination="false"
+            size="small"
+          />
+        </template>
+        <template v-else-if="entityType === 'topic'">
+          <Typography.Title :level="5" class="detail__schema-title">Sample messages</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            GET /api/v1/topics/{id}/sampleData. Topics have no tableProfile endpoint.
+          </Typography.Paragraph>
+          <Alert
+            v-if="observabilityError && !topicSample"
+            type="warning"
+            show-icon
+            :message="observabilityError"
+            class="detail__alert"
+          />
+          <Table
+            v-if="topicSample"
+            data-testid="asset-topic-sample-table"
+            row-key="__idx"
+            :columns="[{ title: 'Message', dataIndex: 'message', key: 'message' }]"
+            :data-source="topicSample.messages.map((message, index) => ({ __idx: index, message }))"
+            :pagination="false"
+            size="small"
+          />
+        </template>
       </template>
     </Card>
     <Modal

@@ -33,6 +33,16 @@ import GlossariesListView from '@/views/governance/GlossariesListView.vue';
 import GlossaryDetailView from '@/views/governance/GlossaryDetailView.vue';
 import GlossaryTermDetailView from '@/views/governance/GlossaryTermDetailView.vue';
 import TagDetailView from '@/views/governance/TagDetailView.vue';
+import AlertDetailView from '@/views/observability/AlertDetailView.vue';
+import AlertsListView from '@/views/observability/AlertsListView.vue';
+import IncidentDetailView from '@/views/observability/IncidentDetailView.vue';
+import IncidentsListView from '@/views/observability/IncidentsListView.vue';
+import TestCaseDetailView from '@/views/quality/TestCaseDetailView.vue';
+import TestCasesListView from '@/views/quality/TestCasesListView.vue';
+import TestDefinitionDetailView from '@/views/quality/TestDefinitionDetailView.vue';
+import TestDefinitionsListView from '@/views/quality/TestDefinitionsListView.vue';
+import TestSuiteDetailView from '@/views/quality/TestSuiteDetailView.vue';
+import TestSuitesListView from '@/views/quality/TestSuitesListView.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -113,6 +123,49 @@ export const router = createRouter({
           path: 'governance/data-products/:id',
           name: 'governance-data-product',
           component: DataProductDetailView,
+          props: true,
+        },
+        {
+          path: 'quality/test-definitions',
+          name: 'quality-test-definitions',
+          component: TestDefinitionsListView,
+        },
+        {
+          path: 'quality/test-definitions/:id',
+          name: 'quality-test-definition',
+          component: TestDefinitionDetailView,
+          props: true,
+        },
+        { path: 'quality/test-cases', name: 'quality-test-cases', component: TestCasesListView },
+        {
+          path: 'quality/test-cases/:id',
+          name: 'quality-test-case',
+          component: TestCaseDetailView,
+          props: true,
+        },
+        { path: 'quality/test-suites', name: 'quality-test-suites', component: TestSuitesListView },
+        {
+          path: 'quality/test-suites/:id',
+          name: 'quality-test-suite',
+          component: TestSuiteDetailView,
+          props: true,
+        },
+        {
+          path: 'observability/incidents',
+          name: 'observability-incidents',
+          component: IncidentsListView,
+        },
+        {
+          path: 'observability/incidents/:id',
+          name: 'observability-incident',
+          component: IncidentDetailView,
+          props: true,
+        },
+        { path: 'observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        {
+          path: 'observability/alerts/:id',
+          name: 'observability-alert',
+          component: AlertDetailView,
           props: true,
         },
       ],
