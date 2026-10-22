@@ -132,6 +132,55 @@ def test_kafka_http_source_wires_mocked_transport() -> None:
     assert topics[0].partitions == 4
 
 
+def test_kafka_stores_sasl_only_when_opt_in() -> None:
+    source = KafkaSource(
+        SourceConfig(
+            type="kafka",
+            service_name="events",
+            connection={
+                "bootstrapServers": "broker:9092",
+                "saslUsername": "u",
+                "saslPassword": "p",
+            },
+            store_connection_secrets=True,
+        ),
+        reader=SequenceTopicReader([]),
+    )
+    service = next(iter(source.produce()))
+    assert isinstance(service, MessagingServiceRecord)
+    assert service.connection["config"]["saslUsername"] == "u"
+    assert service.connection["config"]["saslPassword"] == "p"
+
+
+def test_confluent_http_reader_accepts_object_topics_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/topics"):
+            return httpx.Response(
+                200, json={"data": [{"topic_name": "orders"}, {"name": "payments"}]}
+            )
+        return httpx.Response(200, text="")
+
+    reader = ConfluentHttpTopicReader(
+        rest_proxy_url="http://proxy.test",
+        transport=httpx.MockTransport(handler),
+    )
+    names = [row.name for row in reader.list_topics()]
+    reader.close()
+    assert names == ["orders", "payments"]
+
+
+def test_kafka_bootstrap_without_extra_fails() -> None:
+    source = KafkaSource(
+        SourceConfig(
+            type="kafka",
+            service_name="events",
+            connection={"bootstrapServers": "broker:9092"},
+        )
+    )
+    with pytest.raises(WorkflowError, match="smartmetadata-ingestion\\[kafka\\]"):
+        list(source.produce())
+
+
 def test_kafka_requires_discovery_endpoint() -> None:
     source = KafkaSource(SourceConfig(type="kafka", service_name="events", connection={}))
     with pytest.raises(WorkflowError, match="restProxyUrl"):
@@ -147,5 +196,21 @@ def test_http_reader_rejects_bad_topics_payload() -> None:
         transport=httpx.MockTransport(handler),
     )
     with pytest.raises(WorkflowError, match="did not return a list"):
+        reader.list_topics()
+    reader.close()
+
+
+def test_http_reader_rejects_empty_proxy_and_http_errors() -> None:
+    with pytest.raises(WorkflowError, match="restProxyUrl"):
+        ConfluentHttpTopicReader(rest_proxy_url="   ")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="boom")
+
+    reader = ConfluentHttpTopicReader(
+        rest_proxy_url="http://proxy.test",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(WorkflowError, match="HTTP 500"):
         reader.list_topics()
     reader.close()

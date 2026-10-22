@@ -371,6 +371,8 @@ def _as_int(value: Any) -> int | None:
 
 
 def _snowflake_connect(connection: dict[str, Any]):
+    if not connection.get("account"):
+        raise WorkflowError("snowflake source.connection.account is required")
     try:
         import snowflake.connector
     except ImportError as exc:
@@ -378,8 +380,6 @@ def _snowflake_connect(connection: dict[str, Any]):
             "snowflake live reads need the optional extra: "
             "pip install 'smartmetadata-ingestion[snowflake]'"
         ) from exc
-    if not connection.get("account"):
-        raise WorkflowError("snowflake source.connection.account is required")
 
     def connect():
         kwargs: dict[str, Any] = {
