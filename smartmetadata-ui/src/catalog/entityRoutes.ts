@@ -13,8 +13,8 @@
  * generic page that shows fields already in the search document.
  */
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
-  table: { collection: 'tables', fields: 'owners,tags,columns,domains' },
-  topic: { collection: 'topics', fields: 'owners,tags,domains' },
+  table: { collection: 'tables', fields: 'owners,tags,columns,domains,extension' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains,extension' },
 };
 
 export function assetLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {

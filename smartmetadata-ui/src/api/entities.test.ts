@@ -58,6 +58,7 @@ describe('asset entity writes', () => {
     expect(asset.domains[0]).toMatchObject({ id: 'd1', type: 'domain' });
     expect(lastFetch().url).toContain('/api/v1/tables/name/');
     expect(lastFetch().url).toContain('domains');
+    expect(lastFetch().url).toContain('extension');
   });
 
   it('PATCHes a table by id with RFC 6902 json-patch', async () => {

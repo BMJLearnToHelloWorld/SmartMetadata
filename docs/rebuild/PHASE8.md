@@ -127,7 +127,7 @@ Pipelines list views; pipeline detail does not call trigger/deploy.
 - Prefect / native Airflow operator that would make trigger safe
 - Full OM connector wizard (75+ types, test-connection automations)
 - Dashboard / pipeline / storage / drive service forms
-- Phase 9 Feed/Tasks; Phase 10 MCP
+- Phase 9 Feed/Tasks (see [PHASE9.md](PHASE9.md)); Phase 10 MCP
 - Shipping the SPA inside `openmetadata-dist` (needs a new ADR)
 - Depending on `openmetadata-airflow-apis` or CCL ingestion wheels
 

@@ -65,6 +65,9 @@ const selectedKeys = computed(() => {
   if (name === 'ingestion-pipeline') {
     return ['ingestion-pipelines'];
   }
+  if (name === 'task') {
+    return ['tasks'];
+  }
   return [name];
 });
 
@@ -89,6 +92,15 @@ watch(
     if (routeName.startsWith('ingestion-') && !openKeys.value.includes('ingestion')) {
       openKeys.value = [...openKeys.value, 'ingestion'];
     }
+    if (
+      (routeName === 'activity' ||
+        routeName === 'tasks' ||
+        routeName === 'task' ||
+        routeName === 'announcements') &&
+      !openKeys.value.includes('collaboration')
+    ) {
+      openKeys.value = [...openKeys.value, 'collaboration'];
+    }
   },
   { immediate: true },
 );
@@ -100,7 +112,8 @@ function onMenuClick({ key }: { key: string | number }): void {
     name === 'governance' ||
     name === 'quality' ||
     name === 'observability' ||
-    name === 'ingestion'
+    name === 'ingestion' ||
+    name === 'collaboration'
   ) {
     return;
   }
@@ -153,6 +166,11 @@ async function onLogout(): Promise<void> {
         <Menu.SubMenu key="ingestion" title="Ingestion" data-testid="ingestion-nav">
           <Menu.Item key="ingestion-services">Services</Menu.Item>
           <Menu.Item key="ingestion-pipelines">Pipelines</Menu.Item>
+        </Menu.SubMenu>
+        <Menu.SubMenu key="collaboration" title="Collaboration" data-testid="collaboration-nav">
+          <Menu.Item key="activity">Activity</Menu.Item>
+          <Menu.Item key="tasks">Tasks</Menu.Item>
+          <Menu.Item key="announcements">Announcements</Menu.Item>
         </Menu.SubMenu>
         <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
           <Menu.Item key="admin-users">Users</Menu.Item>

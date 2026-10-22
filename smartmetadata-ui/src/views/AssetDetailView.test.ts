@@ -74,7 +74,21 @@ describe('AssetDetailView governance', () => {
             tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' }],
             domains: [{ id: 'd1', name: 'Marketing', type: 'domain' }],
             columns: [{ name: 'id', dataType: 'BIGINT' }],
+            extension: { retentionDays: 7 },
           });
+        }
+        if (url.includes('/api/v1/activity/entity/table/name/')) {
+          return jsonResponse({
+            data: [{ id: 'act-1', eventType: 'DescriptionUpdated', summary: 'Updated description' }],
+          });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [{ id: 'c1', message: 'please review', about: '<#E::table::svc.db.schema.orders>' }] });
+        }
+        if (url.includes('/api/v1/metadata/types/name/table/customProperties')) {
+          return jsonResponse([
+            { name: 'retentionDays', displayName: 'Retention days', propertyType: { name: 'integer' } },
+          ]);
         }
         if (url.includes('/api/v1/users')) {
           return jsonResponse({ data: [{ id: 'u1', name: 'alice', displayName: 'Alice' }] });
@@ -152,6 +166,18 @@ describe('AssetDetailView governance', () => {
     await wrapper.find('[data-testid="asset-test-tc1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('quality-test-case');
+  });
+
+  it('shows entity activity, conversations, and custom property values', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('Updated description');
+    expect(wrapper.text()).toContain('please review');
+    expect(wrapper.text()).toContain('Retention days');
+    expect(wrapper.text()).toContain('7');
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-conversations-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-custom-properties"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="create-asset-conversation"]').exists()).toBe(true);
   });
 
   it('PATCHes the table by id when governance is saved', async () => {
