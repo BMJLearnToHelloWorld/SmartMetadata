@@ -168,11 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get("CI"):
         print("  CI=1: still offline — live server/UI paths are in docs/rebuild/PHASE11.md")
 
-    failed: list[str] = []
     for step in steps:
         code = run_step(step, repo=REPO)
         if code != 0:
-            failed.append(step.id)
             print(
                 "See docs/rebuild/PHASE11.md. Live catalog / Docker / slim-dist are maintainer "
                 "checklist items, not this command.",
@@ -182,8 +180,6 @@ def main(argv: list[str] | None = None) -> int:
 
     print("Rebuild verify passed.")
     print("  " + ", ".join(step.id for step in steps))
-    if failed:
-        return 1
     return 0
 
 
