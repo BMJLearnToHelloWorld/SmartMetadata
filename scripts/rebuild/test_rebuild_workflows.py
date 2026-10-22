@@ -34,6 +34,10 @@ class RebuildWorkflowContract(unittest.TestCase):
             "run_local_docker",
             "-i true",
             "maven-build-collate",
+            "make generate",
+            "make yarn_start_dev_ui",
+            "pip install ingestion/",
+            "include ingestion/Makefile",
         ):
             self.assertNotIn(
                 forbidden,

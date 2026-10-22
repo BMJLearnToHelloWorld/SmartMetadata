@@ -44,6 +44,8 @@ def complete_tree(root: Path) -> None:
                 "Historical trees stay **reference-only**; do not delete them in this change.",
                 "Do not demo with `./docker/run_local_docker.sh -i true` or Collate quickstart images.",
                 "Override the docker ingestion path only with I_UNDERSTAND_CCL_INGESTION=1.",
+                "Default `make help` lists rebuilt targets only.",
+                "CCL Make recipes live in Makefile.reference behind I_UNDERSTAND_REFERENCE_STACK=1.",
                 "VERIFY leftovers: openmetadata-airflow-apis header/LICENSE conflict;",
                 "openmetadata-ui-core-components is not in dist.",
                 "",
@@ -55,6 +57,10 @@ def complete_tree(root: Path) -> None:
         "# CCL trees stay reference-only\n",
     )
     write(
+        root / "docs" / "decisions" / "2026-10-22-product-make-is-rebuild-only.md",
+        "# Product Make executes rebuilt surfaces only\n",
+    )
+    write(
         root / "docker" / "run_local_docker_common.sh",
         "require_ccl_ingestion_ack() {\n  :\n}\n"
         "I_UNDERSTAND_CCL_INGESTION\n"
@@ -64,11 +70,41 @@ def complete_tree(root: Path) -> None:
     )
     write(
         root / "README.md",
-        "See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).\n",
+        "See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).\n"
+        "Escape hatch: I_UNDERSTAND_REFERENCE_STACK=1\n",
     )
     write(
         root / "openmetadata-dist" / "pom.xml",
         "<dependency><artifactId>openmetadata-ui</artifactId></dependency>\n",
+    )
+    write(
+        root / "Makefile",
+        "ifeq ($(I_UNDERSTAND_REFERENCE_STACK),1)\n"
+        "include Makefile.reference\n"
+        "include ingestion/Makefile\n"
+        "endif\n",
+    )
+    write(
+        root / "Makefile.reference",
+        "yarn_start_dev_ui:\n\tcd openmetadata-ui/src/main/resources/ui && yarn start\n",
+    )
+    write(
+        root / "scripts" / "rebuild" / "require_reference_stack.py",
+        "ENV = 'I_UNDERSTAND_REFERENCE_STACK'\n"
+        "# NOT the SmartMetadata product path\n",
+    )
+    write(
+        root / "scripts" / "dev_setup.sh",
+        "python3 scripts/rebuild/require_reference_stack.py --target dev_setup\n",
+    )
+    write(
+        root / "docker" / "docker-compose-quickstart" / "docker-compose.yml",
+        "# Historical Collate quickstart — not a SmartMetadata product demo.\n",
+    )
+    write(
+        root / "docker" / "docker-compose-quickstart" / "up.sh",
+        "python3 scripts/rebuild/require_reference_stack.py --target compose-quickstart\n"
+        "docker compose -f docker-compose.yml \"$@\"\n",
     )
 
 
@@ -98,6 +134,20 @@ class ProductPathHintsContract(unittest.TestCase):
         self.assertNotIn("openmetadata-dist/pom.xml", source)
         self.assertNotIn("binary.xml", source)
         self.assertIn("does not re-scan", (hints.__doc__ or "").lower())
+
+    def test_ungated_ingestion_include_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "Makefile").write_text(
+                "include ingestion/Makefile\n", encoding="utf-8"
+            )
+            errors = hints.check_repo(root)
+        self.assertTrue(
+            any("ingestion/Makefile" in item for item in errors),
+            errors,
+        )
 
     def test_missing_docker_ack_fails(self) -> None:
         hints = load_hints()

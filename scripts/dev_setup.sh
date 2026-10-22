@@ -129,6 +129,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# This script installs the historical CCL reference stack (ingestion/,
+# openmetadata-ui/). Product setup is make ui_install ingest_install mcp_install.
+python3 "$REPO_ROOT/scripts/rebuild/require_reference_stack.py" --target dev_setup
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------

@@ -195,7 +195,7 @@ def clean_word(word):
 
 def makefile_targets():
     targets = set()
-    for mf in ("Makefile", "ingestion/Makefile"):
+    for mf in ("Makefile", "Makefile.reference", "ingestion/Makefile"):
         if not os.path.exists(rp(mf)):
             continue
         for line in read_lines(mf):

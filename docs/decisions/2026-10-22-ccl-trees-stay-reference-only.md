@@ -4,7 +4,7 @@
 - **Revisions:** v1 2026-10-22 (initial)
 - **Deciders:** SmartMetadata rebuild (tree hygiene)
 - **Guard:** `scripts/rebuild/check_product_path_hints.py`; docker `I_UNDERSTAND_CCL_INGESTION=1` before `-i true`. Dist classpath stays with ADR:2026-10-22-shippable-dist-excludes-ccl-modules (`ban-ccl-modules` / `check_ccl_free_dist.py`) — do not duplicate that scan here.
-- **Related:** `docs/rebuild/PRODUCT_PATH.md`; `docs/rebuild/PHASE0.md`; `docs/rebuild/PHASE11.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules
+- **Related:** `docs/rebuild/PRODUCT_PATH.md`; `docs/rebuild/PHASE0.md`; `docs/rebuild/PHASE11.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-product-make-is-rebuild-only
 
 ## Context
 

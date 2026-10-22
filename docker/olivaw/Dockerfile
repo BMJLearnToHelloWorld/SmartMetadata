@@ -97,10 +97,12 @@ RUN case "$(dpkg --print-architecture)" in \
 # `make py_antlr` — the Java build uses antlr4-maven-plugin and needs none of this.
 #
 # Copying just the makefiles keeps this layer from being invalidated by every other change in the tree.
-# Both are needed and neither is optional: the root Makefile's line 3 is `include ingestion/Makefile`,
-# so the root one alone does not parse.
+# install_antlr_cli lives on the product Makefile and no longer needs
+# `include ingestion/Makefile` to parse. Keep the ingestion copy so an
+# accidental I_UNDERSTAND_REFERENCE_STACK=1 during this layer still parses.
 COPY Makefile /tmp/antlr/Makefile
 COPY ingestion/Makefile /tmp/antlr/ingestion/Makefile
+COPY Makefile.reference /tmp/antlr/Makefile.reference
 RUN make -C /tmp/antlr install_antlr_cli \
     && rm -rf /tmp/antlr \
     && antlr4 2>&1 | head -1
