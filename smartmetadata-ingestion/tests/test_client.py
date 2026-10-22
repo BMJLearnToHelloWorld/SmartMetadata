@@ -12,7 +12,6 @@ import base64
 
 import httpx
 import pytest
-
 from smartmetadata_ingestion.client.rest import RestClient, encode_login_password
 from smartmetadata_ingestion.config import AuthConfig, ServerConfig
 from smartmetadata_ingestion.errors import RestError
@@ -75,6 +74,8 @@ def test_upsert_paths_and_bearer_header() -> None:
             "warehouse.analytics.public.orders_v",
             {"source": "Manual"},
         )
+        client.upsert_messaging_service({"name": "events", "serviceType": "Kafka"})
+        client.upsert_topic({"name": "orders", "service": "events", "partitions": 3})
     assert [item[0:2] for item in seen] == [
         ("PUT", "/api/v1/services/databaseServices"),
         ("PUT", "/api/v1/databases"),
@@ -85,6 +86,8 @@ def test_upsert_paths_and_bearer_header() -> None:
             "/api/v1/lineage/table/name/warehouse.analytics.public.orders/"
             "table/name/warehouse.analytics.public.orders_v",
         ),
+        ("PUT", "/api/v1/services/messagingServices"),
+        ("PUT", "/api/v1/topics"),
     ]
     assert all(item[2] == "Bearer bot-token" for item in seen)
 

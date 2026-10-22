@@ -11,4 +11,4 @@
 from smartmetadata_ingestion.errors import IngestError, RestError, WorkflowError
 
 __all__ = ["IngestError", "RestError", "WorkflowError", "__version__"]
-__version__ = "0.6.0"
+__version__ = "0.7.0"

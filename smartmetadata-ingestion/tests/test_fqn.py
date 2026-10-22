@@ -7,7 +7,6 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 
 import pytest
-
 from smartmetadata_ingestion.fqn import build_fqn, quote_name
 
 

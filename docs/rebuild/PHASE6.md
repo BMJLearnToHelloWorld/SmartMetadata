@@ -76,7 +76,7 @@ runner error collection / `failFast`; CLI report; CCL import gate.
 
 ## Non-goals (later phases)
 
-- Full connector catalog (Phase 7)
+- Full connector catalog — first production batch is [PHASE7.md](PHASE7.md)
 - Ingestion console UI / Prefect/Airflow operators (Phase 8)
 - Profiler and DQ job execution (interfaces stubbed only)
 - Shipping the SPA in `openmetadata-dist`

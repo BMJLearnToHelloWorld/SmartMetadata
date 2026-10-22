@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from smartmetadata_ingestion.config import SourceConfig, WorkflowConfig
+from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
     ColumnRecord,
@@ -29,6 +30,7 @@ class Source(Protocol):
     def produce(self) -> Iterable[WorkflowRecord]: ...
 
 
+@register_source("static")
 class StaticSource:
     """Fixture/source-of-record list used in tests and documented dry runs."""
 
@@ -93,10 +95,7 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
 def build_source(config: WorkflowConfig, source: Source | None = None) -> Source:
     if source is not None:
         return source
-    if config.source.type == "static":
-        return StaticSource(config.source)
-    if config.source.type == "postgres":
-        from smartmetadata_ingestion.connectors.postgres import PostgresSource
+    from smartmetadata_ingestion.connectors.registry import get_source, load_builtin_sources
 
-        return PostgresSource(config.source)
-    raise WorkflowError(f"unsupported source type {config.source.type}")
+    load_builtin_sources()
+    return get_source(config.source.type, config.source)

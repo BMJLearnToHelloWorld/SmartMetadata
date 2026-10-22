@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from smartmetadata_ingestion.config import WorkflowConfig, load_workflow_config
 
 FIXTURES = Path(__file__).parent / "fixtures"

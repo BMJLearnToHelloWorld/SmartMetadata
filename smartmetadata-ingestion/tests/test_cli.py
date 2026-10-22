@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-
 from smartmetadata_ingestion.cli import main
 from smartmetadata_ingestion.progress import RunReport
 

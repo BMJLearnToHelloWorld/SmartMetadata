@@ -17,8 +17,10 @@ from smartmetadata_ingestion.records import (
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
+    MessagingServiceRecord,
     SchemaRecord,
     TableRecord,
+    TopicRecord,
     WorkflowRecord,
 )
 
@@ -37,12 +39,16 @@ class MetadataRestSink:
     def write(self, record: WorkflowRecord) -> Any:
         if isinstance(record, DatabaseServiceRecord):
             result = self._client.upsert_database_service(_service_payload(record))
+        elif isinstance(record, MessagingServiceRecord):
+            result = self._client.upsert_messaging_service(_messaging_service_payload(record))
         elif isinstance(record, DatabaseRecord):
             result = self._client.upsert_database(_database_payload(record))
         elif isinstance(record, SchemaRecord):
             result = self._client.upsert_schema(_schema_payload(record))
         elif isinstance(record, TableRecord):
             result = self._client.upsert_table(_table_payload(record))
+        elif isinstance(record, TopicRecord):
+            result = self._client.upsert_topic(_topic_payload(record))
         elif isinstance(record, LineageRecord):
             details: dict[str, Any] = {"source": record.source}
             if record.sql_query:
@@ -81,6 +87,40 @@ def _service_payload(record: DatabaseServiceRecord) -> dict[str, Any]:
         payload["description"] = record.description
     if record.connection:
         payload["connection"] = record.connection
+    return payload
+
+
+def _messaging_service_payload(record: MessagingServiceRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "serviceType": record.service_type}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.connection:
+        payload["connection"] = record.connection
+    return payload
+
+
+def _topic_payload(record: TopicRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": record.name,
+        "service": record.service,
+        "partitions": max(int(record.partitions), 1),
+    }
+    if record.description:
+        payload["description"] = record.description
+    if record.message_schema:
+        payload["messageSchema"] = record.message_schema
+    if record.cleanup_policies:
+        payload["cleanupPolicies"] = record.cleanup_policies
+    if record.replication_factor is not None:
+        payload["replicationFactor"] = record.replication_factor
+    if record.retention_time is not None:
+        payload["retentionTime"] = record.retention_time
+    if record.maximum_message_size is not None:
+        payload["maximumMessageSize"] = record.maximum_message_size
+    if record.topic_config:
+        payload["topicConfig"] = record.topic_config
     return payload
 
 

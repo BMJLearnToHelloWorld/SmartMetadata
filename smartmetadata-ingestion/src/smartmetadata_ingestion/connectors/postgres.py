@@ -10,12 +10,15 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
+from smartmetadata_ingestion.connectors.registry import register_source
+from smartmetadata_ingestion.connectors.select import is_selected
+from smartmetadata_ingestion.connectors.sql_views import map_table_type as _map_table_type
+from smartmetadata_ingestion.connectors.sql_views import parse_view_parents
 from smartmetadata_ingestion.datatypes import map_postgres_type
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.fqn import build_fqn
@@ -31,10 +34,6 @@ from smartmetadata_ingestion.records import (
 )
 
 _SYSTEM_SCHEMAS = frozenset({"information_schema", "pg_catalog", "pg_toast"})
-_FROM_TABLE = re.compile(
-    r'(?:from|join)\s+("?[A-Za-z_][\w$]*"?\.)?("?[A-Za-z_][\w$]*"?)',
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +175,7 @@ class CursorCatalogReader:
                 cursor.close()
 
 
+@register_source("postgres")
 class PostgresSource:
     def __init__(
         self,
@@ -240,17 +240,12 @@ class PostgresSource:
         return CursorCatalogReader(_psycopg_connect(self._config.connection))
 
     def _selected_schemas(self, reader: CatalogReader) -> list[SchemaRow]:
-        include = {name.lower() for name in self._config.include_schemas}
-        exclude = {name.lower() for name in self._config.exclude_schemas} | _SYSTEM_SCHEMAS
-        selected: list[SchemaRow] = []
-        for schema in reader.list_schemas():
-            key = schema.name.lower()
-            if include and key not in include:
-                continue
-            if key in exclude:
-                continue
-            selected.append(schema)
-        return selected
+        exclude = list(self._config.exclude_schemas) + list(_SYSTEM_SCHEMAS)
+        return [
+            schema
+            for schema in reader.list_schemas()
+            if is_selected(schema.name, include=self._config.include_schemas, exclude=exclude)
+        ]
 
     def _columns(self, reader: CatalogReader, table: TableRow) -> list[ColumnRecord]:
         return [
@@ -291,33 +286,6 @@ class PostgresSource:
                     source="ViewLineage",
                     sql_query=view.definition,
                 )
-
-
-def parse_view_parents(definition: str, default_schema: str) -> list[tuple[str, str]]:
-    found: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for match in _FROM_TABLE.finditer(definition or ""):
-        schema = _unquote(match.group(1).rstrip(".")) if match.group(1) else default_schema
-        table = _unquote(match.group(2))
-        key = (schema, table)
-        if key in seen:
-            continue
-        seen.add(key)
-        found.append(key)
-    return found
-
-
-def _unquote(name: str) -> str:
-    value = name.strip()
-    if value.startswith('"') and value.endswith('"'):
-        return value[1:-1].replace('""', '"')
-    return value
-
-
-def _map_table_type(table_type: str) -> str:
-    if table_type and table_type.upper() == "VIEW":
-        return "View"
-    return "Regular"
 
 
 def _psycopg_connect(connection: dict[str, Any]):

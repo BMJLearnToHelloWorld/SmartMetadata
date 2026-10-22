@@ -98,4 +98,41 @@ class LineageRecord(Record):
         return f"lineage:{self.from_entity.fqn}->{self.to_entity.fqn}"
 
 
-WorkflowRecord = DatabaseServiceRecord | DatabaseRecord | SchemaRecord | TableRecord | LineageRecord
+class MessagingServiceRecord(Record):
+    kind: Literal["messagingService"] = "messagingService"
+    name: str
+    service_type: str
+    description: str | None = None
+    display_name: str | None = None
+    connection: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"messagingService:{self.name}"
+
+
+class TopicRecord(Record):
+    kind: Literal["topic"] = "topic"
+    name: str
+    service: str
+    partitions: int = 1
+    description: str | None = None
+    message_schema: dict[str, Any] | None = None
+    cleanup_policies: list[str] | None = None
+    replication_factor: int | None = None
+    retention_time: float | None = None
+    maximum_message_size: int | None = None
+    topic_config: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"topic:{self.service}.{self.name}"
+
+
+WorkflowRecord = (
+    DatabaseServiceRecord
+    | DatabaseRecord
+    | SchemaRecord
+    | TableRecord
+    | LineageRecord
+    | MessagingServiceRecord
+    | TopicRecord
+)
