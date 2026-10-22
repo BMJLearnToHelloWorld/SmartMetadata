@@ -39,9 +39,12 @@ jobs:
         with:
           repo-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      # Fork-only. Same-repo PRs already have write access; do not require
+      # Collate's "safe to test" allowlist (ADR:2026-10-22-smartmetadata-prs-skip-collate-issue-and-label-gates).
       - name: Verify PR labels
         id: verify
         continue-on-error: true
+        if: github.event.pull_request.head.repo.full_name != github.repository
         uses: jesusvasquez333/verify-pr-label-action@v1.4.0
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
@@ -50,7 +53,7 @@ jobs:
           disable-reviews: true  # To not auto approve changes
 
       - name: Add verification comment
-        if: steps.verify.outcome != 'success'
+        if: steps.verify.outcome == 'failure'
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}

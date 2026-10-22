@@ -15,6 +15,10 @@ name: PR Metadata Validation
 # description and (b) is tracked in the "Shipping" project with the Status,
 # Source, Priority, Domain and Release fields set.
 #
+# SmartMetadata: skip entirely when the repository has GitHub issues
+# disabled (API `has_issues` is false). Do not require fake issue links.
+# ADR:2026-10-22-smartmetadata-prs-skip-collate-issue-and-label-gates.
+#
 # Linked issues are resolved from two sources:
 #   * Same-repo: GitHub's native `closingIssuesReferences` (the PR "Development"
 #     section + same-repo closing keywords). This is authoritative and also
@@ -33,7 +37,7 @@ name: PR Metadata Validation
 # through the API — no untrusted checkout — so pull_request_target is safe here.
 on:
   pull_request_target:
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, edited, reopened, synchronize, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -394,6 +398,14 @@ jobs:
 
             if (pr.draft) {
               core.info('Draft PR — skipping metadata validation.');
+              return;
+            }
+
+            // This fork has GitHub issues disabled. Requiring a linked Shipping-project
+            // issue cannot succeed without fake issue links (ADR:2026-10-22-smartmetadata-prs-skip-collate-issue-and-label-gates).
+            const repoInfo = await github.rest.repos.get({ owner, repo });
+            if (!repoInfo.data.has_issues) {
+              core.info('Repository has GitHub issues disabled — skipping linked-issue metadata validation.');
               return;
             }
             if (pr.user && pr.user.type === 'Bot') {

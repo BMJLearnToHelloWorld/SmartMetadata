@@ -96,9 +96,16 @@ jobs:
     # job too without the explicit status function.
     if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.changes.outputs.backend == 'true') && !github.event.pull_request.draft && (github.event_name != 'pull_request_target' || github.event.action != 'labeled' || github.event.label.name == 'safe to test') }}
     steps:
+      - name: Skip Collate dispatch outside open-metadata/OpenMetadata
+        if: github.repository != 'open-metadata/OpenMetadata'
+        run: |
+          echo "Skipping Maven Collate Tests."
+          echo "This repository does not dispatch to open-metadata/openmetadata-collate."
+          echo "Product PRs are gated by SmartMetadata rebuild (verify-rebuild)."
+
       - name: Wait for the labeler
         uses: lewagon/wait-on-check-action@v1.9.1
-        if: ${{ github.event_name == 'pull_request_target' }}
+        if: ${{ github.repository == 'open-metadata/OpenMetadata' && github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           check-name: Team Label
@@ -107,7 +114,7 @@ jobs:
 
       - name: Verify PR labels
         uses: jesusvasquez333/verify-pr-label-action@v1.4.0
-        if: ${{ github.event_name == 'pull_request_target' }}
+        if: ${{ github.repository == 'open-metadata/OpenMetadata' && github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
           valid-labels: "safe to test"
@@ -115,6 +122,7 @@ jobs:
           disable-reviews: true # To not auto approve changes
 
       - name: Checkout
+        if: github.repository == 'open-metadata/OpenMetadata'
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -124,6 +132,7 @@ jobs:
       # Collate branch matching the PR or merge-queue base: dispatching main for a 1.13 PR builds
       # main-only Collate code against a 1.13 checkout. A push or a manual run builds its own ref.
       - name: Resolve the Collate branch
+        if: github.repository == 'open-metadata/OpenMetadata'
         id: collate-ref
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || github.event.merge_group.base_ref || github.ref_name || 'main' }}
@@ -133,6 +142,7 @@ jobs:
       # every Collate workflow, GitHub serves those pages in two different orders at random, and
       # the lookup missed the workflow with "Unable to find workflow" on about one run in four.
       - name: Trigger Collate build & wait
+        if: github.repository == 'open-metadata/OpenMetadata'
         # Must stay above WAIT_SECONDS below. The step timeout kills the script outright, so when
         # it is the smaller of the two the wait can never run out on its own and the step
         # reports a bare "has timed out" with no downstream conclusion.

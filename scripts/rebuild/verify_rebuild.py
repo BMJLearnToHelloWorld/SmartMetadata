@@ -96,6 +96,10 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
             id="rebuild-ci-contract",
             argv=(PYTHON, "scripts/rebuild/test_rebuild_workflows.py"),
         ),
+        Step(
+            id="pr-hygiene-contract",
+            argv=(PYTHON, "scripts/rebuild/test_pr_hygiene_workflows.py"),
+        ),
     ]
 
 

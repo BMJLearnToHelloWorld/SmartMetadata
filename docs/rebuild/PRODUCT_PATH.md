@@ -17,7 +17,8 @@ ADR:2026-10-22-shippable-dist-excludes-ccl-modules.
 | MCP | `smartmetadata-mcp/` | `cd smartmetadata-mcp && npm start` |
 
 Go-live matrix: [PHASE11.md](PHASE11.md) (`make verify-rebuild`). Slim server
-runbook: [PHASE0.md](PHASE0.md).
+runbook: [PHASE0.md](PHASE0.md). Gap matrix vs official surfaces:
+[PARITY.md](PARITY.md).
 
 Local Docker **without** CCL ingestion:
 

@@ -46,6 +46,7 @@ class VerifyRebuildContract(unittest.TestCase):
             "decision-records",
             "live-smoke-contract",
             "rebuild-ci-contract",
+            "pr-hygiene-contract",
         ):
             self.assertIn(required, ids)
 
@@ -115,6 +116,7 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("decision-records", completed.stdout)
         self.assertIn("live-smoke-contract", completed.stdout)
         self.assertIn("rebuild-ci-contract", completed.stdout)
+        self.assertIn("pr-hygiene-contract", completed.stdout)
 
 
 if __name__ == "__main__":
