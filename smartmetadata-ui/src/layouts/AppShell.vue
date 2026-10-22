@@ -32,6 +32,18 @@ const selectedKeys = computed(() => {
   if (name === 'admin-bot') {
     return ['admin-bots'];
   }
+  if (name === 'governance-glossary' || name === 'governance-term') {
+    return ['governance-glossaries'];
+  }
+  if (name === 'governance-classification' || name === 'governance-tag') {
+    return ['governance-classifications'];
+  }
+  if (name === 'governance-domain') {
+    return ['governance-domains'];
+  }
+  if (name === 'governance-data-product') {
+    return ['governance-data-products'];
+  }
   return [name];
 });
 
@@ -40,8 +52,12 @@ const openKeys = ref<string[]>([]);
 watch(
   () => route.name,
   (name) => {
-    if (String(name ?? '').startsWith('admin-') && !openKeys.value.includes('admin')) {
+    const routeName = String(name ?? '');
+    if (routeName.startsWith('admin-') && !openKeys.value.includes('admin')) {
       openKeys.value = [...openKeys.value, 'admin'];
+    }
+    if (routeName.startsWith('governance-') && !openKeys.value.includes('governance')) {
+      openKeys.value = [...openKeys.value, 'governance'];
     }
   },
   { immediate: true },
@@ -49,7 +65,7 @@ watch(
 
 function onMenuClick({ key }: { key: string | number }): void {
   const name = String(key);
-  if (name === 'admin') {
+  if (name === 'admin' || name === 'governance') {
     return;
   }
   void router.push({ name });
@@ -83,6 +99,12 @@ async function onLogout(): Promise<void> {
       >
         <Menu.Item key="search">Search</Menu.Item>
         <Menu.Item key="lineage-home">Lineage</Menu.Item>
+        <Menu.SubMenu key="governance" title="Governance" data-testid="governance-nav">
+          <Menu.Item key="governance-glossaries">Glossaries</Menu.Item>
+          <Menu.Item key="governance-classifications">Classifications</Menu.Item>
+          <Menu.Item key="governance-domains">Domains</Menu.Item>
+          <Menu.Item key="governance-data-products">Data products</Menu.Item>
+        </Menu.SubMenu>
         <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
           <Menu.Item key="admin-users">Users</Menu.Item>
           <Menu.Item key="admin-teams">Teams</Menu.Item>

@@ -23,6 +23,16 @@ import TeamDetailView from '@/views/admin/TeamDetailView.vue';
 import TeamsListView from '@/views/admin/TeamsListView.vue';
 import UserDetailView from '@/views/admin/UserDetailView.vue';
 import UsersListView from '@/views/admin/UsersListView.vue';
+import ClassificationDetailView from '@/views/governance/ClassificationDetailView.vue';
+import ClassificationsListView from '@/views/governance/ClassificationsListView.vue';
+import DataProductDetailView from '@/views/governance/DataProductDetailView.vue';
+import DataProductsListView from '@/views/governance/DataProductsListView.vue';
+import DomainDetailView from '@/views/governance/DomainDetailView.vue';
+import DomainsListView from '@/views/governance/DomainsListView.vue';
+import GlossariesListView from '@/views/governance/GlossariesListView.vue';
+import GlossaryDetailView from '@/views/governance/GlossaryDetailView.vue';
+import GlossaryTermDetailView from '@/views/governance/GlossaryTermDetailView.vue';
+import TagDetailView from '@/views/governance/TagDetailView.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -62,6 +72,49 @@ export const router = createRouter({
         { path: 'admin/bots', name: 'admin-bots', component: BotsListView },
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
         { path: 'admin/settings', name: 'admin-settings', component: SettingsView },
+        { path: 'governance/glossaries', name: 'governance-glossaries', component: GlossariesListView },
+        {
+          path: 'governance/glossaries/:id',
+          name: 'governance-glossary',
+          component: GlossaryDetailView,
+          props: true,
+        },
+        {
+          path: 'governance/terms/:id',
+          name: 'governance-term',
+          component: GlossaryTermDetailView,
+          props: true,
+        },
+        {
+          path: 'governance/classifications',
+          name: 'governance-classifications',
+          component: ClassificationsListView,
+        },
+        {
+          path: 'governance/classifications/:id',
+          name: 'governance-classification',
+          component: ClassificationDetailView,
+          props: true,
+        },
+        { path: 'governance/tags/:id', name: 'governance-tag', component: TagDetailView, props: true },
+        { path: 'governance/domains', name: 'governance-domains', component: DomainsListView },
+        {
+          path: 'governance/domains/:id',
+          name: 'governance-domain',
+          component: DomainDetailView,
+          props: true,
+        },
+        {
+          path: 'governance/data-products',
+          name: 'governance-data-products',
+          component: DataProductsListView,
+        },
+        {
+          path: 'governance/data-products/:id',
+          name: 'governance-data-product',
+          component: DataProductDetailView,
+          props: true,
+        },
       ],
     },
   ],

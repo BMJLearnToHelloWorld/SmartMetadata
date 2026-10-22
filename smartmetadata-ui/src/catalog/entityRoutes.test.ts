@@ -13,6 +13,7 @@ import {
   encodeFqnForApi,
   lineageLocation,
   resolveDetailEndpoint,
+  resolvePatchPath,
 } from './entityRoutes';
 
 describe('entityRoutes', () => {
@@ -32,11 +33,11 @@ describe('entityRoutes', () => {
   it('maps Phase 1 entity types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
-      fields: 'owners,tags,columns',
+      fields: 'owners,tags,columns,domains',
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
-      fields: 'owners,tags',
+      fields: 'owners,tags,domains',
     });
   });
 
@@ -50,5 +51,11 @@ describe('entityRoutes', () => {
   it('does not invent endpoints for unwired entity types', () => {
     expect(resolveDetailEndpoint('dashboard', 'bi.sales')).toBeNull();
     expect(resolveDetailEndpoint('', 'x')).toBeNull();
+    expect(resolvePatchPath('dashboard', 'id-1')).toBeNull();
+  });
+
+  it('maps wired types onto PATCH /v1/{collection}/{id}', () => {
+    expect(resolvePatchPath('table', 'tbl-1')).toBe('/v1/tables/tbl-1');
+    expect(resolvePatchPath('topic', 'top-1')).toBe('/v1/topics/top-1');
   });
 });

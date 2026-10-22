@@ -73,7 +73,7 @@ LineageView empty/error/click-through/depth refetch.
 ## Non-goals (later phases)
 
 - Impact analysis productization beyond this graph
-- Glossary / classification deep editors (Phase 4)
+- Glossary / classification / domain editors — **done in** [PHASE4.md](PHASE4.md)
 - Data quality / observability (Phase 5)
 - Ingestion / connectors / MCP
 - Shipping the SPA inside `openmetadata-dist` (needs a new ADR)
