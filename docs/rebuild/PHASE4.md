@@ -85,7 +85,7 @@ PATCH of description/owners/tags/domains.
 
 ## Non-goals (later phases)
 
-- Data quality tests / dashboards (Phase 5)
+- Data quality tests / dashboards (Phase 5 — see [PHASE5.md](PHASE5.md))
 - Ingestion / connectors / MCP
 - Shipping the SPA inside `openmetadata-dist` (needs a new ADR)
 - Policy rule authoring / glossary CSV or RDF import / auto-classification

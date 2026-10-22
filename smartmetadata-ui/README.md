@@ -14,9 +14,12 @@ Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware lo
 Phase 3: upstream/downstream lineage graph (Vue Flow + dagre) from `GET /v1/lineage/{entity}/name/{fqn}`.
 Phase 4: glossaries/terms, classifications/tags, domains/data products, and
 asset description/owners/tags/domain PATCH.
-See `docs/rebuild/PHASE1.md`–`PHASE4.md`, ADR:2026-10-22-clean-room-vue-spa,
-ADR:2026-10-22-lineage-vue-flow-dagre, and
-ADR:2026-10-22-asset-governance-uses-json-patch.
+Phase 5: test definitions/cases/suites, asset DQ + profiler/sample, incidents,
+and event-subscription alerts.
+See `docs/rebuild/PHASE1.md`–`PHASE5.md`, ADR:2026-10-22-clean-room-vue-spa,
+ADR:2026-10-22-lineage-vue-flow-dagre,
+ADR:2026-10-22-asset-governance-uses-json-patch, and
+ADR:2026-10-22-dq-entity-links-use-message-parser-format.
 
 ## Stack
 
