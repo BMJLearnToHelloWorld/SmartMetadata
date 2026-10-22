@@ -136,6 +136,14 @@ repos:
         files: ^(smartmetadata-mcp/|scripts/rebuild/check_ccl_free_mcp\.py)
         pass_filenames: false
         require_serial: true
+      - id: verify-rebuild-contract
+        name: Offline rebuild verify runner still covers the Phase 11 matrix
+        description: Fails if scripts/rebuild/verify_rebuild.py drops a required offline step. See docs/rebuild/PHASE11.md.
+        entry: python3 scripts/rebuild/test_verify_rebuild.py
+        language: system
+        files: ^(scripts/rebuild/verify_rebuild\.py|scripts/rebuild/test_verify_rebuild\.py)
+        pass_filenames: false
+        require_serial: true
       - id: java-impact-map
         name: Java impact map owns the code and ITs this branch adds
         description: Fails the push while the branch leaves Java code or ITs without an area in .github/java-tests/impact-map.json, empties a pattern or breaks a map rule. The message names the glob to add and the likely area.

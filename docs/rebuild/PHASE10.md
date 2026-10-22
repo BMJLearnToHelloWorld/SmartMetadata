@@ -82,7 +82,7 @@ tool registration; source/package cannot import official MCP.
 - HTTP/SSE or Streamable HTTP transport
 - Embedding this process in the Java server or `openmetadata-dist`
 - Shipping the Vue SPA inside the Java dist (still needs its own ADR)
-- Phase 11 harden / full verify
+- Phase 11 harden / full verify — **done in** [PHASE11.md](PHASE11.md)
 
 ## Residual risks and open questions
 

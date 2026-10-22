@@ -153,6 +153,11 @@ mcp_build:  ## Typecheck and build the SmartMetadata MCP server
 check-ccl-free-mcp:  ## Fail if smartmetadata-mcp imports or depends on official CCL MCP
 	python3 scripts/rebuild/check_ccl_free_mcp.py
 
+.PHONY: verify-rebuild
+verify-rebuild:  ## Offline Phase 11 matrix: UI/ingest/MCP tests + three CCL gates + decision records
+	python3 scripts/rebuild/test_verify_rebuild.py
+	python3 scripts/rebuild/verify_rebuild.py $(ARGS)
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a

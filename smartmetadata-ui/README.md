@@ -27,6 +27,7 @@ ADR:2026-10-22-dq-entity-links-use-message-parser-format, and
 ADR:2026-10-22-ingestion-console-runs-via-cli,
 ADR:2026-10-22-collaboration-uses-activity-and-conversations, and
 ADR:2026-10-22-custom-property-values-use-extension-patch.
+Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`).
 
 ## Stack
 
@@ -61,6 +62,7 @@ actually has.
 | `npm run preview` | Serve the built SPA |
 
 Root Makefile wrappers: `make ui_install`, `make ui_dev`, `make ui_test`, `make ui_build`.
+Offline matrix: `make verify-rebuild`.
 
 ## Later static hosting
 
@@ -71,4 +73,5 @@ dev so requests stay on `/api` and the proxy forwards them.
 
 Do **not** add this bundle (or the historical CCL UI jar) to `openmetadata-dist`.
 Phase 0 gates (`make check-ccl-free-dist`) must stay green. Serving the SPA from
-the slim server is an open question for a later phase.
+the slim server still needs its own ADR. Production proxy / CORS notes:
+`docs/rebuild/PHASE11.md`.
