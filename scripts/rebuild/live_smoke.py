@@ -122,13 +122,13 @@ def assert_mcp_unregistered(result: HttpResult) -> None:
         or "/mcp/sse" in body
         or "mcp-session" in body
     )
-    if result.status == 200 and looks_like_mcp:
+    if looks_like_mcp:
         raise SmokeError("GET /mcp looks registered; slim dist must leave official MCP off the classpath")
-    if result.status in {404, 405, 401, 403}:
+    if result.status in {404, 405}:
         return
-    if result.status == 200 and not looks_like_mcp:
-        return
-    raise SmokeError(f"GET /mcp expected unregistered (404/405), got {result.status}")
+    raise SmokeError(
+        f"GET /mcp expected unregistered (404/405), got {result.status}: {result.body[:200]}"
+    )
 
 
 def assert_root_is_not_product_ui(result: HttpResult) -> None:

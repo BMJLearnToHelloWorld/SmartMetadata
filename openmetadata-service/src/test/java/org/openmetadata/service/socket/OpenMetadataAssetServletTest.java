@@ -49,6 +49,12 @@ public class OpenMetadataAssetServletTest {
     assertEquals(expectedValue, capturedValues.get(capturedValues.size() - 1));
   }
 
+  private MockedStatic<IndexResource> mockIndexWithUi() {
+    MockedStatic<IndexResource> mocked = mockStatic(IndexResource.class);
+    mocked.when(IndexResource::uiAssetsAvailable).thenReturn(true);
+    return mocked;
+  }
+
   private void mockStaticAssetRequest(String path) {
     when(request.getRequestURI()).thenReturn(path);
     when(request.getContextPath()).thenReturn("");
@@ -381,8 +387,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getAttribute("cspNonce")).thenReturn(null);
     when(request.getHeader("If-None-Match")).thenReturn(etag);
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn(etag);
       servlet.doGet(request, response);
     }
@@ -405,8 +410,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getHeader("If-None-Match")).thenReturn(staleEtag);
     when(response.getWriter()).thenReturn(new PrintWriter(bodyCapture));
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn(currentEtag);
       indexResource
           .when(() -> IndexResource.getIndexFile("/", null))
@@ -444,8 +448,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getHeader("If-None-Match")).thenReturn("\"anything\"");
     when(response.getWriter()).thenReturn(new PrintWriter(bodyCapture));
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource
           .when(() -> IndexResource.getIndexFile("/", nonce))
           .thenReturn("<html>nonce=" + nonce + "</html>");
@@ -472,8 +475,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getAttribute("cspNonce")).thenReturn(nonce);
     when(request.getHeader("If-None-Match")).thenReturn(etag);
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn(etag);
       servlet.doGet(request, response);
     }
@@ -505,8 +507,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getHeader("If-None-Match")).thenReturn(null);
     when(response.getWriter()).thenReturn(new PrintWriter(bodyCapture));
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn("\"base\"");
       indexResource
           .when(() -> IndexResource.getIndexFile("/", null))
@@ -535,8 +536,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getHeader("If-None-Match")).thenReturn(null);
     when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn("\"base\"");
       indexResource.when(() -> IndexResource.getIndexFile("/", null)).thenReturn("<html></html>");
       subclass.doGet(request, response);
@@ -563,8 +563,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getAttribute("cspNonce")).thenReturn(null);
     when(request.getHeader("If-None-Match")).thenReturn("\"base-v2\"");
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn("\"base\"");
       subclass.doGet(request, response);
     }
@@ -591,8 +590,7 @@ public class OpenMetadataAssetServletTest {
     when(request.getAttribute("cspNonce")).thenReturn(null);
     when(request.getHeader("If-None-Match")).thenReturn("\"base\"");
 
-    try (MockedStatic<IndexResource> indexResource =
-        org.mockito.Mockito.mockStatic(IndexResource.class)) {
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
       indexResource.when(() -> IndexResource.getIndexEtag("/")).thenReturn("\"base\"");
       subclass.doGet(request, response);
     }
@@ -613,5 +611,49 @@ public class OpenMetadataAssetServletTest {
   public void testApiPathsAreNotSpaRoutes() {
     assertFalse(servlet.isSpaRoute("/api/v1/system/version"));
     assertFalse(servlet.isSpaRoute("/openapi.json"));
+  }
+
+  @Test
+  public void testMcpPathIsNotAnSpaRoute() {
+    // /mcp is the official CCL servlet mount. Rewriting it to index.html makes GET /mcp
+    // look like a UI page (or 500 in no-ui) instead of unregistered. Slim live-smoke
+    // requires 404/405 here.
+    assertFalse(servlet.isSpaRoute("/mcp"));
+    assertFalse(servlet.isSpaRoute("/mcp/"));
+    assertFalse(servlet.isSpaRoute("/mcp/sse"));
+    OpenMetadataAssetServlet prefixed =
+        new OpenMetadataAssetServlet(
+            "/data-catalog", "/assets", "/", "index.html", webConfiguration);
+    assertFalse(prefixed.isSpaRoute("/data-catalog/mcp"));
+  }
+
+  @Test
+  public void testNoUiGetMcpSends404InsteadOfThrowing() throws Exception {
+    // Slim dist has no /assets/index.html. SPA fallback used to call IndexResource.getIndexFile
+    // and throw IllegalStateException → HTTP 500 on GET /mcp (Job C live-smoke).
+    mockStaticAssetRequest("/mcp");
+    when(response.isCommitted()).thenReturn(false);
+    when(response.getStatus()).thenReturn(404);
+
+    try (MockedStatic<IndexResource> indexResource = mockStatic(IndexResource.class)) {
+      indexResource.when(IndexResource::uiAssetsAvailable).thenReturn(false);
+      servlet.doGet(request, response);
+    }
+
+    verify(response).sendError(HttpServletResponse.SC_NOT_FOUND);
+  }
+
+  @Test
+  public void testGetMcpWithUiDoesNotServeIndex() throws Exception {
+    mockStaticAssetRequest("/mcp");
+    when(response.isCommitted()).thenReturn(false);
+    when(response.getStatus()).thenReturn(404);
+
+    try (MockedStatic<IndexResource> indexResource = mockIndexWithUi()) {
+      servlet.doGet(request, response);
+    }
+
+    verify(response).sendError(HttpServletResponse.SC_NOT_FOUND);
+    verify(response, never()).setStatus(200);
   }
 }

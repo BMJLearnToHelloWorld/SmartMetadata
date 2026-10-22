@@ -185,6 +185,28 @@ class IndexResourceTest {
   }
 
   @Test
+  void testUiAssetsAvailableAfterInitialize() {
+    assertTrue(IndexResource.uiAssetsAvailable());
+  }
+
+  @Test
+  void testUiAssetsUnavailableAfterClearMatchesSlimNoUi() {
+    IndexResource.clearUiAssetsForTesting();
+    try {
+      assertFalse(IndexResource.uiAssetsAvailable());
+      HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+      Response response = resource.getIndex(mockRequest);
+      assertEquals(404, response.getStatus());
+    } finally {
+      OpenMetadataApplicationConfig config = mock(OpenMetadataApplicationConfig.class);
+      SentryConfiguration sentryConfig = new SentryConfiguration();
+      when(config.getSentryConfiguration()).thenReturn(sentryConfig);
+      when(config.getClusterName()).thenReturn("test-cluster");
+      IndexResource.initialize(config);
+    }
+  }
+
+  @Test
   void testEtagDiffersAcrossBasePaths() {
     // The body bakes the basePath into multiple positions (window.BASE_PATH, favicon hrefs,
     // etc.), so the ETag for two different basePaths must differ.

@@ -62,9 +62,10 @@ Local Docker wrapper now defaults to the slim path (no UI package, no ingestion 
 The server image `docker/development/Dockerfile` unpacks whatever tarball `openmetadata-dist`
 produced. After Phase 0 that tarball has no UI jar and no MCP jar.
 
-API: `http://localhost:8585/api`. Admin: `8586`. The SPA is not packaged; `GET /` is not a product
-UI (the asset servlet still maps `/*` and will 404 without `/assets`). MCP HTTP (`/mcp`) is not
-registered without the CCL module.
+API: `http://localhost:8585/api`. Admin: `8586`. The SPA is not packaged. Without
+`/assets/index.html` the asset servlet is not registered and 404s are not rewritten to `/`, so
+`GET /` and `GET /mcp` stay unregistered (404). MCP HTTP (`/mcp`) is not registered without the
+CCL module.
 
 ## Verification checklist
 
