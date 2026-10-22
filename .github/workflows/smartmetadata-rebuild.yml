@@ -1,0 +1,296 @@
+#  Copyright 2026 SmartMetadata authors.
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#  http://www.apache.org/licenses/LICENSE-2.0
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+# SmartMetadata CCL-free rebuild CI — a clean, separate surface.
+#
+# Does NOT reuse Collate / official Playwright / docker-openmetadata-ingestion
+# workflows. Does not run yarn_* against openmetadata-ui. Does not start
+# `./docker/run_local_docker.sh -i true`.
+#
+# Authorized by Bernie Bai. ADR:2026-10-22-rebuild-ci-is-a-separate-workflow
+# Live catalog e2e stays out of `make verify-rebuild`
+# (ADR:2026-10-22-rebuild-verify-is-offline).
+#
+# Job A verify-rebuild — required on pull_request + push to main (also
+# merge_group / workflow_dispatch). Offline; Node 20 + Python 3.10; no Docker.
+# Job B slim-dist — push to main + workflow_dispatch. Needs Java 21 (Temurin)
+# and Maven 3.8+ (`actions/setup-java` provides both). Optional on PRs because
+# a full `mvn -pl openmetadata-dist -am` is too slow for every change.
+# Job C live-smoke — workflow_dispatch only (nightly schedule can be added later
+# if cheap). GitHub-hosted runner service containers for MySQL + Elasticsearch.
+# Contributor laptops without Docker are not a live-smoke venue.
+#
+# Docs: docs/rebuild/VERIFY_RUNTIME.md
+
+name: SmartMetadata rebuild
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_live_smoke:
+        description: "Run Job C live-smoke (GHA MySQL + Elasticsearch service containers + slim server)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smartmetadata-rebuild-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  verify-rebuild:
+    name: verify-rebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CI: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            smartmetadata-ui/package-lock.json
+            smartmetadata-mcp/package-lock.json
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Offline rebuild gate
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rebuild-venv"
+          # shellcheck disable=SC1091
+          source "$RUNNER_TEMP/rebuild-venv/bin/activate"
+          python -m pip install --upgrade pip
+          make verify-rebuild ARGS='--install'
+
+  slim-dist:
+    name: slim-dist
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Java 21 + Maven: required to compile Apache openmetadata-service and
+      # assemble openmetadata-dist. setup-java ships Maven; do not install a
+      # second JDK. This job must not yarn-install openmetadata-ui.
+      - name: Set up JDK 21 (Maven from setup-java)
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Build slim dist and require a CCL-free tarball
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          make slim-dist
+          python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball
+
+      - name: Upload slim dist tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: smartmetadata-slim-dist
+          path: openmetadata-dist/target/openmetadata-*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  live-smoke:
+    name: live-smoke
+    needs: slim-dist
+    if: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.run_live_smoke == 'true' || github.event.inputs.run_live_smoke == '') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "1"
+      DB_HOST: localhost
+      DB_PORT: "3306"
+      DB_USER: openmetadata_user
+      DB_USER_PASSWORD: openmetadata_password
+      OM_DATABASE: openmetadata_db
+      ELASTICSEARCH_HOST: localhost
+      ELASTICSEARCH_PORT: "9200"
+      PIPELINE_SERVICE_CLIENT_ENABLED: "false"
+      OPENMETADATA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      OM_API_URL: http://localhost:8585
+      OM_LOGIN_EMAIL: admin@open-metadata.org
+      OM_LOGIN_PASSWORD: admin
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: openmetadata_db
+          MYSQL_USER: openmetadata_user
+          MYSQL_PASSWORD: openmetadata_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ppassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd="curl -s http://localhost:9200/_cluster/health | grep -qE 'green|yellow'"
+          --health-interval=15s
+          --health-timeout=10s
+          --health-retries=12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21 (Maven not required; runtime only)
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: temurin
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            smartmetadata-ui/package-lock.json
+            smartmetadata-mcp/package-lock.json
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Download slim dist tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: smartmetadata-slim-dist
+          path: ${{ runner.temp }}/slim-tarball
+
+      - name: Unpack slim server, migrate, start
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/slim"
+          tar -xzf "$RUNNER_TEMP"/slim-tarball/openmetadata-*.tar.gz -C "$RUNNER_TEMP/slim" --strip-components 1
+          cd "$RUNNER_TEMP/slim"
+          mkdir -p logs
+          ./bootstrap/openmetadata-ops.sh migrate
+          nohup ./bin/openmetadata-server-start.sh conf/openmetadata.yaml > logs/server.out 2>&1 &
+          echo $! > "$RUNNER_TEMP/om-server.pid"
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8586/healthcheck >/dev/null; then
+              echo "slim server healthy after ${i} attempts"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "slim server failed to become healthy"
+          tail -n 200 logs/server.out || true
+          exit 1
+
+      - name: HTTP health, /mcp unregistered, GET / is not product UI
+        run: |
+          python3 scripts/rebuild/live_smoke.py --skip-login
+
+      - name: Ingest fail-closed without OM_JWT
+        env:
+          OM_JWT: ""
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rebuild-venv"
+          # shellcheck disable=SC1091
+          source "$RUNNER_TEMP/rebuild-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install -e 'smartmetadata-ingestion/'
+          python3 scripts/rebuild/live_smoke.py --no-http \
+            --ingest-fail-closed smartmetadata-ingestion/examples/postgres-metadata.yaml
+          if OM_JWT= smartmetadata-ingest run --config smartmetadata-ingestion/examples/postgres-metadata.yaml; then
+            echo "expected smartmetadata-ingest to fail closed without OM_JWT"
+            exit 1
+          fi
+
+      - name: Seed catalog via static source (bootstrap login)
+        run: |
+          # shellcheck disable=SC1091
+          source "$RUNNER_TEMP/rebuild-venv/bin/activate"
+          smartmetadata-ingest run --config scripts/rebuild/static-smoke.yaml
+
+      - name: Build and preview smartmetadata-ui
+        working-directory: smartmetadata-ui
+        run: |
+          npm ci
+          npm run build
+          nohup npm run preview -- --host 127.0.0.1 --port 4173 > "$RUNNER_TEMP/spa-preview.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/spa-preview.log" || true
+          exit 1
+
+      - name: Login, search, open seeded asset, SPA preview
+        run: |
+          python3 scripts/rebuild/live_smoke.py \
+            --spa-url http://127.0.0.1:4173 \
+            --token-out "$RUNNER_TEMP/om.jwt"
+
+      - name: Optional MCP stdio search_entities
+        continue-on-error: true
+        env:
+          # TODO: set repository secret OM_JWT to a bot PAT to override bootstrap login.
+          OM_JWT_SECRET: ${{ secrets.OM_JWT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OM_JWT_SECRET:-}" ]; then
+            printf '%s' "$OM_JWT_SECRET" > "$RUNNER_TEMP/om.jwt"
+          fi
+          if [ ! -s "$RUNNER_TEMP/om.jwt" ]; then
+            echo "::warning::No JWT for MCP stdio; skip. # TODO: set secret OM_JWT or rerun after login smoke writes the token file."
+            exit 0
+          fi
+          export OM_JWT
+          OM_JWT="$(cat "$RUNNER_TEMP/om.jwt")"
+          (cd smartmetadata-mcp && npm ci && npm run build)
+          python3 scripts/rebuild/live_smoke.py --skip-login --mcp-command node smartmetadata-mcp/dist/index.js

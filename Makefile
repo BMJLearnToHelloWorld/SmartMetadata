@@ -158,6 +158,11 @@ verify-rebuild:  ## Offline Phase 11 matrix: UI/ingest/MCP tests + three CCL gat
 	python3 scripts/rebuild/test_verify_rebuild.py
 	python3 scripts/rebuild/verify_rebuild.py $(ARGS)
 
+.PHONY: live-smoke
+live-smoke:  ## HTTP smoke against an already-running catalog (no Docker)
+	python3 scripts/rebuild/test_live_smoke.py
+	python3 scripts/rebuild/live_smoke.py $(ARGS)
+
 .PHONY: install_antlr_cli
 ANTLR_VERSION := 4.9.2
 # Dots escaped so the banner match below is a real version match, not a

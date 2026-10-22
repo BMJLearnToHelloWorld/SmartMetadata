@@ -1,10 +1,10 @@
 # Rebuild verification is an offline matrix; a live catalog is maintainer-only
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial)
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (CI wiring authorized; live path is GHA Job C)
 - **Deciders:** SmartMetadata rebuild (Phase 11)
 - **Guard:** `scripts/rebuild/test_verify_rebuild.py` (pre-commit `verify-rebuild-contract`); `make verify-rebuild` (`scripts/rebuild/verify_rebuild.py`)
-- **Related:** `docs/rebuild/PHASE11.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules
+- **Related:** `docs/rebuild/PHASE11.md`; `docs/rebuild/VERIFY_RUNTIME.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-rebuild-ci-is-a-separate-workflow
 
 ## Context
 
@@ -32,3 +32,12 @@ A green `make verify-rebuild` means the product packages typecheck/test and
 the license gates still hold. It does not mean a human logged in and searched
 a populated catalog. Revisit only if a stable, in-repo catalog fixture exists
 that does not pull CCL sample-data loaders or the official UI image.
+
+## Amendment (v2 2026-10-22)
+
+Bernie Bai authorized `.github/workflows` edits. The "do not edit GitHub
+Actions in the same change" clause is superseded by
+ADR:2026-10-22-rebuild-ci-is-a-separate-workflow. The offline matrix and the
+rule that live e2e stays **out of** `make verify-rebuild` are unchanged. The
+live path is GitHub Actions Job C (service containers), not a contributor
+laptop Docker checklist.

@@ -6,8 +6,9 @@ decision-record check. Does **not** start Docker, MySQL, Elasticsearch,
 Airflow, or a live catalog, and does not build ``openmetadata-dist`` unless
 ``--require-tarball`` is passed.
 
-See ``docs/rebuild/PHASE11.md`` and
-ADR:2026-10-22-rebuild-verify-is-offline.
+See ``docs/rebuild/PHASE11.md``, ``docs/rebuild/VERIFY_RUNTIME.md``,
+ADR:2026-10-22-rebuild-verify-is-offline, and
+ADR:2026-10-22-rebuild-ci-is-a-separate-workflow.
 """
 
 from __future__ import annotations
@@ -65,6 +66,14 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
         Step(
             id="decision-records",
             argv=(PYTHON, "scripts/harness/check_decision_records.py"),
+        ),
+        Step(
+            id="live-smoke-contract",
+            argv=(PYTHON, "scripts/rebuild/test_live_smoke.py"),
+        ),
+        Step(
+            id="rebuild-ci-contract",
+            argv=(PYTHON, "scripts/rebuild/test_rebuild_workflows.py"),
         ),
     ]
 
@@ -166,14 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  repo: {REPO}")
     print(f"  steps: {', '.join(step.id for step in steps)}")
     if os.environ.get("CI"):
-        print("  CI=1: still offline — live server/UI paths are in docs/rebuild/PHASE11.md")
+        print("  CI=1: still offline — live server/UI paths are Job C in docs/rebuild/VERIFY_RUNTIME.md")
 
     for step in steps:
         code = run_step(step, repo=REPO)
         if code != 0:
             print(
-                "See docs/rebuild/PHASE11.md. Live catalog / Docker / slim-dist are maintainer "
-                "checklist items, not this command.",
+                "See docs/rebuild/VERIFY_RUNTIME.md. Live catalog is GitHub Actions Job C, "
+                "not this command.",
                 file=sys.stderr,
             )
             return code

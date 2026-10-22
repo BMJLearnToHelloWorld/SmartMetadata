@@ -144,6 +144,14 @@ repos:
         files: ^(scripts/rebuild/verify_rebuild\.py|scripts/rebuild/test_verify_rebuild\.py)
         pass_filenames: false
         require_serial: true
+      - id: rebuild-ci-contract
+        name: SmartMetadata rebuild CI stays a separate offline+GHA surface
+        description: Fails if the dedicated rebuild workflow reuses Collate/Playwright/ingestion-image CI, or if live_smoke.py starts Docker. See docs/rebuild/VERIFY_RUNTIME.md.
+        entry: bash -c 'python3 scripts/rebuild/test_live_smoke.py && python3 scripts/rebuild/test_rebuild_workflows.py'
+        language: system
+        files: ^(scripts/rebuild/live_smoke\.py|scripts/rebuild/test_live_smoke\.py|scripts/rebuild/test_rebuild_workflows\.py|\.github/workflows/smartmetadata-rebuild\.yml)
+        pass_filenames: false
+        require_serial: true
       - id: java-impact-map
         name: Java impact map owns the code and ITs this branch adds
         description: Fails the push while the branch leaves Java code or ITs without an area in .github/java-tests/impact-map.json, empties a pattern or breaks a map rule. The message names the glob to add and the likely area.
