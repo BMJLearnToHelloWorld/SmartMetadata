@@ -2,8 +2,8 @@
 
 ![Commit Activity](https://img.shields.io/github/commit-activity/m/open-metadata/OpenMetadata?style=for-the-badge) [![Release](https://img.shields.io/github/release/open-metadata/OpenMetadata/all.svg?style=for-the-badge)](https://github.com/open-metadata/OpenMetadata/releases)
 
-> **CCL-free product path:** `make slim-dist` plus `smartmetadata-ui/`, `smartmetadata-ingestion/`, and `smartmetadata-mcp/`.
-> Historical `openmetadata-ui/`, `ingestion/`, and `openmetadata-mcp/` stay in git as **reference-only**.
+> **CCL-free product path:** `make help` (default) lists rebuilt targets only — `make slim-dist` plus `smartmetadata-ui/`, `smartmetadata-ingestion/`, and `smartmetadata-mcp/`.
+> Historical `openmetadata-ui/`, `ingestion/`, and `openmetadata-mcp/` stay in git as **reference-only**; `make yarn_start_dev_ui` / `make install` / `make generate` refuse unless `I_UNDERSTAND_REFERENCE_STACK=1`.
 > Do not demo the product with `./docker/run_local_docker.sh -i true` or Collate quickstart images.
 > See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).
 

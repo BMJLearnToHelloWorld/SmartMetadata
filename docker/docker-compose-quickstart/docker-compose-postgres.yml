@@ -9,6 +9,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# Historical Collate quickstart — not a SmartMetadata product demo.
+# Product path: docs/rebuild/PRODUCT_PATH.md (`make slim-dist` + smartmetadata-*).
+# Runtime wrapper: docker/docker-compose-quickstart/up.sh (I_UNDERSTAND_REFERENCE_STACK=1).
+
 version: "3.9"
 volumes:
   ingestion-volume-dag-airflow:

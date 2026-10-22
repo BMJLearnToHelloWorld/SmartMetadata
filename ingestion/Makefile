@@ -1,3 +1,6 @@
+# CCL reference stack. Product ingest is `make ingest_install` (smartmetadata-ingestion).
+# Root `include` of this file is gated on I_UNDERSTAND_REFERENCE_STACK=1.
+# Direct `make -C ingestion` is still parsed for historical Collate CI; do not use it as a product demo.
 DIRECTORY_NAME := $(notdir $(CURDIR))
 PY_SOURCE ?= ./src
 

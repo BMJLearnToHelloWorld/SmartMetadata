@@ -85,6 +85,10 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
             argv=(PYTHON, "scripts/rebuild/check_product_path_hints.py"),
         ),
         Step(
+            id="reference-stack-contract",
+            argv=(PYTHON, "scripts/rebuild/test_require_reference_stack.py"),
+        ),
+        Step(
             id="decision-records",
             argv=(PYTHON, "scripts/harness/check_decision_records.py"),
         ),

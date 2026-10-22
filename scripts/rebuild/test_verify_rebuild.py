@@ -43,6 +43,7 @@ class VerifyRebuildContract(unittest.TestCase):
             "ccl-dist",
             "ccl-mcp",
             "product-path-hints",
+            "reference-stack-contract",
             "decision-records",
             "live-smoke-contract",
             "rebuild-ci-contract",
@@ -56,7 +57,30 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("check_ccl_free_ingestion.py", joined)
         self.assertIn("check_ccl_free_mcp.py", joined)
         self.assertIn("check_product_path_hints.py", joined)
+        self.assertIn("test_require_reference_stack.py", joined)
         self.assertIn("check_decision_records.py", joined)
+
+    def test_steps_never_cd_into_reference_trees(self) -> None:
+        verify = load_verify()
+        forbidden_cwd = (
+            "openmetadata-ui",
+            "openmetadata-mcp",
+            "ingestion",
+            "openmetadata-airflow-apis",
+            "openmetadata-ui-core-components",
+        )
+        for step in verify.default_steps(install=True):
+            cwd = step.cwd or "."
+            self.assertNotIn(
+                cwd,
+                forbidden_cwd,
+                f"{step.id} cwd {cwd} is a CCL reference tree",
+            )
+            for prefix in forbidden_cwd:
+                self.assertFalse(
+                    cwd == prefix or cwd.startswith(prefix + "/"),
+                    f"{step.id} cwd {cwd} is under {prefix}",
+                )
 
     def test_default_matrix_does_not_start_a_live_catalog(self) -> None:
         verify = load_verify()
@@ -113,6 +137,7 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("ui-test", completed.stdout)
         self.assertIn("ccl-dist", completed.stdout)
         self.assertIn("product-path-hints", completed.stdout)
+        self.assertIn("reference-stack-contract", completed.stdout)
         self.assertIn("decision-records", completed.stdout)
         self.assertIn("live-smoke-contract", completed.stdout)
         self.assertIn("rebuild-ci-contract", completed.stdout)
