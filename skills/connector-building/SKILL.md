@@ -19,6 +19,13 @@ hooks:
 
 # OpenMetadata Connector Building Skill
 
+Official CCL `ingestion/` and `openmetadata-ui/` were **purged**
+(ADR:2026-10-22-ccl-trees-are-purged). Product connectors live in
+`smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/` and register
+with `@register_source`. Do not restore official trees or copy them. Coverage
+gaps: `docs/rebuild/PARITY.md`. Local catalog: `./docker/run_local_docker.sh`
+(no `-i true`). Ingest: `smartmetadata-ingest run --config …`.
+
 ## When to Activate
 
 When a user asks to build, create, add, or scaffold a new connector, source, or integration for OpenMetadata.
@@ -229,12 +236,12 @@ Build everything and bring up a full local OpenMetadata stack with Docker:
 **Full build** (first time or after Java/UI changes). `-i true` is the CCL
 reference stack, not the product path (`docs/rebuild/PRODUCT_PATH.md`):
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+./docker/run_local_docker.sh -d mysql -s false -r true
 ```
 
 **Fast rebuild** (ingestion-only changes, ~2-3 minutes):
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+./docker/run_local_docker.sh -d mysql -s true -r false
 ```
 
 Once services are up (~3-5 minutes):

@@ -10,6 +10,12 @@ allowed-tools:
 
 # Load OpenMetadata Connector Standards
 
+Official CCL `ingestion/` and React UI registration files were **purged**
+(ADR:2026-10-22-ccl-trees-are-purged). Product connectors are
+`smartmetadata-ingestion/` `@register_source` modules. The standards below
+describe the deleted official layout for historical context only — do not
+recreate those paths. See `docs/rebuild/PARITY.md`.
+
 ## When to Activate
 
 When a user asks to "load standards", "show connector standards", or before starting any connector development or review work.

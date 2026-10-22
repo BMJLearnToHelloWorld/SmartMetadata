@@ -11,9 +11,6 @@
 
 version: "3.9"
 volumes:
-  ingestion-volume-dag-airflow:
-  ingestion-volume-dags:
-  ingestion-volume-tmp:
   es-data:
   fuseki-data:
 services:
@@ -524,79 +521,6 @@ services:
     healthcheck:
       test: [ "CMD", "wget", "-q", "--spider",  "http://localhost:8586/healthcheck" ]
   
-  ingestion:
-    build:
-      context: ../../.
-      dockerfile: ingestion/Dockerfile.ci
-      args:
-        INGESTION_DEPENDENCY: ${INGESTION_DEPENDENCY:-all}
-    container_name: openmetadata_ingestion
-    environment:
-      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__LOGGING__LOGGING_LEVEL: ${AIRFLOW_LOGGING_LEVEL:-DEBUG}
-      AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_GENERATED_CONFIGS: "/opt/airflow/dag_generated_configs"
-      # OpenLineage transport config (optional - enable for lineage via OL)
-      # AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "http", "url": "http://openmetadata-server:8585/api/v1/openlineage/", "endpoint": "lineage", "auth": {"type": "api_key", "api_key": "<OM_JWT_TOKEN>"}}'
-      # AIRFLOW__OPENLINEAGE__NAMESPACE: local_airflow
-      DB_HOST: ${AIRFLOW_DB_HOST:-mysql}
-      DB_PORT: ${AIRFLOW_DB_PORT:-3306}
-      AIRFLOW_DB: ${AIRFLOW_DB:-airflow_db}
-      DB_SCHEME: ${AIRFLOW_DB_SCHEME:-mysql+mysqldb}
-      DB_USER: ${AIRFLOW_DB_USER:-airflow_user}
-      DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow_pass}
-
-      # extra connection-string properties for the database
-      # EXAMPLE 
-      # require SSL (only for Postgres)
-      # properties: "?sslmode=require"
-      DB_PROPERTIES: ${AIRFLOW_DB_PROPERTIES:-}
-      
-      # To test the lineage backend
-      # AIRFLOW__LINEAGE__BACKEND: airflow_provider_openmetadata.lineage.backend.OpenMetadataLineageBackend
-      # AIRFLOW__LINEAGE__AIRFLOW_SERVICE_NAME: local_airflow
-      # AIRFLOW__LINEAGE__OPENMETADATA_API_ENDPOINT: http://openmetadata-server:8585/api
-      # AIRFLOW__LINEAGE__JWT_TOKEN: ...
-      # AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      # AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: true
-
-      ## Secrets Manager
-      # To integrate Azure Key Vault
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AZURE_KEY_VAULT_NAME: ${OM_SM_VAULT_NAME:-""}
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AZURE_TENANT_ID: ${OM_SM_TENANT_ID:-""}
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AZURE_CLIENT_ID: ${OM_SM_CLIENT_ID:-""}
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AZURE_CLIENT_SECRET: ${OM_SM_CLIENT_SECRET:-""}
-      # To Integrate with AWS SSM
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AWS_REGION: ${OM_SM_AWS_REGION:-""}
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AWS_ACCESS_KEY_ID: ${OM_SM_AWS_ACCESS_KEY_ID:-""}
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__AWS_SECRET_ACCESS_KEY: ${OM_SM_AWS_SECRET_ACCESS_KEY:-""}
-      # To integrate GCP
-      AIRFLOW__OPENMETADATA_SECRETS_MANAGER__GCP_PROJECT_ID: ${OM_SM_PROJECT_ID:-""}
-
-      # Apps
-      ENABLE_APP_HelloPipelines: "true"
-
-    entrypoint: /bin/bash
-    command:
-      - "/opt/airflow/ingestion_dependency.sh"
-    depends_on:
-      elasticsearch:
-        condition: service_started
-      mysql:
-        condition: service_healthy
-      openmetadata-server:
-        condition: service_started
-    expose:
-      - 8080
-    ports:
-      - "8080:8080"
-    networks:
-      - local_app_net
-    volumes:
-      - ingestion-volume-dag-airflow:/opt/airflow/dag_generated_configs
-      - ingestion-volume-dags:/opt/airflow/dags
-      - ingestion-volume-tmp:/tmp
-      - /var/run/docker.sock:/var/run/docker.sock:z  # Need 600 permissions to run DockerOperator
 
 
   mock-oidc-provider:

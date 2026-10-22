@@ -2,10 +2,11 @@
 
 Clean-room Apache-2.0 MCP server for the slim OpenMetadata server.
 
-This package is **not** `openmetadata-mcp`. It does not copy, transpile, or
-import that Collate Community License module. It talks to documented
-`openmetadata-service` REST paths over HTTP and exposes them to agents as MCP
-tools.
+Official Java `openmetadata-mcp` was **purged**
+(ADR:2026-10-22-ccl-trees-are-purged). This package does not copy, transpile, or
+import it. It talks to documented `openmetadata-service` REST paths over HTTP
+and exposes them to agents as MCP tools. Gaps vs the deleted tool list:
+`docs/rebuild/PARITY.md`.
 
 Transport default: **stdio** (JSON-RPC on stdin/stdout). That is the durable
 host contract used by Claude Desktop, Cursor, and other MCP clients. HTTP/SSE

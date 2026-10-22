@@ -1,9 +1,9 @@
 # Collate Community License trees stay in git as reference-only until a purge ADR
 
-- **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial)
+- **Status:** Superseded by ADR:2026-10-22-ccl-trees-are-purged
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (superseded: trees deleted)
 - **Deciders:** SmartMetadata rebuild (tree hygiene)
-- **Guard:** `scripts/rebuild/check_product_path_hints.py`; docker `I_UNDERSTAND_CCL_INGESTION=1` before `-i true`. Dist classpath stays with ADR:2026-10-22-shippable-dist-excludes-ccl-modules (`ban-ccl-modules` / `check_ccl_free_dist.py`) — do not duplicate that scan here.
+- **Guard:** superseded — see ADR:2026-10-22-ccl-trees-are-purged (`check_purged_trees.py`). Dist classpath stays with ADR:2026-10-22-shippable-dist-excludes-ccl-modules.
 - **Related:** `docs/rebuild/PRODUCT_PATH.md`; `docs/rebuild/PHASE0.md`; `docs/rebuild/PHASE11.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules
 
 ## Context
@@ -58,3 +58,8 @@ but is a repo-layout change that needs counsel and a follow-up ADR.
 Misuse is harder; the trees are still cloneable. Revisit option 2 or 3 only
 with a new ADR after counsel. Restoring CCL artifacts to `openmetadata-dist`
 remains forbidden by the Phase 0 record.
+
+## Amendment (v2 2026-10-22)
+
+Option 3 was executed. Official CCL trees are deleted. See
+ADR:2026-10-22-ccl-trees-are-purged.

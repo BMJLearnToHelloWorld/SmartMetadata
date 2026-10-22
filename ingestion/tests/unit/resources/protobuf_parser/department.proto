@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-import "company.proto";
-
-message Department {
-  string name = 1;
-  Company company = 2;
-}

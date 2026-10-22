@@ -42,6 +42,7 @@ class VerifyRebuildContract(unittest.TestCase):
             "mcp-build",
             "ccl-dist",
             "ccl-mcp",
+            "purged-trees",
             "product-path-hints",
             "decision-records",
             "live-smoke-contract",
@@ -54,6 +55,7 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("check_ccl_free_dist.py", joined)
         self.assertIn("check_ccl_free_ingestion.py", joined)
         self.assertIn("check_ccl_free_mcp.py", joined)
+        self.assertIn("check_purged_trees.py", joined)
         self.assertIn("check_product_path_hints.py", joined)
         self.assertIn("check_decision_records.py", joined)
 

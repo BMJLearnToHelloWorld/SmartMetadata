@@ -1,8 +1,9 @@
 # Documentation Index
 
-The map to OpenMetadata's written knowledge — design docs, plans, generated references, and the
-reference docs that live *outside* `docs/` (in the UI, ingestion, and bootstrap trees). Use it to
-find an existing doc before reverse-engineering the code or guessing.
+The map to SmartMetadata written knowledge — design docs, plans, generated
+references, and docs that live *outside* `docs/` (Apache server, `smartmetadata-*`
+packages, bootstrap). Official CCL UI / ingestion / MCP trees were purged. Use
+this index to find an existing doc before reverse-engineering the code.
 
 **Freshness** was verified against the working tree on **2026-07-24** (not inferred from age — each
 verdict cites an artifact that was checked to still exist):
@@ -19,8 +20,9 @@ verdict cites an artifact that was checked to still exist):
 
 | Doc | Purpose | Read when | Modified | Freshness |
 |---|---|---|---|---|
-| `docs/rebuild/PRODUCT_PATH.md` | CCL-free product path vs in-tree reference-only CCL trees; forbids `-i true` / Collate quickstart as a product demo; VERIFY leftovers | Choosing what to build, run, or demo after the rebuild | 2026-10-22 | CURRENT |
-| `docs/rebuild/PHASE0.md` | Phase 0 baseline: shippable `openmetadata-dist` excludes UI, MCP, and ingestion; how to build/run the slim server; verification; residual in-tree CCL trees; non-goals | Building or packaging the SmartMetadata server without Collate Community License modules | 2026-10-22 | CURRENT |
+| `docs/rebuild/PRODUCT_PATH.md` | CCL-free product path after the purge; forbids restoring official CCL trees and `-i true`; lists license evidence | Choosing what to build, run, or demo | 2026-10-22 | CURRENT |
+| `docs/rebuild/PARITY.md` | Capability matrix vs purged official surfaces (connectors, UI, MCP, framework) plus labeled gaps | Checking rebuild coverage before adding product scope | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE0.md` | Phase 0 baseline: shippable `openmetadata-dist` excludes UI, MCP, and ingestion; how to build/run the slim server; official CCL trees are purged | Building or packaging the SmartMetadata server without Collate Community License modules | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE1.md` | Phase 1 clean-room Vue 3 + Ant Design Vue SPA (`smartmetadata-ui/`): login, search, table/topic detail; how to run against the slim server; manual verify; packaging non-goals | Building or running the product UI without Collate Community License frontend code | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE2.md` | Phase 2 admin parity on the same SPA: users, teams, roles, bots, settings, auth-provider-aware login; wired to `openmetadata-service` REST; residual APIs not invented | Extending the clean-room console with system administration | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE3.md` | Phase 3 clean-room lineage graph (Vue Flow + dagre) against `GET /v1/lineage/{entity}/name/{fqn}` | Extending the clean-room console with upstream/downstream lineage | 2026-10-22 | CURRENT |
@@ -113,28 +115,22 @@ index, so only the entry point is listed here. A comment citing `ADR:<date>-<slu
 
 | Doc | Purpose | Read when | Modified | Freshness |
 |---|---|---|---|---|
-| `openmetadata-ui/src/main/resources/ui/DEVELOPER_HANDBOOK.md` | **UI folder structure + file naming spec.** Layers (`components/`, `pages/`, `rest/`, `utils/`, `hooks/`) stay top-level, grouped inside by `domain/feature/`; five domains (`discovery`, `governance`, `observability`, `insights`, `platform`) with cross-cutting features at the domain level. New files use one stem + role suffix (`GlossaryList.tsx`, `.types.ts`, `.utils.ts`, `.test.tsx`); legacy uses `.component.tsx`/`.interface.ts`. Also covers imports, barrels, routing and state locations | **Before creating any new file under `ui/src/`**, or when deciding where code belongs | 2026-08-21 | CURRENT |
-| `openmetadata-ui/UI_PR_REVIEW_GUIDELINES.md` | What a review of a UI pull request checks: type safety, i18n, design-system use, React patterns, file naming (`.types.ts` for new files) | Reviewing a UI PR, or before asking for review of one | 2026-10-06 | CURRENT |
-| `openmetadata-ui/src/main/resources/ui/specs/` | **Machine-readable design system** (41 files). `README.md` declares two stacks — **go-forward = UntitledUI + Tailwind (`tw:`)**, **legacy (deprecated) = Ant Design + Less** — plus `foundations/*` (color, spacing, typography, radius, elevation, motion), `tokens/*` (Tailwind-utility + master token reference), `untitled/*` (go-forward component specs), and legacy `components/*` | **Before writing or modifying any UI code** — start at `specs/README.md`, then the `foundations`/`tokens` and the `untitled/<component>.md` (or legacy `components/*`) spec for what you touch | 2026-07-27 | CURRENT ⁶ |
-| `openmetadata-ui/src/main/resources/ui/docs/colors.md` | Semantic color-token system (`tw:bg-primary`, `tw:text-fg-*`, `tw:border-*`) with light/dark values + the mandatory `ring`→`border` migration (§2.3.1) | Before writing/reviewing any Tailwind color class or dark-mode styling, or when tempted to use `ring-*` or a raw hex | 2026-07-23 | CURRENT |
-| `openmetadata-ui/src/main/resources/ui/docs/formutils.md` | The modern react-hook-form + react-aria form stack (`FieldProp`, `getField`/`FormFields`/`HookForm`) vs the legacy antd `@utils/formUtils` API | Before building/modifying any UI form — which API to use, and wiring to `useFormDrawerWithHook` + a pure transform | 2026-07-15 | CURRENT |
-| `openmetadata-ui/src/main/resources/ui/playwright/docs/` | Auto-generated E2E test-coverage catalog (`README.md` + Discovery/Governance/Integration/Observability/Platform) mapping component → spec file → scenarios | Check what UI behavior is already E2E-covered before writing Playwright tests or reasoning about gaps | 2026-03-09 – 2026-07-16 | CURRENT (by construction) ³ |
+| `smartmetadata-ui/README.md` | Product Vue 3 console: run, proxy, phases 1–9 | Building or running the product UI | 2026-10-22 | CURRENT |
+| Official React `openmetadata-ui/**` handbooks/specs | Purged with the CCL React tree | — | 2026-10-22 | SUPERSEDED (ADR:2026-10-22-ccl-trees-are-purged) |
 
 ## Ingestion & bootstrap reference (outside `docs/`)
 
 | Doc | Purpose | Read when | Modified | Freshness |
 |---|---|---|---|---|
-| `ingestion/docs/design/ingestion-diagnostics.md` | DEBUG-gated ingestion diagnostics subsystem (operation registry, watchdog, heartbeat, memory tracker, HTTP introspection, stage backpressure, signal dumps) | Understand why/how the diagnostics subsystem works before instrumenting ingestion hangs/OOMs | 2026-05-20 | CURRENT ⚠⁴ |
+| `smartmetadata-ingestion/` package docs / `docs/rebuild/PHASE6.md` | Clean-room Source→Sink runner + connectors | Building or running product ingest | 2026-10-22 | CURRENT |
 | `bootstrap/MIGRATION_SYSTEM.md` | Hybrid DB-migration architecture — one version-sorted execution order (Flyway `0.0.x` first, native before extension on equal versions), `SERVER_CHANGE_LOG` tracking, file layout (Flyway *parsers* only, not the Flyway runner) | Before adding/debugging a migration under `bootstrap/sql/migrations/`, or reasoning about ordering / tracking tables / MySQL+Postgres dual paths | 2026-10-09 | CURRENT ⚠⁵ |
 
 ## Caveats (verification notes)
 
 1. **impersonation-design** — §4.4 (v1.1) is authoritative and matches shipped code (`allowImpersonation` in `createBot.json`/`user.json`, `checkImpersonationAuthorization` in `DefaultAuthorizer.java`, the four policy/role seeds, `BotImpersonationIT`). The earlier §4.1/4.2 `POST /users/impersonate` token-exchange endpoint was **never shipped** — impersonation uses the `X-Impersonate-User` header (`JwtFilter.java`), which §4.4 supersedes 4.1/4.2 to reflect. Read §4.4.
 2. **logviewer-modal plan** — superseded by the **2026-06-24 revision** of the design spec (row above): the plan's built-in LazyLog search + `CopyToClipboardButton` were reversed (search moved to the header, a footer status bar added). The shipped dir (`LogViewerModal.utils.tsx`, `LogsViewerModalContainer.tsx`, `useLogStream.ts`) follows the revised spec, not this plan.
-3. **by construction** — `docs/generated/*` are regenerated by `make generate-reference-docs` and gated by the reference-docs freshness CI job; the Playwright docs by `playwright/doc-generator/generate.js` + the `playwright-docs-check.yml` workflow. They cannot drift from their source on the watched paths. (One benign lag: the Playwright `README.md` roll-up footer reads `2026-03-09` while `Governance.md` regenerated `2026-07-16`; self-corrects on the next spec-touching PR.)
-4. **ingestion-diagnostics** — the design **shipped** (`ingestion/src/metadata/ingestion/diagnostics/`, activated at `loggerLevel == DEBUG`, installed in `metadata/workflow/base.py`), but the doc's §5/§7 *flat file map drifted*: files now live under `collectors/`, `monitors/`, `samplers/`; there is no standalone `heartbeat.py`; wire-in is `base.py`, not the doc's `base_workflow.py`. Treat the file map as design-era, the behavior as current.
+3. **by construction** — `docs/generated/*` are regenerated by `make generate-reference-docs` and gated by the reference-docs freshness CI job.
 5. **MIGRATION_SYSTEM** — accurate (the `flyway/`+`native/` layout, `SERVER_CHANGE_LOG`, `MigrationWorkflow`/`FlywayMigrationFile`, and `conf/openmetadata.yaml` `flywayPath`/`nativePath`/`extensionPath` all verified) except: the runner class is `MigrationProcessImpl` (doc says `MigrationProcess`), and the `extensions/` dir is not materialized on disk (`extensionPath: ""`) though the path is still supported.
-6. **ui/specs** — tracked (41 files) and CURRENT: all four audit commands its `README.md` cites resolve to real `package.json` scripts (`tw-audit`, `tw-audit:report`, `tw-guard`, `token-audit`), and the two-stack policy it states (go-forward UntitledUI+Tailwind, legacy Antd+Less deprecated) matches the enforced rules — `tw-guard` blocks new `antd` imports / new `.less` files, and `.claude/rules/frontend-styling.md` routes agents into `specs/README.md`.
 
 ---
 

@@ -12,8 +12,8 @@ Checks, in order:
    jars, no PyPI ``openmetadata-ingestion`` artifact, and no Collate Community
    License text.
 
-Does not delete or refuse the in-tree CCL source trees — those stay as
-reference-only. See ``docs/rebuild/PHASE0.md`` and
+Does not replace ``check_purged_trees.py`` (source trees must stay gone).
+See ``docs/rebuild/PHASE0.md`` and
 ADR:2026-10-22-shippable-dist-excludes-ccl-modules.
 
 Stdlib only. Exit 0 on pass, 1 on failure.

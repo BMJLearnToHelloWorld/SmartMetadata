@@ -6,10 +6,10 @@ For every first-class entity schema under
 schema path and the four artifacts codegen/routing derive from it:
 
   - Java generated type   -- read directly from the schema's ``javaType``
-  - Python generated module -- the datamodel-code-generator convention
-                               (input ``json/schema`` -> output ``generated/schema``)
-  - TypeScript generated type -- the quicktype convention (``ui/src/generated/**``),
-                               only listed when the committed ``.ts`` actually exists
+  - Python generated module -- listed only when the generated file exists
+                               (official CCL ``ingestion/`` Pydantic tree was purged)
+  - TypeScript generated type -- listed only when the committed ``.ts`` exists
+                               (official CCL React ``generated/`` tree was purged)
   - REST resource class   -- joined from ``extends EntityResource<Entity, Repo>``
 
 An "entity" here is a schema under ``entity/**`` that declares a ``javaType`` and a
@@ -31,6 +31,7 @@ ENTITY_ROOT = os.path.join(SCHEMA_ROOT, "entity")
 RESOURCE_ROOT = "openmetadata-service/src/main/java/org/openmetadata/service/resources"
 JAVA_SRC_ROOT = "openmetadata-service/src/main/java/"
 TS_GEN_ROOT = "openmetadata-ui/src/main/resources/ui/src/generated"
+PY_GEN_ROOT = "ingestion/src/metadata/generated/schema"
 PY_GEN_MODULE = "metadata.generated.schema"
 OUT_PATH = "docs/generated/entity-index.md"
 
@@ -99,6 +100,9 @@ def under_schema_root(schema_rel):
 
 def python_module(schema_rel):
     inner = under_schema_root(schema_rel)[: -len(".json")]
+    py_rel = f"{PY_GEN_ROOT}/{inner}.py"
+    if not os.path.exists(repo(py_rel)):
+        return "—"
     return f"{PY_GEN_MODULE}." + inner.replace("/", ".")
 
 
@@ -147,9 +151,8 @@ def render(rows):
         "",
         "- **Entity** = a schema under `openmetadata-spec/src/main/resources/json/schema/entity/**`",
         "  that declares a `javaType` and a top-level `id` property.",
-        "- **Java** is read from the schema's `javaType`. **Python** / **TypeScript** paths follow the",
-        "  codegen conventions (datamodel-code-generator / quicktype); the TS column shows `—` when the",
-        "  committed `.ts` is absent.",
+        "- **Java** is read from the schema's `javaType`. **Python** / **TypeScript** columns show `—`",
+        "  when the generated file is absent (official CCL Pydantic/React trees were purged).",
         "- **REST resource** is joined from `extends EntityResource<Entity, …>`; `—` means no dedicated",
         "  `EntityResource` was found (the entity may be exposed via a shared or non-`EntityResource` route).",
         "",
@@ -165,11 +168,11 @@ def render(rows):
             lines.append("| Entity | Schema | Java | Python | TypeScript | REST resource |")
             lines.append("|---|---|---|---|---|---|")
         lines.append(
-            "| {entity} | `{schema}` | `{java}` | `{python}` | {ts} | {resource} |".format(
+            "| {entity} | `{schema}` | `{java}` | {python} | {ts} | {resource} |".format(
                 entity=row["entity"],
                 schema=row["schema"],
                 java=row["java"],
-                python=row["python"],
+                python=f"`{row['python']}`" if row["python"] != "—" else "—",
                 ts=f"`{row['ts']}`" if row["ts"] != "—" else "—",
                 resource=f"`{row['resource']}`" if row["resource"] != "—" else "—",
             )

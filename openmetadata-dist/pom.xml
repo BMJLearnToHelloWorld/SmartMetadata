@@ -27,10 +27,9 @@
   <packaging>pom</packaging>
   <name>OpenMetadata Distribution</name>
   <!-- Shippable server tarball: Apache-licensed service only.
-       Collate Community License modules (openmetadata-ui, openmetadata-mcp,
-       openmetadata-ui-core-components) and the Python ingestion tree stay
-       in-repo as reference-only and must not appear on this module's
-       dependency tree or in the assembled libs/. See docs/rebuild/PHASE0.md
+       Collate Community License trees were purged from this repository
+       (ADR:2026-10-22-ccl-trees-are-purged). Dist must still refuse those
+       artifacts if they reappear as Maven dependencies. See docs/rebuild/PHASE0.md
        and ADR:2026-10-22-shippable-dist-excludes-ccl-modules. -->
   <description>CCL-free OpenMetadata server binary distribution (no UI, MCP, or ingestion)</description>
 

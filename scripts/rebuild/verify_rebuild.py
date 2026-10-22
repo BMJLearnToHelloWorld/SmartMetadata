@@ -81,6 +81,10 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
         Step(id="ccl-dist", argv=tuple(dist_argv)),
         Step(id="ccl-mcp", argv=(PYTHON, "scripts/rebuild/check_ccl_free_mcp.py")),
         Step(
+            id="purged-trees",
+            argv=(PYTHON, "scripts/rebuild/check_purged_trees.py"),
+        ),
+        Step(
             id="product-path-hints",
             argv=(PYTHON, "scripts/rebuild/check_product_path_hints.py"),
         ),

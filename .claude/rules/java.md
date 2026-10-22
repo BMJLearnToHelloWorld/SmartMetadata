@@ -180,7 +180,7 @@ repository) and `common/src/main/java/org/openmetadata/common/utils/CommonUtil.j
 
 ```bash
 mvn clean package -DskipTests                          # build without tests
-mvn clean package -DonlyBackend -pl '!openmetadata-ui' # backend only
+mvn -DskipTests package -pl openmetadata-dist -am      # product slim server
 mvn test                                               # unit tests
 mvn verify                                             # integration tests
 mvn spotless:apply                                     # format

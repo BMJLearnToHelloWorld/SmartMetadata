@@ -23,12 +23,9 @@ make generate
 # 2. Verify Java compilation
 mvn test-compile -pl openmetadata-spec,openmetadata-service
 
-# 3. Verify Python models
-source env/bin/activate && cd ingestion
-python -c "from metadata.generated.schema.entity.services.connections.<module> import <Model>; print('OK')"
-
-# 4. If connection schema: verify UI schema resolution
-cd openmetadata-ui/src/main/resources/ui && yarn parse-schema
+# 3. Product ingest still imports
+source env/bin/activate
+python -c "import smartmetadata_ingestion; print('OK')"
 ```
 
 ### Java Backend Changes
@@ -50,26 +47,15 @@ make java_affected_run
 ### Python Ingestion Changes
 
 ```bash
-source env/bin/activate && cd ingestion
-
-# 1. Format (apply) then lint check (verify)
-make py_format
-make py_format_check
-
-# 2. Type check
-make static-checks
-
-# 3. Run unit tests
-python -m pytest tests/unit/<relevant_test>.py -v
-
-# 4. For connector changes: run connector-specific tests
-python -m pytest tests/unit/topology/<service_type>/ -v
+source env/bin/activate
+make ingest_test
+python3 scripts/rebuild/check_ccl_free_ingestion.py
 ```
 
 ### Frontend Changes
 
 ```bash
-cd openmetadata-ui/src/main/resources/ui
+cd smartmetadata-ui
 
 # 1. Lint
 yarn lint

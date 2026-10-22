@@ -4,7 +4,6 @@
   "maven": {
     "unitTestModules": [
       "openmetadata-service",
-      "openmetadata-mcp",
       "openmetadata-k8s-operator",
       "common"
     ],
@@ -142,7 +141,6 @@
     "openmetadata-service/src/main/**",
     "openmetadata-spec/src/main/**",
     "openmetadata-sdk/src/main/**",
-    "openmetadata-mcp/src/main/**",
     "openmetadata-k8s-operator/src/main/**",
     "common/src/main/**",
     "bootstrap/**",
@@ -1107,7 +1105,6 @@
       "name": "ai-mcp-context",
       "description": "AI agents and governance, the MCP server, context memory, prompts, LLM clients.",
       "sources": [
-        "openmetadata-mcp/**",
         "openmetadata-service/src/main/java/org/openmetadata/service/aicontext/**",
         "openmetadata-service/src/main/java/org/openmetadata/service/context/**",
         "openmetadata-service/src/main/java/org/openmetadata/service/llm/**",
@@ -1132,7 +1129,6 @@
         "openmetadata-spec/src/main/resources/json/schema/api/data/*ContextFile*"
       ],
       "tests": [
-        "org/openmetadata/it/tests/mcp/**",
         "*Mcp*IT",
         "AI*IT",
         "*Agent*IT",

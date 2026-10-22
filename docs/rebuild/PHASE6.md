@@ -1,9 +1,10 @@
 # Phase 6 — Clean-room ingestion framework
 
 Phase 6 adds a **new** Apache-2.0 Python package at `smartmetadata-ingestion/`.
-It replaces CCL `ingestion/` / `openmetadata-ingestion` for product use. The
-historical tree stays in git as reference-only. This package does not copy,
-transpile, import, or depend on that tree or on `openmetadata-airflow-apis`.
+It replaces CCL `ingestion/` / `openmetadata-ingestion` for product use.
+Official CCL ingestion was **purged** (ADR:2026-10-22-ccl-trees-are-purged).
+This package does not copy, transpile, import, or depend on that tree or on
+`openmetadata-airflow-apis`.
 
 Earlier phases: [PHASE0.md](PHASE0.md) (slim dist) · [PHASE1.md](PHASE1.md)–[PHASE5.md](PHASE5.md)
 (clean-room Vue console).

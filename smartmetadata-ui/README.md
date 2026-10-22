@@ -3,11 +3,11 @@
 Clean-room Vue 3 + Ant Design Vue console for the existing Apache OpenMetadata /
 SmartMetadata server REST API.
 
-This module is **Apache-2.0**. It does **not** copy, transpile, or import
-`openmetadata-ui` or `openmetadata-ui-core-components` (Collate Community License).
-Those trees remain reference-only for behavior. Contracts come from
+This module is **Apache-2.0**. Official React `openmetadata-ui` /
+`openmetadata-ui-core-components` were **purged**
+(ADR:2026-10-22-ccl-trees-are-purged). Do not restore them. Contracts come from
 `openmetadata-service` JAX-RS resources, `docs/generated/api-reference.md`, and
-JSON Schema.
+JSON Schema. Gaps vs the deleted console: `docs/rebuild/PARITY.md`.
 
 Phase 1: app shell, basic-auth login, global search, Table + Topic detail.
 Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware login.

@@ -85,12 +85,12 @@ git diff --name-only HEAD~5 | grep -E "^(openmetadata-spec|openmetadata-service|
 **Skip Maven if**:
 - User passed `--skip-maven` or `--fast`
 - Only files under `ingestion/` changed (Python-only changes)
-- No changes to `openmetadata-spec/`, `openmetadata-service/`, or `openmetadata-ui/`
+- No changes to `openmetadata-spec/`, `openmetadata-service/`, or `smartmetadata-ui/`
 
 **Full build if**:
 - JSON Schema files changed (`openmetadata-spec/`)
 - Java service code changed (`openmetadata-service/`)
-- UI code changed (`openmetadata-ui/`)
+- UI code changed (`smartmetadata-ui/`)
 - First time running (no existing Docker images)
 - User explicitly asked for full build
 
@@ -106,18 +106,20 @@ If containers are already running:
 
 ### Step 6: Build and Deploy
 
-This starts the historical CCL ingestion container, not the product path
-(`docs/rebuild/PRODUCT_PATH.md`). `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1`.
+This starts the slim Apache server (MySQL + search). Official CCL ingestion
+was purged (`docs/rebuild/PRODUCT_PATH.md`). `-i true` always refuses.
 
 **Full build**:
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+./docker/run_local_docker.sh -d mysql -s false -r true
 ```
 
-**Fast rebuild** (ingestion-only):
+**Fast rebuild** (skip Maven):
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+./docker/run_local_docker.sh -d mysql -s true -r false
 ```
+
+Product ingest is `smartmetadata-ingest run --config …`, not an Airflow container.
 
 Tell the user which strategy was chosen and why. The build takes:
 - Full build: ~5-8 minutes
@@ -170,7 +172,7 @@ If the user reports issues, check these:
 grep -l "YourConnector" openmetadata-spec/src/main/resources/json/schema/entity/services/*Service.json
 
 # Need to rebuild without skip-maven
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+./docker/run_local_docker.sh -d mysql -s false -r true
 ```
 
 **Test connection fails?**
@@ -199,5 +201,5 @@ cd docker/development && docker compose down -v && docker system prune -f
 # Format first, then rebuild
 make py_format
 mvn spotless:apply
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+./docker/run_local_docker.sh -d mysql -s false -r true
 ```

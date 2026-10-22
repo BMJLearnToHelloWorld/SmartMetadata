@@ -80,9 +80,9 @@ Do not claim success without output. Minimum bar:
 ```bash
 source .dev-env.local.sh
 make prerequisites                              # all ✓
-python -c "import metadata.generated.schema.entity.data.table"   # models generated
+python -c "import smartmetadata_ingestion"      # product ingest
 mvn -q -pl openmetadata-spec install -DskipTests                 # backend toolchain
-cd openmetadata-ui/src/main/resources/ui && yarn tsc --noEmit --version  # UI deps
+cd smartmetadata-ui && npx tsc --noEmit --pretty false | head    # UI deps
 ```
 
 ## What the script actually does
@@ -92,8 +92,8 @@ cd openmetadata-ui/src/main/resources/ui && yarn tsc --noEmit --version  # UI de
    (libffi, openssl, sasl/gssapi, krb5, libpq, librdkafka, unixodbc, libxml2/xslt).
 3. Ensures Java 21, Maven ≥ 3.6, Node 22, Yarn 1.x, Python ≥ 3.10, ANTLR 4.9.2, Docker.
 4. Creates `env/`, then runs the CLAUDE.md bootstrap sequence:
-   `make install_dev_env` → `make generate` → `make yarn_install_cache` →
-   `make install_test precommit_install` → `make prerequisites`.
+   `make ingest_install` → `make generate` → `make ui_install` →
+   `make precommit_install` → `make prerequisites`.
 5. Writes `.dev-env.local.sh` and, when mise is active, a gitignored `.mise.local.toml` so mise's
    shell hook does not restore incompatible global Java/Node versions.
 
@@ -121,11 +121,9 @@ The ANTLR CLI must be exactly **4.9.2** — it has to match the pinned
 produces parsers those runtimes reject. Fix:
 `make install_antlr_cli ANTLR_INSTALL_DIR="$HOME/.local/bin"` (checksum-pinned, no sudo).
 
-**`make generate` fails or silently produces nothing**
-It must run inside the venv (`source env/bin/activate`) and only from the **repo root** —
-it is a root-only target and does not exist under `ingestion/`. It wipes and rebuilds
-`ingestion/src/metadata/generated`, so a partial run leaves an unimportable tree; re-run it
-rather than hand-patching.
+**`make generate` prints Maven-only instructions**
+Official CCL Pydantic generation was purged. Java POJOs come from
+`mvn -pl openmetadata-spec,openmetadata-service -am test-compile`.
 
 **Node is not version 22**
 Some distro releases provide Node 18/20 while rolling installations may already have Node 24/26.
@@ -144,9 +142,9 @@ publish wheels for those minors and their fallback source build fails. The setup
 3.11 by default and currently builds its venv only with Python 3.10–3.12. Re-run the setup; it will
 offer to rebuild an incompatible existing `env/` and provision Python 3.11 through `uv` if needed.
 
-**`cx_Oracle` fails to build**
-It is installed deliberately with `--no-build-isolation` (see `ingestion/Makefile`). Use the
-make targets rather than a bare `pip install`.
+**Connector extras fail to build**
+Product ingest is `smartmetadata-ingestion/` (`make ingest_install`). Official
+CCL `ingestion/Makefile` extras were purged.
 
 **Docker daemon unreachable on Linux**
 `sudo systemctl enable --now docker` and `sudo usermod -aG docker $USER`, then log out and

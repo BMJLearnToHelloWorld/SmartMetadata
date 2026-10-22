@@ -1,10 +1,10 @@
 # Rebuild verification is an offline matrix; a live catalog is maintainer-only
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (CI wiring authorized; live path is GHA Job C) · v3 2026-10-22 (product-path hints)
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (CI wiring authorized; live path is GHA Job C) · v3 2026-10-22 (product-path hints) · v4 2026-10-22 (purged-tree gate)
 - **Deciders:** SmartMetadata rebuild (Phase 11)
 - **Guard:** `scripts/rebuild/test_verify_rebuild.py` (pre-commit `verify-rebuild-contract`); `make verify-rebuild` (`scripts/rebuild/verify_rebuild.py`)
-- **Related:** `docs/rebuild/PHASE11.md`; `docs/rebuild/VERIFY_RUNTIME.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-rebuild-ci-is-a-separate-workflow; ADR:2026-10-22-ccl-trees-stay-reference-only
+- **Related:** `docs/rebuild/PHASE11.md`; `docs/rebuild/VERIFY_RUNTIME.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules; ADR:2026-10-22-rebuild-ci-is-a-separate-workflow; ADR:2026-10-22-ccl-trees-are-purged
 
 ## Context
 
@@ -18,7 +18,7 @@ missing server would flake.
 
 - `make verify-rebuild` runs UI test+build, ingestion pytest, MCP test+build,
   `check_ccl_free_dist.py`, `check_ccl_free_ingestion.py`,
-  `check_ccl_free_mcp.py`, `check_product_path_hints.py`,
+  `check_ccl_free_mcp.py`, `check_purged_trees.py`, `check_product_path_hints.py`,
   `check_decision_records.py`, and the offline contracts for `live_smoke.py`
   / the rebuild workflow.
 - It does not start Docker, the slim server, Vite `ui_dev`, Airflow, or a
@@ -49,3 +49,10 @@ laptop Docker checklist.
 `check_product_path_hints.py` joined the offline matrix. It asserts the
 product-path docs and docker `I_UNDERSTAND_CCL_INGESTION` ack still exist. It
 does not re-scan `openmetadata-dist` (that remains `check_ccl_free_dist.py`).
+
+## Amendment (v4, 2026-10-22)
+
+Official CCL trees were deleted. `check_purged_trees.py` joined the offline
+matrix. Docker `-i true` always refuses; there is no
+`I_UNDERSTAND_CCL_INGESTION` override. ADR:2026-10-22-ccl-trees-stay-reference-only
+is superseded by ADR:2026-10-22-ccl-trees-are-purged.

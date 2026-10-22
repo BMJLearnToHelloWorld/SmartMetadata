@@ -1,5 +1,0 @@
-logs
-dags
-dag_generated_configs
-airflow-webserver.pid
-webserver_config.py

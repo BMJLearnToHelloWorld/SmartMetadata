@@ -1,10 +1,13 @@
-# DEVELOPER.md — AI-Assisted Development Guide for OpenMetadata
+# DEVELOPER.md — AI-Assisted Development Guide for SmartMetadata
 
-This guide helps developers (and AI agents like Claude Code, Codex, Copilot) write correct, production-quality code in the OpenMetadata codebase. It covers the preferred workflow for each language, architecture patterns you must understand, and how to use the available skills.
+This guide helps developers (and AI agents) write correct code in the Apache
+OpenMetadata **server** plus the SmartMetadata rebuild (`smartmetadata-ui/`,
+`smartmetadata-ingestion/`, `smartmetadata-mcp/`). Official CCL UI / ingestion /
+MCP trees were **purged** (ADR:2026-10-22-ccl-trees-are-purged).
 
 For environment setup, build commands, and coding standards, see [AGENTS.md](AGENTS.md).
-For connector-specific development, see [skills/README.md](skills/README.md).
-The CCL-free product path is [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md); do not treat `openmetadata-ui/`, `ingestion/`, or `openmetadata-mcp/` as shippable modules.
+Product map: [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).
+Gaps vs purged official surfaces: [docs/rebuild/PARITY.md](docs/rebuild/PARITY.md).
 
 ---
 
@@ -48,35 +51,30 @@ The CCL-free product path is [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT
 - Run `mvn spotless:apply` before every commit
 - Every new REST endpoint needs a corresponding `*IT.java` in `openmetadata-integration-tests/`
 
-### React/TypeScript Frontend
+### Vue 3 Frontend (`smartmetadata-ui/`)
 
 ```
-1. /planning          — Identify components, state management, API contracts
-2. /tdd               — Write Jest test for the component
-3.                       Implement the component
-4.                       yarn lint:fix
-5. /test-enforcement   — Verify Jest coverage + Playwright E2E if user-facing
-6. /verification       — Show lint + test output
-7. /code-review        — Run frontend-reviewer agent
-8. /ui-pr-recording    — When creating a UI feature/task PR: run Docker, record the feature, upload
+1. /planning          — Identify views, API contracts (Apache REST only)
+2. /tdd               — Write a Vitest test next to the change
+3.                       Implement in smartmetadata-ui/src/views/…
+4.                       npm test && npm run build
+5. /verification       — Show lint + test output
 ```
 
 **Key rules:**
-- Use components from `openmetadata-ui-core-components`, never Ant Design
-- All Tailwind classes use `tw:` prefix, all colors use CSS custom properties
-- No string literals in JSX — use `t('label.key-name')` from `useTranslation()`
-- No `any` type — use generated types from `generated/` or define proper interfaces
-- New keys go in `locale/languages/en-us.json` using kebab-case under the appropriate namespace
-- Run `yarn parse-schema` after any connection schema changes
+- Product UI is Vue 3 + Ant Design Vue. Official React / ui-core-components were purged.
+- Talk to the server through `smartmetadata-ui/src/api/` helpers already on the branch.
+- Routes live in `src/router/index.ts`. Do not invent undocumented REST paths.
+- `make ui_test` / `make ui_build`.
 
-### Python Ingestion
+### Python Ingestion (`smartmetadata-ingestion/`)
 
 ```
-1. /planning          — Choose connector architecture (SQLAlchemy vs REST vs SDK)
-2. /connector-standards — Load the relevant standards
-3. /tdd               — Write pytest tests first
-4.                       Implement using topology pattern
-5.                       make py_format && make py_format_check
+1. /planning          — Choose a `source.type` and CatalogReader/HTTP contract
+2. /tdd               — Write pytest tests first
+3.                       Implement in connectors/{name}.py with @register_source
+4.                       make ingest_test
+5.                       python3 scripts/rebuild/check_ccl_free_ingestion.py
 6. /test-enforcement   — Verify 90% coverage
 7. /verification       — Show test + lint output
 8. /connector-review   — Full review against golden standards (for connectors)
@@ -84,11 +82,10 @@ The CCL-free product path is [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT
 
 **Key rules:**
 - Use pytest style — plain `assert`, no `unittest.TestCase`
-- Use the topology pattern (`ServiceSpec` + `TopologyNode`) for all connectors
-- Keep connector-specific logic in the connector's directory, not in shared files
-- Use generators (`yield`) for streaming entities — never accumulate in memory
-- Implement pagination for all REST API calls
-- Reuse HTTP sessions — create one `requests.Session()` per connector lifetime
+- Register with `@register_source("type")`. Do not import `metadata` / `openmetadata_ingestion`
+- Keep connector-specific SQL/HTTP in that connector file
+- Stream entities; do not accumulate catalogs in memory
+- Do not copy purged official connectors (see [PARITY.md](docs/rebuild/PARITY.md))
 
 ---
 
@@ -151,17 +148,13 @@ openmetadata-spec/src/main/resources/json/schema/
                     ↓ Code generation ↓
 
 Java POJOs:     jsonschema2pojo → openmetadata-spec/target/generated-sources/
-Python models:  datamodel-code-generator → ingestion/src/metadata/generated/
-TypeScript:     QuickType → openmetadata-ui/.../ui/src/generated/
-UI forms:       parseSchemas.js → resolved JSON for RJSF auto-rendering
+Product ingest/UI: no generated Pydantic/TS client (official trees purged)
 ```
 
 **When you modify a schema:**
 1. Edit the JSON schema in `openmetadata-spec/`
-2. Run `make generate` (Python models)
-3. Run `mvn clean install -pl openmetadata-spec` (Java POJOs)
-4. Run `yarn parse-schema` (UI connection schemas only)
-5. Add corresponding Flyway migration if the change affects the database
+2. Run `mvn -pl openmetadata-spec,openmetadata-service -am test-compile` (Java POJOs)
+3. Add a corresponding native migration if the change affects the database
 
 **Schema conventions:**
 - `$id` must match the file path
@@ -500,11 +493,9 @@ const { t } = useTranslation();
 
 #### Component Library
 
-Use `openmetadata-ui-core-components` for all new UI work:
-- Components: Button, Input, Select, Modal, Table, Tabs, Pagination, Badge, Avatar, Checkbox, Dropdown, Form, Card, Tooltip, Toggle, Slider, Textarea, Tags
-- Source: `openmetadata-ui-core-components/src/main/resources/ui/src/components/`
-- Tailwind CSS v4 with `tw:` prefix for all utility classes
-- CSS custom properties for design tokens (see `globals.css`)
+Product UI is `smartmetadata-ui/` (Vue 3 + Ant Design Vue). Official React
+core-components were purged. Add views next to the existing area in
+`smartmetadata-ui/src/views/`.
 
 #### State Management
 
@@ -516,12 +507,8 @@ Use `openmetadata-ui-core-components` for all new UI work:
 
 #### Generated Types
 
-TypeScript interfaces are generated from JSON schemas and live in:
-```
-openmetadata-ui/src/main/resources/ui/src/generated/
-```
-
-Always import from `generated/` for API response types. Never hand-write interfaces for schema-defined types.
+The Vue console types REST payloads next to `smartmetadata-ui/src/api/`.
+Do not restore the purged React `generated/` tree.
 
 ---
 
@@ -567,8 +554,7 @@ Always import from `generated/` for API response types. Never hand-write interfa
 9. **Migration**: Create `bootstrap/sql/migrations/native/{version}/mysql/schemaChanges.sql` + postgres variant
 10. **Search index**: Create `MyEntityIndex.java` if searchable
 11. **Integration test**: Create `MyEntityIT extends BaseEntityIT<MyEntity, CreateMyEntity>` in `openmetadata-integration-tests/`
-12. **Frontend**: Add generated types, API client methods, and UI components
-13. **i18n**: Add labels to `en-us.json`
+12. **Frontend** (optional): add a Vue view in `smartmetadata-ui/src/views/` if the entity is user-facing
 
 ### Adding a New Connector (End-to-End Checklist)
 
@@ -576,10 +562,8 @@ Always import from `generated/` for API response types. Never hand-write interfa
 2. **Service type enum**: Add to `{type}Service.json` `oneOf` list
 3. **Generate code**: `make generate` + `mvn clean install -pl openmetadata-spec`
 4. **ClassConverter** (if using `oneOf`): `openmetadata-service/src/main/java/org/openmetadata/service/secrets/converter/`
-5. **Python source class**: `ingestion/src/metadata/ingestion/source/{type}/{connector}/`
-   - `connection.py` — connection handling
-   - `metadata.py` — metadata extraction
-   - `__init__.py` — ServiceSpec definition
-6. **Unit tests**: `ingestion/tests/unit/topology/{type}/test_{connector}.py`
-7. **UI integration**: Update `{type}ServiceUtils.tsx`, add MDX doc file
-8. **Run**: `yarn parse-schema` for UI form generation
+5. **Python source**: `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/{connector}.py`
+   with `@register_source("{type}")`
+6. **Unit tests**: `smartmetadata-ingestion/tests/`
+7. **UI** (optional): service connection fields in `smartmetadata-ui/src/components/ingestion/`
+8. **Gate**: `python3 scripts/rebuild/check_ccl_free_ingestion.py`

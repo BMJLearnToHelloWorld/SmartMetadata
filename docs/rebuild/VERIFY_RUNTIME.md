@@ -25,9 +25,9 @@ No Java, no Docker, no live catalog. Job A prints `node -v` after
 `actions/setup-node` so the log shows the Node that `npm test` uses.
 
 **Asserts:** `smartmetadata-ui` test+build, `smartmetadata-ingestion` pytest,
-`smartmetadata-mcp` test+build, the three CCL-free gates, product-path
-hints, decision-record check, and the offline contracts for `live_smoke.py`
-/ the rebuild workflow.
+`smartmetadata-mcp` test+build, the three CCL-free gates, purged-tree check,
+product-path hints, decision-record check, and the offline contracts for
+`live_smoke.py` / the rebuild workflow.
 
 Live e2e stays **out** of this target on purpose. A missing catalog must not
 flake the PR gate.

@@ -1,7 +1,7 @@
 # Product ingestion is a clean-room Apache package with no CCL dependencies
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial)
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (official CCL ingestion purged)
 - **Deciders:** SmartMetadata rebuild (Phase 6)
 - **Guard:** `scripts/rebuild/check_ccl_free_ingestion.py`; `smartmetadata-ingestion/LICENSE` is Apache-2.0; `make check-ccl-free-dist` still bans `openmetadata-ingestion` in the server tarball
 - **Related:** `docs/rebuild/PHASE6.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules
@@ -30,6 +30,10 @@ from source systems and written through the Apache server REST API.
 
 ## Consequences
 
-CCL ingestion stays reference-only. Later connector work (Phase 7) and the
+Later connector work (Phase 7) and the
 ingestion console (Phase 8) extend this package. Revisit the client only if the
 server path contract changes; do not replace it with the CCL Python SDK.
+
+## Amendment (v2 2026-10-22)
+
+Official CCL ingestion was deleted (ADR:2026-10-22-ccl-trees-are-purged).

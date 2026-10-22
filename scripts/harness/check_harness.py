@@ -58,6 +58,11 @@ EPHEMERAL_PREFIXES = (
     "ingestion/src/metadata/generated",
     "ingestion-core/src/metadata/generated",
     "openmetadata-ui/src/main/resources/ui/node_modules",
+    "openmetadata-ui/",
+    "openmetadata-mcp/",
+    "ingestion/",
+    "openmetadata-airflow-apis/",
+    "openmetadata-ui-core-components/",
     "node_modules",
     "env/",
     "dist/",
@@ -211,8 +216,8 @@ def makefile_targets():
 def yarn_scripts():
     scripts = set()
     for pkg in (
-        "openmetadata-ui/src/main/resources/ui/package.json",
-        "openmetadata-ui-core-components/src/main/resources/ui/package.json",
+        "smartmetadata-ui/package.json",
+        "smartmetadata-mcp/package.json",
     ):
         if os.path.exists(rp(pkg)):
             scripts.update(json.loads(read(pkg)).get("scripts", {}).keys())

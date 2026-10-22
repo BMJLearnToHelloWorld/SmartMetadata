@@ -93,5 +93,6 @@ user decide.
 
 - UI / TypeScript formatting — use the `ui-checkstyle` skill
   (ESLint + Prettier + organize-imports); this skill is Java-only.
-- Python formatting — use `make py_format` (**ruff** lint-fix + format; see
-  `ingestion/Makefile`). *(Note: this is ruff, not black/isort/pycln.)*
+- Python formatting — ruff via pre-commit on `smartmetadata-ingestion/`
+  (`smartmetadata-ingestion/pyproject.toml`). Official CCL `ingestion/Makefile`
+  was purged.

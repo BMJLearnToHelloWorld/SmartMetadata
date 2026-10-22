@@ -1,7 +1,7 @@
 # The product UI is a clean-room Vue 3 SPA in smartmetadata-ui
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-22 (initial)
+- **Revisions:** v1 2026-10-22 (initial) · v2 2026-10-22 (official CCL React trees purged)
 - **Deciders:** SmartMetadata rebuild (Phase 1)
 - **Guard:** `smartmetadata-ui/LICENSE` is Apache-2.0; `make check-ccl-free-dist` still bans CCL UI/MCP/ingestion in dist; reviewers reject imports from `openmetadata-ui` / `openmetadata-ui-core-components`
 - **Related:** `docs/rebuild/PHASE1.md`; ADR:2026-10-22-shippable-dist-excludes-ccl-modules
@@ -29,6 +29,10 @@ Design Vue, not the historical React console.
 
 ## Consequences
 
-The CCL React trees stay reference-only. Later phases extend this SPA (lineage,
+Later phases extend this SPA (lineage,
 admin, SSO) instead of importing those trees. Revisit the module path or auth
 header only if the server contract changes.
+
+## Amendment (v2 2026-10-22)
+
+Official CCL React trees were deleted (ADR:2026-10-22-ccl-trees-are-purged).

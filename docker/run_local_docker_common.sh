@@ -14,21 +14,13 @@ RED='\033[0;31m'
 NC='\033[0m'
 RUN_LOCAL_DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-require_ccl_ingestion_ack() {
+refuse_purged_ccl_ingestion() {
   echo -e "${RED}========================================================================
-WARNING: -i true starts the historical Collate Community License
-ingestion container. That is NOT the SmartMetadata product path.
+-i true is not available. Official Collate Community License ingestion
+was purged from this repository.
 
 Product ingest is smartmetadata-ingest (docs/rebuild/PRODUCT_PATH.md).
-Collate quickstart images are also not a product demo.
-
-To proceed with this reference-only path, export I_UNDERSTAND_CCL_INGESTION=1
 ========================================================================${NC}" >&2
-  if [[ "${I_UNDERSTAND_CCL_INGESTION:-}" == "1" ]]; then
-    echo "Proceeding with CCL ingestion because I_UNDERSTAND_CCL_INGESTION=1 is set." >&2
-    return 0
-  fi
-  echo "Refusing to start CCL ingestion without I_UNDERSTAND_CCL_INGESTION=1." >&2
   exit 1
 }
 
@@ -40,7 +32,7 @@ helpFunction() {
    echo "\t-m Running mode: [ui, no-ui]. Default [no-ui]. The shippable dist no longer packages the CCL UI; both modes build the slim server.\n"
    echo "\t-d Database: [mysql, postgresql]. Default [mysql]\n"
    echo "\t-s Skip maven build: [true, false]. Default [false]\n"
-   echo "\t-i Include ingestion: [true, false]. Default [false]. The CCL ingestion image is reference-only; not part of the product dist. Requires I_UNDERSTAND_CCL_INGESTION=1.\n"
+   echo "\t-i Include ingestion: [true, false]. Default [false]. Always refused — CCL ingestion was purged; use smartmetadata-ingest.\n"
    echo "\t-x Open JVM debug port on 5005: [true, false]. Default [false]\n"
    echo "\t-h For usage help\n"
    echo "\t-r For Cleaning DB Volumes. [true, false]. Default [true]\n"
@@ -402,7 +394,7 @@ run_local_docker_main() {
   export APP_RUN_WAIT_TIMEOUT_SECONDS="${APP_RUN_WAIT_TIMEOUT_SECONDS:-300}"
 
   if [[ $includeIngestion == "true" ]]; then
-    require_ccl_ingestion_ack
+    refuse_purged_ccl_ingestion
   fi
 
   echo "Running local docker using mode [$mode] database [$database] and skipping maven build [$skipMaven] with cleanDB as [$cleanDbVolumes] and including ingestion [$includeIngestion]"

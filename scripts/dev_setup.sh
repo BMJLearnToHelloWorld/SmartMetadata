@@ -30,7 +30,7 @@ cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
 # Pinned versions. Keep in sync with scripts/check_prerequisites.sh, the UI
-# package.json `engines` block, and ingestion/pyproject.toml `requires-python`.
+# package.json `engines` block, and smartmetadata-ingestion/pyproject.toml `requires-python`.
 # ---------------------------------------------------------------------------
 JAVA_VERSION=21
 NODE_VERSION=22
@@ -863,32 +863,30 @@ install_ingestion() {
   export_brew_build_flags
   run python -m pip install --upgrade pip "setuptools<81"
   if [ "$SLIM_PYTHON" -eq 1 ]; then
-    info "Slim mode: installing ingestion[dev] only."
-    run make -C "$REPO_ROOT" install_dev
+    info "Slim mode: installing smartmetadata-ingestion[dev] only."
+    run make -C "$REPO_ROOT" ingest_install
   else
-    info "Installing the full dev environment; this pulls every connector's dependencies and takes a while."
-    run make -C "$REPO_ROOT" install_dev_env
+    info "Installing smartmetadata-ingestion[dev] (official CCL extras were purged)."
+    run make -C "$REPO_ROOT" ingest_install
   fi
   ok "Ingestion framework installed"
 }
 
 generate_models() {
-  # `make generate` wipes and regenerates ingestion/src/metadata/generated and
-  # the ANTLR parsers, then reinstalls the ingestion package.
+  # Java POJOs come from Maven. Official CCL Pydantic/quicktype trees were purged.
   run make -C "$REPO_ROOT" generate
-  ok "Generated Pydantic models and ANTLR parsers"
+  ok "Schema generate target ran (Maven POJOs; no CCL Pydantic tree)"
 }
 
 install_ui_deps() {
   if [ "$(node_major || true)" != "$NODE_VERSION" ]; then
-    fail "Refusing to run Yarn with $(node --version 2>/dev/null || echo no Node); the current UI dependencies require Node $NODE_VERSION."
+    fail "Refusing to install UI deps with $(node --version 2>/dev/null || echo no Node); smartmetadata-ui requires Node $NODE_VERSION."
   fi
-  run make -C "$REPO_ROOT" yarn_install_cache
+  run make -C "$REPO_ROOT" ui_install
   ok "UI dependencies installed"
 }
 
 install_precommit() {
-  run make -C "$REPO_ROOT" install_test
   run make -C "$REPO_ROOT" precommit_install
   ok "pre-commit hooks installed (format + license gate on every commit)"
 }
@@ -1046,8 +1044,8 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
   else
     warn "No usable virtualenv at $VENV_DIR."
   fi
-  [ -d "ingestion/src/metadata/generated" ] && ok "Generated models present" || warn "ingestion/src/metadata/generated is missing — run 'make generate'."
-  [ -d "openmetadata-ui/src/main/resources/ui/node_modules" ] && ok "UI node_modules present" || warn "UI dependencies are not installed."
+  [ -d "smartmetadata-ingestion/src/smartmetadata_ingestion" ] && ok "smartmetadata-ingestion present" || warn "smartmetadata-ingestion is missing."
+  [ -d "smartmetadata-ui/node_modules" ] && ok "UI node_modules present" || warn "UI dependencies are not installed (make ui_install)."
   [ -f ".git/hooks/pre-commit" ] && ok "pre-commit hook installed" || warn "pre-commit hook is not installed."
   summary
   [ "$WARNING_COUNT" -eq 0 ]

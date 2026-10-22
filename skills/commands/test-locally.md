@@ -38,13 +38,13 @@ This generates Python Pydantic models from the JSON Schema you created/modified.
 **Full build** (first time, or if Java/UI changes were made):
 
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s false -i true -r true
+./docker/run_local_docker.sh -d mysql -s false -r true
 ```
 
 **Skip Maven** (ingestion-only changes — much faster, ~2-3 minutes):
 
 ```bash
-I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+./docker/run_local_docker.sh -d mysql -s true -r false
 ```
 
 ### Step 4: Wait for services
@@ -89,7 +89,7 @@ If you modify connector code and want to redeploy:
 cd docker/development && docker compose down
 
 # Rebuild with skip-maven (fast)
-cd ../.. && I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -m ui -d mysql -s true -i true -r false
+cd ../.. && ./docker/run_local_docker.sh -d mysql -s true -r false
 ```
 
 ### Troubleshooting
