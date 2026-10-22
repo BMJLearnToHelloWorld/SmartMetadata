@@ -24,6 +24,13 @@ export function assetLocation(entityType: string, fqn: string): { name: string; 
   };
 }
 
+export function lineageLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {
+  return {
+    name: 'lineage',
+    params: { entityType, fqn },
+  };
+}
+
 export function encodeFqnForApi(fqn: string): string {
   return encodeURIComponent(fqn);
 }

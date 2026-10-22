@@ -4,15 +4,18 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Card, Descriptions, Table, Tag, Space, Typography, Alert, Spin } from 'ant-design-vue';
+import { useRouter } from 'vue-router';
+import { Button, Card, Descriptions, Table, Tag, Space, Typography, Alert, Spin } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
-import { isDetailWired } from '@/catalog/entityRoutes';
+import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import type { AssetDetail } from '@/types/api';
 
 const props = defineProps<{
   entityType: string;
   fqn: string;
 }>();
+
+const router = useRouter();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -63,6 +66,13 @@ watch(
       <Typography.Paragraph type="secondary">
         {{ entityType }} · {{ asset?.fullyQualifiedName || decodedFqn }}
       </Typography.Paragraph>
+      <Button
+        data-testid="view-lineage"
+        class="detail__lineage"
+        @click="router.push(lineageLocation(entityType, decodedFqn))"
+      >
+        View lineage
+      </Button>
       <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="detail__alert" />
       <template v-if="asset">
         <Descriptions bordered :column="1" size="small">
@@ -98,6 +108,9 @@ watch(
 
 <style scoped>
 .detail__alert {
+  margin-bottom: 16px;
+}
+.detail__lineage {
   margin-bottom: 16px;
 }
 .detail__schema-title {

@@ -9,6 +9,17 @@
  */
 import { vi } from 'vitest';
 
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+Object.defineProperty(window, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverStub,
+});
+
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({

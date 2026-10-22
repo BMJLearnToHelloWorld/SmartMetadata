@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assetLocation,
   encodeFqnForApi,
+  lineageLocation,
   resolveDetailEndpoint,
 } from './entityRoutes';
 
@@ -36,6 +37,13 @@ describe('entityRoutes', () => {
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
       fields: 'owners,tags',
+    });
+  });
+
+  it('builds a lineage route that keeps the raw FQN in params', () => {
+    expect(lineageLocation('table', 'svc.db.schema.orders')).toEqual({
+      name: 'lineage',
+      params: { entityType: 'table', fqn: 'svc.db.schema.orders' },
     });
   });
 

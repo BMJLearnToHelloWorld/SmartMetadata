@@ -10,6 +10,8 @@
 import { loadSession } from '@/auth/token';
 import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
+import LineageHomeView from '@/views/LineageHomeView.vue';
+import LineageView from '@/views/LineageView.vue';
 import BotDetailView from '@/views/admin/BotDetailView.vue';
 import BotsListView from '@/views/admin/BotsListView.vue';
 import LoginView from '@/views/LoginView.vue';
@@ -42,6 +44,13 @@ export const router = createRouter({
           path: 'assets/:entityType/:fqn',
           name: 'asset',
           component: AssetDetailView,
+          props: true,
+        },
+        { path: 'lineage', name: 'lineage-home', component: LineageHomeView },
+        {
+          path: 'lineage/:entityType/:fqn',
+          name: 'lineage',
+          component: LineageView,
           props: true,
         },
         { path: 'admin/users', name: 'admin-users', component: UsersListView },
