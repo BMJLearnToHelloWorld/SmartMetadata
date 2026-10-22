@@ -1,0 +1,34 @@
+# Static catalog fixture for GitHub Actions live-smoke (Job C).
+# Uses bootstrap login so the runner does not need a pre-issued bot JWT.
+# JWT configs still fail closed — see smartmetadata-ingestion/examples/postgres-metadata.yaml.
+workflow:
+  name: live-smoke-static
+  type: metadata
+  failFast: true
+
+server:
+  hostPort: ${OM_API_URL:-http://localhost:8585/api}
+  auth:
+    type: login
+    email: ${OM_LOGIN_EMAIL:-admin@open-metadata.org}
+    password: ${OM_LOGIN_PASSWORD:-admin}
+
+source:
+  type: static
+  serviceName: smoke
+  storeConnectionSecrets: false
+  records:
+    - kind: database
+      name: analytics
+    - kind: schema
+      name: public
+      database: smoke.analytics
+    - kind: table
+      name: orders
+      databaseSchema: smoke.analytics.public
+      columns:
+        - name: id
+          dataType: INT
+
+sink:
+  type: metadata-rest

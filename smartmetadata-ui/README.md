@@ -27,7 +27,8 @@ ADR:2026-10-22-dq-entity-links-use-message-parser-format, and
 ADR:2026-10-22-ingestion-console-runs-via-cli,
 ADR:2026-10-22-collaboration-uses-activity-and-conversations, and
 ADR:2026-10-22-custom-property-values-use-extension-patch.
-Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`).
+Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`) and
+`docs/rebuild/VERIFY_RUNTIME.md` (GitHub Actions Jobs A–C).
 
 ## Stack
 
@@ -35,8 +36,10 @@ Vite · Vue 3 · TypeScript · Ant Design Vue · Vue Router · Pinia · Vue Flow
 
 ## Run against a slim Phase 0 server
 
-1. Start the CCL-free server from `docs/rebuild/PHASE0.md`
-   (`make slim-dist`, MySQL + Elasticsearch, migrate, listen on `:8585`).
+1. Point this SPA at an **already-running** slim server (`:8585`). GitHub
+   Actions Job C starts MySQL + ES + the server; a laptop without Docker
+   uses a remote catalog — `docs/rebuild/VERIFY_RUNTIME.md`. Operators with
+   a container runtime can still follow `docs/rebuild/PHASE0.md`.
 2. From this directory:
 
 ```bash

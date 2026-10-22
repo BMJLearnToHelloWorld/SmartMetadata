@@ -82,9 +82,10 @@ artifacts re-enter the dependency tree.
 - No ingestion rebuild, no MCP rebuild, no clean-room connectors.
 - No deletion of historical CCL source trees.
 - No OSS-feature parity UI, lineage graph, or collection console.
-- No GitHub Actions workflow edits (workflows are a supply-chain surface). Wire
-  `make verify-rebuild` (includes `check-ccl-free-dist`) into CI when that is
-  explicitly authorized — see [PHASE11.md](PHASE11.md).
+- GitHub Actions for the CCL-free rebuild is a **separate** workflow
+  (`.github/workflows/smartmetadata-rebuild.yml`, authorized;
+  ADR:2026-10-22-rebuild-ci-is-a-separate-workflow). Do not reuse Collate /
+  Playwright / ingestion-image workflows. See [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md).
 - No brand/NOTICE/trademark sweep, no secrets, no fake business logic.
 - Do not treat Ant Design + Less, MUI, or Webpack as the go-forward UI stack.
 

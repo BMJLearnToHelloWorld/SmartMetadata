@@ -42,6 +42,8 @@ class VerifyRebuildContract(unittest.TestCase):
             "ccl-dist",
             "ccl-mcp",
             "decision-records",
+            "live-smoke-contract",
+            "rebuild-ci-contract",
         ):
             self.assertIn(required, ids)
 

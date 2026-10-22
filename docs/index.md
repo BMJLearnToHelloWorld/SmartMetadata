@@ -30,7 +30,8 @@ verdict cites an artifact that was checked to still exist):
 | `docs/rebuild/PHASE8.md` | Phase 8 ingestion console: DatabaseService / MessagingService and IngestionPipeline CRUD in `smartmetadata-ui/`; CLI YAML mapping; no Airflow trigger | Operators managing services and pipeline entities without CCL UI or Airflow | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE9.md` | Phase 9 collaboration / long-tail UI: activity feed, conversations, tasks, announcements, custom property values; persona landing skipped | Extending the clean-room console with OSS Feed/Tasks and related APIs | 2026-10-22 | CURRENT |
 | `docs/rebuild/PHASE10.md` | Phase 10 clean-room stdio MCP (`smartmetadata-mcp/`): JWT to Apache REST, OSS tools, CCL MCP stays out of dist | Adding an Apache agent MCP without shipping or importing `openmetadata-mcp` | 2026-10-22 | CURRENT |
-| `docs/rebuild/PHASE11.md` | Phase 11 go-live / acceptance: Phases 0–10 delivery map, residual risks, offline `make verify-rebuild`, maintainer live checklist, production topology, OSS capability table | Closing the CCL-free rebuild or running the aggregated verification matrix | 2026-10-22 | CURRENT |
+| `docs/rebuild/PHASE11.md` | Phase 11 go-live / acceptance: Phases 0–10 delivery map, residual risks, offline `make verify-rebuild`, live-smoke venues, production topology, OSS capability table | Closing the CCL-free rebuild or running the aggregated verification matrix | 2026-10-22 | CURRENT |
+| `docs/rebuild/VERIFY_RUNTIME.md` | Three-layer runtime assurance: Job A `make verify-rebuild`, Job B `make slim-dist`, Job C GHA live-smoke (service containers; no laptop Docker) | Wiring or running SmartMetadata rebuild CI, or hitting a remote catalog from a Docker-free laptop | 2026-10-22 | CURRENT |
 
 ## Start here — root guides (not under `docs/`)
 

@@ -35,7 +35,7 @@ These are accepted leftovers, not Phase 11 bugs.
 
 | Risk | Why it remains | What to do instead |
 |---|---|---|
-| **Live catalog not exercised in agent VMs** | No guaranteed MySQL + ES + migrated server in this environment | Maintainer live checklist below |
+| **Live catalog not exercised in agent VMs** | No guaranteed MySQL + ES + migrated server in this environment | GitHub Actions Job C (`workflow_dispatch`); laptop without Docker talks to a remote catalog — [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md) |
 | **CLI vs Airflow trigger** | Slim dist has `PipelineServiceClient` disabled. Console does not call `/trigger` or `/deploy` | `smartmetadata-ingest run --config …` (ADR:2026-10-22-ingestion-console-runs-via-cli) |
 | **Persona landing skipped** | No thin non-AI `uiCustomization` path in Phase 9 | Default AppShell nav; do not invent Collate AI widgets |
 | **In-tree CCL source** | Anyone can still `mvn package` UI/MCP or `pip install ingestion/` | Shipping policy is dist classpath + the three gates |
@@ -66,6 +66,7 @@ python3 scripts/rebuild/verify_rebuild.py
 4. `check_ccl_free_dist.py` (static pom + assembly; tarball scanned only if present)
 5. `check_ccl_free_mcp.py`
 6. `scripts/harness/check_decision_records.py`
+7. `scripts/rebuild/test_live_smoke.py` and `test_rebuild_workflows.py` (offline contracts; not live e2e)
 
 Install steps (`npm ci` in the two Node packages, `pip install -e smartmetadata-ingestion/[dev]`)
 run automatically when `node_modules` or the Python package is missing. Force or skip:
@@ -81,40 +82,38 @@ python3 scripts/rebuild/verify_rebuild.py --list
 the Java dist.
 
 This command does **not** start Docker, MySQL, Elasticsearch, Airflow, Vite
-`ui_dev`, or Playwright against a running server. Those are the live path
-below. Do not add a flaky catalog e2e to this target.
+`ui_dev`, or Playwright against a running server. Live catalog checks are
+GitHub Actions Job C — see [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md). Do not add
+a flaky catalog e2e to this target
+(ADR:2026-10-22-rebuild-verify-is-offline).
 
-GitHub Actions workflow edits are a supply-chain surface
-(`AGENTS.md`). This PR does not add a workflow. When that is explicitly
-authorized, the job should be `make verify-rebuild`.
+GitHub Actions: `.github/workflows/smartmetadata-rebuild.yml` (authorized;
+ADR:2026-10-22-rebuild-ci-is-a-separate-workflow). Job A is
+`make verify-rebuild`. Job B is `make slim-dist`. Job C is live-smoke on
+GitHub-hosted service containers, not a laptop Docker session.
 
 Pre-commit already runs the three CCL gates on the matching trees,
 `check_decision_records.py` on every commit, and
 `scripts/rebuild/test_verify_rebuild.py` when the verify runner changes.
 
-## Maintainer live checklist
+## Live catalog (not a laptop Docker requirement)
 
-Run on a laptop or a long-lived environment with Java 21, Docker, and a
-catalog. Not required to merge this PR.
+Go-live live-smoke is **GitHub Actions Job C**, not a contributor machine
+with Docker. Full steps, OSS-capability mapping, and the three venues:
+[VERIFY_RUNTIME.md](VERIFY_RUNTIME.md).
 
-1. **Slim server.** `make slim-dist` then MySQL + ES, migrate, start
-   (`docs/rebuild/PHASE0.md`). `curl -sf http://localhost:8586/healthcheck`.
-   Confirm `GET /` is not a product UI and `/mcp` is unregistered.
-2. **SPA.** `make ui_install && make ui_dev` → http://localhost:5173. Login
-   (`admin@open-metadata.org` / `admin` on stock bootstrap). Exercise
-   Search → asset → Admin → Lineage → Governance → Quality → Ingestion →
-   Activity. Unauthenticated routes redirect to `/login`.
-3. **Ingest dry-run / live.** `smartmetadata-ingest run --config
-   smartmetadata-ingestion/examples/postgres-metadata.yaml` with `OM_JWT`
-   and source env vars. Missing `${OM_JWT}` must fail closed. A mocked
-   `pytest` pass is not a substitute for this step when promoting a release.
-4. **MCP.** `cd smartmetadata-mcp && npm start` with `OM_API_URL` + `OM_JWT`.
-   Call `search_entities` (`q=*`) and one get-by-FQN tool.
-5. **Gates.** Re-run `make verify-rebuild` (and `make slim-dist` +
-   `python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball` after
-   a dist build).
-6. **Do not** start `./docker/run_local_docker.sh -i true` or rely on the
-   CCL `ingestion` compose service / official UI jar for a product demo.
+1. **Preferred:** `workflow_dispatch` the `SmartMetadata rebuild` workflow
+   (Job C uses GHA MySQL + Elasticsearch **service containers**, the Job B
+   tarball, SPA preview, login → search → open asset).
+2. **Optional:** a remote VM or Kubernetes cluster that already has a
+   container runtime — not a Windows/Mac laptop without Docker.
+3. **Laptop without Docker:** point `make ui_dev`, `smartmetadata-ingest`,
+   and `smartmetadata-mcp` at an **already-running** remote catalog
+   (`VITE_API_PROXY_TARGET` / `OM_API_URL` + JWT or bootstrap login). Do not
+   start MySQL, Elasticsearch, or compose locally.
+
+Do **not** start `./docker/run_local_docker.sh -i true` or rely on the CCL
+`ingestion` compose service / official UI jar for a product demo.
 
 ## Production notes
 
@@ -196,15 +195,22 @@ Rebuild-map modules → shipped SmartMetadata surfaces. Collate-only stays DROP.
 - New connectors, Prefect/Airflow operators, or SPA-in-Java
 - Persona landing / Collate AI Studio
 - HTTP MCP transport
-- GitHub workflow edits without explicit authorization
+- GitHub workflow edits without explicit authorization (rebuild CI is
+  authorized: ADR:2026-10-22-rebuild-ci-is-a-separate-workflow)
+- Live catalog e2e inside `make verify-rebuild`
+- Documenting contributor-laptop Docker as a go-live requirement
 
 ## Open questions (safest default already taken)
 
-1. **Add a live-catalog e2e to `make verify-rebuild`?** **No.** Document the
-   live path; do not flake CI on a missing catalog.
+1. **Add a live-catalog e2e to `make verify-rebuild`?** **No.** Job C is
+   `workflow_dispatch`; do not flake the PR gate on a missing catalog.
 2. **Embed the SPA or MCP in the slim Java process?** **No** — existing ADRs.
-3. **Wire `make verify-rebuild` into `.github/workflows` in this PR?** **No.**
+3. **Wire `make verify-rebuild` into `.github/workflows`?** **Yes** — Job A
+   of `.github/workflows/smartmetadata-rebuild.yml` after explicit
+   authorization (ADR:2026-10-22-rebuild-ci-is-a-separate-workflow).
 4. **Ship `-i true` / official UI Docker as a product path?** **No.**
+5. **Require Docker on a contributor laptop for go-live?** **No.** Job C
+   runs on GitHub-hosted runners.
 
 ## Verification checklist
 
@@ -212,4 +218,4 @@ Rebuild-map modules → shipped SmartMetadata surfaces. Collate-only stays DROP.
 2. `make verify-rebuild` (or `python3 scripts/rebuild/verify_rebuild.py`)
 3. Confirm the three CCL gates print pass
 4. Confirm `check_decision_records.py` is in the same run
-5. Optional live path above, on a maintainer machine
+5. Optional: `workflow_dispatch` Job C (see [VERIFY_RUNTIME.md](VERIFY_RUNTIME.md))
