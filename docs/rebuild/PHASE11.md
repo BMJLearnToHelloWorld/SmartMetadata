@@ -42,10 +42,10 @@ These are accepted leftovers, not Phase 11 bugs.
 | **Persona landing skipped** | No thin non-AI `uiCustomization` path in Phase 9 | Default AppShell nav; do not invent Collate AI widgets |
 | **In-tree CCL source** | Anyone can still `mvn package` UI/MCP or `pip install ingestion/` | Shipping policy is dist classpath + the three gates |
 | **Profiler / DQ job execution** | Phase 6 stubs only; Phase 5 UI is catalog CRUD + read of results | Results stay empty until a later runner writes them |
-| **MCP is stdio only** | No HTTP/SSE transport; official `/mcp` stays unregistered | Point the MCP host at `node smartmetadata-mcp/dist/index.js` |
-| **SPA is not in `openmetadata-dist`** | Serving Vue from the Java process needs a new ADR | Static host or Vite dev proxy |
-| **Empty catalog** | Fresh migrate has login + empty search | Seed via API or `smartmetadata-ingest`, not CCL sample-data loaders |
-| **Compose still defines an ingestion service** | Historical reference (`docker/development/`, quickstart) | Default `./docker/run_local_docker.sh` does **not** start it. `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1` |
+| **MCP is stdio only** | No HTTP/SSE transport; official `/mcp` stays unregistered | Product compose `mcp` service, or `node smartmetadata-mcp/dist/index.js` |
+| **SPA is not in `openmetadata-dist`** | Serving Vue from the Java process needs a new ADR | Product compose `ui` (nginx) or `make ui_dev` |
+| **Empty catalog** | Fresh migrate has login + empty search | Product compose `ingest` seeds `static-smoke.yaml`; do not use CCL sample-data loaders |
+| **Historical compose still defines an ingestion service** | Files stay until the #18 purge (`docker/development/`, quickstart) | Product Docker is `make docker-up` (`docker/rebuild/`, no ingestion service). Historical wrapper refuses unless `I_UNDERSTAND_REFERENCE_STACK=1`. `-i true` also needs `I_UNDERSTAND_CCL_INGESTION=1` |
 | **`openmetadata-airflow-apis/` and `ui-core-components`** | VERIFY for counsel; not in the tarball | Do not import either into product modules |
 | **ITs may pull CCL MCP on the test classpath** | `openmetadata-integration-tests` test-scoped `openmetadata-mcp` | Dist / runtime classpath still exclude it |
 
@@ -116,9 +116,11 @@ with Docker. Full steps, OSS-capability mapping, and the three venues:
    (`VITE_API_PROXY_TARGET` / `OM_API_URL` + JWT or bootstrap login). Do not
    start MySQL, Elasticsearch, or compose locally.
 
-Do **not** start `./docker/run_local_docker.sh -i true` or rely on the CCL
-`ingestion` compose service / official UI jar for a product demo. That flag
-now requires `I_UNDERSTAND_CCL_INGESTION=1`.
+Do **not** start `./docker/run_local_docker.sh` or rely on the CCL
+`ingestion` compose service / official UI jar for a product demo. Product
+Docker is `make docker-up`. The historical wrapper requires
+`I_UNDERSTAND_REFERENCE_STACK=1`; `-i true` also needs
+`I_UNDERSTAND_CCL_INGESTION=1`.
 
 ## Production notes
 

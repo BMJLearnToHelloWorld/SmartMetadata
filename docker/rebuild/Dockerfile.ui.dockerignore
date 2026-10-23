@@ -1,0 +1,9 @@
+**
+!smartmetadata-ui/
+!smartmetadata-ui/**
+!docker/
+!docker/rebuild/
+!docker/rebuild/nginx.conf
+smartmetadata-ui/node_modules
+smartmetadata-ui/dist
+smartmetadata-ui/coverage

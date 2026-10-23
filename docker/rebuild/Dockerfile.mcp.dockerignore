@@ -1,0 +1,9 @@
+**
+!smartmetadata-mcp/
+!smartmetadata-mcp/**
+!docker/
+!docker/rebuild/
+!docker/rebuild/mcp-entrypoint.sh
+smartmetadata-mcp/node_modules
+smartmetadata-mcp/dist
+smartmetadata-mcp/coverage

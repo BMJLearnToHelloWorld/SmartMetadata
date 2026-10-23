@@ -42,30 +42,37 @@ artifact is the dist tarball / the image built from it, and that classpath is wh
 Minimum: Java 21, Maven 3.8+, MySQL ≥ 8 or Postgres ≥ 15, Elasticsearch 9.x or OpenSearch.
 
 ```bash
+make docker-up
+# builds slim-dist if needed, then ups docker/rebuild/ only
+# API: http://localhost:8585/api   Admin: http://localhost:8586/healthcheck
+```
+
+Or unpack the tarball against already-running MySQL + Elasticsearch:
+
+```bash
 make slim-dist
 tar -xzf openmetadata-dist/target/openmetadata-2.0.0-SNAPSHOT.tar.gz
-# Start MySQL + Elasticsearch (no ingestion container):
-docker compose -f docker/development/docker-compose.yml up -d mysql elasticsearch
+# Product compose (no ingestion service exists in this file):
+docker compose -f docker/rebuild/docker-compose.yml up -d mysql elasticsearch
 # From the unpacked dist, with conf/openmetadata.yaml pointed at those services:
 ./bootstrap/openmetadata-ops.sh migrate
 ./bin/openmetadata-server-start.sh conf/openmetadata.yaml
 ```
 
-Local Docker wrapper now defaults to the slim path (no UI package, no ingestion container):
+Historical `docker/development/` and `./docker/run_local_docker.sh` are
+reference-only (ADR:2026-10-23-product-docker-is-rebuild-only). They refuse
+unless `I_UNDERSTAND_REFERENCE_STACK=1`. `-i true` also needs
+`I_UNDERSTAND_CCL_INGESTION=1`.
 
-```bash
-./docker/run_local_docker.sh
-# historical CCL ingestion (not a product demo):
-# I_UNDERSTAND_CCL_INGESTION=1 ./docker/run_local_docker.sh -i true
-```
+The product server image `docker/rebuild/Dockerfile` unpacks whatever tarball
+`openmetadata-dist` produced. After Phase 0 that tarball has no UI jar and no MCP jar.
 
-The server image `docker/development/Dockerfile` unpacks whatever tarball `openmetadata-dist`
-produced. After Phase 0 that tarball has no UI jar and no MCP jar.
-
-API: `http://localhost:8585/api`. Admin: `8586`. The SPA is not packaged. Without
-`/assets/index.html` the asset servlet is not registered and 404s are not rewritten to `/`, so
-`GET /` and `GET /mcp` stay unregistered (404). MCP HTTP (`/mcp`) is not registered without the
-CCL module.
+API: `http://localhost:8585/api`. Admin: `8586`. The SPA is not packaged **in the
+Java tarball**. Product Docker serves `smartmetadata-ui` from nginx on
+`:8080` (`make docker-up`). Without `/assets/index.html` the Java asset servlet
+is not registered, so `GET /` on `:8585` stays 404. MCP HTTP (`/mcp`) is not
+registered without the CCL module; product MCP is the stdio process
+`smartmetadata-mcp`.
 
 ## Verification checklist
 
@@ -99,10 +106,12 @@ artifacts re-enter the dependency tree.
   Shipping policy is the dist/runtime classpath, not a git sparse checkout.
 - **`openmetadata-integration-tests` test-scoped `openmetadata-mcp`.** Full IT runs that need
   `/mcp` still pull the CCL module onto the *test* classpath. The server dist does not.
-- **Compose files** under `docker/docker-compose-quickstart/` and `docker/development/` still
-  *define* an `ingestion` service (Collate image / local CCL build). Default local run no longer
-  starts it. `-i true` requires `I_UNDERSTAND_CCL_INGESTION=1`. Those files are historical
-  reference until a later compose cleanup. See [PRODUCT_PATH.md](PRODUCT_PATH.md).
+- **Historical compose files** under `docker/docker-compose-quickstart/` and
+  `docker/development/` still *define* an `ingestion` service. Product Docker is
+  `docker/rebuild/` (`make docker-up`). The historical wrapper refuses unless
+  `I_UNDERSTAND_REFERENCE_STACK=1`. `-i true` also needs
+  `I_UNDERSTAND_CCL_INGESTION=1`. Those files stay in git until a purge ADR.
+  See [PRODUCT_PATH.md](PRODUCT_PATH.md).
 - **MCP catalog entities and `McpApplication`** remain in the Apache spec/server. Without the CCL
   jar the process logs `MCP module not found in classpath` and continues. Agents use the
   standalone Apache process in [PHASE10.md](PHASE10.md) (`smartmetadata-mcp/`), not the CCL jar.

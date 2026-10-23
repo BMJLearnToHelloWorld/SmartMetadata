@@ -9,6 +9,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# Historical Collate development compose — reference-only.
+# It still DEFINES a CCL `ingestion` service. That is NOT the SmartMetadata
+# product path. Product Docker is `make docker-up` (`docker/rebuild/`).
+# Bare `docker compose -f docker/development/docker-compose.yml up -d` starts
+# ingestion; do not do that. Wrapper: I_UNDERSTAND_REFERENCE_STACK=1
+# ./docker/run_local_docker.sh  (and I_UNDERSTAND_CCL_INGESTION=1 for -i true).
+
 version: "3.9"
 volumes:
   ingestion-volume-dag-airflow:
