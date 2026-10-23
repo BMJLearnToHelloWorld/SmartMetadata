@@ -14,11 +14,18 @@ RED='\033[0;31m'
 NC='\033[0m'
 RUN_LOCAL_DOCKER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+require_reference_stack_ack() {
+  local root
+  root="$(cd "$RUN_LOCAL_DOCKER_DIR/.." && pwd)"
+  python3 "$root/scripts/rebuild/require_reference_stack.py" --target run_local_docker || exit 1
+}
+
 require_ccl_ingestion_ack() {
   echo -e "${RED}========================================================================
 WARNING: -i true starts the historical Collate Community License
 ingestion container. That is NOT the SmartMetadata product path.
 
+Product Docker is make docker-up (docker/rebuild/).
 Product ingest is smartmetadata-ingest (docs/rebuild/PRODUCT_PATH.md).
 Collate quickstart images are also not a product demo.
 
@@ -36,6 +43,8 @@ authorizationToken="eyJraWQiOiJHYjM4OWEtOWY3Ni1nZGpzLWE5MmotMDI0MmJrOTQzNTYiLCJ0
 
 helpFunction() {
    echo ""
+   echo "Historical reference-stack wrapper. Product Docker is make docker-up."
+   echo "Requires I_UNDERSTAND_REFERENCE_STACK=1. See docs/rebuild/PRODUCT_PATH.md."
    echo "Usage: $0 -m mode -d database"
    echo "\t-m Running mode: [ui, no-ui]. Default [no-ui]. The shippable dist no longer packages the CCL UI; both modes build the slim server.\n"
    echo "\t-d Database: [mysql, postgresql]. Default [mysql]\n"
@@ -400,6 +409,8 @@ run_local_docker_main() {
   debugOM="${debugOM:=false}"
   cleanDbVolumes="${cleanDbVolumes:=true}"
   export APP_RUN_WAIT_TIMEOUT_SECONDS="${APP_RUN_WAIT_TIMEOUT_SECONDS:-300}"
+
+  require_reference_stack_ack
 
   if [[ $includeIngestion == "true" ]]; then
     require_ccl_ingestion_ack

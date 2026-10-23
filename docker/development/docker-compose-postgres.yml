@@ -9,6 +9,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# Historical Collate development compose — reference-only.
+# Product Docker is `make docker-up` (`docker/rebuild/`).
+# Wrapper: I_UNDERSTAND_REFERENCE_STACK=1 ./docker/run_local_docker.sh
+
 version: "3.9"
 volumes:
   ingestion-volume-dag-airflow:

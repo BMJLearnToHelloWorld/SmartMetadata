@@ -27,9 +27,7 @@ detail page explains that Phase 1 does not fetch a dedicated entity endpoint
 Server (Phase 0):
 
 ```bash
-make slim-dist
-docker compose -f docker/development/docker-compose.yml up -d mysql elasticsearch
-# unpack the tarball, migrate, start the server — see docs/rebuild/PHASE0.md
+make docker-up
 # API: http://localhost:8585/api
 ```
 

@@ -1,0 +1,8 @@
+**
+!smartmetadata-ingestion/
+!smartmetadata-ingestion/**
+smartmetadata-ingestion/**/__pycache__
+smartmetadata-ingestion/**/*.pyc
+smartmetadata-ingestion/.pytest_cache
+smartmetadata-ingestion/tests
+smartmetadata-ingestion/*.egg-info

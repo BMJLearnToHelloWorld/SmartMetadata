@@ -1,7 +1,8 @@
 # SmartMetadata product Makefile.
 #
 # Default `make` / `make help` list and run rebuilt surfaces only
-# (slim-dist, ui_*, ingest_*, mcp_*, verify-rebuild, live-smoke, check-*).
+# (slim-dist, docker-up, ui_*, ingest_*, mcp_*, verify-rebuild, live-smoke, check-*).
+# docker-up starts the rebuilt server + Vue UI + ingest seed + MCP.
 # Historical CCL trees stay in git as read-only reference.
 # Escape hatch: I_UNDERSTAND_REFERENCE_STACK=1
 # Map: docs/rebuild/PRODUCT_PATH.md
@@ -54,8 +55,16 @@ check-ccl-free-dist:  ## Fail if the shippable dist still depends on Collate Com
 	python3 scripts/rebuild/check_ccl_free_dist.py
 
 .PHONY: check-product-path-hints
-check-product-path-hints:  ## Fail if product-path docs or the docker CCL ingestion ack are missing
+check-product-path-hints:  ## Fail if product-path docs, product Docker, or the docker CCL ingestion ack are missing
 	python3 scripts/rebuild/check_product_path_hints.py
+
+.PHONY: docker-up
+docker-up:  ## Start the rebuilt product stack (server, Vue UI, ingest seed, MCP)
+	./docker/rebuild/up.sh
+
+.PHONY: docker-down
+docker-down:  ## Stop the rebuilt product Docker stack
+	./docker/rebuild/down.sh
 
 .PHONY: ui_install
 ui_install:  ## Install SmartMetadata Vue UI dependencies

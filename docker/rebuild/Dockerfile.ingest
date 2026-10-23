@@ -1,0 +1,16 @@
+# Product ingest image. Installs the clean-room package plus the shipped
+# connector extras (postgres, mysql, kafka, snowflake). Not the CCL tree.
+# Context is the repo root.
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+COPY smartmetadata-ingestion/pyproject.toml smartmetadata-ingestion/README.md smartmetadata-ingestion/LICENSE ./
+COPY smartmetadata-ingestion/src ./src
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir '.[postgres,mysql,kafka,snowflake]'
+ENTRYPOINT ["smartmetadata-ingest"]
+CMD ["--help"]

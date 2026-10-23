@@ -138,10 +138,10 @@ repos:
         require_serial: true
       - id: product-path-hints
         name: Product-path misuse guards still present
-        description: Fails if PRODUCT_PATH.md, the docker I_UNDERSTAND_CCL_INGESTION ack, or the README pointer is missing. Does not re-scan openmetadata-dist (see ccl-free-dist).
+        description: Fails if PRODUCT_PATH.md, product Docker (docker/rebuild), the historical docker acks, or the README pointer is missing. Does not re-scan openmetadata-dist (see ccl-free-dist).
         entry: python3 scripts/rebuild/test_check_product_path_hints.py
         language: system
-        files: ^(docs/rebuild/PRODUCT_PATH\.md|docs/decisions/2026-10-22-ccl-trees-stay-reference-only\.md|README\.md|docker/run_local_docker_common\.sh|scripts/rebuild/check_product_path_hints\.py|scripts/rebuild/test_check_product_path_hints\.py)
+        files: ^(docs/rebuild/PRODUCT_PATH\.md|docs/decisions/2026-10-22-ccl-trees-stay-reference-only\.md|docs/decisions/2026-10-23-product-docker-is-rebuild-only\.md|README\.md|docker/run_local_docker_common\.sh|docker/rebuild/.*|scripts/rebuild/check_product_path_hints\.py|scripts/rebuild/test_check_product_path_hints\.py)
         pass_filenames: false
         require_serial: true
       - id: verify-rebuild-contract

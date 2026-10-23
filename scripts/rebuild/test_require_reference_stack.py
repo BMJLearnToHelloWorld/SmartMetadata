@@ -26,6 +26,8 @@ HATCH = "I_UNDERSTAND_REFERENCE_STACK"
 
 PRODUCT_HELP_TARGETS = (
     "slim-dist",
+    "docker-up",
+    "docker-down",
     "ui_dev",
     "ui_install",
     "ingest_install",
@@ -172,6 +174,13 @@ class ProductMakefileSurface(unittest.TestCase):
         self.assertIn("openmetadata-dist", slim.stdout)
         self.assertNotIn("openmetadata-ui/", slim.stdout)
 
+        docker_up = run_make(["-n", "docker-up"])
+        self.assertEqual(docker_up.returncode, 0, docker_up.stderr)
+        self.assertIn("docker/rebuild/up.sh", docker_up.stdout)
+        self.assertNotIn("run_local_docker.sh", docker_up.stdout)
+        self.assertNotIn("I_UNDERSTAND_CCL_INGESTION", docker_up.stdout)
+        self.assertNotIn("openmetadata-ui/", docker_up.stdout)
+
     def test_hatch_enables_reference_recipes(self) -> None:
         yarn = run_make(["-n", "yarn_start_dev_ui"], env={HATCH: "1"})
         self.assertEqual(yarn.returncode, 0, yarn.stderr)
@@ -261,6 +270,39 @@ class DevSetupAndComposeFootguns(unittest.TestCase):
         joined = " ".join(str(item) for item in workspaces)
         self.assertNotIn("openmetadata-ui", joined)
         self.assertNotIn("openmetadata-ui-core-components", joined)
+
+    def test_historical_docker_wrapper_refuses_without_hatch(self) -> None:
+        env = os.environ.copy()
+        env.pop(HATCH, None)
+        env.pop("I_UNDERSTAND_CCL_INGESTION", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            stub = Path(tmp) / "bin"
+            stub.mkdir()
+            log = Path(tmp) / "invoked.log"
+            for name in ("docker", "mvn", "make", "curl"):
+                script = stub / name
+                script.write_text(
+                    f"#!/bin/bash\nprintf '%s ' '{name}' >> '{log}'\n"
+                    f"printf '%s\\n' \"$*\" >> '{log}'\nexit 0\n",
+                    encoding="utf-8",
+                )
+                script.chmod(0o755)
+            env["PATH"] = f"{stub}{os.pathsep}{env.get('PATH', '')}"
+            completed = subprocess.run(
+                ["bash", str(REPO / "docker" / "run_local_docker.sh"), "-s", "true"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(REPO),
+                timeout=8,
+            )
+        self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        err = strip_ansi(completed.stderr + completed.stdout)
+        self.assertIn("NOT the SmartMetadata product path", err)
+        self.assertIn(HATCH, err)
+        self.assertIn("make docker-up", err)
+        self.assertFalse(log.is_file(), "historical docker wrapper must not start compose without the hatch")
 
 
 class GuardImport(unittest.TestCase):

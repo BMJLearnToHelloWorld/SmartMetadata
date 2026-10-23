@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Refuse historical CCL/reference-stack execution unless explicitly acknowledged.
 
-Product Make, ``scripts/dev_setup.sh``, and Collate quickstart compose must not
-run ``openmetadata-ui/``, ``ingestion/``, ``openmetadata-mcp/``,
-``openmetadata-airflow-apis/``, or ``openmetadata-ui-core-components`` unless
-``I_UNDERSTAND_REFERENCE_STACK=1``.
+Product Make, ``scripts/dev_setup.sh``, historical ``run_local_docker.sh``,
+and Collate quickstart compose must not run ``openmetadata-ui/``,
+``ingestion/``, ``openmetadata-mcp/``, ``openmetadata-airflow-apis/``, or
+``openmetadata-ui-core-components`` unless ``I_UNDERSTAND_REFERENCE_STACK=1``.
 
-Mirrors docker ``I_UNDERSTAND_CCL_INGESTION`` (that ack is only for
-``run_local_docker.sh -i true``; it does not unlock Make).
+``I_UNDERSTAND_CCL_INGESTION`` is only for ``run_local_docker.sh -i true``
+after the reference-stack hatch; it does not unlock Make or product Docker.
 
 Stdlib only. Exit 0 when the hatch is set, 1 otherwise.
 """
@@ -42,7 +42,9 @@ SUBSTITUTES = {
     "js_antlr": "CCL openmetadata-ui ANTLR generate is reference-only",
     "dev_setup": "make ui_install && make ingest_install && make mcp_install && make slim-dist",
     "dev_check": "make verify-rebuild",
-    "compose-quickstart": "./docker/run_local_docker.sh  (do not pass -i true)",
+    "compose-quickstart": "make docker-up",
+    "run_local_docker": "make docker-up",
+    "run_local_docker_rdf": "make docker-up",
     "unit_ingestion": "make ingest_test",
     "unit_ingestion_dev_env": "make ingest_test",
     "py_format": "format smartmetadata-ingestion/ (product) rather than ingestion/",
@@ -68,7 +70,7 @@ def substitute_for(target: str) -> str:
         return "make ingest_install / make ingest_test"
     if "airflow" in target:
         return "openmetadata-airflow-apis is not a product package"
-    return f"see {PRODUCT_PATH} (slim-dist, ui_*, ingest_*, mcp_*)"
+    return f"see {PRODUCT_PATH} (slim-dist, docker-up, ui_*, ingest_*, mcp_*)"
 
 
 def hatch_set(env: dict[str, str] | None = None) -> bool:

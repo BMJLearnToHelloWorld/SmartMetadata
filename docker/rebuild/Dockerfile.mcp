@@ -1,0 +1,17 @@
+# Product MCP image. Builds smartmetadata-mcp (stdio). Context is the repo root.
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY smartmetadata-mcp/package.json smartmetadata-mcp/package-lock.json ./
+RUN npm ci
+COPY smartmetadata-mcp/ ./
+RUN npm run build && npm prune --omit=dev
+
+FROM node:22-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY docker/rebuild/mcp-entrypoint.sh /mcp-entrypoint.sh
+RUN chmod 755 /mcp-entrypoint.sh
+ENTRYPOINT ["/mcp-entrypoint.sh"]

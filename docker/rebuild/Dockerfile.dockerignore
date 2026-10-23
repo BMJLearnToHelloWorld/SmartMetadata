@@ -1,0 +1,13 @@
+# Allowlist for docker/rebuild/Dockerfile. Context is the repo root so the
+# image can reach openmetadata-dist/target and this directory, without pulling
+# CCL trees (ingestion/, openmetadata-ui/, openmetadata-mcp/) into the build.
+
+**
+
+!openmetadata-dist/
+!openmetadata-dist/target/
+!openmetadata-dist/target/openmetadata-*.tar.gz
+
+!docker/
+!docker/rebuild/
+!docker/rebuild/openmetadata-start.sh

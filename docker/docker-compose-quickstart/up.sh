@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fail-closed wrapper for the historical Collate quickstart compose.
-# Product path: ./docker/run_local_docker.sh (do not pass -i true).
+# Product path: make docker-up (docker/rebuild/). This wrapper is reference-only.
 # Map: docs/rebuild/PRODUCT_PATH.md
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

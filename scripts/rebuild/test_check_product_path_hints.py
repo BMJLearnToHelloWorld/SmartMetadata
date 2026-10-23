@@ -42,7 +42,10 @@ def complete_tree(root: Path) -> None:
                 "# Product path",
                 "Product: make slim-dist + smartmetadata-ui + smartmetadata-ingestion + smartmetadata-mcp.",
                 "Historical trees stay **reference-only**; do not delete them in this change.",
-                "Do not demo with `./docker/run_local_docker.sh -i true` or Collate quickstart images.",
+                "Product Docker is `make docker-up` / `./docker/rebuild/up.sh`.",
+                "Do not demo with `./docker/run_local_docker.sh` or Collate quickstart images.",
+                "`./docker/run_local_docker.sh -i true` stays reference-only.",
+                "Override the historical docker path only with I_UNDERSTAND_REFERENCE_STACK=1.",
                 "Override the docker ingestion path only with I_UNDERSTAND_CCL_INGESTION=1.",
                 "Default `make help` lists rebuilt targets only.",
                 "CCL Make recipes live in Makefile.reference behind I_UNDERSTAND_REFERENCE_STACK=1.",
@@ -61,9 +64,16 @@ def complete_tree(root: Path) -> None:
         "# Product Make executes rebuilt surfaces only\n",
     )
     write(
+        root / "docs" / "decisions" / "2026-10-23-product-docker-is-rebuild-only.md",
+        "# Product Docker executes rebuilt compose only\n",
+    )
+    write(
         root / "docker" / "run_local_docker_common.sh",
         "require_ccl_ingestion_ack() {\n  :\n}\n"
+        "require_reference_stack_ack() {\n  :\n}\n"
         "I_UNDERSTAND_CCL_INGESTION\n"
+        "I_UNDERSTAND_REFERENCE_STACK\n"
+        "require_reference_stack_ack\n"
         '  if [[ $includeIngestion == "true" ]]; then\n'
         "    require_ccl_ingestion_ack\n"
         "  fi\n",
@@ -71,6 +81,7 @@ def complete_tree(root: Path) -> None:
     write(
         root / "README.md",
         "See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).\n"
+        "Product Docker: make docker-up (docker/rebuild/).\n"
         "Escape hatch: I_UNDERSTAND_REFERENCE_STACK=1\n",
     )
     write(
@@ -82,7 +93,9 @@ def complete_tree(root: Path) -> None:
         "ifeq ($(I_UNDERSTAND_REFERENCE_STACK),1)\n"
         "include Makefile.reference\n"
         "include ingestion/Makefile\n"
-        "endif\n",
+        "endif\n"
+        "docker-up:\n\t./docker/rebuild/up.sh\n"
+        "docker-down:\n\t./docker/rebuild/down.sh\n",
     )
     write(
         root / "Makefile.reference",
@@ -91,7 +104,8 @@ def complete_tree(root: Path) -> None:
     write(
         root / "scripts" / "rebuild" / "require_reference_stack.py",
         "ENV = 'I_UNDERSTAND_REFERENCE_STACK'\n"
-        "# NOT the SmartMetadata product path\n",
+        "# NOT the SmartMetadata product path\n"
+        "make docker-up\n",
     )
     write(
         root / "scripts" / "dev_setup.sh",
@@ -105,6 +119,51 @@ def complete_tree(root: Path) -> None:
         root / "docker" / "docker-compose-quickstart" / "up.sh",
         "python3 scripts/rebuild/require_reference_stack.py --target compose-quickstart\n"
         "docker compose -f docker-compose.yml \"$@\"\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "docker-compose.yml",
+        "services:\n"
+        "  mysql:\n    image: mysql:8.0\n"
+        "  elasticsearch:\n    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0\n"
+        "  migrate:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
+        "  openmetadata-server:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
+        "  ui:\n    build:\n      context: ../../smartmetadata-ui\n"
+        "  ingest:\n    build:\n      context: ../../smartmetadata-ingestion\n"
+        "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "Dockerfile",
+        "COPY openmetadata-dist/target/openmetadata-*.tar.gz /\n"
+        "RUN tar zxvf openmetadata-*.tar.gz\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "up.sh",
+        "#!/bin/bash\n"
+        "make slim-dist\n"
+        "python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball\n"
+        "docker compose -f docker/rebuild/docker-compose.yml up -d\n"
+        "echo Console http://localhost:8080 ingest mcp\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "Dockerfile.ui",
+        "FROM nginx:1.27-alpine\nCOPY dist /usr/share/nginx/html\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "Dockerfile.ingest",
+        "FROM python:3.11-slim\nCOPY src ./src\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "Dockerfile.mcp",
+        "FROM node:22-bookworm-slim\nCOPY dist ./dist\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "down.sh",
+        "docker compose -f docker/rebuild/docker-compose.yml down\n",
+    )
+    write(
+        root / "docker" / "development" / "docker-compose.yml",
+        "# Historical reference-only compose. Product path: make docker-up.\n"
+        "services:\n  ingestion:\n    build:\n      dockerfile: ingestion/Dockerfile.ci\n",
     )
 
 
@@ -160,6 +219,54 @@ class ProductPathHintsContract(unittest.TestCase):
             errors = hints.check_repo(root)
         self.assertTrue(any("I_UNDERSTAND_CCL_INGESTION" in item for item in errors), errors)
 
+    def test_missing_product_docker_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "docker" / "rebuild" / "docker-compose.yml").unlink()
+            errors = hints.check_repo(root)
+        self.assertTrue(any("docker/rebuild" in item for item in errors), errors)
+
+    def test_product_compose_with_ingestion_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "docker" / "rebuild" / "docker-compose.yml").write_text(
+                "services:\n"
+                "  mysql:\n    image: mysql:8.0\n"
+                "  elasticsearch:\n    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0\n"
+                "  migrate:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
+                "  openmetadata-server:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
+                "  ui:\n    build:\n      context: ../../smartmetadata-ui\n"
+                "  ingest:\n    build:\n      context: ../../smartmetadata-ingestion\n"
+                "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n"
+                "  ingestion:\n    build:\n      dockerfile: ingestion/Dockerfile.ci\n",
+                encoding="utf-8",
+            )
+            errors = hints.check_repo(root)
+        self.assertTrue(
+            any("ingestion" in item for item in errors),
+            errors,
+        )
+
+    def test_product_up_must_not_set_ccl_hatch(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "docker" / "rebuild" / "up.sh").write_text(
+                "export I_UNDERSTAND_CCL_INGESTION=1\n"
+                "docker compose -f docker/development/docker-compose.yml up -d\n",
+                encoding="utf-8",
+            )
+            errors = hints.check_repo(root)
+        self.assertTrue(
+            any("I_UNDERSTAND_CCL_INGESTION" in item or "docker/rebuild" in item for item in errors),
+            errors,
+        )
+
     def test_live_tree_passes(self) -> None:
         hints = load_hints()
         self.assertEqual(hints.main([]), 0)
@@ -185,6 +292,25 @@ class CclIngestionDockerAck(unittest.TestCase):
     def test_entry_point_refuses_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log, env = self._stub_bin(Path(tmp))
+            completed = subprocess.run(
+                ["bash", str(REPO / "docker" / "run_local_docker.sh"), "-i", "true", "-s", "true"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(REPO),
+                timeout=8,
+            )
+        self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("NOT the SmartMetadata product path", completed.stderr)
+        self.assertIn("I_UNDERSTAND_REFERENCE_STACK", completed.stderr)
+        self.assertIn("make docker-up", completed.stderr)
+        self.assertFalse(log.is_file(), log.read_text(encoding="utf-8") if log.is_file() else "")
+
+    def test_entry_point_refuses_ingestion_even_with_reference_hatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log, env = self._stub_bin(Path(tmp))
+            env["I_UNDERSTAND_REFERENCE_STACK"] = "1"
             completed = subprocess.run(
                 ["bash", str(REPO / "docker" / "run_local_docker.sh"), "-i", "true", "-s", "true"],
                 check=False,

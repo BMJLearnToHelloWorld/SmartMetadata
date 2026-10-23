@@ -1,0 +1,170 @@
+# SmartMetadata product compose — rebuilt, CCL-free by construction.
+# Services: official MySQL 8, official Elasticsearch 9, migrate, slim server,
+# Vue console, clean-room ingest seed, stdio MCP.
+# Does not define CCL ingest/Airflow/quickstart/console/MCP services.
+# Entry: make docker-up / ./docker/rebuild/up.sh
+# ADR:2026-10-23-product-docker-is-rebuild-only
+
+name: smartmetadata-rebuild
+
+volumes:
+  mysql-data:
+  es-data:
+
+x-slim-server-environment: &slim-server-environment
+  DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
+  DB_SCHEME: mysql
+  DB_PARAMS: allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_USER: openmetadata_user
+  DB_USER_PASSWORD: openmetadata_password
+  OM_DATABASE: openmetadata_db
+  ELASTICSEARCH_HOST: elasticsearch
+  ELASTICSEARCH_PORT: "9200"
+  SEARCH_TYPE: elasticsearch
+  PIPELINE_SERVICE_CLIENT_ENABLED: "false"
+  SERVER_PORT: "8585"
+  SERVER_ADMIN_PORT: "8586"
+  OPENMETADATA_HEAP_OPTS: ${OPENMETADATA_HEAP_OPTS:--Xmx1G -Xms1G}
+
+x-catalog-auth: &catalog-auth
+  OM_API_URL: http://openmetadata-server:8585
+  OM_ADMIN_URL: http://openmetadata-server:8586
+  OM_LOGIN_EMAIL: ${OM_LOGIN_EMAIL:-admin@open-metadata.org}
+  OM_LOGIN_PASSWORD: ${OM_LOGIN_PASSWORD:-admin}
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: smartmetadata_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: openmetadata_db
+      MYSQL_USER: openmetadata_user
+      MYSQL_PASSWORD: openmetadata_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+    container_name: smartmetadata_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE 'green|yellow'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile
+    container_name: smartmetadata_migrate
+    command: ["./bootstrap/openmetadata-ops.sh", "migrate"]
+    environment:
+      <<: *slim-server-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    restart: "no"
+
+  openmetadata-server:
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile
+    container_name: smartmetadata_server
+    environment:
+      <<: *slim-server-environment
+    ports:
+      - "8585:8585"
+      - "8586:8586"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8586/healthcheck"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  ui:
+    # smartmetadata-ui (nginx). Not the CCL console.
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile.ui
+    container_name: smartmetadata_ui
+    ports:
+      - "8080:80"
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ingest:
+    # smartmetadata-ingestion seed + CLI image. Not the CCL Airflow image.
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile.ingest
+    container_name: smartmetadata_ingest
+    entrypoint: ["/bin/sh", "/ingest-entrypoint.sh"]
+    environment:
+      <<: *catalog-auth
+      OM_API_URL: http://openmetadata-server:8585/api
+      INGEST_CONFIG: /config/static-smoke.yaml
+    volumes:
+      - ./ingest-entrypoint.sh:/ingest-entrypoint.sh:ro
+      - ../../scripts/rebuild/static-smoke.yaml:/config/static-smoke.yaml:ro
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ingest-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mcp:
+    # smartmetadata-mcp stdio. Not the CCL Java MCP jar.
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile.mcp
+    container_name: smartmetadata_mcp
+    stdin_open: true
+    environment:
+      <<: *catalog-auth
+    depends_on:
+      openmetadata-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/mcp-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
