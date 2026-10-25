@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { encodeLoginPassword } from '@/auth/token';
+import { createTestI18n } from '@/test/i18n';
 import LoginView from './LoginView.vue';
 
 async function mountLogin() {
@@ -29,7 +30,7 @@ async function mountLogin() {
   await router.isReady();
   const wrapper = mount(LoginView, {
     global: {
-      plugins: [pinia, router, Antd],
+      plugins: [pinia, router, Antd, createTestI18n()],
     },
   });
   return { wrapper, router };
@@ -77,6 +78,7 @@ describe('LoginView', () => {
     expect(wrapper.text()).toContain('Sign in');
     expect(wrapper.find('[data-testid="login-email"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="login-submit"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
   });
 
   it('submits a Base64 password to the login API and persists the token', async () => {

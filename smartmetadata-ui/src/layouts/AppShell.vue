@@ -4,102 +4,33 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Input, Layout, Menu, Space, Typography, message } from 'ant-design-vue';
+import { Button, Input, Layout, Menu, Select, Space, Typography, message } from 'ant-design-vue';
+import { setAppLocale } from '@/i18n';
+import { isSupportedLocale } from '@/i18n/localePreference';
+import { isNavSectionKey, NAV_ENTRIES, sectionKeyForRoute, selectedNavKey } from '@/layouts/nav';
+import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const { t, locale } = useI18n();
 
-const selectedKeys = computed(() => {
-  const name = String(route.name ?? 'search');
-  if (name === 'asset') {
-    return ['search'];
-  }
-  if (name === 'lineage') {
-    return ['lineage-home'];
-  }
-  if (name === 'admin-user') {
-    return ['admin-users'];
-  }
-  if (name === 'admin-team') {
-    return ['admin-teams'];
-  }
-  if (name === 'admin-role') {
-    return ['admin-roles'];
-  }
-  if (name === 'admin-bot') {
-    return ['admin-bots'];
-  }
-  if (name === 'governance-glossary' || name === 'governance-term') {
-    return ['governance-glossaries'];
-  }
-  if (name === 'governance-classification' || name === 'governance-tag') {
-    return ['governance-classifications'];
-  }
-  if (name === 'governance-domain') {
-    return ['governance-domains'];
-  }
-  if (name === 'governance-data-product') {
-    return ['governance-data-products'];
-  }
-  if (name === 'quality-test-definition') {
-    return ['quality-test-definitions'];
-  }
-  if (name === 'quality-test-case') {
-    return ['quality-test-cases'];
-  }
-  if (name === 'quality-test-suite') {
-    return ['quality-test-suites'];
-  }
-  if (name === 'observability-incident') {
-    return ['observability-incidents'];
-  }
-  if (name === 'observability-alert') {
-    return ['observability-alerts'];
-  }
-  if (name === 'ingestion-service') {
-    return ['ingestion-services'];
-  }
-  if (name === 'ingestion-pipeline') {
-    return ['ingestion-pipelines'];
-  }
-  if (name === 'task') {
-    return ['tasks'];
-  }
-  return [name];
-});
-
+const collapsed = ref(false);
 const openKeys = ref<string[]>([]);
+
+const selectedKeys = computed(() => [selectedNavKey(route.name)]);
+
+const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
 
 watch(
   () => route.name,
   (name) => {
-    const routeName = String(name ?? '');
-    if (routeName.startsWith('admin-') && !openKeys.value.includes('admin')) {
-      openKeys.value = [...openKeys.value, 'admin'];
-    }
-    if (routeName.startsWith('governance-') && !openKeys.value.includes('governance')) {
-      openKeys.value = [...openKeys.value, 'governance'];
-    }
-    if (routeName.startsWith('quality-') && !openKeys.value.includes('quality')) {
-      openKeys.value = [...openKeys.value, 'quality'];
-    }
-    if (routeName.startsWith('observability-') && !openKeys.value.includes('observability')) {
-      openKeys.value = [...openKeys.value, 'observability'];
-    }
-    if (routeName.startsWith('ingestion-') && !openKeys.value.includes('ingestion')) {
-      openKeys.value = [...openKeys.value, 'ingestion'];
-    }
-    if (
-      (routeName === 'activity' ||
-        routeName === 'tasks' ||
-        routeName === 'task' ||
-        routeName === 'announcements') &&
-      !openKeys.value.includes('collaboration')
-    ) {
-      openKeys.value = [...openKeys.value, 'collaboration'];
+    const section = sectionKeyForRoute(name);
+    if (section && !openKeys.value.includes(section)) {
+      openKeys.value = [...openKeys.value, section];
     }
   },
   { immediate: true },
@@ -107,14 +38,7 @@ watch(
 
 function onMenuClick({ key }: { key: string | number }): void {
   const name = String(key);
-  if (
-    name === 'admin' ||
-    name === 'governance' ||
-    name === 'quality' ||
-    name === 'observability' ||
-    name === 'ingestion' ||
-    name === 'collaboration'
-  ) {
+  if (isNavSectionKey(name)) {
     return;
   }
   void router.push({ name });
@@ -124,11 +48,17 @@ function onSearch(value: string): void {
   void router.push({ name: 'search', query: value.trim() ? { q: value.trim() } : {} });
 }
 
+function onLocaleChange(value: unknown): void {
+  if (isSupportedLocale(value)) {
+    setAppLocale(value, locale);
+  }
+}
+
 async function onLogout(): Promise<void> {
   try {
     await auth.logout();
   } catch (error) {
-    message.warning(error instanceof Error ? error.message : 'Server logout failed; local session cleared');
+    message.warning(error instanceof Error ? error.message : t('chrome.logoutFailed'));
     auth.forgetLocalSession();
   }
   await router.push({ name: 'login' });
@@ -137,62 +67,72 @@ async function onLogout(): Promise<void> {
 
 <template>
   <Layout class="shell">
-    <Layout.Sider breakpoint="lg" collapsed-width="0" theme="dark" class="shell__sider">
-      <div class="shell__brand">SmartMetadata</div>
+    <Layout.Sider
+      v-model:collapsed="collapsed"
+      class="shell__sider"
+      breakpoint="lg"
+      collapsible
+      :collapsed-width="64"
+      :width="220"
+      theme="dark"
+    >
+      <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
+        <span class="shell__brand-name">{{ collapsed ? 'SM' : t('product.name') }}</span>
+        <span v-if="!collapsed" class="shell__brand-sub">{{ t('product.subtitle') }}</span>
+      </div>
       <Menu
         theme="dark"
         mode="inline"
+        :inline-collapsed="collapsed"
         :selected-keys="selectedKeys"
         v-model:openKeys="openKeys"
         @click="onMenuClick"
       >
-        <Menu.Item key="search">Search</Menu.Item>
-        <Menu.Item key="lineage-home">Lineage</Menu.Item>
-        <Menu.SubMenu key="governance" title="Governance" data-testid="governance-nav">
-          <Menu.Item key="governance-glossaries">Glossaries</Menu.Item>
-          <Menu.Item key="governance-classifications">Classifications</Menu.Item>
-          <Menu.Item key="governance-domains">Domains</Menu.Item>
-          <Menu.Item key="governance-data-products">Data products</Menu.Item>
-        </Menu.SubMenu>
-        <Menu.SubMenu key="quality" title="Quality" data-testid="quality-nav">
-          <Menu.Item key="quality-test-definitions">Test definitions</Menu.Item>
-          <Menu.Item key="quality-test-cases">Test cases</Menu.Item>
-          <Menu.Item key="quality-test-suites">Test suites</Menu.Item>
-        </Menu.SubMenu>
-        <Menu.SubMenu key="observability" title="Observability" data-testid="observability-nav">
-          <Menu.Item key="observability-incidents">Incidents</Menu.Item>
-          <Menu.Item key="observability-alerts">Alerts</Menu.Item>
-        </Menu.SubMenu>
-        <Menu.SubMenu key="ingestion" title="Ingestion" data-testid="ingestion-nav">
-          <Menu.Item key="ingestion-services">Services</Menu.Item>
-          <Menu.Item key="ingestion-pipelines">Pipelines</Menu.Item>
-        </Menu.SubMenu>
-        <Menu.SubMenu key="collaboration" title="Collaboration" data-testid="collaboration-nav">
-          <Menu.Item key="activity">Activity</Menu.Item>
-          <Menu.Item key="tasks">Tasks</Menu.Item>
-          <Menu.Item key="announcements">Announcements</Menu.Item>
-        </Menu.SubMenu>
-        <Menu.SubMenu key="admin" title="Admin" data-testid="admin-nav">
-          <Menu.Item key="admin-users">Users</Menu.Item>
-          <Menu.Item key="admin-teams">Teams</Menu.Item>
-          <Menu.Item key="admin-roles">Roles</Menu.Item>
-          <Menu.Item key="admin-bots">Bots</Menu.Item>
-          <Menu.Item key="admin-settings">Settings</Menu.Item>
-        </Menu.SubMenu>
+        <template v-for="entry in NAV_ENTRIES" :key="entry.key">
+          <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
+            <template #icon>
+              <component :is="navIcon(entry.key)" />
+            </template>
+            {{ t(entry.titleKey) }}
+          </Menu.Item>
+          <Menu.SubMenu v-else :key="entry.key" :data-testid="entry.testId">
+            <template #icon>
+              <component :is="navIcon(entry.key)" />
+            </template>
+            <template #title>{{ t(entry.titleKey) }}</template>
+            <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
+              {{ t(item.titleKey) }}
+            </Menu.Item>
+          </Menu.SubMenu>
+        </template>
       </Menu>
     </Layout.Sider>
     <Layout>
       <Layout.Header class="shell__header">
         <Input.Search
           class="shell__search"
-          placeholder="Search data assets"
+          :placeholder="t('chrome.searchPlaceholder')"
           allow-clear
+          size="small"
           :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
           @search="onSearch"
         />
-        <Space>
-          <Typography.Text class="shell__user">{{ auth.displayName }}</Typography.Text>
-          <Button data-testid="logout-button" @click="onLogout">Log out</Button>
+        <Space size="small" class="shell__toolbar">
+          <Select
+            data-testid="locale-switcher"
+            size="small"
+            class="shell__locale"
+            :value="locale"
+            :aria-label="t('chrome.locale')"
+            @change="onLocaleChange"
+          >
+            <Select.Option value="en-US">{{ t('chrome.localeEn') }}</Select.Option>
+            <Select.Option value="zh-CN">{{ t('chrome.localeZh') }}</Select.Option>
+          </Select>
+          <Typography.Text class="shell__user">{{ displayName }}</Typography.Text>
+          <Button data-testid="logout-button" size="small" @click="onLogout">
+            {{ t('chrome.logout') }}
+          </Button>
         </Space>
       </Layout.Header>
       <Layout.Content class="shell__content">
@@ -209,29 +149,67 @@ async function onLogout(): Promise<void> {
 .shell__sider {
   min-height: 100vh;
 }
+.shell__sider :deep(.ant-layout-sider-trigger) {
+  height: 36px;
+  line-height: 36px;
+}
+.shell__sider :deep(.ant-menu-item),
+.shell__sider :deep(.ant-menu-submenu-title) {
+  height: 36px;
+  line-height: 36px;
+  margin-inline: 8px;
+  width: calc(100% - 16px);
+}
 .shell__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   color: #fff;
+  padding: 12px 16px 8px;
+  min-height: 52px;
+}
+.shell__brand--collapsed {
+  align-items: center;
+  padding: 12px 8px 8px;
+}
+.shell__brand-name {
   font-weight: 650;
   letter-spacing: 0.01em;
-  padding: 20px 20px 12px;
+  line-height: 1.2;
+  font-size: 15px;
+}
+.shell__brand-sub {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 11px;
+  line-height: 1.3;
+  margin-top: 2px;
 }
 .shell__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  height: 48px;
+  line-height: 48px;
   background: #fff;
-  padding-inline: 24px;
+  padding-inline: 16px;
   border-bottom: 1px solid #e5e7eb;
 }
 .shell__search {
-  max-width: 480px;
+  max-width: 520px;
   flex: 1;
+}
+.shell__toolbar {
+  flex-shrink: 0;
+}
+.shell__locale {
+  min-width: 104px;
 }
 .shell__user {
   color: #334155;
+  font-size: 13px;
 }
 .shell__content {
-  margin: 24px;
+  margin: 16px;
 }
 </style>
