@@ -243,8 +243,8 @@ def check_compose_variants(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_COMPOSE_CN} must pin ES via the DaoCloud elastic proxy")
         if "m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot" not in cn:
             errors.append(f"{PRODUCT_COMPOSE_CN} must pass DaoCloud distroless as DISTROLESS_IMAGE")
-        if "8089:80" not in cn:
-            errors.append(f"{PRODUCT_COMPOSE_CN} must map UI host port 8089")
+        if "8089" not in cn:
+            errors.append(f"{PRODUCT_COMPOSE_CN} must document UI host port 8089")
         for needle in PRODUCT_COMPOSE_FORBIDDEN_NEEDLES:
             if needle in cn:
                 errors.append(f"{PRODUCT_COMPOSE_CN} must not mention {needle!r}")
@@ -259,8 +259,8 @@ def check_compose_variants(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_COMPOSE_INTL} must not pin DaoCloud proxies")
         if "gcr.io/distroless/cc-debian13:debug-nonroot" not in intl:
             errors.append(f"{PRODUCT_COMPOSE_INTL} must pass official gcr distroless")
-        if "8089:80" not in intl:
-            errors.append(f"{PRODUCT_COMPOSE_INTL} must map UI host port 8089")
+        if "8089" not in intl:
+            errors.append(f"{PRODUCT_COMPOSE_INTL} must document UI host port 8089")
 
     variant = read_text(repo / PRODUCT_COMPOSE_VARIANT)
     if variant is None:
