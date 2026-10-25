@@ -62,7 +62,8 @@ No new Java/Python endpoints.
 | Persona switcher / Applications / SSO callback | Documented P2/P9 gaps; auth provider is read-only on System |
 | Policies / audit logs / online users / appearance / search-settings / profiler-run | No product Vue page + client for those writes |
 | Custom property **definitions** admin | Asset Custom properties tab already edits values |
-| Insights / KPI, Pipeline DAG, non-table asset shells | Later batch steps |
+| Insights / KPI | Batch 2 step 4 (`UI_PARITY_BATCH2_CHARTS.md`) |
+| Pipeline DAG / non-table asset shells | Later batch step |
 | Knowledge / Ontology / AI | Collate-only **DROP** |
 | Left-nav still lists Users/Teams/… plus Ingestion | Official nests many of these only under Settings; product keeps the working shortcuts |
 

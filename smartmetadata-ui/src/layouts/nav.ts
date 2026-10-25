@@ -35,12 +35,13 @@ export type NavEntry = NavLeaf | NavSection;
  * Product information architecture aligned with official left-nav grouping
  * (Explore and Lineage as siblings; quality under Observability) using only
  * routes already in `router/index.ts`. Collate-only surfaces stay off this
- * list: Home/My Data, Insights, Marketplace landing, Ontology Studio,
+ * list: Home/My Data, Marketplace landing, Ontology Studio,
  * Knowledge/Context Center, persona AI.
  */
 export const NAV_ENTRIES: NavEntry[] = [
   { kind: 'item', key: 'search', titleKey: 'nav.explore' },
   { kind: 'item', key: 'lineage-home', titleKey: 'nav.lineage' },
+  { kind: 'item', key: 'insights', titleKey: 'nav.insights' },
   {
     kind: 'section',
     key: 'observability',

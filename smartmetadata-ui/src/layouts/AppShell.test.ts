@@ -30,6 +30,7 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
           { path: '', redirect: { name: 'search' } },
           { path: 'search', name: 'search', component: { template: '<div>search</div>' } },
           { path: 'lineage', name: 'lineage-home', component: { template: '<div>lineage</div>' } },
+          { path: 'insights', name: 'insights', component: { template: '<div>insights</div>' } },
           {
             path: 'quality/test-cases',
             name: 'quality-test-cases',
@@ -66,6 +67,7 @@ describe('AppShell', () => {
     const { wrapper } = await mountShell();
     expect(wrapper.text()).toContain('Explore');
     expect(wrapper.text()).toContain('Lineage');
+    expect(wrapper.text()).toContain('Insights');
     expect(wrapper.text()).toContain('Observability');
     expect(wrapper.find('[data-testid="governance-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="observability-nav"]').exists()).toBe(true);

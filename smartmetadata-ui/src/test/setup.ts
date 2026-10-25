@@ -9,6 +9,8 @@
  */
 import { vi } from 'vitest';
 
+vi.mock('vue-echarts', () => import('./echartsStub'));
+
 class ResizeObserverStub {
   observe(): void {}
   unobserve(): void {}

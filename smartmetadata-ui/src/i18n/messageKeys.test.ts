@@ -56,5 +56,12 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('settings.title');
     expect(keys).toContain('settings.categories.members.title');
     expect(keys).toContain('settings.system.saveLogin');
+    expect(keys).toContain('nav.insights');
+    expect(keys).toContain('insights.title');
+    expect(keys).toContain('insights.tabs.dataAssets');
+    expect(keys).toContain('insights.pipelineEmpty');
+    expect(keys).toContain('charts.empty');
+    expect(keys).toContain('asset.rowCountChart');
+    expect(keys).toContain('asset.resultsChart');
   });
 });

@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asRecord, asString } from '@/api/json';
+import { asNumber, asRecord, asString, parsePaged } from '@/api/json';
 import type { ColumnProfile, TableProfile, TableSampleData, TopicSampleData } from '@/types/quality';
 import { apiRequest } from './client';
 
@@ -80,6 +80,28 @@ export async function getTopicSampleData(id: string): Promise<TopicSampleData> {
     ? sample.messages.map(stringifyCell)
     : [];
   return { messages };
+}
+
+function mapTableProfile(raw: Record<string, unknown>): TableProfile | null {
+  const profile = asRecord(raw.profile) ?? raw;
+  const timestamp = asNumber(profile.timestamp) ?? asNumber(raw.timestamp);
+  const rowCount = asNumber(profile.rowCount) ?? asNumber(raw.rowCount);
+  const columnCount = asNumber(profile.columnCount) ?? asNumber(raw.columnCount);
+  if (timestamp === undefined && rowCount === undefined && columnCount === undefined) {
+    return null;
+  }
+  return { timestamp, rowCount, columnCount, columns: [] };
+}
+
+export async function listTableProfiles(
+  fqn: string,
+  startTs: number,
+  endTs: number,
+): Promise<TableProfile[]> {
+  const raw = await apiRequest<unknown>(`/v1/tables/${encodeURIComponent(fqn)}/tableProfile`, {
+    query: { startTs, endTs },
+  });
+  return parsePaged(raw, mapTableProfile).data;
 }
 
 export async function getLatestTableProfile(fqn: string): Promise<TableProfile> {

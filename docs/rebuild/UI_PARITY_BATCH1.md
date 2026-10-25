@@ -87,7 +87,7 @@ No new Java/Python endpoints. Search still uses documented Lucene `q=` on
 |---|---|
 | Inner CRUD page strings still English | Out of Phase B scope |
 | No Home / My Data landing | No product route; do not invent |
-| Insights / KPI | Documented product gap (`PARITY.md`) |
+| Insights / KPI | Closed as live snapshots + residual pipeline in `UI_PARITY_BATCH2_CHARTS.md` |
 | Official Marketplace landing | Domains + data products already under Governance |
 | Settings as one landing page | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`) |
 | Collaboration in the left nav | Official feed lives in the AppBar; product routes stay listed |

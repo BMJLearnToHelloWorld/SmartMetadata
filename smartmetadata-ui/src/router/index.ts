@@ -10,6 +10,7 @@
 import { loadSession } from '@/auth/token';
 import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
+import InsightsView from '@/views/insights/InsightsView.vue';
 import LineageHomeView from '@/views/LineageHomeView.vue';
 import LineageView from '@/views/LineageView.vue';
 import BotDetailView from '@/views/admin/BotDetailView.vue';
@@ -75,6 +76,7 @@ export const router = createRouter({
           component: AssetDetailView,
           props: true,
         },
+        { path: 'insights', name: 'insights', component: InsightsView },
         { path: 'lineage', name: 'lineage-home', component: LineageHomeView },
         {
           path: 'lineage/:entityType/:fqn',

@@ -16,6 +16,7 @@ const enUS = {
   nav: {
     explore: 'Explore',
     lineage: 'Lineage',
+    insights: 'Insights',
     observability: 'Observability',
     testDefinitions: 'Test definitions',
     testCases: 'Test cases',
@@ -189,6 +190,65 @@ const enUS = {
     sampleUnavailable: 'Sample data unavailable',
     activityFailed: 'Failed to load activity',
     customPropsFailed: 'Failed to load custom properties',
+    rowCountChart: 'Row count',
+    rowCountChartLead: 'GET /api/v1/tables/{fqn}/tableProfile?startTs&endTs — one point per stored profile day. Empty until a profiler job writes history.',
+    usageChart: 'Usage',
+    usageChartLead: 'GET /api/v1/usage/table/name/{fqn}?days=30. Empty when usage has not been computed.',
+    columnNullChart: 'Column nulls',
+    columnNullChartLead: 'Null counts from the latest table profile columns. Not a time series.',
+    testStatusChart: 'Latest test status',
+    testStatusChartLead: 'Latest status on linked GET /api/v1/dataQuality/testCases?entityFQN=… (this page, not a warehouse KPI).',
+    resultsChart: 'Test results over time',
+    resultsChartLead: 'GET /api/v1/dataQuality/testCases/testCaseResults/{fqn}. One count per stored result day and status.',
+  },
+  charts: {
+    empty: 'No series from this API yet',
+  },
+  insights: {
+    title: 'Insights',
+    lead:
+      'Live catalog and quality snapshots from GET /api/v1/search/query, GET /api/v1/dataQuality/testCases, and GET /api/v1/dataQuality/testCases/testCaseIncidentStatus. Historical Data Insights charts appear only when GET /api/v1/analytics/dataInsights/system/charts/listChartData returns points.',
+    loadFailed: 'Failed to load Insights',
+    catalogTotal: 'Catalog assets in this search snapshot: {total}',
+    tabs: {
+      dataAssets: 'Data assets',
+      appAnalytics: 'App analytics',
+      kpis: 'KPIs',
+    },
+    series: {
+      entityType: 'Entity type',
+      serviceType: 'Service type',
+      tier: 'Tier',
+      testStatus: 'Test status',
+      incidentStatus: 'Incident status',
+    },
+    charts: {
+      entityType: 'Assets by type',
+      entityTypeLead: 'Buckets from include_aggregations on GET /api/v1/search/query (dataAsset). Snapshot, not a history.',
+      serviceType: 'Assets by service type',
+      serviceTypeLead: 'Service-type aggregation from the same search response.',
+      tier: 'Assets by tier',
+      tierLead: 'tier.tagFQN aggregation. Hidden empty when the catalog has no tier tags.',
+      testStatus: 'Test-case status',
+      testStatusLead: 'Latest status on the first 100 GET /api/v1/dataQuality/testCases rows. Not a global KPI warehouse.',
+      incidents: 'Incident status',
+      incidentsLead: 'Latest incident statuses (limit 100). Empty when none are stored.',
+    },
+    pipelineTitle: 'Data Insights pipeline',
+    pipelineLead:
+      'GET /api/v1/analytics/dataInsights/system/charts/listChartData for the seeded system chart names. This UI does not start the Data Insights application.',
+    pipelineEmpty:
+      'No pipeline series yet. Residual until a Data Insights job writes report data — this page does not invent points.',
+    pipelineFailed: 'Failed to load Data Insights chart data',
+    appAnalyticsEmpty:
+      'App analytics (page views, daily active users) stay residual. This console does not call web-analytics report indexes.',
+    kpisEmpty: 'KPI entities stay residual. This console has no GET /v1/kpi client and will not invent targets.',
+    pipeline: {
+      total_data_assets: 'Total data assets (pipeline)',
+      percentage_of_data_asset_with_description: 'Assets with description (pipeline)',
+      percentage_of_data_asset_with_owner: 'Assets with owner (pipeline)',
+      total_data_assets_by_tier: 'Assets by tier (pipeline)',
+    },
   },
   lineage: {
     title: 'Lineage',
