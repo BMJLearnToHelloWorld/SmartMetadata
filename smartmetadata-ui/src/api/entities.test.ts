@@ -46,6 +46,11 @@ describe('asset entity writes', () => {
             tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' }],
             domains: [{ id: 'd1', name: 'Marketing', type: 'domain' }],
             columns: [{ name: 'id', dataType: 'BIGINT' }],
+            tableType: 'Regular',
+            serviceType: 'BigQuery',
+            service: { name: 'bq', displayName: 'BigQuery Prod', type: 'databaseService' },
+            database: { name: 'analytics' },
+            databaseSchema: { name: 'marts' },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -56,9 +61,14 @@ describe('asset entity writes', () => {
     expect(asset.owners[0]).toMatchObject({ id: 'u1', type: 'user' });
     expect(asset.tags[0]).toMatchObject({ tagFQN: 'PII.Sensitive', source: 'Classification' });
     expect(asset.domains[0]).toMatchObject({ id: 'd1', type: 'domain' });
+    expect(asset.tableType).toBe('Regular');
+    expect(asset.service?.displayName).toBe('BigQuery Prod');
+    expect(asset.database?.name).toBe('analytics');
+    expect(asset.databaseSchema?.name).toBe('marts');
     expect(lastFetch().url).toContain('/api/v1/tables/name/');
     expect(lastFetch().url).toContain('domains');
     expect(lastFetch().url).toContain('extension');
+    expect(lastFetch().url).toContain('tableType');
   });
 
   it('PATCHes a table by id with RFC 6902 json-patch', async () => {

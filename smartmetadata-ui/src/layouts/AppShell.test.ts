@@ -83,6 +83,18 @@ describe('AppShell', () => {
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('zh-CN');
   });
 
+  it('keeps Explore facet query params when the header search runs', async () => {
+    const { wrapper, router } = await mountShell();
+    await router.push({ name: 'search', query: { q: 'orders', entityType: 'table' } });
+    await flushPromises();
+    const search = wrapper.find('.shell__search input');
+    expect(search.exists()).toBe(true);
+    await search.setValue('customers');
+    await search.trigger('keydown.enter');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toMatchObject({ q: 'customers', entityType: 'table' });
+  });
+
   it('opens Observability when a quality route is active', async () => {
     const { wrapper, router } = await mountShell();
     await router.push({ name: 'quality-test-cases' });

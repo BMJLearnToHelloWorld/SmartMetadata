@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import AssetDetailView from './AssetDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -51,7 +52,7 @@ async function mountView() {
   const wrapper = mount(AssetDetailView, {
     props: { entityType: 'table', fqn: 'svc.db.schema.orders' },
     attachTo: document.body,
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -75,6 +76,31 @@ describe('AssetDetailView governance', () => {
             domains: [{ id: 'd1', name: 'Marketing', type: 'domain' }],
             columns: [{ name: 'id', dataType: 'BIGINT' }],
             extension: { retentionDays: 7 },
+            tableType: 'Regular',
+            serviceType: 'BigQuery',
+            service: { name: 'bq', displayName: 'BigQuery Prod' },
+            database: { name: 'analytics' },
+            databaseSchema: { name: 'marts' },
+          });
+        }
+        if (url.includes('/api/v1/lineage/')) {
+          return jsonResponse({
+            entity: {
+              id: 'tbl-1',
+              type: 'table',
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+            },
+            nodes: [
+              {
+                id: 'up-1',
+                type: 'table',
+                name: 'raw_orders',
+                fullyQualifiedName: 'svc.db.schema.raw_orders',
+              },
+            ],
+            upstreamEdges: [{ fromEntity: 'up-1', toEntity: 'tbl-1' }],
+            downstreamEdges: [],
           });
         }
         if (url.includes('/api/v1/activity/entity/table/name/')) {
@@ -156,6 +182,21 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Sensitive');
     expect(wrapper.text()).toContain('Marketing');
     expect(wrapper.find('[data-testid="edit-governance"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Regular');
+    expect(wrapper.text()).toContain('BigQuery Prod');
+    expect(wrapper.text()).toContain('analytics');
+    expect(wrapper.text()).toContain('marts');
+  });
+
+  it('loads upstream neighbors from GET /v1/lineage on the lineage tab', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="asset-lineage-upstream"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('raw_orders');
+    expect(wrapper.text()).toContain('Overview');
+    expect(wrapper.text()).toContain('Schema');
+    expect(wrapper.text()).toContain('Lineage');
+    expect(wrapper.text()).toContain('Quality');
   });
 
   it('shows linked tests and latest status from GET /v1/dataQuality/testCases', async () => {

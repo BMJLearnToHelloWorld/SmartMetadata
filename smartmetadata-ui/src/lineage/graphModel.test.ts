@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { layoutLineageGraph, mapEntityLineage } from './graphModel';
+import { layoutLineageGraph, lineageNeighbors, mapEntityLineage } from './graphModel';
 
 const PAYLOAD = {
   entity: {
@@ -123,6 +123,14 @@ describe('mapEntityLineage', () => {
       hasColumnLineage: false,
     });
     expect(mapEntityLineage({})).toMatchObject({ centerId: '', nodes: [], edges: [] });
+  });
+});
+
+describe('lineageNeighbors', () => {
+  it('splits mapped edges into upstream and downstream nodes', () => {
+    const neighbors = lineageNeighbors(mapEntityLineage(PAYLOAD));
+    expect(neighbors.upstream.map((node) => node.id)).toEqual(['up-id']);
+    expect(neighbors.downstream.map((node) => node.id)).toEqual(['down-id']);
   });
 });
 

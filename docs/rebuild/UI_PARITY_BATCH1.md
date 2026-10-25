@@ -1,24 +1,31 @@
-# UI parity batch 1 — AppShell, nav IA, layout density, zh/en i18n
+# UI parity batch 1 — AppShell, Explore/search, asset detail
 
-Phase A of the authorized UI parity work. **Explore/search and asset-detail
-deepening are out of scope** and stay a later PR.
+Authorized UI parity on the Vue 3 console (`smartmetadata-ui/`). Official
+`openmetadata-ui/` is **reference-only** for information architecture and
+field names. No CCL React source was copied.
 
 ADR:2026-10-25-vue-i18n-zh-en.
 ADR:2026-10-22-clean-room-vue-spa.
 
-Official console (`openmetadata-ui/`) is **reference-only** for information
-architecture. Product console is a Vue 3 rebuild in `smartmetadata-ui/`. No
-CCL React source was copied.
+**Phase A** (merged as `728e87e81e`, PR #24): AppShell / nav IA / density /
+zh-CN+en-US i18n.
+
+**Phase B** (this document's remaining Explore + asset work): deepen
+`SearchView` and `AssetDetailView` using Apache `GET /v1/search/query` and
+entity GET fields the product already calls. No new backend endpoints.
 
 ## What official / CCL chrome has (read-only contrast)
 
 Taken from `openmetadata-ui/.../constants/LeftSidebar.constants.ts`
-`SIDEBAR_LIST` plus the top AppBar (names only):
+`SIDEBAR_LIST` plus Explore / entity-detail IA (names only):
 
 | Official surface | Kind |
 |---|---|
 | Home / My Data | Left-nav top item |
-| Explore | Left-nav top item |
+| Explore | Left-nav top item; facet rail + result cards |
+| Explore facets | Terms aggregations from `searchSettings.json` (`entityType`, `serviceType`, `service.displayName.keyword`, `database.name.keyword`, `databaseSchema.name.keyword`, `tags.tagFQN`, `ownerDisplayName`, `domains.displayName.keyword`, `tier.tagFQN`, plus classification/glossary/certification) |
+| Explore cards | Entity-type chip, display name, FQN, description, service/db/schema, owners, tags, tier |
+| Asset detail tabs | Overview / Schema / Lineage / Data Quality (plus activity, custom properties, profiler/sample) |
 | Lineage | Left-nav top item |
 | Observability → Data Quality, Incident Manager, Alerts, Test Library | Nested |
 | Insights / Data Insight | Left-nav item |
@@ -35,38 +42,62 @@ height, dense header (~48px), content flush to the chrome.
 ## What the product had before this batch
 
 `AppShell.vue` (Phase 1–9): dark sider, English hard-coded **Search** +
-**Lineage** + six submenus (Governance, Quality, Observability, Ingestion,
-Collaboration, Admin). Header 64px, content margin 24px, sider
-`collapsed-width="0"` (nav disappears on small screens). No locale switcher.
+**Lineage** + six submenus. Header 64px, content margin 24px, sider
+`collapsed-width="0"`. No locale switcher.
 
-## Gap closed in this PR
+`SearchView.vue`: thin English table, `include_aggregations: false`, no
+filters, no pagination, no entity-type chrome.
+
+`AssetDetailView.vue`: one stacked card (descriptions + schema + activity +
+conversations + DQ + profiler/sample + custom properties). Table/topic GET
+requested `owners,tags,columns,domains,extension` only.
+
+## Gap closed
+
+### Phase A (PR #24)
 
 | Item | Change |
 |---|---|
 | Explore label | Nav item is **Explore** (route name stays `search`) |
-| Official-like IA | Explore and Lineage are top-level siblings; quality CRUD sits under **Observability** with incidents/alerts |
-| Grouping of existing routes | Governance / Ingestion / Collaboration / Admin unchanged in membership |
-| Density | 48px header, 13px body, 36px menu rows, 16px content margin, sider 220→64 (icons remain) |
-| i18n | vue-i18n, `en-US` + `zh-CN`, switcher on login + header, persist `sm.locale.v1` |
-| Ant Design locale | `ConfigProvider` follows the same locale |
-| Collate-only | Still **DROP**: Home landing, Insights, Marketplace overview, Ontology Studio, Knowledge Center, persona AI widgets |
+| Official-like IA | Explore and Lineage are top-level siblings; quality CRUD sits under **Observability** |
+| Density | 48px header, 13px body, 36px menu rows, 16px content margin, sider 220→64 |
+| i18n | vue-i18n, `en-US` + `zh-CN`, persist `sm.locale.v1` |
+| Collate-only | Still **DROP**: Home, Insights, Marketplace overview, Ontology, Knowledge, persona AI |
+
+### Phase B (this PR)
+
+| Item | Official (reference) | Product now | Residual |
+|---|---|---|---|
+| Explore facets | Left rail from search aggregations | Facet checkboxes from `include_aggregations` buckets: entityType, serviceType, service, database, schema, tags, owner, domain, tier. Lucene `q=` AND/OR. Query-string filters. Hidden when a bucket list is empty. | `classificationTags` / `glossaryTags` / `certification` unused (tag FQN already covers classification+glossary; certification is not a product surface) |
+| Explore cards | Dense cards, entity-type chip | Cards with type chip, name, FQN, description, service/db/schema, owners, tags, tier; unwired types stay listed | Dashboard/pipeline/etc. still have no detail page |
+| Explore pagination | Paged results | `page` + size 20 on `GET /v1/search/query` | Advanced sort / saved searches not wired (no product client) |
+| Header search | Keeps Explore context | Preserves facet query params; resets page | Help / persona still absent |
+| Asset tabs | Overview / Schema / Lineage / Quality | Same four, plus Activity and Custom properties (already shipped APIs) | No Collate profiler-run, no Knowledge, no Ontology |
+| Asset overview fields | Service, database, schema, table type | Table GET now asks `service,database,databaseSchema,tableType`; topic asks `service,messageSchema,partitions` | Followers / usage / certification skipped |
+| Asset lineage tab | Embedded graph | Neighbors from existing `GET /v1/lineage/{type}/name/{fqn}` (depth 1) + button to the full graph page | Depth controls stay on `/lineage/...` |
+| Asset quality tab | Tests + profiler + sample | Same existing clients, now under the Quality tab | Profiler **run** still residual (`jobs.py` raises) |
+| Explore/asset i18n | Full catalogs | `explore.*` and `asset.*` keys in zh-CN / en-US | Other CRUD pages stay English |
+
+No new Java/Python endpoints. Search still uses documented Lucene `q=` on
+`dataAsset`. Entity GET field lists stay Apache table/topic collections.
 
 ## Residual gaps (intentionally later)
 
 | Gap | Why it stays |
 |---|---|
-| Explore/search page still a thin table | Phase B (separate run) |
-| Asset detail still a single stacked card | Phase B |
-| Inner CRUD page strings still English | Not chrome; do not expand this PR |
+| Inner CRUD page strings still English | Out of Phase B scope |
 | No Home / My Data landing | No product route; do not invent |
 | Insights / KPI | Documented product gap (`PARITY.md`) |
 | Official Marketplace landing | Domains + data products already under Governance |
 | Settings as one landing page | Product already has `/admin/settings` plus users/teams/roles/bots |
-| Collaboration in the left nav | Official feed lives in the AppBar; product routes stay listed because they exist |
-| Ingestion under Settings | Official nests services in Settings; product keeps an Ingestion section for existing routes |
+| Collaboration in the left nav | Official feed lives in the AppBar; product routes stay listed |
+| Ingestion under Settings | Official nests services in Settings; product keeps an Ingestion section |
 | Icon set | Ant Design icons, not official SVG glyphs |
 | Help menu / persona switcher | No product APIs wired; persona landing skipped in Phase 9 |
 | Additional locales | Only zh-CN / en-US authorized |
+| Non-table/topic asset CRUD | Phase 1 wiring; do not invent collections |
+| Semantic / NLQ search | Collate AI; **DROP** |
+| Certification / Data Insights facets | Not a product surface |
 
 ## How to verify
 
@@ -82,9 +113,12 @@ Root: `make ui_test` and `make ui_build`. Offline matrix still
 
 Manual (against an already-running slim server; this PR does not redeploy):
 
-1. Open the console, confirm left nav shows Explore (not Search) and that
-   test definitions/cases/suites sit under Observability.
-2. Collapse the sider — icons remain (width 64).
-3. Switch language on login and in the header; reload — preference survives
-   (`localStorage.sm.locale.v1`).
-4. Log in; header search still routes to `/search?q=`.
+1. Open Explore. Confirm facet rail from aggregations and denser cards
+   (entity-type chip, service/db/schema, owners, tags).
+2. Toggle Entity type = table. URL gets `entityType=table`; results use
+   Lucene `q=` (`entityType:table`). Header search keeps that filter.
+3. Open a table. Tabs: Overview / Schema / Lineage / Quality (+ Activity,
+   Custom properties). Overview shows service/database/schema/tableType
+   when the GET returns them. Lineage tab lists depth-1 neighbors.
+4. Topic detail: Schema fields + sample messages; no invented profiler.
+5. Unwired types (dashboard, …) still show the existing warning.

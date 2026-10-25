@@ -104,6 +104,25 @@ function schemaRowsFor(entityType: string, body: Record<string, unknown>): { row
   return { rows: [], label: 'Schema' };
 }
 
+function mapRef(value: unknown): EntityRef | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const name = asString(rec.displayName) || asString(rec.name) || asString(rec.fullyQualifiedName);
+  const id = asString(rec.id);
+  if (!name && !id) {
+    return undefined;
+  }
+  return {
+    id: id || undefined,
+    name: name || id,
+    displayName: asString(rec.displayName) || undefined,
+    type: asString(rec.type) || undefined,
+    fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+  };
+}
+
 export async function fetchAssetDetail(entityType: string, fqn: string): Promise<AssetDetail> {
   const endpoint = resolveDetailEndpoint(entityType, fqn);
   if (!endpoint) {
@@ -120,6 +139,12 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     displayName: asString(body.displayName) || undefined,
     fullyQualifiedName: asString(body.fullyQualifiedName) || fqn,
     description: asString(body.description) || undefined,
+    tableType: asString(body.tableType) || undefined,
+    serviceType: asString(body.serviceType) || undefined,
+    service: mapRef(body.service),
+    database: mapRef(body.database),
+    databaseSchema: mapRef(body.databaseSchema),
+    partitions: typeof body.partitions === 'number' ? body.partitions : undefined,
     owners: mapOwners(body.owners),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),

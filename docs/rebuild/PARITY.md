@@ -66,7 +66,7 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Area | Official (reference) | Product | Status |
 |---|---|---|---|
 | Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1 |
-| Search / catalog | Explore | `SearchView.vue` + table/topic `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** aligned in UI parity batch 1 (`UI_PARITY_BATCH1.md`). Explore page + asset-detail deepening **not** in that PR |
+| Search / catalog | Explore | `SearchView.vue` + table/topic `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`) |
 | Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` | Shipped (P3) |
 | Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2) |
 | Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4) |
@@ -161,15 +161,16 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
 ## Questions for Bernie (blocking the first production-correct batch)
 
 1. **Which surface is batch 1?** **Answered 2026-10-25:** UI chrome first
-   (AppShell / nav / density + zh-CN/en-US). Explore/search + asset detail is
-   the next sequential PR, not this one. See `UI_PARITY_BATCH1.md`.
+   (AppShell / nav / density + zh-CN/en-US) as Phase A. **Phase B** (this
+   follow-up) deepens Explore/search + asset-detail tabs. See
+   `UI_PARITY_BATCH1.md`.
 2. **If connector:** which `source.type` / official family, and which OSS
    client+version to wrap? How should it map to Apache catalog entities
    (especially Databricks / Unity Catalog / datalake vs table)?
 3. **If UI (after shell):** Insights/KPI, first-class non-table assets,
    profiler **run** UI, or SSO/persona? Persona landing and Collate AI widgets
-   stay DROP unless you reverse Phase 9/11. Explore/asset deepening is the
-   authorized next step after this shell PR merges.
+   stay DROP unless you reverse Phase 9/11. Explore/asset deepening is
+   Phase B in `UI_PARITY_BATCH1.md`.
 4. **If MCP:** wire generic Apache REST tools (`get_entity_details` for more
    entity types, `patch_entity`, `create_test_case`, …) on stdio only, or
    also HTTP/SSE (Phase 10 said no)? RDF/AI tools stay DROP unless you
