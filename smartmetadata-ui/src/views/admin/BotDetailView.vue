@@ -3,33 +3,36 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Input,
-  Select,
-  Space,
-  Spin,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { Button, Descriptions, Input, Select, Space, message } from 'ant-design-vue';
 import { generateBotToken, getBot, revokeBotToken } from '@/api/bots';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminBot, JwtTokenExpiry } from '@/types/admin';
 
 const EXPIRY_OPTIONS: JwtTokenExpiry[] = ['OneHour', '1', '7', '30', '60', '90', 'Unlimited'];
 
 const props = defineProps<{ id: string }>();
-const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const bot = ref<AdminBot | null>(null);
+const activeTab = ref('overview');
 const expiry = ref<JwtTokenExpiry>('7');
 const generatedToken = ref('');
 const working = ref(false);
+
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('admin.bots.title'), to: { name: 'admin-bots' } },
+  { label: entityLabel(bot.value) || t('admin.bots.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'bot-tab-overview' },
+  { key: 'token', label: t('admin.bots.tokenTab'), testId: 'bot-tab-token' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -38,7 +41,7 @@ async function load(): Promise<void> {
     bot.value = await getBot(props.id);
   } catch (error) {
     bot.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load bot';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -47,7 +50,7 @@ async function load(): Promise<void> {
 async function onGenerate(): Promise<void> {
   const botUserId = bot.value?.botUser?.id;
   if (!botUserId) {
-    message.error('This bot has no botUser id; cannot call generateToken');
+    message.error(t('admin.bots.missingBotUser'));
     return;
   }
   working.value = true;
@@ -55,12 +58,12 @@ async function onGenerate(): Promise<void> {
     const result = await generateBotToken(botUserId, expiry.value);
     generatedToken.value = result.JWTToken || '';
     if (!generatedToken.value) {
-      message.warning('Token generated but the response did not include JWTToken');
+      message.warning(t('admin.bots.generatedMissing'));
     } else {
-      message.success('Token generated — copy it now; later GETs may redact it');
+      message.success(t('admin.bots.generated'));
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Generate token failed');
+    message.error(error instanceof Error ? error.message : t('admin.bots.generateFailed'));
   } finally {
     working.value = false;
   }
@@ -69,16 +72,16 @@ async function onGenerate(): Promise<void> {
 async function onRevoke(): Promise<void> {
   const botUserId = bot.value?.botUser?.id;
   if (!botUserId) {
-    message.error('This bot has no botUser id; cannot call revokeToken');
+    message.error(t('admin.bots.missingBotUserRevoke'));
     return;
   }
   working.value = true;
   try {
     await revokeBotToken(botUserId);
     generatedToken.value = '';
-    message.success('Bot token revoked');
+    message.success(t('admin.bots.revoked'));
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Revoke token failed');
+    message.error(error instanceof Error ? error.message : t('admin.bots.revokeFailed'));
   } finally {
     working.value = false;
   }
@@ -98,47 +101,48 @@ watch(
 </script>
 
 <template>
-  <Card>
-    <Button type="link" style="padding-left: 0" @click="router.push({ name: 'admin-bots' })">
-      ← Bots
-    </Button>
-    <Spin :spinning="loading">
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <template v-if="bot">
-        <Typography.Title :level="4">{{ bot.displayName || bot.name }}</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          GET /api/v1/bots/{id}. Tokens use PUT /api/v1/users/generateToken/{botUserId} and PUT
-          /api/v1/users/revokeToken.
-        </Typography.Paragraph>
-        <Descriptions bordered :column="1">
-          <Descriptions.Item label="Name">{{ bot.name }}</Descriptions.Item>
-          <Descriptions.Item label="Bot user">{{ bot.botUser?.name || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Bot user id">{{ bot.botUser?.id || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ bot.description || '—' }}</Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5" style="margin-top: 24px">JWT token</Typography.Title>
-        <Space wrap>
-          <Select v-model:value="expiry" style="width: 160px">
-            <Select.Option v-for="option in EXPIRY_OPTIONS" :key="option" :value="option">
-              {{ option }}
-            </Select.Option>
-          </Select>
-          <Button type="primary" :loading="working" data-testid="generate-bot-token" @click="onGenerate">
-            Generate token
-          </Button>
-          <Button danger :loading="working" data-testid="revoke-bot-token" @click="onRevoke">
-            Revoke token
-          </Button>
-        </Space>
-        <Input.TextArea
-          v-if="generatedToken"
-          data-testid="generated-bot-token"
-          :value="generatedToken"
-          :rows="4"
-          readonly
-          style="margin-top: 12px"
-        />
-      </template>
-    </Spin>
-  </Card>
+  <EntityDetailShell
+    :title="entityLabel(bot) || t('admin.bots.title')"
+    :name="bot?.name"
+    :deleted="bot?.deleted"
+    :lead="t('admin.bots.detailLead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!bot && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="bot ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #overview>
+      <Descriptions v-if="bot" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ bot.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.bots.botUser')">{{ bot.botUser?.name || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.bots.botUserId')">{{ bot.botUser?.id || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ bot.description || '—' }}</Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #token>
+      <Space wrap>
+        <Select v-model:value="expiry" style="width: 160px">
+          <Select.Option v-for="option in EXPIRY_OPTIONS" :key="option" :value="option">
+            {{ option }}
+          </Select.Option>
+        </Select>
+        <Button type="primary" :loading="working" data-testid="generate-bot-token" @click="onGenerate">
+          {{ t('admin.bots.generate') }}
+        </Button>
+        <Button danger :loading="working" data-testid="revoke-bot-token" @click="onRevoke">
+          {{ t('admin.bots.revoke') }}
+        </Button>
+      </Space>
+      <Input.TextArea
+        v-if="generatedToken"
+        data-testid="generated-bot-token"
+        :value="generatedToken"
+        :rows="4"
+        readonly
+        style="margin-top: 12px"
+      />
+    </template>
+  </EntityDetailShell>
 </template>

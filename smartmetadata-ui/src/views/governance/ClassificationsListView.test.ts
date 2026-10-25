@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import ClassificationsListView from './ClassificationsListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -42,7 +43,7 @@ async function mountView() {
   await router.push('/governance/classifications');
   await router.isReady();
   const wrapper = mount(ClassificationsListView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };

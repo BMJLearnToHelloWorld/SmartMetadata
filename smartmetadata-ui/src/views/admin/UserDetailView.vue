@@ -3,38 +3,28 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { Button, Checkbox, Descriptions, Form, Input, Modal, Select, Tag, message } from 'ant-design-vue';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
 import { assignUserRolesPatch, deactivateUser, getUser, patchUser, restoreUser, updateUser } from '@/api/users';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
 
 const props = defineProps<{ id: string }>();
-const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const user = ref<AdminUser | null>(null);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const teams = ref<AdminTeam[]>([]);
 const roles = ref<AdminRole[]>([]);
+
 function idsOf(refs: { id?: string }[]): string[] {
   return refs.map((item) => item.id).filter((id): id is string => Boolean(id));
 }
@@ -48,6 +38,16 @@ const editForm = reactive({
   roleIds: [] as string[],
 });
 
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('admin.users.title'), to: { name: 'admin-users' } },
+  { label: entityLabel(user.value) || t('admin.users.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'user-tab-overview' },
+  { key: 'roles', label: t('admin.users.rolesTab'), testId: 'user-tab-roles' },
+]);
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
@@ -57,7 +57,7 @@ async function load(): Promise<void> {
     editForm.teamIds = idsOf(user.value.teams);
   } catch (error) {
     user.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load user';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -92,10 +92,10 @@ async function onSave(): Promise<void> {
       roles: editForm.roleIds,
     });
     editOpen.value = false;
-    message.success('User updated');
+    message.success(t('admin.users.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -107,10 +107,10 @@ async function onDeactivate(): Promise<void> {
   }
   try {
     await deactivateUser(user.value.id);
-    message.success('User deactivated (soft-deleted)');
+    message.success(t('admin.users.deactivated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Deactivate failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
 }
 
@@ -120,10 +120,10 @@ async function onRestore(): Promise<void> {
   }
   try {
     await restoreUser(user.value.id);
-    message.success('User restored');
+    message.success(t('admin.users.restored'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Restore failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
 }
 
@@ -133,10 +133,10 @@ async function onAssignRoles(roleIds: string[]): Promise<void> {
   }
   try {
     await patchUser(user.value.id, assignUserRolesPatch(user.value.roles, roleIds));
-    message.success('Roles updated');
+    message.success(t('admin.users.rolesUpdated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Role assignment failed');
+    message.error(error instanceof Error ? error.message : t('admin.users.roleAssignFailed'));
   }
 }
 
@@ -159,108 +159,118 @@ watch(
 </script>
 
 <template>
-  <Card>
-    <Button type="link" style="padding-left: 0" @click="router.push({ name: 'admin-users' })">
-      ← Users
-    </Button>
-    <Spin :spinning="loading">
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <template v-if="user">
-        <Space class="admin-head">
-          <Typography.Title :level="4">{{ user.displayName || user.name }}</Typography.Title>
-          <Space>
-            <Button data-testid="edit-user" @click="openEdit">Edit</Button>
-            <Button v-if="!user.deleted" danger data-testid="deactivate-user" @click="onDeactivate">
-              Deactivate
-            </Button>
-            <Button v-else type="primary" data-testid="restore-user" @click="onRestore">Restore</Button>
-          </Space>
-        </Space>
-        <Typography.Paragraph type="secondary">
-          GET /api/v1/users/{id}. Deactivate is DELETE (soft). Restore is PUT /api/v1/users/restore.
-        </Typography.Paragraph>
-        <Descriptions bordered :column="2">
-          <Descriptions.Item label="Name">{{ user.name }}</Descriptions.Item>
-          <Descriptions.Item label="Email">{{ user.email || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Admin">
-            <Tag v-if="user.isAdmin" color="blue">admin</Tag>
-            <span v-else>—</span>
-          </Descriptions.Item>
-          <Descriptions.Item label="Bot">
-            <Tag v-if="user.isBot">bot</Tag>
-            <span v-else>—</span>
-          </Descriptions.Item>
-          <Descriptions.Item label="Status">
-            <Tag :color="user.deleted ? 'red' : 'green'">{{ user.deleted ? 'deactivated' : 'active' }}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Description" :span="2">{{ user.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Teams" :span="2">
-            {{ user.teams.map((t) => t.displayName || t.name).join(', ') || '—' }}
-          </Descriptions.Item>
-          <Descriptions.Item label="Roles" :span="2">
-            {{ user.roles.map((r) => r.displayName || r.name).join(', ') || '—' }}
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5" style="margin-top: 24px">Assign roles</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          PATCH /api/v1/users/{id} with RFC 6902 replace of <code>/roles</code>.
-        </Typography.Paragraph>
-        <Space direction="vertical" style="width: 100%">
-          <Select
-            v-model:value="editForm.roleIds"
-            mode="multiple"
-            style="width: 100%"
-            placeholder="Select roles"
-            data-testid="user-roles-select"
-          >
-            <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-              {{ role.displayName || role.name }}
-            </Select.Option>
-          </Select>
-          <Button type="primary" data-testid="save-user-roles" @click="onAssignRoles(editForm.roleIds)">
-            Save roles
-          </Button>
-        </Space>
-      </template>
-    </Spin>
-    <Modal v-model:open="editOpen" title="Edit user" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Email">
-          <Input v-model:value="editForm.email" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="2" />
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="editForm.isAdmin">Administrator</Checkbox>
-        </Form.Item>
-        <Form.Item label="Teams">
-          <Select v-model:value="editForm.teamIds" mode="multiple" allow-clear>
-            <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
-              {{ team.displayName || team.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Roles">
-          <Select v-model:value="editForm.roleIds" mode="multiple" allow-clear>
-            <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-              {{ role.displayName || role.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+  <EntityDetailShell
+    :title="entityLabel(user) || t('admin.users.title')"
+    :name="user?.name"
+    :deleted="user?.deleted"
+    :lead="t('admin.users.detailLead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!user && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="user ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button v-if="user" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button v-if="user && !user.deleted" danger data-testid="deactivate-user" @click="onDeactivate">
+        {{ t('admin.users.deactivate') }}
+      </Button>
+      <Button v-if="user?.deleted" type="primary" data-testid="restore-user" @click="onRestore">
+        {{ t('admin.users.restore') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="user" bordered :column="2" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ user.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.email')">{{ user.email || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.users.admin')">
+          <Tag v-if="user.isAdmin" color="blue">{{ t('admin.users.admin') }}</Tag>
+          <span v-else>—</span>
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('admin.users.bot')">
+          <Tag v-if="user.isBot">{{ t('admin.users.bot') }}</Tag>
+          <span v-else>—</span>
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('admin.users.status')">
+          <Tag :color="user.deleted ? 'red' : 'green'">
+            {{ user.deleted ? t('crud.deleted') : t('crud.active') }}
+          </Tag>
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')" :span="2">{{ user.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.users.teams')" :span="2">
+          {{ joinRefNames(user.teams) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('admin.users.roles')" :span="2">
+          {{ joinRefNames(user.roles) || '—' }}
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #roles>
+      <p class="entity-detail__tab-lead">{{ t('admin.users.rolesLead') }}</p>
+      <Select
+        v-if="user"
+        v-model:value="editForm.roleIds"
+        mode="multiple"
+        style="width: 100%"
+        :placeholder="t('admin.users.selectRoles')"
+        data-testid="user-roles-select"
+      >
+        <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
+          {{ entityLabel(role) }}
+        </Select.Option>
+      </Select>
+      <Button
+        type="primary"
+        style="margin-top: 12px"
+        data-testid="save-user-roles"
+        @click="onAssignRoles(editForm.roleIds)"
+      >
+        {{ t('admin.users.saveRoles') }}
+      </Button>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('admin.users.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.email')">
+        <Input v-model:value="editForm.email" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="2" />
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="editForm.isAdmin">{{ t('admin.users.administrator') }}</Checkbox>
+      </Form.Item>
+      <Form.Item :label="t('admin.users.teams')">
+        <Select v-model:value="editForm.teamIds" mode="multiple" allow-clear>
+          <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
+            {{ entityLabel(team) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('admin.users.roles')">
+        <Select v-model:value="editForm.roleIds" mode="multiple" allow-clear>
+          <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
+            {{ entityLabel(role) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
 
 <style scoped>
-.admin-head {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  margin-bottom: 8px;
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
+  margin-bottom: 12px;
 }
 </style>

@@ -3,17 +3,33 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Space, Table, Typography, message } from 'ant-design-vue';
+import { Button, Form, Input, Modal, message } from 'ant-design-vue';
 import { createBotWithUser, listBots } from '@/api/bots';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import {
+  DEFAULT_PAGE_SIZE,
+  canGoNext,
+  canGoPrev,
+  createCursorPager,
+  entityLabel,
+  goNext,
+  goPrev,
+  type CursorPager,
+} from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminBot } from '@/types/admin';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const bots = ref<AdminBot[]>([]);
 const total = ref<number | undefined>();
+const pageAfter = ref<string | undefined>();
+const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -24,25 +40,41 @@ const form = reactive({
   description: '',
 });
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Bot user', key: 'botUser' },
-  { title: 'Description', dataIndex: 'description', key: 'description', ellipsis: true },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('admin.bots.botUser'), key: 'botUser' },
+  { title: t('crud.description'), dataIndex: 'description', key: 'description', ellipsis: true },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listBots(50);
+    const page = await listBots(DEFAULT_PAGE_SIZE, cursor.value.after);
     bots.value = page.data;
     total.value = page.total;
+    pageAfter.value = page.after;
   } catch (error) {
     bots.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load bots';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+function onNext(): void {
+  if (pageAfter.value) {
+    cursor.value = goNext(cursor.value, pageAfter.value);
+  }
+  void load();
+}
+
+function onPrev(): void {
+  cursor.value = goPrev(cursor.value);
+  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -57,10 +89,10 @@ async function onCreate(): Promise<void> {
       description: form.description.trim() || undefined,
     });
     createOpen.value = false;
-    message.success(`Created bot ${created.name}`);
+    message.success(t('admin.bots.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create bot failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -72,66 +104,64 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="admin-head">
-        <div>
-          <Typography.Title :level="4">Bots</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET /api/v1/bots. Create POSTs a bot user (<code>isBot: true</code>) then POST /api/v1/bots.
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-bot" @click="createOpen = true">Create bot</Button>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="admin-bots-table"
-        :columns="columns"
-        :data-source="bots"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a href="#" @click.prevent="router.push({ name: 'admin-bot', params: { id: (record as AdminBot).id } })">
-              {{ (record as AdminBot).displayName || (record as AdminBot).name }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'botUser'">
-            {{ (record as AdminBot).botUser?.name || '—' }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">{{ bots.length }} shown<template v-if="total !== undefined"> of {{ total }}</template></Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create bot" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Bot name" required>
-          <Input v-model:value="form.name" data-testid="create-bot-name" />
-        </Form.Item>
-        <Form.Item label="Bot user name" extra="Defaults to the bot name. CreateBot.botUser is this user name.">
-          <Input v-model:value="form.botUser" placeholder="same as bot name" />
-        </Form.Item>
-        <Form.Item label="Bot user email" required>
-          <Input v-model:value="form.botUserEmail" data-testid="create-bot-email" />
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="form.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="2" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+  <EntityListShell
+    :title="t('admin.bots.title')"
+    :lead="t('admin.bots.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="bots"
+    table-test-id="admin-bots-table"
+    :total="total"
+    :has-next="hasNext"
+    :has-prev="hasPrev"
+    @refresh="load"
+    @next="onNext"
+    @prev="onPrev"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-bot" @click="createOpen = true">
+        {{ t('admin.bots.create') }}
+      </Button>
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`bot-row-${(record as AdminBot).id}`"
+          @click.prevent="router.push({ name: 'admin-bot', params: { id: (record as AdminBot).id } })"
+        >
+          {{ entityLabel(record as AdminBot) }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'botUser'">
+        {{ (record as AdminBot).botUser?.name || '—' }}
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('admin.bots.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('admin.bots.botName')" required>
+        <Input v-model:value="form.name" data-testid="create-bot-name" />
+      </Form.Item>
+      <Form.Item :label="t('admin.bots.botUserName')" :extra="t('admin.bots.botUserNameExtra')">
+        <Input v-model:value="form.botUser" />
+      </Form.Item>
+      <Form.Item :label="t('admin.bots.botUserEmail')" required>
+        <Input v-model:value="form.botUserEmail" data-testid="create-bot-email" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="2" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.admin-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

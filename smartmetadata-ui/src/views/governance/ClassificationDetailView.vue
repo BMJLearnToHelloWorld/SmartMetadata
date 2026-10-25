@@ -3,34 +3,25 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { Button, Checkbox, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { getClassification, updateClassification } from '@/api/classifications';
 import { createTag, listTags } from '@/api/tags';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { Classification, ClassificationTag } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const classification = ref<Classification | null>(null);
 const tags = ref<ClassificationTag[]>([]);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const createTagOpen = ref(false);
 const saving = ref(false);
@@ -48,11 +39,21 @@ const tagForm = reactive({
   mutuallyExclusive: false,
 });
 
-const tagColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-  { title: 'Usage', key: 'usageCount', width: 90 },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('governance.classifications.title'), to: { name: 'governance-classifications' } },
+  { label: entityLabel(classification.value) || t('governance.classifications.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'classification-tab-overview' },
+  { key: 'tags', label: t('governance.classifications.tagsTab'), testId: 'classification-tab-tags' },
+]);
+
+const tagColumns = computed(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+  { title: t('governance.classifications.usage'), key: 'usageCount', width: 90 },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -64,7 +65,7 @@ async function load(): Promise<void> {
   } catch (error) {
     classification.value = null;
     tags.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load classification';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -93,10 +94,10 @@ async function onSave(): Promise<void> {
       mutuallyExclusive: editForm.mutuallyExclusive,
     });
     editOpen.value = false;
-    message.success('Classification updated');
+    message.success(t('governance.classifications.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -117,10 +118,10 @@ async function onCreateTag(): Promise<void> {
       mutuallyExclusive: tagForm.mutuallyExclusive,
     });
     createTagOpen.value = false;
-    message.success(`Created tag ${created.name}`);
+    message.success(t('governance.classifications.tagCreated', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create tag failed');
+    message.error(error instanceof Error ? error.message : t('governance.classifications.tagCreateFailed'));
   } finally {
     creating.value = false;
   }
@@ -139,106 +140,110 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Space direction="vertical" size="middle" style="width: 100%">
-        <div class="gov-head">
-          <Typography.Title :level="4">
-            {{ classification?.displayName || classification?.name || 'Classification' }}
-          </Typography.Title>
-          <Space>
-            <Button @click="router.push({ name: 'governance-classifications' })">Back</Button>
-            <Button type="primary" :disabled="!classification" data-testid="edit-classification" @click="openEdit">
-              Edit
-            </Button>
-            <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
-              Create tag
-            </Button>
-          </Space>
-        </div>
-        <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" />
-        <Descriptions v-if="classification" bordered :column="1" size="small">
-          <Descriptions.Item label="Name">{{ classification.name }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ classification.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Mutually exclusive">
-            {{ classification.mutuallyExclusive ? 'yes' : 'no' }}
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5">Tags</Typography.Title>
-        <Table
-          row-key="id"
-          data-testid="classification-tags-table"
-          :columns="tagColumns"
-          :data-source="tags"
-          :pagination="false"
-          size="small"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                href="#"
-                @click.prevent="
-                  router.push({ name: 'governance-tag', params: { id: (record as ClassificationTag).id } })
-                "
-              >
-                {{ (record as ClassificationTag).displayName || (record as ClassificationTag).name }}
-              </a>
-            </template>
-            <template v-else-if="column.key === 'usageCount'">
-              {{ (record as ClassificationTag).usageCount ?? '—' }}
-            </template>
-          </template>
-        </Table>
-      </Space>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit classification" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="editForm.mutuallyExclusive">Tags are mutually exclusive</Checkbox>
-        </Form.Item>
-      </Form>
-    </Modal>
-    <Modal v-model:open="createTagOpen" title="Create tag" :confirm-loading="creating" @ok="onCreateTag">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="tagForm.name" data-testid="create-tag-name" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="tagForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="tagForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Parent tag">
-          <Select v-model:value="tagForm.parent" allow-clear>
-            <Select.Option
-              v-for="tag in tags"
-              :key="tag.id"
-              :value="tag.fullyQualifiedName || tag.name"
+  <EntityDetailShell
+    :title="entityLabel(classification) || t('governance.classifications.title')"
+    :name="classification?.name"
+    :fqn="classification?.fullyQualifiedName"
+    :lead="t('governance.classifications.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!classification && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="classification ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button type="primary" :disabled="!classification" data-testid="edit-classification" @click="openEdit">
+        {{ t('crud.edit') }}
+      </Button>
+      <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
+        {{ t('governance.classifications.createTag') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="classification" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ classification.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ classification.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('governance.classifications.exclusive')">
+          {{ classification.mutuallyExclusive ? t('crud.yes') : t('crud.no') }}
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #tags>
+      <Table
+        row-key="id"
+        data-testid="classification-tags-table"
+        :columns="tagColumns"
+        :data-source="tags"
+        :pagination="false"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              href="#"
+              @click.prevent="router.push({ name: 'governance-tag', params: { id: (record as ClassificationTag).id } })"
             >
-              {{ tag.displayName || tag.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="tagForm.mutuallyExclusive">Child tags are mutually exclusive</Checkbox>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+              {{ entityLabel(record as ClassificationTag) }}
+            </a>
+          </template>
+          <template v-else-if="column.key === 'usageCount'">
+            {{ (record as ClassificationTag).usageCount ?? '—' }}
+          </template>
+        </template>
+      </Table>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('governance.classifications.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="editForm.mutuallyExclusive">
+          {{ t('governance.classifications.exclusiveEdit') }}
+        </Checkbox>
+      </Form.Item>
+    </Form>
+  </Modal>
+  <Modal
+    v-model:open="createTagOpen"
+    :title="t('governance.classifications.createTagTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreateTag"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="tagForm.name" data-testid="create-tag-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="tagForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="tagForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('governance.classifications.parentTag')">
+        <Select v-model:value="tagForm.parent" allow-clear>
+          <Select.Option v-for="tag in tags" :key="tag.id" :value="tag.fullyQualifiedName || tag.name">
+            {{ entityLabel(tag) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="tagForm.mutuallyExclusive">
+          {{ t('governance.classifications.childExclusive') }}
+        </Checkbox>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.gov-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

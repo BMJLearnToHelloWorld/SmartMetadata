@@ -4,11 +4,10 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import {
   Alert,
   Button,
-  Card,
   Checkbox,
   Descriptions,
   Form,
@@ -16,9 +15,7 @@ import {
   Modal,
   Select,
   Space,
-  Spin,
   Table,
-  Typography,
   message,
 } from 'ant-design-vue';
 import { listRoles } from '@/api/roles';
@@ -32,14 +29,18 @@ import {
   updateTeam,
 } from '@/api/teams';
 import { listUsers } from '@/api/users';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
-const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const team = ref<AdminTeam | null>(null);
+const activeTab = ref('overview');
 const roles = ref<AdminRole[]>([]);
 const users = ref<AdminUser[]>([]);
 const addUserId = ref<string | undefined>();
@@ -59,11 +60,21 @@ function idsOf(refs: { id?: string }[]): string[] {
 
 const canHoldUsers = computed(() => team.value?.teamType === 'Group');
 
-const memberColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'type', key: 'type', width: 100 },
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('admin.teams.title'), to: { name: 'admin-teams' } },
+  { label: entityLabel(team.value) || t('admin.teams.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'team-tab-overview' },
+  { key: 'members', label: t('admin.teams.membersTab'), testId: 'team-tab-members' },
+]);
+
+const memberColumns = computed(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('admin.teams.type'), dataIndex: 'type', key: 'type', width: 100 },
   { title: '', key: 'actions', width: 120 },
-];
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -73,7 +84,7 @@ async function load(): Promise<void> {
     form.defaultRoleIds = idsOf(team.value.defaultRoles);
   } catch (error) {
     team.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load team';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -106,10 +117,10 @@ async function onSave(): Promise<void> {
       defaultRoles: form.defaultRoleIds,
     });
     editOpen.value = false;
-    message.success('Team updated');
+    message.success(t('admin.teams.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -121,16 +132,16 @@ async function onAddMember(): Promise<void> {
   }
   const existing = idsOf(team.value.users);
   if (existing.includes(addUserId.value)) {
-    message.info('User is already a member');
+    message.info(t('admin.teams.alreadyMember'));
     return;
   }
   try {
     await replaceTeamUsers(team.value.id, [...existing, addUserId.value]);
     addUserId.value = undefined;
-    message.success('Member added');
+    message.success(t('admin.teams.memberAdded'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Add member failed');
+    message.error(error instanceof Error ? error.message : t('admin.teams.addFailed'));
   }
 }
 
@@ -140,10 +151,10 @@ async function onRemoveMember(user: EntityRef): Promise<void> {
   }
   try {
     await removeTeamUser(team.value.id, user.id);
-    message.success('Member removed');
+    message.success(t('admin.teams.memberRemoved'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Remove member failed');
+    message.error(error instanceof Error ? error.message : t('admin.teams.removeFailed'));
   }
 }
 
@@ -153,10 +164,10 @@ async function onDefaultRoles(roleIds: string[]): Promise<void> {
   }
   try {
     await patchTeam(team.value.id, assignTeamDefaultRolesPatch(team.value.defaultRoles, roleIds));
-    message.success('Default roles updated');
+    message.success(t('admin.teams.rolesUpdated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Default roles update failed');
+    message.error(error instanceof Error ? error.message : t('admin.teams.rolesFailed'));
   }
 }
 
@@ -179,112 +190,118 @@ watch(
 </script>
 
 <template>
-  <Card>
-    <Button type="link" style="padding-left: 0" @click="router.push({ name: 'admin-teams' })">
-      ← Teams
-    </Button>
-    <Spin :spinning="loading">
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <template v-if="team">
-        <Space class="admin-head">
-          <Typography.Title :level="4">{{ team.displayName || team.name }}</Typography.Title>
-          <Button data-testid="edit-team" @click="openEdit">Edit</Button>
-        </Space>
-        <Typography.Paragraph type="secondary">
-          GET /api/v1/teams/{id}. Membership: PUT /api/v1/teams/{id}/users and DELETE
-          /api/v1/teams/{id}/users/{userId}.
-        </Typography.Paragraph>
-        <Descriptions bordered :column="2">
-          <Descriptions.Item label="Name">{{ team.name }}</Descriptions.Item>
-          <Descriptions.Item label="Type">{{ team.teamType }}</Descriptions.Item>
-          <Descriptions.Item label="Joinable">{{ team.isJoinable ? 'yes' : 'no' }}</Descriptions.Item>
-          <Descriptions.Item label="Parents">
-            {{ team.parents.map((p) => p.displayName || p.name).join(', ') || '—' }}
-          </Descriptions.Item>
-          <Descriptions.Item label="Description" :span="2">{{ team.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Policies" :span="2">
-            {{ team.policies.map((p) => p.displayName || p.name).join(', ') || '—' }}
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5" style="margin-top: 24px">Default roles</Typography.Title>
-        <Space direction="vertical" style="width: 100%">
+  <EntityDetailShell
+    :title="entityLabel(team) || t('admin.teams.title')"
+    :name="team?.name"
+    :deleted="team?.deleted"
+    :lead="t('admin.teams.detailLead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!team && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="team ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button v-if="team" data-testid="edit-team" @click="openEdit">{{ t('crud.edit') }}</Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="team" bordered :column="2" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ team.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.teams.type')">{{ team.teamType }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.teams.joinable')">
+          {{ team.isJoinable ? t('crud.yes') : t('crud.no') }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('admin.teams.parents')">
+          {{ joinRefNames(team.parents) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')" :span="2">{{ team.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.teams.policies')" :span="2">
+          {{ joinRefNames(team.policies) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('admin.teams.defaultRoles')" :span="2">
+          <Space direction="vertical" style="width: 100%">
+            <Select v-model:value="form.defaultRoleIds" mode="multiple" style="width: 100%">
+              <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
+                {{ entityLabel(role) }}
+              </Select.Option>
+            </Select>
+            <Button type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
+              {{ t('admin.teams.saveRoles') }}
+            </Button>
+          </Space>
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #members>
+      <Alert
+        v-if="team && !canHoldUsers"
+        type="info"
+        show-icon
+        :message="t('admin.teams.membersInherited', { type: team.teamType })"
+        style="margin-bottom: 12px"
+      />
+      <Space v-if="team && canHoldUsers" style="margin-bottom: 12px">
         <Select
-          v-model:value="form.defaultRoleIds"
-          mode="multiple"
-          style="width: 100%"
-        >
-          <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-            {{ role.displayName || role.name }}
-          </Select.Option>
-        </Select>
-          <Button type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
-            Save default roles
-          </Button>
-        </Space>
-        <Typography.Title :level="5" style="margin-top: 24px">Members</Typography.Title>
-        <Alert
-          v-if="!canHoldUsers"
-          type="info"
-          show-icon
-          :message="`${team.teamType} teams do not hold direct users. Members listed here are inherited from descendant Groups.`"
-          style="margin-bottom: 12px"
+          v-model:value="addUserId"
+          show-search
+          :placeholder="t('admin.teams.selectUser')"
+          style="width: 280px"
+          option-filter-prop="label"
+          :options="users.map((u) => ({ value: u.id, label: `${entityLabel(u)} <${u.email || ''}>` }))"
         />
-        <Space v-if="canHoldUsers" style="margin-bottom: 12px">
-          <Select
-            v-model:value="addUserId"
-            show-search
-            placeholder="Select a user to add"
-            style="width: 280px"
-            option-filter-prop="label"
-            :options="users.map((u) => ({ value: u.id, label: `${u.displayName || u.name} <${u.email || ''}>` }))"
-          />
-          <Button type="primary" data-testid="add-team-member" @click="onAddMember">Add member</Button>
-        </Space>
-        <Table row-key="id" :columns="memberColumns" :data-source="team.users" :pagination="false">
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-            </template>
-            <template v-else-if="column.key === 'actions'">
-              <Button
-                v-if="canHoldUsers && (record as EntityRef).id"
-                type="link"
-                danger
-                @click="onRemoveMember(record as EntityRef)"
-              >
-                Remove
-              </Button>
-            </template>
+        <Button type="primary" data-testid="add-team-member" @click="onAddMember">
+          {{ t('admin.teams.addMember') }}
+        </Button>
+      </Space>
+      <Table
+        v-if="team"
+        row-key="id"
+        :columns="memberColumns"
+        :data-source="team.users"
+        :pagination="false"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            {{ entityLabel(record as EntityRef) }}
           </template>
-        </Table>
-      </template>
-    </Spin>
-    <Modal v-model:open="editOpen" title="Edit team" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="form.displayName" />
-        </Form.Item>
-        <Form.Item label="Team type">
-          <Select v-model:value="form.teamType">
-            <Select.Option v-for="type in TEAM_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="2" />
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="form.isJoinable">Users may join this team</Checkbox>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+          <template v-else-if="column.key === 'actions'">
+            <Button
+              v-if="canHoldUsers && (record as EntityRef).id"
+              type="link"
+              danger
+              @click="onRemoveMember(record as EntityRef)"
+            >
+              {{ t('admin.teams.remove') }}
+            </Button>
+          </template>
+        </template>
+      </Table>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('admin.teams.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('admin.teams.type')">
+        <Select v-model:value="form.teamType">
+          <Select.Option v-for="type in TEAM_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="2" />
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="form.isJoinable">{{ t('admin.teams.isJoinable') }}</Checkbox>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.admin-head {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  margin-bottom: 8px;
-}
-</style>
