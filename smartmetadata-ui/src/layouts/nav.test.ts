@@ -42,6 +42,7 @@ describe('nav IA', () => {
     expect(selectedNavKey('quality-test-case')).toBe('quality-test-cases');
     expect(selectedNavKey('task')).toBe('tasks');
     expect(selectedNavKey('search')).toBe('search');
+    expect(selectedNavKey('admin-settings-system')).toBe('admin-settings');
   });
 
   it('opens the section that owns the current route', () => {

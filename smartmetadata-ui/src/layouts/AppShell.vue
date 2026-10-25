@@ -3,10 +3,10 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Input, Layout, Menu, Select, Space, Typography, message } from 'ant-design-vue';
+import { Button, Dropdown, Input, Layout, Menu, Select, Space, message } from 'ant-design-vue';
 import { filtersFromQuery, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
@@ -25,6 +25,13 @@ const openKeys = ref<string[]>([]);
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
 
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
+const profileUserId = computed(() => auth.user?.id || '');
+
+onMounted(() => {
+  if (auth.isAuthenticated) {
+    void auth.refreshUser().catch(() => undefined);
+  }
+});
 
 watch(
   () => route.name,
@@ -60,6 +67,25 @@ function onSearch(value: string): void {
 function onLocaleChange(value: unknown): void {
   if (isSupportedLocale(value)) {
     setAppLocale(value, locale);
+  }
+}
+
+function popupParent(node: HTMLElement): HTMLElement {
+  return node.parentElement ?? document.body;
+}
+
+function onUserMenu({ key }: { key: string | number }): void {
+  const action = String(key);
+  if (action === 'profile' && profileUserId.value) {
+    void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
+    return;
+  }
+  if (action === 'settings') {
+    void router.push({ name: 'admin-settings' });
+    return;
+  }
+  if (action === 'logout') {
+    void onLogout();
   }
 }
 
@@ -119,6 +145,7 @@ async function onLogout(): Promise<void> {
     <Layout>
       <Layout.Header class="shell__header">
         <Input.Search
+          data-testid="global-search"
           class="shell__search"
           :placeholder="t('chrome.searchPlaceholder')"
           allow-clear
@@ -138,10 +165,27 @@ async function onLogout(): Promise<void> {
             <Select.Option value="en-US">{{ t('chrome.localeEn') }}</Select.Option>
             <Select.Option value="zh-CN">{{ t('chrome.localeZh') }}</Select.Option>
           </Select>
-          <Typography.Text class="shell__user">{{ displayName }}</Typography.Text>
-          <Button data-testid="logout-button" size="small" @click="onLogout">
-            {{ t('chrome.logout') }}
-          </Button>
+          <Dropdown
+            :trigger="['click']"
+            :get-popup-container="popupParent"
+          >
+            <Button data-testid="user-menu-trigger" size="small" :aria-label="t('chrome.userMenu')">
+              {{ displayName }}
+            </Button>
+            <template #overlay>
+              <Menu data-testid="user-menu" @click="onUserMenu">
+                <Menu.Item v-if="profileUserId" key="profile" data-testid="user-profile-item">
+                  {{ t('chrome.viewProfile') }}
+                </Menu.Item>
+                <Menu.Item key="settings" data-testid="user-settings-item">
+                  {{ t('chrome.settings') }}
+                </Menu.Item>
+                <Menu.Item key="logout" data-testid="logout-button">
+                  {{ t('chrome.logout') }}
+                </Menu.Item>
+              </Menu>
+            </template>
+          </Dropdown>
         </Space>
       </Layout.Header>
       <Layout.Content class="shell__content">
@@ -213,10 +257,6 @@ async function onLogout(): Promise<void> {
 }
 .shell__locale {
   min-width: 104px;
-}
-.shell__user {
-  color: #334155;
-  font-size: 13px;
 }
 .shell__content {
   margin: 16px;

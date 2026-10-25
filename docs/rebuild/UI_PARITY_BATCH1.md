@@ -89,7 +89,7 @@ No new Java/Python endpoints. Search still uses documented Lucene `q=` on
 | No Home / My Data landing | No product route; do not invent |
 | Insights / KPI | Documented product gap (`PARITY.md`) |
 | Official Marketplace landing | Domains + data products already under Governance |
-| Settings as one landing page | Product already has `/admin/settings` plus users/teams/roles/bots |
+| Settings as one landing page | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`) |
 | Collaboration in the left nav | Official feed lives in the AppBar; product routes stay listed |
 | Ingestion under Settings | Official nests services in Settings; product keeps an Ingestion section |
 | Icon set | Ant Design icons, not official SVG glyphs |

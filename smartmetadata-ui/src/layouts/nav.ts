@@ -113,6 +113,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'admin-team': 'admin-teams',
   'admin-role': 'admin-roles',
   'admin-bot': 'admin-bots',
+  'admin-settings-system': 'admin-settings',
   'governance-glossary': 'governance-glossaries',
   'governance-term': 'governance-glossaries',
   'governance-classification': 'governance-classifications',

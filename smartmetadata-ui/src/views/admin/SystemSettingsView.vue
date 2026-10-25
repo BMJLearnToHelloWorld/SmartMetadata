@@ -4,6 +4,8 @@
 -->
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { RouterLink } from 'vue-router';
 import {
   Alert,
   Button,
@@ -38,6 +40,7 @@ import type {
   SystemSetting,
 } from '@/types/admin';
 
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const version = ref<ServerVersion | null>(null);
@@ -100,7 +103,7 @@ async function load(): Promise<void> {
       }
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load settings';
+    errorMessage.value = error instanceof Error ? error.message : t('settings.system.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -114,10 +117,10 @@ async function saveLogin(): Promise<void> {
       accessBlockTime: login.accessBlockTime,
       jwtTokenExpiryTime: login.jwtTokenExpiryTime,
     });
-    message.success('Login configuration saved');
+    message.success(t('settings.system.loginSaved'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Save login configuration failed');
+    message.error(error instanceof Error ? error.message : t('settings.system.loginSaveFailed'));
   } finally {
     savingLogin.value = false;
   }
@@ -131,10 +134,10 @@ async function saveEmail(): Promise<void> {
       delete payload.password;
     }
     await updateSetting('emailConfiguration', payload);
-    message.success('Email configuration saved');
+    message.success(t('settings.system.emailSaved'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Save email configuration failed');
+    message.error(error instanceof Error ? error.message : t('settings.system.emailSaveFailed'));
   } finally {
     savingEmail.value = false;
   }
@@ -146,108 +149,112 @@ onMounted(() => {
 </script>
 
 <template>
-  <Space direction="vertical" size="middle" style="width: 100%">
+  <Space direction="vertical" size="middle" style="width: 100%" data-testid="system-settings">
     <Card>
-      <Typography.Title :level="4">Settings</Typography.Title>
+      <RouterLink data-testid="settings-back" :to="{ name: 'admin-settings' }">{{ t('settings.back') }}</RouterLink>
+      <Typography.Title :level="4" data-testid="system-settings-title">{{ t('settings.system.title') }}</Typography.Title>
       <Typography.Paragraph type="secondary">
-        Auth is GET /api/v1/system/config/auth. Settings list/update are GET/PUT /api/v1/system/settings.
-        Authentication and authorizer documents are not writable through that endpoint (the server
-        rejects them). SSO callback implementation is out of scope.
+        {{ t('settings.system.lead') }}
       </Typography.Paragraph>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
       <Descriptions v-if="version" bordered size="small" :column="2" style="margin-bottom: 16px">
-        <Descriptions.Item label="Server version">{{ version.version || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Revision">{{ version.revision || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('settings.system.serverVersion')">{{ version.version || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('settings.system.revision')">{{ version.revision || '—' }}</Descriptions.Item>
       </Descriptions>
       <Descriptions v-if="authConfig" bordered size="small" :column="1" data-testid="auth-config">
-        <Descriptions.Item label="Auth provider">
+        <Descriptions.Item :label="t('settings.system.authProvider')">
           {{ ssoProviderLabel(authConfig.provider, authConfig.providerName) }}
         </Descriptions.Item>
-        <Descriptions.Item label="Password login">
-          {{ supportsPasswordLogin(authConfig.provider) ? 'yes (POST /users/login)' : 'no' }}
+        <Descriptions.Item :label="t('settings.system.passwordLogin')">
+          {{
+            supportsPasswordLogin(authConfig.provider)
+              ? t('settings.system.passwordLoginYes')
+              : t('settings.system.passwordLoginNo')
+          }}
         </Descriptions.Item>
-        <Descriptions.Item v-if="isSsoOnlyProvider(authConfig.provider)" label="SSO note">
-          This console will not start a fake OIDC/SAML browser flow. Authority
-          {{ authConfig.authority || '—' }}; callback {{ authConfig.callbackUrl || '—' }}.
+        <Descriptions.Item v-if="isSsoOnlyProvider(authConfig.provider)" :label="t('settings.system.ssoNote')">
+          {{ t('settings.system.ssoNoteBody', { authority: authConfig.authority || '—', callback: authConfig.callbackUrl || '—' }) }}
         </Descriptions.Item>
-        <Descriptions.Item label="Self sign-up">
-          {{ authConfig.enableSelfSignup ? 'enabled' : 'disabled' }}
+        <Descriptions.Item :label="t('settings.system.selfSignup')">
+          {{ authConfig.enableSelfSignup ? t('settings.system.enabled') : t('settings.system.disabled') }}
         </Descriptions.Item>
       </Descriptions>
     </Card>
 
-    <Card v-if="loginLoaded" title="Login configuration">
+    <Card v-if="loginLoaded" :title="t('settings.system.loginTitle')">
       <Typography.Paragraph type="secondary">
-        PUT /api/v1/system/settings with <code>config_type: loginConfiguration</code>.
+        {{ t('settings.system.loginLead') }}
       </Typography.Paragraph>
       <Form layout="vertical">
-        <Form.Item label="Max failed login attempts">
+        <Form.Item :label="t('settings.system.maxFail')">
           <InputNumber v-model:value="login.maxLoginFailAttempts" :min="1" />
         </Form.Item>
-        <Form.Item label="Access block time (seconds)">
+        <Form.Item :label="t('settings.system.blockTime')">
           <InputNumber v-model:value="login.accessBlockTime" :min="0" />
         </Form.Item>
-        <Form.Item label="JWT expiry (seconds)">
+        <Form.Item :label="t('settings.system.jwtExpiry')">
           <InputNumber v-model:value="login.jwtTokenExpiryTime" :min="60" />
         </Form.Item>
         <Button type="primary" :loading="savingLogin" data-testid="save-login-config" @click="saveLogin">
-          Save login configuration
+          {{ t('settings.system.saveLogin') }}
         </Button>
       </Form>
     </Card>
 
-    <Card v-if="emailLoaded" title="Email configuration">
+    <Card v-if="emailLoaded" :title="t('settings.system.emailTitle')">
       <Typography.Paragraph type="secondary">
-        PUT /api/v1/system/settings with <code>config_type: emailConfiguration</code>. Leave password
-        unchanged unless you intend to set a new SMTP secret.
+        {{ t('settings.system.emailLead') }}
       </Typography.Paragraph>
       <Form layout="vertical">
-        <Form.Item label="Enable SMTP">
+        <Form.Item :label="t('settings.system.enableSmtp')">
           <Switch v-model:checked="email.enableSmtpServer" />
         </Form.Item>
-        <Form.Item label="Emailing entity">
+        <Form.Item :label="t('settings.system.emailingEntity')">
           <Input v-model:value="email.emailingEntity" />
         </Form.Item>
-        <Form.Item label="Sender mail">
+        <Form.Item :label="t('settings.system.senderMail')">
           <Input v-model:value="email.senderMail" />
         </Form.Item>
-        <Form.Item label="Server endpoint">
+        <Form.Item :label="t('settings.system.serverEndpoint')">
           <Input v-model:value="email.serverEndpoint" />
         </Form.Item>
-        <Form.Item label="Server port">
+        <Form.Item :label="t('settings.system.serverPort')">
           <InputNumber v-model:value="email.serverPort" :min="1" />
         </Form.Item>
-        <Form.Item label="Username">
+        <Form.Item :label="t('settings.system.username')">
           <Input v-model:value="email.username" />
         </Form.Item>
-        <Form.Item label="Password">
+        <Form.Item :label="t('settings.system.password')">
           <Input.Password v-model:value="email.password" />
         </Form.Item>
-        <Form.Item label="Transport">
+        <Form.Item :label="t('settings.system.transport')">
           <Select v-model:value="email.transportationStrategy" allow-clear>
             <Select.Option value="SMTP">SMTP</Select.Option>
             <Select.Option value="SMTPS">SMTPS</Select.Option>
             <Select.Option value="SMTP_TLS">SMTP_TLS</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item label="Support URL">
+        <Form.Item :label="t('settings.system.supportUrl')">
           <Input v-model:value="email.supportUrl" />
         </Form.Item>
         <Button type="primary" :loading="savingEmail" data-testid="save-email-config" @click="saveEmail">
-          Save email configuration
+          {{ t('settings.system.saveEmail') }}
         </Button>
       </Form>
     </Card>
 
-    <Card title="All settings" :loading="loading">
+    <Card :title="t('settings.system.allTitle')" :loading="loading">
       <Typography.Paragraph type="secondary">
-        Search, theme, lineage, MCP, and other settings are listed read-only. PUT exists for the
-        collection, but Phase 2 only edits login and email.
+        {{ t('settings.system.allLead') }}
       </Typography.Paragraph>
       <Table row-key="configType" :columns="settingColumns" :data-source="settings" :pagination="false">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'editable'">
-            {{ EDITABLE_SETTING_TYPES.has((record as SystemSetting).configType) ? 'yes' : 'read-only' }}
+            {{
+              EDITABLE_SETTING_TYPES.has((record as SystemSetting).configType)
+                ? t('settings.system.editable')
+                : t('settings.system.readOnly')
+            }}
           </template>
           <template v-else-if="column.key === 'preview'">
             <Typography.Text type="secondary">{{ preview((record as SystemSetting).configValue) }}</Typography.Text>

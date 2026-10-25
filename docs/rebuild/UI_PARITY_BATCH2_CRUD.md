@@ -70,7 +70,7 @@ No new Java/Python endpoints.
 | Gap | Why it stays |
 |---|---|
 | Roles / policies / domains / data products / quality / alerts / services / pipelines still one-off | Same pattern, next CRUD pass; this PR is the first 5 |
-| Settings landing / topbar | Batch 2 step 3 |
+| Settings landing / topbar | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`) |
 | Team / glossary / classification / bot catalog search | No product search client for those indexes; do not pretend a local filter is server search |
 | Hard delete / policy authoring / bot edit form | Not wired in the existing views; not invented here |
 | Cursor `before` from the server | Official NextPrevious can send `before`; product responses often only return `after`. Previous walks a client-side cursor stack of `after` values already fetched |

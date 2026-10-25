@@ -68,7 +68,7 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1 |
 | Search / catalog | Explore | `SearchView.vue` + table/topic `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`) |
 | Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` + shared `LineageCanvas` | Shipped (P3); **canvas thickening** in UI parity batch 2 (`UI_PARITY_BATCH2_LINEAGE.md`) |
-| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); **users / teams / bots** share list+detail chrome in UI parity batch 2 (`UI_PARITY_BATCH2_CRUD.md`). Roles + Settings landing still one-off |
+| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); **users / teams / bots** share list+detail chrome in UI parity batch 2 (`UI_PARITY_BATCH2_CRUD.md`). **Settings hub + topbar user menu** in `UI_PARITY_BATCH2_CHROME.md`. Roles list still one-off |
 | Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4); **classifications + glossaries** on the same CRUD shells. Domains / data products still one-off |
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); **job execution residual** (`jobs.py` raises `WorkflowError`) |
 | Services / pipelines console | AddService / AddIngestion | `views/ingestion/*` | CRUD + CLI YAML shipped (P8); **no Airflow `/trigger`** (ADR:2026-10-22-ingestion-console-runs-via-cli) |
@@ -172,7 +172,8 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
    stay DROP unless you reverse Phase 9/11. Explore/asset deepening is
    Phase B in `UI_PARITY_BATCH1.md`. Lineage canvas is batch 2 step 1
    (`UI_PARITY_BATCH2_LINEAGE.md`). Shared list+detail CRUD chrome is
-   batch 2 step 2 (`UI_PARITY_BATCH2_CRUD.md`).
+   batch 2 step 2 (`UI_PARITY_BATCH2_CRUD.md`). Topbar + Settings hub is
+   batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`).
 4. **If MCP:** wire generic Apache REST tools (`get_entity_details` for more
    entity types, `patch_entity`, `create_test_case`, …) on stdio only, or
    also HTTP/SSE (Phase 10 said no)? RDF/AI tools stay DROP unless you

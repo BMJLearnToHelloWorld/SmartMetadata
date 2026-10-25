@@ -18,7 +18,8 @@ import LoginView from '@/views/LoginView.vue';
 import RoleDetailView from '@/views/admin/RoleDetailView.vue';
 import RolesListView from '@/views/admin/RolesListView.vue';
 import SearchView from '@/views/SearchView.vue';
-import SettingsView from '@/views/admin/SettingsView.vue';
+import SettingsHubView from '@/views/admin/SettingsHubView.vue';
+import SystemSettingsView from '@/views/admin/SystemSettingsView.vue';
 import TeamDetailView from '@/views/admin/TeamDetailView.vue';
 import TeamsListView from '@/views/admin/TeamsListView.vue';
 import UserDetailView from '@/views/admin/UserDetailView.vue';
@@ -89,7 +90,8 @@ export const router = createRouter({
         { path: 'admin/roles/:id', name: 'admin-role', component: RoleDetailView, props: true },
         { path: 'admin/bots', name: 'admin-bots', component: BotsListView },
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
-        { path: 'admin/settings', name: 'admin-settings', component: SettingsView },
+        { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
+        { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
         { path: 'governance/glossaries', name: 'governance-glossaries', component: GlossariesListView },
         {
           path: 'governance/glossaries/:id',
