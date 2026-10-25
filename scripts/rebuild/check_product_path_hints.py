@@ -245,6 +245,11 @@ def check_compose_variants(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_COMPOSE_CN} must pass DaoCloud distroless as DISTROLESS_IMAGE")
         if "8089" not in cn:
             errors.append(f"{PRODUCT_COMPOSE_CN} must document UI host port 8089")
+        if re.search(r'(?m)^\s+-\s*[\"\']?8089:80', cn):
+            errors.append(
+                f"{PRODUCT_COMPOSE_CN} must not repeat ports 8089:80 "
+                "(compose appends port sequences onto the base file)"
+            )
         for needle in PRODUCT_COMPOSE_FORBIDDEN_NEEDLES:
             if needle in cn:
                 errors.append(f"{PRODUCT_COMPOSE_CN} must not mention {needle!r}")
@@ -261,6 +266,11 @@ def check_compose_variants(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_COMPOSE_INTL} must pass official gcr distroless")
         if "8089" not in intl:
             errors.append(f"{PRODUCT_COMPOSE_INTL} must document UI host port 8089")
+        if re.search(r'(?m)^\s+-\s*[\"\']?8089:80', intl):
+            errors.append(
+                f"{PRODUCT_COMPOSE_INTL} must not repeat ports 8089:80 "
+                "(compose appends port sequences onto the base file)"
+            )
 
     variant = read_text(repo / PRODUCT_COMPOSE_VARIANT)
     if variant is None:

@@ -156,7 +156,7 @@ def complete_tree(root: Path) -> None:
         "  migrate:\n"
         "    build:\n      args:\n"
         "        DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot\n"
-        "  ui:\n    ports:\n      - \"8089:80\"\n",
+        "  ui:\n    # host 8089 from base compose\n",
     )
     write(
         root / "docker" / "rebuild" / "docker-compose.intl.yml",
@@ -166,7 +166,7 @@ def complete_tree(root: Path) -> None:
         "  migrate:\n"
         "    build:\n      args:\n"
         "        DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot\n"
-        "  ui:\n    ports:\n      - \"8089:80\"\n",
+        "  ui:\n    # host 8089 from base compose\n",
     )
     write(
         root / "docker" / "rebuild" / "compose-variant.sh",
@@ -281,6 +281,16 @@ class ProductPathHintsContract(unittest.TestCase):
             (root / "docker" / "rebuild" / "docker-compose.cn.yml").unlink()
             errors = hints.check_repo(root)
         self.assertTrue(any("docker-compose.cn.yml" in item for item in errors), errors)
+
+    def test_overlay_repeating_ui_port_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            cn = root / "docker" / "rebuild" / "docker-compose.cn.yml"
+            cn.write_text(cn.read_text(encoding="utf-8") + '  ui:\n    ports:\n      - "8089:80"\n', encoding="utf-8")
+            errors = hints.check_repo(root)
+        self.assertTrue(any("8089:80" in item and "append" in item for item in errors), errors)
 
     def test_up_without_8089_fails(self) -> None:
         hints = load_hints()
