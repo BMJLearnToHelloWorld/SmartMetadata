@@ -2,8 +2,7 @@
  * Copyright 2026 SmartMetadata authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * you may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -11,45 +10,17 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defineComponent, h } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import LineageView from './LineageView.vue';
 
-vi.mock('@vue-flow/core', () => ({
-  VueFlow: defineComponent({
-    name: 'VueFlow',
-    props: { nodes: { type: Array, default: () => [] } },
-    emits: ['node-click'],
-    setup(props, { emit }) {
-      return () =>
-        h(
-          'div',
-          { 'data-testid': 'vue-flow-stub' },
-          (props.nodes as { id: string; data: { name: string; entityType: string; fullyQualifiedName: string } }[]).map(
-            (node) =>
-              h(
-                'button',
-                {
-                  'data-testid': `lineage-node-${node.id}`,
-                  onClick: () => emit('node-click', { node }),
-                },
-                node.data.name,
-              ),
-          ),
-        );
-    },
-  }),
-  Handle: defineComponent({ name: 'Handle', setup: () => () => h('div') }),
-  MarkerType: { ArrowClosed: 'arrowclosed' },
-  Position: { Left: 'left', Right: 'right' },
-}));
+vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
+vi.mock('@vue-flow/background', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/background']());
+vi.mock('@vue-flow/controls', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/controls']());
+vi.mock('@vue-flow/minimap', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/minimap']());
 
-vi.mock('@vue-flow/background', () => ({
-  Background: defineComponent({ name: 'Background', setup: () => () => h('div') }),
-}));
-
-vi.mock('@vue-flow/controls', () => ({
-  Controls: defineComponent({ name: 'Controls', setup: () => () => h('div') }),
+vi.mock('@/api/search', () => ({
+  searchAssets: vi.fn(async () => ({ total: 0, hits: [], facets: [] })),
 }));
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -100,7 +71,7 @@ async function mountLineage() {
   await router.isReady();
   const wrapper = mount(LineageView, {
     props: { entityType: 'table', fqn: 'svc.db.schema.orders' },
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -125,6 +96,8 @@ describe('LineageView', () => {
     expect(wrapper.text()).toContain('raw_orders');
     expect(wrapper.text()).toContain('orders');
     expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="column-lineage-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('raw_orders.id');
     expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/api/v1/lineage/table/name/');

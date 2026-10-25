@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { layoutLineageGraph, lineageNeighbors, mapEntityLineage } from './graphModel';
+import { layoutLineageGraph, lineageNeighbors, lineageNodeSize, mapEntityLineage } from './graphModel';
 
 const PAYLOAD = {
   entity: {
@@ -81,6 +81,11 @@ describe('mapEntityLineage', () => {
     ]);
     expect(model.hasColumnLineage).toBe(true);
     expect(model.columnMappings).toHaveLength(1);
+    expect(model.nodes.find((node) => node.isCenter)?.serviceName).toBe('svc');
+    expect(model.nodes.find((node) => node.isCenter)?.pathLabel).toBe('svc / db / schema');
+    expect(model.nodes.find((node) => node.isCenter)?.columns).toEqual([
+      { fqn: 'svc.db.schema.orders.id', name: 'id' },
+    ]);
 
     const downstream = model.edges.find((edge) => edge.target === 'down-id');
     expect(downstream?.source).toBe('center-id');
@@ -140,5 +145,14 @@ describe('layoutLineageGraph', () => {
     const byId = Object.fromEntries(positioned.nodes.map((node) => [node.id, node]));
     expect(byId['up-id'].position.x).toBeLessThan(byId['center-id'].position.x);
     expect(byId['down-id'].position.x).toBeGreaterThan(byId['center-id'].position.x);
+  });
+
+  it('grows a node when its mapped columns are expanded', () => {
+    const model = mapEntityLineage(PAYLOAD);
+    const center = model.nodes.find((node) => node.isCenter);
+    expect(center).toBeTruthy();
+    const collapsed = lineageNodeSize(center!);
+    const expanded = lineageNodeSize(center!, new Set([center!.id]));
+    expect(expanded.height).toBeGreaterThan(collapsed.height);
   });
 });
