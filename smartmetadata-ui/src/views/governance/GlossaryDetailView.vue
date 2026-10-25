@@ -3,34 +3,25 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { Button, Checkbox, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { getGlossary, updateGlossary } from '@/api/glossaries';
 import { createGlossaryTerm, listGlossaryTerms } from '@/api/glossaryTerms';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const glossary = ref<Glossary | null>(null);
 const terms = ref<GlossaryTerm[]>([]);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const createTermOpen = ref(false);
 const saving = ref(false);
@@ -48,12 +39,22 @@ const termForm = reactive({
   mutuallyExclusive: false,
 });
 
-const termColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-  { title: 'Parent', key: 'parent' },
-  { title: 'Related', key: 'relatedTerms' },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('governance.glossaries.title'), to: { name: 'governance-glossaries' } },
+  { label: entityLabel(glossary.value) || t('governance.glossaries.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'glossary-tab-overview' },
+  { key: 'terms', label: t('governance.glossaries.termsTab'), testId: 'glossary-tab-terms' },
+]);
+
+const termColumns = computed(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+  { title: t('governance.glossaries.parent'), key: 'parent' },
+  { title: t('governance.glossaries.related'), key: 'relatedTerms' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -65,7 +66,7 @@ async function load(): Promise<void> {
   } catch (error) {
     glossary.value = null;
     terms.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load glossary';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -94,10 +95,10 @@ async function onSave(): Promise<void> {
       mutuallyExclusive: editForm.mutuallyExclusive,
     });
     editOpen.value = false;
-    message.success('Glossary updated');
+    message.success(t('governance.glossaries.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -118,10 +119,10 @@ async function onCreateTerm(): Promise<void> {
       mutuallyExclusive: termForm.mutuallyExclusive,
     });
     createTermOpen.value = false;
-    message.success(`Created term ${created.name}`);
+    message.success(t('governance.glossaries.termCreated', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create term failed');
+    message.error(error instanceof Error ? error.message : t('governance.glossaries.termCreateFailed'));
   } finally {
     creating.value = false;
   }
@@ -140,111 +141,117 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Space direction="vertical" size="middle" style="width: 100%">
-        <div class="gov-head">
-          <Typography.Title :level="4">
-            {{ glossary?.displayName || glossary?.name || 'Glossary' }}
-          </Typography.Title>
-          <Space>
-            <Button @click="router.push({ name: 'governance-glossaries' })">Back</Button>
-            <Button type="primary" data-testid="edit-glossary" :disabled="!glossary" @click="openEdit">
-              Edit glossary
-            </Button>
-            <Button data-testid="create-term" :disabled="!glossary" @click="createTermOpen = true">
-              Create term
-            </Button>
-          </Space>
-        </div>
-        <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" />
-        <Descriptions v-if="glossary" bordered :column="1" size="small">
-          <Descriptions.Item label="Name">{{ glossary.name }}</Descriptions.Item>
-          <Descriptions.Item label="FQN">{{ glossary.fullyQualifiedName }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ glossary.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Mutually exclusive">
-            {{ glossary.mutuallyExclusive ? 'yes' : 'no' }}
-          </Descriptions.Item>
-          <Descriptions.Item label="Term count">{{ glossary.termCount ?? terms.length }}</Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5">Terms</Typography.Title>
-        <Table
-          row-key="id"
-          data-testid="glossary-terms-table"
-          :columns="termColumns"
-          :data-source="terms"
-          :pagination="false"
-          size="small"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                href="#"
-                @click.prevent="
-                  router.push({ name: 'governance-term', params: { id: (record as GlossaryTerm).id } })
-                "
-              >
-                {{ (record as GlossaryTerm).displayName || (record as GlossaryTerm).name }}
-              </a>
-            </template>
-            <template v-else-if="column.key === 'parent'">
-              {{ (record as GlossaryTerm).parent?.name || '—' }}
-            </template>
-            <template v-else-if="column.key === 'relatedTerms'">
-              {{ (record as GlossaryTerm).relatedTerms.map((item) => item.name).join(', ') || '—' }}
-            </template>
-          </template>
-        </Table>
-      </Space>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit glossary" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="editForm.mutuallyExclusive">Child terms are mutually exclusive</Checkbox>
-        </Form.Item>
-      </Form>
-    </Modal>
-    <Modal v-model:open="createTermOpen" title="Create glossary term" :confirm-loading="creating" @ok="onCreateTerm">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="termForm.name" data-testid="create-term-name" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="termForm.description" data-testid="create-term-description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="termForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Parent term">
-          <Select v-model:value="termForm.parent" allow-clear>
-            <Select.Option
-              v-for="term in terms"
-              :key="term.id"
-              :value="term.fullyQualifiedName || term.name"
+  <EntityDetailShell
+    :title="entityLabel(glossary) || t('governance.glossaries.title')"
+    :name="glossary?.name"
+    :fqn="glossary?.fullyQualifiedName"
+    :lead="t('governance.glossaries.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!glossary && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="glossary ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="edit-glossary" :disabled="!glossary" @click="openEdit">
+        {{ t('crud.edit') }}
+      </Button>
+      <Button data-testid="create-term" :disabled="!glossary" @click="createTermOpen = true">
+        {{ t('governance.glossaries.createTerm') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="glossary" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ glossary.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ glossary.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ glossary.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('governance.glossaries.exclusive')">
+          {{ glossary.mutuallyExclusive ? t('crud.yes') : t('crud.no') }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('governance.glossaries.termCount')">
+          {{ glossary.termCount ?? terms.length }}
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #terms>
+      <Table
+        row-key="id"
+        data-testid="glossary-terms-table"
+        :columns="termColumns"
+        :data-source="terms"
+        :pagination="false"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              href="#"
+              @click.prevent="router.push({ name: 'governance-term', params: { id: (record as GlossaryTerm).id } })"
             >
-              {{ term.displayName || term.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item>
-          <Checkbox v-model:checked="termForm.mutuallyExclusive">Child terms are mutually exclusive</Checkbox>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+              {{ entityLabel(record as GlossaryTerm) }}
+            </a>
+          </template>
+          <template v-else-if="column.key === 'parent'">
+            {{ (record as GlossaryTerm).parent?.name || '—' }}
+          </template>
+          <template v-else-if="column.key === 'relatedTerms'">
+            {{ joinRefNames((record as GlossaryTerm).relatedTerms) || '—' }}
+          </template>
+        </template>
+      </Table>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('governance.glossaries.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="editForm.mutuallyExclusive">
+          {{ t('governance.glossaries.exclusiveHint') }}
+        </Checkbox>
+      </Form.Item>
+    </Form>
+  </Modal>
+  <Modal
+    v-model:open="createTermOpen"
+    :title="t('governance.glossaries.createTermTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreateTerm"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="termForm.name" data-testid="create-term-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="termForm.description" data-testid="create-term-description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="termForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('governance.glossaries.parentTerm')">
+        <Select v-model:value="termForm.parent" allow-clear>
+          <Select.Option v-for="term in terms" :key="term.id" :value="term.fullyQualifiedName || term.name">
+            {{ entityLabel(term) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item>
+        <Checkbox v-model:checked="termForm.mutuallyExclusive">
+          {{ t('governance.glossaries.exclusiveHint') }}
+        </Checkbox>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.gov-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

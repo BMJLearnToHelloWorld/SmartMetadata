@@ -42,7 +42,7 @@ table. Asset Lineage tab = neighbor tables only.
 | Asset tab | Same `Lineage` host | `LineageCanvas` (same fetch + `LineageGraph`) at depth default 1, configurable 0–3; link to full page | Neighbor-only table removed — graph is the tab |
 | Column lineage | Expandable ports + column edges | Ports and dashed handle-to-handle edges **only** for `lineageDetails.columnsLineage`; row click highlights those nodes/edges; table remains | No full table schema on a node (would need per-node entity GET). No column-lineage edit |
 | Toolbar | Find node, depth, fullscreen | Canvas node select, existing 0–3 depth clamp, fullscreen overlay | Impact Analysis, time filter, PNG export skipped (not cheap on existing APIs) |
-| i18n | Official catalogs | `lineage.*` keys in zh-CN / en-US | Other CRUD pages still English |
+| i18n | Official catalogs | `lineage.*` keys in zh-CN / en-US | Shared CRUD chrome i18n is batch 2 step 2 (`UI_PARITY_BATCH2_CRUD.md`) |
 
 No new Java/Python endpoints.
 

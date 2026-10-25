@@ -43,5 +43,13 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('lineage.searchPlaceholder');
     expect(keys).toContain('lineage.findNode');
     expect(keys).toContain('lineage.columnsLead');
+    expect(keys).toContain('crud.refresh');
+    expect(keys).toContain('crud.next');
+    expect(keys).toContain('crud.empty');
+    expect(keys).toContain('admin.users.title');
+    expect(keys).toContain('admin.teams.title');
+    expect(keys).toContain('admin.bots.title');
+    expect(keys).toContain('governance.classifications.title');
+    expect(keys).toContain('governance.glossaries.title');
   });
 });
