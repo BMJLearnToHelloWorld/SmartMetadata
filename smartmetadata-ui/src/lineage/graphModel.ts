@@ -234,6 +234,22 @@ export function isLineageEmpty(model: LineageGraphModel): boolean {
   return model.edges.length === 0;
 }
 
+export function lineageNeighbors(model: LineageGraphModel): {
+  upstream: LineageGraphNode[];
+  downstream: LineageGraphNode[];
+} {
+  const incoming = new Set(
+    model.edges.filter((edge) => edge.target === model.centerId).map((edge) => edge.source),
+  );
+  const outgoing = new Set(
+    model.edges.filter((edge) => edge.source === model.centerId).map((edge) => edge.target),
+  );
+  return {
+    upstream: model.nodes.filter((node) => incoming.has(node.id)),
+    downstream: model.nodes.filter((node) => outgoing.has(node.id)),
+  };
+}
+
 export function layoutLineageGraph(model: LineageGraphModel): PositionedLineageGraph {
   if (model.nodes.length === 0) {
     return { ...model, nodes: [] };

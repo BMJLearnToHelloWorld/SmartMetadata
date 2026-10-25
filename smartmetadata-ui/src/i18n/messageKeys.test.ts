@@ -25,7 +25,7 @@ describe('i18n catalogs', () => {
     expect(leafKeys(zhCN).sort()).toEqual(leafKeys(enUS).sort());
   });
 
-  it('covers shell, nav, and login chrome', () => {
+  it('covers shell, nav, login, Explore, and asset tabs', () => {
     const keys = leafKeys(enUS);
     expect(keys).toContain('nav.explore');
     expect(keys).toContain('nav.lineage');
@@ -33,7 +33,11 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('chrome.logout');
     expect(keys).toContain('chrome.searchPlaceholder');
     expect(keys).toContain('login.submit');
-    expect(keys).not.toContain('explore.title');
-    expect(keys).not.toContain('asset.tabs.overview');
+    expect(keys).toContain('explore.title');
+    expect(keys).toContain('explore.facets.entityType');
+    expect(keys).toContain('asset.tabs.overview');
+    expect(keys).toContain('asset.tabs.schema');
+    expect(keys).toContain('asset.tabs.lineage');
+    expect(keys).toContain('asset.tabs.quality');
   });
 });

@@ -19,7 +19,7 @@ export async function searchAssets(query: string, from = 0, size = 20): Promise<
       index: 'dataAsset',
       from,
       size,
-      include_aggregations: false,
+      include_aggregations: true,
     },
   });
   return mapSearchResponse(payload);

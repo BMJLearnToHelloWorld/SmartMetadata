@@ -7,6 +7,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Input, Layout, Menu, Select, Space, Typography, message } from 'ant-design-vue';
+import { filtersFromQuery, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
 import { isNavSectionKey, NAV_ENTRIES, sectionKeyForRoute, selectedNavKey } from '@/layouts/nav';
@@ -45,7 +46,15 @@ function onMenuClick({ key }: { key: string | number }): void {
 }
 
 function onSearch(value: string): void {
-  void router.push({ name: 'search', query: value.trim() ? { q: value.trim() } : {} });
+  const nextQuery = value.trim();
+  if (route.name === 'search') {
+    void router.push({
+      name: 'search',
+      query: searchRouteQuery(nextQuery, filtersFromQuery(route.query), 0),
+    });
+    return;
+  }
+  void router.push({ name: 'search', query: searchRouteQuery(nextQuery, {}, 0) });
 }
 
 function onLocaleChange(value: unknown): void {

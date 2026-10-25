@@ -7,6 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import type { SearchFacet } from '@/catalog/searchFacets';
 
 export interface JwtResponse {
   accessToken?: string;
@@ -43,6 +44,11 @@ export interface SearchHit {
   fullyQualifiedName: string;
   entityType: string;
   description?: string;
+  serviceType?: string;
+  serviceName?: string;
+  databaseName?: string;
+  schemaName?: string;
+  tier?: string;
   owners: EntityRef[];
   tags: TagRef[];
 }
@@ -50,6 +56,7 @@ export interface SearchHit {
 export interface SearchPage {
   total: number;
   hits: SearchHit[];
+  facets: SearchFacet[];
 }
 
 export interface SchemaRow {
@@ -65,6 +72,12 @@ export interface AssetDetail {
   displayName?: string;
   fullyQualifiedName: string;
   description?: string;
+  tableType?: string;
+  serviceType?: string;
+  service?: EntityRef;
+  database?: EntityRef;
+  databaseSchema?: EntityRef;
+  partitions?: number;
   owners: EntityRef[];
   tags: TagRef[];
   domains: EntityRef[];
