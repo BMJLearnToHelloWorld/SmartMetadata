@@ -69,7 +69,14 @@ async function load(): Promise<void> {
       t('insights.series.tier'),
       bucketsToPoints(facetBuckets(search.facets, 'tier')),
     );
-    testSeries.value = namedSeries(t('insights.series.testStatus'), testResultsToStatusPoints(tests.data));
+    testSeries.value = namedSeries(
+      t('insights.series.testStatus'),
+      testResultsToStatusPoints(
+        tests.data.map((item) => ({
+          testCaseStatus: item.testCaseResult?.testCaseStatus || item.testCaseStatus,
+        })),
+      ),
+    );
     incidentSeries.value = namedSeries(
       t('insights.series.incidentStatus'),
       testResultsToStatusPoints(incidents.data.map((item) => ({ testCaseStatus: item.testCaseResolutionStatusType }))),

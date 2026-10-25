@@ -101,6 +101,14 @@ describe('InsightsView', () => {
     expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(true);
   });
 
+  it('plots test-status donut when latest status lives only under testCaseResult', async () => {
+    listTestCases.mockResolvedValue({
+      data: [{ testCaseResult: { testCaseStatus: 'Failed' } }, { testCaseResult: { testCaseStatus: 'Success' } }],
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="insights-test-chart"]').attributes('data-points')).toBe('1');
+  });
+
   it('plots pipeline series only when listChartData returns points', async () => {
     listSystemChartData.mockResolvedValue({
       total_data_assets: [{ count: 4, day: Date.UTC(2026, 0, 1), group: 'table' }],
