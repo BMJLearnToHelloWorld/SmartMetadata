@@ -10,6 +10,8 @@ Those trees remain reference-only for behavior. Contracts come from
 JSON Schema.
 
 Phase 1: app shell, basic-auth login, global search, Table + Topic detail.
+UI parity batch 1: denser AppShell / official-like nav IA + zh-CN/en-US i18n
+(`docs/rebuild/UI_PARITY_BATCH1.md`, ADR:2026-10-25-vue-i18n-zh-en).
 Phase 2: Admin (users, teams, roles, bots, settings) plus auth-provider-aware login.
 Phase 3: upstream/downstream lineage graph (Vue Flow + dagre) from `GET /v1/lineage/{entity}/name/{fqn}`.
 Phase 4: glossaries/terms, classifications/tags, domains/data products, and
@@ -32,7 +34,7 @@ Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`) and
 
 ## Stack
 
-Vite · Vue 3 · TypeScript · Ant Design Vue · Vue Router · Pinia · Vue Flow · dagre · Vitest
+Vite · Vue 3 · TypeScript · Ant Design Vue · Vue Router · Pinia · vue-i18n · Vue Flow · dagre · Vitest
 
 ## Run against a slim Phase 0 server
 

@@ -20,7 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => Boolean(session.value?.accessToken));
   const displayName = computed(
-    () => user.value?.displayName || user.value?.name || session.value?.email || 'Signed in',
+    () => user.value?.displayName || user.value?.name || session.value?.email || '',
   );
 
   function hydrate(): void {

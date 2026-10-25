@@ -4,16 +4,20 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Form, Input, Select, Typography } from 'ant-design-vue';
 import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
 import { fetchAuthConfig } from '@/api/system';
+import { setAppLocale } from '@/i18n';
+import { isSupportedLocale } from '@/i18n/localePreference';
 import { useAuthStore } from '@/stores/auth';
 import type { AuthConfiguration } from '@/types/admin';
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
+const { t, locale } = useI18n();
 
 const form = reactive({
   email: '',
@@ -31,8 +35,7 @@ async function loadAuthConfig(): Promise<void> {
   try {
     authConfig.value = await fetchAuthConfig();
   } catch (error) {
-    authConfigError.value =
-      error instanceof Error ? error.message : 'Could not read GET /api/v1/system/config/auth';
+    authConfigError.value = error instanceof Error ? error.message : t('login.authConfigMissing');
   }
 }
 
@@ -44,9 +47,15 @@ async function onSubmit(): Promise<void> {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/search';
     await router.replace(redirect);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Login failed';
+    errorMessage.value = error instanceof Error ? error.message : t('login.failed');
   } finally {
     submitting.value = false;
+  }
+}
+
+function onLocaleChange(value: unknown): void {
+  if (isSupportedLocale(value)) {
+    setAppLocale(value, locale);
   }
 }
 
@@ -58,16 +67,28 @@ onMounted(() => {
 <template>
   <div class="login">
     <Card class="login__card">
-      <Typography.Title :level="3">SmartMetadata</Typography.Title>
+      <div class="login__head">
+        <Typography.Title :level="3">{{ t('login.title') }}</Typography.Title>
+        <Select
+          data-testid="locale-switcher"
+          size="small"
+          class="login__locale"
+          :value="locale"
+          :aria-label="t('chrome.locale')"
+          @change="onLocaleChange"
+        >
+          <Select.Option value="en-US">{{ t('chrome.localeEn') }}</Select.Option>
+          <Select.Option value="zh-CN">{{ t('chrome.localeZh') }}</Select.Option>
+        </Select>
+      </div>
       <Typography.Paragraph type="secondary">
-        Sign in against the server login API. The password is Base64-encoded in the request body as
-        required by <code>POST /api/v1/users/login</code>.
+        {{ t('login.lead') }}
       </Typography.Paragraph>
       <Alert
         v-if="authConfigError"
         type="warning"
         show-icon
-        :message="`Auth provider lookup failed (${authConfigError}). Showing the password form because stock servers use basic login.`"
+        :message="t('login.authConfigFailed', { error: authConfigError })"
         class="login__error"
       />
       <Alert
@@ -76,15 +97,14 @@ onMounted(() => {
         type="info"
         show-icon
         class="login__error"
-        :message="`This server is configured for ${ssoProviderLabel(authConfig?.provider, authConfig?.providerName)} authentication. Username/password login is not available.`"
+        :message="
+          t('login.ssoOnly', { provider: ssoProviderLabel(authConfig?.provider, authConfig?.providerName) })
+        "
       >
         <template #description>
-          <p>
-            The console does not invent an OIDC/SAML browser callback or client secret. Use a JWT from
-            your identity provider, or reconfigure the server for basic/LDAP login.
-          </p>
-          <p v-if="authConfig?.authority">Authority: {{ authConfig.authority }}</p>
-          <p v-if="authConfig?.callbackUrl">Callback URL advertised by the server: {{ authConfig.callbackUrl }}</p>
+          <p>{{ t('login.ssoHelp') }}</p>
+          <p v-if="authConfig?.authority">{{ t('login.authority', { value: authConfig.authority }) }}</p>
+          <p v-if="authConfig?.callbackUrl">{{ t('login.callback', { value: authConfig.callbackUrl }) }}</p>
         </template>
       </Alert>
       <Alert
@@ -96,7 +116,11 @@ onMounted(() => {
         class="login__error"
       />
       <Form v-if="passwordLogin" layout="vertical" :model="form" @finish="onSubmit">
-        <Form.Item label="Email" name="email" :rules="[{ required: true, message: 'Email is required' }]">
+        <Form.Item
+          :label="t('login.email')"
+          name="email"
+          :rules="[{ required: true, message: t('login.emailRequired') }]"
+        >
           <Input
             v-model:value="form.email"
             data-testid="login-email"
@@ -104,7 +128,11 @@ onMounted(() => {
             placeholder="admin@open-metadata.org"
           />
         </Form.Item>
-        <Form.Item label="Password" name="password" :rules="[{ required: true, message: 'Password is required' }]">
+        <Form.Item
+          :label="t('login.password')"
+          name="password"
+          :rules="[{ required: true, message: t('login.passwordRequired') }]"
+        >
           <Input.Password
             v-model:value="form.password"
             data-testid="login-password"
@@ -118,7 +146,7 @@ onMounted(() => {
           :loading="submitting"
           data-testid="login-submit"
         >
-          Sign in
+          {{ t('login.submit') }}
         </Button>
       </Form>
     </Card>
@@ -136,6 +164,19 @@ onMounted(() => {
 .login__card {
   width: 100%;
   max-width: 420px;
+}
+.login__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.login__head :deep(.ant-typography) {
+  margin-bottom: 0;
+}
+.login__locale {
+  min-width: 104px;
+  margin-top: 6px;
 }
 .login__error {
   margin-bottom: 16px;

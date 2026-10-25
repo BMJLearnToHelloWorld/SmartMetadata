@@ -11,14 +11,19 @@ import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import Antd from 'ant-design-vue';
 import App from './App.vue';
+import { applyDocumentLang, createAppI18n } from './i18n';
+import type { SupportedLocale } from './i18n/localePreference';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
 import 'ant-design-vue/dist/reset.css';
 
 const app = createApp(App);
 const pinia = createPinia();
+const i18n = createAppI18n();
+applyDocumentLang(i18n.global.locale.value as SupportedLocale);
 app.use(pinia);
 app.use(router);
+app.use(i18n);
 app.use(Antd);
 
 useAuthStore().hydrate();
