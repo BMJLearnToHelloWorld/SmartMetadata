@@ -1,9 +1,13 @@
 # SmartMetadata product compose — rebuilt, CCL-free by construction.
-# Services: official MySQL 8, official Elasticsearch 9, migrate, slim server,
-# Vue console, clean-room ingest seed, stdio MCP.
+# Shared service graph. Default start is this file plus docker-compose.cn.yml
+# (DaoCloud proxies, UI host 8089). Official registries: SM_DOCKER_VARIANT=intl
+# (this file plus docker-compose.intl.yml).
+# Services: MySQL 8, Elasticsearch 9, migrate, slim server, Vue console,
+# clean-room ingest seed, stdio MCP.
 # Does not define CCL ingest/Airflow/quickstart/console/MCP services.
 # Entry: make docker-up / ./docker/rebuild/up.sh
 # ADR:2026-10-23-product-docker-is-rebuild-only
+# ADR:2026-10-25-product-docker-defaults-to-china-mirrors
 
 name: smartmetadata-rebuild
 
@@ -116,7 +120,7 @@ services:
       dockerfile: docker/rebuild/Dockerfile.ui
     container_name: smartmetadata_ui
     ports:
-      - "8080:80"
+      - "8089:80"
     depends_on:
       openmetadata-server:
         condition: service_healthy

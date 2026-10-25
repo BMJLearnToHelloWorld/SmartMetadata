@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  China-host Maven settings. Copy to ~/.m2/settings.xml or pass
+  MAVEN_SETTINGS=docker/rebuild/maven-settings.cn.xml.example to `make slim-dist`.
+  Aliyun Central with mirrorOf=* unblocks stalls on maven.google.com.
+  No credentials — public mirror only.
+  See docs/rebuild/DEPLOY_CN.md
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>aliyun-central</id>
+      <mirrorOf>*</mirrorOf>
+      <name>Aliyun Maven Central</name>
+      <url>https://maven.aliyun.com/repository/central</url>
+    </mirror>
+  </mirrors>
+</settings>

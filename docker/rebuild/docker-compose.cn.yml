@@ -1,0 +1,45 @@
+# China overlay — default product Docker path (make docker-up).
+# Hub registry-mirrors do not cover docker.elastic.co or gcr.io. Pin the same
+# name/tag through the DaoCloud proxy. Hub library images are also prefixed so
+# a daemon without a mirror still gets MySQL / Node / nginx / Python.
+# UI host port is 8089 (container 80). See docs/rebuild/DEPLOY_CN.md
+# ADR:2026-10-25-product-docker-defaults-to-china-mirrors
+
+services:
+  mysql:
+    image: m.daocloud.io/docker.io/library/mysql:8.0
+
+  elasticsearch:
+    image: m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+
+  migrate:
+    build:
+      args:
+        ALPINE_IMAGE: m.daocloud.io/docker.io/library/alpine:3
+        TEMURIN_IMAGE: m.daocloud.io/docker.io/library/eclipse-temurin:21-jdk
+        DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot
+
+  openmetadata-server:
+    build:
+      args:
+        ALPINE_IMAGE: m.daocloud.io/docker.io/library/alpine:3
+        TEMURIN_IMAGE: m.daocloud.io/docker.io/library/eclipse-temurin:21-jdk
+        DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot
+
+  ui:
+    build:
+      args:
+        NODE_IMAGE: m.daocloud.io/docker.io/library/node:22-bookworm-slim
+        NGINX_IMAGE: m.daocloud.io/docker.io/library/nginx:1.27-alpine
+    ports:
+      - "8089:80"
+
+  ingest:
+    build:
+      args:
+        PYTHON_IMAGE: m.daocloud.io/docker.io/library/python:3.11-slim
+
+  mcp:
+    build:
+      args:
+        NODE_IMAGE: m.daocloud.io/docker.io/library/node:22-bookworm-slim

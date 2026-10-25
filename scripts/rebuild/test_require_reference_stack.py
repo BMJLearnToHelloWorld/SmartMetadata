@@ -181,6 +181,11 @@ class ProductMakefileSurface(unittest.TestCase):
         self.assertNotIn("I_UNDERSTAND_CCL_INGESTION", docker_up.stdout)
         self.assertNotIn("openmetadata-ui/", docker_up.stdout)
 
+        docker_up_intl = run_make(["-n", "docker-up-intl"])
+        self.assertEqual(docker_up_intl.returncode, 0, docker_up_intl.stderr)
+        self.assertIn("SM_DOCKER_VARIANT=intl", docker_up_intl.stdout)
+        self.assertIn("docker/rebuild/up.sh", docker_up_intl.stdout)
+
     def test_hatch_enables_reference_recipes(self) -> None:
         yarn = run_make(["-n", "yarn_start_dev_ui"], env={HATCH: "1"})
         self.assertEqual(yarn.returncode, 0, yarn.stderr)
