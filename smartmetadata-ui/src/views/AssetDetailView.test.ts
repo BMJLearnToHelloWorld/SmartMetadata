@@ -15,6 +15,11 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import AssetDetailView from './AssetDetailView.vue';
 
+vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
+vi.mock('@vue-flow/background', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/background']());
+vi.mock('@vue-flow/controls', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/controls']());
+vi.mock('@vue-flow/minimap', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/minimap']());
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -189,9 +194,11 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('marts');
   });
 
-  it('loads upstream neighbors from GET /v1/lineage on the lineage tab', async () => {
+  it('embeds the shared lineage graph on the lineage tab', async () => {
     const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="asset-lineage-upstream"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-graph"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('raw_orders');
     expect(wrapper.text()).toContain('Overview');
     expect(wrapper.text()).toContain('Schema');

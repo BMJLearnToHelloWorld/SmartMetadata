@@ -9,14 +9,22 @@
  */
 import dagre from 'dagre';
 import { asRecord, asString } from '@/api/json';
+import { attachColumnPorts } from './columnPorts';
+import { lineagePathLabel, lineageServiceName, truncateLineageFqn } from './nodeChrome';
 
-const NODE_WIDTH = 240;
-const NODE_HEIGHT = 80;
+export const NODE_WIDTH = 260;
+export const NODE_HEADER_HEIGHT = 78;
+export const COLUMN_ROW_HEIGHT = 24;
 
 export interface ColumnMapping {
   fromColumns: string[];
   toColumn: string;
   function?: string;
+}
+
+export interface LineageColumnPort {
+  fqn: string;
+  name: string;
 }
 
 export interface LineageGraphNode {
@@ -26,6 +34,10 @@ export interface LineageGraphNode {
   displayName: string;
   fullyQualifiedName: string;
   isCenter: boolean;
+  serviceName: string;
+  pathLabel: string;
+  truncatedFqn: string;
+  columns: LineageColumnPort[];
 }
 
 export interface LineageGraphEdge {
@@ -37,6 +49,9 @@ export interface LineageGraphEdge {
   sourceKind?: string;
   pipelineName?: string;
   columnMappings: ColumnMapping[];
+  sourceHandle?: string;
+  targetHandle?: string;
+  isColumnEdge?: boolean;
 }
 
 export interface LineageGraphModel {
@@ -110,13 +125,18 @@ function referenceFrom(value: unknown, fallbackId = ''): LineageGraphNode | null
   const name = rec
     ? asString(rec.name) || asString(rec.displayName) || asString(rec.fullyQualifiedName) || id
     : fallbackId;
+  const fullyQualifiedName = rec ? asString(rec.fullyQualifiedName) : '';
   return {
     id,
     entityType: rec ? asString(rec.type) || asString(rec.entityType) : '',
     name,
     displayName: rec ? asString(rec.displayName) || name : name,
-    fullyQualifiedName: rec ? asString(rec.fullyQualifiedName) : '',
+    fullyQualifiedName,
     isCenter: false,
+    serviceName: lineageServiceName(fullyQualifiedName),
+    pathLabel: lineagePathLabel(fullyQualifiedName),
+    truncatedFqn: truncateLineageFqn(fullyQualifiedName),
+    columns: [],
   };
 }
 
@@ -221,13 +241,13 @@ export function mapEntityLineage(payload: unknown): LineageGraphModel {
   }
 
   const columnMappings = edges.flatMap((edge) => edge.columnMappings);
-  return {
+  return attachColumnPorts({
     centerId: center.id,
     nodes: [...byId.values()],
     edges,
     columnMappings,
     hasColumnLineage: columnMappings.length > 0,
-  };
+  });
 }
 
 export function isLineageEmpty(model: LineageGraphModel): boolean {
@@ -250,16 +270,31 @@ export function lineageNeighbors(model: LineageGraphModel): {
   };
 }
 
-export function layoutLineageGraph(model: LineageGraphModel): PositionedLineageGraph {
+export function lineageNodeSize(
+  node: LineageGraphNode,
+  expandedNodeIds?: ReadonlySet<string>,
+): { width: number; height: number } {
+  const expanded = expandedNodeIds?.has(node.id) && node.columns.length > 0;
+  return {
+    width: NODE_WIDTH,
+    height: NODE_HEADER_HEIGHT + (expanded ? node.columns.length * COLUMN_ROW_HEIGHT + 8 : 0),
+  };
+}
+
+export function layoutLineageGraph(
+  model: LineageGraphModel,
+  expandedNodeIds?: ReadonlySet<string>,
+): PositionedLineageGraph {
   if (model.nodes.length === 0) {
     return { ...model, nodes: [] };
   }
 
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));
-  graph.setGraph({ rankdir: 'LR', nodesep: 56, ranksep: 120, marginx: 16, marginy: 16 });
+  graph.setGraph({ rankdir: 'LR', nodesep: 56, ranksep: 140, marginx: 16, marginy: 16 });
   for (const node of model.nodes) {
-    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const size = lineageNodeSize(node, expandedNodeIds);
+    graph.setNode(node.id, { width: size.width, height: size.height });
   }
   for (const edge of model.edges) {
     graph.setEdge(edge.source, edge.target);
@@ -270,11 +305,12 @@ export function layoutLineageGraph(model: LineageGraphModel): PositionedLineageG
     ...model,
     nodes: model.nodes.map((node) => {
       const laid = graph.node(node.id);
+      const size = lineageNodeSize(node, expandedNodeIds);
       return {
         ...node,
         position: {
-          x: (laid?.x ?? 0) - NODE_WIDTH / 2,
-          y: (laid?.y ?? 0) - NODE_HEIGHT / 2,
+          x: (laid?.x ?? 0) - size.width / 2,
+          y: (laid?.y ?? 0) - size.height / 2,
         },
       };
     }),

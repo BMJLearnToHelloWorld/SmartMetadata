@@ -67,7 +67,7 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 |---|---|---|---|
 | Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1 |
 | Search / catalog | Explore | `SearchView.vue` + table/topic `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`) |
-| Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` | Shipped (P3) |
+| Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` + shared `LineageCanvas` | Shipped (P3); **canvas thickening** in UI parity batch 2 (`UI_PARITY_BATCH2_LINEAGE.md`) |
 | Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2) |
 | Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4) |
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); **job execution residual** (`jobs.py` raises `WorkflowError`) |
@@ -170,7 +170,8 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
 3. **If UI (after shell):** Insights/KPI, first-class non-table assets,
    profiler **run** UI, or SSO/persona? Persona landing and Collate AI widgets
    stay DROP unless you reverse Phase 9/11. Explore/asset deepening is
-   Phase B in `UI_PARITY_BATCH1.md`.
+   Phase B in `UI_PARITY_BATCH1.md`. Lineage canvas thickening is batch 2
+   step 1 in `UI_PARITY_BATCH2_LINEAGE.md`.
 4. **If MCP:** wire generic Apache REST tools (`get_entity_details` for more
    entity types, `patch_entity`, `create_test_case`, …) on stdio only, or
    also HTTP/SSE (Phase 10 said no)? RDF/AI tools stay DROP unless you

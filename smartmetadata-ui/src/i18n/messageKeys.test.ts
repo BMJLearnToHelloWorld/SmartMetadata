@@ -39,5 +39,9 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('asset.tabs.schema');
     expect(keys).toContain('asset.tabs.lineage');
     expect(keys).toContain('asset.tabs.quality');
+    expect(keys).toContain('lineage.title');
+    expect(keys).toContain('lineage.searchPlaceholder');
+    expect(keys).toContain('lineage.findNode');
+    expect(keys).toContain('lineage.columnsLead');
   });
 });

@@ -27,10 +27,10 @@ import { listEntityActivity } from '@/api/activity';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, patchAsset } from '@/api/entities';
-import { fetchEntityLineage } from '@/api/lineage';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
-import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
+import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
+import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import {
   loadGovernanceCatalog,
   ownerKey,
@@ -38,7 +38,6 @@ import {
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
 import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
-import { lineageNeighbors, mapEntityLineage, type LineageGraphModel } from '@/lineage/graphModel';
 import { toEntityLink } from '@/quality/entityLink';
 import type { AssetDetail } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
@@ -68,8 +67,6 @@ const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const customProperties = ref<CustomPropertyDef[]>([]);
 const customPropsError = ref('');
-const lineageModel = ref<LineageGraphModel | null>(null);
-const lineageError = ref('');
 const editOpen = ref(false);
 const commentOpen = ref(false);
 const propsOpen = ref(false);
@@ -84,9 +81,6 @@ const editForm = reactive({
 });
 
 const decodedFqn = computed(() => props.fqn);
-const neighbors = computed(() =>
-  lineageModel.value ? lineageNeighbors(lineageModel.value) : { upstream: [], downstream: [] },
-);
 
 const schemaColumns = computed(() => [
   { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
@@ -124,12 +118,6 @@ const customPropertyColumns = computed(() => [
   { title: t('asset.columns.value'), key: 'value' },
 ]);
 
-const neighborColumns = computed(() => [
-  { title: t('asset.fields.type'), dataIndex: 'entityType', key: 'entityType', width: 120 },
-  { title: t('asset.fields.name'), key: 'name' },
-  { title: t('asset.fields.fqn'), dataIndex: 'fullyQualifiedName', key: 'fqn' },
-]);
-
 function extensionValue(name: string): string {
   const value = asset.value?.extension?.[name];
   if (value === undefined || value === null) {
@@ -150,8 +138,6 @@ function resetSecondary(): void {
   collaborationError.value = '';
   customProperties.value = [];
   customPropsError.value = '';
-  lineageModel.value = null;
-  lineageError.value = '';
 }
 
 async function load(): Promise<void> {
@@ -166,26 +152,11 @@ async function load(): Promise<void> {
   }
   try {
     asset.value = await fetchAssetDetail(props.entityType, decodedFqn.value);
-    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadLineage()]);
+    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
   } finally {
     loading.value = false;
-  }
-}
-
-async function loadLineage(): Promise<void> {
-  try {
-    const payload = await fetchEntityLineage({
-      entityType: props.entityType,
-      fqn: decodedFqn.value,
-      upstreamDepth: 1,
-      downstreamDepth: 1,
-    });
-    lineageModel.value = mapEntityLineage(payload);
-  } catch (error) {
-    lineageModel.value = null;
-    lineageError.value = error instanceof Error ? error.message : t('asset.lineageFailed');
   }
 }
 
@@ -385,13 +356,6 @@ async function onSaveCustomProperties(): Promise<void> {
   }
 }
 
-function openNeighbor(entityType: string, fqn: string): void {
-  if (!entityType || !fqn) {
-    return;
-  }
-  void router.push(assetLocation(entityType, fqn));
-}
-
 watch(
   () => [props.entityType, props.fqn],
   () => {
@@ -501,65 +465,7 @@ onMounted(() => {
           />
         </Tabs.TabPane>
         <Tabs.TabPane key="lineage" :tab="t('asset.tabs.lineage')" force-render data-testid="asset-tab-lineage">
-          <Typography.Paragraph type="secondary">
-            {{ t('asset.lineageLead', { type: entityType, fqn: decodedFqn }) }}
-          </Typography.Paragraph>
-          <Alert v-if="lineageError" type="warning" show-icon :message="lineageError" class="detail__alert" />
-          <Typography.Text v-else-if="!neighbors.upstream.length && !neighbors.downstream.length" type="secondary">
-            {{ t('asset.lineageEmpty') }}
-          </Typography.Text>
-          <template v-else>
-            <Typography.Title :level="5">{{ t('asset.upstream') }}</Typography.Title>
-            <Table
-              row-key="id"
-              data-testid="asset-lineage-upstream"
-              :columns="neighborColumns"
-              :data-source="neighbors.upstream"
-              :pagination="false"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'name'">
-                  <a
-                    href="#"
-                    @click.prevent="
-                      openNeighbor(
-                        (record as { entityType: string; fullyQualifiedName: string }).entityType,
-                        (record as { fullyQualifiedName: string }).fullyQualifiedName,
-                      )
-                    "
-                  >
-                    {{ (record as { displayName?: string; name: string }).displayName || (record as { name: string }).name }}
-                  </a>
-                </template>
-              </template>
-            </Table>
-            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.downstream') }}</Typography.Title>
-            <Table
-              row-key="id"
-              data-testid="asset-lineage-downstream"
-              :columns="neighborColumns"
-              :data-source="neighbors.downstream"
-              :pagination="false"
-              size="small"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'name'">
-                  <a
-                    href="#"
-                    @click.prevent="
-                      openNeighbor(
-                        (record as { entityType: string; fullyQualifiedName: string }).entityType,
-                        (record as { fullyQualifiedName: string }).fullyQualifiedName,
-                      )
-                    "
-                  >
-                    {{ (record as { displayName?: string; name: string }).displayName || (record as { name: string }).name }}
-                  </a>
-                </template>
-              </template>
-            </Table>
-          </template>
+          <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" />
         </Tabs.TabPane>
         <Tabs.TabPane key="quality" :tab="t('asset.tabs.quality')" force-render data-testid="asset-tab-quality">
           <Typography.Title :level="5">{{ t('asset.testsTitle') }}</Typography.Title>
