@@ -1,6 +1,10 @@
 # Product Vue SPA. Builds smartmetadata-ui and serves it with nginx.
 # Context is the repo root. Same-origin /api is proxied to the slim server.
+# FROM-scope ARGs must sit above the first FROM. Docker 29 / BuildKit treats
+# a between-stage ARG as stage-local and fails with UndefinedArgInFrom when
+# compose passes NODE_IMAGE / NGINX_IMAGE (China overlay).
 ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NGINX_IMAGE=nginx:1.27-alpine
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY smartmetadata-ui/package.json smartmetadata-ui/package-lock.json ./
@@ -9,7 +13,6 @@ COPY smartmetadata-ui/ ./
 ENV VITE_API_BASE_URL=
 RUN npm run build
 
-ARG NGINX_IMAGE=nginx:1.27-alpine
 FROM ${NGINX_IMAGE}
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/rebuild/nginx.conf /etc/nginx/conf.d/default.conf
