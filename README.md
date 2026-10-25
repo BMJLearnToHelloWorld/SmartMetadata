@@ -4,7 +4,7 @@
 
 > **CCL-free product path:** `make help` (default) lists rebuilt targets only — `make slim-dist`, `make docker-up`, plus `smartmetadata-ui/`, `smartmetadata-ingestion/`, and `smartmetadata-mcp/`.
 > Historical `openmetadata-ui/`, `ingestion/`, and `openmetadata-mcp/` stay in git as **reference-only**; `make yarn_start_dev_ui` / `make install` / `make generate` refuse unless `I_UNDERSTAND_REFERENCE_STACK=1`.
-> Product Docker is `make docker-up` (`docker/rebuild/`). `./docker/run_local_docker.sh` and Collate quickstart are reference-only.
+> Product Docker is `make docker-up` (`docker/rebuild/`, China compose default, UI :8089). Official registries: `make docker-up-intl`. `./docker/run_local_docker.sh` and Collate quickstart are reference-only.
 > See [docs/rebuild/PRODUCT_PATH.md](docs/rebuild/PRODUCT_PATH.md).
 
 ## The Open Context Layer for AI

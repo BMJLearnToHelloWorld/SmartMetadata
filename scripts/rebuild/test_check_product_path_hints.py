@@ -49,6 +49,7 @@ def complete_tree(root: Path) -> None:
                 "Override the docker ingestion path only with I_UNDERSTAND_CCL_INGESTION=1.",
                 "Default `make help` lists rebuilt targets only.",
                 "CCL Make recipes live in Makefile.reference behind I_UNDERSTAND_REFERENCE_STACK=1.",
+                "Console is host 8089. China runbook: DEPLOY_CN.md. Official registries: docker-up-intl.",
                 "VERIFY leftovers: openmetadata-airflow-apis header/LICENSE conflict;",
                 "openmetadata-ui-core-components is not in dist.",
                 "",
@@ -66,6 +67,19 @@ def complete_tree(root: Path) -> None:
     write(
         root / "docs" / "decisions" / "2026-10-23-product-docker-is-rebuild-only.md",
         "# Product Docker executes rebuilt compose only\n",
+    )
+    write(
+        root / "docs" / "decisions" / "2026-10-25-product-docker-defaults-to-china-mirrors.md",
+        "# Product Docker defaults to the China compose overlay\n",
+    )
+    write(
+        root / "docs" / "rebuild" / "DEPLOY_CN.md",
+        "China runbook. UI 8089. "
+        "m.daocloud.io/docker.elastic.co ES proxy. "
+        "maven.aliyun.com Aliyun Central. "
+        "migrate Exited 0 is expected. "
+        "make docker-up-intl for official registries. "
+        "Hub registry-mirrors do not cover elastic.co or gcr.\n",
     )
     write(
         root / "docker" / "run_local_docker_common.sh",
@@ -95,7 +109,9 @@ def complete_tree(root: Path) -> None:
         "include ingestion/Makefile\n"
         "endif\n"
         "docker-up:\n\t./docker/rebuild/up.sh\n"
-        "docker-down:\n\t./docker/rebuild/down.sh\n",
+        "docker-up-intl:\n\tSM_DOCKER_VARIANT=intl ./docker/rebuild/up.sh\n"
+        "docker-down:\n\t./docker/rebuild/down.sh\n"
+        "slim-dist:\n\tmvn $(MAVEN_SETTINGS)\n",
     )
     write(
         root / "Makefile.reference",
@@ -128,11 +144,44 @@ def complete_tree(root: Path) -> None:
         "  migrate:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
         "  openmetadata-server:\n    build:\n      dockerfile: docker/rebuild/Dockerfile\n"
         "  ui:\n    build:\n      context: ../../smartmetadata-ui\n"
+        "    ports:\n      - \"8089:80\"\n"
         "  ingest:\n    build:\n      context: ../../smartmetadata-ingestion\n"
         "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n",
     )
     write(
+        root / "docker" / "rebuild" / "docker-compose.cn.yml",
+        "services:\n"
+        "  elasticsearch:\n"
+        "    image: m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:9.3.0\n"
+        "  migrate:\n"
+        "    build:\n      args:\n"
+        "        DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot\n"
+        "  ui:\n    # host 8089 from base compose\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "docker-compose.intl.yml",
+        "services:\n"
+        "  elasticsearch:\n"
+        "    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0\n"
+        "  migrate:\n"
+        "    build:\n      args:\n"
+        "        DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot\n"
+        "  ui:\n    # host 8089 from base compose\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "compose-variant.sh",
+        'VARIANT="${SM_DOCKER_VARIANT:-cn}"\n'
+        "COMPOSE_FILES=(-f docker/rebuild/docker-compose.yml -f docker/rebuild/docker-compose.cn.yml)\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "maven-settings.cn.xml.example",
+        "<settings><mirrors><mirror>"
+        "<url>https://maven.aliyun.com/repository/central</url>"
+        "</mirror></mirrors></settings>\n",
+    )
+    write(
         root / "docker" / "rebuild" / "Dockerfile",
+        "ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian13:debug-nonroot\n"
         "COPY openmetadata-dist/target/openmetadata-*.tar.gz /\n"
         "RUN tar zxvf openmetadata-*.tar.gz\n",
     )
@@ -141,8 +190,11 @@ def complete_tree(root: Path) -> None:
         "#!/bin/bash\n"
         "make slim-dist\n"
         "python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball\n"
-        "docker compose -f docker/rebuild/docker-compose.yml up -d\n"
-        "echo Console http://localhost:8080 ingest mcp\n",
+        "source docker/rebuild/compose-variant.sh\n"
+        "docker compose -f docker/rebuild/docker-compose.yml "
+        "-f docker/rebuild/docker-compose.cn.yml up -d\n"
+        "echo Console http://localhost:8089 ingest mcp\n"
+        "echo migrate Exited 0 is expected\n",
     )
     write(
         root / "docker" / "rebuild" / "Dockerfile.ui",
@@ -158,7 +210,9 @@ def complete_tree(root: Path) -> None:
     )
     write(
         root / "docker" / "rebuild" / "down.sh",
-        "docker compose -f docker/rebuild/docker-compose.yml down\n",
+        "source docker/rebuild/compose-variant.sh\n"
+        "docker compose -f docker/rebuild/docker-compose.yml "
+        "-f docker/rebuild/docker-compose.cn.yml down\n",
     )
     write(
         root / "docker" / "development" / "docker-compose.yml",
@@ -218,6 +272,40 @@ class ProductPathHintsContract(unittest.TestCase):
             )
             errors = hints.check_repo(root)
         self.assertTrue(any("I_UNDERSTAND_CCL_INGESTION" in item for item in errors), errors)
+
+    def test_missing_cn_compose_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "docker" / "rebuild" / "docker-compose.cn.yml").unlink()
+            errors = hints.check_repo(root)
+        self.assertTrue(any("docker-compose.cn.yml" in item for item in errors), errors)
+
+    def test_overlay_repeating_ui_port_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            cn = root / "docker" / "rebuild" / "docker-compose.cn.yml"
+            cn.write_text(cn.read_text(encoding="utf-8") + '  ui:\n    ports:\n      - "8089:80"\n', encoding="utf-8")
+            errors = hints.check_repo(root)
+        self.assertTrue(any("8089:80" in item and "append" in item for item in errors), errors)
+
+    def test_up_without_8089_fails(self) -> None:
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            (root / "docker" / "rebuild" / "up.sh").write_text(
+                "#!/bin/bash\n"
+                "make slim-dist\n"
+                "docker compose -f docker/rebuild/docker-compose.yml up -d\n"
+                "echo Console http://localhost:8080 ingest mcp\n",
+                encoding="utf-8",
+            )
+            errors = hints.check_repo(root)
+        self.assertTrue(any("8089" in item for item in errors), errors)
 
     def test_missing_product_docker_fails(self) -> None:
         hints = load_hints()

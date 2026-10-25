@@ -2,7 +2,7 @@
 #
 # Default `make` / `make help` list and run rebuilt surfaces only
 # (slim-dist, docker-up, ui_*, ingest_*, mcp_*, verify-rebuild, live-smoke, check-*).
-# docker-up starts the rebuilt server + Vue UI + ingest seed + MCP.
+# docker-up starts the rebuilt server + Vue UI + ingest seed + MCP (China compose default).
 # Historical CCL trees stay in git as read-only reference.
 # Escape hatch: I_UNDERSTAND_REFERENCE_STACK=1
 # Map: docs/rebuild/PRODUCT_PATH.md
@@ -45,9 +45,12 @@ generate-reference-docs: generate-entity-index generate-api-reference  ## Regene
 harness-check:  ## Warn on harness decay (dead refs, doc sizes, rule globs, generated-doc freshness)
 	python3 scripts/harness/check_harness.py
 
+# Optional: MAVEN_SETTINGS=/path/to/settings.xml (China: docker/rebuild/maven-settings.cn.xml.example)
+MVN_SETTINGS_FLAG := $(if $(MAVEN_SETTINGS),-s $(MAVEN_SETTINGS),)
+
 .PHONY: slim-dist
 slim-dist:  ## Build the CCL-free server distribution (no UI/MCP/ingestion)
-	mvn -DskipTests package -pl openmetadata-dist -am
+	mvn $(MVN_SETTINGS_FLAG) -DskipTests package -pl openmetadata-dist -am
 	python3 scripts/rebuild/check_ccl_free_dist.py --require-tarball
 
 .PHONY: check-ccl-free-dist
@@ -59,8 +62,12 @@ check-product-path-hints:  ## Fail if product-path docs, product Docker, or the 
 	python3 scripts/rebuild/check_product_path_hints.py
 
 .PHONY: docker-up
-docker-up:  ## Start the rebuilt product stack (server, Vue UI, ingest seed, MCP)
+docker-up:  ## Start the rebuilt product stack (China compose default: DaoCloud + UI :8089)
 	./docker/rebuild/up.sh
+
+.PHONY: docker-up-intl
+docker-up-intl:  ## Start the rebuilt product stack with official registries (UI :8089)
+	SM_DOCKER_VARIANT=intl ./docker/rebuild/up.sh
 
 .PHONY: docker-down
 docker-down:  ## Stop the rebuilt product Docker stack

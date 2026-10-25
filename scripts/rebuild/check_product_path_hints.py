@@ -24,9 +24,15 @@ ADR_MAKE = Path("docs") / "decisions" / "2026-10-22-product-make-is-rebuild-only
 ADR_DOCKER = Path("docs") / "decisions" / "2026-10-23-product-docker-is-rebuild-only.md"
 DOCKER_COMMON = Path("docker") / "run_local_docker_common.sh"
 PRODUCT_COMPOSE = Path("docker") / "rebuild" / "docker-compose.yml"
+PRODUCT_COMPOSE_CN = Path("docker") / "rebuild" / "docker-compose.cn.yml"
+PRODUCT_COMPOSE_INTL = Path("docker") / "rebuild" / "docker-compose.intl.yml"
+PRODUCT_COMPOSE_VARIANT = Path("docker") / "rebuild" / "compose-variant.sh"
 PRODUCT_DOCKERFILE = Path("docker") / "rebuild" / "Dockerfile"
 PRODUCT_UP = Path("docker") / "rebuild" / "up.sh"
 PRODUCT_DOWN = Path("docker") / "rebuild" / "down.sh"
+PRODUCT_MAVEN_CN = Path("docker") / "rebuild" / "maven-settings.cn.xml.example"
+DEPLOY_CN = Path("docs") / "rebuild" / "DEPLOY_CN.md"
+ADR_DOCKER_CN = Path("docs") / "decisions" / "2026-10-25-product-docker-defaults-to-china-mirrors.md"
 DEV_COMPOSE = Path("docker") / "development" / "docker-compose.yml"
 README = Path("README.md")
 MAKEFILE = Path("Makefile")
@@ -53,6 +59,9 @@ REQUIRED_PRODUCT_PATH_MARKERS = (
     "reference-only",
     "make help",
     "Makefile.reference",
+    "8089",
+    "DEPLOY_CN",
+    "docker-up-intl",
 )
 DOCKER_ACK_MARKERS = (
     "I_UNDERSTAND_CCL_INGESTION",
@@ -195,8 +204,12 @@ def check_makefile(repo: Path) -> list[str]:
             )
     if "docker-up" not in text:
         errors.append(f"{MAKEFILE} must define docker-up")
+    if "docker-up-intl" not in text:
+        errors.append(f"{MAKEFILE} must define docker-up-intl for official registries")
     if "docker/rebuild/up.sh" not in body:
         errors.append(f"{MAKEFILE} product recipes must invoke docker/rebuild/up.sh")
+    if "MAVEN_SETTINGS" not in text:
+        errors.append(f"{MAKEFILE} must accept MAVEN_SETTINGS for China Aliyun builds")
     if "run_local_docker.sh" in body:
         errors.append(f"{MAKEFILE} product recipes must not invoke run_local_docker.sh")
     if not (repo / MAKEFILE_REFERENCE).is_file():
@@ -216,6 +229,69 @@ def check_makefile(repo: Path) -> list[str]:
             errors.append(f"{REFERENCE_GUARD} must refuse with a product-path error")
         if "make docker-up" not in guard_text:
             errors.append(f"{REFERENCE_GUARD} must point historical docker at make docker-up")
+    return errors
+
+
+def check_compose_variants(repo: Path) -> list[str]:
+    """China overlay is the default; international overlay keeps official refs."""
+    errors: list[str] = []
+    cn = read_text(repo / PRODUCT_COMPOSE_CN)
+    if cn is None:
+        errors.append(f"missing {PRODUCT_COMPOSE_CN}")
+    else:
+        if "m.daocloud.io/docker.elastic.co/elasticsearch/elasticsearch:9.3.0" not in cn:
+            errors.append(f"{PRODUCT_COMPOSE_CN} must pin ES via the DaoCloud elastic proxy")
+        if "m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot" not in cn:
+            errors.append(f"{PRODUCT_COMPOSE_CN} must pass DaoCloud distroless as DISTROLESS_IMAGE")
+        if "8089" not in cn:
+            errors.append(f"{PRODUCT_COMPOSE_CN} must document UI host port 8089")
+        if re.search(r'(?m)^\s+-\s*[\"\']?8089:80', cn):
+            errors.append(
+                f"{PRODUCT_COMPOSE_CN} must not repeat ports 8089:80 "
+                "(compose appends port sequences onto the base file)"
+            )
+        for needle in PRODUCT_COMPOSE_FORBIDDEN_NEEDLES:
+            if needle in cn:
+                errors.append(f"{PRODUCT_COMPOSE_CN} must not mention {needle!r}")
+
+    intl = read_text(repo / PRODUCT_COMPOSE_INTL)
+    if intl is None:
+        errors.append(f"missing {PRODUCT_COMPOSE_INTL}")
+    else:
+        if "docker.elastic.co/elasticsearch/elasticsearch:9.3.0" not in intl:
+            errors.append(f"{PRODUCT_COMPOSE_INTL} must keep the official Elasticsearch image")
+        if "m.daocloud.io" in intl:
+            errors.append(f"{PRODUCT_COMPOSE_INTL} must not pin DaoCloud proxies")
+        if "gcr.io/distroless/cc-debian13:debug-nonroot" not in intl:
+            errors.append(f"{PRODUCT_COMPOSE_INTL} must pass official gcr distroless")
+        if "8089" not in intl:
+            errors.append(f"{PRODUCT_COMPOSE_INTL} must document UI host port 8089")
+        if re.search(r'(?m)^\s+-\s*[\"\']?8089:80', intl):
+            errors.append(
+                f"{PRODUCT_COMPOSE_INTL} must not repeat ports 8089:80 "
+                "(compose appends port sequences onto the base file)"
+            )
+
+    variant = read_text(repo / PRODUCT_COMPOSE_VARIANT)
+    if variant is None:
+        errors.append(f"missing {PRODUCT_COMPOSE_VARIANT}")
+    else:
+        if 'VARIANT="${SM_DOCKER_VARIANT:-cn}"' not in variant and "SM_DOCKER_VARIANT:-cn" not in variant:
+            errors.append(f"{PRODUCT_COMPOSE_VARIANT} must default SM_DOCKER_VARIANT to cn")
+        if "docker-compose.cn.yml" not in variant:
+            errors.append(f"{PRODUCT_COMPOSE_VARIANT} must select {PRODUCT_COMPOSE_CN}")
+
+    maven_cn = read_text(repo / PRODUCT_MAVEN_CN)
+    if maven_cn is None:
+        errors.append(f"missing {PRODUCT_MAVEN_CN}")
+    elif "https://maven.aliyun.com/repository/central" not in maven_cn:
+        errors.append(f"{PRODUCT_MAVEN_CN} must use Aliyun Central")
+    elif "<password>" in (maven_cn or "").lower() or "server>" in maven_cn:
+        errors.append(f"{PRODUCT_MAVEN_CN} must not commit Maven credentials")
+
+    base = read_text(repo / PRODUCT_COMPOSE)
+    if base is not None and "8089:80" not in base:
+        errors.append(f"{PRODUCT_COMPOSE} must map UI host port 8089")
     return errors
 
 
@@ -270,6 +346,10 @@ def check_product_docker(repo: Path) -> list[str]:
     else:
         if "openmetadata-*.tar.gz" not in dockerfile:
             errors.append(f"{PRODUCT_DOCKERFILE} must unpack the slim openmetadata-dist tarball")
+        if "DISTROLESS_IMAGE" not in dockerfile:
+            errors.append(
+                f"{PRODUCT_DOCKERFILE} must ARG DISTROLESS_IMAGE so China can pin DaoCloud"
+            )
         if "ingestion/" in dockerfile or "openmetadata-ui" in dockerfile:
             errors.append(f"{PRODUCT_DOCKERFILE} must not copy CCL ingestion/ui trees")
 
@@ -300,13 +380,27 @@ def check_product_docker(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_UP} must not set or mention I_UNDERSTAND_CCL_INGESTION")
         if "docker/development" in up_text or "run_local_docker" in up_text:
             errors.append(f"{PRODUCT_UP} must not invoke historical development compose")
-        if "8080" not in up_text:
-            errors.append(f"{PRODUCT_UP} must print the product console URL")
+        if "docker/rebuild/docker-compose.cn.yml" not in up_text and "compose-variant.sh" not in up_text:
+            errors.append(f"{PRODUCT_UP} must default to the China compose overlay")
+        if "8089" not in up_text:
+            errors.append(f"{PRODUCT_UP} must print the product console URL on :8089")
+        if "8080" in up_text and "8089" not in up_text:
+            errors.append(f"{PRODUCT_UP} must not advertise UI host port 8080")
+        if "SM_DOCKER_VARIANT" not in up_text and "compose-variant.sh" not in up_text:
+            errors.append(f"{PRODUCT_UP} must select CN vs intl via SM_DOCKER_VARIANT")
+        if "Exited 0" not in up_text:
+            errors.append(f"{PRODUCT_UP} must say migrate Exited 0 is expected")
         if "ingest" not in up_text.lower() or "mcp" not in up_text.lower():
             errors.append(f"{PRODUCT_UP} must start ingest and MCP, not host leftovers")
 
     if not (repo / PRODUCT_DOWN).is_file():
         errors.append(f"missing {PRODUCT_DOWN}")
+    else:
+        down_text = read_text(repo / PRODUCT_DOWN) or ""
+        if "compose-variant.sh" not in down_text and "docker-compose.cn.yml" not in down_text:
+            errors.append(f"{PRODUCT_DOWN} must tear down the same CN/intl compose variant as up.sh")
+
+    errors.extend(check_compose_variants(repo))
 
     dev_compose = read_text(repo / DEV_COMPOSE)
     if dev_compose is None:
@@ -384,6 +478,22 @@ def check_repo(repo: Path) -> list[str]:
         errors.append(f"missing {ADR_MAKE}")
     if not (repo / ADR_DOCKER).is_file():
         errors.append(f"missing {ADR_DOCKER}")
+    if not (repo / ADR_DOCKER_CN).is_file():
+        errors.append(f"missing {ADR_DOCKER_CN}")
+    deploy_cn = read_text(repo / DEPLOY_CN)
+    if deploy_cn is None:
+        errors.append(f"missing {DEPLOY_CN}")
+    else:
+        for marker in (
+            "8089",
+            "m.daocloud.io/docker.elastic.co",
+            "maven.aliyun.com",
+            "Exited 0",
+            "docker-up-intl",
+            "registry-mirrors",
+        ):
+            if marker not in deploy_cn:
+                errors.append(f"{DEPLOY_CN} must mention {marker!r}")
 
     docker_text = read_text(repo / DOCKER_COMMON)
     if docker_text is None:
@@ -453,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("Product-path hint check passed.")
     print(f"  product path: {PRODUCT_PATH}")
-    print(f"  product docker: {PRODUCT_COMPOSE} via make docker-up")
+    print(f"  product docker: {PRODUCT_COMPOSE} + {PRODUCT_COMPOSE_CN} via make docker-up")
     print(f"  docker ack: {DOCKER_COMMON} requires {HATCH} then I_UNDERSTAND_CCL_INGESTION")
     print(f"  make hatch: {MAKEFILE} requires {HATCH} before CCL recipes")
     print("  dist scan: not this script (check_ccl_free_dist.py)")

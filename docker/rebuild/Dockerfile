@@ -4,7 +4,10 @@
 # the historical development Dockerfile (distroless + local tarball), owned
 # here so the product path does not build from docker/development/.
 
-FROM alpine:3 AS dist
+# Image refs are overridable so the China compose overlay can pin DaoCloud
+# proxies without a second Dockerfile. Defaults stay official (CI / intl).
+ARG ALPINE_IMAGE=alpine:3
+FROM ${ALPINE_IMAGE} AS dist
 
 COPY openmetadata-dist/target/openmetadata-*.tar.gz /
 
@@ -20,7 +23,8 @@ RUN mkdir -p /opt/openmetadata && \
     mkdir -p /shim/usr/bin && \
     ln -s /busybox/env /shim/usr/bin/env
 
-FROM eclipse-temurin:21-jdk AS jre-builder
+ARG TEMURIN_IMAGE=eclipse-temurin:21-jdk
+FROM ${TEMURIN_IMAGE} AS jre-builder
 
 RUN jlink \
       --add-modules ALL-MODULE-PATH \
@@ -35,7 +39,8 @@ RUN find /javaruntime/bin -type f \
       ! -name jinfo ! -name jps ! -name jstat ! -name jfr ! -name keytool \
       -delete
 
-FROM gcr.io/distroless/cc-debian13:debug-nonroot
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian13:debug-nonroot
+FROM ${DISTROLESS_IMAGE}
 
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"

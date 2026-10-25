@@ -1,7 +1,8 @@
 # Product ingest image. Installs the clean-room package plus the shipped
 # connector extras (postgres, mysql, kafka, snowflake). Not the CCL tree.
 # Context is the repo root.
-FROM python:3.11-slim
+ARG PYTHON_IMAGE=python:3.11-slim
+FROM ${PYTHON_IMAGE}
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

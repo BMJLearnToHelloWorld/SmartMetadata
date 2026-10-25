@@ -45,6 +45,7 @@ Minimum: Java 21, Maven 3.8+, MySQL ≥ 8 or Postgres ≥ 15, Elasticsearch 9.x 
 make docker-up
 # builds slim-dist if needed, then ups docker/rebuild/ only
 # API: http://localhost:8585/api   Admin: http://localhost:8586/healthcheck
+# Console: http://localhost:8089  (China compose is the default; see DEPLOY_CN.md)
 ```
 
 Or unpack the tarball against already-running MySQL + Elasticsearch:
@@ -69,7 +70,7 @@ The product server image `docker/rebuild/Dockerfile` unpacks whatever tarball
 
 API: `http://localhost:8585/api`. Admin: `8586`. The SPA is not packaged **in the
 Java tarball**. Product Docker serves `smartmetadata-ui` from nginx on
-`:8080` (`make docker-up`). Without `/assets/index.html` the Java asset servlet
+`:8089` (`make docker-up`). Without `/assets/index.html` the Java asset servlet
 is not registered, so `GET /` on `:8585` stays 404. MCP HTTP (`/mcp`) is not
 registered without the CCL module; product MCP is the stdio process
 `smartmetadata-mcp`.

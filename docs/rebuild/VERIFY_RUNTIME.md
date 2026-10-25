@@ -82,7 +82,7 @@ documented warning — a hang is never treated as success
 |---|---|
 | **Preferred — GitHub Actions Job C** | `workflow_dispatch` on this repo. Service containers + slim server + SPA preview. No contributor Docker. |
 | **Optional — remote VM / Kubernetes** | Any host that already has a container runtime. Operators may compose MySQL + ES there. Not documented as a laptop step. |
-| **Optional — laptop/VM with Docker** | `make docker-up` (`docker/rebuild/`: slim server + Vue UI + ingest seed + stdio MCP). Not Job C. |
+| **Optional — laptop/VM with Docker** | `make docker-up` (`docker/rebuild/` China compose default, UI :8089: slim server + Vue UI + ingest seed + stdio MCP). Official registries: `make docker-up-intl`. Not Job C. |
 | **Developer laptop without Docker** | Do **not** start MySQL, Elasticsearch, or compose. Point `make ui_dev` / `smartmetadata-ingest` / `smartmetadata-mcp` at an **already-running** remote catalog (`VITE_API_PROXY_TARGET` / `OM_API_URL` + JWT or bootstrap login). |
 
 `scripts/rebuild/live_smoke.py` never starts Docker. Against a remote catalog:

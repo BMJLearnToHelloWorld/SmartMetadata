@@ -1,0 +1,42 @@
+# International overlay — official registries (no DaoCloud prefix).
+# Select with SM_DOCKER_VARIANT=intl or `make docker-up-intl`.
+# UI host port stays 8089. See docs/rebuild/DEPLOY_CN.md
+# ADR:2026-10-25-product-docker-defaults-to-china-mirrors
+
+services:
+  mysql:
+    image: mysql:8.0
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.3.0
+
+  migrate:
+    build:
+      args:
+        ALPINE_IMAGE: alpine:3
+        TEMURIN_IMAGE: eclipse-temurin:21-jdk
+        DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot
+
+  openmetadata-server:
+    build:
+      args:
+        ALPINE_IMAGE: alpine:3
+        TEMURIN_IMAGE: eclipse-temurin:21-jdk
+        DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot
+
+  ui:
+    build:
+      args:
+        NODE_IMAGE: node:22-bookworm-slim
+        NGINX_IMAGE: nginx:1.27-alpine
+    # UI host 8089:80 is declared on docker-compose.yml (do not repeat; sequences append).
+
+  ingest:
+    build:
+      args:
+        PYTHON_IMAGE: python:3.11-slim
+
+  mcp:
+    build:
+      args:
+        NODE_IMAGE: node:22-bookworm-slim

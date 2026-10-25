@@ -22,7 +22,7 @@ ADR:2026-10-23-product-docker-is-rebuild-only.
 | MCP | `smartmetadata-mcp/` | product compose `mcp` (stdio) |
 | Offline matrix | rebuilt packages + gates | `make verify-rebuild` |
 | Live HTTP smoke | already-running catalog | `make live-smoke` |
-| Local Docker | `docker/rebuild/` | `make docker-up` |
+| Local Docker | `docker/rebuild/` (China compose default) | `make docker-up` |
 
 Go-live matrix: [PHASE11.md](PHASE11.md) (`make verify-rebuild`). Slim server
 runbook: [PHASE0.md](PHASE0.md). Gap matrix vs official surfaces:
@@ -33,15 +33,19 @@ Local Docker — one command starts the **already-rebuilt** surfaces (server,
 Vue console, clean-room ingest seed, stdio MCP). This is not official 100+
 connector parity; see [PARITY.md](PARITY.md).
 
-AlmaLinux 9 (or any host with Java 21, Maven 3.8+, and Docker Compose v2):
+AlmaLinux 9 (or any host with Java 21, Maven 3.8+, and Docker Compose v2).
+Default `make docker-up` is the **China** compose (DaoCloud image proxies, UI
+**:8089**). Official-registry hosts: `make docker-up-intl`. Alma timeouts,
+mirrors, Aliyun Maven, and migrate `Exited 0`: [DEPLOY_CN.md](DEPLOY_CN.md).
 
 ```bash
 make docker-up
 # equivalent: ./docker/rebuild/up.sh
+# official registries: make docker-up-intl   # or SM_DOCKER_VARIANT=intl
 
 curl -sf http://127.0.0.1:8586/healthcheck
-curl -sf http://127.0.0.1:8080/
-# Console: http://localhost:8080
+curl -sf http://127.0.0.1:8089/
+# Console: http://localhost:8089
 # Login:   admin@open-metadata.org / admin
 # API:     http://localhost:8585/api
 ```
@@ -56,7 +60,8 @@ start path.
 Further ingest (shipped connectors only: postgres / mysql / kafka / snowflake):
 
 ```bash
-docker compose -f docker/rebuild/docker-compose.yml exec ingest \
+docker compose -f docker/rebuild/docker-compose.yml \
+  -f docker/rebuild/docker-compose.cn.yml exec ingest \
   smartmetadata-ingest run --config /config/your.yaml
 ```
 
