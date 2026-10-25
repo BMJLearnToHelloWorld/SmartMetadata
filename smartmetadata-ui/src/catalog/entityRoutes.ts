@@ -9,8 +9,8 @@
  */
 
 /**
- * Phase 1 only wires Table and Topic. Other search hits stay navigable to a
- * generic page that shows fields already in the search document.
+ * Catalog types with a slim GET /v1/{collection}/name/{fqn}. Search hits for
+ * any other type stay navigable but unwired — do not invent collections.
  */
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
@@ -18,6 +18,30 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
     fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType',
   },
   topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions' },
+  dashboard: {
+    collection: 'dashboards',
+    fields: 'owners,tags,domains,extension,service,charts,dataModels,project',
+  },
+  pipeline: {
+    collection: 'pipelines',
+    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state',
+  },
+  mlmodel: {
+    collection: 'mlmodels',
+    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard',
+  },
+  container: {
+    collection: 'containers',
+    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats',
+  },
+  searchIndex: {
+    collection: 'searchIndexes',
+    fields: 'owners,tags,domains,extension,service,fields,indexType',
+  },
+  storedProcedure: {
+    collection: 'storedProcedures',
+    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
+  },
 };
 
 export function assetLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {

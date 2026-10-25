@@ -65,6 +65,42 @@ export interface SchemaRow {
   description?: string;
 }
 
+export interface PipelineTask {
+  name: string;
+  displayName?: string;
+  fullyQualifiedName?: string;
+  description?: string;
+  taskType?: string;
+  sourceUrl?: string;
+  downstreamTasks: string[];
+}
+
+export interface PipelineTaskStatus {
+  name: string;
+  executionStatus: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+export interface CatalogPipelineStatus {
+  timestamp: number;
+  executionStatus: string;
+  executionId?: string;
+  endTime?: number;
+  taskStatus: PipelineTaskStatus[];
+}
+
+export interface MlHyperParameter {
+  name: string;
+  value?: string;
+  description?: string;
+}
+
+export interface StoredProcedureCode {
+  language?: string;
+  code?: string;
+}
+
 export interface AssetDetail {
   entityType: string;
   id?: string;
@@ -78,6 +114,28 @@ export interface AssetDetail {
   database?: EntityRef;
   databaseSchema?: EntityRef;
   partitions?: number;
+  sourceUrl?: string;
+  scheduleInterval?: string;
+  pipelineState?: string;
+  project?: string;
+  dashboardType?: string;
+  algorithm?: string;
+  target?: string;
+  prefix?: string;
+  numberOfObjects?: number;
+  size?: number;
+  fileFormats?: string[];
+  indexType?: string;
+  storedProcedureType?: string;
+  storedProcedureCode?: StoredProcedureCode;
+  parent?: EntityRef;
+  children?: EntityRef[];
+  charts?: EntityRef[];
+  dataModels?: EntityRef[];
+  mlFeatures?: SchemaRow[];
+  mlHyperParameters?: MlHyperParameter[];
+  tasks?: PipelineTask[];
+  pipelineStatus?: CatalogPipelineStatus;
   owners: EntityRef[];
   tags: TagRef[];
   domains: EntityRef[];

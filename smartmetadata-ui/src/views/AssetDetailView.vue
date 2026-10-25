@@ -9,21 +9,20 @@ import { useRouter } from 'vue-router';
 import {
   Alert,
   Button,
-  Card,
   Descriptions,
+  Empty,
   Form,
   Input,
   Modal,
   Select,
   Space,
-  Spin,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
 } from 'ant-design-vue';
 import { listEntityActivity } from '@/api/activity';
+import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, patchAsset } from '@/api/entities';
@@ -31,6 +30,9 @@ import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTabl
 import { listTestCases } from '@/api/testCases';
 import { getEntityUsage } from '@/api/usage';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
+import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
+import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
+import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import SmChart from '@/features/charts/SmChart.vue';
 import {
   columnNullPoints,
@@ -40,7 +42,8 @@ import {
   usageToPoints,
 } from '@/features/charts/series';
 import { seriesWindow, type ChartSeries } from '@/features/charts/types';
-import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import {
   loadGovernanceCatalog,
   ownerKey,
@@ -48,8 +51,9 @@ import {
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
 import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
+import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
-import type { AssetDetail } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption } from '@/types/governance';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -60,7 +64,7 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-const { t } = useI18n();
+const { t, te } = useI18n();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -81,6 +85,10 @@ const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const customProperties = ref<CustomPropertyDef[]>([]);
 const customPropsError = ref('');
+const pipelineStatuses = ref<CatalogPipelineStatus[]>([]);
+const pipelineStatusError = ref('');
+const pipelineStatusTried = ref(false);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const commentOpen = ref(false);
 const propsOpen = ref(false);
@@ -95,6 +103,51 @@ const editForm = reactive({
 });
 
 const decodedFqn = computed(() => props.fqn);
+
+function entityLabel(entityType: string): string {
+  const key = `explore.entity.${entityType}`;
+  return te(key) ? t(key) : entityType;
+}
+
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('nav.explore'), to: { name: 'search' } },
+  { label: entityLabel(props.entityType) },
+  { label: asset.value?.displayName || asset.value?.name || decodedFqn.value },
+]);
+
+const TAB_TEST_IDS: Record<AssetTabKey, string> = {
+  overview: 'asset-tab-overview',
+  schema: 'asset-tab-schema',
+  charts: 'asset-tab-charts',
+  features: 'asset-tab-features',
+  tasks: 'asset-tab-tasks',
+  executions: 'asset-tab-executions',
+  code: 'asset-tab-code',
+  lineage: 'asset-tab-lineage',
+  quality: 'asset-tab-quality',
+  activity: 'asset-tab-activity',
+  customProperties: 'asset-tab-custom',
+};
+
+const tabs = computed<EntityDetailTab[]>(() => {
+  if (!asset.value) {
+    return [];
+  }
+  return assetTabKeys(props.entityType).map((key) => ({
+    key,
+    label: t(`asset.tabs.${key}`),
+    testId: TAB_TEST_IDS[key],
+  }));
+});
+
+const taskGraph = computed(() => mapPipelineTaskGraph(asset.value?.tasks, asset.value?.pipelineStatus));
+const taskGraphEmpty = computed(() => isPipelineTaskGraphEmpty(taskGraph.value));
+const executionRows = computed(() => {
+  if (pipelineStatuses.value.length) {
+    return pipelineStatuses.value;
+  }
+  return asset.value?.pipelineStatus ? [asset.value.pipelineStatus] : [];
+});
 
 const schemaColumns = computed(() => [
   { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
@@ -132,6 +185,38 @@ const customPropertyColumns = computed(() => [
   { title: t('asset.columns.value'), key: 'value' },
 ]);
 
+const refColumns = computed(() => [
+  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+  { title: t('asset.columns.type'), dataIndex: 'type', key: 'type', width: 160 },
+  { title: t('asset.columns.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+]);
+
+const featureColumns = computed(() => [
+  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+  { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: 160 },
+  { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
+]);
+
+const hyperColumns = computed(() => [
+  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+  { title: t('asset.columns.value'), dataIndex: 'value', key: 'value' },
+  { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
+]);
+
+const executionColumns = computed(() => [
+  { title: t('asset.columns.timestamp'), dataIndex: 'timestamp', key: 'timestamp', width: 180 },
+  { title: t('asset.columns.status'), dataIndex: 'executionStatus', key: 'executionStatus', width: 140 },
+  { title: t('asset.columns.executionId'), dataIndex: 'executionId', key: 'executionId' },
+]);
+
+function formatTs(value?: number): string {
+  if (typeof value !== 'number') {
+    return '—';
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+}
+
 function extensionValue(name: string): string {
   const value = asset.value?.extension?.[name];
   if (value === undefined || value === null) {
@@ -156,6 +241,10 @@ function resetSecondary(): void {
   collaborationError.value = '';
   customProperties.value = [];
   customPropsError.value = '';
+  pipelineStatuses.value = [];
+  pipelineStatusError.value = '';
+  pipelineStatusTried.value = false;
+  activeTab.value = 'overview';
 }
 
 async function load(): Promise<void> {
@@ -170,7 +259,7 @@ async function load(): Promise<void> {
   }
   try {
     asset.value = await fetchAssetDetail(props.entityType, decodedFqn.value);
-    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties()]);
+    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
   } finally {
@@ -240,6 +329,26 @@ async function loadQuality(): Promise<void> {
       topicSample.value = null;
       observabilityError.value = error instanceof Error ? error.message : t('asset.sampleUnavailable');
     }
+  }
+}
+
+async function loadPipelineStatuses(): Promise<void> {
+  if (props.entityType !== 'pipeline' || !asset.value) {
+    return;
+  }
+  const window = seriesWindow();
+  pipelineStatusTried.value = true;
+  try {
+    const page = await listCatalogPipelineStatuses(asset.value.fullyQualifiedName, {
+      startTs: window.startTs,
+      endTs: window.endTs,
+      limit: 20,
+    });
+    pipelineStatuses.value = page.data;
+    pipelineStatusError.value = '';
+  } catch (error) {
+    pipelineStatuses.value = [];
+    pipelineStatusError.value = error instanceof Error ? error.message : t('asset.executionsFailed');
   }
 }
 
@@ -419,15 +528,22 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ asset?.displayName || asset?.name || decodedFqn }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        {{ entityType }} · {{ asset?.fullyQualifiedName || decodedFqn }}
-      </Typography.Paragraph>
-      <Space class="detail__actions">
+  <div>
+    <EntityDetailShell
+      :title="asset?.displayName || asset?.name || decodedFqn"
+      :name="asset?.name"
+      :fqn="asset?.fullyQualifiedName || decodedFqn"
+      :lead="entityLabel(entityType)"
+      :loading="loading"
+      :error="errorMessage"
+      :empty="!loading && !errorMessage && !asset"
+      :breadcrumbs="breadcrumbs"
+      :tabs="tabs"
+      :active-tab="activeTab"
+      tabs-test-id="asset-tabs"
+      @update:activeTab="activeTab = $event"
+    >
+      <template #actions>
         <Button
           data-testid="view-lineage"
           @click="router.push(lineageLocation(entityType, decodedFqn))"
@@ -447,10 +563,8 @@ onMounted(() => {
         >
           {{ t('asset.editCustomProperties') }}
         </Button>
-      </Space>
-      <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="detail__alert" />
-      <Tabs v-if="asset" data-testid="asset-tabs" class="detail__tabs">
-        <Tabs.TabPane key="overview" :tab="t('asset.tabs.overview')" force-render data-testid="asset-tab-overview">
+      </template>
+      <template v-if="asset" #overview>
           <Descriptions bordered :column="1" size="small">
             <Descriptions.Item :label="t('asset.fields.name')">{{ asset.name }}</Descriptions.Item>
             <Descriptions.Item :label="t('asset.fields.type')">{{ asset.entityType }}</Descriptions.Item>
@@ -471,6 +585,39 @@ onMounted(() => {
             </Descriptions.Item>
             <Descriptions.Item v-if="asset.partitions !== undefined" :label="t('asset.fields.partitions')">
               {{ asset.partitions }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.project" :label="t('asset.fields.project')">
+              {{ asset.project }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.dashboardType" :label="t('asset.fields.dashboardType')">
+              {{ asset.dashboardType }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.scheduleInterval" :label="t('asset.fields.scheduleInterval')">
+              {{ asset.scheduleInterval }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.pipelineState" :label="t('asset.fields.pipelineState')">
+              {{ asset.pipelineState }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.algorithm" :label="t('asset.fields.algorithm')">
+              {{ asset.algorithm }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.target" :label="t('asset.fields.target')">
+              {{ asset.target }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.prefix" :label="t('asset.fields.prefix')">
+              {{ asset.prefix }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.fileFormats?.length" :label="t('asset.fields.fileFormats')">
+              {{ asset.fileFormats.join(', ') }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.indexType" :label="t('asset.fields.indexType')">
+              {{ asset.indexType }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.storedProcedureType" :label="t('asset.fields.storedProcedureType')">
+              {{ asset.storedProcedureType }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.sourceUrl" :label="t('asset.fields.sourceUrl')">
+              <a :href="asset.sourceUrl" target="_blank" rel="noreferrer">{{ asset.sourceUrl }}</a>
             </Descriptions.Item>
             <Descriptions.Item :label="t('asset.fields.fqn')">{{ asset.fullyQualifiedName }}</Descriptions.Item>
             <Descriptions.Item :label="t('asset.fields.description')">{{ asset.description || '—' }}</Descriptions.Item>
@@ -497,10 +644,16 @@ onMounted(() => {
               </Space>
             </Descriptions.Item>
           </Descriptions>
-        </Tabs.TabPane>
-        <Tabs.TabPane key="schema" :tab="t('asset.tabs.schema')" force-render data-testid="asset-tab-schema">
+      </template>
+      <template v-if="asset" #schema>
           <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
+          <Empty
+            v-if="!asset.schemaRows.length"
+            data-testid="asset-schema-empty"
+            :description="t('asset.schemaEmpty')"
+          />
           <Table
+            v-else
             row-key="name"
             data-testid="asset-schema-table"
             :columns="schemaColumns"
@@ -508,11 +661,117 @@ onMounted(() => {
             :pagination="false"
             size="small"
           />
-        </Tabs.TabPane>
-        <Tabs.TabPane key="lineage" :tab="t('asset.tabs.lineage')" force-render data-testid="asset-tab-lineage">
+      </template>
+      <template v-if="asset" #charts>
+          <Typography.Paragraph type="secondary">{{ t('asset.chartsLead') }}</Typography.Paragraph>
+          <Empty
+            v-if="!asset.charts?.length && !asset.dataModels?.length"
+            data-testid="asset-charts-empty"
+            :description="t('asset.chartsEmpty')"
+          />
+          <template v-else>
+            <Typography.Title :level="5">{{ t('asset.chartsTitle') }}</Typography.Title>
+            <Table
+              row-key="name"
+              data-testid="asset-charts-table"
+              :columns="refColumns"
+              :data-source="asset.charts ?? []"
+              :pagination="false"
+              size="small"
+            />
+            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.dataModelsTitle') }}</Typography.Title>
+            <Table
+              row-key="name"
+              data-testid="asset-data-models-table"
+              :columns="refColumns"
+              :data-source="asset.dataModels ?? []"
+              :pagination="false"
+              size="small"
+            />
+          </template>
+      </template>
+      <template v-if="asset" #features>
+          <Typography.Paragraph type="secondary">{{ t('asset.featuresLead') }}</Typography.Paragraph>
+          <Empty
+            v-if="!asset.mlFeatures?.length && !asset.mlHyperParameters?.length"
+            data-testid="asset-features-empty"
+            :description="t('asset.featuresEmpty')"
+          />
+          <template v-else>
+            <Typography.Title :level="5">{{ t('asset.featuresTitle') }}</Typography.Title>
+            <Table
+              row-key="name"
+              data-testid="asset-features-table"
+              :columns="featureColumns"
+              :data-source="asset.mlFeatures ?? []"
+              :pagination="false"
+              size="small"
+            />
+            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.hyperTitle') }}</Typography.Title>
+            <Table
+              row-key="name"
+              data-testid="asset-hyper-table"
+              :columns="hyperColumns"
+              :data-source="asset.mlHyperParameters ?? []"
+              :pagination="false"
+              size="small"
+            />
+          </template>
+      </template>
+      <template v-if="asset" #tasks>
+          <Typography.Paragraph type="secondary">{{ t('asset.tasksLead') }}</Typography.Paragraph>
+          <Empty
+            v-if="taskGraphEmpty"
+            data-testid="pipeline-task-empty"
+            :description="t('asset.tasksEmpty')"
+          />
+          <PipelineTaskGraph v-else :model="taskGraph" />
+      </template>
+      <template v-if="asset" #executions>
+          <Typography.Paragraph type="secondary">{{ t('asset.executionsLead') }}</Typography.Paragraph>
+          <Alert
+            v-if="pipelineStatusError && !executionRows.length"
+            type="warning"
+            show-icon
+            :message="pipelineStatusError"
+            class="detail__alert"
+          />
+          <Empty
+            v-if="pipelineStatusTried && !pipelineStatusError && !executionRows.length"
+            data-testid="pipeline-executions-empty"
+            :description="t('asset.executionsEmpty')"
+          />
+          <Table
+            v-else-if="executionRows.length"
+            row-key="timestamp"
+            data-testid="pipeline-executions-table"
+            :columns="executionColumns"
+            :data-source="executionRows"
+            :pagination="false"
+            size="small"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'timestamp'">
+                {{ formatTs((record as CatalogPipelineStatus).timestamp) }}
+              </template>
+            </template>
+          </Table>
+      </template>
+      <template v-if="asset" #code>
+          <Typography.Paragraph type="secondary">{{ t('asset.codeLead') }}</Typography.Paragraph>
+          <Empty
+            v-if="!asset.storedProcedureCode?.code && !asset.storedProcedureCode?.language"
+            data-testid="asset-code-empty"
+            :description="t('asset.codeEmpty')"
+          />
+          <pre v-else data-testid="asset-code-block" class="detail__code">{{
+            [asset.storedProcedureCode?.language, asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
+          }}</pre>
+      </template>
+      <template v-if="asset" #lineage>
           <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" />
-        </Tabs.TabPane>
-        <Tabs.TabPane key="quality" :tab="t('asset.tabs.quality')" force-render data-testid="asset-tab-quality">
+      </template>
+      <template v-if="asset" #quality>
           <Typography.Title :level="5">{{ t('asset.testsTitle') }}</Typography.Title>
           <Typography.Paragraph type="secondary">{{ t('asset.qualityLead') }}</Typography.Paragraph>
           <Alert v-if="testsError" type="warning" show-icon :message="testsError" class="detail__alert" />
@@ -646,8 +905,8 @@ onMounted(() => {
               size="small"
             />
           </template>
-        </Tabs.TabPane>
-        <Tabs.TabPane key="activity" :tab="t('asset.tabs.activity')" force-render data-testid="asset-tab-activity">
+      </template>
+      <template v-if="asset" #activity>
           <Typography.Paragraph type="secondary">
             {{ t('asset.activityLead', { type: entityType, fqn: decodedFqn }) }}
           </Typography.Paragraph>
@@ -684,8 +943,8 @@ onMounted(() => {
             :pagination="false"
             size="small"
           />
-        </Tabs.TabPane>
-        <Tabs.TabPane key="customProperties" :tab="t('asset.tabs.customProperties')" force-render data-testid="asset-tab-custom">
+      </template>
+      <template v-if="asset" #customProperties>
           <Typography.Paragraph type="secondary">
             {{ t('asset.customPropertiesLead', { type: entityType }) }}
           </Typography.Paragraph>
@@ -707,9 +966,8 @@ onMounted(() => {
               </template>
             </template>
           </Table>
-        </Tabs.TabPane>
-      </Tabs>
-    </Card>
+      </template>
+    </EntityDetailShell>
     <Modal
       v-model:open="editOpen"
       :title="t('asset.editTitle')"
@@ -774,7 +1032,7 @@ onMounted(() => {
         </Form.Item>
       </Form>
     </Modal>
-  </Spin>
+  </div>
 </template>
 
 <style scoped>
@@ -799,5 +1057,13 @@ onMounted(() => {
 .detail__chart-block {
   margin-block: 12px 16px;
   max-width: 420px;
+}
+.detail__code {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: var(--ant-color-fill-quaternary, #fafafa);
+  border-radius: 6px;
 }
 </style>

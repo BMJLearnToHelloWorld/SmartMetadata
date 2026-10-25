@@ -9,8 +9,10 @@
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolvePatchPath } from '@/catalog/entityRoutes';
-import type { AssetDetail, EntityRef, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, EntityRef, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
+import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
+import { asNumber, mapEntityRefs } from './json';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
@@ -101,7 +103,57 @@ function schemaRowsFor(entityType: string, body: Record<string, unknown>): { row
     const schema = asRecord(body.messageSchema);
     return { rows: mapColumns(schema?.schemaFields), label: 'Schema fields' };
   }
+  if (entityType === 'container') {
+    const model = asRecord(body.dataModel);
+    return { rows: mapColumns(model?.columns), label: 'Columns' };
+  }
+  if (entityType === 'searchIndex') {
+    return { rows: mapColumns(body.fields), label: 'Fields' };
+  }
   return { rows: [], label: 'Schema' };
+}
+
+function mapHyperParameters(value: unknown): MlHyperParameter[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    const name = asString(rec.name);
+    if (!name) {
+      return [];
+    }
+    return [
+      {
+        name,
+        value: asString(rec.value) || undefined,
+        description: asString(rec.description) || undefined,
+      },
+    ];
+  });
+}
+
+function mapStoredProcedureCode(value: unknown): AssetDetail['storedProcedureCode'] {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const language = asString(rec.language) || undefined;
+  const code = asString(rec.code) || undefined;
+  if (!language && !code) {
+    return undefined;
+  }
+  return { language, code };
+}
+
+function mapStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
 function mapRef(value: unknown): EntityRef | undefined {
@@ -132,6 +184,14 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     query: { fields: endpoint.fields },
   });
   const schema = schemaRowsFor(entityType, body);
+  const code = mapStoredProcedureCode(body.storedProcedureCode);
+  const tasks = Array.isArray(body.tasks)
+    ? body.tasks.flatMap((item) => {
+        const mapped = mapPipelineTask(item);
+        return mapped ? [mapped] : [];
+      })
+    : [];
+  const pipelineStatus = mapCatalogPipelineStatus(body.pipelineStatus) ?? undefined;
   return {
     entityType,
     id: asString(body.id) || undefined,
@@ -145,6 +205,28 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     database: mapRef(body.database),
     databaseSchema: mapRef(body.databaseSchema),
     partitions: typeof body.partitions === 'number' ? body.partitions : undefined,
+    sourceUrl: asString(body.sourceUrl) || undefined,
+    scheduleInterval: asString(body.scheduleInterval) || undefined,
+    pipelineState: asString(body.state) || undefined,
+    project: asString(body.project) || undefined,
+    dashboardType: asString(body.dashboardType) || undefined,
+    algorithm: asString(body.algorithm) || undefined,
+    target: asString(body.target) || undefined,
+    prefix: asString(body.prefix) || undefined,
+    numberOfObjects: asNumber(body.numberOfObjects),
+    size: asNumber(body.size),
+    fileFormats: mapStringList(body.fileFormats),
+    indexType: asString(body.indexType) || undefined,
+    storedProcedureType: asString(body.storedProcedureType) || undefined,
+    storedProcedureCode: code,
+    parent: mapRef(body.parent),
+    children: mapEntityRefs(body.children),
+    charts: mapEntityRefs(body.charts),
+    dataModels: mapEntityRefs(body.dataModels),
+    mlFeatures: mapColumns(body.mlFeatures),
+    mlHyperParameters: mapHyperParameters(body.mlHyperParameters),
+    tasks,
+    pipelineStatus,
     owners: mapOwners(body.owners),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),

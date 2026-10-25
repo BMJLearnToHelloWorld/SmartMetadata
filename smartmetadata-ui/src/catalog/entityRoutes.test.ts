@@ -30,7 +30,7 @@ describe('entityRoutes', () => {
     );
   });
 
-  it('maps Phase 1 entity types onto documented collections', () => {
+  it('maps wired catalog types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
       fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType',
@@ -38,6 +38,30 @@ describe('entityRoutes', () => {
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
       fields: 'owners,tags,domains,extension,service,messageSchema,partitions',
+    });
+    expect(resolveDetailEndpoint('dashboard', 'bi.sales')).toEqual({
+      path: `/v1/dashboards/name/${encodeURIComponent('bi.sales')}`,
+      fields: 'owners,tags,domains,extension,service,charts,dataModels,project',
+    });
+    expect(resolveDetailEndpoint('pipeline', 'airflow.etl')).toEqual({
+      path: `/v1/pipelines/name/${encodeURIComponent('airflow.etl')}`,
+      fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state',
+    });
+    expect(resolveDetailEndpoint('mlmodel', 'ml.churn')).toEqual({
+      path: `/v1/mlmodels/name/${encodeURIComponent('ml.churn')}`,
+      fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard',
+    });
+    expect(resolveDetailEndpoint('container', 's3.lake')).toEqual({
+      path: `/v1/containers/name/${encodeURIComponent('s3.lake')}`,
+      fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats',
+    });
+    expect(resolveDetailEndpoint('searchIndex', 'os.logs')).toEqual({
+      path: `/v1/searchIndexes/name/${encodeURIComponent('os.logs')}`,
+      fields: 'owners,tags,domains,extension,service,fields,indexType',
+    });
+    expect(resolveDetailEndpoint('storedProcedure', 'svc.db.schema.sp')).toEqual({
+      path: `/v1/storedProcedures/name/${encodeURIComponent('svc.db.schema.sp')}`,
+      fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
     });
   });
 
@@ -49,9 +73,9 @@ describe('entityRoutes', () => {
   });
 
   it('does not invent endpoints for unwired entity types', () => {
-    expect(resolveDetailEndpoint('dashboard', 'bi.sales')).toBeNull();
+    expect(resolveDetailEndpoint('chart', 'bi.sales.chart')).toBeNull();
     expect(resolveDetailEndpoint('', 'x')).toBeNull();
-    expect(resolvePatchPath('dashboard', 'id-1')).toBeNull();
+    expect(resolvePatchPath('chart', 'id-1')).toBeNull();
   });
 
   it('maps wired types onto PATCH /v1/{collection}/{id}', () => {

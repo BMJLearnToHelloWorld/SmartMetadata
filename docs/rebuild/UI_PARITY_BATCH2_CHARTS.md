@@ -67,7 +67,7 @@ No new Java/Python endpoints. No invented numeric points.
 | Catalog composition as a time series | Search aggregations are a live snapshot; history only from `listChartData` |
 | Quality snapshot is page-limited | First 100 test cases / latest incidents, not a global warehouse KPI |
 | Profiler / DQ **execution** | `jobs.py` still raises; this UI only reads stored results |
-| Pipeline DAG / non-table asset shells | Batch 2 step 5 — out of this PR |
+| Pipeline DAG / non-table asset shells | Closed in batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`) |
 | Knowledge / Ontology / AI | Collate-only **DROP** |
 
 ## How to verify

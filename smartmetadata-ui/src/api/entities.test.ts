@@ -71,6 +71,122 @@ describe('asset entity writes', () => {
     expect(lastFetch().url).toContain('tableType');
   });
 
+  it('maps dashboard charts and pipeline tasks from the wired GETs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dashboards/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'dash-1',
+              name: 'sales',
+              fullyQualifiedName: 'bi.sales',
+              project: 'Finance',
+              dashboardType: 'Dashboard',
+              charts: [{ id: 'c1', name: 'revenue', type: 'chart' }],
+              dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
+              service: { name: 'superset' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'pipe-1',
+            name: 'daily_etl',
+            fullyQualifiedName: 'airflow.daily_etl',
+            scheduleInterval: '0 2 * * *',
+            state: 'Active',
+            tasks: [
+              { name: 'extract', displayName: 'Extract', downstreamTasks: ['load'] },
+              { name: 'load', downstreamTasks: [] },
+            ],
+            pipelineStatus: {
+              timestamp: 1700000000000,
+              executionStatus: 'Successful',
+              taskStatus: [{ name: 'extract', executionStatus: 'Successful' }],
+            },
+            service: { name: 'airflow' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const dashboard = await fetchAssetDetail('dashboard', 'bi.sales');
+    expect(dashboard.charts?.[0]).toMatchObject({ name: 'revenue', type: 'chart' });
+    expect(dashboard.dataModels?.[0]?.name).toBe('sales_model');
+    expect(dashboard.project).toBe('Finance');
+    expect(lastFetch().url).toContain('/api/v1/dashboards/name/');
+    expect(lastFetch().url).toContain('charts');
+
+    const pipeline = await fetchAssetDetail('pipeline', 'airflow.daily_etl');
+    expect(pipeline.tasks).toHaveLength(2);
+    expect(pipeline.tasks?.[0]).toMatchObject({ name: 'extract', downstreamTasks: ['load'] });
+    expect(pipeline.pipelineStatus?.executionStatus).toBe('Successful');
+    expect(pipeline.scheduleInterval).toBe('0 2 * * *');
+    expect(lastFetch().url).toContain('/api/v1/pipelines/name/');
+    expect(lastFetch().url).toContain('tasks');
+    expect(lastFetch().url).toContain('pipelineStatus');
+  });
+
+  it('maps container columns, search-index fields, and stored-procedure code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/containers/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'ctr-1',
+              name: 'lake',
+              fullyQualifiedName: 's3.lake',
+              prefix: 'raw/',
+              fileFormats: ['parquet'],
+              dataModel: { columns: [{ name: 'event_id', dataType: 'STRING' }] },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/searchIndexes/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'idx-1',
+              name: 'logs',
+              fullyQualifiedName: 'os.logs',
+              indexType: 'Index',
+              fields: [{ name: 'message', dataType: 'TEXT' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'sp-1',
+            name: 'refresh_mart',
+            fullyQualifiedName: 'svc.db.schema.refresh_mart',
+            storedProcedureType: 'StoredProcedure',
+            storedProcedureCode: { language: 'SQL', code: 'SELECT 1' },
+            mlFeatures: [{ name: 'ignored' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const container = await fetchAssetDetail('container', 's3.lake');
+    expect(container.schemaRows).toEqual([{ name: 'event_id', dataType: 'STRING' }]);
+    expect(container.prefix).toBe('raw/');
+    expect(container.fileFormats).toEqual(['parquet']);
+
+    const index = await fetchAssetDetail('searchIndex', 'os.logs');
+    expect(index.schemaRows).toEqual([{ name: 'message', dataType: 'TEXT' }]);
+    expect(index.indexType).toBe('Index');
+
+    const proc = await fetchAssetDetail('storedProcedure', 'svc.db.schema.refresh_mart');
+    expect(proc.storedProcedureCode).toEqual({ language: 'SQL', code: 'SELECT 1' });
+    expect(proc.schemaRows).toEqual([]);
+  });
+
   it('PATCHes a table by id with RFC 6902 json-patch', async () => {
     vi.stubGlobal(
       'fetch',
