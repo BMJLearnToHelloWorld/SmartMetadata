@@ -63,5 +63,9 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('charts.empty');
     expect(keys).toContain('asset.rowCountChart');
     expect(keys).toContain('asset.resultsChart');
+    expect(keys).toContain('asset.tabs.tasks');
+    expect(keys).toContain('asset.tabs.executions');
+    expect(keys).toContain('asset.tasksEmpty');
+    expect(keys).toContain('explore.entity.searchIndex');
   });
 });

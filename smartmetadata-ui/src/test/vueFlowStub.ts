@@ -26,20 +26,21 @@ export const vueFlowStubs = {
                 id: string;
                 data: {
                   name: string;
-                  entityType: string;
-                  fullyQualifiedName: string;
+                  entityType?: string;
+                  fullyQualifiedName?: string;
                   displayName?: string;
                   pathLabel?: string;
                   truncatedFqn?: string;
                   columns?: { fqn: string; name: string }[];
                   expanded?: boolean;
+                  testId?: string;
                 };
               }[]
             ).map((node) =>
               h(
                 'button',
                 {
-                  'data-testid': `lineage-node-${node.id}`,
+                  'data-testid': node.data.testId || `lineage-node-${node.id}`,
                   'data-entity-type': node.data.entityType,
                   'data-path-label': node.data.pathLabel || '',
                   onClick: () => emit('node-click', { node }),
@@ -60,7 +61,7 @@ export const vueFlowStubs = {
     }),
     Handle: defineComponent({ name: 'Handle', setup: () => () => h('div') }),
     MarkerType: { ArrowClosed: 'arrowclosed' },
-    Position: { Left: 'left', Right: 'right' },
+    Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   }),
   '@vue-flow/background': () => ({
     Background: defineComponent({ name: 'Background', setup: () => () => h('div') }),

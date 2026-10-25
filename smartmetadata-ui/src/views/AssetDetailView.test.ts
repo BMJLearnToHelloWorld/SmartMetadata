@@ -42,6 +42,7 @@ async function mountView() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
       { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
       { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>tc</div>' } },
@@ -271,5 +272,172 @@ describe('AssetDetailView governance', () => {
     expect(body.some((op) => op.path === '/tags')).toBe(true);
     expect(body.some((op) => op.path === '/owners')).toBe(true);
     expect(body.some((op) => op.path === '/domains')).toBe(true);
+  });
+});
+
+async function mountTypedView(entityType: string, fqn: string) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
+      { path: '/assets/:entityType/:fqn', name: 'asset', component: AssetDetailView, props: true },
+      { path: '/lineage/:entityType/:fqn', name: 'lineage', component: { template: '<div>lineage</div>' } },
+    ],
+  });
+  await router.push(`/assets/${entityType}/${fqn}`);
+  await router.isReady();
+  const wrapper = mount(AssetDetailView, {
+    props: { entityType, fqn },
+    attachTo: document.body,
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+  });
+  await flushPromises();
+  return { wrapper, router };
+}
+
+describe('AssetDetailView non-table shells', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders dashboard chart refs from the dashboard GET and skips a schema tab', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dashboards/name/')) {
+          return jsonResponse({
+            id: 'dash-1',
+            name: 'sales',
+            fullyQualifiedName: 'bi.sales',
+            project: 'Finance',
+            charts: [{ name: 'revenue', type: 'chart' }],
+            dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
+            service: { name: 'superset' },
+          });
+        }
+        if (url.includes('/api/v1/lineage/')) {
+          return jsonResponse({ entity: { id: 'dash-1', type: 'dashboard', name: 'sales' }, nodes: [] });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/customProperties')) {
+          return jsonResponse([]);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountTypedView('dashboard', 'bi.sales');
+    expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Charts');
+    expect(wrapper.text()).not.toContain('Schema');
+    expect(wrapper.find('[data-testid="asset-charts-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('revenue');
+    expect(wrapper.text()).toContain('sales_model');
+    expect(wrapper.text()).toContain('Finance');
+  });
+
+  it('draws a pipeline DAG only from returned tasks and shows Empty when tasks are missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/pipelines/name/')) {
+          return jsonResponse({
+            id: 'pipe-1',
+            name: 'daily_etl',
+            fullyQualifiedName: 'airflow.daily_etl',
+            tasks: [
+              { name: 'extract', displayName: 'Extract', downstreamTasks: ['load'] },
+              { name: 'load', downstreamTasks: [] },
+            ],
+            pipelineStatus: {
+              timestamp: 1700000000000,
+              executionStatus: 'Successful',
+              taskStatus: [{ name: 'extract', executionStatus: 'Successful' }],
+            },
+            service: { name: 'airflow' },
+          });
+        }
+        if (url.includes('/api/v1/pipelines/') && url.includes('/status')) {
+          return jsonResponse({
+            data: [{ timestamp: 1700000000000, executionStatus: 'Successful', executionId: 'run-1' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/lineage/')) {
+          return jsonResponse({ entity: { id: 'pipe-1', type: 'pipeline', name: 'daily_etl' }, nodes: [] });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/customProperties')) {
+          return jsonResponse([]);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    expect(wrapper.find('[data-testid="pipeline-task-graph"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-task-extract"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-task-load"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-task-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipeline-executions-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('run-1');
+    expect(wrapper.text()).toContain('Tasks');
+    expect(wrapper.text()).toContain('Executions');
+  });
+
+  it('does not invent a pipeline graph when tasks are empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/pipelines/name/')) {
+          return jsonResponse({
+            id: 'pipe-empty',
+            name: 'empty_etl',
+            fullyQualifiedName: 'airflow.empty_etl',
+            tasks: [],
+            service: { name: 'airflow' },
+          });
+        }
+        if (url.includes('/api/v1/pipelines/') && url.includes('/status')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/lineage/')) {
+          return jsonResponse({ entity: { id: 'pipe-empty', type: 'pipeline', name: 'empty_etl' }, nodes: [] });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/') || url.includes('/api/v1/conversations') || url.includes('/customProperties')) {
+          return jsonResponse({ data: [] });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.empty_etl');
+    expect(wrapper.find('[data-testid="pipeline-task-graph"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipeline-task-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-executions-empty"]').exists()).toBe(true);
   });
 });

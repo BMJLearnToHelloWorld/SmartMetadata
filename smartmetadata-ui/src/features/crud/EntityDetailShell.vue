@@ -25,6 +25,7 @@ const props = withDefaults(
     breadcrumbs?: EntityBreadcrumb[];
     tabs?: EntityDetailTab[];
     activeTab?: string;
+    tabsTestId?: string;
   }>(),
   {
     name: '',
@@ -37,6 +38,7 @@ const props = withDefaults(
     breadcrumbs: () => [],
     tabs: () => [],
     activeTab: '',
+    tabsTestId: 'entity-detail-tabs',
   },
 );
 
@@ -102,7 +104,7 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
         <template v-else-if="!empty">
           <Tabs
             v-if="tabs.length"
-            data-testid="entity-detail-tabs"
+            :data-testid="tabsTestId"
             :active-key="currentTab"
             @change="(key: string | number) => emit('update:activeTab', String(key))"
           >

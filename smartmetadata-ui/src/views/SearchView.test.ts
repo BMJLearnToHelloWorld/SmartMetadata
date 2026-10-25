@@ -82,7 +82,7 @@ describe('SearchView', () => {
                 _source: {
                   name: 'sales',
                   fullyQualifiedName: 'superset.sales',
-                  entityType: 'dashboard',
+                  entityType: 'chart',
                 },
               },
             ],
