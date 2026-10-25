@@ -51,5 +51,10 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('admin.bots.title');
     expect(keys).toContain('governance.classifications.title');
     expect(keys).toContain('governance.glossaries.title');
+    expect(keys).toContain('chrome.userMenu');
+    expect(keys).toContain('chrome.viewProfile');
+    expect(keys).toContain('settings.title');
+    expect(keys).toContain('settings.categories.members.title');
+    expect(keys).toContain('settings.system.saveLogin');
   });
 });

@@ -36,6 +36,8 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
             component: { template: '<div>tc</div>' },
           },
           { path: 'login', name: 'login', component: { template: '<div>login</div>' } },
+          { path: 'admin/settings', name: 'admin-settings', component: { template: '<div>settings</div>' } },
+          { path: 'admin/users/:id', name: 'admin-user', component: { template: '<div>profile</div>' } },
         ],
       },
     ],
@@ -69,6 +71,11 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="observability-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="quality-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="notifications-button"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('Log out');
   });
 
@@ -79,6 +86,8 @@ describe('AppShell', () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(wrapper.text()).toContain('探索');
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('退出登录');
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('zh-CN');
   });
@@ -93,6 +102,26 @@ describe('AppShell', () => {
     await search.trigger('keydown.enter');
     await flushPromises();
     expect(router.currentRoute.value.query).toMatchObject({ q: 'customers', entityType: 'table' });
+  });
+
+  it('opens Settings from the user menu and profile only when loggedInUser has an id', async () => {
+    const { wrapper, router } = await mountShell();
+    const { useAuthStore } = await import('@/stores/auth');
+    const auth = useAuthStore();
+    auth.user = { id: 'u-1', name: 'alice', displayName: 'Alice' };
+    await wrapper.vm.$nextTick();
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="user-profile-item"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="user-settings-item"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings');
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="user-profile-item"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-user');
+    expect(router.currentRoute.value.params.id).toBe('u-1');
   });
 
   it('opens Observability when a quality route is active', async () => {
