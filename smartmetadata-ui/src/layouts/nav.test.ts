@@ -14,6 +14,7 @@ describe('nav IA', () => {
   it('puts Explore and Lineage at the top and nests quality under Observability', () => {
     expect(NAV_ENTRIES[0]).toMatchObject({ kind: 'item', key: 'search' });
     expect(NAV_ENTRIES[1]).toMatchObject({ kind: 'item', key: 'lineage-home' });
+    expect(NAV_ENTRIES[2]).toMatchObject({ kind: 'item', key: 'insights' });
     const observability = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === 'observability');
     expect(observability?.kind === 'section' && observability.items.map((item) => item.key)).toEqual([
       'quality-test-definitions',
@@ -28,7 +29,7 @@ describe('nav IA', () => {
     const keys = NAV_ENTRIES.flatMap((entry) =>
       entry.kind === 'item' ? [entry.key] : [entry.key, ...entry.items.map((item) => item.key)],
     );
-    expect(keys).not.toContain('insights');
+    expect(keys).toContain('insights');
     expect(keys).not.toContain('knowledge');
     expect(keys).not.toContain('ontology');
     expect(keys).not.toContain('marketplace');

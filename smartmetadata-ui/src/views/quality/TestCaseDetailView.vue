@@ -3,16 +3,21 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Spin, Table, Typography, message } from 'ant-design-vue';
 import { getTestCase, updateTestCase } from '@/api/testCases';
 import { listTestCaseResults } from '@/api/testCaseResults';
+import SmChart from '@/features/charts/SmChart.vue';
+import { testResultsToTimeline } from '@/features/charts/series';
 import { parseEntityLink } from '@/quality/entityLink';
 import type { TestCase, TestCaseResult } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
+const { t } = useI18n();
+const resultSeries = computed(() => testResultsToTimeline(results.value));
 const loading = ref(false);
 const errorMessage = ref('');
 const testCase = ref<TestCase | null>(null);
@@ -167,6 +172,9 @@ onMounted(() => {
         </Descriptions.Item>
         <Descriptions.Item label="Description">{{ testCase.description || '—' }}</Descriptions.Item>
       </Descriptions>
+      <Typography.Title :level="5" class="dq-sub">{{ t('asset.resultsChart') }}</Typography.Title>
+      <Typography.Paragraph type="secondary">{{ t('asset.resultsChartLead') }}</Typography.Paragraph>
+      <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
       <Typography.Title :level="5" class="dq-sub">Results</Typography.Title>
       <Table
         data-testid="test-case-results-table"

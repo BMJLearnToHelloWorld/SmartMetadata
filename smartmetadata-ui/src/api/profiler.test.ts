@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getLatestTableProfile, getTableSampleData, getTopicSampleData } from './profiler';
+import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from './profiler';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -79,5 +79,31 @@ describe('profiler API', () => {
     expect(profile.rowCount).toBe(10);
     expect(profile.columns[0]?.name).toBe('id');
     expect(decodeURIComponent(lastFetch().url)).toContain('/api/v1/tables/svc.db.schema.orders/tableProfile/latest');
+  });
+
+  it('lists table profiles from GET /v1/tables/{fqn}/tableProfile', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { timestamp: 1, rowCount: 8, columnCount: 2 },
+              { profile: { timestamp: 2, rowCount: 11 } },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const profiles = await listTableProfiles('svc.db.schema.orders', 10, 20);
+    expect(profiles).toEqual([
+      { timestamp: 1, rowCount: 8, columnCount: 2, columns: [] },
+      { timestamp: 2, rowCount: 11, columnCount: undefined, columns: [] },
+    ]);
+    const url = decodeURIComponent(lastFetch().url);
+    expect(url).toContain('/api/v1/tables/svc.db.schema.orders/tableProfile');
+    expect(url).toContain('startTs=10');
+    expect(url).toContain('endTs=20');
   });
 });

@@ -166,6 +166,19 @@ describe('AssetDetailView governance', () => {
             columns: [{ name: 'id', profile: { nullCount: 0 } }],
           });
         }
+        if (url.includes('/tableProfile')) {
+          return jsonResponse({
+            data: [
+              { timestamp: Date.UTC(2026, 0, 1), rowCount: 8 },
+              { timestamp: Date.UTC(2026, 0, 2), rowCount: 11 },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/usage/')) {
+          return jsonResponse({
+            usage: [{ date: '2026-01-02', dailyStats: { count: 4 } }],
+          });
+        }
         if (init?.method === 'PATCH' && url.includes('/api/v1/tables/tbl-1')) {
           return jsonResponse({});
         }
@@ -204,6 +217,18 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Schema');
     expect(wrapper.text()).toContain('Lineage');
     expect(wrapper.text()).toContain('Quality');
+  });
+
+  it('plots profiler history, usage, and latest test status from real GET payloads', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-rowcount-chart"]').attributes('data-points')).toBe('1');
+    expect(wrapper.find('[data-testid="asset-usage-chart"]').attributes('data-points')).toBe('1');
+    expect(wrapper.find('[data-testid="asset-column-null-chart"]').attributes('data-points')).toBe('1');
+    expect(wrapper.find('[data-testid="asset-test-status-chart"]').attributes('data-points')).toBe('1');
+    expect(lastMatchingFetch((url) => url.includes('/tableProfile') && !url.includes('/latest')).url).toContain(
+      'startTs=',
+    );
   });
 
   it('shows linked tests and latest status from GET /v1/dataQuality/testCases', async () => {

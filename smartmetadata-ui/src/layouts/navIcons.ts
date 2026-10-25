@@ -14,6 +14,7 @@ import {
   BankOutlined,
   CloudSyncOutlined,
   CommentOutlined,
+  LineChartOutlined,
   SearchOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue';
@@ -22,6 +23,7 @@ import type { Component } from 'vue';
 const ICONS: Record<string, Component> = {
   search: SearchOutlined,
   'lineage-home': ApartmentOutlined,
+  insights: LineChartOutlined,
   observability: AlertOutlined,
   governance: BankOutlined,
   ingestion: CloudSyncOutlined,

@@ -27,9 +27,19 @@ import { listEntityActivity } from '@/api/activity';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, patchAsset } from '@/api/entities';
-import { getLatestTableProfile, getTableSampleData, getTopicSampleData } from '@/api/profiler';
+import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
+import { getEntityUsage } from '@/api/usage';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
+import SmChart from '@/features/charts/SmChart.vue';
+import {
+  columnNullPoints,
+  namedSeries,
+  profilesToRowCountPoints,
+  testResultsToStatusPoints,
+  usageToPoints,
+} from '@/features/charts/series';
+import { seriesWindow, type ChartSeries } from '@/features/charts/types';
 import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import {
   loadGovernanceCatalog,
@@ -61,6 +71,10 @@ const testsError = ref('');
 const tableSample = ref<TableSampleData | null>(null);
 const topicSample = ref<TopicSampleData | null>(null);
 const tableProfile = ref<TableProfile | null>(null);
+const rowCountSeries = ref<ChartSeries[]>([]);
+const usageSeries = ref<ChartSeries[]>([]);
+const columnNullSeries = ref<ChartSeries[]>([]);
+const testStatusSeries = ref<ChartSeries[]>([]);
 const observabilityError = ref('');
 const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
@@ -132,6 +146,10 @@ function resetSecondary(): void {
   tableSample.value = null;
   topicSample.value = null;
   tableProfile.value = null;
+  rowCountSeries.value = [];
+  usageSeries.value = [];
+  columnNullSeries.value = [];
+  testStatusSeries.value = [];
   observabilityError.value = '';
   activity.value = [];
   conversations.value = [];
@@ -171,8 +189,17 @@ async function loadQuality(): Promise<void> {
       limit: 50,
     });
     tests.value = page.data;
+    testStatusSeries.value = namedSeries(
+      t('asset.testStatusChart'),
+      testResultsToStatusPoints(
+        page.data.map((item) => ({
+          testCaseStatus: item.testCaseResult?.testCaseStatus || item.testCaseStatus,
+        })),
+      ),
+    );
   } catch (error) {
     tests.value = [];
+    testStatusSeries.value = [];
     testsError.value = error instanceof Error ? error.message : t('asset.testsFailed');
   }
   if (props.entityType === 'table' && asset.value.id) {
@@ -184,8 +211,26 @@ async function loadQuality(): Promise<void> {
     }
     try {
       tableProfile.value = await getLatestTableProfile(asset.value.fullyQualifiedName);
+      columnNullSeries.value = namedSeries(
+        t('asset.columnNullChart'),
+        columnNullPoints(tableProfile.value.columns),
+      );
     } catch {
       tableProfile.value = null;
+      columnNullSeries.value = [];
+    }
+    const window = seriesWindow();
+    try {
+      const history = await listTableProfiles(asset.value.fullyQualifiedName, window.startTs, window.endTs);
+      rowCountSeries.value = namedSeries(t('asset.rowCountChart'), profilesToRowCountPoints(history));
+    } catch {
+      rowCountSeries.value = [];
+    }
+    try {
+      const days = await getEntityUsage('table', asset.value.fullyQualifiedName, 30);
+      usageSeries.value = namedSeries(t('asset.usageChart'), usageToPoints(days));
+    } catch {
+      usageSeries.value = [];
     }
   }
   if (props.entityType === 'topic' && asset.value.id) {
@@ -518,12 +563,34 @@ onMounted(() => {
               </template>
             </template>
           </Table>
+          <div class="detail__chart-block">
+            <Typography.Text strong>{{ t('asset.testStatusChart') }}</Typography.Text>
+            <Typography.Paragraph type="secondary">{{ t('asset.testStatusChartLead') }}</Typography.Paragraph>
+            <SmChart kind="donut" test-id="asset-test-status-chart" :series="testStatusSeries" :empty="t('charts.empty')" />
+          </div>
           <template v-if="entityType === 'table'">
             <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.profilerTitle') }}</Typography.Title>
             <Typography.Paragraph type="secondary">{{ t('asset.profilerLead') }}</Typography.Paragraph>
             <Typography.Paragraph v-if="tableProfile">
               {{ t('asset.rows', { rows: tableProfile.rowCount ?? '—', columns: tableProfile.columnCount ?? '—' }) }}
             </Typography.Paragraph>
+            <div class="detail__charts" data-testid="asset-profile-charts">
+              <div>
+                <Typography.Text strong>{{ t('asset.rowCountChart') }}</Typography.Text>
+                <Typography.Paragraph type="secondary">{{ t('asset.rowCountChartLead') }}</Typography.Paragraph>
+                <SmChart kind="line" test-id="asset-rowcount-chart" :series="rowCountSeries" :empty="t('charts.empty')" />
+              </div>
+              <div>
+                <Typography.Text strong>{{ t('asset.usageChart') }}</Typography.Text>
+                <Typography.Paragraph type="secondary">{{ t('asset.usageChartLead') }}</Typography.Paragraph>
+                <SmChart kind="line" test-id="asset-usage-chart" :series="usageSeries" :empty="t('charts.empty')" />
+              </div>
+              <div>
+                <Typography.Text strong>{{ t('asset.columnNullChart') }}</Typography.Text>
+                <Typography.Paragraph type="secondary">{{ t('asset.columnNullChartLead') }}</Typography.Paragraph>
+                <SmChart kind="bar" test-id="asset-column-null-chart" :series="columnNullSeries" :empty="t('charts.empty')" />
+              </div>
+            </div>
             <Table
               row-key="name"
               data-testid="asset-profile-table"
@@ -722,5 +789,15 @@ onMounted(() => {
 }
 .detail__tabs {
   margin-top: 8px;
+}
+.detail__charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-block: 12px 16px;
+}
+.detail__chart-block {
+  margin-block: 12px 16px;
+  max-width: 420px;
 }
 </style>
