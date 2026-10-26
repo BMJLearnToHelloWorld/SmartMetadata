@@ -11,7 +11,8 @@ import { theme, type ThemeConfig } from 'ant-design-vue';
 
 /**
  * In-repo OpenMetadata console brand-600 / DEFAULT_THEME.primaryColor.
- * #1d4ed8 is only OM @blue-42 (a palette step), not the brand.
+ * Owner OM phase overrode historical #37 `#005587`. Soul accents must not
+ * revert the primary. `#1d4ed8` is only OM @blue-42 (a palette step).
  */
 export const SM_COLOR_PRIMARY = '#1570ef';
 export const SM_COLOR_PRIMARY_HOVER = '#175cd3';
@@ -22,19 +23,27 @@ export const SM_COLOR_SUCCESS = '#039855';
 export const SM_COLOR_WARNING = '#DC6803';
 export const SM_COLOR_ERROR = '#D92D20';
 
-/** OM control radius (UntitledUI rounded-lg). */
-export const SM_BORDER_RADIUS = 8;
-/** OM card / panel radius (rounded-xl). */
-export const SM_RADIUS_CARD = 12;
-/** OM dialog radius (rounded-2xl). */
-export const SM_RADIUS_MODAL = 16;
+/** iPlatform radius-on (Provider.vue token.borderRadius when radius is on). */
+export const SM_BORDER_RADIUS = 6;
+/** Cards / panels share the same iPlatform radius-on — not OM rounded-xl. */
+export const SM_RADIUS_CARD = SM_BORDER_RADIUS;
+/** Dialogs share radius-on — not OM rounded-2xl. */
+export const SM_RADIUS_MODAL = SM_BORDER_RADIUS;
 
-export const SM_FONT_SIZE = 14;
+export const SM_FONT_SIZE = 13;
 export const SM_CONTROL_HEIGHT = 32;
 
+/** Quiet rest elevation (iPlatform-like; not a copy of @icore CSS). */
+export const SM_SHADOW_CARD =
+  '0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06)';
+/** Overlay / modal / dropdown elevation. */
+export const SM_SHADOW_RAISED =
+  '0 6px 16px rgba(15, 17, 21, 0.08), 0 3px 6px -2px rgba(15, 17, 21, 0.06)';
+
 /**
- * Light surfaces from the in-repo OM token contract (`tokens.css` / colors.md).
- * Names stay `--sm-*` in CSS so we do not import OM React or Tailwind.
+ * Neutral surfaces: iPlatform-inspired canvas / elevated / border, with OM
+ * text + selected tints kept so Batch 1–4 copy/chrome is not undone.
+ * Names stay `--sm-*` in CSS; do not import @icore or openmetadata-ui.
  */
 /** OM visualization / categorical hues — not default antd ECharts colors. */
 export const SM_CHART_COLORS = [
@@ -51,22 +60,22 @@ export const SM_CHART_COLORS = [
 export const SM_SURFACES = {
   bgBase: '#ffffff',
   bgContainer: '#ffffff',
-  bgElevated: '#ffffff',
-  contentBg: '#fafafa',
+  bgElevated: '#f7f8fa',
+  contentBg: '#f0f2f5',
   textPrimary: '#181d27',
   textSecondary: '#414651',
   textTertiary: '#535862',
   textQuaternary: '#717680',
-  borderColor: '#d5d7da',
-  borderSecondary: '#e9eaeb',
+  borderColor: '#f0f0f0',
+  borderSecondary: '#f0f0f0',
   layoutBg: '#ffffff',
   siderBg: '#ffffff',
-  triggerBg: '#fafafa',
-  triggerHoverBg: '#f5f5f5',
+  triggerBg: '#f4f4f5',
+  triggerHoverBg: '#e3e6e8',
   menuHoverBg: '#eff8ff',
-  rowHoverBg: '#fafafa',
+  rowHoverBg: '#f7f8fa',
   rowSelectedBg: '#eff8ff',
-  tableHeaderBg: '#fafafa',
+  tableHeaderBg: '#f7f8fa',
   overlay: 'rgba(10, 13, 18, 0.55)',
   focusRing: 'rgba(21, 112, 239, 0.22)',
 } as const;
@@ -89,14 +98,14 @@ export const smAntdTheme: ThemeConfig = {
     colorError: SM_COLOR_ERROR,
     borderRadius: SM_BORDER_RADIUS,
     borderRadiusLG: SM_RADIUS_CARD,
-    borderRadiusSM: 6,
+    borderRadiusSM: SM_BORDER_RADIUS,
     fontSize: SM_FONT_SIZE,
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif',
     controlHeight: SM_CONTROL_HEIGHT,
     colorBgLayout: SM_SURFACES.contentBg,
     colorBgContainer: SM_SURFACES.bgContainer,
-    colorBgElevated: SM_SURFACES.bgElevated,
+    colorBgElevated: SM_SURFACES.bgContainer,
     colorBgSpotlight: '#181d27',
     colorText: SM_SURFACES.textPrimary,
     colorTextSecondary: SM_SURFACES.textSecondary,
@@ -108,8 +117,8 @@ export const smAntdTheme: ThemeConfig = {
     colorFillSecondary: SM_SURFACES.tableHeaderBg,
     controlOutline: SM_SURFACES.focusRing,
     controlOutlineWidth: 2,
-    boxShadowSecondary:
-      '0 12px 32px rgba(10, 13, 18, 0.12), 0 2px 8px rgba(10, 13, 18, 0.06)',
+    boxShadow: SM_SHADOW_CARD,
+    boxShadowSecondary: SM_SHADOW_RAISED,
     motionDurationMid: '0.18s',
     motionDurationSlow: '0.24s',
   },
@@ -125,8 +134,8 @@ export const smAntdTheme: ThemeConfig = {
     Card: {
       colorBorderSecondary: SM_SURFACES.borderSecondary,
       borderRadiusLG: SM_RADIUS_CARD,
-      headerHeight: 48,
-      headerFontSize: 16,
+      headerHeight: 44,
+      headerFontSize: 14,
     },
     Table: {
       headerBg: SM_SURFACES.tableHeaderBg,
@@ -137,15 +146,15 @@ export const smAntdTheme: ThemeConfig = {
       rowSelectedHoverBg: SM_COLOR_PRIMARY_BG_HOVER,
       colorFillAlter: SM_SURFACES.tableHeaderBg,
       colorBorderSecondary: SM_SURFACES.borderSecondary,
-      cellPaddingBlock: 10,
-      cellPaddingInline: 16,
-      cellPaddingBlockSM: 8,
-      cellPaddingInlineSM: 12,
+      cellPaddingBlock: 8,
+      cellPaddingInline: 12,
+      cellPaddingBlockSM: 6,
+      cellPaddingInlineSM: 10,
       borderRadius: SM_BORDER_RADIUS,
     },
     Modal: {
       borderRadiusLG: SM_RADIUS_MODAL,
-      titleFontSize: 16,
+      titleFontSize: 15,
       titleLineHeight: 1.4,
       contentBg: SM_SURFACES.bgContainer,
       headerBg: SM_SURFACES.bgContainer,
@@ -153,13 +162,13 @@ export const smAntdTheme: ThemeConfig = {
     },
     Drawer: {
       colorBgElevated: SM_SURFACES.bgContainer,
-      padding: 20,
+      padding: 16,
     },
     Form: {
       labelColor: SM_SURFACES.textSecondary,
       labelFontSize: 13,
-      verticalLabelPadding: '0 0 6px',
-      itemMarginBottom: 16,
+      verticalLabelPadding: '0 0 4px',
+      itemMarginBottom: 12,
     },
     Menu: {
       itemBorderRadius: SM_BORDER_RADIUS,
@@ -198,7 +207,7 @@ export const smAntdTheme: ThemeConfig = {
       borderRadiusLG: SM_RADIUS_CARD,
     },
     Tooltip: {
-      borderRadius: 6,
+      borderRadius: SM_BORDER_RADIUS,
       colorBgSpotlight: '#181d27',
     },
     Tabs: {
@@ -238,7 +247,7 @@ export const smAntdTheme: ThemeConfig = {
       linkHoverColor: SM_COLOR_PRIMARY_HOVER,
     },
     Tag: {
-      borderRadiusSM: 6,
+      borderRadiusSM: SM_BORDER_RADIUS,
     },
     Checkbox: {
       borderRadiusSM: 4,

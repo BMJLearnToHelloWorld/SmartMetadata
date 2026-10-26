@@ -1,10 +1,10 @@
 # SmartMetadata UI aligns component look to the in-repo OpenMetadata console
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (owner sequencing)
+- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (owner sequencing) · v3 2026-10-26 (soul layered; primary stays `#1570ef`)
 - **Deciders:** Bernie Bai (owner)
-- **Guard:** `smartmetadata-ui/src/theme/tokens.test.ts` asserts primary `#1570ef` (not `#1d4ed8`), OM surfaces, and global Table/Modal/Menu/focus polish; reviewers reject React/CSS copy from `openmetadata-ui`, Settings appearance UI, and historical #37 / `@icore` tokens in this phase
-- **Related:** ADR:2026-10-22-clean-room-vue-spa; `docs/rebuild/UI_PARITY_OM_1TO1.md`
+- **Guard:** `smartmetadata-ui/src/theme/tokens.test.ts` asserts primary `#1570ef` (not `#1d4ed8` / `#005587`); reviewers reject React/CSS copy from `openmetadata-ui`, Settings appearance UI, and IP3Layout / `@icore` package imports. Soul accents are ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om.
+- **Related:** ADR:2026-10-22-clean-room-vue-spa; ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om; `docs/rebuild/UI_PARITY_OM_1TO1.md`
 
 ## Context
 
@@ -49,3 +49,12 @@ closes.
 Owner restated sequencing: current Batch 1 / ongoing work is **OM-only**.
 iPlatform3 soul stays deferred until the OM residual matrix is largely
 closed. Docs for this phase must not frame the console as icore-first.
+
+## Amendment (2026-10-26, v3)
+
+OM Batches 1–4 closed the actionable chrome/copy matrix. Step 2 layered
+iPlatform soul accents (radius 6, shadows, denser ant chrome, neutrals)
+while **keeping primary `#1570ef`** and OM IA
+(ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om). This record still
+owns OM copy/chrome/primary; it does not authorize `#005587` or a layout
+transplant.

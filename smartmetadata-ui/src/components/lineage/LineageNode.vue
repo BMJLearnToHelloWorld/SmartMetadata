@@ -94,10 +94,10 @@ function columnClass(fqn: string): string {
   width: 252px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--sm-border-color, #d5d7da);
-  border-radius: var(--sm-border-radius, 8px);
+  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
   background: var(--sm-bg-container, #fff);
-  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+  box-shadow: var(--sm-shadow-card);
 }
 .lineage-node--center {
   border: 2px solid var(--sm-color-primary, #1570ef);
@@ -113,8 +113,8 @@ function columnClass(fqn: string): string {
   justify-content: space-between;
   gap: 8px;
   padding: 5px 10px;
-  background: var(--sm-table-header-bg, #fafafa);
-  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
+  background: var(--sm-table-header-bg, #f7f8fa);
+  border-bottom: 1px solid var(--sm-border-secondary, #f0f0f0);
 }
 .lineage-node--center .lineage-node__head {
   background: var(--sm-color-primary-bg, #eff8ff);
@@ -152,7 +152,7 @@ function columnClass(fqn: string): string {
 }
 .lineage-node__columns {
   margin-top: 8px;
-  border-top: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-top: 1px solid var(--sm-border-secondary, #f0f0f0);
   padding-top: 6px;
 }
 .lineage-node__column {

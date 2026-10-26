@@ -229,9 +229,9 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 420px;
-  border: 1px solid var(--sm-border-color, #d5d7da);
-  border-radius: var(--sm-radius-card, 12px);
-  background: var(--sm-content-bg, #fafafa);
+  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border-radius: var(--sm-radius-card, 6px);
+  background: var(--sm-content-bg, #f0f2f5);
 }
 .lineage-graph--page {
   flex: 1 1 auto;
@@ -248,11 +248,11 @@ watch(
   height: 100vh;
   min-height: 100vh;
   border-radius: 0;
-  background: var(--sm-content-bg, #fafafa);
+  background: var(--sm-content-bg, #f0f2f5);
 }
 .lineage-graph__toolbar {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-bottom: 1px solid var(--sm-border-secondary, #f0f0f0);
   background: var(--sm-bg-container, #fff);
 }
 .lineage-graph__find {
@@ -273,14 +273,14 @@ watch(
 }
 .lineage-graph :deep(.vue-flow__controls) {
   overflow: hidden;
-  border: 1px solid var(--sm-border-secondary, #e9eaeb);
-  border-radius: var(--sm-border-radius, 8px);
-  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
+  box-shadow: var(--sm-shadow-card);
 }
 .lineage-graph :deep(.vue-flow__controls-button) {
   width: 28px;
   height: 28px;
-  border-color: var(--sm-border-secondary, #e9eaeb);
+  border-color: var(--sm-border-secondary, #f0f0f0);
   background: var(--sm-bg-container, #fff);
 }
 .lineage-graph :deep(.vue-flow__controls-button:hover) {
@@ -288,7 +288,7 @@ watch(
 }
 .lineage-graph :deep(.vue-flow__minimap) {
   overflow: hidden;
-  border: 1px solid var(--sm-border-secondary, #e9eaeb);
-  border-radius: var(--sm-border-radius, 8px);
+  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
 }
 </style>

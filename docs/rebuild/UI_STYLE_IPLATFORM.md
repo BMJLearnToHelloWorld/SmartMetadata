@@ -1,21 +1,25 @@
-# iPlatform soul — deferred (not this phase)
+# iPlatform soul — layered on OM IA
 
-**This file is not the visual source of truth.** Current work is OM-only:
+**Visual source of truth for feel accents:** [`UI_IP3_SOUL.md`](UI_IP3_SOUL.md)
+(ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om).
+
+OM Batches 1–4 remain the IA / copy / chrome SoT:
 [`UI_PARITY_OM_1TO1.md`](UI_PARITY_OM_1TO1.md)
 (ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look).
 
-Owner sequencing:
+Owner sequencing (completed):
 
 1. Approximate in-repo **openmetadata-ui** first (pages, components, modals,
-   interactive details). Vue 3 + ant-design-vue native. No iPlatform blend.
-2. **Only after** the OM residual matrix is largely closed — a later batch /
-   separate PR may layer **iPlatform3 shadow/soul** (feel/brand accents)
-   without undoing OM IA or cloning IP3Layout.
+   interactive details). Vue 3 + ant-design-vue native.
+2. After that residual matrix was largely closed — layer **iPlatform3
+   shadow/soul** (feel/brand accents) without undoing OM IA or cloning
+   IP3Layout.
 
-Until then, do **not** re-apply historical #37 / `@icore` surface tokens or
-IP3Layout / NaviTab chrome. That primary is superseded.
+Primary stays **`#1570ef`**. Do **not** re-apply historical #37 `#005587`.
+Soul is radius 6, shadows, denser Modal/Card/Table/Input, and
+iPlatform-inspired neutrals.
 
-Still forbidden in every phase:
+Still forbidden:
 
 - Porting `@icore` packages or IP3Layout / NaviTab / TabMenu
 - Settings appearance / themeConfiguration PUT

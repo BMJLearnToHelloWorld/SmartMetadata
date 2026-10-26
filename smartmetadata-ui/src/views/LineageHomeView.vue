@@ -73,9 +73,9 @@ function openTyped(): void {
 .lineage-home__canvas {
   min-height: calc(100vh - 280px);
   margin-top: 12px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px dashed var(--sm-border-color, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
+  background: var(--sm-bg-elevated, #f7f8fa);
   display: flex;
   align-items: center;
   justify-content: center;

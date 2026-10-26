@@ -29,10 +29,11 @@ ADR:2026-10-22-dq-entity-links-use-message-parser-format, and
 ADR:2026-10-22-ingestion-console-runs-via-cli,
 ADR:2026-10-22-collaboration-uses-activity-and-conversations, and
 ADR:2026-10-22-custom-property-values-use-extension-patch.
-Component look is **OM-only** this phase (`#1570ef` tokens, no React copy,
-no layout transplant): `docs/rebuild/UI_PARITY_OM_1TO1.md`
-(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look). iPlatform3 soul is
-deferred until that residual matrix is largely closed.
+Component look is OM IA/copy (`#1570ef`) plus iPlatform soul accents
+(radius 6, shadows, denser chrome): `docs/rebuild/UI_PARITY_OM_1TO1.md`,
+`docs/rebuild/UI_IP3_SOUL.md` (ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look,
+ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om). No React copy, no
+layout transplant, no `#005587`.
 Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`) and
 `docs/rebuild/VERIFY_RUNTIME.md` (GitHub Actions Jobs A–C).
 
