@@ -195,6 +195,7 @@ import org.openmetadata.schema.entity.data.Table;
 import org.openmetadata.schema.entity.teams.Team;
 import org.openmetadata.schema.entity.teams.User;
 import org.openmetadata.schema.entity.type.Style;
+import org.openmetadata.schema.governance.changeRequest.MutationOp;
 import org.openmetadata.schema.settings.SettingsType;
 import org.openmetadata.schema.system.EntityError;
 import org.openmetadata.schema.type.ApiStatus;
@@ -259,7 +260,6 @@ import org.openmetadata.service.governance.approval.ChangeRequestService;
 import org.openmetadata.service.governance.approval.StagedChange;
 import org.openmetadata.service.governance.workflows.EntityStatusWorkflows;
 import org.openmetadata.service.governance.workflows.StageOwnership;
-import org.openmetadata.service.governance.workflows.WorkflowEventConsumer;
 import org.openmetadata.service.governance.workflows.WorkflowHandler;
 import org.openmetadata.service.jdbi3.CoreRelationshipDAOs.EntityRelationshipRecord;
 import org.openmetadata.service.jdbi3.CoreRelationshipDAOs.EntityVersionPair;
@@ -1586,28 +1586,16 @@ public abstract class EntityRepository<T extends EntityInterface<?>> {
 
   private void validateEntityStatusChange(T current, T change, String from, String to) {
     requireMoveInLifecycle(from, to);
-    if (isDecidedByPeople(current, change, from)) {
-      checkDecidedByAPerson(current, change);
-      checkUpdatedByReviewer(current, change.getUpdatedBy());
-    } else {
-      checkEntityStatusNotOwnedByWorkflow(current, change);
-      checkReviewerLeavesReview(current, change, from, to);
-    }
+    checkEntityStatusNotOwnedByWorkflow(current, change);
+    checkReviewerLeavesReview(current, change, from, to);
+    checkStageDecision(current, change, from, to);
   }
 
-  // A workflow still moves the stages it opens on its own; only a direct change is left to people.
-  private boolean isDecidedByPeople(T current, T change, String from) {
-    return isStageDecidedByPeople(current, from) && !EntityStatusWorkflows.isWorkflowChange(change);
-  }
-
-  private void checkDecidedByAPerson(T current, T change) {
-    if (WorkflowEventConsumer.isBotChange(change.getUpdatedBy(), change.getImpersonatedBy())) {
-      throw new AuthorizationException(
-          String.format(
-              "A person must approve or reject %s '%s'; a bot cannot",
-              entityType, current.getFullyQualifiedName()));
-    }
-  }
+  /**
+   * Entity-specific rules on who may make a stage move. Unlike the ownership rule above, they also
+   * apply to a workflow's own writes, which act for the user a workflow variable names.
+   */
+  protected void checkStageDecision(T current, T change, String from, String to) {}
 
   // A workflow's approval task already decided who may approve (reviewers, owners or named
   // candidates), so the reviewer rule only guards direct edits and imports.
@@ -1617,16 +1605,6 @@ public abstract class EntityRepository<T extends EntityInterface<?>> {
         && !EntityStatusWorkflows.isWorkflowChange(change)) {
       checkUpdatedByReviewer(current, change.getUpdatedBy());
     }
-  }
-
-  /**
-   * Whether people move this entity out of {@code from} directly, even while a workflow owns its
-   * stage, because no workflow will ever pick it up. Its reviewers decide when it has any; anyone
-   * allowed to edit it decides otherwise. A workflow's own writes still move it, and a bot never
-   * decides it.
-   */
-  protected boolean isStageDecidedByPeople(T current, String from) {
-    return false;
   }
 
   /**
@@ -1654,9 +1632,7 @@ public abstract class EntityRepository<T extends EntityInterface<?>> {
   // rule would see an entity without reviewers. Load them the way a PATCH does, inherited ones
   // included, before checking who may move the entity out of review.
   private void loadReviewersForStageCheck(T original, String from) {
-    if (supportsReviewers
-        && (EntityStatus.IN_REVIEW.value().equals(from)
-            || isStageDecidedByPeople(original, from))) {
+    if (supportsReviewers && EntityStatus.IN_REVIEW.value().equals(from)) {
       T withReviewers =
           get(null, original.getId(), getFields(FIELD_REVIEWERS), Include.NON_DELETED, false);
       original.setReviewers(withReviewers.getReviewers());
@@ -6409,6 +6385,41 @@ public abstract class EntityRepository<T extends EntityInterface<?>> {
   /** Relationship fields a CSV import replaces with the row's values. */
   public Set<String> getRelationsReplacedByImport() {
     return Set.of(FIELD_TAGS, FIELD_OWNERS, FIELD_DOMAINS, FIELD_REVIEWERS, FIELD_DATA_PRODUCTS);
+  }
+
+  /**
+   * Relations an approval can hold that the entity's JSON does not carry, such as a data product's
+   * ports. A change request names them as list fields of the entity.
+   * ADR:2026-10-19-a-data-product-port-change-is-held-as-a-list-field-of-the-data-product
+   */
+  public Set<String> getStagedRelationFields() {
+    return Set.of();
+  }
+
+  /** Adds {@code fields}, relations of {@link #getStagedRelationFields()}, to the entity's JSON. */
+  public void addStagedRelations(
+      final ObjectNode entityJson, final UUID entityId, final Set<String> fields) {
+    // Entities without staged relations carry everything a change request names in their JSON.
+  }
+
+  /** Refuses, without saving anything, staged relation changes that can no longer be made. */
+  public void validateStagedRelations(final UUID entityId, final List<MutationOp> ops) {
+    throw new IllegalArgumentException(
+        "%s has no relations an approval can hold".formatted(entityType));
+  }
+
+  /**
+   * Publishes approved changes of staged relations, as {@code requestedBy} would have. {@code
+   * withFieldChanges}: the same approval has just published field changes, which the relation
+   * changes join in the entity's change description.
+   */
+  public void applyStagedRelations(
+      final UUID entityId,
+      final List<MutationOp> ops,
+      final String requestedBy,
+      final boolean withFieldChanges) {
+    throw new IllegalArgumentException(
+        "%s has no relations an approval can hold".formatted(entityType));
   }
 
   protected List<String> getFieldsStrippedFromStorageJson() {
