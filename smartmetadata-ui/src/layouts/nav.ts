@@ -36,7 +36,8 @@ export type NavEntry = NavLeaf | NavSection;
  * (Home / My Data first, then Explore and Lineage as siblings; quality under
  * Observability) using only routes already in `router/index.ts`. Collate-only
  * surfaces stay off this list: Marketplace landing, Ontology Studio,
- * Knowledge/Context Center, persona AI.
+ * Knowledge/Context Center, persona AI. Home / My Data is the official landing
+ * at `/my-data` (route name `home`).
  */
 export const NAV_ENTRIES: NavEntry[] = [
   { kind: 'item', key: 'home', titleKey: 'nav.home' },

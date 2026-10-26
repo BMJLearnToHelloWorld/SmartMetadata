@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import { Alert, Button, Card, Col, Descriptions, Empty, Row, Spin, Table, Tabs, Typography } from 'ant-design-vue';
 import { listSystemChartData, SYSTEM_CHART_NAMES } from '@/api/dataInsights';
 import { listKpis } from '@/api/kpi';
@@ -19,8 +20,10 @@ import { seriesWindow } from '@/features/charts/types';
 import type { Kpi } from '@/types/kpi';
 
 const { t, te } = useI18n();
+const route = useRoute();
 
 const loading = ref(false);
+const activeTab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'data-assets');
 const errorMessage = ref('');
 const catalogTotal = ref(0);
 const entitySeries = ref<ChartSeries[]>([]);
@@ -180,7 +183,7 @@ onMounted(() => {
     <Typography.Title :level="4">{{ t('insights.title') }}</Typography.Title>
     <Typography.Paragraph type="secondary">{{ t('insights.lead') }}</Typography.Paragraph>
     <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="insights__alert" />
-    <Tabs data-testid="insights-tabs">
+    <Tabs v-model:activeKey="activeTab" data-testid="insights-tabs">
       <Tabs.TabPane key="data-assets" :tab="t('insights.tabs.dataAssets')">
         <Typography.Paragraph>
           {{ t('insights.catalogTotal', { total: catalogTotal }) }}

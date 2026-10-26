@@ -51,6 +51,7 @@ export interface SearchHit {
   tier?: string;
   owners: EntityRef[];
   tags: TagRef[];
+  updatedAt?: number;
 }
 
 export interface SearchPage {

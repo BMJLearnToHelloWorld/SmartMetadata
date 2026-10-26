@@ -159,6 +159,10 @@ export function mapSearchResponse(payload: unknown): SearchPage {
         tier: mapTier(source),
         owners: mapOwners(source.owners),
         tags: mapTags(source.tags),
+        updatedAt:
+          typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
+            ? source.updatedAt
+            : undefined,
       },
     ];
   });

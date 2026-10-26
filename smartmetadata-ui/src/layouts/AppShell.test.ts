@@ -28,7 +28,7 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
         component: AppShell,
         children: [
           { path: '', redirect: { name: 'home' } },
-          { path: 'my-data', name: 'home', component: { template: '<div>home</div>' } },
+          { path: 'my-data', name: 'home', component: { template: '<div>home</div>' }, meta: { flush: true } },
           { path: 'search', name: 'search', component: { template: '<div>search</div>' } },
           { path: 'lineage', name: 'lineage-home', component: { template: '<div>lineage</div>' } },
           { path: 'insights', name: 'insights', component: { template: '<div>insights</div>' } },
@@ -130,6 +130,17 @@ describe('AppShell', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-user');
     expect(router.currentRoute.value.params.id).toBe('u-1');
+  });
+
+  it('hides the header search on My Data so the hero owns search', async () => {
+    const { wrapper, router } = await mountShell();
+    await router.push({ name: 'home' });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(false);
+    expect(wrapper.find('.shell__content--flush').exists()).toBe(true);
+    await router.push({ name: 'search' });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
   });
 
   it('opens Observability when a quality route is active', async () => {
