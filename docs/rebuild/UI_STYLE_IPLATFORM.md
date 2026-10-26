@@ -12,9 +12,8 @@ Owner sequencing:
    separate PR may layer **iPlatform3 shadow/soul** (feel/brand accents)
    without undoing OM IA or cloning IP3Layout.
 
-Until then, do **not** re-apply iPlatform primary `#005587`, `@icore` surface
-tokens, or IP3Layout / NaviTab chrome. Historical #37 used those; that
-primary is superseded.
+Until then, do **not** re-apply historical #37 / `@icore` surface tokens or
+IP3Layout / NaviTab chrome. That primary is superseded.
 
 Still forbidden in every phase:
 

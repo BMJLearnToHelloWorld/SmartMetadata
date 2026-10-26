@@ -892,7 +892,7 @@ const zhCN = {
     task: {
       loadFailed: '加载任务失败',
       resolve: '解决',
-      resolveLead: 'POST /api/v1/tasks/{id}/resolve，需要 resolutionType。工作流类型可能拒绝不在其转换列表上的解决。',
+      resolveLead: "POST /api/v1/tasks/{'{id}'}/resolve，需要 resolutionType。工作流类型可能拒绝不在其转换列表上的解决。",
       resolved: '任务已解决',
       resolveFailed: '解决失败',
       commentPlaceholder: '可选备注',
@@ -942,7 +942,7 @@ const zhCN = {
     missingGlossary: '此术语没有术语库 FQN；PUT /v1/glossaryTerms 需要 glossary',
     updated: '术语已更新',
     relatedEntities: '关联实体',
-    relatedLead: '当此术语作为标签应用时，GET /api/v1/glossaryTerms/{id}/assets 返回的资产。',
+    relatedLead: "当此术语作为标签应用时，GET /api/v1/glossaryTerms/{'{id}'}/assets 返回的资产。",
     noAssets: '没有返回已打标资产。',
     relatedTerms: '相关术语',
     glossary: '术语库',
@@ -968,12 +968,12 @@ const zhCN = {
     role: '角色',
     bootstrapServers: 'Bootstrap 服务器',
     schemaRegistry: 'Schema Registry URL',
-    password: '密码或 ${ENV} 占位符',
+    password: "密码或 {'${ENV}'} 占位符",
     persistSecrets: '将字面密码持久化到服务实体',
     confluentNote:
       'Confluent REST Proxy URL 是 CLI 工作流键（restProxyUrl），不是目录 MessagingService 字段。它会出现在生成的 smartmetadata-ingest YAML 中。',
     secretHint:
-      '已存储密钥不会显示。留空以保留现有密码。${VAR} 占位符按原样存储。只有勾选持久化密钥时才会发送字面密码 — 默认关闭，与第 6–7 阶段一致。',
+      "已存储密钥不会显示。留空以保留现有密码。{'${VAR}'} 占位符按原样存储。只有勾选持久化密钥时才会发送字面密码 — 默认关闭，与第 6–7 阶段一致。",
   },
 } as const;
 

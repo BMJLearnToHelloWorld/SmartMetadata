@@ -1,9 +1,12 @@
 # SmartMetadata UI uses iPlatform @icore component tokens without a layout transplant
 
+**Historical.** Do not implement this record. This phase is OM-only
+(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look).
+
 - **Status:** Superseded by ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
-- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (primary #005587 superseded)
+- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (primary superseded; OM-only first)
 - **Deciders:** Bernie Bai (owner)
-- **Guard:** historical — successor ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look owns the live token test; this record must not be used to re-apply `#005587`
+- **Guard:** historical — successor ADR owns the live token test; this record must not be used to re-apply #37 / `@icore` tokens
 - **Related:** `docs/rebuild/UI_STYLE_IPLATFORM.md`; ADR:2026-10-22-clean-room-vue-spa; ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
 
 ## Context
@@ -33,7 +36,7 @@ decision.
 
 ## Amendment (2026-10-26)
 
-Owner authorized an OM-only 1:1 pass first. Primary `#005587` / `@icore`
+Owner authorized an OM-only 1:1 pass first. Historical #37 / `@icore`
 surfaces are out of this phase
 (ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look). iPlatform3 soul is
 **deferred** until the OM residual matrix is largely closed. The

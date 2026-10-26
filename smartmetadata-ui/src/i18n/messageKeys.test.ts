@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import { createTestI18n } from '@/test/i18n';
 import enUS from './locales/en-US';
 import zhCN from './locales/zh-CN';
 
@@ -111,5 +112,20 @@ describe('i18n catalogs', () => {
     expect(zhCN.nav.governance).toBe('数据治理');
     expect(zhCN.nav.glossaries).toBe('术语库');
     expect(zhCN.crud.create).toBe('新建');
+  });
+
+  it('keeps leftover API placeholders literal after vue-i18n compile', () => {
+    const i18n = createTestI18n('en-US');
+    const t = i18n.global.t;
+    expect(t('connection.password')).toContain('${ENV}');
+    expect(t('connection.secretHint')).toContain('${VAR}');
+    expect(t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
+    expect(t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
+
+    const zh = createTestI18n('zh-CN');
+    expect(zh.global.t('connection.password')).toContain('${ENV}');
+    expect(zh.global.t('connection.secretHint')).toContain('${VAR}');
+    expect(zh.global.t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
+    expect(zh.global.t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
   });
 });

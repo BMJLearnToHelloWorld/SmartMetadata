@@ -1,13 +1,21 @@
 # OM 1:1 style + copy — Batch 1 (2026-10-26)
 
-**This phase is OM-only.** Approximate the in-repo **openmetadata-ui** console
-(pages, shared components, modals, interactive details) with Vue 3 +
-ant-design-vue official native APIs. Clean-room: recreate look/feel; do not
-copy React/TSX/CSS. Keep IA and routes.
+Owner sequencing (authoritative):
 
-**iPlatform3 shadow/soul is deferred.** Do not blend `#005587`, `@icore`
-surfaces, or IP3Layout chrome into this phase. A later PR may add iPlatform
-feel/brand accents only after the OM residual matrix below is largely closed.
+1. **First** — complete approximation of **openmetadata-ui** original (pages,
+   components, modals, all interactive details). Vue 3 + ant-design-vue
+   native. Clean-room. OM primary. Do **not** blend iPlatform tokens/soul
+   into this phase.
+2. **Only after** this residual matrix is largely closed (later batches /
+   separate PR) — layer **iPlatform3 shadow/soul** (feel/brand accents),
+   without undoing OM IA or becoming a literal IP3Layout clone.
+
+**This phase is OM-only.** Approximate the in-repo **openmetadata-ui** console
+with Vue 3 + ant-design-vue official native APIs. Clean-room: recreate
+look/feel; do not copy React/TSX/CSS. Keep IA and routes.
+
+**iPlatform3 shadow/soul is deferred.** It is not in Batch 1. Do not re-apply
+historical #37 primary or `@icore` surfaces here.
 
 ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look.
 
@@ -38,7 +46,7 @@ appearance page.
 
 ## Out of scope this phase
 
-- iPlatform soul / `#005587` / `@icore` tokens / IP3Layout / NaviTab
+- iPlatform soul / historical #37 primary / `@icore` tokens / IP3Layout / NaviTab
 - DROP (Knowledge / Ontology / AI)
 - Connector / MCP / profiler-DQ authoring
 - Appearance Settings UI

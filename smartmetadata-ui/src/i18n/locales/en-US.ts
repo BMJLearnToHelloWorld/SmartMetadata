@@ -907,7 +907,7 @@ const enUS = {
       loadFailed: 'Failed to load task',
       resolve: 'Resolve',
       resolveLead:
-        'POST /api/v1/tasks/{id}/resolve with resolutionType. Workflow-owned types may reject a resolve that is not on their transition list.',
+        "POST /api/v1/tasks/{'{id}'}/resolve with resolutionType. Workflow-owned types may reject a resolve that is not on their transition list.",
       resolved: 'Task resolved',
       resolveFailed: 'Resolve failed',
       commentPlaceholder: 'Optional comment',
@@ -957,7 +957,7 @@ const enUS = {
     missingGlossary: 'This term has no glossary FQN; PUT /v1/glossaryTerms requires glossary',
     updated: 'Term updated',
     relatedEntities: 'Related entities',
-    relatedLead: 'Assets returned by GET /api/v1/glossaryTerms/{id}/assets when this term is applied as a tag.',
+    relatedLead: "Assets returned by GET /api/v1/glossaryTerms/{'{id}'}/assets when this term is applied as a tag.",
     noAssets: 'No tagged assets returned.',
     relatedTerms: 'Related terms',
     glossary: 'Glossary',
@@ -983,12 +983,12 @@ const enUS = {
     role: 'Role',
     bootstrapServers: 'Bootstrap servers',
     schemaRegistry: 'Schema Registry URL',
-    password: 'Password or ${ENV} placeholder',
+    password: "Password or {'${ENV}'} placeholder",
     persistSecrets: 'Persist a typed literal password on the service entity',
     confluentNote:
       'Confluent REST Proxy URL is a CLI workflow key (restProxyUrl), not a catalog MessagingService field. It appears on the generated smartmetadata-ingest YAML.',
     secretHint:
-      'Stored secrets are not shown. Leave blank to keep an existing password. A ${VAR} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.',
+      "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.",
   },
 } as const;
 
