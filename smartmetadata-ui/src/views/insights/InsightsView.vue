@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Card, Col, Descriptions, Empty, Row, Spin, Table, Tabs, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Col, Descriptions, Empty, Row, Spin, Table, Tabs, Typography } from 'ant-design-vue';
 import { listSystemChartData, SYSTEM_CHART_NAMES } from '@/api/dataInsights';
 import { listKpis } from '@/api/kpi';
 import { searchAssets } from '@/api/search';
@@ -154,6 +154,8 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('insights.loadFailed');
+  } finally {
+    loading.value = false;
   }
   try {
     const page = await kpiPromise;
@@ -165,7 +167,6 @@ async function load(): Promise<void> {
     kpiError.value = error instanceof Error ? error.message : t('insights.kpisFailed');
   } finally {
     kpiTried.value = true;
-    loading.value = false;
   }
 }
 
@@ -259,7 +260,11 @@ onMounted(() => {
             :custom-row="kpiCustomRow"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">{{ record.displayName || record.name }}</template>
+              <template v-if="column.key === 'name'">
+                <Button type="link" data-testid="insights-kpi-select" @click.stop="onSelectKpi(record)">
+                  {{ record.displayName || record.name }}
+                </Button>
+              </template>
               <template v-else-if="column.key === 'metricType'">{{ record.metricType || '—' }}</template>
               <template v-else-if="column.key === 'target'">
                 {{ record.targetValue === undefined ? '—' : record.targetValue }}

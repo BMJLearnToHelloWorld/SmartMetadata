@@ -141,6 +141,42 @@ describe('InsightsView', () => {
     expect(wrapper.text()).toContain('80');
     expect(wrapper.text()).toContain('42');
     expect(wrapper.text()).toContain('percentage_of_data_asset_with_description');
+    expect(wrapper.find('[data-testid="insights-kpis-detail"]').text()).toContain('no');
+  });
+
+  it('selects another KPI row from the same GET payload', async () => {
+    listKpis.mockResolvedValue({
+      data: [
+        {
+          name: 'description-coverage',
+          displayName: 'Description coverage',
+          metricType: 'PERCENTAGE',
+          targetValue: 80,
+          owners: [],
+          kpiResult: { targetResult: [{ name: 'a', value: '42', targetMet: false }] },
+        },
+        {
+          name: 'owner-coverage',
+          displayName: 'Owner coverage',
+          metricType: 'PERCENTAGE',
+          targetValue: 60,
+          owners: [],
+          kpiResult: { targetResult: [{ name: 'b', value: '55', targetMet: true }] },
+        },
+      ],
+    });
+    const wrapper = await mountView();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[2]?.trigger('click');
+    await flushPromises();
+    const selects = wrapper.findAll('[data-testid="insights-kpi-select"]');
+    expect(selects).toHaveLength(2);
+    await selects[1]?.trigger('click');
+    await flushPromises();
+    const detail = wrapper.find('[data-testid="insights-kpis-detail"]');
+    expect(detail.text()).toContain('owner-coverage');
+    expect(detail.text()).toContain('55');
+    expect(detail.text()).toContain('yes');
   });
 
   it('shows honest KPI empty when GET /v1/kpi fails and does not invent rows', async () => {
