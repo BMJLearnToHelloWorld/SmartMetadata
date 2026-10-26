@@ -147,20 +147,36 @@ body {
   border-top: 1px solid var(--sm-border-secondary);
 }
 
-.ant-modal-confirm .ant-modal-content {
-  padding: 20px 20px 16px;
+.ant-modal-confirm .ant-modal-content,
+.sm-confirm-delete .ant-modal-content {
+  padding: 16px 16px 12px;
 }
 
 .ant-modal-confirm .ant-modal-confirm-body {
-  gap: 12px;
+  gap: 10px;
 }
 
 .ant-modal-confirm .ant-modal-confirm-title {
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.35;
+  color: var(--sm-text-primary);
+}
+
+.ant-modal-confirm .ant-modal-confirm-content {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sm-text-secondary);
 }
 
 .ant-modal-confirm .ant-modal-confirm-btns {
-  margin-top: 12px;
+  margin-top: 16px;
+}
+
+.ant-modal-confirm .ant-btn-primary.ant-btn-dangerous {
+  background: var(--sm-color-error);
+  border-color: var(--sm-color-error);
 }
 
 .ant-drawer .ant-drawer-header {
@@ -260,8 +276,12 @@ body {
 
 .ant-tabs .ant-tabs-tab {
   color: var(--sm-text-secondary);
-  padding: 8px 2px;
+  padding: 10px 0 8px;
   font-weight: 500;
+}
+
+.ant-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin: 0 0 0 20px;
 }
 
 .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
@@ -271,11 +291,16 @@ body {
 
 .ant-tabs .ant-tabs-ink-bar {
   height: 3px;
-  border-radius: 2px 2px 0 0;
+  border-radius: 0;
   background: var(--sm-color-primary);
 }
 
+.ant-tabs-top > .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
 .ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom-width: 2px;
   border-bottom-color: var(--sm-border-secondary);
 }
 
@@ -283,12 +308,43 @@ body {
   color: var(--sm-text-secondary);
 }
 
+.ant-form-item-extra {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sm-text-quaternary);
+}
+
 .ant-form-item-explain-error {
   color: var(--sm-color-error);
 }
 
+.ant-empty {
+  margin-block: 16px;
+  padding: 8px 4px;
+}
+
+.ant-empty-image {
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+.ant-empty-image svg {
+  height: 40px;
+}
+
 .ant-empty-description {
   color: var(--sm-text-tertiary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ant-spin-dot {
+  font-size: 18px;
+}
+
+.ant-skeleton {
+  padding-block: 8px;
 }
 
 .ant-alert {

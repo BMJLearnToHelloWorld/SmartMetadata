@@ -45,6 +45,9 @@ describe('EntityListShell', () => {
     expect(wrapper.get('[data-testid="entity-list-empty"]').text()).toContain('just give it a spin');
     expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="entity-list-refresh"]').text()).toBe('Refresh');
+    expect(wrapper.get('[data-testid="entity-list-refresh"]').attributes('aria-label')).toBe(
+      'Reload this list',
+    );
   });
 
   it('shows rows, error, and search when provided', async () => {

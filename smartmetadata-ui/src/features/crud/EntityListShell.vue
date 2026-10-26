@@ -106,7 +106,15 @@ const tableColumns = computed<EntityListColumn[]>(() => {
           @search="emit('search')"
         />
         <slot name="filters" />
-        <Button data-testid="entity-list-refresh" @click="emit('refresh')">{{ t('crud.refresh') }}</Button>
+        <Tooltip :title="t('crud.refreshHelp')">
+          <Button
+            data-testid="entity-list-refresh"
+            :aria-label="t('crud.refreshHelp')"
+            @click="emit('refresh')"
+          >
+            {{ t('crud.refresh') }}
+          </Button>
+        </Tooltip>
       </Space>
       <Alert v-if="error" type="error" show-icon :message="error" data-testid="entity-list-error" />
       <Empty

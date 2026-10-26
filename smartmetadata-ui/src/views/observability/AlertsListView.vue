@@ -178,10 +178,10 @@ onMounted(() => {
       <Form.Item :label="t('observability.alerts.webhookUrl')" required>
         <Input v-model:value="form.webhookUrl" data-testid="create-alert-webhook" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="3" />
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
       </Form.Item>
     </Form>

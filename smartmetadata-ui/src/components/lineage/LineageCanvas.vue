@@ -153,26 +153,36 @@ watch(
         <Tooltip :title="t('lineage.depthHelp')" placement="top">
           <span>{{ t('lineage.upstreamDepth') }}</span>
         </Tooltip>
-        <Button data-testid="upstream-depth-dec" @click="bumpDepth('upstream', -1)">−</Button>
+        <Tooltip :title="t('lineage.depthDecHelp')">
+          <Button data-testid="upstream-depth-dec" :aria-label="t('lineage.depthDecHelp')" @click="bumpDepth('upstream', -1)">−</Button>
+        </Tooltip>
         <InputNumber
           v-model:value="upstreamDepth"
           data-testid="upstream-depth"
           :min="LINEAGE_DEPTH_MIN"
           :max="LINEAGE_DEPTH_MAX"
         />
-        <Button data-testid="upstream-depth-inc" @click="bumpDepth('upstream', 1)">+</Button>
+        <Tooltip :title="t('lineage.depthIncHelp')">
+          <Button data-testid="upstream-depth-inc" :aria-label="t('lineage.depthIncHelp')" @click="bumpDepth('upstream', 1)">+</Button>
+        </Tooltip>
         <Tooltip :title="t('lineage.depthHelp')" placement="top">
           <span>{{ t('lineage.downstreamDepth') }}</span>
         </Tooltip>
-        <Button data-testid="downstream-depth-dec" @click="bumpDepth('downstream', -1)">−</Button>
+        <Tooltip :title="t('lineage.depthDecHelp')">
+          <Button data-testid="downstream-depth-dec" :aria-label="t('lineage.depthDecHelp')" @click="bumpDepth('downstream', -1)">−</Button>
+        </Tooltip>
         <InputNumber
           v-model:value="downstreamDepth"
           data-testid="downstream-depth"
           :min="LINEAGE_DEPTH_MIN"
           :max="LINEAGE_DEPTH_MAX"
         />
-        <Button data-testid="downstream-depth-inc" @click="bumpDepth('downstream', 1)">+</Button>
-        <Button data-testid="lineage-reload" @click="load">{{ t('lineage.reload') }}</Button>
+        <Tooltip :title="t('lineage.depthIncHelp')">
+          <Button data-testid="downstream-depth-inc" :aria-label="t('lineage.depthIncHelp')" @click="bumpDepth('downstream', 1)">+</Button>
+        </Tooltip>
+        <Tooltip :title="t('lineage.reloadHelp')">
+          <Button data-testid="lineage-reload" :aria-label="t('lineage.reloadHelp')" @click="load">{{ t('lineage.reload') }}</Button>
+        </Tooltip>
         <Button
           v-if="variant === 'page'"
           data-testid="lineage-open-asset"

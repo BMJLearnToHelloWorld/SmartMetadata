@@ -102,6 +102,14 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('crud.fieldRequired');
     expect(keys).toContain('crud.view');
     expect(keys).toContain('crud.emptyHint');
+    expect(keys).toContain('crud.refreshHelp');
+    expect(keys).toContain('crud.displayNameHelp');
+    expect(keys).toContain('crud.descriptionHelp');
+    expect(keys).toContain('crud.deleteTitle');
+    expect(keys).toContain('explore.clearFiltersHelp');
+    expect(keys).toContain('lineage.reloadHelp');
+    expect(keys).toContain('admin.users.passwordHelp');
+    expect(keys).toContain('ingestion.pipelines.scheduleHelp');
     expect(keys).toContain('observability.incidents.statusAck');
     expect(keys).toContain('observability.incidents.statusResolved');
   });
@@ -123,6 +131,9 @@ describe('i18n catalogs', () => {
     expect(enUS.crud.fieldRequired).toBe('{field} is required');
     expect(enUS.crud.fieldRequiredPlain).toBe('This field is required');
     expect(enUS.crud.empty).toBe('No data');
+    expect(enUS.crud.emptyHint).toBe('Adding a new record is easy, just give it a spin!');
+    expect(enUS.crud.deleteTitle).toBe('Delete');
+    expect(enUS.ingestion.services.deleteConfirm).toMatch(/cannot be undone/);
     expect(enUS.observability.incidents.statusAck).toBe('Acknowledged');
     expect(enUS.observability.incidents.statusResolved).toBe('Resolved');
     expect(enUS.insights.kpisEmpty).toBe(

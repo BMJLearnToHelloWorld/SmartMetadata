@@ -268,29 +268,29 @@ onMounted(() => {
       <Form.Item :label="t('crud.email')" :rules="requiredField(t, t('crud.email'))">
         <Input v-model:value="createForm.email" data-testid="create-user-email" />
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="createForm.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="createForm.description" :rows="2" />
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="createForm.isAdmin">{{ t('admin.users.administrator') }}</Checkbox>
       </Form.Item>
-      <Form.Item :label="t('admin.users.password')">
+      <Form.Item :label="t('admin.users.password')" :extra="t('admin.users.passwordHelp')">
         <Input.Password v-model:value="createForm.password" />
       </Form.Item>
-      <Form.Item :label="t('admin.users.confirmPassword')">
+      <Form.Item :label="t('admin.users.confirmPassword')" :extra="t('admin.users.confirmPasswordHelp')">
         <Input.Password v-model:value="createForm.confirmPassword" />
       </Form.Item>
-      <Form.Item :label="t('admin.users.teams')">
+      <Form.Item :label="t('admin.users.teams')" :extra="t('admin.users.teamsHelp')">
         <Select v-model:value="createForm.teamIds" mode="multiple" allow-clear>
           <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
             {{ entityLabel(team) }}
           </Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('admin.users.roles')">
+      <Form.Item :label="t('admin.users.roles')" :extra="t('admin.users.rolesHelp')">
         <Select v-model:value="createForm.roleIds" mode="multiple" allow-clear>
           <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
             {{ entityLabel(role) }}

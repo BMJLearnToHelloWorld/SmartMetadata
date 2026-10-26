@@ -10,6 +10,7 @@ import { Alert, Button, Checkbox, Form, Input, Modal, Select, message } from 'an
 import { listDatabaseServices } from '@/api/databaseServices';
 import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { listMessagingServices } from '@/api/messagingServices';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -141,7 +142,13 @@ function openDetail(pipeline: IngestionPipeline): void {
 }
 
 async function onDelete(pipeline: IngestionPipeline): Promise<void> {
-  if (!window.confirm(t('ingestion.pipelines.deleteConfirm', { name: pipeline.name }))) {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('ingestion.pipelines.deleteConfirm', { name: pipeline.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
     return;
   }
   try {
@@ -237,16 +244,24 @@ onMounted(() => {
           {{ t('ingestion.pipelines.includeViews') }}
         </Checkbox>
       </Form.Item>
-      <Form.Item v-if="form.serviceKind === 'database'" :label="t('ingestion.pipelines.includeSchemas')">
+      <Form.Item
+        v-if="form.serviceKind === 'database'"
+        :label="t('ingestion.pipelines.includeSchemas')"
+        :extra="t('ingestion.pipelines.includeSchemasHelp')"
+      >
         <Input v-model:value="form.includeSchemas" placeholder="public, analytics" />
       </Form.Item>
-      <Form.Item v-if="form.serviceKind === 'messaging'" :label="t('ingestion.pipelines.includeTopics')">
+      <Form.Item
+        v-if="form.serviceKind === 'messaging'"
+        :label="t('ingestion.pipelines.includeTopics')"
+        :extra="t('ingestion.pipelines.includeTopicsHelp')"
+      >
         <Input v-model:value="form.includeTopics" placeholder="orders, payments" />
       </Form.Item>
-      <Form.Item :label="t('ingestion.pipelines.schedule')">
+      <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">
         <Input v-model:value="form.scheduleInterval" placeholder="0 0 * * *" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="3" />
       </Form.Item>
     </Form>

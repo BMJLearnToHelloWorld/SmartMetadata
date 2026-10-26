@@ -205,23 +205,23 @@ onMounted(() => {
           <Select.Option v-for="type in TEAM_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="form.isJoinable">{{ t('admin.teams.isJoinable') }}</Checkbox>
       </Form.Item>
-      <Form.Item :label="t('admin.teams.parents')">
+      <Form.Item :label="t('admin.teams.parents')" :extra="t('admin.teams.parentsHelp')">
         <Select v-model:value="form.parentIds" mode="multiple" allow-clear>
           <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
             {{ entityLabel(team) }}
           </Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('admin.teams.defaultRoles')">
+      <Form.Item :label="t('admin.teams.defaultRoles')" :extra="t('admin.teams.defaultRolesHelp')">
         <Select v-model:value="form.defaultRoleIds" mode="multiple" allow-clear>
           <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
             {{ entityLabel(role) }}
