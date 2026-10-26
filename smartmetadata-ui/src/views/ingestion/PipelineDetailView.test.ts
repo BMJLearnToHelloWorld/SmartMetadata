@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import PipelineDetailView from './PipelineDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -39,7 +40,7 @@ async function mountView() {
   await router.isReady();
   const wrapper = mount(PipelineDetailView, {
     props: { id: 'p1' },
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper };
@@ -91,6 +92,7 @@ describe('PipelineDetailView', () => {
 
   it('shows catalog status, CLI YAML, and no trigger call', async () => {
     const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipeline-run-note"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('success');
     expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').text()).toContain('type: postgres');

@@ -4,22 +4,9 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Spin,
-  Table,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { Alert, Button, Checkbox, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
 import { getDatabaseService } from '@/api/databaseServices';
 import {
   deleteIngestionPipeline,
@@ -29,6 +16,9 @@ import {
   updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
 import { getMessagingService } from '@/api/messagingServices';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { buildCliWorkflowYaml } from '@/ingestion/cliWorkflow';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { buildSourceConfig, formHintsFromSourceConfig } from '@/ingestion/sourceConfig';
@@ -42,6 +32,7 @@ import type {
 } from '@/types/ingestion';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -49,6 +40,7 @@ const pipeline = ref<IngestionPipeline | null>(null);
 const service = ref<CatalogService | null>(null);
 const statuses = ref<PipelineStatus[]>([]);
 const orchestrator = ref<OrchestratorStatus | null>(null);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
@@ -63,12 +55,22 @@ const editForm = reactive<PipelineFormValues>({
   scheduleInterval: '',
 });
 
-const statusColumns = [
-  { title: 'Run', dataIndex: 'runId', key: 'runId' },
-  { title: 'State', dataIndex: 'pipelineState', key: 'pipelineState', width: 140 },
-  { title: 'Timestamp', dataIndex: 'timestamp', key: 'timestamp', width: 180 },
-  { title: 'Triggered by', dataIndex: 'triggeredBy', key: 'triggeredBy', width: 160 },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('ingestion.pipelines.title'), to: { name: 'ingestion-pipelines' } },
+  { label: entityLabel(pipeline.value) || t('ingestion.pipelines.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'pipeline-tab-overview' },
+  { key: 'status', label: t('ingestion.pipelines.statusTab'), testId: 'pipeline-tab-status' },
+]);
+
+const statusColumns = computed<EntityListColumn[]>(() => [
+  { title: t('ingestion.pipelines.run'), dataIndex: 'runId', key: 'runId' },
+  { title: t('ingestion.pipelines.state'), dataIndex: 'pipelineState', key: 'pipelineState', width: 140 },
+  { title: t('ingestion.pipelines.timestamp'), dataIndex: 'timestamp', key: 'timestamp', width: 180 },
+  { title: t('ingestion.pipelines.triggeredBy'), dataIndex: 'triggeredBy', key: 'triggeredBy', width: 160 },
+]);
 
 const cliYaml = computed(() => {
   if (!pipeline.value || !service.value) {
@@ -119,7 +121,7 @@ async function load(): Promise<void> {
     pipeline.value = null;
     service.value = null;
     statuses.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load pipeline';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -166,10 +168,10 @@ async function onSave(): Promise<void> {
       description: editForm.description?.trim() || undefined,
     });
     editOpen.value = false;
-    message.success('Pipeline updated');
+    message.success(t('ingestion.pipelines.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -179,16 +181,16 @@ async function onDelete(): Promise<void> {
   if (!pipeline.value) {
     return;
   }
-  if (!window.confirm(`Delete pipeline ${pipeline.value.name}? This cannot be undone from this console.`)) {
+  if (!window.confirm(t('ingestion.pipelines.deleteConfirm', { name: pipeline.value.name }))) {
     return;
   }
   deleting.value = true;
   try {
     await deleteIngestionPipeline(pipeline.value.id);
-    message.success(`Deleted ${pipeline.value.name}`);
+    message.success(t('ingestion.pipelines.deleted', { name: pipeline.value.name }));
     await router.push({ name: 'ingestion-pipelines' });
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Delete failed');
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   } finally {
     deleting.value = false;
   }
@@ -207,47 +209,58 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ pipeline?.displayName || pipeline?.name || 'Ingestion pipeline' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET/PUT /api/v1/services/ingestionPipelines · status GET /{fqn}/pipelineStatus
-      </Typography.Paragraph>
-      <Space>
-        <Button data-testid="edit-pipeline" :disabled="!pipeline" @click="openEdit">Edit</Button>
-        <Button data-testid="delete-pipeline" danger :disabled="!pipeline" :loading="deleting" @click="onDelete">
-          Delete
-        </Button>
-      </Space>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="ing-alert" />
+  <EntityDetailShell
+    :title="entityLabel(pipeline) || t('ingestion.pipelines.title')"
+    :name="pipeline?.name"
+    :fqn="pipeline?.fullyQualifiedName"
+    :lead="t('ingestion.pipelines.detailLead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!pipeline && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="pipeline ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button data-testid="edit-pipeline" :disabled="!pipeline" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button data-testid="delete-pipeline" danger :disabled="!pipeline" :loading="deleting" @click="onDelete">
+        {{ t('crud.delete') }}
+      </Button>
+    </template>
+    <template #overview>
       <Alert
-        class="ing-alert"
         type="info"
         show-icon
         data-testid="pipeline-run-note"
-        message="This page does not call POST /trigger/{id} or /deploy/{id}. Those endpoints proxy the Airflow pipeline-service client. Run the job with smartmetadata-ingest, then any runner that can write pipelineStatus will appear below."
+        :message="t('ingestion.pipelines.runNote')"
       />
-      <Descriptions v-if="pipeline" bordered :column="1" size="small" class="ing-desc">
-        <Descriptions.Item label="Name">{{ pipeline.name }}</Descriptions.Item>
-        <Descriptions.Item label="FQN">{{ pipeline.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item label="Type">{{ pipeline.pipelineType || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Service">{{ pipeline.service?.name || service?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="sourceConfig.type">
+      <Descriptions v-if="pipeline" bordered :column="1" size="small" style="margin-top: 16px">
+        <Descriptions.Item :label="t('crud.name')">{{ pipeline.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ pipeline.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.type')">{{ pipeline.pipelineType || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('ingestion.pipelines.service')">
+          {{ pipeline.service?.name || service?.name || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('ingestion.pipelines.sourceConfigType')">
           {{ pipeline.sourceConfig?.config?.type || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="airflowConfig">
-          pausePipeline={{ pipeline.airflowConfig?.pausePipeline ?? true }}
-          <template v-if="pipeline.airflowConfig?.scheduleInterval">
-            · schedule={{ pipeline.airflowConfig.scheduleInterval }}
-          </template>
-          (catalog field; CLI ignores it)
+        <Descriptions.Item :label="t('ingestion.pipelines.airflowConfig')">
+          {{
+            t('ingestion.pipelines.airflowValue', {
+              pause: String(pipeline.airflowConfig?.pausePipeline ?? true),
+              schedule: pipeline.airflowConfig?.scheduleInterval
+                ? ` · schedule=${pipeline.airflowConfig.scheduleInterval}`
+                : '',
+            })
+          }}
         </Descriptions.Item>
-        <Descriptions.Item label="Orchestrator GET /status">{{ orchestratorLabel }}</Descriptions.Item>
-        <Descriptions.Item label="Description">{{ pipeline.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('ingestion.pipelines.orchestrator')">{{ orchestratorLabel }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ pipeline.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title :level="5" class="ing-sub">Stored run status</Typography.Title>
+      <p class="entity-detail__tab-lead">{{ t('ingestion.pipelines.yamlTitle') }}</p>
+      <pre v-if="cliYaml" class="ing-yaml" data-testid="pipeline-cli-yaml">{{ cliYaml }}</pre>
+    </template>
+    <template #status>
       <Table
         row-key="runId"
         size="small"
@@ -256,43 +269,45 @@ onMounted(() => {
         :data-source="statuses"
         :pagination="false"
       />
-      <Typography.Title :level="5" class="ing-sub">smartmetadata-ingest YAML</Typography.Title>
-      <pre v-if="cliYaml" class="ing-yaml" data-testid="pipeline-cli-yaml">{{ cliYaml }}</pre>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit ingestion pipeline" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item v-if="editForm.serviceKind === 'database'">
-          <Checkbox v-model:checked="editForm.includeViews">
-            Include views (catalog includeViews; CLI includeViewLineage)
-          </Checkbox>
-        </Form.Item>
-        <Form.Item v-if="editForm.serviceKind === 'database'" label="Include schemas">
-          <Input v-model:value="editForm.includeSchemas" />
-        </Form.Item>
-        <Form.Item v-if="editForm.serviceKind === 'messaging'" label="Include topics">
-          <Input v-model:value="editForm.includeTopics" />
-        </Form.Item>
-        <Form.Item label="Schedule interval (catalog only)">
-          <Input v-model:value="editForm.scheduleInterval" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('ingestion.pipelines.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item v-if="editForm.serviceKind === 'database'">
+        <Checkbox v-model:checked="editForm.includeViews">
+          {{ t('ingestion.pipelines.includeViews') }}
+        </Checkbox>
+      </Form.Item>
+      <Form.Item v-if="editForm.serviceKind === 'database'" :label="t('ingestion.pipelines.includeSchemas')">
+        <Input v-model:value="editForm.includeSchemas" />
+      </Form.Item>
+      <Form.Item v-if="editForm.serviceKind === 'messaging'" :label="t('ingestion.pipelines.includeTopics')">
+        <Input v-model:value="editForm.includeTopics" />
+      </Form.Item>
+      <Form.Item :label="t('ingestion.pipelines.schedule')">
+        <Input v-model:value="editForm.scheduleInterval" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
 
 <style scoped>
-.ing-alert,
-.ing-desc {
-  margin-top: 16px;
-}
-.ing-sub {
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
   margin-top: 24px;
+  margin-bottom: 12px;
 }
 .ing-yaml {
   background: #f8fafc;

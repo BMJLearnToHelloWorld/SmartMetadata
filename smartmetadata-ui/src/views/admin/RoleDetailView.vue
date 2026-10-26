@@ -3,16 +3,21 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Descriptions, Select, Space, Spin, Table, Typography, message } from 'ant-design-vue';
+import { Button, Descriptions, Select, Space, Table, message } from 'ant-design-vue';
 import { getRole } from '@/api/roles';
-import { getTeam, listTeams, patchTeam, assignTeamDefaultRolesPatch } from '@/api/teams';
+import { assignTeamDefaultRolesPatch, getTeam, listTeams, patchTeam } from '@/api/teams';
 import { assignUserRolesPatch, getUser, listUsers, patchUser } from '@/api/users';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -21,11 +26,23 @@ const users = ref<AdminUser[]>([]);
 const teams = ref<AdminTeam[]>([]);
 const assignUserId = ref<string | undefined>();
 const assignTeamId = ref<string | undefined>();
+const activeTab = ref('overview');
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'type', key: 'type', width: 100 },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('admin.roles.title'), to: { name: 'admin-roles' } },
+  { label: entityLabel(role.value) || t('admin.roles.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'role-tab-overview' },
+  { key: 'users', label: t('admin.roles.usersTab'), testId: 'role-tab-users' },
+  { key: 'teams', label: t('admin.roles.teamsTab'), testId: 'role-tab-teams' },
+]);
+
+const memberColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'type', key: 'type', width: 100 },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -34,7 +51,7 @@ async function load(): Promise<void> {
     role.value = await getRole(props.id);
   } catch (error) {
     role.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load role';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -51,11 +68,11 @@ async function onAssignUser(): Promise<void> {
       ids.push(role.value.id);
     }
     await patchUser(target.id, assignUserRolesPatch(target.roles, ids));
-    message.success(`Assigned ${role.value.name} to ${target.name}`);
+    message.success(t('admin.roles.assignedUser', { role: role.value.name, name: target.name }));
     assignUserId.value = undefined;
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Assign role to user failed');
+    message.error(error instanceof Error ? error.message : t('admin.roles.assignUserFailed'));
   }
 }
 
@@ -70,11 +87,11 @@ async function onAssignTeam(): Promise<void> {
       ids.push(role.value.id);
     }
     await patchTeam(target.id, assignTeamDefaultRolesPatch(target.defaultRoles, ids));
-    message.success(`Added ${role.value.name} as a default role on ${target.name}`);
+    message.success(t('admin.roles.assignedTeam', { role: role.value.name, name: target.name }));
     assignTeamId.value = undefined;
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Assign role to team failed');
+    message.error(error instanceof Error ? error.message : t('admin.roles.assignTeamFailed'));
   }
 }
 
@@ -97,82 +114,104 @@ watch(
 </script>
 
 <template>
-  <Card>
-    <Button type="link" style="padding-left: 0" @click="router.push({ name: 'admin-roles' })">
-      ← Roles
-    </Button>
-    <Spin :spinning="loading">
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <template v-if="role">
-        <Typography.Title :level="4">{{ role.displayName || role.name }}</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          GET /api/v1/roles/{id}. Assignment uses PATCH on the user or team entity.
-        </Typography.Paragraph>
-        <Descriptions bordered :column="1">
-          <Descriptions.Item label="Name">{{ role.name }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ role.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Policies">
-            {{ role.policies.map((p) => p.displayName || p.name).join(', ') || '—' }}
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5" style="margin-top: 24px">Assign to a user</Typography.Title>
-        <Space>
-          <Select
-            v-model:value="assignUserId"
-            show-search
-            placeholder="Select user"
-            style="width: 280px"
-            :options="users.map((u) => ({ value: u.id, label: u.displayName || u.name }))"
-          />
-          <Button type="primary" data-testid="assign-role-user" @click="onAssignUser">Assign</Button>
-        </Space>
-        <Typography.Title :level="5" style="margin-top: 24px">Add as a team default role</Typography.Title>
-        <Space>
-          <Select
-            v-model:value="assignTeamId"
-            show-search
-            placeholder="Select team"
-            style="width: 280px"
-            :options="teams.map((t) => ({ value: t.id, label: t.displayName || t.name }))"
-          />
-          <Button data-testid="assign-role-team" @click="onAssignTeam">Add default role</Button>
-        </Space>
-        <Typography.Title :level="5" style="margin-top: 24px">Users with this role</Typography.Title>
-        <Table
-          row-key="id"
-          :columns="columns"
-          :data-source="role.users"
-          :pagination="false"
-          :row-class-name="() => 'role-user-row'"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                v-if="(record as EntityRef).id"
-                href="#"
-                @click.prevent="router.push({ name: 'admin-user', params: { id: (record as EntityRef).id } })"
-              >
-                {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-              </a>
-              <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
-            </template>
+  <EntityDetailShell
+    :title="entityLabel(role) || t('admin.roles.title')"
+    :name="role?.name"
+    :lead="t('admin.roles.detailLead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!role && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="role ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #overview>
+      <Descriptions v-if="role" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ role.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ role.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('admin.roles.policies')">
+          {{ joinRefNames(role.policies) || '—' }}
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #users>
+      <p class="entity-detail__tab-lead">{{ t('admin.roles.assignUser') }}</p>
+      <Space>
+        <Select
+          v-model:value="assignUserId"
+          show-search
+          :placeholder="t('admin.roles.selectUser')"
+          style="width: 280px"
+          :options="users.map((u) => ({ value: u.id, label: entityLabel(u) }))"
+        />
+        <Button type="primary" data-testid="assign-role-user" @click="onAssignUser">
+          {{ t('admin.roles.assign') }}
+        </Button>
+      </Space>
+      <Table
+        row-key="id"
+        :columns="memberColumns"
+        :data-source="role?.users ?? []"
+        :pagination="false"
+        size="small"
+        style="margin-top: 16px"
+        :row-class-name="() => 'role-user-row'"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              v-if="(record as EntityRef).id"
+              href="#"
+              @click.prevent="router.push({ name: 'admin-user', params: { id: (record as EntityRef).id } })"
+            >
+              {{ entityLabel(record as EntityRef) }}
+            </a>
+            <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
-        </Table>
-        <Typography.Title :level="5" style="margin-top: 24px">Teams with this default role</Typography.Title>
-        <Table row-key="id" :columns="columns" :data-source="role.teams" :pagination="false">
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                v-if="(record as EntityRef).id"
-                href="#"
-                @click.prevent="router.push({ name: 'admin-team', params: { id: (record as EntityRef).id } })"
-              >
-                {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-              </a>
-            </template>
+        </template>
+      </Table>
+    </template>
+    <template #teams>
+      <p class="entity-detail__tab-lead">{{ t('admin.roles.assignTeam') }}</p>
+      <Space>
+        <Select
+          v-model:value="assignTeamId"
+          show-search
+          :placeholder="t('admin.roles.selectTeam')"
+          style="width: 280px"
+          :options="teams.map((item) => ({ value: item.id, label: entityLabel(item) }))"
+        />
+        <Button data-testid="assign-role-team" @click="onAssignTeam">
+          {{ t('admin.roles.addDefaultRole') }}
+        </Button>
+      </Space>
+      <Table
+        row-key="id"
+        :columns="memberColumns"
+        :data-source="role?.teams ?? []"
+        :pagination="false"
+        size="small"
+        style="margin-top: 16px"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              v-if="(record as EntityRef).id"
+              href="#"
+              @click.prevent="router.push({ name: 'admin-team', params: { id: (record as EntityRef).id } })"
+            >
+              {{ entityLabel(record as EntityRef) }}
+            </a>
           </template>
-        </Table>
-      </template>
-    </Spin>
-  </Card>
+        </template>
+      </Table>
+    </template>
+  </EntityDetailShell>
 </template>
+
+<style scoped>
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
+  margin-bottom: 12px;
+}
+</style>

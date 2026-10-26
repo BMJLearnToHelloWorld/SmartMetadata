@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import IncidentsListView from './IncidentsListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -34,7 +35,7 @@ async function mountView() {
   await router.push('/observability/incidents');
   await router.isReady();
   const wrapper = mount(IncidentsListView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -73,6 +74,7 @@ describe('IncidentsListView', () => {
     const { wrapper, router } = await mountView();
     expect(wrapper.text()).toContain('svc.db.schema.orders.row_count');
     expect(wrapper.text()).toContain('New');
+    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="incidents-table"]').exists()).toBe(true);
     await wrapper.find('[data-testid="incident-row-inc1"]').trigger('click');
     await flushPromises();

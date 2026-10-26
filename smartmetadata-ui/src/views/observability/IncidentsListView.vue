@@ -3,24 +3,28 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Card, Space, Table, Typography } from 'ant-design-vue';
 import { listTestIncidents } from '@/api/testIncidents';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import type { TestIncident } from '@/types/quality';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const incidents = ref<TestIncident[]>([]);
 const total = ref<number | undefined>();
 
-const columns = [
-  { title: 'Test case', key: 'testCase', ellipsis: true },
-  { title: 'Status', dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
-  { title: 'Severity', dataIndex: 'severity', key: 'severity', width: 120 },
-  { title: 'Updated', key: 'timestamp', width: 200 },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('observability.incidents.testCase'), key: 'testCase', ellipsis: true },
+  { title: t('crud.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
+  { title: t('observability.incidents.severity'), dataIndex: 'severity', key: 'severity', width: 120 },
+  { title: t('observability.incidents.updated'), key: 'timestamp', width: 200 },
+]);
 
 function formatTs(value?: number): string {
   if (!value) {
@@ -39,7 +43,7 @@ async function load(): Promise<void> {
     total.value = page.total;
   } catch (error) {
     incidents.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load incidents';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -51,46 +55,34 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div>
-        <Typography.Title :level="4">Incidents</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          GET /api/v1/dataQuality/testCases/testCaseIncidentStatus?latest=true. These records are
-          the Incident Manager time series — not a separate invented incident entity.
-        </Typography.Paragraph>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="incidents-table"
-        :columns="columns"
-        :data-source="incidents"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'testCase'">
-            <a
-              href="#"
-              :data-testid="`incident-row-${(record as TestIncident).id}`"
-              @click.prevent="router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
-            >
-              {{
-                (record as TestIncident).testCaseReference?.fullyQualifiedName ||
-                (record as TestIncident).testCaseReference?.name ||
-                (record as TestIncident).id
-              }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'timestamp'">
-            {{ formatTs((record as TestIncident).timestamp) }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ incidents.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-  </Card>
+  <EntityListShell
+    :title="t('observability.incidents.title')"
+    :lead="t('observability.incidents.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="incidents"
+    table-test-id="incidents-table"
+    :total="total"
+    @refresh="load"
+  >
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'testCase'">
+        <a
+          href="#"
+          :data-testid="`incident-row-${(record as TestIncident).id}`"
+          @click.prevent="router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
+        >
+          {{
+            (record as TestIncident).testCaseReference?.fullyQualifiedName ||
+            entityLabel((record as TestIncident).testCaseReference) ||
+            (record as TestIncident).id
+          }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'timestamp'">
+        {{ formatTs((record as TestIncident).timestamp) }}
+      </template>
+    </template>
+  </EntityListShell>
 </template>

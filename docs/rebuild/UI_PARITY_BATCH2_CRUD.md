@@ -69,7 +69,7 @@ No new Java/Python endpoints.
 
 | Gap | Why it stays |
 |---|---|
-| Roles / policies / domains / data products / quality / alerts / services / pipelines still one-off | Same pattern, next CRUD pass; this PR is the first 5 |
+| Roles / policies / domains / data products / quality / alerts / services / pipelines still one-off | Closed in batch 3.1 (`UI_PARITY_BATCH3_CRUD.md`) except Settings Policies (batch 3.4) |
 | Settings landing / topbar | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`) |
 | Team / glossary / classification / bot catalog search | No product search client for those indexes; do not pretend a local filter is server search |
 | Hard delete / policy authoring / bot edit form | Not wired in the existing views; not invented here |

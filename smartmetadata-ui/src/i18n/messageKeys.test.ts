@@ -51,6 +51,16 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('admin.bots.title');
     expect(keys).toContain('governance.classifications.title');
     expect(keys).toContain('governance.glossaries.title');
+    expect(keys).toContain('admin.roles.title');
+    expect(keys).toContain('governance.domains.title');
+    expect(keys).toContain('governance.dataProducts.title');
+    expect(keys).toContain('quality.testCases.title');
+    expect(keys).toContain('quality.testDefinitions.title');
+    expect(keys).toContain('quality.testSuites.title');
+    expect(keys).toContain('observability.alerts.title');
+    expect(keys).toContain('observability.incidents.title');
+    expect(keys).toContain('ingestion.services.title');
+    expect(keys).toContain('ingestion.pipelines.title');
     expect(keys).toContain('chrome.userMenu');
     expect(keys).toContain('chrome.viewProfile');
     expect(keys).toContain('settings.title');

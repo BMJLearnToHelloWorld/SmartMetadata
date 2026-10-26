@@ -3,21 +3,37 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
-import { Alert, Card, Descriptions, Spin, Table, Typography } from 'ant-design-vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { Descriptions, Table } from 'ant-design-vue';
 import { getEventSubscription } from '@/api/eventSubscriptions';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { EventSubscription } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const alert = ref<EventSubscription | null>(null);
+const activeTab = ref('overview');
 
-const destinationColumns = [
-  { title: 'Category', dataIndex: 'category', key: 'category' },
-  { title: 'Type', dataIndex: 'type', key: 'type' },
-  { title: 'Endpoint', dataIndex: 'endpoint', key: 'endpoint' },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('observability.alerts.title'), to: { name: 'observability-alerts' } },
+  { label: entityLabel(alert.value) || t('observability.alerts.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'alert-tab-overview' },
+  { key: 'destinations', label: t('observability.alerts.destinationsTab'), testId: 'alert-tab-destinations' },
+]);
+
+const destinationColumns = computed<EntityListColumn[]>(() => [
+  { title: t('observability.alerts.category'), dataIndex: 'category', key: 'category' },
+  { title: t('crud.type'), dataIndex: 'type', key: 'type' },
+  { title: t('observability.alerts.endpoint'), dataIndex: 'endpoint', key: 'endpoint' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -26,7 +42,7 @@ async function load(): Promise<void> {
     alert.value = await getEventSubscription(props.id);
   } catch (error) {
     alert.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load alert';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -45,22 +61,29 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ alert?.displayName || alert?.name || 'Alert' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET /api/v1/events/subscriptions/{id}
-      </Typography.Paragraph>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Descriptions v-if="alert" bordered :column="1" size="small" class="dq-desc">
-        <Descriptions.Item label="Name">{{ alert.name }}</Descriptions.Item>
-        <Descriptions.Item label="Type">{{ alert.alertType || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Enabled">{{ alert.enabled === false ? 'no' : 'yes' }}</Descriptions.Item>
-        <Descriptions.Item label="Description">{{ alert.description || '—' }}</Descriptions.Item>
+  <EntityDetailShell
+    :title="entityLabel(alert) || t('observability.alerts.title')"
+    :name="alert?.name"
+    :fqn="alert?.fullyQualifiedName"
+    :lead="t('observability.alerts.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!alert && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="alert ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #overview>
+      <Descriptions v-if="alert" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ alert.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('observability.alerts.type')">{{ alert.alertType || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.enabled')">
+          {{ alert.enabled === false ? t('crud.no') : t('crud.yes') }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ alert.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title v-if="alert" :level="5" class="dq-sub">Destinations</Typography.Title>
+    </template>
+    <template #destinations>
       <Table
         v-if="alert"
         row-key="type"
@@ -69,15 +92,6 @@ onMounted(() => {
         :data-source="alert.destinations"
         :pagination="false"
       />
-    </Card>
-  </Spin>
+    </template>
+  </EntityDetailShell>
 </template>
-
-<style scoped>
-.dq-desc {
-  margin-top: 16px;
-}
-.dq-sub {
-  margin-top: 24px;
-}
-</style>

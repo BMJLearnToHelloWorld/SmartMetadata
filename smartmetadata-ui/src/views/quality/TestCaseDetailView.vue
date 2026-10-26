@@ -6,22 +6,25 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Spin, Table, Typography, message } from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
 import { getTestCase, updateTestCase } from '@/api/testCases';
 import { listTestCaseResults } from '@/api/testCaseResults';
 import SmChart from '@/features/charts/SmChart.vue';
 import { testResultsToTimeline } from '@/features/charts/series';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { parseEntityLink } from '@/quality/entityLink';
 import type { TestCase, TestCaseResult } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
 const { t } = useI18n();
-const resultSeries = computed(() => testResultsToTimeline(results.value));
 const loading = ref(false);
 const errorMessage = ref('');
 const testCase = ref<TestCase | null>(null);
 const results = ref<TestCaseResult[]>([]);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -30,11 +33,23 @@ const editForm = reactive({
   parameterText: '',
 });
 
-const resultColumns = [
-  { title: 'Status', dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
-  { title: 'Timestamp', key: 'timestamp', width: 200 },
-  { title: 'Result', dataIndex: 'result', key: 'result' },
-];
+const resultSeries = computed(() => testResultsToTimeline(results.value));
+
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('quality.testCases.title'), to: { name: 'quality-test-cases' } },
+  { label: entityLabel(testCase.value) || t('quality.testCases.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'test-case-tab-overview' },
+  { key: 'results', label: t('quality.testCases.resultsTab'), testId: 'test-case-tab-results' },
+]);
+
+const resultColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.status'), dataIndex: 'testCaseStatus', key: 'testCaseStatus', width: 120 },
+  { title: t('quality.testCases.timestamp'), key: 'timestamp', width: 200 },
+  { title: t('quality.testCases.result'), dataIndex: 'result', key: 'result' },
+]);
 
 function formatTs(value?: number): string {
   if (!value) {
@@ -59,7 +74,7 @@ async function load(): Promise<void> {
   } catch (error) {
     testCase.value = null;
     results.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load test case';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -77,7 +92,7 @@ function openEdit(): void {
 
 async function onSave(): Promise<void> {
   if (!testCase.value?.entityLink || !testCase.value.testDefinition) {
-    message.error('Cannot update a test case without entityLink and testDefinition');
+    message.error(t('quality.testCases.cannotUpdate'));
     return;
   }
   saving.value = true;
@@ -99,10 +114,10 @@ async function onSave(): Promise<void> {
       parameterValues,
     });
     editOpen.value = false;
-    message.success('Test case updated');
+    message.success(t('quality.testCases.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -139,47 +154,55 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ testCase?.displayName || testCase?.name || 'Test case' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET /api/v1/dataQuality/testCases/{id} · results from
-        GET /api/v1/dataQuality/testCases/testCaseResults/{fqn}
-      </Typography.Paragraph>
-      <Space>
-        <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">Edit</Button>
-        <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">Open asset</Button>
-        <Button
-          data-testid="open-test-definition"
-          :disabled="!testCase?.testDefinition?.id"
-          @click="openDefinition"
-        >
-          Open definition
-        </Button>
-      </Space>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="dq-alert" />
-      <Descriptions v-if="testCase" bordered :column="1" size="small" class="dq-desc">
-        <Descriptions.Item label="Name">{{ testCase.name }}</Descriptions.Item>
-        <Descriptions.Item label="FQN">{{ testCase.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item label="Entity link">{{ testCase.entityLink || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Latest status">
+  <EntityDetailShell
+    :title="entityLabel(testCase) || t('quality.testCases.title')"
+    :name="testCase?.name"
+    :fqn="testCase?.fullyQualifiedName"
+    :lead="t('quality.testCases.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!testCase && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="testCase ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">
+        {{ t('quality.testCases.openAsset') }}
+      </Button>
+      <Button
+        data-testid="open-test-definition"
+        :disabled="!testCase?.testDefinition?.id"
+        @click="openDefinition"
+      >
+        {{ t('quality.testCases.openDefinition') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="testCase" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ testCase.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ testCase.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testCases.entityLink')">
+          {{ testCase.entityLink || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testCases.latestStatus')">
           {{ testCase.testCaseResult?.testCaseStatus || testCase.testCaseStatus || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="Latest result">
+        <Descriptions.Item :label="t('quality.testCases.latestResult')">
           {{ testCase.testCaseResult?.result || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="Description">{{ testCase.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ testCase.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title :level="5" class="dq-sub">{{ t('asset.resultsChart') }}</Typography.Title>
-      <Typography.Paragraph type="secondary">{{ t('asset.resultsChartLead') }}</Typography.Paragraph>
+    </template>
+    <template #results>
+      <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
       <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
-      <Typography.Title :level="5" class="dq-sub">Results</Typography.Title>
       <Table
         data-testid="test-case-results-table"
         row-key="timestamp"
         size="small"
+        style="margin-top: 16px"
         :columns="resultColumns"
         :data-source="results"
         :pagination="false"
@@ -190,29 +213,32 @@ onMounted(() => {
           </template>
         </template>
       </Table>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit test case" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Parameters (one name=value per line)">
-          <Input.TextArea v-model:value="editForm.parameterText" :rows="3" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('quality.testCases.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.parameters')">
+        <Input.TextArea v-model:value="editForm.parameterText" :rows="3" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
 
 <style scoped>
-.dq-alert,
-.dq-desc {
-  margin-top: 16px;
-}
-.dq-sub {
-  margin-top: 24px;
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
+  margin-bottom: 12px;
 }
 </style>

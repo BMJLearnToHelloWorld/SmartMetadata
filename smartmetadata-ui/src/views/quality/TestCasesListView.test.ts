@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import TestCasesListView from './TestCasesListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -34,7 +35,7 @@ async function mountView() {
   await router.push('/quality/test-cases');
   await router.isReady();
   const wrapper = mount(TestCasesListView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -77,6 +78,7 @@ describe('TestCasesListView', () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('row_count');
     expect(wrapper.text()).toContain('Success');
+    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-cases-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-test-case"]').exists()).toBe(true);
   });

@@ -4,20 +4,26 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Space, Spin, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Descriptions, Form, Input, Modal, message } from 'ant-design-vue';
 import { deleteDatabaseService, getDatabaseService, updateDatabaseService } from '@/api/databaseServices';
 import { deleteMessagingService, getMessagingService, updateMessagingService } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import { buildServiceConnection, formValuesFromService, redactConnectionForDisplay } from '@/ingestion/connections';
 import { cliSourceType } from '@/ingestion/cliWorkflow';
 import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
 const props = defineProps<{ kind: string; id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const service = ref<CatalogService | null>(null);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
@@ -35,6 +41,16 @@ const connectionJson = computed(() =>
   JSON.stringify(redactConnectionForDisplay(service.value?.connection) ?? {}, null, 2),
 );
 
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('ingestion.services.title'), to: { name: 'ingestion-services' } },
+  { label: entityLabel(service.value) || t('ingestion.services.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'service-tab-overview' },
+  { key: 'connection', label: t('ingestion.services.connectionTab'), testId: 'service-tab-connection' },
+]);
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
@@ -43,7 +59,7 @@ async function load(): Promise<void> {
       kind.value === 'messaging' ? await getMessagingService(props.id) : await getDatabaseService(props.id);
   } catch (error) {
     service.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load service';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -76,10 +92,10 @@ async function onSave(): Promise<void> {
       await updateDatabaseService(body);
     }
     editOpen.value = false;
-    message.success('Service updated');
+    message.success(t('ingestion.services.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -89,7 +105,7 @@ async function onDelete(): Promise<void> {
   if (!service.value) {
     return;
   }
-  if (!window.confirm(`Delete service ${service.value.name}? This cannot be undone from this console.`)) {
+  if (!window.confirm(t('ingestion.services.deleteConfirm', { name: service.value.name }))) {
     return;
   }
   deleting.value = true;
@@ -99,10 +115,10 @@ async function onDelete(): Promise<void> {
     } else {
       await deleteDatabaseService(service.value.id);
     }
-    message.success(`Deleted ${service.value.name}`);
+    message.success(t('ingestion.services.deleted', { name: service.value.name }));
     await router.push({ name: 'ingestion-services' });
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Delete failed');
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   } finally {
     deleting.value = false;
   }
@@ -121,62 +137,72 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ service?.displayName || service?.name || 'Service' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET/PUT /api/v1/services/{{ kind === 'messaging' ? 'messagingServices' : 'databaseServices' }}
-      </Typography.Paragraph>
-      <Space>
-        <Button data-testid="edit-service" :disabled="!service || !supported" @click="openEdit">Edit</Button>
-        <Button data-testid="delete-service" danger :disabled="!service" :loading="deleting" @click="onDelete">
-          Delete
-        </Button>
-      </Space>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="ing-alert" />
+  <EntityDetailShell
+    :title="entityLabel(service) || t('ingestion.services.title')"
+    :name="service?.name"
+    :fqn="service?.fullyQualifiedName"
+    :lead="t('ingestion.services.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!service && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="service ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button data-testid="edit-service" :disabled="!service || !supported" @click="openEdit">
+        {{ t('crud.edit') }}
+      </Button>
+      <Button data-testid="delete-service" danger :disabled="!service" :loading="deleting" @click="onDelete">
+        {{ t('crud.delete') }}
+      </Button>
+    </template>
+    <template #overview>
       <Alert
         v-if="service && !supported"
         type="info"
         show-icon
-        class="ing-alert"
-        message="This serviceType is listed from the catalog but has no Phase 6–7 connector form. Connection JSON is read-only."
+        :message="t('ingestion.services.unsupported')"
       />
-      <Descriptions v-if="service" bordered :column="1" size="small" class="ing-desc">
-        <Descriptions.Item label="Name">{{ service.name }}</Descriptions.Item>
-        <Descriptions.Item label="FQN">{{ service.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item label="Kind">{{ service.kind }}</Descriptions.Item>
-        <Descriptions.Item label="Type">{{ service.serviceType || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="CLI source.type">
+      <Descriptions v-if="service" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ service.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ service.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('ingestion.services.kind')">{{ service.kind }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.type')">{{ service.serviceType || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('ingestion.services.cliSource')">
           {{ cliSourceType(service.serviceType) || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="Description">{{ service.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ service.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title v-if="service" :level="5" class="ing-sub">Connection (secrets redacted)</Typography.Title>
+    </template>
+    <template #connection>
+      <p class="entity-detail__tab-lead">{{ t('ingestion.services.connectionTitle') }}</p>
       <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit service" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <ServiceConnectionFields :form="editForm" />
-      </Form>
-    </Modal>
-  </Spin>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('ingestion.services.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <ServiceConnectionFields :form="editForm" />
+    </Form>
+  </Modal>
 </template>
 
 <style scoped>
-.ing-alert,
-.ing-desc {
-  margin-top: 16px;
-}
-.ing-sub {
-  margin-top: 24px;
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
+  margin-bottom: 12px;
 }
 .ing-json {
   background: #f8fafc;

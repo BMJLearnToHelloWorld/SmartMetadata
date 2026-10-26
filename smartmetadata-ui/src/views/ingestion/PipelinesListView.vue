@@ -4,21 +4,37 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Checkbox, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Checkbox, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { listDatabaseServices } from '@/api/databaseServices';
 import { createIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { listMessagingServices } from '@/api/messagingServices';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import {
+  DEFAULT_PAGE_SIZE,
+  canGoNext,
+  canGoPrev,
+  createCursorPager,
+  entityLabel,
+  goNext,
+  goPrev,
+  type CursorPager,
+} from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { buildSourceConfig } from '@/ingestion/sourceConfig';
 import type { CatalogService, IngestionPipeline, PipelineFormValues } from '@/types/ingestion';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const pipelines = ref<IngestionPipeline[]>([]);
 const catalogServices = ref<CatalogService[]>([]);
 const total = ref<number | undefined>();
+const pageAfter = ref<string | undefined>();
+const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive<PipelineFormValues>({
@@ -38,31 +54,47 @@ const selectedService = computed(
   () => catalogServices.value.find((item) => item.id === form.serviceId) ?? null,
 );
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
-  { title: 'Service', key: 'service' },
-  { title: 'Enabled', key: 'enabled', width: 100 },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
+  { title: t('ingestion.pipelines.service'), key: 'service' },
+  { title: t('crud.enabled'), key: 'enabled', width: 100 },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
     const [page, databases, messaging] = await Promise.all([
-      listIngestionPipelines({ limit: 100 }),
+      listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
       listDatabaseServices({ limit: 100 }),
       listMessagingServices({ limit: 100 }),
     ]);
     pipelines.value = page.data;
     total.value = page.total;
+    pageAfter.value = page.after;
     catalogServices.value = [...databases.data, ...messaging.data];
   } catch (error) {
     pipelines.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load pipelines';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+function onNext(): void {
+  if (pageAfter.value) {
+    cursor.value = goNext(cursor.value, pageAfter.value);
+  }
+  void load();
+}
+
+function onPrev(): void {
+  cursor.value = goPrev(cursor.value);
+  void load();
 }
 
 function onServiceChange(id: string): void {
@@ -76,7 +108,7 @@ function onServiceChange(id: string): void {
 async function onCreate(): Promise<void> {
   const service = selectedService.value;
   if (!service) {
-    message.error('Select a service');
+    message.error(t('ingestion.pipelines.selectService'));
     return;
   }
   creating.value = true;
@@ -94,10 +126,10 @@ async function onCreate(): Promise<void> {
       description: form.description?.trim() || undefined,
     });
     createOpen.value = false;
-    message.success(`Created pipeline ${created.name}`);
+    message.success(t('ingestion.pipelines.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create pipeline failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -109,101 +141,89 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="ing-head">
-        <div>
-          <Typography.Title :level="4">Ingestion pipelines</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/services/ingestionPipelines. CreateIngestionPipeline still requires
-            <code>sourceConfig</code> + <code>airflowConfig</code> even though this console does not
-            deploy Airflow DAGs. Jobs run with <code>smartmetadata-ingest run</code>.
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-pipeline" @click="createOpen = true">Create pipeline</Button>
-      </div>
-      <Alert
-        type="info"
-        show-icon
-        message="Trigger and deploy call the server pipeline-service client (Airflow). They are not offered here. Status below is the catalog record; run history is GET /{fqn}/pipelineStatus."
-      />
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="pipelines-table"
-        :columns="columns"
-        :data-source="pipelines"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`pipeline-row-${(record as IngestionPipeline).id}`"
-              @click.prevent="
-                router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })
-              "
-            >
-              {{ (record as IngestionPipeline).displayName || (record as IngestionPipeline).name }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'service'">
-            {{ (record as IngestionPipeline).service?.name || '—' }}
-          </template>
-          <template v-else-if="column.key === 'enabled'">
-            {{ (record as IngestionPipeline).enabled === false ? 'no' : 'yes' }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ pipelines.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create ingestion pipeline" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="form.name" data-testid="create-pipeline-name" />
-        </Form.Item>
-        <Form.Item label="Service" required>
-          <Select
-            :value="form.serviceId"
-            data-testid="create-pipeline-service"
-            placeholder="Select a catalog service"
-            @update:value="onServiceChange"
-          >
-            <Select.Option v-for="item in catalogServices" :key="item.id" :value="item.id">
-              {{ item.name }} ({{ item.serviceType }})
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item v-if="form.serviceKind === 'database'">
-          <Checkbox v-model:checked="form.includeViews" data-testid="create-pipeline-include-views">
-            Include views (catalog includeViews; CLI includeViewLineage)
-          </Checkbox>
-        </Form.Item>
-        <Form.Item v-if="form.serviceKind === 'database'" label="Include schemas">
-          <Input v-model:value="form.includeSchemas" placeholder="public, analytics" />
-        </Form.Item>
-        <Form.Item v-if="form.serviceKind === 'messaging'" label="Include topics">
-          <Input v-model:value="form.includeTopics" placeholder="orders, payments" />
-        </Form.Item>
-        <Form.Item label="Schedule interval (catalog only)">
-          <Input v-model:value="form.scheduleInterval" placeholder="0 0 * * *" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="3" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+  <EntityListShell
+    :title="t('ingestion.pipelines.title')"
+    :lead="t('ingestion.pipelines.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="pipelines"
+    table-test-id="pipelines-table"
+    :total="total"
+    :has-next="hasNext"
+    :has-prev="hasPrev"
+    @refresh="load"
+    @next="onNext"
+    @prev="onPrev"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-pipeline" @click="createOpen = true">
+        {{ t('ingestion.pipelines.create') }}
+      </Button>
+    </template>
+    <template #filters>
+      <Alert type="info" show-icon :message="t('ingestion.pipelines.triggerNote')" />
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`pipeline-row-${(record as IngestionPipeline).id}`"
+          @click.prevent="
+            router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })
+          "
+        >
+          {{ entityLabel(record as IngestionPipeline) }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'service'">
+        {{ (record as IngestionPipeline).service?.name || '—' }}
+      </template>
+      <template v-else-if="column.key === 'enabled'">
+        {{ (record as IngestionPipeline).enabled === false ? t('crud.no') : t('crud.yes') }}
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('ingestion.pipelines.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="form.name" data-testid="create-pipeline-name" />
+      </Form.Item>
+      <Form.Item :label="t('ingestion.pipelines.service')" required>
+        <Select
+          :value="form.serviceId"
+          data-testid="create-pipeline-service"
+          :placeholder="t('ingestion.pipelines.selectServicePlaceholder')"
+          @update:value="onServiceChange"
+        >
+          <Select.Option v-for="item in catalogServices" :key="item.id" :value="item.id">
+            {{ item.name }} ({{ item.serviceType }})
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item v-if="form.serviceKind === 'database'">
+        <Checkbox v-model:checked="form.includeViews" data-testid="create-pipeline-include-views">
+          {{ t('ingestion.pipelines.includeViews') }}
+        </Checkbox>
+      </Form.Item>
+      <Form.Item v-if="form.serviceKind === 'database'" :label="t('ingestion.pipelines.includeSchemas')">
+        <Input v-model:value="form.includeSchemas" placeholder="public, analytics" />
+      </Form.Item>
+      <Form.Item v-if="form.serviceKind === 'messaging'" :label="t('ingestion.pipelines.includeTopics')">
+        <Input v-model:value="form.includeTopics" placeholder="orders, payments" />
+      </Form.Item>
+      <Form.Item :label="t('ingestion.pipelines.schedule')">
+        <Input v-model:value="form.scheduleInterval" placeholder="0 0 * * *" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="3" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.ing-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

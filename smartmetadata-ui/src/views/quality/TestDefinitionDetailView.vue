@@ -3,15 +3,21 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Spin, Table, Typography, message } from 'ant-design-vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { getTestDefinition, updateTestDefinition } from '@/api/testDefinitions';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { TEST_DEFINITION_ENTITY_TYPES, TEST_PLATFORMS, type TestDefinition } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const definition = ref<TestDefinition | null>(null);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -21,12 +27,22 @@ const editForm = reactive({
   testPlatforms: ['OpenMetadata'] as string[],
 });
 
-const parameterColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'dataType', key: 'dataType' },
-  { title: 'Required', key: 'required', width: 100 },
-  { title: 'Description', dataIndex: 'description', key: 'description' },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('quality.testDefinitions.title'), to: { name: 'quality-test-definitions' } },
+  { label: entityLabel(definition.value) || t('quality.testDefinitions.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'test-definition-tab-overview' },
+  { key: 'parameters', label: t('quality.testDefinitions.parametersTab'), testId: 'test-definition-tab-parameters' },
+]);
+
+const parameterColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'dataType', key: 'dataType' },
+  { title: t('quality.testDefinitions.required'), key: 'required', width: 100 },
+  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -35,7 +51,7 @@ async function load(): Promise<void> {
     definition.value = await getTestDefinition(props.id);
   } catch (error) {
     definition.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load test definition';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -68,10 +84,10 @@ async function onSave(): Promise<void> {
       displayName: editForm.displayName.trim() || undefined,
     });
     editOpen.value = false;
-    message.success('Test definition updated');
+    message.success(t('quality.testDefinitions.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -90,26 +106,43 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ definition?.displayName || definition?.name || 'Test definition' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET/PUT /api/v1/dataQuality/testDefinitions
-      </Typography.Paragraph>
-      <Button data-testid="edit-test-definition" :disabled="!definition" @click="openEdit">Edit</Button>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="dq-alert" />
-      <Descriptions v-if="definition" bordered :column="1" size="small" class="dq-desc">
-        <Descriptions.Item label="Name">{{ definition.name }}</Descriptions.Item>
-        <Descriptions.Item label="FQN">{{ definition.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item label="Entity type">{{ definition.entityType || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Platforms">{{ definition.testPlatforms.join(', ') || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Dimension">{{ definition.dataQualityDimension || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Provider">{{ definition.provider || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Description">{{ definition.description || '—' }}</Descriptions.Item>
+  <EntityDetailShell
+    :title="entityLabel(definition) || t('quality.testDefinitions.title')"
+    :name="definition?.name"
+    :fqn="definition?.fullyQualifiedName"
+    :lead="t('quality.testDefinitions.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!definition && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="definition ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button data-testid="edit-test-definition" :disabled="!definition" @click="openEdit">
+        {{ t('crud.edit') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="definition" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ definition.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ definition.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testDefinitions.entityType')">
+          {{ definition.entityType || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testDefinitions.platforms')">
+          {{ definition.testPlatforms.join(', ') || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testDefinitions.dimension')">
+          {{ definition.dataQualityDimension || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testDefinitions.provider')">
+          {{ definition.provider || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ definition.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title v-if="definition" :level="5" class="dq-sub">Parameters</Typography.Title>
+    </template>
+    <template #parameters>
       <Table
         v-if="definition"
         row-key="name"
@@ -120,44 +153,40 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'required'">
-            {{ record.required ? 'yes' : 'no' }}
+            {{ record.required ? t('crud.yes') : t('crud.no') }}
           </template>
         </template>
       </Table>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit test definition" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Entity type">
-          <Select v-model:value="editForm.entityType">
-            <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
-              {{ type }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Test platforms">
-          <Select v-model:value="editForm.testPlatforms" mode="multiple">
-            <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
-              {{ platform }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('quality.testDefinitions.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('quality.testDefinitions.entityType')">
+        <Select v-model:value="editForm.entityType">
+          <Select.Option v-for="type in TEST_DEFINITION_ENTITY_TYPES" :key="type" :value="type">
+            {{ type }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('quality.testDefinitions.platforms')">
+        <Select v-model:value="editForm.testPlatforms" mode="multiple">
+          <Select.Option v-for="platform in TEST_PLATFORMS" :key="platform" :value="platform">
+            {{ platform }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.dq-alert,
-.dq-desc {
-  margin-top: 16px;
-}
-.dq-sub {
-  margin-top: 24px;
-}
-</style>
