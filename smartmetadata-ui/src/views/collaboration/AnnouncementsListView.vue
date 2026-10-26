@@ -7,6 +7,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { createAnnouncement, listAnnouncements } from '@/api/announcements';
+import { requiredField } from '@/features/crud/formRules';
 import { toEntityLink } from '@/quality/entityLink';
 import { ANNOUNCEMENT_TYPES, type Announcement } from '@/types/collaboration';
 
@@ -137,7 +138,7 @@ onMounted(() => {
         <Form.Item :label="t('collaboration.announcements.displayName')">
           <Input v-model:value="form.displayName" data-testid="announcement-title" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.description')" required>
+        <Form.Item :label="t('collaboration.announcements.description')" :rules="requiredField(t, t('collaboration.announcements.description'))">
           <Input.TextArea v-model:value="form.description" data-testid="announcement-description" :rows="3" />
         </Form.Item>
         <Form.Item :label="t('collaboration.announcements.type')">
@@ -147,10 +148,10 @@ onMounted(() => {
             </Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.start')" required>
+        <Form.Item :label="t('collaboration.announcements.start')" :rules="requiredField(t, t('collaboration.announcements.start'))">
           <Input v-model:value="form.startLocal" type="datetime-local" data-testid="announcement-start" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.end')" required>
+        <Form.Item :label="t('collaboration.announcements.end')" :rules="requiredField(t, t('collaboration.announcements.end'))">
           <Input v-model:value="form.endLocal" type="datetime-local" data-testid="announcement-end" />
         </Form.Item>
         <Form.Item :label="t('collaboration.announcements.entityType')">

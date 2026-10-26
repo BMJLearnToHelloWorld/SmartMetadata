@@ -6,6 +6,7 @@
 import { computed, markRaw, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Select, Space } from 'ant-design-vue';
+import { SM_COLOR_PRIMARY, SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
 import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
@@ -99,6 +100,10 @@ const edges = computed<Edge[]>(() => {
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     class: props.highlightedEdgeIds.includes(edge.id) ? 'lineage-edge--active' : undefined,
+    style: {
+      stroke: props.highlightedEdgeIds.includes(edge.id) ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
+      strokeWidth: props.highlightedEdgeIds.includes(edge.id) ? 2.25 : 1.75,
+    },
   }));
   const columnEdges = visibleColumnEdges.value.map((edge) => ({
     id: edge.id,
@@ -110,6 +115,11 @@ const edges = computed<Edge[]>(() => {
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     class: 'lineage-edge--column',
+    style: {
+      stroke: SM_COLOR_PRIMARY,
+      strokeWidth: 1.5,
+      strokeDasharray: '5 4',
+    },
   }));
   return [...entityEdges, ...columnEdges];
 });
@@ -162,6 +172,7 @@ watch(
     class="lineage-graph"
     :class="[
       `lineage-graph--${variant}`,
+      'lineage-graph--om-chrome',
       { 'lineage-graph--fullscreen': fullscreen },
     ]"
     data-testid="lineage-graph"
@@ -198,7 +209,7 @@ watch(
       :max-zoom="2"
       @node-click="onNodeClick"
     >
-      <Background />
+      <Background :color="SM_SURFACES.borderSecondary" :gap="18" :size="1" />
       <Controls />
       <MiniMap pannable zoomable />
     </VueFlow>
@@ -210,9 +221,9 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 420px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f8fafc;
+  border: 1px solid var(--sm-border-color, #d5d7da);
+  border-radius: var(--sm-radius-card, 12px);
+  background: var(--sm-content-bg, #fafafa);
 }
 .lineage-graph--page {
   flex: 1 1 auto;
@@ -229,12 +240,12 @@ watch(
   height: 100vh;
   min-height: 100vh;
   border-radius: 0;
-  background: #f8fafc;
+  background: var(--sm-content-bg, #fafafa);
 }
 .lineage-graph__toolbar {
   padding: 8px 10px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
+  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
+  background: var(--sm-bg-container, #fff);
 }
 .lineage-graph__find {
   min-width: 220px;
@@ -243,11 +254,33 @@ watch(
   flex: 1 1 auto;
   min-height: 0;
 }
-.lineage-graph :deep(.lineage-edge--active) {
-  stroke: #fa8c16;
+.lineage-graph :deep(.vue-flow__edge-path) {
+  stroke-linecap: round;
 }
-.lineage-graph :deep(.lineage-edge--column) {
-  stroke: #1677ff;
-  stroke-dasharray: 4 3;
+.lineage-graph :deep(.lineage-edge--active .vue-flow__edge-path) {
+  stroke: var(--sm-color-warning, #dc6803);
+}
+.lineage-graph :deep(.lineage-edge--column .vue-flow__edge-path) {
+  stroke: var(--sm-color-primary, #1570ef);
+}
+.lineage-graph :deep(.vue-flow__controls) {
+  overflow: hidden;
+  border: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-radius: var(--sm-border-radius, 8px);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+}
+.lineage-graph :deep(.vue-flow__controls-button) {
+  width: 28px;
+  height: 28px;
+  border-color: var(--sm-border-secondary, #e9eaeb);
+  background: var(--sm-bg-container, #fff);
+}
+.lineage-graph :deep(.vue-flow__controls-button:hover) {
+  background: var(--sm-color-primary-bg, #eff8ff);
+}
+.lineage-graph :deep(.vue-flow__minimap) {
+  overflow: hidden;
+  border: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-radius: var(--sm-border-radius, 8px);
 }
 </style>

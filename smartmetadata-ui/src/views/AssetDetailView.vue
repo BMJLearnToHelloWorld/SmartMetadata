@@ -43,6 +43,7 @@ import {
 } from '@/features/charts/series';
 import { seriesWindow, type ChartSeries } from '@/features/charts/types';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import {
   loadGovernanceCatalog,
@@ -1046,7 +1047,7 @@ onMounted(() => {
       @ok="onCreateConversation"
     >
       <Form layout="vertical">
-        <Form.Item :label="t('asset.messageLabel')" required>
+        <Form.Item :label="t('asset.messageLabel')" :rules="requiredField(t, t('asset.messageLabel'))">
           <Input.TextArea v-model:value="commentMessage" data-testid="asset-conversation-message" :rows="3" />
         </Form.Item>
       </Form>

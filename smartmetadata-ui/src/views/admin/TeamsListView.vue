@@ -145,6 +145,7 @@ onMounted(() => {
     :data-source="teams"
     table-test-id="admin-teams-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -152,6 +153,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="openTeam($event as AdminTeam)"
+    @edit="openTeam($event as AdminTeam)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-team" @click="createOpen = true">

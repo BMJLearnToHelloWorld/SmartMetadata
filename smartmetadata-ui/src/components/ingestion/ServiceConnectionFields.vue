@@ -6,6 +6,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Checkbox, Form, Input, Typography } from 'ant-design-vue';
+import { requiredField } from '@/features/crud/formRules';
 import type { ServiceFormValues } from '@/types/ingestion';
 
 const props = defineProps<{ form: ServiceFormValues }>();
@@ -28,21 +29,21 @@ const passwordPlaceholder = computed(() => {
 
 <template>
   <template v-if="type === 'Postgres'">
-    <Form.Item :label="t('connection.hostPort')" required>
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
       <Input v-model:value="form.hostPort" data-testid="service-host-port" placeholder="localhost:5432" />
     </Form.Item>
-    <Form.Item :label="t('connection.username')" required>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
       <Input v-model:value="form.username" data-testid="service-username" />
     </Form.Item>
-    <Form.Item :label="t('connection.database')" required>
+    <Form.Item :label="t('connection.database')" :rules="requiredField(t, t('connection.database'))">
       <Input v-model:value="form.database" data-testid="service-database" />
     </Form.Item>
   </template>
   <template v-else-if="type === 'Mysql'">
-    <Form.Item :label="t('connection.hostPort')" required>
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
       <Input v-model:value="form.hostPort" data-testid="service-host-port" placeholder="localhost:3306" />
     </Form.Item>
-    <Form.Item :label="t('connection.username')" required>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
       <Input v-model:value="form.username" data-testid="service-username" />
     </Form.Item>
     <Form.Item :label="t('connection.databaseName')">
@@ -53,13 +54,13 @@ const passwordPlaceholder = computed(() => {
     </Form.Item>
   </template>
   <template v-else-if="type === 'Snowflake'">
-    <Form.Item :label="t('connection.account')" required>
+    <Form.Item :label="t('connection.account')" :rules="requiredField(t, t('connection.account'))">
       <Input v-model:value="form.account" data-testid="service-account" />
     </Form.Item>
-    <Form.Item :label="t('connection.username')" required>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
       <Input v-model:value="form.username" data-testid="service-username" />
     </Form.Item>
-    <Form.Item :label="t('connection.warehouse')" required>
+    <Form.Item :label="t('connection.warehouse')" :rules="requiredField(t, t('connection.warehouse'))">
       <Input v-model:value="form.warehouse" data-testid="service-warehouse" />
     </Form.Item>
     <Form.Item :label="t('connection.database')">
@@ -70,7 +71,7 @@ const passwordPlaceholder = computed(() => {
     </Form.Item>
   </template>
   <template v-else-if="type === 'Kafka'">
-    <Form.Item :label="t('connection.bootstrapServers')" required>
+    <Form.Item :label="t('connection.bootstrapServers')" :rules="requiredField(t, t('connection.bootstrapServers'))">
       <Input
         v-model:value="form.bootstrapServers"
         data-testid="service-bootstrap-servers"

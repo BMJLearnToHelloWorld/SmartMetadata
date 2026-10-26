@@ -44,6 +44,8 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('lineage.searchPlaceholder');
     expect(keys).toContain('lineage.findNode');
     expect(keys).toContain('lineage.columnsLead');
+    expect(keys).toContain('lineage.depthHelp');
+    expect(keys).toContain('ingestion.services.connectionJsonHelp');
     expect(keys).toContain('crud.refresh');
     expect(keys).toContain('crud.next');
     expect(keys).toContain('crud.empty');
@@ -154,18 +156,54 @@ describe('i18n catalogs', () => {
     expect(zhCN.explore.lead).not.toMatch(/GET \/api/);
   });
 
+  it('replaces Batch 3 tab and settings leads with OM-style help, not API tutorials', () => {
+    const apiTutorial = /GET \/api|POST \/api|PUT \/api|PATCH \/api|RFC 6902/i;
+    expect(enUS.asset.lineageLead).toBe('Upstream and downstream lineage for this asset.');
+    expect(enUS.asset.activityLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.conversationsLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.customPropertiesLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.chartsLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.featuresLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.tasksLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.executionsLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.codeLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.rowCountChartLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.usageChartLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.testStatusChartLead).not.toMatch(apiTutorial);
+    expect(enUS.asset.resultsChartLead).not.toMatch(apiTutorial);
+    expect(enUS.lineage.graphLead).not.toMatch(apiTutorial);
+    expect(enUS.lineage.tabLead).not.toMatch(apiTutorial);
+    expect(enUS.collaboration.activity.lead).not.toMatch(apiTutorial);
+    expect(enUS.collaboration.tasks.lead).not.toMatch(apiTutorial);
+    expect(enUS.collaboration.task.resolveLead).not.toMatch(apiTutorial);
+    expect(enUS.collaboration.announcements.lead).not.toMatch(apiTutorial);
+    expect(enUS.settings.system.lead).not.toMatch(apiTutorial);
+    expect(enUS.settings.system.loginLead).not.toMatch(apiTutorial);
+    expect(enUS.settings.system.emailLead).not.toMatch(apiTutorial);
+    expect(enUS.settings.customProperties.lead).not.toMatch(apiTutorial);
+    expect(enUS.settings.customProperties.detailLead).not.toMatch(apiTutorial);
+    expect(enUS.admin.users.rolesLead).not.toMatch(apiTutorial);
+    expect(enUS.ingestion.pipelines.detailLead).not.toMatch(apiTutorial);
+    expect(enUS.ingestion.services.connectionJsonHelp).toMatch(/JSON/i);
+    expect(enUS.settings.residual.appearance).toMatch(/theme|read-only/i);
+    expect(enUS.settings.residual.applications).toMatch(/wired|residual/i);
+    expect(enUS.settings.residual.sso).toMatch(/SSO/);
+    expect(enUS.settings.residual.persona).toMatch(/persona/i);
+    expect(enUS.settings.residual.inbox).toMatch(/inbox|Activity|Tasks/i);
+    expect(zhCN.asset.activityLead).not.toMatch(apiTutorial);
+    expect(zhCN.collaboration.activity.lead).not.toMatch(apiTutorial);
+    expect(zhCN.settings.system.lead).not.toMatch(apiTutorial);
+    expect(zhCN.settings.customProperties.lead).not.toMatch(apiTutorial);
+  });
+
   it('keeps leftover API placeholders literal after vue-i18n compile', () => {
     const i18n = createTestI18n('en-US');
     const t = i18n.global.t;
     expect(t('connection.password')).toContain('${ENV}');
     expect(t('connection.secretHint')).toContain('${VAR}');
-    expect(t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
-    expect(t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
 
     const zh = createTestI18n('zh-CN');
     expect(zh.global.t('connection.password')).toContain('${ENV}');
     expect(zh.global.t('connection.secretHint')).toContain('${VAR}');
-    expect(zh.global.t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
-    expect(zh.global.t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
   });
 });

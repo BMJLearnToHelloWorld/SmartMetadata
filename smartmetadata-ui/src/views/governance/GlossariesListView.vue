@@ -112,6 +112,7 @@ onMounted(() => {
     :data-source="glossaries"
     table-test-id="glossaries-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -119,6 +120,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
+    @edit="(record) => router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-glossary" @click="createOpen = true">

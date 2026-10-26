@@ -111,6 +111,7 @@ onMounted(() => {
     :data-source="suites"
     table-test-id="test-suites-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -118,6 +119,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
+    @edit="(record) => router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-test-suite" @click="createOpen = true">

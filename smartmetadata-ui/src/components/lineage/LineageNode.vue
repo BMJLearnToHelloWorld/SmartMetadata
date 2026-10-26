@@ -67,6 +67,7 @@ function columnClass(fqn: string): string {
         {{ t('lineage.mappedColumns', { count: data.columns.length }) }}
       </button>
     </div>
+    <div class="lineage-node__body">
     <div class="lineage-node__name">{{ data.displayName || data.name }}</div>
     <div v-if="data.pathLabel" class="lineage-node__path">{{ data.pathLabel }}</div>
     <div class="lineage-node__fqn">{{ data.truncatedFqn || data.fullyQualifiedName || '—' }}</div>
@@ -83,6 +84,7 @@ function columnClass(fqn: string): string {
         <Handle :id="column.fqn" type="source" :position="Position.Right" />
       </div>
     </div>
+    </div>
     <Handle type="source" :position="Position.Right" />
   </div>
 </template>
@@ -90,26 +92,32 @@ function columnClass(fqn: string): string {
 <style scoped>
 .lineage-node {
   width: 252px;
-  padding: 8px 10px 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--sm-border-color, #d5d7da);
+  border-radius: var(--sm-border-radius, 8px);
+  background: var(--sm-bg-container, #fff);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
 }
 .lineage-node--center {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 1px #1677ff inset;
+  border: 2px solid var(--sm-color-primary, #1570ef);
+  box-shadow: 0 0 0 1px var(--sm-color-primary, #1570ef) inset;
 }
 .lineage-node--highlighted {
-  border-color: #fa8c16;
-  box-shadow: 0 0 0 1px #fa8c16 inset;
+  border-color: var(--sm-color-warning, #dc6803);
+  box-shadow: 0 0 0 1px var(--sm-color-warning, #dc6803) inset;
 }
 .lineage-node__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  padding: 6px 10px;
+  background: var(--sm-table-header-bg, #fafafa);
+  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
+}
+.lineage-node__body {
+  padding: 8px 10px 10px;
 }
 .lineage-node__chip {
   margin-inline-end: 0;
@@ -120,13 +128,13 @@ function columnClass(fqn: string): string {
   border: 0;
   background: none;
   padding: 0;
-  color: #1677ff;
+  color: var(--sm-color-primary, #1570ef);
   cursor: pointer;
   font-size: 11px;
 }
 .lineage-node__name {
   font-weight: 650;
-  color: #0f172a;
+  color: var(--sm-text-primary, #181d27);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -134,14 +142,14 @@ function columnClass(fqn: string): string {
 .lineage-node__path,
 .lineage-node__fqn {
   font-size: 11px;
-  color: #64748b;
+  color: var(--sm-text-tertiary, #535862);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .lineage-node__columns {
   margin-top: 8px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--sm-border-secondary, #e9eaeb);
   padding-top: 6px;
 }
 .lineage-node__column {
@@ -151,7 +159,7 @@ function columnClass(fqn: string): string {
   min-height: 22px;
   padding: 0 4px;
   font-size: 12px;
-  color: #334155;
+  color: var(--sm-text-secondary, #414651);
 }
 .lineage-node__column--active {
   background: #fff7e6;
