@@ -67,7 +67,7 @@ describe('iPlatform component-style tokens', () => {
     expect(themeCss).toContain('--sm-content-bg: #f0f2f5');
     expect(themeCss).toContain('--sm-color-primary: #005587');
     expect(themeCss).toContain('--sm-border-radius: 6px');
-    expect(themeCss).toContain(':root[data-theme="dark"]');
+    expect(themeCss).toMatch(/:root\[data-theme=['"]dark['"]\]/);
     expect(themeCss).toContain('.ant-modal');
     expect(themeCss).toContain('.ant-card');
     expect(themeCss).toContain('.ant-table-thead');

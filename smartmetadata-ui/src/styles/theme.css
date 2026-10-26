@@ -70,7 +70,6 @@ body {
 
 .ant-modal .ant-modal-content {
   border-radius: var(--sm-border-radius);
-  overflow: hidden;
 }
 
 /* Card / Table / Input-Select borders use the same surface tokens */
