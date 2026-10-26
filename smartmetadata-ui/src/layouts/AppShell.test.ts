@@ -27,7 +27,8 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
         path: '/',
         component: AppShell,
         children: [
-          { path: '', redirect: { name: 'search' } },
+          { path: '', redirect: { name: 'home' } },
+          { path: 'my-data', name: 'home', component: { template: '<div>home</div>' } },
           { path: 'search', name: 'search', component: { template: '<div>search</div>' } },
           { path: 'lineage', name: 'lineage-home', component: { template: '<div>lineage</div>' } },
           { path: 'insights', name: 'insights', component: { template: '<div>insights</div>' } },
@@ -63,8 +64,9 @@ describe('AppShell', () => {
     localStorage.clear();
   });
 
-  it('renders Explore (not Search) and groups quality under Observability', async () => {
+  it('renders Home then Explore (not Search) and groups quality under Observability', async () => {
     const { wrapper } = await mountShell();
+    expect(wrapper.text()).toContain('Home');
     expect(wrapper.text()).toContain('Explore');
     expect(wrapper.text()).toContain('Lineage');
     expect(wrapper.text()).toContain('Insights');

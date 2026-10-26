@@ -145,7 +145,7 @@ Documented so the next batch does not rediscover them as Alma blockers.
 | Extra official Settings cards | Permission debugger, OM health, data-asset-rules, per-type search settings, lineage/url config, workflows, column bulk, … | Not listed as live or residual tiles | Never in Batch3 inventory; do not start a workstream here |
 | Pipeline `/trigger` / logs websocket | Ingestion run UI | CLI YAML + status read | ADR:2026-10-22-ingestion-console-runs-via-cli |
 | Profiler / DQ **execution** | Profiler/DQ pipelines | Read of stored results / charts only | `jobs.py` raises |
-| Home / Marketplace overview | Left-nav Home + Marketplace | Explore is default `/`; domains + data products under Governance | Do not invent landings |
+| Home / Marketplace overview | Left-nav Home + Marketplace | **Home / My Data shipped** at `/my-data` (post-login default). Marketplace landing still not invented; domains + data products stay under Governance | Marketplace / persona customize residual |
 | Help menu / persona switcher / domain scope | AppBar extras | Locale + profile + Settings + logout | No product APIs |
 | Connectors / MCP tools | 106 connectors; 21 MCP tools | 4 connectors; 7 tools | Out of this UI round (`PARITY.md`) |
 

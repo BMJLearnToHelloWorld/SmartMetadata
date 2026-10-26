@@ -73,6 +73,7 @@ invented-API / DROP residuals — do not fake them.
 | Collaboration / settings-system / custom-property definition leads | **Closed** in Batch 3 |
 | Connection JSON read-only | **Helper closed**; payload remains raw JSON for unsupported types |
 | Insights chart warehouse | **Open** — live snapshots only; no invented page-view / DAU warehouse |
+| Post-login Home / My Data | **Closed** — `/` and login land on `/my-data` (`MyDataView`): greeting, announcements rail, topic widgets wired to existing list/search APIs. Residual: no persona customize / Knowledge Center / curated-assets docStore / Needs you now / first-login welcome / fake DAU |
 | Settings hub residual tiles | **Open by design** — Appearance / Apps / SSO / Persona / inbox stay residual text (do not fake) |
 
 ### Component look / interaction still thinner than OM
@@ -118,7 +119,7 @@ npm run build
 
 Root: `make verify-rebuild` (Job A: `ui-test` then `ui-build`).
 
-Manual: login → Explore (denser cards, hover brand inset) → open an asset
+Manual: login → My Data (`/my-data`, greeting + widgets) → Explore (denser cards, hover brand inset) → open an asset
 with detail tabs (3px ink on a 2px rule) → Users list empty (`No data` +
 spin hint) → Services list ⋯ Delete (Modal.confirm, danger OK) → lineage
 depth/reload tooltips → optional create fields show short extras → toggle

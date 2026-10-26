@@ -14,6 +14,7 @@ import {
   BankOutlined,
   CloudSyncOutlined,
   CommentOutlined,
+  HomeOutlined,
   LineChartOutlined,
   SearchOutlined,
   SettingOutlined,
@@ -21,6 +22,7 @@ import {
 import type { Component } from 'vue';
 
 const ICONS: Record<string, Component> = {
+  home: HomeOutlined,
   search: SearchOutlined,
   'lineage-home': ApartmentOutlined,
   insights: LineChartOutlined,

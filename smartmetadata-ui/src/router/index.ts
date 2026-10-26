@@ -11,6 +11,7 @@ import { loadSession } from '@/auth/token';
 import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
 import InsightsView from '@/views/insights/InsightsView.vue';
+import MyDataView from '@/views/home/MyDataView.vue';
 import LineageHomeView from '@/views/LineageHomeView.vue';
 import LineageView from '@/views/LineageView.vue';
 import BotDetailView from '@/views/admin/BotDetailView.vue';
@@ -72,7 +73,8 @@ export const router = createRouter({
       path: '/',
       component: AppShell,
       children: [
-        { path: '', redirect: { name: 'search' } },
+        { path: '', redirect: { name: 'home' } },
+        { path: 'my-data', name: 'home', component: MyDataView },
         { path: 'search', name: 'search', component: SearchView },
         {
           path: 'assets/:entityType/:fqn',

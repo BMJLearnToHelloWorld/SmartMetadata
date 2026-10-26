@@ -11,10 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { isNavSectionKey, NAV_ENTRIES, sectionKeyForRoute, selectedNavKey } from './nav';
 
 describe('nav IA', () => {
-  it('puts Explore and Lineage at the top and nests quality under Observability', () => {
-    expect(NAV_ENTRIES[0]).toMatchObject({ kind: 'item', key: 'search' });
-    expect(NAV_ENTRIES[1]).toMatchObject({ kind: 'item', key: 'lineage-home' });
-    expect(NAV_ENTRIES[2]).toMatchObject({ kind: 'item', key: 'insights' });
+  it('puts Home then Explore and Lineage at the top and nests quality under Observability', () => {
+    expect(NAV_ENTRIES[0]).toMatchObject({ kind: 'item', key: 'home' });
+    expect(NAV_ENTRIES[1]).toMatchObject({ kind: 'item', key: 'search' });
+    expect(NAV_ENTRIES[2]).toMatchObject({ kind: 'item', key: 'lineage-home' });
+    expect(NAV_ENTRIES[3]).toMatchObject({ kind: 'item', key: 'insights' });
     const observability = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === 'observability');
     expect(observability?.kind === 'section' && observability.items.map((item) => item.key)).toEqual([
       'quality-test-definitions',
@@ -30,10 +31,10 @@ describe('nav IA', () => {
       entry.kind === 'item' ? [entry.key] : [entry.key, ...entry.items.map((item) => item.key)],
     );
     expect(keys).toContain('insights');
+    expect(keys).toContain('home');
     expect(keys).not.toContain('knowledge');
     expect(keys).not.toContain('ontology');
     expect(keys).not.toContain('marketplace');
-    expect(keys).not.toContain('home');
   });
 
   it('maps detail routes onto their list item', () => {
@@ -43,6 +44,7 @@ describe('nav IA', () => {
     expect(selectedNavKey('quality-test-case')).toBe('quality-test-cases');
     expect(selectedNavKey('task')).toBe('tasks');
     expect(selectedNavKey('search')).toBe('search');
+    expect(selectedNavKey('home')).toBe('home');
     expect(selectedNavKey('admin-settings-system')).toBe('admin-settings');
     expect(selectedNavKey('admin-policy')).toBe('admin-settings');
     expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');

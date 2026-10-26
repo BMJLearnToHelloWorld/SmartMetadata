@@ -45,7 +45,7 @@ async function onSubmit(): Promise<void> {
   submitting.value = true;
   try {
     await auth.login(form.email.trim(), form.password);
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/search';
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/my-data';
     await router.replace(redirect);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('login.failed');
