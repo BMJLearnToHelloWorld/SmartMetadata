@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import TaskDetailView from './TaskDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -42,7 +43,7 @@ async function mountView() {
   const wrapper = mount(TaskDetailView, {
     props: { id: 't1' },
     attachTo: document.body,
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper };

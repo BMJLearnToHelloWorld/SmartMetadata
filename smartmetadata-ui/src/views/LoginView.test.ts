@@ -75,7 +75,7 @@ describe('LoginView', () => {
 
   it('renders the sign-in form', async () => {
     const { wrapper } = await mountLogin();
-    expect(wrapper.text()).toContain('Sign in');
+    expect(wrapper.text()).toContain('Sign In');
     expect(wrapper.find('[data-testid="login-email"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="login-submit"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);

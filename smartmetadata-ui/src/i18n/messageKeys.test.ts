@@ -86,5 +86,30 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('explore.entity.dashboardDataModel');
     expect(keys).toContain('asset.fields.chartType');
     expect(keys).toContain('asset.relatedEmpty');
+    expect(keys).toContain('crud.cancel');
+    expect(keys).toContain('crud.save');
+    expect(keys).toContain('collaboration.activity.title');
+    expect(keys).toContain('collaboration.tasks.create');
+    expect(keys).toContain('collaboration.task.addComment');
+    expect(keys).toContain('collaboration.announcements.createTitle');
+    expect(keys).toContain('terms.editTitle');
+    expect(keys).toContain('tags.edit');
+    expect(keys).toContain('connection.hostPort');
+  });
+
+  it('aligns key shell and CRUD English to in-repo OM locale wording', () => {
+    expect(enUS.chrome.searchPlaceholder).toBe('Search for Data Assets');
+    expect(enUS.chrome.logout).toBe('Logout');
+    expect(enUS.login.submit).toBe('Sign In');
+    expect(enUS.nav.dataProducts).toBe('Data Products');
+    expect(enUS.nav.testCases).toBe('Test Cases');
+    expect(enUS.crud.displayName).toBe('Display Name');
+    expect(enUS.asset.tabs.customProperties).toBe('Custom Properties');
+    expect(zhCN.chrome.logout).toBe('退出');
+    expect(zhCN.login.submit).toBe('登入');
+    expect(zhCN.nav.lineage).toBe('血缘关系');
+    expect(zhCN.nav.governance).toBe('数据治理');
+    expect(zhCN.nav.glossaries).toBe('术语库');
+    expect(zhCN.crud.create).toBe('新建');
   });
 });

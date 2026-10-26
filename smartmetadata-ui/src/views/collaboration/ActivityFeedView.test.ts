@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import ActivityFeedView from './ActivityFeedView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -34,7 +35,7 @@ async function mountView() {
   await router.push('/activity');
   await router.isReady();
   const wrapper = mount(ActivityFeedView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };

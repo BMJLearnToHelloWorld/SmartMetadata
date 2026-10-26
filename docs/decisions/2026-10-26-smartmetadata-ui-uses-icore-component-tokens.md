@@ -1,10 +1,10 @@
 # SmartMetadata UI uses iPlatform @icore component tokens without a layout transplant
 
-- **Status:** Accepted
-- **Revisions:** v1 2026-10-26 (initial)
+- **Status:** Superseded by ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
+- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (primary #005587 superseded)
 - **Deciders:** Bernie Bai (owner)
-- **Guard:** `smartmetadata-ui/src/theme/tokens.test.ts` asserts primary `#005587`, radius `6`, and `--sm-*` CSS; reviewers reject IP3Layout / NaviTab / @icore package imports and Settings appearance UI
-- **Related:** `docs/rebuild/UI_STYLE_IPLATFORM.md`; ADR:2026-10-22-clean-room-vue-spa
+- **Guard:** historical — successor ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look owns the live token test; this record must not be used to re-apply `#005587`
+- **Related:** `docs/rebuild/UI_STYLE_IPLATFORM.md`; ADR:2026-10-22-clean-room-vue-spa; ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
 
 ## Context
 
@@ -30,3 +30,12 @@ Primary and radius are now iPlatform defaults. A later appearance page
 would flip `data-theme` and/or ConfigProvider algorithm; it must not
 rewrite IA. Changing the primary hex or importing `@icore` is a new
 decision.
+
+## Amendment (2026-10-26)
+
+Owner authorized an OM-only 1:1 pass first. Primary `#005587` / `@icore`
+surfaces are out of this phase
+(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look). iPlatform3 soul is
+**deferred** until the OM residual matrix is largely closed. The
+no-layout-transplant / no-Settings-appearance / no-@icore-import guards
+still hold.

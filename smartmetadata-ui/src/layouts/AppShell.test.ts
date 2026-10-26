@@ -74,11 +74,15 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="quality-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
+    expect(wrapper.find('.shell__search input').attributes('placeholder')).toBe(
+      'Search for Data Assets',
+    );
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="notifications-button"]').exists()).toBe(false);
+    expect(wrapper.find('.shell__sider').classes().join(' ')).not.toContain('ant-layout-sider-dark');
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
-    expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('Log out');
+    expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('Logout');
   });
 
   it('switches locale, persists sm.locale.v1, and relabels chrome', async () => {
@@ -90,7 +94,7 @@ describe('AppShell', () => {
     expect(wrapper.text()).toContain('探索');
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
-    expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('退出登录');
+    expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('退出');
     expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('zh-CN');
   });
 

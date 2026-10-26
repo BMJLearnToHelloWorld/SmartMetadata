@@ -1,45 +1,23 @@
-# SmartMetadata UI — iPlatform component style (Batch style-1)
+# iPlatform soul — deferred (not this phase)
 
-Authorized **component-style** alignment on the Vue 3 console
-(`smartmetadata-ui/`). iPlatform3 `@icore` is **reference-only** for tokens
-and ant-design-vue ConfigProvider defaults. No `@icore` packages, no CCL
-React, and no layout/IA transplant.
+**This file is not the visual source of truth.** Current work is OM-only:
+[`UI_PARITY_OM_1TO1.md`](UI_PARITY_OM_1TO1.md)
+(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look).
 
-ADR:2026-10-26-smartmetadata-ui-uses-icore-component-tokens.
+Owner sequencing:
 
-## What this batch aligns
+1. Approximate in-repo **openmetadata-ui** first (pages, components, modals,
+   interactive details). Vue 3 + ant-design-vue native. No iPlatform blend.
+2. **Only after** the OM residual matrix is largely closed — a later batch /
+   separate PR may layer **iPlatform3 shadow/soul** (feel/brand accents)
+   without undoing OM IA or cloning IP3Layout.
 
-| Surface | Before | After |
-|---|---|---|
-| CSS variables | Hard-coded `#f4f6f8` / `#fff` / `#e5e7eb` on body + header | `--sm-*` 1:1 with `@icore` light (`--icore-content-bg` `#f0f2f5`, text, border, layout) in `src/styles/theme.css` |
-| ConfigProvider primary | `#1d4ed8` | `#005587` (iPlatform default) |
-| ConfigProvider radius | `4` | `6` (iPlatform radius-on) |
-| Density | `fontSize` 13 / `controlHeight` 32 | Unchanged; compact algorithm **off** |
-| Modal / Card / Table / Input | Ant defaults + local hex | Shared `smAntdTheme` + global CSS in `theme.css` |
+Until then, do **not** re-apply iPlatform primary `#005587`, `@icore` surface
+tokens, or IP3Layout / NaviTab chrome. Historical #37 used those; that
+primary is superseded.
 
-Wiring lives in `src/theme/tokens.ts` (`smAntdTheme`) and `src/App.vue`
-`ConfigProvider`. Body and AppShell header/content backgrounds use the
-variables. AppShell / routes / EntityListShell / EntityDetailShell DOM is
-unchanged.
+Still forbidden in every phase:
 
-Optional `:root[data-theme="dark"]` values exist as a CSS hook only. There
-is **no** Settings appearance page and **no** dark-mode toggle.
-
-## Out of scope (do not invent)
-
-- IP3Layout / NaviTab / TabMenu / Bell / multi-tab chrome
-- Porting `@icore` packages or FullModal as a required wrapper
+- Porting `@icore` packages or IP3Layout / NaviTab / TabMenu
 - Settings appearance / themeConfiguration PUT
-- DROP / connector / MCP / profiler-DQ work
-- Per-view hex churn on lineage/search cards (prefer the global layer)
-
-## How to verify
-
-```bash
-cd smartmetadata-ui
-npm ci
-npm test
-npm run build
-```
-
-Root: `make verify-rebuild` (Job A: `ui-test` then `ui-build`).
+- DROP / connector / MCP / profiler-DQ invent

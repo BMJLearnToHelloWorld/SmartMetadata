@@ -29,9 +29,10 @@ ADR:2026-10-22-dq-entity-links-use-message-parser-format, and
 ADR:2026-10-22-ingestion-console-runs-via-cli,
 ADR:2026-10-22-collaboration-uses-activity-and-conversations, and
 ADR:2026-10-22-custom-property-values-use-extension-patch.
-Component style (iPlatform `@icore` tokens, no layout transplant):
-`docs/rebuild/UI_STYLE_IPLATFORM.md`
-(ADR:2026-10-26-smartmetadata-ui-uses-icore-component-tokens).
+Component look is **OM-only** this phase (`#1570ef` tokens, no React copy,
+no layout transplant): `docs/rebuild/UI_PARITY_OM_1TO1.md`
+(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look). iPlatform3 soul is
+deferred until that residual matrix is largely closed.
 Go-live / acceptance: `docs/rebuild/PHASE11.md` (`make verify-rebuild`) and
 `docs/rebuild/VERIFY_RUNTIME.md` (GitHub Actions Jobs A–C).
 

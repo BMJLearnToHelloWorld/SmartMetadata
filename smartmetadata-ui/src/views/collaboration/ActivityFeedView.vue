@@ -3,7 +3,8 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { listActivityEvents } from '@/api/activity';
@@ -13,6 +14,7 @@ import { toEntityLink } from '@/quality/entityLink';
 import type { ActivityEvent } from '@/types/collaboration';
 
 const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const events = ref<ActivityEvent[]>([]);
@@ -25,13 +27,13 @@ const form = reactive({
   message: '',
 });
 
-const columns = [
-  { title: 'When', key: 'timestamp', width: 180 },
-  { title: 'Type', dataIndex: 'eventType', key: 'eventType', width: 180 },
-  { title: 'Summary', key: 'summary' },
-  { title: 'Asset', key: 'entity' },
-  { title: 'Actor', key: 'actor', width: 160 },
-];
+const columns = computed(() => [
+  { title: t('collaboration.activity.when'), key: 'timestamp', width: 180 },
+  { title: t('collaboration.activity.type'), dataIndex: 'eventType', key: 'eventType', width: 180 },
+  { title: t('collaboration.activity.summary'), key: 'summary' },
+  { title: t('collaboration.activity.asset'), key: 'entity' },
+  { title: t('collaboration.activity.actor'), key: 'actor', width: 160 },
+]);
 
 function formatTime(value?: number): string {
   if (!value) {
@@ -49,7 +51,7 @@ async function load(): Promise<void> {
     total.value = page.total;
   } catch (error) {
     events.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load activity';
+    errorMessage.value = error instanceof Error ? error.message : t('collaboration.activity.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -64,10 +66,10 @@ async function onCreate(): Promise<void> {
     });
     createOpen.value = false;
     form.message = '';
-    message.success('Posted conversation');
+    message.success(t('collaboration.activity.posted'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create conversation failed');
+    message.error(error instanceof Error ? error.message : t('collaboration.activity.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -92,15 +94,13 @@ onMounted(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div class="collab-head">
         <div>
-          <Typography.Title :level="4">Activity</Typography.Title>
+          <Typography.Title :level="4">{{ t('collaboration.activity.title') }}</Typography.Title>
           <Typography.Paragraph type="secondary">
-            Change feed from GET /api/v1/activity. Operator comments are POST
-            /api/v1/conversations (<code>message</code> + MessageParser
-            <code>about</code>). There is no <code>/v1/feed</code> on this server.
+            {{ t('collaboration.activity.lead') }}
           </Typography.Paragraph>
         </div>
         <Button type="primary" data-testid="create-conversation" @click="createOpen = true">
-          Post conversation
+          {{ t('collaboration.activity.post') }}
         </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
@@ -142,21 +142,32 @@ onMounted(() => {
         </template>
       </Table>
       <Typography.Text type="secondary">
-        {{ events.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
+        {{
+          total !== undefined
+            ? t('crud.shownOf', { shown: events.length, total })
+            : t('crud.shown', { shown: events.length })
+        }}
       </Typography.Text>
     </Space>
-    <Modal v-model:open="createOpen" title="Post conversation" :confirm-loading="creating" @ok="onCreate">
+    <Modal
+      v-model:open="createOpen"
+      :title="t('collaboration.activity.createTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="creating"
+      @ok="onCreate"
+    >
       <Form layout="vertical">
-        <Form.Item label="Entity type" required>
+        <Form.Item :label="t('collaboration.activity.entityType')" required>
           <Select v-model:value="form.entityType">
             <Select.Option value="table">table</Select.Option>
             <Select.Option value="topic">topic</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item label="FQN" required>
+        <Form.Item :label="t('collaboration.activity.fqn')" required>
           <Input v-model:value="form.entityFqn" data-testid="conversation-fqn" />
         </Form.Item>
-        <Form.Item label="Message" required>
+        <Form.Item :label="t('collaboration.activity.message')" required>
           <Input.TextArea v-model:value="form.message" data-testid="conversation-message" :rows="3" />
         </Form.Item>
       </Form>
