@@ -487,6 +487,21 @@ const zhCN = {
       assignUserFailed: '向用户分配角色失败',
       assignTeamFailed: '向团队分配角色失败',
     },
+    policies: {
+      title: '策略',
+      lead: 'GET /api/v1/policies。规则、角色和团队来自接口返回。本页不发明策略编辑器。',
+      detailLead: 'GET /api/v1/policies/{id}。分配仍在角色和团队实体上；本页只读。',
+      rules: '规则',
+      roles: '角色',
+      teams: '团队',
+      rulesTab: '规则',
+      rolesTab: '角色',
+      teamsTab: '团队',
+      effect: '效果',
+      operations: '操作',
+      resources: '资源',
+      condition: '条件',
+    },
   },
   governance: {
     classifications: {
@@ -713,7 +728,6 @@ const zhCN = {
       generic: '本控制台未接线。',
       admins: '没有单独的管理员页。请到用户列表筛选管理员。',
       onlineUsers: '本控制台不调用 online-users API。',
-      policies: '没有策略列表或编辑器。角色/团队页只显示策略名称。',
       auditLogs: '没有审计日志客户端。',
       appearance: '没有主题外观的 PUT 页。主题配置在系统页只读列出。',
       searchSettings: '没有搜索设置编辑器。探索页使用已交付的 GET /v1/search/query。',
@@ -722,7 +736,6 @@ const zhCN = {
       applications: '没有应用目录客户端。',
       sso: 'SSO 回调不在范围内。提供方可在系统页只读查看（GET /v1/system/config/auth）。',
       persona: 'Persona 落地页在第 9 阶段已跳过。本控制台没有 persona 切换 API。',
-      customProperties: '没有设置里的定义页。资产「自定义属性」页签已经编辑取值。',
     },
     items: {
       admins: '管理员',
@@ -746,7 +759,7 @@ const zhCN = {
       },
       access: {
         title: '访问控制',
-        description: '角色来自 GET /v1/roles。策略仍是 residual。',
+        description: '角色来自 GET /v1/roles，策略来自 GET /v1/policies。',
       },
       bots: {
         title: '机器人',
@@ -782,7 +795,7 @@ const zhCN = {
       },
       customProperties: {
         title: '自定义属性',
-        description: '定义管理不是本产品的设置页。',
+        description: '定义来自 GET /v1/metadata/types。取值仍在资产页签。',
       },
     },
     system: {
@@ -826,6 +839,14 @@ const zhCN = {
       allLead: '搜索、主题、血缘、MCP 等设置为只读列出。集合上有 PUT，但这里只编辑登录和邮件。',
       editable: '是',
       readOnly: '只读',
+    },
+    customProperties: {
+      title: '自定义属性定义',
+      lead: 'GET /api/v1/metadata/types?category=entity&fields=customProperties。打开类型后读取 GET /api/v1/metadata/types/name/{type}/customProperties。本页不发明定义编辑器；资产取值仍在「自定义属性」页签。',
+      detailLead: '{type} 的定义来自 GET /api/v1/metadata/types/name/{type}/customProperties。PUT addProperty 未接线。',
+      definitions: '定义',
+      displayName: '显示名',
+      propertyType: '属性类型',
     },
   },
 } as const;

@@ -38,6 +38,8 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'admin-roles',
   'admin-bots',
   'admin-settings-system',
+  'admin-policies',
+  'admin-settings-custom-properties',
   'governance-glossaries',
   'governance-classifications',
   'governance-domains',
@@ -73,7 +75,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     descriptionKey: 'settings.categories.access.description',
     items: [
       { key: 'roles', titleKey: 'nav.roles', kind: 'route', routeName: 'admin-roles' },
-      { key: 'policies', titleKey: 'settings.items.policies', kind: 'residual', residualKey: 'settings.residual.policies' },
+      { key: 'policies', titleKey: 'settings.items.policies', kind: 'route', routeName: 'admin-policies' },
       {
         key: 'audit-logs',
         titleKey: 'settings.items.auditLogs',
@@ -191,8 +193,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: 'custom-properties',
         titleKey: 'settings.items.customProperties',
-        kind: 'residual',
-        residualKey: 'settings.residual.customProperties',
+        kind: 'route',
+        routeName: 'admin-settings-custom-properties',
       },
     ],
   },

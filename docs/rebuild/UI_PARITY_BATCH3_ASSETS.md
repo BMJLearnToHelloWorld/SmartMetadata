@@ -45,7 +45,7 @@ PATCH still uses `/v1/{collection}/{id}` from the same map (including
 |---|---|
 | `query`, `apiCollection`, `apiEndpoint`, `dataContract`, drive/file/spreadsheet/worksheet, `report` | Known Apache collections exist, but this batch only named the five Explore leftovers from #31 |
 | KPI Insights tab (`GET /v1/kpi`) | Closed in batch 3.3 (`UI_PARITY_BATCH3_KPI.md`). KPI CRUD / history charts still residual |
-| Settings Policies | Batch 3.4 |
+| Settings Policies | Closed in batch 3.4 (`UI_PARITY_BATCH3_SETTINGS.md`) |
 | App analytics / `listChartData` extras | Insights residual from batch 2 step 4 |
 | Chart **widget** render | Slim GET only; no embedded BI |
 | Pipeline `/trigger` / logs websocket | Slim console does not call them |

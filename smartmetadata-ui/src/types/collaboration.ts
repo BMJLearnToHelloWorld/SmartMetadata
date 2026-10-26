@@ -149,4 +149,14 @@ export interface CustomPropertyDef {
   propertyType?: string;
 }
 
+export interface MetadataType {
+  id?: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  nameSpace?: string;
+  customProperties: CustomPropertyDef[];
+}
+
 export type ExtensionValues = Record<string, unknown>;

@@ -41,12 +41,13 @@ governance / services.
 | User menu | Profile icon → view profile / logout | Dropdown: view profile when `GET /v1/users/loggedInUser` has `id`, Settings hub, logout | No persona switcher, no role/team lists in the menu |
 | Notifications | Bell + websocket `NotificationBox` | **Omitted** — no inbox/websocket client | Activity + Tasks remain pages |
 | Settings landing | Category cards | `SettingsHubView` at `/admin/settings` | Cards that lack a Vue page stay residual text |
-| Members / Access / Bots | Nested Settings routes | Live links to Users / Teams / Roles / Bots | Admins / online-users / policies / audit logs residual |
+| Members / Access / Bots | Nested Settings routes | Live links to Users / Teams / Roles / Bots / Policies | Admins / online-users / audit logs residual |
 | Governance | Settings + left-nav Govern | Live links to glossaries, classifications, domains, data products | Ontology **DROP** |
 | Services | Settings → service types | Live links to existing ingestion services + pipelines | Per-type service admin pages not split out |
 | Preferences | Email / login / theme / search / profiler | Live **Login and email** at `/admin/settings/system` (`GET/PUT /v1/system/settings` for those two types; auth GET read-only) | Appearance, search-settings, profiler-run residual |
 | Notifications category | Alerts + announcements | Live links to existing alert + announcement pages | No navbar inbox |
-| Apps / SSO / Persona / custom-property defs | Official Settings cards | Residual copy only | Do not invent save forms |
+| Apps / SSO / Persona | Official Settings cards | Residual copy only | Do not invent save forms |
+| Custom property definitions | Official Settings cards | Live Settings page (`UI_PARITY_BATCH3_SETTINGS.md`) | No definition editor |
 
 i18n: `chrome.userMenu|viewProfile|settings` and `settings.*` in zh-CN + en-US.
 
@@ -60,8 +61,9 @@ No new Java/Python endpoints.
 | Help menu / version-mismatch toast | No help-link client; version stays on System |
 | Domain scope switcher | No active-domain preference API in this console |
 | Persona switcher / Applications / SSO callback | Documented P2/P9 gaps; auth provider is read-only on System |
-| Policies / audit logs / online users / appearance / search-settings / profiler-run | No product Vue page + client for those writes |
-| Custom property **definitions** admin | Asset Custom properties tab already edits values |
+| Policies | Closed in batch 3.4 (`UI_PARITY_BATCH3_SETTINGS.md`) — read-only list/detail |
+| Audit logs / online users / appearance / search-settings / profiler-run | No product Vue page + client for those writes |
+| Custom property **definitions** admin | Closed in batch 3.4; asset tab still edits **values** only |
 | Insights / KPI | Batch 2 step 4 (`UI_PARITY_BATCH2_CHARTS.md`) |
 | Pipeline DAG / non-table asset shells | Later batch step |
 | Knowledge / Ontology / AI | Collate-only **DROP** |
@@ -84,8 +86,8 @@ Manual (already-running slim server; this PR does not redeploy):
 2. User menu: Settings → hub. Profile → `/admin/users/:id` only after
    `loggedInUser` has an id. Logout still clears the session.
 3. Settings hub cards open Users / Teams / Bots / Classifications /
-   Glossaries / Services / Login and email.
-4. Residual rows (Applications, SSO, Persona, inbox, policies) are text,
+   Glossaries / Services / Login and email / Policies / Custom properties.
+4. Residual rows (Applications, SSO, Persona, inbox) are text,
    not save buttons.
 5. Login and email still PUT `loginConfiguration` / `emailConfiguration`
    only.

@@ -55,6 +55,8 @@ describe('settings hub catalog', () => {
         'classifications',
         'system',
         'services',
+        'policies',
+        'custom-properties',
       ]),
     );
   });

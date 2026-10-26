@@ -82,6 +82,28 @@ export interface AdminRole {
   teams: EntityRef[];
 }
 
+export interface PolicyRule {
+  name: string;
+  description?: string;
+  effect?: string;
+  operations: string[];
+  resources: string[];
+  condition?: string;
+}
+
+export interface AdminPolicy {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  enabled?: boolean;
+  deleted?: boolean;
+  owners: EntityRef[];
+  teams: EntityRef[];
+  roles: EntityRef[];
+  rules: PolicyRule[];
+}
+
 export interface AdminBot {
   id: string;
   name: string;

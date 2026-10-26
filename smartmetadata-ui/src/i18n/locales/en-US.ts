@@ -497,6 +497,21 @@ const enUS = {
       assignUserFailed: 'Assign role to user failed',
       assignTeamFailed: 'Assign role to team failed',
     },
+    policies: {
+      title: 'Policies',
+      lead: 'GET /api/v1/policies. Rules, roles, and teams come from the payload. This page does not invent a policy editor.',
+      detailLead: 'GET /api/v1/policies/{id}. Assignment stays on the role and team entities; this page is read-only.',
+      rules: 'Rules',
+      roles: 'Roles',
+      teams: 'Teams',
+      rulesTab: 'Rules',
+      rolesTab: 'Roles',
+      teamsTab: 'Teams',
+      effect: 'Effect',
+      operations: 'Operations',
+      resources: 'Resources',
+      condition: 'Condition',
+    },
   },
   governance: {
     classifications: {
@@ -723,7 +738,6 @@ const enUS = {
       generic: 'Not wired in this console.',
       admins: 'No separate Admins page. Use Users and filter Admins.',
       onlineUsers: 'No online-users API is called by this console.',
-      policies: 'No Policies list or editor is wired. Role/team pages show policy names only.',
       auditLogs: 'No audit-log client is wired.',
       appearance: 'No theme/appearance PUT page. Theme settings stay read-only on System.',
       searchSettings: 'No search-settings editor. Explore uses GET /v1/search/query as shipped.',
@@ -732,7 +746,6 @@ const enUS = {
       applications: 'No applications catalog client is wired.',
       sso: 'SSO callback is out of scope. Provider is read-only on System (GET /v1/system/config/auth).',
       persona: 'Persona landing was skipped in Phase 9. No persona switcher API in this console.',
-      customProperties: 'No Settings definitions page. Asset Custom properties tab already edits values.',
     },
     items: {
       admins: 'Admins',
@@ -756,7 +769,7 @@ const enUS = {
       },
       access: {
         title: 'Access',
-        description: 'Roles from GET /v1/roles. Policies stay residual.',
+        description: 'Roles from GET /v1/roles and policies from GET /v1/policies.',
       },
       bots: {
         title: 'Bots',
@@ -792,7 +805,7 @@ const enUS = {
       },
       customProperties: {
         title: 'Custom properties',
-        description: 'Definition admin is not a product Settings page.',
+        description: 'Definitions from GET /v1/metadata/types. Values stay on the asset tab.',
       },
     },
     system: {
@@ -839,6 +852,15 @@ const enUS = {
         'Search, theme, lineage, MCP, and other settings are listed read-only. PUT exists for the collection, but only login and email are edited here.',
       editable: 'yes',
       readOnly: 'read-only',
+    },
+    customProperties: {
+      title: 'Custom property definitions',
+      lead: 'GET /api/v1/metadata/types?category=entity&fields=customProperties. Open a type to read GET /api/v1/metadata/types/name/{type}/customProperties. This page does not invent a definition editor; asset values stay on the Custom properties tab.',
+      detailLead:
+        'Definitions for {type} from GET /api/v1/metadata/types/name/{type}/customProperties. PUT addProperty is not wired.',
+      definitions: 'Definitions',
+      displayName: 'Display name',
+      propertyType: 'Property type',
     },
   },
 } as const;

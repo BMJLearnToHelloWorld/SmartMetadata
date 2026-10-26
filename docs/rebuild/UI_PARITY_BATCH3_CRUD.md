@@ -47,7 +47,7 @@ buttons, or pipeline trigger/websocket.
 
 | Gap | Why it stays |
 |---|---|
-| Settings Policies list/editor | Batch 3.4 — not this pass |
+| Settings Policies list/editor | Closed as **read-only** in batch 3.4 (`UI_PARITY_BATCH3_SETTINGS.md`); authoring still residual |
 | Collaboration tasks / announcements / activity | Same Card+Table debt, not named in this batch |
 | GlossaryTerm / Tag detail (child pages) | Parent lists already shelled; child pages stay as shipped |
 | Team / glossary / classification / bot / domain catalog search | No product search client; roles keep the existing `/v1/roles/search` only |

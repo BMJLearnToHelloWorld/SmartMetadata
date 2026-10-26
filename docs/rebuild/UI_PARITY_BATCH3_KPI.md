@@ -43,7 +43,7 @@ No new Java/Python endpoints. No invented numeric points.
 | KPI create / edit / delete | Official write APIs exist; this batch is read-only list/detail |
 | `GET /v1/kpi/{name}/kpiResult` history charts | Needs a Data Insights job this UI does not start |
 | App analytics (page views, DAU) | Official reads web-analytic report indexes this console does not call |
-| Settings Policies | Batch 3.4 |
+| Settings Policies | Closed in batch 3.4 (`UI_PARITY_BATCH3_SETTINGS.md`) |
 | Profiler / DQ **execution** | `jobs.py` still raises |
 | Knowledge / Ontology / AI | Collate-only **DROP** |
 
