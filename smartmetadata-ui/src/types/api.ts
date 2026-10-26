@@ -119,6 +119,11 @@ export interface AssetDetail {
   pipelineState?: string;
   project?: string;
   dashboardType?: string;
+  chartType?: string;
+  metricType?: string;
+  unitOfMeasurement?: string;
+  granularity?: string;
+  dataModelType?: string;
   algorithm?: string;
   target?: string;
   prefix?: string;

@@ -42,6 +42,26 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
     collection: 'storedProcedures',
     fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
   },
+  chart: {
+    collection: 'charts',
+    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl',
+  },
+  metric: {
+    collection: 'metrics',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity',
+  },
+  dashboardDataModel: {
+    collection: 'dashboard/datamodels',
+    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl',
+  },
+  database: {
+    collection: 'databases',
+    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl',
+  },
+  databaseSchema: {
+    collection: 'databaseSchemas',
+    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl',
+  },
 };
 
 export function assetLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {

@@ -440,4 +440,101 @@ describe('AssetDetailView non-table shells', () => {
     expect(wrapper.find('[data-testid="pipeline-task-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipeline-executions-empty"]').exists()).toBe(true);
   });
+
+  it('loads chart / metric / dashboardDataModel / database / schema GETs and keeps query unwired', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/charts/name/')) {
+          return jsonResponse({
+            id: 'ch-1',
+            name: 'revenue',
+            fullyQualifiedName: 'bi.sales.revenue',
+            chartType: 'Bar',
+            service: { name: 'superset' },
+            dashboards: [{ name: 'sales', type: 'dashboard' }],
+          });
+        }
+        if (url.includes('/api/v1/metrics/name/')) {
+          return jsonResponse({
+            id: 'm-1',
+            name: 'mau',
+            fullyQualifiedName: 'kpi.mau',
+            metricType: 'COUNT',
+            metricExpression: { language: 'SQL', code: 'SELECT 1' },
+          });
+        }
+        if (url.includes('/api/v1/dashboard/datamodels/name/')) {
+          return jsonResponse({
+            id: 'dm-1',
+            name: 'sales_model',
+            fullyQualifiedName: 'bi.sales.model',
+            dataModelType: 'SupersetDataModel',
+            columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+          });
+        }
+        if (url.includes('/api/v1/databases/name/')) {
+          return jsonResponse({
+            id: 'db-1',
+            name: 'analytics',
+            fullyQualifiedName: 'svc.analytics',
+            service: { name: 'svc' },
+            databaseSchemas: [],
+          });
+        }
+        if (url.includes('/api/v1/databaseSchemas/name/')) {
+          return jsonResponse({
+            id: 'sch-1',
+            name: 'marts',
+            fullyQualifiedName: 'svc.analytics.marts',
+            database: { name: 'analytics' },
+            tables: [{ name: 'orders', type: 'table' }],
+          });
+        }
+        if (url.includes('/api/v1/lineage/') || url.includes('/api/v1/activity/') || url.includes('/api/v1/conversations') || url.includes('/customProperties') || url.includes('/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+
+    const chart = await mountTypedView('chart', 'bi.sales.revenue');
+    expect(chart.wrapper.text()).toContain('Bar');
+    expect(chart.wrapper.text()).toContain('superset');
+    expect(chart.wrapper.text()).toContain('sales');
+    expect(chart.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    expect(chart.wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    expect(chart.wrapper.text()).not.toContain('No slim GET is wired');
+    chart.wrapper.unmount();
+
+    const metric = await mountTypedView('metric', 'kpi.mau');
+    expect(metric.wrapper.text()).toContain('COUNT');
+    expect(metric.wrapper.find('[data-testid="asset-code-block"]').exists()).toBe(true);
+    expect(metric.wrapper.text()).toContain('SELECT 1');
+    metric.wrapper.unmount();
+
+    const model = await mountTypedView('dashboardDataModel', 'bi.sales.model');
+    expect(model.wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    expect(model.wrapper.text()).toContain('amount');
+    expect(model.wrapper.text()).toContain('SupersetDataModel');
+    model.wrapper.unmount();
+
+    const database = await mountTypedView('database', 'svc.analytics');
+    expect(database.wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
+    expect(database.wrapper.find('[data-testid="asset-related-empty"]').exists()).toBe(true);
+    expect(database.wrapper.text()).not.toContain('No slim GET is wired');
+    database.wrapper.unmount();
+
+    const schema = await mountTypedView('databaseSchema', 'svc.analytics.marts');
+    expect(schema.wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    expect(schema.wrapper.text()).toContain('orders');
+    expect(schema.wrapper.text()).toContain('analytics');
+    schema.wrapper.unmount();
+
+    const query = await mountTypedView('query', 'analytics.q1');
+    expect(query.wrapper.text()).toContain('No slim GET is wired');
+    expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(false);
+    query.wrapper.unmount();
+  });
 });

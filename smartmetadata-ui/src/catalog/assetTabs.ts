@@ -31,6 +31,7 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
     case 'topic':
     case 'container':
     case 'searchIndex':
+    case 'dashboardDataModel':
       keys.push('schema');
       break;
     case 'dashboard':
@@ -43,6 +44,7 @@ export function assetTabKeys(entityType: string): AssetTabKey[] {
       keys.push('tasks', 'executions');
       break;
     case 'storedProcedure':
+    case 'metric':
       keys.push('code');
       break;
     default:

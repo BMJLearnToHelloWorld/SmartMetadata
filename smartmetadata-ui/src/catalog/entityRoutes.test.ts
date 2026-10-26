@@ -63,6 +63,26 @@ describe('entityRoutes', () => {
       path: `/v1/storedProcedures/name/${encodeURIComponent('svc.db.schema.sp')}`,
       fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
     });
+    expect(resolveDetailEndpoint('chart', 'bi.sales.revenue')).toEqual({
+      path: `/v1/charts/name/${encodeURIComponent('bi.sales.revenue')}`,
+      fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl',
+    });
+    expect(resolveDetailEndpoint('metric', 'kpi.mau')).toEqual({
+      path: `/v1/metrics/name/${encodeURIComponent('kpi.mau')}`,
+      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity',
+    });
+    expect(resolveDetailEndpoint('dashboardDataModel', 'bi.sales.model')).toEqual({
+      path: `/v1/dashboard/datamodels/name/${encodeURIComponent('bi.sales.model')}`,
+      fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl',
+    });
+    expect(resolveDetailEndpoint('database', 'svc.analytics')).toEqual({
+      path: `/v1/databases/name/${encodeURIComponent('svc.analytics')}`,
+      fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl',
+    });
+    expect(resolveDetailEndpoint('databaseSchema', 'svc.analytics.marts')).toEqual({
+      path: `/v1/databaseSchemas/name/${encodeURIComponent('svc.analytics.marts')}`,
+      fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl',
+    });
   });
 
   it('builds a lineage route that keeps the raw FQN in params', () => {
@@ -73,9 +93,10 @@ describe('entityRoutes', () => {
   });
 
   it('does not invent endpoints for unwired entity types', () => {
-    expect(resolveDetailEndpoint('chart', 'bi.sales.chart')).toBeNull();
+    expect(resolveDetailEndpoint('query', 'analytics.q1')).toBeNull();
+    expect(resolveDetailEndpoint('kpi', 'retention')).toBeNull();
     expect(resolveDetailEndpoint('', 'x')).toBeNull();
-    expect(resolvePatchPath('chart', 'id-1')).toBeNull();
+    expect(resolvePatchPath('query', 'id-1')).toBeNull();
   });
 
   it('maps wired types onto PATCH /v1/{collection}/{id}', () => {

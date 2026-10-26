@@ -77,5 +77,10 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('asset.tabs.executions');
     expect(keys).toContain('asset.tasksEmpty');
     expect(keys).toContain('explore.entity.searchIndex');
+    expect(keys).toContain('explore.entity.chart');
+    expect(keys).toContain('explore.entity.metric');
+    expect(keys).toContain('explore.entity.dashboardDataModel');
+    expect(keys).toContain('asset.fields.chartType');
+    expect(keys).toContain('asset.relatedEmpty');
   });
 });

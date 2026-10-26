@@ -187,6 +187,110 @@ describe('asset entity writes', () => {
     expect(proc.schemaRows).toEqual([]);
   });
 
+  it('maps chart, metric, dashboard data model, database, and schema GETs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/charts/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'ch-1',
+              name: 'revenue',
+              fullyQualifiedName: 'bi.sales.revenue',
+              chartType: 'Bar',
+              sourceUrl: 'https://bi.example/charts/revenue',
+              service: { name: 'superset' },
+              dashboards: [{ name: 'sales', type: 'dashboard' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/metrics/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'm-1',
+              name: 'mau',
+              fullyQualifiedName: 'kpi.mau',
+              metricType: 'COUNT',
+              unitOfMeasurement: 'EVENTS',
+              granularity: 'DAY',
+              metricExpression: { language: 'SQL', code: 'SELECT COUNT(*) FROM users' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/dashboard/datamodels/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'dm-1',
+              name: 'sales_model',
+              fullyQualifiedName: 'bi.sales.model',
+              dataModelType: 'SupersetDataModel',
+              project: 'Finance',
+              columns: [{ name: 'amount', dataType: 'DECIMAL' }],
+              service: { name: 'superset' },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/databases/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'db-1',
+              name: 'analytics',
+              fullyQualifiedName: 'svc.analytics',
+              service: { name: 'svc' },
+              databaseSchemas: [{ name: 'marts', type: 'databaseSchema' }],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'sch-1',
+            name: 'marts',
+            fullyQualifiedName: 'svc.analytics.marts',
+            service: { name: 'svc' },
+            database: { name: 'analytics' },
+            tables: [{ name: 'orders', type: 'table' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+
+    const chart = await fetchAssetDetail('chart', 'bi.sales.revenue');
+    expect(chart.chartType).toBe('Bar');
+    expect(chart.children?.[0]).toMatchObject({ name: 'sales', type: 'dashboard' });
+    expect(lastFetch().url).toContain('/api/v1/charts/name/');
+    expect(lastFetch().url).toContain('dashboards');
+
+    const metric = await fetchAssetDetail('metric', 'kpi.mau');
+    expect(metric.metricType).toBe('COUNT');
+    expect(metric.unitOfMeasurement).toBe('EVENTS');
+    expect(metric.granularity).toBe('DAY');
+    expect(metric.storedProcedureCode).toEqual({ language: 'SQL', code: 'SELECT COUNT(*) FROM users' });
+    expect(lastFetch().url).toContain('/api/v1/metrics/name/');
+
+    const model = await fetchAssetDetail('dashboardDataModel', 'bi.sales.model');
+    expect(model.schemaRows).toEqual([{ name: 'amount', dataType: 'DECIMAL' }]);
+    expect(model.dataModelType).toBe('SupersetDataModel');
+    expect(model.project).toBe('Finance');
+    expect(lastFetch().url).toContain('/api/v1/dashboard/datamodels/name/');
+
+    const database = await fetchAssetDetail('database', 'svc.analytics');
+    expect(database.children?.[0]).toMatchObject({ name: 'marts', type: 'databaseSchema' });
+    expect(lastFetch().url).toContain('/api/v1/databases/name/');
+    expect(lastFetch().url).toContain('databaseSchemas');
+
+    const schema = await fetchAssetDetail('databaseSchema', 'svc.analytics.marts');
+    expect(schema.database?.name).toBe('analytics');
+    expect(schema.children?.[0]).toMatchObject({ name: 'orders', type: 'table' });
+    expect(lastFetch().url).toContain('/api/v1/databaseSchemas/name/');
+    expect(lastFetch().url).toContain('tables');
+  });
+
   it('PATCHes a table by id with RFC 6902 json-patch', async () => {
     vi.stubGlobal(
       'fetch',
