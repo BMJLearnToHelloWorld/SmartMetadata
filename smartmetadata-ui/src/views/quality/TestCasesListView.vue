@@ -3,19 +3,35 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createTestCase, listTestCases } from '@/api/testCases';
 import { listTestDefinitions } from '@/api/testDefinitions';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import {
+  DEFAULT_PAGE_SIZE,
+  canGoNext,
+  canGoPrev,
+  createCursorPager,
+  entityLabel,
+  goNext,
+  goPrev,
+  type CursorPager,
+} from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import { toEntityLink } from '@/quality/entityLink';
 import type { TestCase, TestDefinition } from '@/types/quality';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const cases = ref<TestCase[]>([]);
 const total = ref<number | undefined>();
+const pageAfter = ref<string | undefined>();
+const cursor = ref<CursorPager>(createCursorPager());
 const definitions = ref<TestDefinition[]>([]);
 const createOpen = ref(false);
 const creating = ref(false);
@@ -30,12 +46,15 @@ const form = reactive({
   parameterText: '',
 });
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Asset', key: 'entityFQN' },
-  { title: 'Definition', key: 'testDefinition' },
-  { title: 'Latest status', key: 'status', width: 140 },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('quality.testCases.asset'), key: 'entityFQN' },
+  { title: t('quality.testCases.definition'), key: 'testDefinition' },
+  { title: t('quality.testCases.latestStatus'), key: 'status', width: 140 },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
 
 function parseParameterValues(text: string) {
   return text
@@ -55,15 +74,32 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listTestCases({ limit: 50, includeAllTests: true });
+    const page = await listTestCases({
+      limit: DEFAULT_PAGE_SIZE,
+      after: cursor.value.after,
+      includeAllTests: true,
+    });
     cases.value = page.data;
     total.value = page.total;
+    pageAfter.value = page.after;
   } catch (error) {
     cases.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load test cases';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+function onNext(): void {
+  if (pageAfter.value) {
+    cursor.value = goNext(cursor.value, pageAfter.value);
+  }
+  void load();
+}
+
+function onPrev(): void {
+  cursor.value = goPrev(cursor.value);
+  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -78,10 +114,10 @@ async function onCreate(): Promise<void> {
       parameterValues: parseParameterValues(form.parameterText),
     });
     createOpen.value = false;
-    message.success(`Created test case ${created.name}`);
+    message.success(t('quality.testCases.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create test case failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -98,111 +134,99 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="dq-head">
-        <div>
-          <Typography.Title :level="4">Test cases</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/dataQuality/testCases. CreateTestCase requires
-            <code>name</code>, <code>testDefinition</code> FQN, and a MessageParser
-            <code>entityLink</code>.
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-test-case" @click="createOpen = true">Create test case</Button>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="test-cases-table"
-        :columns="columns"
-        :data-source="cases"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`test-case-row-${(record as TestCase).id}`"
-              @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
-            >
-              {{ (record as TestCase).displayName || (record as TestCase).name }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'entityFQN'">
-            {{ (record as TestCase).entityFQN || (record as TestCase).entityLink || '—' }}
-          </template>
-          <template v-else-if="column.key === 'testDefinition'">
-            {{
-              (record as TestCase).testDefinition?.fullyQualifiedName ||
-              (record as TestCase).testDefinition?.name ||
-              '—'
-            }}
-          </template>
-          <template v-else-if="column.key === 'status'">
-            {{
-              (record as TestCase).testCaseResult?.testCaseStatus ||
-              (record as TestCase).testCaseStatus ||
-              '—'
-            }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ cases.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create test case" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="form.name" data-testid="create-test-case-name" />
-        </Form.Item>
-        <Form.Item label="Test definition" required>
-          <Select
-            v-model:value="form.testDefinition"
-            show-search
-            option-filter-prop="label"
-            data-testid="create-test-case-definition"
+  <EntityListShell
+    :title="t('quality.testCases.title')"
+    :lead="t('quality.testCases.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="cases"
+    table-test-id="test-cases-table"
+    :total="total"
+    :has-next="hasNext"
+    :has-prev="hasPrev"
+    @refresh="load"
+    @next="onNext"
+    @prev="onPrev"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-test-case" @click="createOpen = true">
+        {{ t('quality.testCases.create') }}
+      </Button>
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`test-case-row-${(record as TestCase).id}`"
+          @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+        >
+          {{ entityLabel(record as TestCase) }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'entityFQN'">
+        {{ (record as TestCase).entityFQN || (record as TestCase).entityLink || '—' }}
+      </template>
+      <template v-else-if="column.key === 'testDefinition'">
+        {{
+          (record as TestCase).testDefinition?.fullyQualifiedName ||
+          (record as TestCase).testDefinition?.name ||
+          '—'
+        }}
+      </template>
+      <template v-else-if="column.key === 'status'">
+        {{
+          (record as TestCase).testCaseResult?.testCaseStatus || (record as TestCase).testCaseStatus || '—'
+        }}
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('quality.testCases.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="form.name" data-testid="create-test-case-name" />
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.definition')" required>
+        <Select
+          v-model:value="form.testDefinition"
+          show-search
+          option-filter-prop="label"
+          data-testid="create-test-case-definition"
+        >
+          <Select.Option
+            v-for="definition in definitions"
+            :key="definition.id"
+            :value="definition.fullyQualifiedName || definition.name"
+            :label="entityLabel(definition)"
           >
-            <Select.Option
-              v-for="definition in definitions"
-              :key="definition.id"
-              :value="definition.fullyQualifiedName || definition.name"
-              :label="definition.displayName || definition.name"
-            >
-              {{ definition.displayName || definition.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Entity type" required>
-          <Select v-model:value="form.entityType">
-            <Select.Option value="table">table</Select.Option>
-            <Select.Option value="topic">topic</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Entity FQN" required>
-          <Input v-model:value="form.entityFqn" data-testid="create-test-case-fqn" />
-        </Form.Item>
-        <Form.Item label="Column (optional, column-level tests)">
-          <Input v-model:value="form.column" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="2" />
-        </Form.Item>
-        <Form.Item label="Parameters (one name=value per line)">
-          <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+            {{ entityLabel(definition) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.entityType')" required>
+        <Select v-model:value="form.entityType">
+          <Select.Option value="table">table</Select.Option>
+          <Select.Option value="topic">topic</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.entityFqn')" required>
+        <Input v-model:value="form.entityFqn" data-testid="create-test-case-fqn" />
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.column')">
+        <Input v-model:value="form.column" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="2" />
+      </Form.Item>
+      <Form.Item :label="t('quality.testCases.parameters')">
+        <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.dq-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

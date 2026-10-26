@@ -4,11 +4,15 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createDatabaseService, listDatabaseServices } from '@/api/databaseServices';
 import { createMessagingService, listMessagingServices } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import { buildServiceConnection } from '@/ingestion/connections';
 import {
   DATABASE_SERVICE_TYPES,
@@ -18,6 +22,7 @@ import {
   type ServiceKind,
 } from '@/types/ingestion';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -49,12 +54,12 @@ const typeOptions = computed(() =>
   form.kind === 'database' ? DATABASE_SERVICE_TYPES : MESSAGING_SERVICE_TYPES,
 );
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Kind', dataIndex: 'kind', key: 'kind', width: 120 },
-  { title: 'Type', dataIndex: 'serviceType', key: 'serviceType', width: 140 },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('ingestion.services.kind'), dataIndex: 'kind', key: 'kind', width: 120 },
+  { title: t('crud.type'), dataIndex: 'serviceType', key: 'serviceType', width: 140 },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+]);
 
 function resetForm(): void {
   form.name = '';
@@ -90,10 +95,13 @@ async function load(): Promise<void> {
       listMessagingServices({ limit: 100 }),
     ]);
     services.value = [...databases.data, ...messaging.data];
-    total.value = (databases.total ?? databases.data.length) + (messaging.total ?? messaging.data.length);
+    total.value =
+      databases.total !== undefined && messaging.total !== undefined
+        ? databases.total + messaging.total
+        : undefined;
   } catch (error) {
     services.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load services';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -114,10 +122,10 @@ async function onCreate(): Promise<void> {
       form.kind === 'database' ? await createDatabaseService(body) : await createMessagingService(body);
     createOpen.value = false;
     resetForm();
-    message.success(`Created service ${created.name}`);
+    message.success(t('ingestion.services.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create service failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -136,78 +144,63 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="ing-head">
-        <div>
-          <Typography.Title :level="4">Services</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/services/databaseServices and /messagingServices. Create requires
-            <code>name</code> + <code>serviceType</code>. Connection fields match
-            <code>smartmetadata-ingestion</code> Postgres / MySQL / Snowflake / Kafka. Dashboard and
-            pipeline services are not wired.
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-service" @click="createOpen = true">Create service</Button>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="services-table"
-        :columns="columns"
-        :data-source="services"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`service-row-${(record as CatalogService).id}`"
-              @click.prevent="openDetail(record as CatalogService)"
-            >
-              {{ (record as CatalogService).displayName || (record as CatalogService).name }}
-            </a>
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ services.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create service" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Kind" required>
-          <Select :value="form.kind" data-testid="create-service-kind" @update:value="onKindChange">
-            <Select.Option value="database">Database</Select.Option>
-            <Select.Option value="messaging">Messaging</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Service type" required>
-          <Select v-model:value="form.serviceType" data-testid="create-service-type">
-            <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Name" required>
-          <Input v-model:value="form.name" data-testid="create-service-name" />
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="form.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="3" />
-        </Form.Item>
-        <ServiceConnectionFields :form="form" />
-      </Form>
-    </Modal>
-  </Card>
+  <EntityListShell
+    :title="t('ingestion.services.title')"
+    :lead="t('ingestion.services.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="services"
+    table-test-id="services-table"
+    :total="total"
+    @refresh="load"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-service" @click="createOpen = true">
+        {{ t('ingestion.services.create') }}
+      </Button>
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`service-row-${(record as CatalogService).id}`"
+          @click.prevent="openDetail(record as CatalogService)"
+        >
+          {{ entityLabel(record as CatalogService) }}
+        </a>
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('ingestion.services.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('ingestion.services.kind')" required>
+        <Select :value="form.kind" data-testid="create-service-kind" @update:value="onKindChange">
+          <Select.Option value="database">{{ t('ingestion.services.database') }}</Select.Option>
+          <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('crud.type')" required>
+        <Select v-model:value="form.serviceType" data-testid="create-service-type">
+          <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="form.name" data-testid="create-service-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="3" />
+      </Form.Item>
+      <ServiceConnectionFields :form="form" />
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.ing-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

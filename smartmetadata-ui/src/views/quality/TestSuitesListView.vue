@@ -3,17 +3,33 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Space, Table, Typography, message } from 'ant-design-vue';
+import { Button, Form, Input, Modal, message } from 'ant-design-vue';
 import { createTestSuite, listTestSuites } from '@/api/testSuites';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import {
+  DEFAULT_PAGE_SIZE,
+  canGoNext,
+  canGoPrev,
+  createCursorPager,
+  entityLabel,
+  goNext,
+  goPrev,
+  type CursorPager,
+} from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import type { TestSuite } from '@/types/quality';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const suites = ref<TestSuite[]>([]);
 const total = ref<number | undefined>();
+const pageAfter = ref<string | undefined>();
+const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -22,27 +38,43 @@ const form = reactive({
   description: '',
 });
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', key: 'basic', width: 110 },
-  { title: 'Tests', key: 'tests', width: 90 },
-  { title: 'Failed', key: 'failed', width: 90 },
-  { title: 'Success', key: 'success', width: 90 },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('quality.testSuites.suiteType'), key: 'basic', width: 110 },
+  { title: t('quality.testSuites.tests'), key: 'tests', width: 90 },
+  { title: t('quality.testSuites.failed'), key: 'failed', width: 90 },
+  { title: t('quality.testSuites.success'), key: 'success', width: 90 },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listTestSuites({ limit: 50 });
+    const page = await listTestSuites({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
     suites.value = page.data;
     total.value = page.total;
+    pageAfter.value = page.after;
   } catch (error) {
     suites.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load test suites';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+function onNext(): void {
+  if (pageAfter.value) {
+    cursor.value = goNext(cursor.value, pageAfter.value);
+  }
+  void load();
+}
+
+function onPrev(): void {
+  cursor.value = goPrev(cursor.value);
+  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -54,10 +86,10 @@ async function onCreate(): Promise<void> {
       displayName: form.displayName.trim() || undefined,
     });
     createOpen.value = false;
-    message.success(`Created logical test suite ${created.name}`);
+    message.success(t('quality.testSuites.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create test suite failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -69,79 +101,67 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="dq-head">
-        <div>
-          <Typography.Title :level="4">Test suites</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/dataQuality/testSuites creates a <strong>logical</strong> suite
-            (CreateTestSuite requires <code>name</code>). Basic/executable suites are created by
-            the server when tests are attached to an asset; this UI does not invent a pipeline.
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-test-suite" @click="createOpen = true">
-          Create logical suite
-        </Button>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="test-suites-table"
-        :columns="columns"
-        :data-source="suites"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`test-suite-row-${(record as TestSuite).id}`"
-              @click.prevent="router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
-            >
-              {{ (record as TestSuite).displayName || (record as TestSuite).name }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'basic'">
-            {{ (record as TestSuite).basic ? 'basic' : 'logical' }}
-          </template>
-          <template v-else-if="column.key === 'tests'">
-            {{ (record as TestSuite).tests.length }}
-          </template>
-          <template v-else-if="column.key === 'failed'">
-            {{ (record as TestSuite).summary?.failed ?? '—' }}
-          </template>
-          <template v-else-if="column.key === 'success'">
-            {{ (record as TestSuite).summary?.success ?? '—' }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ suites.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create logical test suite" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="form.name" data-testid="create-test-suite-name" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="form.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="form.displayName" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+  <EntityListShell
+    :title="t('quality.testSuites.title')"
+    :lead="t('quality.testSuites.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="suites"
+    table-test-id="test-suites-table"
+    :total="total"
+    :has-next="hasNext"
+    :has-prev="hasPrev"
+    @refresh="load"
+    @next="onNext"
+    @prev="onPrev"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-test-suite" @click="createOpen = true">
+        {{ t('quality.testSuites.create') }}
+      </Button>
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`test-suite-row-${(record as TestSuite).id}`"
+          @click.prevent="router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
+        >
+          {{ entityLabel(record as TestSuite) }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'basic'">
+        {{ (record as TestSuite).basic ? t('quality.testSuites.basic') : t('quality.testSuites.logical') }}
+      </template>
+      <template v-else-if="column.key === 'tests'">
+        {{ (record as TestSuite).tests.length }}
+      </template>
+      <template v-else-if="column.key === 'failed'">
+        {{ (record as TestSuite).summary?.failed ?? '—' }}
+      </template>
+      <template v-else-if="column.key === 'success'">
+        {{ (record as TestSuite).summary?.success ?? '—' }}
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('quality.testSuites.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="form.name" data-testid="create-test-suite-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="form.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.dq-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

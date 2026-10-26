@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import TestDefinitionsListView from './TestDefinitionsListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -34,7 +35,7 @@ async function mountView() {
   await router.push('/quality/test-definitions');
   await router.isReady();
   const wrapper = mount(TestDefinitionsListView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -74,6 +75,7 @@ describe('TestDefinitionsListView', () => {
   it('renders test definitions from GET /v1/dataQuality/testDefinitions', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Row count between');
+    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-definitions-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-test-definition"]').exists()).toBe(true);
   });

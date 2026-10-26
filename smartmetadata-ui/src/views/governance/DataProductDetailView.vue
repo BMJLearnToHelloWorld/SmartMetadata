@@ -3,36 +3,28 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { getDataProduct, listDataProductAssets, updateDataProduct } from '@/api/dataProducts';
 import { listDomains } from '@/api/domains';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { EntityRef } from '@/types/api';
 import type { DataProduct, Domain } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const product = ref<DataProduct | null>(null);
 const domains = ref<Domain[]>([]);
 const assets = ref<EntityRef[]>([]);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -41,11 +33,21 @@ const editForm = reactive({
   domainFqns: [] as string[],
 });
 
-const assetColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'type', key: 'type', width: 140 },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('governance.dataProducts.title'), to: { name: 'governance-data-products' } },
+  { label: entityLabel(product.value) || t('governance.dataProducts.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'data-product-tab-overview' },
+  { key: 'assets', label: t('governance.dataProducts.assetsTab'), testId: 'data-product-tab-assets' },
+]);
+
+const assetColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'type', key: 'type', width: 140 },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -60,7 +62,7 @@ async function load(): Promise<void> {
   } catch (error) {
     product.value = null;
     assets.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load data product';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -91,10 +93,10 @@ async function onSave(): Promise<void> {
       domains: editForm.domainFqns,
     });
     editOpen.value = false;
-    message.success('Data product updated');
+    message.success(t('governance.dataProducts.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -127,88 +129,86 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Space direction="vertical" size="middle" style="width: 100%">
-        <div class="gov-head">
-          <Typography.Title :level="4">
-            {{ product?.displayName || product?.name || 'Data product' }}
-          </Typography.Title>
-          <Space>
-            <Button @click="router.push({ name: 'governance-data-products' })">Back</Button>
-            <Button type="primary" data-testid="edit-data-product" :disabled="!product" @click="openEdit">
-              Edit
-            </Button>
-          </Space>
-        </div>
-        <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" />
-        <Descriptions v-if="product" bordered :column="1" size="small">
-          <Descriptions.Item label="Name">{{ product.name }}</Descriptions.Item>
-          <Descriptions.Item label="FQN">{{ product.fullyQualifiedName }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ product.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Domains">
-            {{ product.domains.map((item) => item.displayName || item.name).join(', ') || '—' }}
-          </Descriptions.Item>
-          <Descriptions.Item label="Owners">
-            {{ product.owners.map((item) => item.displayName || item.name).join(', ') || '—' }}
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Title :level="5">Assets</Typography.Title>
-        <Table
-          row-key="id"
-          :columns="assetColumns"
-          :data-source="assets"
-          :pagination="false"
-          size="small"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'name'">
-              <a
-                v-if="isDetailWired((record as EntityRef).type || '') && (record as EntityRef).fullyQualifiedName"
-                href="#"
-                @click.prevent="openAsset(record as EntityRef)"
-              >
-                {{ (record as EntityRef).displayName || (record as EntityRef).name }}
-              </a>
-              <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
-            </template>
-          </template>
-        </Table>
-        <Typography.Text v-if="!assets.length" type="secondary">
-          No assets returned. Bulk asset membership uses PUT /v1/dataProducts/{name}/assets/add and is
-          not wired in this MVP.
-        </Typography.Text>
-      </Space>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit data product" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Domains" required>
-          <Select v-model:value="editForm.domainFqns" mode="multiple">
-            <Select.Option
-              v-for="domain in domains"
-              :key="domain.id"
-              :value="domain.fullyQualifiedName || domain.name"
+  <EntityDetailShell
+    :title="entityLabel(product) || t('governance.dataProducts.title')"
+    :name="product?.name"
+    :fqn="product?.fullyQualifiedName"
+    :lead="t('governance.dataProducts.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!product && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="product ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="edit-data-product" :disabled="!product" @click="openEdit">
+        {{ t('crud.edit') }}
+      </Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="product" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ product.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ product.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('governance.dataProducts.domains')">
+          {{ joinRefNames(product.domains) || '—' }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.owners')">
+          {{ joinRefNames(product.owners) || '—' }}
+        </Descriptions.Item>
+      </Descriptions>
+    </template>
+    <template #assets>
+      <Table row-key="id" :columns="assetColumns" :data-source="assets" :pagination="false" size="small">
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              v-if="isDetailWired((record as EntityRef).type || '') && (record as EntityRef).fullyQualifiedName"
+              href="#"
+              @click.prevent="openAsset(record as EntityRef)"
             >
-              {{ domain.displayName || domain.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+              {{ entityLabel(record as EntityRef) }}
+            </a>
+            <span v-else>{{ entityLabel(record as EntityRef) }}</span>
+          </template>
+        </template>
+      </Table>
+      <p v-if="!assets.length" class="entity-detail__tab-lead">{{ t('governance.dataProducts.noAssets') }}</p>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('governance.dataProducts.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('governance.dataProducts.domains')" required>
+        <Select v-model:value="editForm.domainFqns" mode="multiple">
+          <Select.Option
+            v-for="domain in domains"
+            :key="domain.id"
+            :value="domain.fullyQualifiedName || domain.name"
+          >
+            {{ entityLabel(domain) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
 
 <style scoped>
-.gov-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
+.entity-detail__tab-lead {
+  color: var(--ant-color-text-secondary, #8c8c8c);
+  margin-top: 12px;
 }
 </style>

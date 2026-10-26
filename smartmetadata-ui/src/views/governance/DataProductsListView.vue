@@ -3,19 +3,36 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createDataProduct, listDataProducts } from '@/api/dataProducts';
 import { listDomains } from '@/api/domains';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
+import {
+  DEFAULT_PAGE_SIZE,
+  canGoNext,
+  canGoPrev,
+  createCursorPager,
+  entityLabel,
+  goNext,
+  goPrev,
+  joinRefNames,
+  type CursorPager,
+} from '@/features/crud/paging';
+import type { EntityListColumn } from '@/features/crud/types';
 import type { DataProduct, Domain } from '@/types/governance';
 
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const products = ref<DataProduct[]>([]);
 const domains = ref<Domain[]>([]);
 const total = ref<number | undefined>();
+const pageAfter = ref<string | undefined>();
+const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -25,25 +42,41 @@ const form = reactive({
   domainFqns: [] as string[],
 });
 
-const columns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Description', dataIndex: 'description', key: 'description' },
-  { title: 'Domains', key: 'domains' },
-];
+const columns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
+  { title: t('governance.dataProducts.domains'), key: 'domains' },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listDataProducts({ limit: 50 });
+    const page = await listDataProducts({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
     products.value = page.data;
     total.value = page.total;
+    pageAfter.value = page.after;
   } catch (error) {
     products.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load data products';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+function onNext(): void {
+  if (pageAfter.value) {
+    cursor.value = goNext(cursor.value, pageAfter.value);
+  }
+  void load();
+}
+
+function onPrev(): void {
+  cursor.value = goPrev(cursor.value);
+  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -56,10 +89,10 @@ async function onCreate(): Promise<void> {
       domains: form.domainFqns,
     });
     createOpen.value = false;
-    message.success(`Created data product ${created.name}`);
+    message.success(t('governance.dataProducts.created', { name: created.name }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create data product failed');
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -76,82 +109,71 @@ onMounted(() => {
 </script>
 
 <template>
-  <Card>
-    <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="gov-head">
-        <div>
-          <Typography.Title :level="4">Data products</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/dataProducts. CreateDataProduct requires <code>name</code>,
-            <code>description</code>, and <code>domains</code> (FQNs).
-          </Typography.Paragraph>
-        </div>
-        <Button type="primary" data-testid="create-data-product" @click="createOpen = true">
-          Create data product
-        </Button>
-      </div>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
-        row-key="id"
-        data-testid="data-products-table"
-        :columns="columns"
-        :data-source="products"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
-            <a
-              href="#"
-              :data-testid="`data-product-row-${(record as DataProduct).id}`"
-              @click.prevent="
-                router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })
-              "
-            >
-              {{ (record as DataProduct).displayName || (record as DataProduct).name }}
-            </a>
-          </template>
-          <template v-else-if="column.key === 'domains'">
-            {{ (record as DataProduct).domains.map((item) => item.displayName || item.name).join(', ') || '—' }}
-          </template>
-        </template>
-      </Table>
-      <Typography.Text type="secondary">
-        {{ products.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
-      </Typography.Text>
-    </Space>
-    <Modal v-model:open="createOpen" title="Create data product" :confirm-loading="creating" @ok="onCreate">
-      <Form layout="vertical">
-        <Form.Item label="Name" required>
-          <Input v-model:value="form.name" data-testid="create-data-product-name" />
-        </Form.Item>
-        <Form.Item label="Description" required>
-          <Input.TextArea v-model:value="form.description" :rows="3" />
-        </Form.Item>
-        <Form.Item label="Domains" required>
-          <Select v-model:value="form.domainFqns" mode="multiple" data-testid="create-data-product-domains">
-            <Select.Option
-              v-for="domain in domains"
-              :key="domain.id"
-              :value="domain.fullyQualifiedName || domain.name"
-            >
-              {{ domain.displayName || domain.name }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item label="Display name">
-          <Input v-model:value="form.displayName" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Card>
+  <EntityListShell
+    :title="t('governance.dataProducts.title')"
+    :lead="t('governance.dataProducts.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :columns="columns"
+    :data-source="products"
+    table-test-id="data-products-table"
+    :total="total"
+    :has-next="hasNext"
+    :has-prev="hasPrev"
+    @refresh="load"
+    @next="onNext"
+    @prev="onPrev"
+  >
+    <template #actions>
+      <Button type="primary" data-testid="create-data-product" @click="createOpen = true">
+        {{ t('governance.dataProducts.create') }}
+      </Button>
+    </template>
+    <template #bodyCell="{ column, record }">
+      <template v-if="column.key === 'name'">
+        <a
+          href="#"
+          :data-testid="`data-product-row-${(record as DataProduct).id}`"
+          @click.prevent="
+            router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })
+          "
+        >
+          {{ entityLabel(record as DataProduct) }}
+        </a>
+      </template>
+      <template v-else-if="column.key === 'domains'">
+        {{ joinRefNames((record as DataProduct).domains) || '—' }}
+      </template>
+    </template>
+  </EntityListShell>
+  <Modal
+    v-model:open="createOpen"
+    :title="t('governance.dataProducts.createTitle')"
+    :ok-text="t('crud.create')"
+    :confirm-loading="creating"
+    @ok="onCreate"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.name')" required>
+        <Input v-model:value="form.name" data-testid="create-data-product-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')" required>
+        <Input.TextArea v-model:value="form.description" :rows="3" />
+      </Form.Item>
+      <Form.Item :label="t('governance.dataProducts.domains')" required>
+        <Select v-model:value="form.domainFqns" mode="multiple" data-testid="create-data-product-domains">
+          <Select.Option
+            v-for="domain in domains"
+            :key="domain.id"
+            :value="domain.fullyQualifiedName || domain.name"
+          >
+            {{ entityLabel(domain) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.gov-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-</style>

@@ -3,18 +3,24 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Spin, Table, Typography, message } from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
 import { getTestSuite, updateTestSuite } from '@/api/testSuites';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { EntityRef } from '@/types/api';
 import type { TestSuite } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const suite = ref<TestSuite | null>(null);
+const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -22,10 +28,20 @@ const editForm = reactive({
   description: '',
 });
 
-const testColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-];
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  { label: t('quality.testSuites.title'), to: { name: 'quality-test-suites' } },
+  { label: entityLabel(suite.value) || t('quality.testSuites.title') },
+]);
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'overview', label: t('crud.overview'), testId: 'test-suite-tab-overview' },
+  { key: 'tests', label: t('quality.testSuites.testsTab'), testId: 'test-suite-tab-tests' },
+]);
+
+const testColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -34,7 +50,7 @@ async function load(): Promise<void> {
     suite.value = await getTestSuite(props.id);
   } catch (error) {
     suite.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load test suite';
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -61,10 +77,10 @@ async function onSave(): Promise<void> {
       displayName: editForm.displayName.trim() || undefined,
     });
     editOpen.value = false;
-    message.success('Test suite updated');
+    message.success(t('quality.testSuites.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -83,27 +99,42 @@ onMounted(() => {
 </script>
 
 <template>
-  <Spin :spinning="loading">
-    <Card>
-      <Typography.Title :level="4">
-        {{ suite?.displayName || suite?.name || 'Test suite' }}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        GET/PUT /api/v1/dataQuality/testSuites
-      </Typography.Paragraph>
-      <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">Edit</Button>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="dq-alert" />
-      <Descriptions v-if="suite" bordered :column="1" size="small" class="dq-desc">
-        <Descriptions.Item label="Name">{{ suite.name }}</Descriptions.Item>
-        <Descriptions.Item label="FQN">{{ suite.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item label="Type">{{ suite.basic ? 'basic' : 'logical' }}</Descriptions.Item>
-        <Descriptions.Item label="Summary">
-          success {{ suite.summary?.success ?? '—' }} · failed {{ suite.summary?.failed ?? '—' }} ·
-          aborted {{ suite.summary?.aborted ?? '—' }} · queued {{ suite.summary?.queued ?? '—' }}
+  <EntityDetailShell
+    :title="entityLabel(suite) || t('quality.testSuites.title')"
+    :name="suite?.name"
+    :fqn="suite?.fullyQualifiedName"
+    :lead="t('quality.testSuites.lead')"
+    :loading="loading"
+    :error="errorMessage"
+    :empty="!suite && !loading && !errorMessage"
+    :breadcrumbs="breadcrumbs"
+    :tabs="suite ? tabs : []"
+    v-model:active-tab="activeTab"
+  >
+    <template #actions>
+      <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">{{ t('crud.edit') }}</Button>
+    </template>
+    <template #overview>
+      <Descriptions v-if="suite" bordered :column="1" size="small">
+        <Descriptions.Item :label="t('crud.name')">{{ suite.name }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.fqn')">{{ suite.fullyQualifiedName }}</Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testSuites.suiteType')">
+          {{ suite.basic ? t('quality.testSuites.basic') : t('quality.testSuites.logical') }}
         </Descriptions.Item>
-        <Descriptions.Item label="Description">{{ suite.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('quality.testSuites.summary')">
+          {{
+            t('quality.testSuites.summaryValue', {
+              success: suite.summary?.success ?? '—',
+              failed: suite.summary?.failed ?? '—',
+              aborted: suite.summary?.aborted ?? '—',
+              queued: suite.summary?.queued ?? '—',
+            })
+          }}
+        </Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">{{ suite.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title :level="5" class="dq-sub">Tests</Typography.Title>
+    </template>
+    <template #tests>
       <Table
         row-key="id"
         size="small"
@@ -118,32 +149,28 @@ onMounted(() => {
               href="#"
               @click.prevent="router.push({ name: 'quality-test-case', params: { id: (record as EntityRef).id } })"
             >
-              {{ (record as EntityRef).displayName || (record as EntityRef).name }}
+              {{ entityLabel(record as EntityRef) }}
             </a>
-            <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
+            <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
       </Table>
-    </Card>
-    <Modal v-model:open="editOpen" title="Edit test suite" :confirm-loading="saving" @ok="onSave">
-      <Form layout="vertical">
-        <Form.Item label="Display name">
-          <Input v-model:value="editForm.displayName" />
-        </Form.Item>
-        <Form.Item label="Description">
-          <Input.TextArea v-model:value="editForm.description" :rows="3" />
-        </Form.Item>
-      </Form>
-    </Modal>
-  </Spin>
+    </template>
+  </EntityDetailShell>
+  <Modal
+    v-model:open="editOpen"
+    :title="t('quality.testSuites.editTitle')"
+    :ok-text="t('crud.edit')"
+    :confirm-loading="saving"
+    @ok="onSave"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="editForm.displayName" />
+      </Form.Item>
+      <Form.Item :label="t('crud.description')">
+        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+      </Form.Item>
+    </Form>
+  </Modal>
 </template>
-
-<style scoped>
-.dq-alert,
-.dq-desc {
-  margin-top: 16px;
-}
-.dq-sub {
-  margin-top: 24px;
-}
-</style>

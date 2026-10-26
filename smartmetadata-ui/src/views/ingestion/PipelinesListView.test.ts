@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import PipelinesListView from './PipelinesListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -38,7 +39,7 @@ async function mountView() {
   await router.push('/ingestion/pipelines');
   await router.isReady();
   const wrapper = mount(PipelinesListView, {
-    global: { plugins: [pinia, router, Antd] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -84,6 +85,7 @@ describe('PipelinesListView', () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('warehouse-metadata');
     expect(wrapper.text()).toContain('smartmetadata-ingest run');
+    expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipelines-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-pipeline"]').exists()).toBe(true);
   });
