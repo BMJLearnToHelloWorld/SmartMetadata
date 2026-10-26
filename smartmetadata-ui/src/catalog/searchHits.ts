@@ -57,7 +57,8 @@ function mapTags(value: unknown): TagRef[] {
     if (!name && !tagFQN) {
       return [];
     }
-    return [{ tagFQN: tagFQN || name, name: name || tagFQN }];
+    const source = rec.source === 'Glossary' || rec.source === 'Classification' ? rec.source : undefined;
+    return [{ tagFQN: tagFQN || name, name: name || tagFQN, source }];
   });
 }
 
@@ -159,6 +160,11 @@ export function mapSearchResponse(payload: unknown): SearchPage {
         tier: mapTier(source),
         owners: mapOwners(source.owners),
         tags: mapTags(source.tags),
+        domains: mapOwners(source.domains),
+        dataProducts: mapOwners(source.dataProducts),
+        dataType: asString(source.dataType) || undefined,
+        tableName: nestedName(source.table, 'displayName', 'name') || asString(source.tableName) || undefined,
+        constraint: asString(source.constraint) || undefined,
         updatedAt:
           typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
             ? source.updatedAt

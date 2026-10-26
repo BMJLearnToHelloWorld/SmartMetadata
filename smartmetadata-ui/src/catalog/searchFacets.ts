@@ -18,6 +18,21 @@ export const FACET_IDS = [
   'owner',
   'domain',
   'tier',
+  'certification',
+  'dataProduct',
+] as const;
+
+/** Top-bar chips shown even when the aggregation is empty (honest empty dropdown). */
+export const CHIP_FACET_IDS = [
+  'entityType',
+  'domain',
+  'dataProduct',
+  'owner',
+  'tagFqn',
+  'tier',
+  'certification',
+  'service',
+  'serviceType',
 ] as const;
 
 export type FacetId = (typeof FACET_IDS)[number];
@@ -48,6 +63,8 @@ const AGG_TO_FACET: Record<string, { id: FacetId; field: string }> = {
   ownerDisplayName: { id: 'owner', field: 'ownerDisplayName' },
   'domains.displayName.keyword': { id: 'domain', field: 'domains.displayName.keyword' },
   'tier.tagFQN': { id: 'tier', field: 'tier.tagFQN' },
+  'certification.tagLabel.tagFQN': { id: 'certification', field: 'certification.tagLabel.tagFQN' },
+  'dataProducts.displayName.keyword': { id: 'dataProduct', field: 'dataProducts.displayName.keyword' },
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {

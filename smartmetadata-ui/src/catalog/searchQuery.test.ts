@@ -8,7 +8,15 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { composeSearchQuery, filtersFromQuery, luceneTerm, searchRouteQuery, toggleFilterValue } from './searchQuery';
+import {
+  composeSearchQuery,
+  filtersFromQuery,
+  luceneTerm,
+  searchRouteFromLocation,
+  searchRouteQuery,
+  sortFromQuery,
+  toggleFilterValue,
+} from './searchQuery';
 
 describe('searchQuery', () => {
   it('composes documented Lucene q= terms for entity type and tags', () => {
@@ -39,5 +47,38 @@ describe('searchQuery', () => {
       tagFqn: 'PII.Sensitive',
       page: '2',
     });
+  });
+
+  it('keeps sort and estate on the search route and maps them to API fields', () => {
+    expect(sortFromQuery({ sort: 'popularity' })).toEqual({ id: 'popularity', order: 'desc' });
+    expect(sortFromQuery({ sort: 'name', order: 'desc' })).toEqual({ id: 'name', order: 'desc' });
+    expect(
+      searchRouteQuery('orders', { entityType: ['table'] }, 0, {
+        sort: { id: 'updated', order: 'desc' },
+        estate: 'databases',
+      }),
+    ).toEqual({
+      q: 'orders',
+      entityType: 'table',
+      sort: 'updated',
+      estate: 'databases',
+    });
+    expect(
+      searchRouteFromLocation('customers', { q: 'orders', entityType: 'table', sort: 'popularity', estate: 'databases' }),
+    ).toEqual({
+      q: 'customers',
+      entityType: 'table',
+      sort: 'popularity',
+      estate: 'databases',
+    });
+  });
+
+  it('composes certification and data-product Lucene terms when those chips are set', () => {
+    expect(composeSearchQuery('', { certification: ['Certification.Gold'] })).toBe(
+      'certification.tagLabel.tagFQN:Certification.Gold',
+    );
+    expect(composeSearchQuery('', { dataProduct: ['Finance Mart'] })).toBe(
+      'dataProducts.displayName.keyword:"Finance Mart"',
+    );
   });
 });

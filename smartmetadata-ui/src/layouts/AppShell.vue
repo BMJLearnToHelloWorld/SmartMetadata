@@ -7,7 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Dropdown, Input, Layout, Menu, Select, Space, message } from 'ant-design-vue';
-import { filtersFromQuery, searchRouteQuery } from '@/catalog/searchQuery';
+import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
 import {
@@ -86,7 +86,7 @@ function onSearch(value: string): void {
   if (route.name === 'search') {
     void router.push({
       name: 'search',
-      query: searchRouteQuery(nextQuery, filtersFromQuery(route.query), 0),
+      query: searchRouteFromLocation(nextQuery, route.query, 0),
     });
     return;
   }

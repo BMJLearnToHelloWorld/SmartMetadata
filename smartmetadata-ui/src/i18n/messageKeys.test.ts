@@ -44,6 +44,13 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('login.submit');
     expect(keys).toContain('explore.title');
     expect(keys).toContain('explore.facets.entityType');
+    expect(keys).toContain('explore.browseEstate');
+    expect(keys).toContain('explore.estate.databases');
+    expect(keys).toContain('explore.facets.certification');
+    expect(keys).toContain('explore.facets.dataProduct');
+    expect(keys).toContain('explore.sortPopularity');
+    expect(keys).toContain('explore.openContextCenter');
+    expect(keys).toContain('explore.glossaryTerms');
     expect(keys).toContain('asset.tabs.overview');
     expect(keys).toContain('asset.tabs.schema');
     expect(keys).toContain('asset.tabs.lineage');

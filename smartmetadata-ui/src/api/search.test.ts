@@ -45,6 +45,13 @@ describe('searchAssets', () => {
     expect(url).toContain('include_aggregations=true');
   });
 
+  it('forwards sort_field and sort_order when Explore asks for popularity', async () => {
+    await searchAssets('orders', 0, 20, { sortField: 'totalVotes', sortOrder: 'desc' });
+    const url = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(url).toContain('sort_field=totalVotes');
+    expect(url).toContain('sort_order=desc');
+  });
+
   it('can skip aggregations for My Data owned/followed term queries', async () => {
     await searchAssets('owners.id:"u-1"', 0, 5, { includeAggregations: false });
     const url = String(vi.mocked(fetch).mock.calls[0][0]);

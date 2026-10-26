@@ -142,6 +142,25 @@ describe('AppShell', () => {
     expect(router.currentRoute.value.query).toMatchObject({ q: 'customers', entityType: 'table' });
   });
 
+  it('keeps Explore sort and estate query params when the header search runs', async () => {
+    const { wrapper, router } = await mountShell();
+    await router.push({
+      name: 'search',
+      query: { q: 'orders', entityType: 'table', sort: 'popularity', estate: 'databases' },
+    });
+    await flushPromises();
+    const search = wrapper.find('.shell__search input');
+    await search.setValue('customers');
+    await search.trigger('keydown.enter');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toMatchObject({
+      q: 'customers',
+      entityType: 'table',
+      sort: 'popularity',
+      estate: 'databases',
+    });
+  });
+
   it('opens Settings from the user menu and profile only when loggedInUser has an id', async () => {
     const { wrapper, router } = await mountShell();
     const { useAuthStore } = await import('@/stores/auth');

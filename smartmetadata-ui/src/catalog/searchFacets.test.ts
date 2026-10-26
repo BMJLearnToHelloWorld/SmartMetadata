@@ -49,7 +49,26 @@ describe('mapSearchAggregations', () => {
     expect(
       mapSearchAggregations({
         aggregations: {
-          'sterms#certification.tagLabel.tagFQN': { buckets: [{ key: 'Gold', doc_count: 1 }] },
+          'sterms#certification.tagLabel.tagFQN': { buckets: [{ key: 'Certification.Gold', doc_count: 2 }] },
+          'sterms#dataProducts.displayName.keyword': { buckets: [{ key: 'Finance', doc_count: 1 }] },
+        },
+      }),
+    ).toEqual([
+      {
+        id: 'certification',
+        field: 'certification.tagLabel.tagFQN',
+        buckets: [{ key: 'Certification.Gold', count: 2 }],
+      },
+      {
+        id: 'dataProduct',
+        field: 'dataProducts.displayName.keyword',
+        buckets: [{ key: 'Finance', count: 1 }],
+      },
+    ]);
+    expect(
+      mapSearchAggregations({
+        aggregations: {
+          'sterms#not.a.real.facet': { buckets: [{ key: 'Gold', doc_count: 1 }] },
         },
       }),
     ).toEqual([]);
