@@ -69,14 +69,14 @@ requested `owners,tags,columns,domains,extension` only.
 | Item | Official (reference) | Product now | Residual |
 |---|---|---|---|
 | Explore facets | Left rail from search aggregations | Facet checkboxes from `include_aggregations` buckets: entityType, serviceType, service, database, schema, tags, owner, domain, tier. Lucene `q=` AND/OR. Query-string filters. Hidden when a bucket list is empty. | `classificationTags` / `glossaryTags` / `certification` unused (tag FQN already covers classification+glossary; certification is not a product surface) |
-| Explore cards | Dense cards, entity-type chip | Cards with type chip, name, FQN, description, service/db/schema, owners, tags, tier; unwired types stay listed | Dashboard/pipeline/etc. still have no detail page |
+| Explore cards | Dense cards, entity-type chip | Cards with type chip, name, FQN, description, service/db/schema, owners, tags, tier; unwired types stay listed | Batch 2/3 wired 13 catalog types (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`, `UI_PARITY_BATCH3_ASSETS.md`). `query` and other leftovers still residual |
 | Explore pagination | Paged results | `page` + size 20 on `GET /v1/search/query` | Advanced sort / saved searches not wired (no product client) |
 | Header search | Keeps Explore context | Preserves facet query params; resets page | Help / persona still absent |
 | Asset tabs | Overview / Schema / Lineage / Quality | Same four, plus Activity and Custom properties (already shipped APIs) | No Collate profiler-run, no Knowledge, no Ontology |
 | Asset overview fields | Service, database, schema, table type | Table GET now asks `service,database,databaseSchema,tableType`; topic asks `service,messageSchema,partitions` | Followers / usage / certification skipped |
 | Asset lineage tab | Embedded graph | Neighbors from existing `GET /v1/lineage/{type}/name/{fqn}` (depth 1) + button to the full graph page | Depth controls stay on `/lineage/...` |
 | Asset quality tab | Tests + profiler + sample | Same existing clients, now under the Quality tab | Profiler **run** still residual (`jobs.py` raises) |
-| Explore/asset i18n | Full catalogs | `explore.*` and `asset.*` keys in zh-CN / en-US | Other CRUD pages stay English |
+| Explore/asset i18n | Full catalogs | `explore.*` and `asset.*` keys in zh-CN / en-US | Catalog CRUD lists later got `crud.*` keys in batch 2/3; collaboration pages still mixed English |
 
 No new Java/Python endpoints. Search still uses documented Lucene `q=` on
 `dataAsset`. Entity GET field lists stay Apache table/topic collections.
@@ -85,17 +85,17 @@ No new Java/Python endpoints. Search still uses documented Lucene `q=` on
 
 | Gap | Why it stays |
 |---|---|
-| Inner CRUD page strings still English | Out of Phase B scope |
+| Collaboration Card+Table chrome | Out of Phase B; still not in Batch3 inventory (`UI_PARITY_BATCH3_HOLISTIC.md`) |
 | No Home / My Data landing | No product route; do not invent |
-| Insights / KPI | Closed as live snapshots + residual pipeline in `UI_PARITY_BATCH2_CHARTS.md` |
+| Insights / KPI | Snapshots + pipeline in `UI_PARITY_BATCH2_CHARTS.md`; KPI tab in `UI_PARITY_BATCH3_KPI.md`. App analytics / KPI write residual |
 | Official Marketplace landing | Domains + data products already under Governance |
-| Settings as one landing page | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`) |
+| Settings as one landing page | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`); Policies + custom-property defs in `UI_PARITY_BATCH3_SETTINGS.md` |
 | Collaboration in the left nav | Official feed lives in the AppBar; product routes stay listed |
 | Ingestion under Settings | Official nests services in Settings; product keeps an Ingestion section |
 | Icon set | Ant Design icons, not official SVG glyphs |
 | Help menu / persona switcher | No product APIs wired; persona landing skipped in Phase 9 |
 | Additional locales | Only zh-CN / en-US authorized |
-| Non-table/topic asset CRUD | Phase 1 wiring; do not invent collections |
+| Non-table/topic asset detail GETs | Closed for the 13 wired types in batch 2 step 5 + batch 3.2. Remaining types stay `asset.unwired` |
 | Semantic / NLQ search | Collate AI; **DROP** |
 | Certification / Data Insights facets | Not a product surface |
 
@@ -121,4 +121,5 @@ Manual (against an already-running slim server; this PR does not redeploy):
    Custom properties). Overview shows service/database/schema/tableType
    when the GET returns them. Lineage tab lists depth-1 neighbors.
 4. Topic detail: Schema fields + sample messages; no invented profiler.
-5. Unwired types (dashboard, …) still show the existing warning.
+5. After batch 2/3, dashboard / pipeline / chart / … load a slim GET.
+   `query` (or any still-unwired type) still shows residual copy.
