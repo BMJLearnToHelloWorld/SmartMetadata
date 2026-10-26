@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { createTask, listTasks } from '@/api/tasks';
+import { requiredField } from '@/features/crud/formRules';
 import { toEntityLink } from '@/quality/entityLink';
 import {
   CREATABLE_TASK_TYPES,
@@ -146,14 +147,14 @@ onMounted(() => {
       @ok="onCreate"
     >
       <Form layout="vertical">
-        <Form.Item :label="t('collaboration.tasks.category')" required>
+        <Form.Item :label="t('collaboration.tasks.category')" :rules="requiredField(t, t('collaboration.tasks.category'))">
           <Select v-model:value="form.category">
             <Select.Option v-for="category in TASK_CATEGORIES" :key="category" :value="category">
               {{ category }}
             </Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.tasks.type')" required>
+        <Form.Item :label="t('collaboration.tasks.type')" :rules="requiredField(t, t('collaboration.tasks.type'))">
           <Select v-model:value="form.type">
             <Select.Option v-for="type in CREATABLE_TASK_TYPES" :key="type" :value="type">
               {{ type }}

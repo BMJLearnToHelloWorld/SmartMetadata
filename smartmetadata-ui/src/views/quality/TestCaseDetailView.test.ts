@@ -74,6 +74,6 @@ describe('TestCaseDetailView results chart', () => {
     listTestCaseResults.mockResolvedValue({ data: [] });
     const empty = await mountView();
     expect(empty.find('[data-testid="test-case-results-chart"]').attributes('data-points')).toBe('0');
-    expect(empty.text()).toContain('No series from this API yet');
+    expect(empty.text()).toContain('No data');
   });
 });

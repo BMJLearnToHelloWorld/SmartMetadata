@@ -119,6 +119,7 @@ onMounted(() => {
     :data-source="definitions"
     table-test-id="test-definitions-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -126,6 +127,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-definition', params: { id: (record as TestDefinition).id } })"
+    @edit="(record) => router.push({ name: 'quality-test-definition', params: { id: (record as TestDefinition).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-test-definition" @click="createOpen = true">

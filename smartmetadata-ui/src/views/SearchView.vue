@@ -164,7 +164,7 @@ watch(searchKey, () => {
           <article
             v-for="(hit, index) in hits"
             :key="hitKey(hit, index)"
-            class="explore__card"
+            class="explore__card explore__card--dense"
             :data-testid="`search-card-${hit.fullyQualifiedName || hit.name}`"
           >
             <div class="explore__card-head">
@@ -261,32 +261,53 @@ watch(searchKey, () => {
 .explore__results {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .explore__card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 10px 12px;
+  border: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-radius: var(--sm-border-radius, 8px);
+  padding: 8px 12px;
+  background: var(--sm-bg-container, #fff);
+}
+.explore__card--dense {
+  box-shadow: none;
+}
+.explore__card--dense:hover {
+  border-color: var(--sm-color-primary, #1570ef);
+  background: var(--sm-color-primary-bg, #eff8ff);
 }
 .explore__card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   flex-wrap: wrap;
+  min-height: 24px;
 }
 .explore__card-name {
+  font-size: 14px;
   font-weight: 600;
+  color: var(--sm-text-primary, #181d27);
+  line-height: 1.3;
 }
 .explore__fqn,
 .explore__desc {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+}
+.explore__fqn {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.explore__desc {
+  font-size: 13px;
+  color: var(--sm-text-secondary, #414651);
 }
 .explore__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-bottom: 4px;
+  gap: 4px 10px;
+  margin-bottom: 2px;
   font-size: 12px;
+  color: var(--sm-text-tertiary, #535862);
 }
 .explore__footer {
   display: flex;

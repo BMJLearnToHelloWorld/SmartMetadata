@@ -177,6 +177,9 @@ onMounted(() => {
     </template>
     <template #connection>
       <p class="entity-detail__tab-lead">{{ t('ingestion.services.connectionTitle') }}</p>
+      <p v-if="service" class="entity-detail__tab-lead" data-testid="service-connection-json-help">
+        {{ t('ingestion.services.connectionJsonHelp') }}
+      </p>
       <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
     </template>
   </EntityDetailShell>

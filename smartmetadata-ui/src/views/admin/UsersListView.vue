@@ -200,6 +200,7 @@ onMounted(() => {
     :data-source="users"
     table-test-id="admin-users-table"
     show-row-actions
+    show-edit-action
     show-search
     :search-value="query"
     :search-placeholder="t('admin.users.searchPlaceholder')"
@@ -212,6 +213,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="openUser($event as AdminUser)"
+    @edit="openUser($event as AdminUser)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-user" @click="createOpen = true">

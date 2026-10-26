@@ -7,6 +7,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Card, Descriptions, Form, Input, Select, Space, Spin, Table, Typography, message } from 'ant-design-vue';
 import { addTaskComment, getTask, resolveTask } from '@/api/tasks';
+import { requiredField } from '@/features/crud/formRules';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
 
 const props = defineProps<{ id: string }>();
@@ -135,7 +136,7 @@ watch(
         </template>
       </Table>
       <Form layout="vertical" class="collab-section">
-        <Form.Item :label="t('collaboration.task.addComment')">
+        <Form.Item :label="t('collaboration.task.addComment')" :rules="requiredField(t, t('collaboration.task.message'))">
           <Input.TextArea v-model:value="form.message" data-testid="task-comment" :rows="2" />
         </Form.Item>
         <Button data-testid="add-task-comment" type="primary" :loading="saving" @click="onComment">

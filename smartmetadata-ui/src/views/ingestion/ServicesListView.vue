@@ -7,8 +7,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createDatabaseService, listDatabaseServices } from '@/api/databaseServices';
-import { createMessagingService, listMessagingServices } from '@/api/messagingServices';
+import { createDatabaseService, deleteDatabaseService, listDatabaseServices } from '@/api/databaseServices';
+import { createMessagingService, deleteMessagingService, listMessagingServices } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -139,6 +139,23 @@ function openDetail(service: CatalogService): void {
   });
 }
 
+async function onDelete(service: CatalogService): Promise<void> {
+  if (!window.confirm(t('ingestion.services.deleteConfirm', { name: service.name }))) {
+    return;
+  }
+  try {
+    if (service.kind === 'messaging') {
+      await deleteMessagingService(service.id);
+    } else {
+      await deleteDatabaseService(service.id);
+    }
+    message.success(t('ingestion.services.deleted', { name: service.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
 });
@@ -154,9 +171,13 @@ onMounted(() => {
     :data-source="services"
     table-test-id="services-table"
     show-row-actions
+    show-edit-action
+    show-delete-action
     :total="total"
     @refresh="load"
     @view="openDetail($event as CatalogService)"
+    @edit="openDetail($event as CatalogService)"
+    @delete="onDelete($event as CatalogService)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-service" @click="createOpen = true">

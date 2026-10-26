@@ -90,4 +90,21 @@ describe('ServicesListView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's1' });
   });
+
+  it('deletes a service from the overflow menu after confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="row-overflow-s1"]').trigger('click');
+    await flushPromises();
+    document.querySelector<HTMLElement>('[data-testid="row-overflow-delete"]')?.click();
+    await flushPromises();
+    expect(confirmSpy).toHaveBeenCalled();
+    const deleted = vi.mocked(fetch).mock.calls.some(([input, init]) => {
+      const url = String(input);
+      const method = typeof init === 'object' && init && 'method' in init ? String(init.method) : 'GET';
+      return url.includes('/api/v1/services/databaseServices/s1') && method === 'DELETE';
+    });
+    expect(deleted).toBe(true);
+    confirmSpy.mockRestore();
+  });
 });

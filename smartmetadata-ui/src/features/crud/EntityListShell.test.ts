@@ -110,8 +110,35 @@ describe('EntityListShell', () => {
     await flushPromises();
     const view = document.querySelector('[data-testid="row-overflow-view"]');
     expect(view?.textContent).toContain('View');
+    expect(document.querySelector('[data-testid="row-overflow-edit"]')).toBeNull();
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')).toBeNull();
     (view as HTMLElement | null)?.click();
     await flushPromises();
     expect(wrapper.emitted('view')?.[0]?.[0]).toEqual({ id: 'u1', name: 'alice' });
+  });
+
+  it('emits edit and delete from the overflow menu without also emitting view', async () => {
+    const wrapper = await mountShell({
+      showRowActions: true,
+      showEditAction: true,
+      showDeleteAction: true,
+      dataSource: [{ id: 'u1', name: 'alice' }],
+    });
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    const edit = [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]')].at(-1);
+    const del = [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-delete"]')].at(-1);
+    expect(edit?.textContent).toContain('Edit');
+    expect(del?.textContent).toContain('Delete');
+    edit?.click();
+    await flushPromises();
+    expect(wrapper.emitted('edit')?.[0]?.[0]).toEqual({ id: 'u1', name: 'alice' });
+    expect(wrapper.emitted('view')).toBeUndefined();
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-delete"]')].at(-1)?.click();
+    await flushPromises();
+    expect(wrapper.emitted('delete')?.[0]?.[0]).toEqual({ id: 'u1', name: 'alice' });
+    expect(wrapper.emitted('view')).toBeUndefined();
   });
 });

@@ -81,6 +81,7 @@ describe('UsersListView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    document.querySelectorAll('.ant-dropdown').forEach((node) => node.remove());
   });
 
   it('renders users from GET /v1/users', async () => {
@@ -97,7 +98,19 @@ describe('UsersListView', () => {
     await flushPromises();
     const view = document.querySelector('[data-testid="row-overflow-view"]');
     expect(view?.textContent).toContain('View');
+    expect(document.querySelector('[data-testid="row-overflow-edit"]')?.textContent).toContain('Edit');
     (view as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-user');
+    expect(router.currentRoute.value.params.id).toBe('u1');
+  });
+
+  it('opens user detail from the overflow Edit action', async () => {
+    const { wrapper, router } = await mountUsers();
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    const edits = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]');
+    edits[edits.length - 1]?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-user');
     expect(router.currentRoute.value.params.id).toBe('u1');

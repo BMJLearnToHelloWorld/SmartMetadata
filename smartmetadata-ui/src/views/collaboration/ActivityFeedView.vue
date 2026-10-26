@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { listActivityEvents } from '@/api/activity';
+import { requiredField } from '@/features/crud/formRules';
 import { createConversation } from '@/api/conversations';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { toEntityLink } from '@/quality/entityLink';
@@ -158,16 +159,16 @@ onMounted(() => {
       @ok="onCreate"
     >
       <Form layout="vertical">
-        <Form.Item :label="t('collaboration.activity.entityType')" required>
+        <Form.Item :label="t('collaboration.activity.entityType')" :rules="requiredField(t, t('collaboration.activity.entityType'))">
           <Select v-model:value="form.entityType">
             <Select.Option value="table">table</Select.Option>
             <Select.Option value="topic">topic</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.activity.fqn')" required>
+        <Form.Item :label="t('collaboration.activity.fqn')" :rules="requiredField(t, t('collaboration.activity.fqn'))">
           <Input v-model:value="form.entityFqn" data-testid="conversation-fqn" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.activity.message')" required>
+        <Form.Item :label="t('collaboration.activity.message')" :rules="requiredField(t, t('collaboration.activity.message'))">
           <Input.TextArea v-model:value="form.message" data-testid="conversation-message" :rows="3" />
         </Form.Item>
       </Form>

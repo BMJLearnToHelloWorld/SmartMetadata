@@ -6,7 +6,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { EllipsisOutlined } from '@ant-design/icons-vue';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Table, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Table, Tooltip, Typography } from 'ant-design-vue';
 import type { EntityListColumn } from './types';
 
 const { t } = useI18n();
@@ -29,6 +29,8 @@ const props = withDefaults(
     hasPrev?: boolean;
     emptyText?: string;
     showRowActions?: boolean;
+    showEditAction?: boolean;
+    showDeleteAction?: boolean;
   }>(),
   {
     lead: '',
@@ -43,6 +45,8 @@ const props = withDefaults(
     hasPrev: false,
     emptyText: '',
     showRowActions: false,
+    showEditAction: false,
+    showDeleteAction: false,
   },
 );
 
@@ -53,6 +57,8 @@ const emit = defineEmits<{
   next: [];
   prev: [];
   view: [record: unknown];
+  edit: [record: unknown];
+  delete: [record: unknown];
 }>();
 
 const shownLabel = computed(() => {
@@ -125,16 +131,37 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         <template #bodyCell="slotProps">
           <template v-if="slotProps.column.key === 'rowActions'">
             <Dropdown :trigger="['click']">
-              <Button
-                type="text"
-                :aria-label="t('crud.moreActions')"
-                :data-testid="`row-overflow-${(slotProps.record as { id?: string }).id ?? ''}`"
-              >
-                <EllipsisOutlined />
-              </Button>
+              <Tooltip :title="t('crud.moreActions')" placement="topLeft">
+                <Button
+                  type="text"
+                  :aria-label="t('crud.moreActions')"
+                  :data-testid="`row-overflow-${(slotProps.record as { id?: string }).id ?? ''}`"
+                >
+                  <EllipsisOutlined />
+                </Button>
+              </Tooltip>
               <template #overlay>
-                <Menu @click="emit('view', slotProps.record)">
-                  <Menu.Item key="view" data-testid="row-overflow-view">{{ t('crud.view') }}</Menu.Item>
+                <Menu>
+                  <Menu.Item key="view" data-testid="row-overflow-view" @click="emit('view', slotProps.record)">
+                    {{ t('crud.view') }}
+                  </Menu.Item>
+                  <Menu.Item
+                    v-if="showEditAction"
+                    key="edit"
+                    data-testid="row-overflow-edit"
+                    @click="emit('edit', slotProps.record)"
+                  >
+                    {{ t('crud.edit') }}
+                  </Menu.Item>
+                  <Menu.Item
+                    v-if="showDeleteAction"
+                    key="delete"
+                    danger
+                    data-testid="row-overflow-delete"
+                    @click="emit('delete', slotProps.record)"
+                  >
+                    {{ t('crud.delete') }}
+                  </Menu.Item>
                   <slot name="rowActions" :record="slotProps.record" />
                 </Menu>
               </template>

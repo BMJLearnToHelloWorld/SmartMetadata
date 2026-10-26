@@ -52,6 +52,7 @@ describe('LineageGraph', () => {
       props: { model: MODEL },
       global: { plugins: [Antd, createTestI18n()] },
     });
+    expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--om-chrome');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(true);

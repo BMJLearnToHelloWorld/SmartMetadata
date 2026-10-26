@@ -113,6 +113,8 @@ describe('SearchView', () => {
     expect(wrapper.text()).not.toMatch(/GET \/api/);
     expect(wrapper.find('[data-testid="search-facets"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="search-facet-entityType"]').exists()).toBe(true);
+    const card = wrapper.get('[data-testid="search-card-svc.db.schema.orders"]');
+    expect(card.classes()).toContain('explore__card--dense');
     expect(wrapper.find('[data-testid="search-card-svc.db.schema.orders"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Orders');
     expect(wrapper.text()).toContain('Daily orders');

@@ -505,7 +505,7 @@ describe('AssetDetailView non-table shells', () => {
     expect(chart.wrapper.text()).toContain('sales');
     expect(chart.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
     expect(chart.wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
-    expect(chart.wrapper.text()).not.toContain('No slim GET is wired');
+    expect(chart.wrapper.text()).not.toContain('No detail page is wired');
     chart.wrapper.unmount();
 
     const metric = await mountTypedView('metric', 'kpi.mau');
@@ -523,7 +523,7 @@ describe('AssetDetailView non-table shells', () => {
     const database = await mountTypedView('database', 'svc.analytics');
     expect(database.wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     expect(database.wrapper.find('[data-testid="asset-related-empty"]').exists()).toBe(true);
-    expect(database.wrapper.text()).not.toContain('No slim GET is wired');
+    expect(database.wrapper.text()).not.toContain('No detail page is wired');
     database.wrapper.unmount();
 
     const schema = await mountTypedView('databaseSchema', 'svc.analytics.marts');
@@ -533,7 +533,7 @@ describe('AssetDetailView non-table shells', () => {
     schema.wrapper.unmount();
 
     const query = await mountTypedView('query', 'analytics.q1');
-    expect(query.wrapper.text()).toContain('No slim GET is wired');
+    expect(query.wrapper.text()).toContain('No detail page is wired');
     expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(false);
     query.wrapper.unmount();
   });

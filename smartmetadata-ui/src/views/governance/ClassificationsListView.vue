@@ -112,6 +112,7 @@ onMounted(() => {
     :data-source="classifications"
     table-test-id="classifications-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -119,6 +120,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'governance-classification', params: { id: (record as Classification).id } })"
+    @edit="(record) => router.push({ name: 'governance-classification', params: { id: (record as Classification).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-classification" @click="createOpen = true">

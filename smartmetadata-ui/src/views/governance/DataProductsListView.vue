@@ -119,6 +119,7 @@ onMounted(() => {
     :data-source="products"
     table-test-id="data-products-table"
     show-row-actions
+    show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -126,6 +127,7 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="(record) => router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })"
+    @edit="(record) => router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-data-product" @click="createOpen = true">

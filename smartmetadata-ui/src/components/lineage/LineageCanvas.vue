@@ -14,6 +14,7 @@ import {
   Space,
   Spin,
   Table,
+  Tooltip,
   Typography,
 } from 'ant-design-vue';
 import { fetchEntityLineage } from '@/api/lineage';
@@ -149,7 +150,9 @@ watch(
       </Typography.Paragraph>
       <Space wrap align="center">
         <slot name="search" />
-        <span>{{ t('lineage.upstreamDepth') }}</span>
+        <Tooltip :title="t('lineage.depthHelp')" placement="top">
+          <span>{{ t('lineage.upstreamDepth') }}</span>
+        </Tooltip>
         <Button data-testid="upstream-depth-dec" @click="bumpDepth('upstream', -1)">−</Button>
         <InputNumber
           v-model:value="upstreamDepth"
@@ -158,7 +161,9 @@ watch(
           :max="LINEAGE_DEPTH_MAX"
         />
         <Button data-testid="upstream-depth-inc" @click="bumpDepth('upstream', 1)">+</Button>
-        <span>{{ t('lineage.downstreamDepth') }}</span>
+        <Tooltip :title="t('lineage.depthHelp')" placement="top">
+          <span>{{ t('lineage.downstreamDepth') }}</span>
+        </Tooltip>
         <Button data-testid="downstream-depth-dec" @click="bumpDepth('downstream', -1)">−</Button>
         <InputNumber
           v-model:value="downstreamDepth"

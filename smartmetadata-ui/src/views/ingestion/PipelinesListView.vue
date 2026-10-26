@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Checkbox, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { listDatabaseServices } from '@/api/databaseServices';
-import { createIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
+import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { listMessagingServices } from '@/api/messagingServices';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -136,6 +136,23 @@ async function onCreate(): Promise<void> {
   }
 }
 
+function openDetail(pipeline: IngestionPipeline): void {
+  void router.push({ name: 'ingestion-pipeline', params: { id: pipeline.id } });
+}
+
+async function onDelete(pipeline: IngestionPipeline): Promise<void> {
+  if (!window.confirm(t('ingestion.pipelines.deleteConfirm', { name: pipeline.name }))) {
+    return;
+  }
+  try {
+    await deleteIngestionPipeline(pipeline.id);
+    message.success(t('ingestion.pipelines.deleted', { name: pipeline.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
 });
@@ -151,13 +168,17 @@ onMounted(() => {
     :data-source="pipelines"
     table-test-id="pipelines-table"
     show-row-actions
+    show-edit-action
+    show-delete-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })"
+    @view="openDetail($event as IngestionPipeline)"
+    @edit="openDetail($event as IngestionPipeline)"
+    @delete="onDelete($event as IngestionPipeline)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-pipeline" @click="createOpen = true">
@@ -199,7 +220,7 @@ onMounted(() => {
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-pipeline-name" />
       </Form.Item>
-      <Form.Item :label="t('ingestion.pipelines.service')" required>
+      <Form.Item :label="t('ingestion.pipelines.service')" :rules="requiredField(t, t('ingestion.pipelines.service'))">
         <Select
           :value="form.serviceId"
           data-testid="create-pipeline-service"
