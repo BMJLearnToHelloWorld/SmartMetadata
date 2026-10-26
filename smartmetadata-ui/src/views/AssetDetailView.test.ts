@@ -261,7 +261,7 @@ describe('AssetDetailView governance', () => {
     const textarea = wrapper.find('[data-testid="asset-description"]');
     expect(textarea.exists()).toBe(true);
     await textarea.setValue('Updated description');
-    const ok = wrapper.findAll('button').find((button) => button.text() === 'OK');
+    const ok = wrapper.findAll('button').find((button) => button.text() === 'Save');
     expect(ok).toBeTruthy();
     await ok!.trigger('click');
     await flushPromises();

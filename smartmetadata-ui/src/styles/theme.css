@@ -147,8 +147,20 @@ body {
   border-top: 1px solid var(--sm-border-secondary);
 }
 
+.ant-modal-confirm .ant-modal-content {
+  padding: 20px 20px 16px;
+}
+
+.ant-modal-confirm .ant-modal-confirm-body {
+  gap: 12px;
+}
+
+.ant-modal-confirm .ant-modal-confirm-title {
+  font-weight: 600;
+}
+
 .ant-modal-confirm .ant-modal-confirm-btns {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .ant-drawer .ant-drawer-header {
@@ -248,7 +260,8 @@ body {
 
 .ant-tabs .ant-tabs-tab {
   color: var(--sm-text-secondary);
-  padding: 10px 4px;
+  padding: 8px 2px;
+  font-weight: 500;
 }
 
 .ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
@@ -257,7 +270,13 @@ body {
 }
 
 .ant-tabs .ant-tabs-ink-bar {
+  height: 3px;
+  border-radius: 2px 2px 0 0;
   background: var(--sm-color-primary);
+}
+
+.ant-tabs-top > .ant-tabs-nav::before {
+  border-bottom-color: var(--sm-border-secondary);
 }
 
 .ant-form-item-label > label {

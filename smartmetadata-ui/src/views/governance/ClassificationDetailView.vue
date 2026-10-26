@@ -198,6 +198,7 @@ onMounted(() => {
     v-model:open="editOpen"
     :title="t('governance.classifications.editTitle')"
     :ok-text="t('crud.edit')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
     @ok="onSave"
   >
@@ -219,6 +220,7 @@ onMounted(() => {
     v-model:open="createTagOpen"
     :title="t('governance.classifications.createTagTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreateTag"
   >

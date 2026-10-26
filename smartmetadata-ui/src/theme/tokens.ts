@@ -36,6 +36,18 @@ export const SM_CONTROL_HEIGHT = 32;
  * Light surfaces from the in-repo OM token contract (`tokens.css` / colors.md).
  * Names stay `--sm-*` in CSS so we do not import OM React or Tailwind.
  */
+/** OM visualization / categorical hues — not default antd ECharts colors. */
+export const SM_CHART_COLORS = [
+  SM_COLOR_PRIMARY,
+  SM_COLOR_SUCCESS,
+  SM_COLOR_WARNING,
+  SM_COLOR_ERROR,
+  '#6938ef',
+  '#088ab2',
+  '#ba24d5',
+  '#4689ff',
+] as const;
+
 export const SM_SURFACES = {
   bgBase: '#ffffff',
   bgContainer: '#ffffff',
@@ -196,6 +208,8 @@ export const smAntdTheme: ThemeConfig = {
       itemActiveColor: SM_COLOR_PRIMARY_HOVER,
       inkBarColor: SM_COLOR_PRIMARY,
       titleFontSize: 14,
+      horizontalItemPadding: '8px 4px',
+      horizontalItemGutter: 24,
     },
     Pagination: {
       itemActiveBg: SM_COLOR_PRIMARY_BG,

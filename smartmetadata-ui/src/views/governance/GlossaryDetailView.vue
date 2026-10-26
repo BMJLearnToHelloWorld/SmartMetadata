@@ -206,6 +206,7 @@ onMounted(() => {
     v-model:open="editOpen"
     :title="t('governance.glossaries.editTitle')"
     :ok-text="t('crud.edit')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
     @ok="onSave"
   >
@@ -227,6 +228,7 @@ onMounted(() => {
     v-model:open="createTermOpen"
     :title="t('governance.glossaries.createTermTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreateTerm"
   >

@@ -10,6 +10,7 @@ import { Button, Checkbox, Form, Input, Modal, Select, message } from 'ant-desig
 import { listRoles } from '@/api/roles';
 import { TEAM_TYPES, createTeam, listTeams } from '@/api/teams';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -117,6 +118,13 @@ async function onCreate(): Promise<void> {
   }
 }
 
+function openTeam(team: AdminTeam): void {
+  if (!team.id) {
+    return;
+  }
+  void router.push({ name: 'admin-team', params: { id: team.id } });
+}
+
 onMounted(() => {
   void load();
   void listRoles(100)
@@ -136,12 +144,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="teams"
     table-test-id="admin-teams-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="openTeam($event as AdminTeam)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-team" @click="createOpen = true">
@@ -160,7 +170,7 @@ onMounted(() => {
         <a
           href="#"
           :data-testid="`team-row-${(record as AdminTeam).id}`"
-          @click.prevent="router.push({ name: 'admin-team', params: { id: (record as AdminTeam).id } })"
+          @click.prevent="openTeam(record as AdminTeam)"
         >
           {{ entityLabel(record as AdminTeam) }}
         </a>
@@ -180,14 +190,15 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('admin.teams.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-team-name" />
       </Form.Item>
-      <Form.Item :label="t('admin.teams.type')" required>
+      <Form.Item :label="t('admin.teams.type')" :rules="requiredField(t, t('admin.teams.type'))">
         <Select v-model:value="form.teamType">
           <Select.Option v-for="type in TEAM_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
         </Select>

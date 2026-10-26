@@ -141,6 +141,7 @@ watch(searchKey, () => {
         <Typography.Title :level="4">{{ t('explore.title') }}</Typography.Title>
         <Typography.Paragraph type="secondary">
           {{ t('explore.lead') }}
+          {{ t('explore.facetHelper') }}
           <template v-if="query"> {{ t('explore.leadQuery', { query }) }} </template>
           <template v-else> {{ t('explore.leadDefault') }}</template>
         </Typography.Paragraph>

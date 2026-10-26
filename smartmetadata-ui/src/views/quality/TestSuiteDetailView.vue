@@ -161,6 +161,7 @@ onMounted(() => {
     v-model:open="editOpen"
     :title="t('quality.testSuites.editTitle')"
     :ok-text="t('crud.edit')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
     @ok="onSave"
   >

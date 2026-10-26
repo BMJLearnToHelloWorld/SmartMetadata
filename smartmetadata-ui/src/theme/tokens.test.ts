@@ -23,6 +23,7 @@ import {
   SM_FONT_SIZE,
   SM_RADIUS_CARD,
   SM_RADIUS_MODAL,
+  SM_CHART_COLORS,
   SM_SURFACES,
   smAntdTheme,
 } from './tokens';
@@ -83,6 +84,9 @@ describe('OM console theme tokens', () => {
     expect(smAntdTheme.components?.Input?.activeShadow).toContain(SM_SURFACES.focusRing);
     expect(smAntdTheme.components?.Select?.optionSelectedBg).toBe(SM_COLOR_PRIMARY_BG);
     expect(smAntdTheme.components?.Tabs?.inkBarColor).toBe(SM_COLOR_PRIMARY);
+    expect(smAntdTheme.components?.Tabs?.horizontalItemPadding).toBe('8px 4px');
+    expect(SM_CHART_COLORS[0]).toBe(SM_COLOR_PRIMARY);
+    expect(SM_CHART_COLORS).not.toContain('#1677ff');
     expect(smAntdTheme.components?.Dropdown?.controlItemBgHover).toBe(SM_SURFACES.rowHoverBg);
     expect(smAntdTheme.components?.Drawer?.colorBgElevated).toBe(SM_SURFACES.bgContainer);
     expect(smAntdTheme.components?.Tooltip?.colorBgSpotlight).toBe('#181d27');
@@ -103,6 +107,8 @@ describe('OM console theme tokens', () => {
     expect(themeCss).toContain('.ant-table-tbody > tr.ant-table-row:hover');
     expect(themeCss).toContain('.ant-dropdown');
     expect(themeCss).toContain('.ant-tabs');
+    expect(themeCss).toContain('height: 3px');
+    expect(themeCss).toContain('.ant-modal-confirm .ant-modal-confirm-btns');
     expect(themeCss).toContain('.ant-empty-description');
     expect(themeCss).toContain('.ant-form-item-explain-error');
     expect(themeCss).toContain(':focus-visible');

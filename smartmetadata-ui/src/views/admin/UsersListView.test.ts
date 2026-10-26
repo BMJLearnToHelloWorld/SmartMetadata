@@ -91,6 +91,18 @@ describe('UsersListView', () => {
     expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
   });
 
+  it('opens user detail from the overflow menu', async () => {
+    const { wrapper, router } = await mountUsers();
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    const view = document.querySelector('[data-testid="row-overflow-view"]');
+    expect(view?.textContent).toContain('View');
+    (view as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-user');
+    expect(router.currentRoute.value.params.id).toBe('u1');
+  });
+
   it('opens user detail on name click', async () => {
     const { wrapper, router } = await mountUsers();
     const link = wrapper.find('[data-testid="user-row-u1"]');

@@ -5,7 +5,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Empty, Input, Space, Table, Typography } from 'ant-design-vue';
+import { EllipsisOutlined } from '@ant-design/icons-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Table, Typography } from 'ant-design-vue';
 import type { EntityListColumn } from './types';
 
 const { t } = useI18n();
@@ -27,6 +28,7 @@ const props = withDefaults(
     hasNext?: boolean;
     hasPrev?: boolean;
     emptyText?: string;
+    showRowActions?: boolean;
   }>(),
   {
     lead: '',
@@ -40,6 +42,7 @@ const props = withDefaults(
     hasNext: false,
     hasPrev: false,
     emptyText: '',
+    showRowActions: false,
   },
 );
 
@@ -49,6 +52,7 @@ const emit = defineEmits<{
   refresh: [];
   next: [];
   prev: [];
+  view: [record: unknown];
 }>();
 
 const shownLabel = computed(() => {
@@ -62,6 +66,12 @@ const shownLabel = computed(() => {
 const emptyDescription = computed(() => props.emptyText || t('crud.empty'));
 const searchPlaceholder = computed(() => props.searchPlaceholder || t('crud.searchPlaceholder'));
 const showPaging = computed(() => props.hasNext || props.hasPrev);
+const tableColumns = computed<EntityListColumn[]>(() => {
+  if (!props.showRowActions) {
+    return props.columns;
+  }
+  return [...props.columns, { title: t('crud.actions'), key: 'rowActions', width: 64 }];
+});
 </script>
 
 <template>
@@ -95,21 +105,42 @@ const showPaging = computed(() => props.hasNext || props.hasPrev);
       <Alert v-if="error" type="error" show-icon :message="error" data-testid="entity-list-error" />
       <Empty
         v-if="!loading && !error && dataSource.length === 0"
-        :description="emptyDescription"
         data-testid="entity-list-empty"
-      />
+      >
+        <template #description>
+          <div>{{ emptyDescription }}</div>
+          <Typography.Text v-if="!emptyText" type="secondary">{{ t('crud.emptyHint') }}</Typography.Text>
+        </template>
+      </Empty>
       <Table
         v-else
         :row-key="rowKey"
         :data-testid="tableTestId"
-        :columns="columns"
+        :columns="tableColumns"
         :data-source="dataSource"
         :loading="loading"
         :pagination="false"
         size="small"
       >
         <template #bodyCell="slotProps">
-          <slot name="bodyCell" v-bind="slotProps" />
+          <template v-if="slotProps.column.key === 'rowActions'">
+            <Dropdown :trigger="['click']">
+              <Button
+                type="text"
+                :aria-label="t('crud.moreActions')"
+                :data-testid="`row-overflow-${(slotProps.record as { id?: string }).id ?? ''}`"
+              >
+                <EllipsisOutlined />
+              </Button>
+              <template #overlay>
+                <Menu @click="emit('view', slotProps.record)">
+                  <Menu.Item key="view" data-testid="row-overflow-view">{{ t('crud.view') }}</Menu.Item>
+                  <slot name="rowActions" :record="slotProps.record" />
+                </Menu>
+              </template>
+            </Dropdown>
+          </template>
+          <slot v-else name="bodyCell" v-bind="slotProps" />
         </template>
       </Table>
       <div class="entity-list__footer">

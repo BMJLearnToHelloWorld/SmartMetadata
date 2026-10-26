@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, message } from 'ant-design-vue';
 import { createBotWithUser, listBots } from '@/api/bots';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -112,12 +113,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="bots"
     table-test-id="admin-bots-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'admin-bot', params: { id: (record as AdminBot).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-bot" @click="createOpen = true">
@@ -143,17 +146,18 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('admin.bots.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('admin.bots.botName')" required>
+      <Form.Item :label="t('admin.bots.botName')" :rules="requiredField(t, t('admin.bots.botName'))">
         <Input v-model:value="form.name" data-testid="create-bot-name" />
       </Form.Item>
       <Form.Item :label="t('admin.bots.botUserName')" :extra="t('admin.bots.botUserNameExtra')">
         <Input v-model:value="form.botUser" />
       </Form.Item>
-      <Form.Item :label="t('admin.bots.botUserEmail')" required>
+      <Form.Item :label="t('admin.bots.botUserEmail')" :rules="requiredField(t, t('admin.bots.botUserEmail'))">
         <Input v-model:value="form.botUserEmail" data-testid="create-bot-email" />
       </Form.Item>
       <Form.Item :label="t('crud.displayName')">

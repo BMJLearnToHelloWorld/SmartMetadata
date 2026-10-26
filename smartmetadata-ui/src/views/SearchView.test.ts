@@ -108,6 +108,9 @@ describe('SearchView', () => {
   it('renders denser cards and Apache aggregation facets', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Explore');
+    expect(wrapper.text()).toContain('Discover data assets');
+    expect(wrapper.text()).toContain('Filter by type, service, owner, tags, and more.');
+    expect(wrapper.text()).not.toMatch(/GET \/api/);
     expect(wrapper.find('[data-testid="search-facets"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="search-facet-entityType"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="search-card-svc.db.schema.orders"]').exists()).toBe(true);

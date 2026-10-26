@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createEventSubscription, listEventSubscriptions } from '@/api/eventSubscriptions';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -118,12 +119,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="alerts"
     table-test-id="alerts-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'observability-alert', params: { id: (record as EventSubscription).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-alert" @click="createOpen = true">
@@ -159,11 +162,12 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('observability.alerts.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-alert-name" />
       </Form.Item>
       <Form.Item :label="t('observability.alerts.type')" required>

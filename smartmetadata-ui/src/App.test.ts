@@ -34,5 +34,6 @@ describe('App', () => {
     expect(provider.props('theme')).toBe(smAntdTheme);
     expect(provider.props('theme').token.colorPrimary).toBe(SM_COLOR_PRIMARY);
     expect(provider.props('theme').token.borderRadius).toBe(SM_BORDER_RADIUS);
+    expect(provider.props('form')?.validateMessages?.required).toBe('${label} is required');
   });
 });

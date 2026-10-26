@@ -10,6 +10,7 @@ import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createDataProduct, listDataProducts } from '@/api/dataProducts';
 import { listDomains } from '@/api/domains';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -117,12 +118,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="products"
     table-test-id="data-products-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-data-product" @click="createOpen = true">
@@ -150,11 +153,12 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('governance.dataProducts.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-data-product-name" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>

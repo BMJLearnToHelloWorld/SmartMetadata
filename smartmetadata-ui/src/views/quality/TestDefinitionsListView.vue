@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createTestDefinition, listTestDefinitions } from '@/api/testDefinitions';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -117,12 +118,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="definitions"
     table-test-id="test-definitions-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'quality-test-definition', params: { id: (record as TestDefinition).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-test-definition" @click="createOpen = true">
@@ -150,11 +153,12 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('quality.testDefinitions.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-test-definition-name" />
       </Form.Item>
       <Form.Item :label="t('quality.testDefinitions.entityType')" required>

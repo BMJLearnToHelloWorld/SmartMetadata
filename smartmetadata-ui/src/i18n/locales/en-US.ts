@@ -56,7 +56,7 @@ const enUS = {
   },
   login: {
     title: 'SmartMetadata',
-    lead: 'Sign in against the server login API. The password is Base64-encoded in the request body as required by POST /api/v1/users/login.',
+    lead: 'Sign in with your catalog account.',
     email: 'Email',
     emailRequired: 'Email is required',
     password: 'Password',
@@ -74,10 +74,11 @@ const enUS = {
   },
   explore: {
     title: 'Explore',
-    lead: 'GET /api/v1/search/query on the dataAsset alias. Facets come from include_aggregations.',
-    leadQuery: 'Query: {query}',
-    leadDefault: 'Showing a default match-all page.',
-    empty: 'No matching assets',
+    lead: 'Discover data assets. Use filters to narrow results.',
+    facetHelper: 'Filter by type, service, owner, tags, and more.',
+    leadQuery: 'Results for “{query}”.',
+    leadDefault: 'Showing all data assets.',
+    empty: 'No data assets found',
     shown: '{shown} shown',
     shownOf: '{shown} shown of {total}',
     failed: 'Search failed',
@@ -134,18 +135,17 @@ const enUS = {
     loadFailed: 'Failed to load asset',
     lineageFailed: 'Failed to load lineage',
     lineageEmpty: 'No upstream or downstream lineage at this depth',
-    lineageLead: 'GET /api/v1/lineage/{type}/name/{fqn}. The graph below uses the same canvas as the full-page view.',
+    lineageLead: 'Upstream and downstream lineage for this asset.',
     upstream: 'Upstream',
     downstream: 'Downstream',
     customPropertiesLead:
       'Definitions from GET /api/v1/metadata/types/name/{type}/customProperties. Values live on extension and are written with RFC 6902 PATCH.',
     activityLead: 'GET /api/v1/activity/entity/{type}/name/{fqn}',
     conversationsLead: 'GET /api/v1/conversations?entityLink=<#E::{type}::{fqn}>',
-    qualityLead: 'GET /api/v1/dataQuality/testCases?entityFQN=…&includeAllTests=true',
-    profilerLead:
-      'GET /api/v1/tables/{fqn}/tableProfile/latest — empty when no profiler job has written results. This UI does not trigger ingestion.',
-    sampleLead: 'GET /api/v1/tables/{id}/sampleData',
-    topicSampleLead: 'GET /api/v1/topics/{id}/sampleData. Topics have no tableProfile endpoint.',
+    qualityLead: 'Data quality tests linked to this asset.',
+    profilerLead: 'Latest profiler metrics for this table. Empty until a profiler job writes results.',
+    sampleLead: 'Sample Data from this table.',
+    topicSampleLead: 'Sample messages from this topic. Topics do not have a table profiler.',
     profilerTitle: 'Latest profiler',
     sampleTitle: 'Sample data',
     topicSampleTitle: 'Sample messages',
@@ -256,8 +256,7 @@ const enUS = {
   },
   insights: {
     title: 'Insights',
-    lead:
-      'Live catalog and quality snapshots from GET /api/v1/search/query, GET /api/v1/dataQuality/testCases, and GET /api/v1/dataQuality/testCases/testCaseIncidentStatus. Historical Data Insights charts appear only when GET /api/v1/analytics/dataInsights/system/charts/listChartData returns points.',
+    lead: 'Track catalog coverage, quality, and Data Insights charts.',
     loadFailed: 'Failed to load Insights',
     catalogTotal: 'Catalog assets in this search snapshot: {total}',
     tabs: {
@@ -274,28 +273,25 @@ const enUS = {
     },
     charts: {
       entityType: 'Assets by type',
-      entityTypeLead: 'Buckets from include_aggregations on GET /api/v1/search/query (dataAsset). Snapshot, not a history.',
+      entityTypeLead: 'Live catalog snapshot by entity type.',
       serviceType: 'Assets by service type',
-      serviceTypeLead: 'Service-type aggregation from the same search response.',
+      serviceTypeLead: 'Live catalog snapshot by service type.',
       tier: 'Assets by tier',
-      tierLead: 'tier.tagFQN aggregation. Hidden empty when the catalog has no tier tags.',
+      tierLead: 'Assets grouped by tier. Hidden when the catalog has no tier tags.',
       testStatus: 'Test-case status',
-      testStatusLead: 'Latest status on the first 100 GET /api/v1/dataQuality/testCases rows. Not a global KPI warehouse.',
+      testStatusLead: 'Latest status on linked test cases.',
       incidents: 'Incident status',
-      incidentsLead: 'Latest incident statuses (limit 100). Empty when none are stored.',
+      incidentsLead: 'Latest incident statuses. Empty when none are stored.',
     },
     pipelineTitle: 'Data Insights pipeline',
-    pipelineLead:
-      'GET /api/v1/analytics/dataInsights/system/charts/listChartData for the seeded system chart names. This UI does not start the Data Insights application.',
-    pipelineEmpty:
-      'No pipeline series yet. Residual until a Data Insights job writes report data — this page does not invent points.',
+    pipelineLead: 'Historical Data Insights charts appear after a Data Insights job writes report data.',
+    pipelineEmpty: 'No Data Insights series yet. Residual until a job writes report data.',
     pipelineFailed: 'Failed to load Data Insights chart data',
     appAnalyticsEmpty:
-      'App analytics (page views, daily active users) stay residual. This console does not call web-analytics report indexes.',
-    kpisLead:
-      'GET /api/v1/kpi with fields=owners,dataInsightChart,kpiResult. Rows, targets, and stored results come from that payload only — this tab does not invent targets or start a Data Insights job.',
-    kpisEmpty: 'No KPI entities from GET /api/v1/kpi. This tab does not invent targets.',
-    kpisFailed: 'Failed to load GET /api/v1/kpi',
+      'App analytics stay residual. This console does not call web-analytics report indexes.',
+    kpisLead: 'Review KPI targets and stored results.',
+    kpisEmpty: 'Define key performance indicators to monitor impact and drive smarter decisions.',
+    kpisFailed: 'Failed to load KPIs',
     kpisDetail: 'Selected KPI',
     kpis: {
       metricType: 'Metric type',
@@ -315,8 +311,7 @@ const enUS = {
   },
   lineage: {
     title: 'Lineage',
-    platformLead:
-      'Search a catalog asset to open its graph. This page does not invent a platform-wide service map — that needs an API this product does not call.',
+    platformLead: 'Search a catalog asset to open its lineage graph.',
     searchPlaceholder: 'Search for an asset to open lineage',
     searchEmpty: 'No matching assets',
     openByFqn: 'Open by type and FQN',
@@ -355,7 +350,8 @@ const enUS = {
     refresh: 'Refresh',
     previous: 'Previous',
     next: 'Next',
-    empty: 'No records',
+    empty: 'No data',
+    emptyHint: 'Adding a new record is easy — just give it a spin.',
     shown: '{shown} shown',
     shownOf: '{shown} shown of {total}',
     deleted: 'Deleted',
@@ -375,6 +371,11 @@ const enUS = {
     cancel: 'Cancel',
     save: 'Save',
     ok: 'OK',
+    view: 'View',
+    actions: 'Actions',
+    moreActions: 'More actions',
+    fieldRequired: '{field} is required',
+    fieldRequiredPlain: 'This field is required',
     overview: 'Overview',
     loadFailed: 'Failed to load',
     createFailed: 'Create failed',
@@ -391,9 +392,8 @@ const enUS = {
   admin: {
     users: {
       title: 'Users',
-      lead: 'GET /api/v1/users (filters) and GET /api/v1/search/query?index=user (search). Create is POST /api/v1/users.',
-      detailLead:
-        'GET /api/v1/users/{id}. Deactivate is DELETE (soft). Restore is PUT /api/v1/users/restore.',
+      lead: 'Create and manage users.',
+      detailLead: 'User profile, teams, and roles.',
       create: 'Create user',
       createTitle: 'Create user',
       editTitle: 'Edit user',
@@ -424,9 +424,8 @@ const enUS = {
     },
     teams: {
       title: 'Teams',
-      lead: 'GET/POST /api/v1/teams. Only Group teams hold direct users.',
-      detailLead:
-        'GET /api/v1/teams/{id}. Membership: PUT /api/v1/teams/{id}/users and DELETE /api/v1/teams/{id}/users/{userId}.',
+      lead: 'Organize users into teams. Only Group teams hold direct users.',
+      detailLead: 'Team profile, members, and default roles.',
       create: 'Create team',
       createTitle: 'Create team',
       editTitle: 'Edit team',
@@ -456,9 +455,8 @@ const enUS = {
     },
     bots: {
       title: 'Bots',
-      lead: 'GET /api/v1/bots. Create POSTs a bot user (isBot: true) then POST /api/v1/bots.',
-      detailLead:
-        'GET /api/v1/bots/{id}. Tokens use PUT /api/v1/users/generateToken/{botUserId} and PUT /api/v1/users/revokeToken.',
+      lead: 'Create and manage bots and their access tokens.',
+      detailLead: 'Bot profile and JWT token.',
       create: 'Create bot',
       createTitle: 'Create bot',
       botUser: 'Bot user',
@@ -481,8 +479,8 @@ const enUS = {
     },
     roles: {
       title: 'Roles',
-      lead: 'GET /api/v1/roles and GET /api/v1/roles/search. Role assignment happens on the user/team entities; this page does not invent an authorization engine.',
-      detailLead: 'GET /api/v1/roles/{id}. Assignment uses PATCH on the user or team entity.',
+      lead: 'Roles are assigned to users. A role is a collection of policies.',
+      detailLead: 'Policies attached to this role. Assignment stays on the user or team.',
       searchPlaceholder: 'Search roles',
       policies: 'Policies',
       users: 'Users',
@@ -502,8 +500,8 @@ const enUS = {
     },
     policies: {
       title: 'Policies',
-      lead: 'GET /api/v1/policies. Rules, roles, and teams come from the payload. This page does not invent a policy editor.',
-      detailLead: 'GET /api/v1/policies/{id}. Assignment stays on the role and team entities; this page is read-only.',
+      lead: 'Policies are a collection of rules that define access. This page is read-only.',
+      detailLead: 'Rules, roles, and teams on this policy. This page is read-only.',
       rules: 'Rules',
       roles: 'Roles',
       teams: 'Teams',
@@ -519,7 +517,7 @@ const enUS = {
   governance: {
     classifications: {
       title: 'Classifications',
-      lead: 'GET/POST /api/v1/classifications. CreateClassification requires name and description.',
+      lead: 'Create classifications and the tags teams apply to assets.',
       create: 'Create classification',
       createTitle: 'Create classification',
       editTitle: 'Edit classification',
@@ -540,7 +538,7 @@ const enUS = {
     },
     glossaries: {
       title: 'Glossaries',
-      lead: 'GET/POST /api/v1/glossaries. CreateGlossary requires name and description.',
+      lead: 'Define concepts in plain business language.',
       create: 'Create glossary',
       createTitle: 'Create glossary',
       editTitle: 'Edit glossary',
@@ -561,7 +559,7 @@ const enUS = {
     },
     domains: {
       title: 'Domains',
-      lead: 'GET/POST /api/v1/domains. CreateDomain requires name, description, and domainType.',
+      lead: 'Organize data by business domains.',
       create: 'Create domain',
       createTitle: 'Create domain',
       editTitle: 'Edit domain',
@@ -574,7 +572,7 @@ const enUS = {
     },
     dataProducts: {
       title: 'Data Products',
-      lead: 'GET/POST /api/v1/dataProducts. CreateDataProduct requires name, description, and domains (FQNs).',
+      lead: 'Create data products to make trusted datasets available for discovery.',
       create: 'Create data product',
       createTitle: 'Create data product',
       editTitle: 'Edit data product',
@@ -589,7 +587,7 @@ const enUS = {
   quality: {
     testCases: {
       title: 'Test Cases',
-      lead: 'GET/POST /api/v1/dataQuality/testCases. CreateTestCase requires name, testDefinition FQN, and a MessageParser entityLink.',
+      lead: 'Monitor data quality test cases on catalog assets.',
       create: 'Create test case',
       createTitle: 'Create test case',
       editTitle: 'Edit test case',
@@ -613,7 +611,7 @@ const enUS = {
     },
     testDefinitions: {
       title: 'Test Definitions',
-      lead: 'GET/POST /api/v1/dataQuality/testDefinitions. CreateTestDefinition requires name, entityType, and testPlatforms. Seeded definitions appear after server bootstrap.',
+      lead: 'Reusable test definitions for quality checks.',
       create: 'Create definition',
       createTitle: 'Create test definition',
       editTitle: 'Edit test definition',
@@ -628,7 +626,7 @@ const enUS = {
     },
     testSuites: {
       title: 'Test Suites',
-      lead: 'GET/POST /api/v1/dataQuality/testSuites creates a logical suite (CreateTestSuite requires name). Basic/executable suites are created by the server when tests are attached to an asset; this UI does not invent a pipeline.',
+      lead: 'Group test cases into logical suites. Executable suites are created when tests are attached to an asset.',
       create: 'Create logical suite',
       createTitle: 'Create logical test suite',
       editTitle: 'Edit test suite',
@@ -649,7 +647,7 @@ const enUS = {
   observability: {
     alerts: {
       title: 'Alerts',
-      lead: 'Event subscriptions at GET/POST /api/v1/events/subscriptions. Create requires name, alertType, and a webhook destination. Slack / email / filter-rule authoring is left residual.',
+      lead: 'Stay current with timely alerts using webhooks.',
       create: 'Create webhook alert',
       createTitle: 'Create webhook alert',
       type: 'Type',
@@ -662,9 +660,11 @@ const enUS = {
     },
     incidents: {
       title: 'Incidents',
-      lead: 'GET /api/v1/dataQuality/testCases/testCaseIncidentStatus?latest=true. These records are the Incident Manager time series — not a separate invented incident entity.',
-      detailLead:
-        'GET /api/v1/dataQuality/testCases/testCaseIncidentStatus/{id}. Status changes POST a new resolution record (CreateTestCaseResolutionStatus requires type + testCaseReference).',
+      lead: 'Track and resolve data quality incidents.',
+      detailLead: 'Incident status, severity, and resolution.',
+      statusNew: 'New',
+      statusAck: 'Acknowledged',
+      statusResolved: 'Resolved',
       testCase: 'Test case',
       severity: 'Severity',
       updated: 'Updated',
@@ -682,7 +682,7 @@ const enUS = {
   ingestion: {
     services: {
       title: 'Services',
-      lead: 'GET/POST /api/v1/services/databaseServices and /messagingServices. Create requires name + serviceType. Connection fields match smartmetadata-ingestion Postgres / MySQL / Snowflake / Kafka. Dashboard and pipeline services are not wired.',
+      lead: 'Connect database and messaging services. Dashboard and pipeline services are not wired.',
       create: 'Create service',
       createTitle: 'Create service',
       editTitle: 'Edit service',
@@ -701,7 +701,7 @@ const enUS = {
     },
     pipelines: {
       title: 'Ingestion pipelines',
-      lead: 'GET/POST /api/v1/services/ingestionPipelines. CreateIngestionPipeline still requires sourceConfig + airflowConfig even though this console does not deploy Airflow DAGs. Jobs run with smartmetadata-ingest run.',
+      lead: 'Create metadata ingestion pipelines. Jobs run with smartmetadata-ingest; this console does not deploy Airflow DAGs.',
       create: 'Create pipeline',
       createTitle: 'Create ingestion pipeline',
       editTitle: 'Edit ingestion pipeline',
@@ -735,7 +735,7 @@ const enUS = {
   },
   settings: {
     title: 'Settings',
-    lead: 'Open a page this console already ships. Residual items stay listed as residual — they are not fake forms.',
+    lead: 'Open a page this console already ships. Residual items stay listed as residual.',
     back: 'Back to Settings',
     residual: {
       generic: 'Not wired in this console.',

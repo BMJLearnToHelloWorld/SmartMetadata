@@ -41,6 +41,8 @@ describe('EntityListShell', () => {
     expect(wrapper.get('[data-testid="entity-list-title"]').text()).toBe('Users');
     expect(wrapper.get('[data-testid="entity-list-lead"]').text()).toContain('GET /api/v1/users');
     expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="entity-list-empty"]').text()).toContain('No data');
+    expect(wrapper.get('[data-testid="entity-list-empty"]').text()).toContain('just give it a spin');
     expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="entity-list-refresh"]').text()).toBe('Refresh');
   });
@@ -96,5 +98,20 @@ describe('EntityListShell', () => {
     );
     expect(wrapper.get('[data-testid="create-user"]').text()).toBe('Create user');
     expect(wrapper.text()).toContain('Admins');
+  });
+
+  it('adds an overflow actions menu that emits view', async () => {
+    const wrapper = await mountShell({
+      showRowActions: true,
+      dataSource: [{ id: 'u1', name: 'alice' }],
+    });
+    const overflow = wrapper.get('[data-testid="row-overflow-u1"]');
+    await overflow.trigger('click');
+    await flushPromises();
+    const view = document.querySelector('[data-testid="row-overflow-view"]');
+    expect(view?.textContent).toContain('View');
+    (view as HTMLElement | null)?.click();
+    await flushPromises();
+    expect(wrapper.emitted('view')?.[0]?.[0]).toEqual({ id: 'u1', name: 'alice' });
   });
 });

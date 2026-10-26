@@ -102,6 +102,7 @@ onMounted(() => {
     :columns="columns"
     :data-source="roles"
     table-test-id="admin-roles-table"
+    show-row-actions
     show-search
     :search-value="query"
     :search-placeholder="t('admin.roles.searchPlaceholder')"
@@ -113,6 +114,7 @@ onMounted(() => {
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'admin-role', params: { id: (record as AdminRole).id } })"
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
