@@ -18,6 +18,7 @@ const searchAssets = vi.fn();
 const listTestCases = vi.fn();
 const listTestIncidents = vi.fn();
 const listSystemChartData = vi.fn();
+const listKpis = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
@@ -35,6 +36,9 @@ vi.mock('@/api/dataInsights', async () => {
     listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
   };
 });
+vi.mock('@/api/kpi', () => ({
+  listKpis: (...args: unknown[]) => listKpis(...args),
+}));
 
 async function mountView() {
   const router = createRouter({
@@ -56,6 +60,8 @@ describe('InsightsView', () => {
     listTestCases.mockReset();
     listTestIncidents.mockReset();
     listSystemChartData.mockReset();
+    listKpis.mockReset();
+    listKpis.mockResolvedValue({ data: [] });
     searchAssets.mockResolvedValue({
       total: 7,
       hits: [],
@@ -87,7 +93,7 @@ describe('InsightsView', () => {
     expect(searchAssets).toHaveBeenCalledWith('*', 0, 1);
   });
 
-  it('leaves pipeline, app analytics, and KPI tabs residual when series are empty', async () => {
+  it('leaves pipeline and app analytics residual; KPI tab is empty until GET /v1/kpi returns rows', async () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Data Insights pipeline');
@@ -96,9 +102,56 @@ describe('InsightsView', () => {
     await tabs[1]?.trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="insights-app-analytics-empty"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('web-analytics');
+    await tabs[2]?.trigger('click');
+    await flushPromises();
+    expect(listKpis).toHaveBeenCalledWith({ limit: 50 });
+    expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(false);
+  });
+
+  it('lists KPI rows from GET /v1/kpi and shows selected detail from that payload', async () => {
+    listKpis.mockResolvedValue({
+      data: [
+        {
+          name: 'description-coverage',
+          displayName: 'Description coverage',
+          description: 'Share of assets with a description',
+          metricType: 'PERCENTAGE',
+          targetValue: 80,
+          startDate: 1704067200000,
+          endDate: 1735689600000,
+          dataInsightChart: { name: 'percentage_of_data_asset_with_description' },
+          owners: [{ name: 'admin' }],
+          kpiResult: {
+            timestamp: 1704153600000,
+            targetResult: [{ name: 'completedDescriptionFraction', value: '42', targetMet: false }],
+          },
+        },
+      ],
+    });
+    const wrapper = await mountView();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[2]?.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-kpis-detail"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Description coverage');
+    expect(wrapper.text()).toContain('80');
+    expect(wrapper.text()).toContain('42');
+    expect(wrapper.text()).toContain('percentage_of_data_asset_with_description');
+  });
+
+  it('shows honest KPI empty when GET /v1/kpi fails and does not invent rows', async () => {
+    listKpis.mockRejectedValue(new Error('kpi down'));
+    const wrapper = await mountView();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
     await tabs[2]?.trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('kpi down');
   });
 
   it('plots test-status donut when latest status lives only under testCaseResult', async () => {

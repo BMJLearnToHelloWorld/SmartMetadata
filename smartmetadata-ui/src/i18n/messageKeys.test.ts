@@ -70,6 +70,8 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('insights.title');
     expect(keys).toContain('insights.tabs.dataAssets');
     expect(keys).toContain('insights.pipelineEmpty');
+    expect(keys).toContain('insights.kpisLead');
+    expect(keys).toContain('insights.kpisEmpty');
     expect(keys).toContain('charts.empty');
     expect(keys).toContain('asset.rowCountChart');
     expect(keys).toContain('asset.resultsChart');

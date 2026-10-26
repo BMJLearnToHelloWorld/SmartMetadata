@@ -287,7 +287,20 @@ const zhCN = {
     pipelineEmpty: '还没有管道序列。在 Data Insights 作业写入报告数据之前保持 residual — 本页不会伪造数据点。',
     pipelineFailed: '加载 Data Insights 图数据失败',
     appAnalyticsEmpty: '应用分析（页面浏览、日活）仍是 residual。本控制台不调用 web-analytics 报告索引。',
-    kpisEmpty: 'KPI 实体仍是 residual。本控制台没有 GET /v1/kpi 客户端，也不会伪造目标值。',
+    kpisLead:
+      'GET /api/v1/kpi（fields=owners,dataInsightChart,kpiResult）。行、目标和已存储结果只来自该响应 — 此页不会伪造目标值，也不会启动 Data Insights 作业。',
+    kpisEmpty: 'GET /api/v1/kpi 没有 KPI 实体。此页不会伪造目标值。',
+    kpisFailed: '加载 GET /api/v1/kpi 失败',
+    kpisDetail: '选中的 KPI',
+    kpis: {
+      metricType: '指标类型',
+      target: '目标',
+      current: '当前值',
+      chart: 'Data Insight 图',
+      start: '开始',
+      end: '结束',
+      targetMet: '是否达标',
+    },
     pipeline: {
       total_data_assets: '数据资产总数（管道）',
       percentage_of_data_asset_with_description: '有描述的资产（管道）',

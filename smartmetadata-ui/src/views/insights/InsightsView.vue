@@ -5,8 +5,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Card, Col, Empty, Row, Spin, Tabs, Typography } from 'ant-design-vue';
+import { Alert, Card, Col, Descriptions, Empty, Row, Spin, Table, Tabs, Typography } from 'ant-design-vue';
 import { listSystemChartData, SYSTEM_CHART_NAMES } from '@/api/dataInsights';
+import { listKpis } from '@/api/kpi';
 import { searchAssets } from '@/api/search';
 import { listTestCases } from '@/api/testCases';
 import { listTestIncidents } from '@/api/testIncidents';
@@ -15,6 +16,7 @@ import SmChart from '@/features/charts/SmChart.vue';
 import { bucketsToPoints, insightResultsToSeries, namedSeries, testResultsToStatusPoints } from '@/features/charts/series';
 import type { ChartSeries } from '@/features/charts/types';
 import { seriesWindow } from '@/features/charts/types';
+import type { Kpi } from '@/types/kpi';
 
 const { t, te } = useI18n();
 
@@ -29,6 +31,59 @@ const incidentSeries = ref<ChartSeries[]>([]);
 const pipeline = ref<Array<{ name: string; title: string; series: ChartSeries[] }>>([]);
 const pipelineError = ref('');
 const pipelineTried = ref(false);
+const kpis = ref<Kpi[]>([]);
+const kpiError = ref('');
+const kpiTried = ref(false);
+const selectedKpi = ref<Kpi | null>(null);
+
+function formatKpiTs(value?: number): string {
+  if (!value) {
+    return '—';
+  }
+  const millis = value < 1e12 ? value * 1000 : value;
+  return new Date(millis).toISOString();
+}
+
+function kpiCurrent(kpi: Kpi): string {
+  return kpi.kpiResult?.targetResult[0]?.value || '—';
+}
+
+function kpiTargetMet(kpi: Kpi): boolean | undefined {
+  return kpi.kpiResult?.targetResult[0]?.targetMet;
+}
+
+function kpiChartName(kpi: Kpi): string {
+  return kpi.dataInsightChart?.displayName || kpi.dataInsightChart?.name || '—';
+}
+
+function kpiOwners(kpi: Kpi): string {
+  const names = kpi.owners.map((owner) => owner.displayName || owner.name).filter(Boolean);
+  return names.join(', ') || '—';
+}
+
+function kpiRowKey(row: Kpi): string {
+  return row.id || row.name;
+}
+
+const kpiColumns = computed(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('insights.kpis.metricType'), dataIndex: 'metricType', key: 'metricType' },
+  { title: t('insights.kpis.target'), key: 'target' },
+  { title: t('insights.kpis.current'), key: 'current' },
+  { title: t('insights.kpis.chart'), key: 'chart' },
+  { title: t('insights.kpis.start'), key: 'start' },
+  { title: t('insights.kpis.end'), key: 'end' },
+]);
+
+function onSelectKpi(record: Kpi): void {
+  selectedKpi.value = record;
+}
+
+function kpiCustomRow(record: Kpi) {
+  return {
+    onClick: () => onSelectKpi(record),
+  };
+}
 
 function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string; count: number }> }>, id: FacetId) {
   return facets.find((facet) => facet.id === id)?.buckets ?? [];
@@ -46,8 +101,13 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   pipelineError.value = '';
   pipelineTried.value = false;
+  kpiError.value = '';
+  kpiTried.value = false;
+  kpis.value = [];
+  selectedKpi.value = null;
+  const window = seriesWindow();
+  const kpiPromise = listKpis({ limit: 50 });
   try {
-    const window = seriesWindow();
     const [search, tests, incidents] = await Promise.all([
       searchAssets('*', 0, 1),
       listTestCases({ limit: 100 }),
@@ -94,7 +154,17 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('insights.loadFailed');
+  }
+  try {
+    const page = await kpiPromise;
+    kpis.value = page.data;
+    selectedKpi.value = page.data[0] ?? null;
+  } catch (error) {
+    kpis.value = [];
+    selectedKpi.value = null;
+    kpiError.value = error instanceof Error ? error.message : t('insights.kpisFailed');
   } finally {
+    kpiTried.value = true;
     loading.value = false;
   }
 }
@@ -171,7 +241,78 @@ onMounted(() => {
         <Empty data-testid="insights-app-analytics-empty" :description="t('insights.appAnalyticsEmpty')" />
       </Tabs.TabPane>
       <Tabs.TabPane key="kpis" :tab="t('insights.tabs.kpis')">
-        <Empty data-testid="insights-kpis-empty" :description="t('insights.kpisEmpty')" />
+        <Typography.Paragraph type="secondary">{{ t('insights.kpisLead') }}</Typography.Paragraph>
+        <Alert v-if="kpiError" type="warning" show-icon :message="kpiError" class="insights__alert" />
+        <Empty
+          v-if="kpiTried && !kpis.length"
+          data-testid="insights-kpis-empty"
+          :description="t('insights.kpisEmpty')"
+        />
+        <div v-else-if="kpis.length" data-testid="insights-kpis-list">
+          <Table
+            data-testid="insights-kpis-table"
+            size="small"
+            :columns="kpiColumns"
+            :data-source="kpis"
+            :row-key="kpiRowKey"
+            :pagination="false"
+            :custom-row="kpiCustomRow"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'name'">{{ record.displayName || record.name }}</template>
+              <template v-else-if="column.key === 'metricType'">{{ record.metricType || '—' }}</template>
+              <template v-else-if="column.key === 'target'">
+                {{ record.targetValue === undefined ? '—' : record.targetValue }}
+              </template>
+              <template v-else-if="column.key === 'current'">{{ kpiCurrent(record) }}</template>
+              <template v-else-if="column.key === 'chart'">{{ kpiChartName(record) }}</template>
+              <template v-else-if="column.key === 'start'">{{ formatKpiTs(record.startDate) }}</template>
+              <template v-else-if="column.key === 'end'">{{ formatKpiTs(record.endDate) }}</template>
+            </template>
+          </Table>
+          <Typography.Title v-if="selectedKpi" :level="5" class="insights__sub">
+            {{ t('insights.kpisDetail') }}
+          </Typography.Title>
+          <Descriptions
+            v-if="selectedKpi"
+            data-testid="insights-kpis-detail"
+            bordered
+            :column="1"
+            size="small"
+          >
+            <Descriptions.Item :label="t('crud.name')">{{ selectedKpi.name }}</Descriptions.Item>
+            <Descriptions.Item :label="t('crud.displayName')">
+              {{ selectedKpi.displayName || '—' }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('crud.description')">
+              {{ selectedKpi.description || '—' }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.metricType')">
+              {{ selectedKpi.metricType || '—' }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.target')">
+              {{ selectedKpi.targetValue === undefined ? '—' : selectedKpi.targetValue }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.current')">
+              {{ kpiCurrent(selectedKpi) }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.targetMet')">
+              {{
+                kpiTargetMet(selectedKpi) === undefined
+                  ? '—'
+                  : kpiTargetMet(selectedKpi)
+                    ? t('crud.yes')
+                    : t('crud.no')
+              }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.chart')">{{ kpiChartName(selectedKpi) }}</Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.start')">
+              {{ formatKpiTs(selectedKpi.startDate) }}
+            </Descriptions.Item>
+            <Descriptions.Item :label="t('insights.kpis.end')">{{ formatKpiTs(selectedKpi.endDate) }}</Descriptions.Item>
+            <Descriptions.Item :label="t('crud.owners')">{{ kpiOwners(selectedKpi) }}</Descriptions.Item>
+          </Descriptions>
+        </div>
       </Tabs.TabPane>
     </Tabs>
   </Spin>
