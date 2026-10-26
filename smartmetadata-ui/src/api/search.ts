@@ -14,6 +14,8 @@ import { apiRequest } from './client';
 export interface SearchAssetsOptions {
   index?: string;
   includeAggregations?: boolean;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export async function searchAssets(
@@ -30,6 +32,8 @@ export async function searchAssets(
       from,
       size,
       include_aggregations: options.includeAggregations ?? true,
+      sort_field: options.sortField,
+      sort_order: options.sortOrder,
     },
   });
   return mapSearchResponse(payload);

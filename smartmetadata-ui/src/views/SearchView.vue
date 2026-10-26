@@ -6,21 +6,39 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Card, Checkbox, Col, Empty, Pagination, Row, Space, Tag, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Empty, Pagination, Select, Space, Tag, Typography } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
+import {
+  browsePathLabels,
+  buildEstateTree,
+  estateCategory,
+  estateFromQuery,
+  filtersForEstateNode,
+  isResidualEstate,
+  selectedEstateFromFilters,
+  type EstateNode,
+} from '@/catalog/browseEstate';
 import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
-import { FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { CHIP_FACET_IDS, type FacetBucket, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import {
+  DEFAULT_SORT,
   SEARCH_PAGE_SIZE,
+  SORT_OPTIONS,
   composeSearchQuery,
   filtersFromQuery,
   hasActiveFilters,
-  searchRouteQuery,
   pageFromQuery,
-  toggleFilterValue,
+  searchRouteQuery,
+  sortField,
+  sortFromQuery,
   type SearchFilters,
+  type SearchSort,
+  type SortId,
 } from '@/catalog/searchQuery';
+import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
+import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
+import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import type { SearchHit } from '@/types/api';
 
 const route = useRoute();
@@ -32,13 +50,46 @@ const errorMessage = ref('');
 const hits = ref<SearchHit[]>([]);
 const total = ref(0);
 const facets = ref<SearchFacet[]>([]);
+const estateFacets = ref<SearchFacet[]>([]);
+const serviceBuckets = ref<FacetBucket[]>([]);
+const expandedKeys = ref<string[]>([]);
+const selectedFqn = ref('');
 
 const query = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const filters = computed(() => filtersFromQuery(route.query));
 const page = computed(() => pageFromQuery(route.query.page));
+const sort = computed(() => sortFromQuery(route.query));
+const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
+const residual = computed(() => isResidualEstate(estateId.value));
 const searchKey = computed(() =>
-  JSON.stringify({ q: query.value, filters: filters.value, page: page.value }),
+  JSON.stringify({
+    q: query.value,
+    filters: filters.value,
+    page: page.value,
+    sort: sort.value,
+    estate: estateFromQuery(route.query),
+  }),
 );
+
+const estateNodes = computed(() => buildEstateTree(estateFacets.value, estateId.value, serviceBuckets.value));
+const selectedEstateKeys = computed(() => {
+  const service = filters.value.service?.[0];
+  if (estateId.value && service) {
+    return [`${estateId.value}:service:${service}`];
+  }
+  return estateId.value ? [estateId.value] : [];
+});
+const crumbs = computed(() => browsePathLabels(filters.value, estateId.value));
+const selectedHit = computed(
+  () => hits.value.find((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value) ?? hits.value[0] ?? null,
+);
+const recordRange = computed(() => {
+  if (!total.value) {
+    return { from: 0, to: 0 };
+  }
+  const from = page.value * SEARCH_PAGE_SIZE + 1;
+  return { from, to: Math.min(total.value, from + hits.value.length - 1) };
+});
 
 function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
@@ -49,24 +100,71 @@ function facetTitle(id: FacetId): string {
   return t(`explore.facets.${id}`);
 }
 
-function pushSearch(nextQuery: string, nextFilters: SearchFilters, nextPage = 0): void {
-  void router.push({ name: 'search', query: searchRouteQuery(nextQuery, nextFilters, nextPage) });
+function crumbLabel(label: string): string {
+  return label.startsWith('explore.') ? t(label) : label;
+}
+
+function pushSearch(
+  nextQuery: string,
+  nextFilters: SearchFilters,
+  nextPage = 0,
+  nextSort: SearchSort = sort.value,
+  nextEstate = estateFromQuery(route.query),
+): void {
+  void router.push({
+    name: 'search',
+    query: searchRouteQuery(nextQuery, nextFilters, nextPage, { sort: nextSort, estate: nextEstate }),
+  });
+}
+
+function onChipChange(id: FacetId, values: string[]): void {
+  const next: SearchFilters = { ...filters.value, [id]: values };
+  if (!values.length) {
+    delete next[id];
+  }
+  const estate = id === 'entityType' ? selectedEstateFromFilters(next) : estateFromQuery(route.query);
+  pushSearch(query.value, next, 0, sort.value, estate);
 }
 
 function onToggleFacet(id: FacetId, value: string): void {
-  pushSearch(query.value, toggleFilterValue(filters.value, id, value), 0);
+  const current = filters.value[id] ?? [];
+  const nextValues = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
+  onChipChange(id, nextValues);
 }
 
 function onClearFilters(): void {
-  pushSearch(query.value, {}, 0);
+  pushSearch(query.value, {}, 0, sort.value, '');
 }
 
 function onPageChange(next: number): void {
   pushSearch(query.value, filters.value, Math.max(0, next - 1));
 }
 
+function onSortChange(value: unknown): void {
+  const id = SORT_OPTIONS.some((item) => item.id === value) ? (value as SortId) : DEFAULT_SORT.id;
+  const option = SORT_OPTIONS.find((item) => item.id === id) ?? SORT_OPTIONS[0];
+  pushSearch(query.value, filters.value, 0, { id: option.id, order: option.defaultOrder }, estateFromQuery(route.query));
+}
+
+function onEstateSelect(node: EstateNode): void {
+  if (isResidualEstate(node.categoryId)) {
+    pushSearch(query.value, { ...filters.value, entityType: undefined, service: undefined }, 0, sort.value, node.categoryId);
+    return;
+  }
+  pushSearch(query.value, filtersForEstateNode(node, filters.value), 0, sort.value, node.categoryId);
+}
+
+function onEstateExpand(keys: string[]): void {
+  expandedKeys.value = keys;
+}
+
+function selectHit(hit: SearchHit): void {
+  selectedFqn.value = hit.fullyQualifiedName || hit.name;
+}
+
 function openHit(hit: SearchHit): void {
-  if (!hit.fullyQualifiedName || !hit.entityType) {
+  if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
+    selectHit(hit);
     return;
   }
   void router.push(assetLocation(hit.entityType, hit.fullyQualifiedName));
@@ -76,18 +174,71 @@ function hitKey(hit: SearchHit, index: number): string {
   return hit.fullyQualifiedName || hit.id || `${hit.entityType}-${index}`;
 }
 
+function isSelected(hit: SearchHit): boolean {
+  const key = hit.fullyQualifiedName || hit.name;
+  return selectedHit.value ? (selectedHit.value.fullyQualifiedName || selectedHit.value.name) === key : false;
+}
+
+function openResidual(): void {
+  const routeName = estateNodes.value.find((node) => node.key === estateId.value)?.residualRoute;
+  if (routeName) {
+    void router.push({ name: routeName });
+  }
+}
+
+async function loadEstatePresence(): Promise<void> {
+  try {
+    const pageResult = await searchAssets(query.value.trim() || '*', 0, 0);
+    estateFacets.value = pageResult.facets;
+  } catch {
+    estateFacets.value = [];
+  }
+}
+
+async function loadEstateServices(categoryId: string): Promise<void> {
+  const category = estateCategory(categoryId);
+  if (!category?.expandable || !category.entityTypes.length) {
+    serviceBuckets.value = [];
+    return;
+  }
+  try {
+    const pageResult = await searchAssets(composeSearchQuery(query.value, { entityType: category.entityTypes }), 0, 0);
+    serviceBuckets.value = pageResult.facets.find((facet) => facet.id === 'service')?.buckets ?? [];
+  } catch {
+    serviceBuckets.value = [];
+  }
+}
+
 async function runSearch(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const pageResult = await searchAssets(
-      composeSearchQuery(query.value, filters.value),
-      page.value * SEARCH_PAGE_SIZE,
-      SEARCH_PAGE_SIZE,
-    );
+    const estatePromise = loadEstatePresence();
+    if (residual.value) {
+      hits.value = [];
+      total.value = 0;
+      facets.value = [];
+      serviceBuckets.value = [];
+      await estatePromise;
+      return;
+    }
+    const pageResult = await searchAssets(composeSearchQuery(query.value, filters.value), page.value * SEARCH_PAGE_SIZE, SEARCH_PAGE_SIZE, {
+      sortField: sortField(sort.value),
+      sortOrder: sort.value.order,
+    });
     hits.value = pageResult.hits;
     total.value = pageResult.total;
     facets.value = pageResult.facets;
+    if (estateId.value) {
+      expandedKeys.value = [estateId.value];
+      await Promise.all([estatePromise, loadEstateServices(estateId.value)]);
+    } else {
+      serviceBuckets.value = [];
+      await estatePromise;
+    }
+    if (hits.value.length && !hits.value.some((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value)) {
+      selectedFqn.value = hits.value[0].fullyQualifiedName || hits.value[0].name;
+    }
   } catch (error) {
     hits.value = [];
     total.value = 0;
@@ -98,81 +249,121 @@ async function runSearch(): Promise<void> {
   }
 }
 
-watch(searchKey, () => {
-  void runSearch();
-}, { immediate: true });
+watch(
+  searchKey,
+  () => {
+    void runSearch();
+  },
+  { immediate: true },
+);
+
+watch(expandedKeys, (keys) => {
+  const categoryId = keys.find((key) => !key.includes(':service:'));
+  if (categoryId && categoryId === estateId.value && !serviceBuckets.value.length) {
+    void loadEstateServices(categoryId);
+  }
+});
 </script>
 
 <template>
-  <Row :gutter="16" class="explore">
-    <Col :xs="24" :lg="6">
-      <Card size="small" class="explore__facets" data-testid="search-facets">
-        <div class="explore__facets-head">
-          <Typography.Text strong>{{ t('explore.filters') }}</Typography.Text>
-          <Tooltip :title="t('explore.clearFiltersHelp')">
-            <Button
-              v-if="hasActiveFilters(filters)"
-              type="link"
-              size="small"
-              data-testid="search-clear-filters"
-              :aria-label="t('explore.clearFiltersHelp')"
-              @click="onClearFilters"
-            >
-              {{ t('explore.clearFilters') }}
-            </Button>
-          </Tooltip>
-        </div>
-        <Empty v-if="!facets.length && !loading" :description="t('explore.empty')" />
-        <section v-for="facet in facets" :key="facet.id" class="explore__facet" :data-testid="`search-facet-${facet.id}`">
-          <Typography.Text class="explore__facet-title">{{ facetTitle(facet.id) }}</Typography.Text>
-          <label
-            v-for="bucket in facet.buckets"
-            :key="bucket.key"
-            class="explore__bucket"
-            :data-testid="`search-facet-${facet.id}-${bucket.key}`"
-            @click.prevent="onToggleFacet(facet.id, bucket.key)"
-          >
-            <Checkbox :checked="(filters[facet.id] ?? []).includes(bucket.key)" />
-            <span class="explore__bucket-key">{{ facet.id === 'entityType' ? entityLabel(bucket.key) : bucket.key }}</span>
-            <Typography.Text type="secondary">{{ bucket.count }}</Typography.Text>
-          </label>
-        </section>
-      </Card>
-    </Col>
-    <Col :xs="24" :lg="18">
-      <Card size="small">
-        <Typography.Title :level="4">{{ t('explore.title') }}</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {{ t('explore.lead') }}
-          {{ t('explore.facetHelper') }}
-          <template v-if="query"> {{ t('explore.leadQuery', { query }) }} </template>
-          <template v-else> {{ t('explore.leadDefault') }}</template>
-        </Typography.Paragraph>
-        <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
-          <template v-for="id in FACET_IDS" :key="id">
-            <Tag
-              v-for="value in filters[id] ?? []"
-              :key="`${id}:${value}`"
-              closable
-              :data-testid="`search-active-${id}-${value}`"
-              @close="onToggleFacet(id, value)"
-            >
-              {{ facetTitle(id) }}: {{ id === 'entityType' ? entityLabel(value) : value }}
-            </Tag>
-          </template>
-        </Space>
+  <div class="explore">
+    <div class="explore__toolbar">
+      <ExploreFilterChips :facets="facets.length ? facets : estateFacets" :filters="filters" @change="onChipChange" />
+      <div class="explore__toolbar-end">
+        <Select
+          data-testid="explore-sort"
+          class="explore__sort"
+          size="small"
+          :value="sort.id"
+          :aria-label="t('explore.sort')"
+          @change="onSortChange"
+        >
+          <Select.Option v-for="option in SORT_OPTIONS" :key="option.id" :value="option.id">
+            {{ t(`explore.sort${option.id.charAt(0).toUpperCase()}${option.id.slice(1)}`) }}
+          </Select.Option>
+        </Select>
+        <Button
+          v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
+          type="link"
+          size="small"
+          data-testid="search-clear-filters"
+          :aria-label="t('explore.clearFiltersHelp')"
+          @click="onClearFilters"
+        >
+          {{ t('explore.clearFilters') }}
+        </Button>
+      </div>
+    </div>
+    <Space v-if="hasActiveFilters(filters)" wrap class="explore__active">
+      <template v-for="id in CHIP_FACET_IDS" :key="id">
+        <Tag
+          v-for="value in filters[id] ?? []"
+          :key="`${id}:${value}`"
+          closable
+          :data-testid="`search-active-${id}-${value}`"
+          @close="onToggleFacet(id, value)"
+        >
+          {{ facetTitle(id) }}: {{ id === 'entityType' ? entityLabel(value) : value }}
+        </Tag>
+      </template>
+    </Space>
+    <div class="explore__split">
+      <aside class="explore__pane explore__pane--estate">
+        <ExploreEstateTree
+          :nodes="estateNodes"
+          :selected-keys="selectedEstateKeys"
+          :expanded-keys="expandedKeys"
+          @select="onEstateSelect"
+          @expand="onEstateExpand"
+        />
+      </aside>
+      <section class="explore__pane explore__pane--results">
+        <nav v-if="crumbs.length" class="explore__crumbs" data-testid="explore-browse-path">
+          <span v-for="(crumb, index) in crumbs" :key="crumb.key">
+            <span v-if="index"> / </span>
+            {{ crumbLabel(crumb.label) }}
+          </span>
+        </nav>
         <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="explore__error" />
         <div data-testid="search-results" class="explore__results">
-          <Empty v-if="!loading && !hits.length && !errorMessage" :description="t('explore.empty')" />
+          <Empty
+            v-if="!loading && residual && !errorMessage"
+            data-testid="explore-residual-empty"
+            :description="estateId === 'contextCenter' ? t('explore.residualContext') : t('explore.residualDomains')"
+          >
+            <Button type="primary" data-testid="explore-residual-cta" @click="openResidual">
+              {{ estateId === 'contextCenter' ? t('explore.openContextCenter') : t('explore.openDomains') }}
+            </Button>
+          </Empty>
+          <Empty
+            v-else-if="!loading && !hits.length && !errorMessage"
+            data-testid="explore-empty"
+            :description="t('explore.emptyTitle')"
+          >
+            <template #description>
+              <Typography.Title :level="5">{{ t('explore.emptyTitle') }}</Typography.Title>
+              <Typography.Paragraph type="secondary">{{ t('explore.emptyHint') }}</Typography.Paragraph>
+            </template>
+            <Space>
+              <Button v-if="hasActiveFilters(filters)" data-testid="explore-empty-clear" @click="onClearFilters">
+                {{ t('explore.clearFilters') }}
+              </Button>
+              <Button type="primary" data-testid="explore-empty-cta" @click="onClearFilters">
+                {{ t('explore.exploreAll') }}
+              </Button>
+            </Space>
+          </Empty>
           <article
             v-for="(hit, index) in hits"
             :key="hitKey(hit, index)"
             class="explore__card explore__card--dense explore__card--om"
+            :class="{ 'explore__card--selected': isSelected(hit) }"
             :data-testid="`search-card-${hit.fullyQualifiedName || hit.name}`"
+            @click="selectHit(hit)"
           >
             <div class="explore__card-head">
               <Tag :color="entityTypeColor(hit.entityType)">{{ entityLabel(hit.entityType) }}</Tag>
-              <a href="#" class="explore__card-name" @click.prevent="openHit(hit)">
+              <a href="#" class="explore__card-name" @click.prevent.stop="openHit(hit)">
                 {{ hit.displayName || hit.name }}
               </a>
               <Typography.Text v-if="!isDetailWired(hit.entityType)" type="secondary">
@@ -183,10 +374,9 @@ watch(searchKey, () => {
               {{ hit.fullyQualifiedName }}
             </Typography.Paragraph>
             <Typography.Paragraph
-              v-if="hit.description"
               class="explore__desc"
               :ellipsis="{ rows: 2 }"
-              :content="hit.description"
+              :content="hit.description || t('explore.noDescription')"
             />
             <div class="explore__meta">
               <Typography.Text type="secondary">
@@ -196,16 +386,17 @@ watch(searchKey, () => {
               <Typography.Text v-if="hit.tier" type="secondary">{{ hit.tier }}</Typography.Text>
             </div>
             <Space wrap>
+              <Typography.Text v-if="!hit.owners.length" type="secondary">{{ t('explore.noOwners') }}</Typography.Text>
               <span v-for="owner in hit.owners" :key="owner.name">{{ owner.displayName || owner.name }}</span>
               <Tag v-for="tag in hit.tags" :key="tag.tagFQN">{{ tag.name }}</Tag>
             </Space>
           </article>
         </div>
-        <div v-if="!loading && !errorMessage" class="explore__footer">
+        <div v-if="!loading && !errorMessage && !residual" class="explore__footer">
           <Typography.Text type="secondary">
             {{
               total
-                ? t('explore.shownOf', { shown: hits.length, total })
+                ? t('explore.records', { from: recordRange.from, to: recordRange.to, total })
                 : t('explore.shown', { shown: hits.length })
             }}
           </Typography.Text>
@@ -220,43 +411,62 @@ watch(searchKey, () => {
             @change="onPageChange"
           />
         </div>
-      </Card>
-    </Col>
-  </Row>
+      </section>
+      <aside class="explore__pane explore__pane--preview">
+        <ExplorePreview :hit="residual ? null : selectedHit" @open="openHit" />
+      </aside>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.explore__facets-head {
+.explore {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100vh - 120px);
+}
+.explore__toolbar {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
 }
-.explore__facet {
-  margin-bottom: 12px;
-}
-.explore__facet-title {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.explore__bucket {
+.explore__toolbar-end {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
-  cursor: pointer;
 }
-.explore__bucket-key {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.explore__sort {
+  min-width: 140px;
 }
 .explore__active {
-  margin-bottom: 12px;
+  margin-bottom: 0;
+}
+.explore__split {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(240px, 300px);
+  gap: 12px;
+  align-items: stretch;
+  min-height: 520px;
+}
+.explore__pane {
+  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
+  background: var(--sm-bg-container, #fff);
+  padding: 12px;
+  min-width: 0;
+}
+.explore__pane--results {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.explore__crumbs {
+  font-size: 12px;
+  color: var(--sm-text-tertiary, #535862);
+  margin-bottom: 8px;
 }
 .explore__error {
   margin-bottom: 12px;
@@ -265,22 +475,26 @@ watch(searchKey, () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
 }
 .explore__card {
   border: 1px solid var(--sm-border-secondary, #f0f0f0);
   border-radius: var(--sm-border-radius, 6px);
   padding: 8px 12px;
   background: var(--sm-bg-container, #fff);
+  cursor: pointer;
 }
 .explore__card--dense {
   box-shadow: none;
 }
-.explore__card--dense:hover {
+.explore__card--dense:hover,
+.explore__card--selected {
   border-color: var(--sm-color-primary, #1570ef);
   background: var(--sm-color-primary-bg, #eff8ff);
   box-shadow: inset 3px 0 0 var(--sm-color-primary, #1570ef);
 }
-.explore__card--dense:hover .explore__card-name {
+.explore__card--dense:hover .explore__card-name,
+.explore__card--selected .explore__card-name {
   color: var(--sm-color-primary, #1570ef);
 }
 .explore__card-head {
@@ -322,5 +536,10 @@ watch(searchKey, () => {
   justify-content: space-between;
   gap: 12px;
   margin-top: 12px;
+}
+@media (max-width: 1100px) {
+  .explore__split {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

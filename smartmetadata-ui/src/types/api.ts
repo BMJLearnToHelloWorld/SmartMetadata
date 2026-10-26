@@ -51,6 +51,11 @@ export interface SearchHit {
   tier?: string;
   owners: EntityRef[];
   tags: TagRef[];
+  domains?: EntityRef[];
+  dataProducts?: EntityRef[];
+  dataType?: string;
+  tableName?: string;
+  constraint?: string;
   updatedAt?: number;
 }
 

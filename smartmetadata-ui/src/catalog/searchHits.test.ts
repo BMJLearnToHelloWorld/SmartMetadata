@@ -33,6 +33,11 @@ describe('mapSearchResponse', () => {
               tier: { tagFQN: 'Tier.Tier1' },
               owners: [{ name: 'data-eng', displayName: 'Data Eng', type: 'team' }],
               tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive' }],
+              domains: [{ name: 'finance', displayName: 'Finance' }],
+              dataProducts: [{ name: 'mart', displayName: 'Orders Mart' }],
+              dataType: 'varchar(50)',
+              table: { name: 'orders', displayName: 'Orders' },
+              constraint: 'NULL',
               updatedAt: 1710000000000,
             },
           },
@@ -70,8 +75,13 @@ describe('mapSearchResponse', () => {
       databaseName: 'analytics',
       schemaName: 'marts',
       tier: 'Tier.Tier1',
+      dataType: 'varchar(50)',
+      tableName: 'Orders',
+      constraint: 'NULL',
       updatedAt: 1710000000000,
     });
+    expect(mapped.hits[0].domains?.[0].displayName).toBe('Finance');
+    expect(mapped.hits[0].dataProducts?.[0].displayName).toBe('Orders Mart');
     expect(mapped.hits[1].entityType).toBe('topic');
     expect(mapped.hits[1].fullyQualifiedName).toBe('kafka.events');
     expect(mapped.facets).toEqual([
