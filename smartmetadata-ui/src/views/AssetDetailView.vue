@@ -1003,6 +1003,8 @@ onMounted(() => {
     <Modal
       v-model:open="editOpen"
       :title="t('asset.editTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
       @ok="onSaveGovernance"
@@ -1037,6 +1039,8 @@ onMounted(() => {
     <Modal
       v-model:open="commentOpen"
       :title="t('asset.commentTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
       @ok="onCreateConversation"
@@ -1050,6 +1054,8 @@ onMounted(() => {
     <Modal
       v-model:open="propsOpen"
       :title="t('asset.propsTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
       @ok="onSaveCustomProperties"

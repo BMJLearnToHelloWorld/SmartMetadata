@@ -7,9 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { SM_CHART_COLORS } from '@/theme/tokens';
 import type { ChartKind, ChartSeries } from './types';
 
-const COLORS = ['#1677ff', '#52c41a', '#faad14', '#ff4d4f', '#722ed1', '#13c2c2', '#eb2f96', '#2f54eb'];
+const COLORS = [...SM_CHART_COLORS];
 
 export function buildChartOption(kind: ChartKind, series: ChartSeries[]): Record<string, unknown> {
   if (kind === 'donut') {

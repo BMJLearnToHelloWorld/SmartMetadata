@@ -10,13 +10,16 @@ import enUS from 'ant-design-vue/es/locale/en_US';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { smAntdTheme } from '@/theme/tokens';
 
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 
 const antdLocale = computed(() => (locale.value === 'zh-CN' ? zhCN : enUS));
+const formValidateMessages = computed(() => ({
+  required: t('crud.fieldRequired', { field: '${label}' }),
+}));
 </script>
 
 <template>
-  <ConfigProvider :theme="smAntdTheme" :locale="antdLocale">
+  <ConfigProvider :theme="smAntdTheme" :locale="antdLocale" :form="{ validateMessages: formValidateMessages }">
     <router-view />
   </ConfigProvider>
 </template>

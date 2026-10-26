@@ -90,12 +90,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="policies"
     table-test-id="admin-policies-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="onRefresh"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'admin-policy', params: { id: (record as AdminPolicy).id } })"
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">

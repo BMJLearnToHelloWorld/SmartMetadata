@@ -56,7 +56,7 @@ const zhCN = {
   },
   login: {
     title: 'SmartMetadata',
-    lead: '通过服务端登录 API 登录。密码按 POST /api/v1/users/login 的要求在请求体中进行 Base64 编码。',
+    lead: '使用目录账号登入。',
     email: '邮箱',
     emailRequired: '请输入邮箱',
     password: '密码',
@@ -73,10 +73,11 @@ const zhCN = {
   },
   explore: {
     title: '探索',
-    lead: 'GET /api/v1/search/query，索引别名 dataAsset。侧面筛选来自 include_aggregations。',
-    leadQuery: '查询：{query}',
-    leadDefault: '正在显示默认的全匹配结果。',
-    empty: '没有匹配的资产',
+    lead: '发现数据资产。使用筛选缩小结果。',
+    facetHelper: '按类型、服务、所有者、标签等筛选。',
+    leadQuery: '“{query}”的结果。',
+    leadDefault: '正在显示全部数据资产。',
+    empty: '未找到数据资产',
     shown: '显示 {shown} 条',
     shownOf: '显示 {shown} / {total} 条',
     failed: '搜索失败',
@@ -133,17 +134,17 @@ const zhCN = {
     loadFailed: '加载资产失败',
     lineageFailed: '加载血缘失败',
     lineageEmpty: '当前深度没有上游或下游血缘',
-    lineageLead: 'GET /api/v1/lineage/{type}/name/{fqn}。下方图与整页血缘共用同一画布。',
+    lineageLead: '此资产的上游和下游血缘。',
     upstream: '上游',
     downstream: '下游',
     customPropertiesLead:
       '定义来自 GET /api/v1/metadata/types/name/{type}/customProperties。值写在 extension 上，通过 RFC 6902 PATCH 更新。',
     activityLead: 'GET /api/v1/activity/entity/{type}/name/{fqn}',
     conversationsLead: 'GET /api/v1/conversations?entityLink=<#E::{type}::{fqn}>',
-    qualityLead: 'GET /api/v1/dataQuality/testCases?entityFQN=…&includeAllTests=true',
-    profilerLead: 'GET /api/v1/tables/{fqn}/tableProfile/latest — 没有剖析作业写入结果时为空。此界面不会触发摄取。',
-    sampleLead: 'GET /api/v1/tables/{id}/sampleData',
-    topicSampleLead: 'GET /api/v1/topics/{id}/sampleData。主题没有 tableProfile 接口。',
+    qualityLead: '关联到此资产的数据质量测试。',
+    profilerLead: '此表的最新剖析指标。剖析作业写入结果前为空。',
+    sampleLead: '此表的样本数据。',
+    topicSampleLead: '此主题的样本消息。主题没有表剖析。',
     profilerTitle: '最新剖析',
     sampleTitle: '样本数据',
     topicSampleTitle: '样本消息',
@@ -254,8 +255,7 @@ const zhCN = {
   },
   insights: {
     title: '洞察',
-    lead:
-      '目录和质量快照来自 GET /api/v1/search/query、GET /api/v1/dataQuality/testCases 和 GET /api/v1/dataQuality/testCases/testCaseIncidentStatus。只有 GET /api/v1/analytics/dataInsights/system/charts/listChartData 返回点时才显示历史 Data Insights 图。',
+    lead: '跟踪目录覆盖率、质量和 Data Insights 图表。',
     loadFailed: '加载洞察失败',
     catalogTotal: '本次搜索快照中的目录资产：{total}',
     tabs: {
@@ -272,25 +272,24 @@ const zhCN = {
     },
     charts: {
       entityType: '按类型的资产',
-      entityTypeLead: 'GET /api/v1/search/query（dataAsset）的 include_aggregations 桶。这是快照，不是历史。',
+      entityTypeLead: '按实体类型的实时目录快照。',
       serviceType: '按服务类型的资产',
-      serviceTypeLead: '同一搜索响应中的服务类型聚合。',
+      serviceTypeLead: '按服务类型的实时目录快照。',
       tier: '按层级的资产',
-      tierLead: 'tier.tagFQN 聚合。目录没有层级标签时为空。',
+      tierLead: '按层级分组的资产。目录没有层级标签时隐藏。',
       testStatus: '测试用例状态',
-      testStatusLead: 'GET /api/v1/dataQuality/testCases 前 100 条的最新状态，不是全局 KPI 仓库。',
+      testStatusLead: '关联测试用例的最新状态。',
       incidents: '事故状态',
-      incidentsLead: '最新事故状态（最多 100 条）。没有记录时为空。',
+      incidentsLead: '最新事故状态。没有记录时为空。',
     },
     pipelineTitle: 'Data Insights 管道',
-    pipelineLead: '对已种子的系统图表名调用 GET /api/v1/analytics/dataInsights/system/charts/listChartData。此界面不会启动 Data Insights 应用。',
-    pipelineEmpty: '还没有管道序列。在 Data Insights 作业写入报告数据之前保持 residual — 本页不会伪造数据点。',
+    pipelineLead: 'Data Insights 作业写入报告数据后才会显示历史图表。',
+    pipelineEmpty: '还没有 Data Insights 序列。作业写入报告数据之前保持 residual。',
     pipelineFailed: '加载 Data Insights 图数据失败',
-    appAnalyticsEmpty: '应用分析（页面浏览、日活）仍是 residual。本控制台不调用 web-analytics 报告索引。',
-    kpisLead:
-      'GET /api/v1/kpi（fields=owners,dataInsightChart,kpiResult）。行、目标和已存储结果只来自该响应 — 此页不会伪造目标值，也不会启动 Data Insights 作业。',
-    kpisEmpty: 'GET /api/v1/kpi 没有 KPI 实体。此页不会伪造目标值。',
-    kpisFailed: '加载 GET /api/v1/kpi 失败',
+    appAnalyticsEmpty: '应用分析仍是 residual。本控制台不调用 web-analytics 报告索引。',
+    kpisLead: '查看 KPI 目标和已存储结果。',
+    kpisEmpty: '定义关键绩效指标，以监控影响并推动更智能的决策。',
+    kpisFailed: '加载 KPI 失败',
     kpisDetail: '选中的 KPI',
     kpis: {
       metricType: '指标类型',
@@ -310,7 +309,7 @@ const zhCN = {
   },
   lineage: {
     title: '血缘关系',
-    platformLead: '搜索目录资产以打开其血缘图。此页不会伪造平台级服务图——产品未调用该接口。',
+    platformLead: '搜索目录资产以打开其血缘图。',
     searchPlaceholder: '搜索资产以打开血缘',
     searchEmpty: '没有匹配的资产',
     openByFqn: '按类型和 FQN 打开',
@@ -347,7 +346,8 @@ const zhCN = {
     refresh: '刷新',
     previous: '上一页',
     next: '下一页',
-    empty: '没有记录',
+    empty: '无数据',
+    emptyHint: '添加新记录很简单，试试看吧。',
     shown: '显示 {shown} 条',
     shownOf: '显示 {shown} / {total} 条',
     deleted: '已删除',
@@ -367,6 +367,11 @@ const zhCN = {
     cancel: '取消',
     save: '保存',
     ok: '确定',
+    view: '查看',
+    actions: '操作',
+    moreActions: '更多操作',
+    fieldRequired: '需要{field}',
+    fieldRequiredPlain: '此字段为必填项',
     overview: '概览',
     loadFailed: '加载失败',
     createFailed: '创建失败',
@@ -383,8 +388,8 @@ const zhCN = {
   admin: {
     users: {
       title: '用户',
-      lead: 'GET /api/v1/users（筛选）和 GET /api/v1/search/query?index=user（搜索）。创建是 POST /api/v1/users。',
-      detailLead: 'GET /api/v1/users/{id}。停用是 DELETE（软删除）。恢复是 PUT /api/v1/users/restore。',
+      lead: '创建和管理用户。',
+      detailLead: '用户资料、团队和角色。',
       create: '创建用户',
       createTitle: '创建用户',
       editTitle: '编辑用户',
@@ -415,9 +420,8 @@ const zhCN = {
     },
     teams: {
       title: '团队',
-      lead: 'GET/POST /api/v1/teams。只有 Group 团队可以直接挂用户。',
-      detailLead:
-        'GET /api/v1/teams/{id}。成员：PUT /api/v1/teams/{id}/users 和 DELETE /api/v1/teams/{id}/users/{userId}。',
+      lead: '将用户组织到团队中。只有 Group 团队可以直接挂用户。',
+      detailLead: '团队资料、成员和默认角色。',
       create: '创建团队',
       createTitle: '创建团队',
       editTitle: '编辑团队',
@@ -446,9 +450,8 @@ const zhCN = {
     },
     bots: {
       title: '机器人',
-      lead: 'GET /api/v1/bots。创建会先 POST 一个机器人用户（isBot: true），再 POST /api/v1/bots。',
-      detailLead:
-        'GET /api/v1/bots/{id}。令牌使用 PUT /api/v1/users/generateToken/{botUserId} 和 PUT /api/v1/users/revokeToken。',
+      lead: '创建和管理机器人及其访问令牌。',
+      detailLead: '机器人资料和 JWT 令牌。',
       create: '创建机器人',
       createTitle: '创建机器人',
       botUser: '机器人用户',
@@ -471,8 +474,8 @@ const zhCN = {
     },
     roles: {
       title: '角色',
-      lead: 'GET /api/v1/roles 和 GET /api/v1/roles/search。角色分配发生在用户/团队实体上；本页不发明授权引擎。',
-      detailLead: 'GET /api/v1/roles/{id}。分配使用对用户或团队实体的 PATCH。',
+      lead: '角色分配给用户。角色是一组策略。',
+      detailLead: '此角色关联的策略。分配仍在用户或团队上。',
       searchPlaceholder: '搜索角色',
       policies: '策略',
       users: '用户',
@@ -492,8 +495,8 @@ const zhCN = {
     },
     policies: {
       title: '策略',
-      lead: 'GET /api/v1/policies。规则、角色和团队来自接口返回。本页不发明策略编辑器。',
-      detailLead: 'GET /api/v1/policies/{id}。分配仍在角色和团队实体上；本页只读。',
+      lead: '策略是一组定义访问权限的规则。本页只读。',
+      detailLead: '此策略上的规则、角色和团队。本页只读。',
       rules: '规则',
       roles: '角色',
       teams: '团队',
@@ -509,7 +512,7 @@ const zhCN = {
   governance: {
     classifications: {
       title: '分类',
-      lead: 'GET/POST /api/v1/classifications。CreateClassification 需要 name 和 description。',
+      lead: '创建分类以及团队应用到资产上的标签。',
       create: '创建分类',
       createTitle: '创建分类',
       editTitle: '编辑分类',
@@ -530,7 +533,7 @@ const zhCN = {
     },
     glossaries: {
       title: '术语库',
-      lead: 'GET/POST /api/v1/glossaries。CreateGlossary 需要 name 和 description。',
+      lead: '用通俗的业务语言定义概念。',
       create: '创建术语表',
       createTitle: '创建术语表',
       editTitle: '编辑术语表',
@@ -551,7 +554,7 @@ const zhCN = {
     },
     domains: {
       title: '域',
-      lead: 'GET/POST /api/v1/domains。CreateDomain 需要 name、description 和 domainType。',
+      lead: '按业务域组织数据。',
       create: '创建域',
       createTitle: '创建域',
       editTitle: '编辑域',
@@ -564,7 +567,7 @@ const zhCN = {
     },
     dataProducts: {
       title: '数据产品',
-      lead: 'GET/POST /api/v1/dataProducts。CreateDataProduct 需要 name、description 和 domains（FQN）。',
+      lead: '创建数据产品，让可信数据集可供发现。',
       create: '创建数据产品',
       createTitle: '创建数据产品',
       editTitle: '编辑数据产品',
@@ -579,7 +582,7 @@ const zhCN = {
   quality: {
     testCases: {
       title: '测试用例',
-      lead: 'GET/POST /api/v1/dataQuality/testCases。CreateTestCase 需要 name、testDefinition FQN，以及 MessageParser entityLink。',
+      lead: '监控目录资产上的数据质量测试用例。',
       create: '创建测试用例',
       createTitle: '创建测试用例',
       editTitle: '编辑测试用例',
@@ -603,7 +606,7 @@ const zhCN = {
     },
     testDefinitions: {
       title: '测试定义',
-      lead: 'GET/POST /api/v1/dataQuality/testDefinitions。CreateTestDefinition 需要 name、entityType 和 testPlatforms。种子定义在服务端引导后出现。',
+      lead: '可复用的质量检查测试定义。',
       create: '创建定义',
       createTitle: '创建测试定义',
       editTitle: '编辑测试定义',
@@ -618,7 +621,7 @@ const zhCN = {
     },
     testSuites: {
       title: '质控测试集',
-      lead: 'GET/POST /api/v1/dataQuality/testSuites 创建逻辑套件（CreateTestSuite 需要 name）。基础/可执行套件由服务端在测试挂到资产时创建；本界面不发明流水线。',
+      lead: '将测试用例组成逻辑套件。可执行套件在测试挂到资产时创建。',
       create: '创建逻辑套件',
       createTitle: '创建逻辑测试套件',
       editTitle: '编辑测试套件',
@@ -639,7 +642,7 @@ const zhCN = {
   observability: {
     alerts: {
       title: '提醒',
-      lead: '事件订阅 GET/POST /api/v1/events/subscriptions。创建需要 name、alertType 和一个 webhook 目的地。Slack / 邮件 / 过滤规则编写仍是 residual。',
+      lead: '使用 Webhooks 及时了解最新的提醒信息。',
       create: '创建 webhook 告警',
       createTitle: '创建 webhook 告警',
       type: '类型',
@@ -652,9 +655,11 @@ const zhCN = {
     },
     incidents: {
       title: '事件',
-      lead: 'GET /api/v1/dataQuality/testCases/testCaseIncidentStatus?latest=true。这些记录是事故管理器时间序列，不是另造的事故实体。',
-      detailLead:
-        'GET /api/v1/dataQuality/testCases/testCaseIncidentStatus/{id}。状态变更会 POST 一条新的解决记录（CreateTestCaseResolutionStatus 需要 type + testCaseReference）。',
+      lead: '跟踪并解决数据质量事件。',
+      detailLead: '事件状态、严重程度和解决情况。',
+      statusNew: '新建',
+      statusAck: '已确认',
+      statusResolved: '已解决',
       testCase: '测试用例',
       severity: '严重程度',
       updated: '更新时间',
@@ -672,7 +677,7 @@ const zhCN = {
   ingestion: {
     services: {
       title: '服务',
-      lead: 'GET/POST /api/v1/services/databaseServices 和 /messagingServices。创建需要 name + serviceType。连接字段对应 smartmetadata-ingestion 的 Postgres / MySQL / Snowflake / Kafka。仪表盘和流水线服务未接线。',
+      lead: '连接数据库和消息服务。仪表盘和流水线服务未接线。',
       create: '创建服务',
       createTitle: '创建服务',
       editTitle: '编辑服务',
@@ -691,7 +696,7 @@ const zhCN = {
     },
     pipelines: {
       title: '摄取流水线',
-      lead: 'GET/POST /api/v1/services/ingestionPipelines。CreateIngestionPipeline 仍需要 sourceConfig + airflowConfig，即使本控制台不部署 Airflow DAG。任务用 smartmetadata-ingest run 运行。',
+      lead: '创建元数据摄取流水线。任务用 smartmetadata-ingest 运行；本控制台不部署 Airflow DAG。',
       create: '创建流水线',
       createTitle: '创建摄取流水线',
       editTitle: '编辑摄取流水线',
@@ -725,7 +730,7 @@ const zhCN = {
   },
   settings: {
     title: '设置',
-    lead: '只打开本控制台已经交付的页面。未接线的项会标明 residual，不会做成假表单。',
+    lead: '只打开本控制台已经交付的页面。未接线的项会标明 residual。',
     back: '返回设置',
     residual: {
       generic: '本控制台未接线。',

@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { Button, Descriptions, Form, Input, Select, Space, message } from 'ant-design-vue';
 import { createTestIncident, getTestIncident } from '@/api/testIncidents';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { incidentStatusLabel } from '@/features/crud/incidentStatus';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { TestIncident } from '@/types/quality';
@@ -129,7 +130,7 @@ onMounted(() => {
           {{ incident.stateId || '—' }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('crud.status')">
-          {{ incident.testCaseResolutionStatusType || '—' }}
+          {{ incidentStatusLabel(t, incident.testCaseResolutionStatusType) }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('observability.incidents.severity')">
           {{ incident.severity || '—' }}
@@ -143,8 +144,8 @@ onMounted(() => {
       </Descriptions>
       <Space v-if="incident" style="margin-top: 16px" wrap>
         <Select v-model:value="nextStatus" style="min-width: 160px" data-testid="incident-next-status">
-          <Select.Option value="Ack">Ack</Select.Option>
-          <Select.Option value="Resolved">Resolved</Select.Option>
+          <Select.Option value="Ack">{{ t('observability.incidents.statusAck') }}</Select.Option>
+          <Select.Option value="Resolved">{{ t('observability.incidents.statusResolved') }}</Select.Option>
         </Select>
         <Form.Item v-if="nextStatus === 'Resolved'" :label="t('observability.incidents.resolveReason')" style="margin-bottom: 0">
           <Select v-model:value="resolveReason" style="min-width: 180px">

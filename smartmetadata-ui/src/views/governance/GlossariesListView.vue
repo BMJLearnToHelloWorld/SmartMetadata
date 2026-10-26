@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Button, Checkbox, Form, Input, Modal, message } from 'ant-design-vue';
 import { createGlossary, listGlossaries } from '@/api/glossaries';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -110,12 +111,14 @@ onMounted(() => {
     :columns="columns"
     :data-source="glossaries"
     table-test-id="glossaries-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
   >
     <template #actions>
       <Button type="primary" data-testid="create-glossary" @click="createOpen = true">
@@ -144,11 +147,12 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('governance.glossaries.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-glossary-name" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>

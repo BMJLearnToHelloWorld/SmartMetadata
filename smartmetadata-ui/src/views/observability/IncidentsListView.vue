@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { listTestIncidents } from '@/api/testIncidents';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { incidentStatusLabel } from '@/features/crud/incidentStatus';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { TestIncident } from '@/types/quality';
@@ -63,8 +64,10 @@ onMounted(() => {
     :columns="columns"
     :data-source="incidents"
     table-test-id="incidents-table"
+    show-row-actions
     :total="total"
     @refresh="load"
+    @view="(record) => router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'testCase'">
@@ -79,6 +82,9 @@ onMounted(() => {
             (record as TestIncident).id
           }}
         </a>
+      </template>
+      <template v-else-if="column.key === 'status'">
+        {{ incidentStatusLabel(t, (record as TestIncident).testCaseResolutionStatusType) }}
       </template>
       <template v-else-if="column.key === 'timestamp'">
         {{ formatTs((record as TestIncident).timestamp) }}

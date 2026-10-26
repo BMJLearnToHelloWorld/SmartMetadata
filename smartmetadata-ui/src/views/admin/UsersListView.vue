@@ -11,6 +11,7 @@ import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
 import { createUser, listUsers, searchUsers } from '@/api/users';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -198,6 +199,7 @@ onMounted(() => {
     :columns="columns"
     :data-source="users"
     table-test-id="admin-users-table"
+    show-row-actions
     show-search
     :search-value="query"
     :search-placeholder="t('admin.users.searchPlaceholder')"
@@ -209,6 +211,7 @@ onMounted(() => {
     @refresh="loadUsers"
     @next="onNext"
     @prev="onPrev"
+    @view="openUser($event as AdminUser)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-user" @click="createOpen = true">
@@ -252,14 +255,15 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('admin.users.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="createForm.name" data-testid="create-user-name" />
       </Form.Item>
-      <Form.Item :label="t('crud.email')" required>
+      <Form.Item :label="t('crud.email')" :rules="requiredField(t, t('crud.email'))">
         <Input v-model:value="createForm.email" data-testid="create-user-email" />
       </Form.Item>
       <Form.Item :label="t('crud.displayName')">

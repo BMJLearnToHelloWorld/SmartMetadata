@@ -89,12 +89,14 @@ onMounted(() => {
     :data-source="types"
     row-key="name"
     table-test-id="admin-custom-property-types-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="onRefresh"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => router.push({ name: 'admin-settings-custom-property-type', params: { entityType: (record as MetadataType).name } })"
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">

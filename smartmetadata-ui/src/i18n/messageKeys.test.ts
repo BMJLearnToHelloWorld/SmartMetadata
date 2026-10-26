@@ -96,6 +96,12 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('terms.editTitle');
     expect(keys).toContain('tags.edit');
     expect(keys).toContain('connection.hostPort');
+    expect(keys).toContain('explore.facetHelper');
+    expect(keys).toContain('crud.fieldRequired');
+    expect(keys).toContain('crud.view');
+    expect(keys).toContain('crud.emptyHint');
+    expect(keys).toContain('observability.incidents.statusAck');
+    expect(keys).toContain('observability.incidents.statusResolved');
   });
 
   it('aligns key shell and CRUD English to in-repo OM locale wording', () => {
@@ -112,6 +118,40 @@ describe('i18n catalogs', () => {
     expect(zhCN.nav.governance).toBe('数据治理');
     expect(zhCN.nav.glossaries).toBe('术语库');
     expect(zhCN.crud.create).toBe('新建');
+    expect(enUS.crud.fieldRequired).toBe('{field} is required');
+    expect(enUS.crud.fieldRequiredPlain).toBe('This field is required');
+    expect(enUS.crud.empty).toBe('No data');
+    expect(enUS.observability.incidents.statusAck).toBe('Acknowledged');
+    expect(enUS.observability.incidents.statusResolved).toBe('Resolved');
+    expect(enUS.insights.kpisEmpty).toBe(
+      'Define key performance indicators to monitor impact and drive smarter decisions.',
+    );
+    expect(zhCN.crud.fieldRequired).toBe('需要{field}');
+    expect(zhCN.crud.fieldRequiredPlain).toBe('此字段为必填项');
+    expect(zhCN.observability.incidents.statusAck).toBe('已确认');
+    expect(zhCN.observability.incidents.statusResolved).toBe('已解决');
+  });
+
+  it('replaces Batch 2 page leads with OM-style help copy, not API tutorials', () => {
+    expect(enUS.login.lead).toBe('Sign in with your catalog account.');
+    expect(enUS.login.lead).not.toMatch(/Base64/i);
+    expect(enUS.explore.lead).toBe('Discover data assets. Use filters to narrow results.');
+    expect(enUS.explore.lead).not.toMatch(/GET \/api/);
+    expect(enUS.asset.profilerLead).not.toMatch(/GET \/api/);
+    expect(enUS.asset.sampleLead).toBe('Sample Data from this table.');
+    expect(enUS.asset.qualityLead).not.toMatch(/GET \/api/);
+    expect(enUS.insights.lead).not.toMatch(/GET \/api/);
+    expect(enUS.lineage.platformLead).toBe('Search a catalog asset to open its lineage graph.');
+    expect(enUS.lineage.platformLead).not.toMatch(/platform-wide/);
+    expect(enUS.admin.users.lead).toBe('Create and manage users.');
+    expect(enUS.admin.teams.lead).not.toMatch(/GET \/api/);
+    expect(enUS.admin.roles.lead).toBe('Roles are assigned to users. A role is a collection of policies.');
+    expect(enUS.governance.glossaries.lead).toBe('Define concepts in plain business language.');
+    expect(enUS.observability.alerts.lead).toBe('Stay current with timely alerts using webhooks.');
+    expect(enUS.settings.residual.appearance).toMatch(/residual|read-only|theme/i);
+    expect(enUS.settings.residual.sso).toMatch(/SSO/);
+    expect(zhCN.login.lead).toBe('使用目录账号登入。');
+    expect(zhCN.explore.lead).not.toMatch(/GET \/api/);
   });
 
   it('keeps leftover API placeholders literal after vue-i18n compile', () => {

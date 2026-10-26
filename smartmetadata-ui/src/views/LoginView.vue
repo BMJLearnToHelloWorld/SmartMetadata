@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Select, Typography } from 'ant-design-vue';
 import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
+import { requiredField } from '@/features/crud/formRules';
 import { fetchAuthConfig } from '@/api/system';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
@@ -119,7 +120,7 @@ onMounted(() => {
         <Form.Item
           :label="t('login.email')"
           name="email"
-          :rules="[{ required: true, message: t('login.emailRequired') }]"
+          :rules="requiredField(t, t('login.email'))"
         >
           <Input
             v-model:value="form.email"
@@ -131,7 +132,7 @@ onMounted(() => {
         <Form.Item
           :label="t('login.password')"
           name="password"
-          :rules="[{ required: true, message: t('login.passwordRequired') }]"
+          :rules="requiredField(t, t('login.password'))"
         >
           <Input.Password
             v-model:value="form.password"

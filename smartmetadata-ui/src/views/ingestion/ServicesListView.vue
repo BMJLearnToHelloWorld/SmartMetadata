@@ -11,6 +11,7 @@ import { createDatabaseService, listDatabaseServices } from '@/api/databaseServi
 import { createMessagingService, listMessagingServices } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { requiredField } from '@/features/crud/formRules';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { buildServiceConnection } from '@/ingestion/connections';
@@ -152,8 +153,10 @@ onMounted(() => {
     :columns="columns"
     :data-source="services"
     table-test-id="services-table"
+    show-row-actions
     :total="total"
     @refresh="load"
+    @view="openDetail($event as CatalogService)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-service" @click="createOpen = true">
@@ -176,6 +179,7 @@ onMounted(() => {
     v-model:open="createOpen"
     :title="t('ingestion.services.createTitle')"
     :ok-text="t('crud.create')"
+    :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
   >
@@ -191,7 +195,7 @@ onMounted(() => {
           <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('crud.name')" required>
+      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-service-name" />
       </Form.Item>
       <Form.Item :label="t('crud.displayName')">
