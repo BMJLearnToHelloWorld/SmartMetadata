@@ -43,7 +43,7 @@ Pipeline canvas reuses **already shipped** MIT `@vue-flow/*` + Apache-2.0
 | Item | Official (reference) | Product now | Residual |
 |---|---|---|---|
 | Shared asset chrome | Entity header + tabs | `AssetDetailView` uses `EntityDetailShell` (breadcrumb, title, FQN, actions, tabs) | Density matches CRUD shells |
-| Wired GET types | Per-collection `/v1/{collection}/name/{fqn}` | `table`, `topic`, `dashboard`, `pipeline`, `mlmodel`, `container`, `searchIndex`, `storedProcedure` | `chart`, `metric`, `dashboardDataModel`, … stay unwired |
+| Wired GET types | Per-collection `/v1/{collection}/name/{fqn}` | `table`, `topic`, `dashboard`, `pipeline`, `mlmodel`, `container`, `searchIndex`, `storedProcedure` | Closed in batch 3.2 (`UI_PARITY_BATCH3_ASSETS.md`): `chart`, `metric`, `dashboardDataModel`, `database`, `databaseSchema` |
 | Type tabs | Only tabs with a payload | Schema / Charts / Features / Tasks / Executions / Code only for those types | No invented Profiler/Sample tabs on non-table types |
 | Pipeline DAG | Tasks tab graph | Vue Flow from `tasks` + `downstreamTasks`; status color from latest `taskStatus` | Empty residual when `tasks` is missing/empty |
 | Pipeline executions | Status list | Entity `pipelineStatus` + `GET /v1/pipelines/{fqn}/status` | Empty residual on 404/empty list |
@@ -55,7 +55,7 @@ No new Java/Python endpoints. No invented DAG nodes or execution rows.
 
 | Gap | Why it stays |
 |---|---|
-| Chart / metric / dashboardDataModel / database / databaseSchema first-class pages | Explore may return them; no slim GET wiring in this step |
+| Chart / metric / dashboardDataModel / database / databaseSchema first-class pages | **Closed in batch 3.2** — see `UI_PARITY_BATCH3_ASSETS.md` |
 | Pipeline run trigger / logs websocket | Slim console does not call `/trigger`; no fake live stream |
 | Ingestion pipeline DAG | `/ingestion/pipelines` is the Airflow entity, not catalog `pipeline` |
 | Profiler / DQ **execution** | `jobs.py` still raises; Quality tab only reads stored tests |
@@ -81,4 +81,4 @@ Manual (already-running slim server; this PR does not redeploy):
    only. Pipeline with empty `tasks` → Empty, no demo graph.
 3. Executions tab lists `pipelineStatus` / `/status` rows or Empty.
 4. Dashboard without `charts`/`dataModels` → Charts Empty.
-5. `chart` (or any still-unwired type) still shows residual copy.
+5. After batch 3.2, `chart` is wired; `query` (or any still-unwired type) still shows residual copy.

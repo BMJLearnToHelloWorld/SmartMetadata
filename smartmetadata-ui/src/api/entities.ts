@@ -110,6 +110,9 @@ function schemaRowsFor(entityType: string, body: Record<string, unknown>): { row
   if (entityType === 'searchIndex') {
     return { rows: mapColumns(body.fields), label: 'Fields' };
   }
+  if (entityType === 'dashboardDataModel') {
+    return { rows: mapColumns(body.columns), label: 'Columns' };
+  }
   return { rows: [], label: 'Schema' };
 }
 
@@ -149,6 +152,19 @@ function mapStoredProcedureCode(value: unknown): AssetDetail['storedProcedureCod
   return { language, code };
 }
 
+function relatedRefsFor(entityType: string, body: Record<string, unknown>): EntityRef[] {
+  if (entityType === 'chart') {
+    return mapEntityRefs(body.dashboards);
+  }
+  if (entityType === 'database') {
+    return mapEntityRefs(body.databaseSchemas);
+  }
+  if (entityType === 'databaseSchema') {
+    return mapEntityRefs(body.tables);
+  }
+  return mapEntityRefs(body.children);
+}
+
 function mapStringList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -184,7 +200,9 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     query: { fields: endpoint.fields },
   });
   const schema = schemaRowsFor(entityType, body);
-  const code = mapStoredProcedureCode(body.storedProcedureCode);
+  const code =
+    mapStoredProcedureCode(body.storedProcedureCode) ?? mapStoredProcedureCode(body.metricExpression);
+  const relatedChildren = relatedRefsFor(entityType, body);
   const tasks = Array.isArray(body.tasks)
     ? body.tasks.flatMap((item) => {
         const mapped = mapPipelineTask(item);
@@ -210,6 +228,11 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     pipelineState: asString(body.state) || undefined,
     project: asString(body.project) || undefined,
     dashboardType: asString(body.dashboardType) || undefined,
+    chartType: asString(body.chartType) || undefined,
+    metricType: asString(body.metricType) || undefined,
+    unitOfMeasurement: asString(body.unitOfMeasurement) || undefined,
+    granularity: asString(body.granularity) || undefined,
+    dataModelType: asString(body.dataModelType) || undefined,
     algorithm: asString(body.algorithm) || undefined,
     target: asString(body.target) || undefined,
     prefix: asString(body.prefix) || undefined,
@@ -220,7 +243,7 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     storedProcedureType: asString(body.storedProcedureType) || undefined,
     storedProcedureCode: code,
     parent: mapRef(body.parent),
-    children: mapEntityRefs(body.children),
+    children: relatedChildren,
     charts: mapEntityRefs(body.charts),
     dataModels: mapEntityRefs(body.dataModels),
     mlFeatures: mapColumns(body.mlFeatures),

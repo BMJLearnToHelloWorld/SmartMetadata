@@ -592,6 +592,21 @@ onMounted(() => {
             <Descriptions.Item v-if="asset.dashboardType" :label="t('asset.fields.dashboardType')">
               {{ asset.dashboardType }}
             </Descriptions.Item>
+            <Descriptions.Item v-if="asset.chartType" :label="t('asset.fields.chartType')">
+              {{ asset.chartType }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.metricType" :label="t('asset.fields.metricType')">
+              {{ asset.metricType }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.unitOfMeasurement" :label="t('asset.fields.unitOfMeasurement')">
+              {{ asset.unitOfMeasurement }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.granularity" :label="t('asset.fields.granularity')">
+              {{ asset.granularity }}
+            </Descriptions.Item>
+            <Descriptions.Item v-if="asset.dataModelType" :label="t('asset.fields.dataModelType')">
+              {{ asset.dataModelType }}
+            </Descriptions.Item>
             <Descriptions.Item v-if="asset.scheduleInterval" :label="t('asset.fields.scheduleInterval')">
               {{ asset.scheduleInterval }}
             </Descriptions.Item>
@@ -644,6 +659,23 @@ onMounted(() => {
               </Space>
             </Descriptions.Item>
           </Descriptions>
+          <template v-if="entityType === 'chart' || entityType === 'database' || entityType === 'databaseSchema'">
+            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.relatedTitle') }}</Typography.Title>
+            <Empty
+              v-if="!asset.children?.length"
+              data-testid="asset-related-empty"
+              :description="t('asset.relatedEmpty')"
+            />
+            <Table
+              v-else
+              row-key="name"
+              data-testid="asset-related-table"
+              :columns="refColumns"
+              :data-source="asset.children"
+              :pagination="false"
+              size="small"
+            />
+          </template>
       </template>
       <template v-if="asset" #schema>
           <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>

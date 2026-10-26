@@ -38,9 +38,14 @@ describe('assetTabKeys', () => {
     expect(assetTabKeys('storedProcedure')).toContain('code');
     expect(assetTabKeys('container')).toContain('schema');
     expect(assetTabKeys('searchIndex')).toContain('schema');
+    expect(assetTabKeys('dashboardDataModel')).toContain('schema');
+    expect(assetTabKeys('metric')).toContain('code');
+    expect(assetTabKeys('database')).not.toContain('schema');
+    expect(assetTabKeys('databaseSchema')).not.toContain('schema');
   });
 
   it('does not invent a schema tab for types without a schema payload', () => {
     expect(assetTabKeys('chart')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
+    expect(assetTabKeys('query')).toEqual(['overview', 'lineage', 'quality', 'activity', 'customProperties']);
   });
 });
