@@ -73,7 +73,7 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **job execution residual** (`jobs.py` raises `WorkflowError`) |
 | Services / pipelines console | AddService / AddIngestion | `views/ingestion/*` | CRUD + CLI YAML shipped (P8); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **no Airflow `/trigger`** (ADR:2026-10-22-ingestion-console-runs-via-cli) |
 | Activity / tasks / announcements | Feed | `views/collaboration/*` | Shipped (P9); **persona landing skipped** |
-| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` | **Partial** (batch 2 step 4, `UI_PARITY_BATCH2_CHARTS.md`): live search/quality snapshots + optional `listChartData`. App analytics / KPI CRUD residual |
+| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial**: batch 2 step 4 snapshots + `listChartData`; batch 3.3 (`UI_PARITY_BATCH3_KPI.md`) lists `GET /v1/kpi`. App analytics / KPI CRUD / history charts residual |
 | Profiler run UI | `ProfilerConfigurationPage` | Read of stored results only | **Gap** (runner residual) |
 | SSO deep config / persona customization | Appearance / Persona pages | Auth-provider-aware login only | **Gap** (P2/P9 residual) |
 | Knowledge / Context Center / Ontology Studio | Collate pages | — | **DROP** (Phase 10/11 Collate-only) |
@@ -178,7 +178,8 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
    asset shells + pipeline DAG are batch 2 step 5
    (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`). Chart / metric /
    dashboardDataModel / database / databaseSchema detail GETs are batch
-   3.2 (`UI_PARITY_BATCH3_ASSETS.md`).
+   3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Insights KPI `GET /v1/kpi` list +
+   tab is batch 3.3 (`UI_PARITY_BATCH3_KPI.md`).
 4. **If MCP:** wire generic Apache REST tools (`get_entity_details` for more
    entity types, `patch_entity`, `create_test_case`, …) on stdio only, or
    also HTTP/SSE (Phase 10 said no)? RDF/AI tools stay DROP unless you

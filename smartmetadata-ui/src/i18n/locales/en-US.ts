@@ -292,7 +292,20 @@ const enUS = {
     pipelineFailed: 'Failed to load Data Insights chart data',
     appAnalyticsEmpty:
       'App analytics (page views, daily active users) stay residual. This console does not call web-analytics report indexes.',
-    kpisEmpty: 'KPI entities stay residual. This console has no GET /v1/kpi client and will not invent targets.',
+    kpisLead:
+      'GET /api/v1/kpi with fields=owners,dataInsightChart,kpiResult. Rows, targets, and stored results come from that payload only — this tab does not invent targets or start a Data Insights job.',
+    kpisEmpty: 'No KPI entities from GET /api/v1/kpi. This tab does not invent targets.',
+    kpisFailed: 'Failed to load GET /api/v1/kpi',
+    kpisDetail: 'Selected KPI',
+    kpis: {
+      metricType: 'Metric type',
+      target: 'Target',
+      current: 'Current',
+      chart: 'Data insight chart',
+      start: 'Start',
+      end: 'End',
+      targetMet: 'Target met',
+    },
     pipeline: {
       total_data_assets: 'Total data assets (pipeline)',
       percentage_of_data_asset_with_description: 'Assets with description (pipeline)',

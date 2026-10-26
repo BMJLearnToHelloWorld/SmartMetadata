@@ -11,9 +11,9 @@ Batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`, PR #31) wired
 dashboard / pipeline / mlmodel / container / searchIndex / storedProcedure.
 Explore could still return `chart`, `metric`, `dashboardDataModel`,
 `database`, and `databaseSchema` as unwired. This pass adds those five
-slim GETs. It does **not** start KPI (3.3), Settings Policies (3.4),
-App analytics, profiler/DQ execution, pipeline trigger, or DROP
-Knowledge / Ontology / AI.
+slim GETs. It does **not** start Settings Policies (3.4), App analytics,
+profiler/DQ execution, pipeline trigger, or DROP Knowledge / Ontology /
+AI. KPI list/detail is batch 3.3 (`UI_PARITY_BATCH3_KPI.md`).
 
 ## Official collections used (no invented paths)
 
@@ -44,7 +44,7 @@ PATCH still uses `/v1/{collection}/{id}` from the same map (including
 | Gap | Why it stays |
 |---|---|
 | `query`, `apiCollection`, `apiEndpoint`, `dataContract`, drive/file/spreadsheet/worksheet, `report` | Known Apache collections exist, but this batch only named the five Explore leftovers from #31 |
-| KPI first-class page | Batch 3.3 |
+| KPI Insights tab (`GET /v1/kpi`) | Closed in batch 3.3 (`UI_PARITY_BATCH3_KPI.md`). KPI CRUD / history charts still residual |
 | Settings Policies | Batch 3.4 |
 | App analytics / `listChartData` extras | Insights residual from batch 2 step 4 |
 | Chart **widget** render | Slim GET only; no embedded BI |

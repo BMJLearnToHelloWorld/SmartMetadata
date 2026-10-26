@@ -51,7 +51,7 @@ hardcoded DQ charts.
 | Insights nav / route | Left-nav Insights | `/insights` + `InsightsView` after Lineage | No Home / Marketplace |
 | Data assets tab | Pipeline + coverage charts | Live snapshot donut/bar from `GET /v1/search/query` aggregations (entity type, service type, tier) + test/incident status from the first 100 quality GETs | Snapshot, not a warehouse history |
 | Pipeline series | `listChartData` after a Data Insights job | Same GET; line charts **only** when `results[]` has counts | Empty residual copy when 404/empty |
-| App analytics / KPIs | Own tabs + extra APIs | Tabs present with residual empty states | No web-analytics index or `GET /v1/kpi` client |
+| App analytics / KPIs | Own tabs + extra APIs | App analytics tab residual Empty. KPIs tab wired in batch 3.3 (`UI_PARITY_BATCH3_KPI.md`) | No web-analytics index. KPI **CRUD** / history charts still residual |
 | Asset profile charts | Profiler / usage widgets | Row-count line (`tableProfile` history), usage line, column-null bar, latest test-status donut | Profiler **run** still residual |
 | Test-case chart | Results over time | Bar series from stored `testCaseResults` | Empty until a quality job writes results |
 | i18n | Official catalogs | `nav.insights`, `insights.*`, `charts.empty`, `asset.*Chart*` in zh-CN + en-US | Other CRUD pages still mixed English |
@@ -62,7 +62,7 @@ No new Java/Python endpoints. No invented numeric points.
 
 | Gap | Why it stays |
 |---|---|
-| Historical Data Insights / KPI targets | Need the Data Insights application and a KPI client this product does not ship |
+| Historical Data Insights / KPI **history** charts | Need the Data Insights application and `GET /v1/kpi/{name}/kpiResult`. List/detail from `GET /v1/kpi` is batch 3.3 |
 | App analytics (page views, DAU) | Official reads web-analytic report indexes this console does not call |
 | Catalog composition as a time series | Search aggregations are a live snapshot; history only from `listChartData` |
 | Quality snapshot is page-limited | First 100 test cases / latest incidents, not a global warehouse KPI |
@@ -87,7 +87,8 @@ Manual (already-running slim server; this PR does not redeploy):
 2. Insights → Data assets: charts appear only for aggregations / statuses
    the APIs returned. Empty catalog → empty states, not demo numbers.
 3. Pipeline cards stay residual until `listChartData` has results.
-4. App analytics and KPIs tabs stay residual empty.
+4. App analytics stays residual empty. KPIs: list/detail when
+   `GET /v1/kpi` has rows, Empty otherwise (batch 3.3).
 5. Open a table → Quality: row-count / usage / column-null / test-status
    charts. Topics get the test-status donut only (no tableProfile).
 6. Open a test case: results chart follows `testCaseResults`, empty if none.
