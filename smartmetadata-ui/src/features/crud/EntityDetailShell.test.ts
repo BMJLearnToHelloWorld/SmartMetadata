@@ -72,6 +72,8 @@ describe('EntityDetailShell', () => {
       fqn: '',
     });
     expect(wrapper.find('[data-testid="entity-detail-empty"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="entity-detail-empty"]').text()).toContain('No data');
+    expect(wrapper.get('[data-testid="entity-detail-empty"]').text()).toContain('just give it a spin');
   });
 
   it('renders named tab slots and actions', async () => {

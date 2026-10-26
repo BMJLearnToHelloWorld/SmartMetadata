@@ -161,19 +161,19 @@ onMounted(() => {
             </Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.tasks.description')">
+        <Form.Item :label="t('collaboration.tasks.description')" :extra="t('collaboration.tasks.descriptionHelp')">
           <Input.TextArea v-model:value="form.description" data-testid="create-task-description" :rows="3" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.tasks.entityType')">
+        <Form.Item :label="t('collaboration.tasks.entityType')" :extra="t('collaboration.tasks.entityTypeHelp')">
           <Select v-model:value="form.entityType">
             <Select.Option value="table">table</Select.Option>
             <Select.Option value="topic">topic</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.tasks.fqn')">
+        <Form.Item :label="t('collaboration.tasks.fqn')" :extra="t('collaboration.tasks.fqnHelp')">
           <Input v-model:value="form.entityFqn" data-testid="create-task-fqn" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.tasks.assignees')">
+        <Form.Item :label="t('collaboration.tasks.assignees')" :extra="t('collaboration.tasks.assigneesHelp')">
           <Input v-model:value="form.assignees" :placeholder="t('collaboration.tasks.assigneesPlaceholder')" />
         </Form.Item>
       </Form>

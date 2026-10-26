@@ -6,10 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Form, Input, Modal, message } from 'ant-design-vue';
+import { Alert, Button, Descriptions, Form, Input, Modal, Tooltip, message } from 'ant-design-vue';
 import { deleteDatabaseService, getDatabaseService, updateDatabaseService } from '@/api/databaseServices';
 import { deleteMessagingService, getMessagingService, updateMessagingService } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
@@ -105,7 +106,13 @@ async function onDelete(): Promise<void> {
   if (!service.value) {
     return;
   }
-  if (!window.confirm(t('ingestion.services.deleteConfirm', { name: service.value.name }))) {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('ingestion.services.deleteConfirm', { name: service.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
     return;
   }
   deleting.value = true;
@@ -153,9 +160,18 @@ onMounted(() => {
       <Button data-testid="edit-service" :disabled="!service || !supported" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
-      <Button data-testid="delete-service" danger :disabled="!service" :loading="deleting" @click="onDelete">
-        {{ t('crud.delete') }}
-      </Button>
+      <Tooltip :title="t('crud.deleteHelp')">
+        <Button
+          data-testid="delete-service"
+          danger
+          :disabled="!service"
+          :loading="deleting"
+          :aria-label="t('crud.deleteHelp')"
+          @click="onDelete"
+        >
+          {{ t('crud.delete') }}
+        </Button>
+      </Tooltip>
     </template>
     <template #overview>
       <Alert
@@ -192,10 +208,10 @@ onMounted(() => {
     @ok="onSave"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="editForm.description" :rows="3" />
       </Form.Item>
       <ServiceConnectionFields :form="editForm" />

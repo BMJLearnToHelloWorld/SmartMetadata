@@ -56,6 +56,12 @@ describe('LineageGraph', () => {
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="lineage-fullscreen"]').attributes('aria-label')).toBe(
+      'Expand the canvas',
+    );
+    expect(wrapper.get('[data-testid="lineage-reset-layout"]').attributes('aria-label')).toBe(
+      'Reset node positions',
+    );
     expect(wrapper.get('[data-testid="lineage-node-center-id"]').attributes('data-path-label')).toBe(
       'svc / db / schema',
     );

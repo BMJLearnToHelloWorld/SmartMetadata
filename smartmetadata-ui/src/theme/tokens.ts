@@ -208,8 +208,8 @@ export const smAntdTheme: ThemeConfig = {
       itemActiveColor: SM_COLOR_PRIMARY_HOVER,
       inkBarColor: SM_COLOR_PRIMARY,
       titleFontSize: 14,
-      horizontalItemPadding: '8px 4px',
-      horizontalItemGutter: 24,
+      horizontalItemPadding: '10px 0',
+      horizontalItemGutter: 20,
     },
     Pagination: {
       itemActiveBg: SM_COLOR_PRIMARY_BG,
@@ -229,6 +229,7 @@ export const smAntdTheme: ThemeConfig = {
     },
     Spin: {
       colorPrimary: SM_COLOR_PRIMARY,
+      dotSize: 18,
     },
     Breadcrumb: {
       itemColor: SM_SURFACES.textTertiary,

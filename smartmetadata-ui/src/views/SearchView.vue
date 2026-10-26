@@ -6,7 +6,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Card, Checkbox, Col, Empty, Pagination, Row, Space, Tag, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Checkbox, Col, Empty, Pagination, Row, Space, Tag, Tooltip, Typography } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
 import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
 import { FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
@@ -109,15 +109,18 @@ watch(searchKey, () => {
       <Card size="small" class="explore__facets" data-testid="search-facets">
         <div class="explore__facets-head">
           <Typography.Text strong>{{ t('explore.filters') }}</Typography.Text>
-          <Button
-            v-if="hasActiveFilters(filters)"
-            type="link"
-            size="small"
-            data-testid="search-clear-filters"
-            @click="onClearFilters"
-          >
-            {{ t('explore.clearFilters') }}
-          </Button>
+          <Tooltip :title="t('explore.clearFiltersHelp')">
+            <Button
+              v-if="hasActiveFilters(filters)"
+              type="link"
+              size="small"
+              data-testid="search-clear-filters"
+              :aria-label="t('explore.clearFiltersHelp')"
+              @click="onClearFilters"
+            >
+              {{ t('explore.clearFilters') }}
+            </Button>
+          </Tooltip>
         </div>
         <Empty v-if="!facets.length && !loading" :description="t('explore.empty')" />
         <section v-for="facet in facets" :key="facet.id" class="explore__facet" :data-testid="`search-facet-${facet.id}`">
@@ -164,7 +167,7 @@ watch(searchKey, () => {
           <article
             v-for="(hit, index) in hits"
             :key="hitKey(hit, index)"
-            class="explore__card explore__card--dense"
+            class="explore__card explore__card--dense explore__card--om"
             :data-testid="`search-card-${hit.fullyQualifiedName || hit.name}`"
           >
             <div class="explore__card-head">
@@ -275,6 +278,10 @@ watch(searchKey, () => {
 .explore__card--dense:hover {
   border-color: var(--sm-color-primary, #1570ef);
   background: var(--sm-color-primary-bg, #eff8ff);
+  box-shadow: inset 3px 0 0 var(--sm-color-primary, #1570ef);
+}
+.explore__card--dense:hover .explore__card-name {
+  color: var(--sm-color-primary, #1570ef);
 }
 .explore__card-head {
   display: flex;

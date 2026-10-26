@@ -98,12 +98,17 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
         <Alert v-if="error" type="error" show-icon :message="error" data-testid="entity-detail-error" />
         <Empty
           v-if="!loading && !error && empty"
-          :description="emptyDescription"
           data-testid="entity-detail-empty"
-        />
+        >
+          <template #description>
+            <div>{{ emptyDescription }}</div>
+            <Typography.Text type="secondary">{{ t('crud.emptyHint') }}</Typography.Text>
+          </template>
+        </Empty>
         <template v-else-if="!empty">
           <Tabs
             v-if="tabs.length"
+            class="entity-detail-tabs"
             :data-testid="tabsTestId"
             :active-key="currentTab"
             @change="(key: string | number) => emit('update:activeTab', String(key))"

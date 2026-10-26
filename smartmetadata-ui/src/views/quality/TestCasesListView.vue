@@ -227,7 +227,7 @@ onMounted(() => {
       <Form.Item :label="t('quality.testCases.column')">
         <Input v-model:value="form.column" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
       <Form.Item :label="t('quality.testCases.parameters')">

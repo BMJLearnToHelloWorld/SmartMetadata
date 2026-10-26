@@ -1,4 +1,4 @@
-# OM 1:1 style + copy — Batch 3 (2026-10-26)
+# OM 1:1 style + copy — Batch 4 (2026-10-26)
 
 Owner sequencing (authoritative):
 
@@ -19,9 +19,10 @@ primary (`#005587`), `@icore` surfaces, or iPlatform tokens.
 
 ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look.
 
-Batch 3 is **not** a claim of full 1:1. It closes remaining page-text,
-explore/lineage chrome, list overflow, and form-helper residuals from
-Batch 2. Invented APIs / DROP / connector marketplace / MCP / profiler-DQ
+Batch 4 is **not** a claim of full 1:1. It closes remaining visual/interaction
+chrome residuals from Batch 3 (tabs ink, empty/spin density, Modal.confirm,
+audited tooltips, one more explore/lineage chrome pass, optional form
+helpers). Invented APIs / DROP / connector marketplace / MCP / profiler-DQ
 authoring / Appearance / SSO / Persona / inbox stay residual.
 
 ## What Batch 1 did (already on main)
@@ -33,27 +34,29 @@ See git `#38`.
 
 Highest-impact copy, modal, and thin-component residuals. See git `#39`.
 
-## What Batch 3 closed
+## What Batch 3 did (already on main)
+
+Page-text, explore/lineage first chrome pass, list overflow, form required
+helpers. See git `#40`.
+
+## What Batch 4 closed
 
 | Surface | After (OM-faithful) |
 |---|---|
-| Asset tabs beyond profiler/sample/quality | Lineage / activity / custom-properties / charts / features / tasks / executions / code / related / chart leads are short help, not GET tutorials |
-| Collaboration / settings-system / custom-property definition leads | OM-style help; no endpoint-first English/zh |
-| Settings hub residual tiles | Still honest residual labels (Appearance / Apps / SSO / Persona / inbox) — not faked |
-| Connection JSON | Unsupported types still raw JSON; short OM-style helper above the payload |
-| Explore cards | Denser card layout/spacing/typography via CSS tokens (still ant Card + Vue, no React port) |
-| Lineage canvas | Thicker Vue Flow node chrome, edge stroke, controls (still Vue Flow, no React Flow copy) |
-| List overflow ⋯ | View plus Edit (navigate to detail) where the list already has edit; Delete on services/pipelines |
-| Tooltips | Overflow ⋯ and lineage depth labels |
-| Empty | Still ant Empty; copy shortened (`No data` / no GET empties) |
-| Create/edit forms | Remaining collaboration / connection / comment name fields use `crud.fieldRequired` + existing Cancel/ok-text |
+| Detail tabs | Denser ant Tabs ink: 3px flush underline on a 2px nav rule; tighter gutter. Still ant Tabs, not UntitledUI TabList |
+| Empty / Spin | Short OM empty (`No data` / `just give it a spin!`) + denser Empty/Spin spacing. Still ant Empty; no illustrated assets |
+| Confirm delete | Shared `confirmDelete` → ant `Modal.confirm` (ok-danger, tighter padding/type). No Dialog compound. Replaces `window.confirm` |
+| Tooltips | List refresh/overflow, lineage depth/reload/layout/fullscreen, explore clear-filters, detail Delete. Unused controls not gold-plated |
+| Explore cards | Second ant Card chrome pass: hover brand inset + name tint. Still Vue + ant Card |
+| Lineage canvas | Second Vue Flow chrome pass: center header tint, thicker edges. Still Vue Flow |
+| Create/edit helpers | Remaining optional displayName/description plus non-obvious optionals (password, teams/roles, parents, schedule, announcement/task FQNs) use short `Form.Item` extras |
 
-Wiring: `src/i18n/locales/{en-US,zh-CN}.ts`, `EntityListShell`,
-`SearchView`, `LineageGraph` / `LineageNode` / `LineageCanvas`,
-`ServiceDetailView`, `ServiceConnectionFields`, list views that already
-had edit/delete.
+Wiring: `src/theme/tokens.ts`, `src/styles/theme.css`,
+`src/features/crud/confirmDelete.ts`, `EntityListShell` / `EntityDetailShell`,
+`SearchView`, `LineageGraph` / `LineageNode` / `LineageCanvas`, service and
+pipeline delete sites, create/edit forms that already had optional fields.
 
-## Residual matrix (Batch 4+ — still OM-only)
+## Residual matrix (Batch 5+ — still OM-only)
 
 Walk these before any iPlatform soul pass. Do not invent missing APIs.
 
@@ -71,13 +74,13 @@ Walk these before any iPlatform soul pass. Do not invent missing APIs.
 
 | Surface | Status |
 |---|---|
-| Explore cards | **Partial** — denser token layout; still not UntitledUI search-card React |
-| Lineage canvas | **Partial** — thicker Vue Flow chrome; still not OM React Flow skin |
+| Explore cards | **Partial** — second chrome pass (hover inset/name tint); still not UntitledUI search-card React |
+| Lineage canvas | **Partial** — second Vue Flow chrome pass; still not OM React Flow skin |
 | List overflow extras | **Closed** — Edit/Delete where those actions already exist |
-| Tooltips / popovers | **Partial** — overflow + lineage depth audited; not every control |
-| Detail tabs | **Open** — ant Tabs (denser ink); not UntitledUI underline weight |
-| Empty / skeleton | **Open** — ant Empty/Spin + short copy; not OM illustrated empties |
-| Confirm delete | **Open** — ant Modal.confirm (tighter); no Dialog compound |
+| Tooltips / popovers | **Closed** for audited chrome (list, lineage, explore filters, detail delete). Unused controls stay unwired |
+| Detail tabs | **Closed** — denser ant Tabs ink/underline; not UntitledUI TabList |
+| Empty / skeleton | **Closed** — ant Empty/Spin + short OM copy + denser spacing; not OM illustrated empties. No Skeleton usage to thicken |
+| Confirm delete | **Closed** — ant Modal.confirm (tighter ok-danger); no Dialog compound |
 | Drawers | **Open** — token-aligned; few drawers exist |
 | Date pickers | **Open** — unused on most pages |
 | Icons | **Open** — `@ant-design/icons-vue`, not UntitledUI glyphs |
@@ -87,7 +90,7 @@ Walk these before any iPlatform soul pass. Do not invent missing APIs.
 | Surface | Status |
 |---|---|
 | Connection JSON read-only | **Helper closed**; unsupported types stay raw JSON (no invented connectors) |
-| Some edit forms | **Partial** — create-name / required collab fields wired; not every optional control has OM helper text |
+| Some edit forms | **Closed** for remaining optional create/edit fields audited in Batch 4. Required-only fields and unused advanced controls stay without tutorials |
 
 ### IA / features explicitly residual
 
@@ -109,8 +112,9 @@ npm run build
 
 Root: `make verify-rebuild` (Job A: `ui-test` then `ui-build`).
 
-Manual: login → Explore (denser cards, hover brand tint) → open an asset
-Lineage / Activity / Custom Properties tab (short help, no GET tutorial)
-→ Users list ⋯ Edit → Services list ⋯ Delete (confirm) → unsupported
-service Connection tab (JSON + helper) → toggle locale. Primary buttons
-must be `#1570ef`. Residual Settings tiles stay labeled residual.
+Manual: login → Explore (denser cards, hover brand inset) → open an asset
+with detail tabs (3px ink on a 2px rule) → Users list empty (`No data` +
+spin hint) → Services list ⋯ Delete (Modal.confirm, danger OK) → lineage
+depth/reload tooltips → optional create fields show short extras → toggle
+locale. Primary buttons must be `#1570ef`. Residual Settings tiles stay
+labeled residual.

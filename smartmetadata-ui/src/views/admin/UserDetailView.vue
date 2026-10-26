@@ -239,26 +239,26 @@ watch(
     @ok="onSave"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.email')">
         <Input v-model:value="editForm.email" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="editForm.description" :rows="2" />
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="editForm.isAdmin">{{ t('admin.users.administrator') }}</Checkbox>
       </Form.Item>
-      <Form.Item :label="t('admin.users.teams')">
+      <Form.Item :label="t('admin.users.teams')" :extra="t('admin.users.teamsHelp')">
         <Select v-model:value="editForm.teamIds" mode="multiple" allow-clear>
           <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
             {{ entityLabel(team) }}
           </Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('admin.users.roles')">
+      <Form.Item :label="t('admin.users.roles')" :extra="t('admin.users.rolesHelp')">
         <Select v-model:value="editForm.roleIds" mode="multiple" allow-clear>
           <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
             {{ entityLabel(role) }}

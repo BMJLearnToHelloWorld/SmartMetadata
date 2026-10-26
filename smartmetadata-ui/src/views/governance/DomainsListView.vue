@@ -164,10 +164,10 @@ onMounted(() => {
           <Select.Option v-for="type in DOMAIN_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
       </Form.Item>
-      <Form.Item :label="t('governance.domains.parentDomain')">
+      <Form.Item :label="t('governance.domains.parentDomain')" :extra="t('governance.domains.parentDomainHelp')">
         <Select v-model:value="form.parent" allow-clear>
           <Select.Option
             v-for="domain in domains"

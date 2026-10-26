@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Modal } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -92,7 +92,11 @@ describe('ServicesListView', () => {
   });
 
   it('deletes a service from the overflow menu after confirm', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
+      expect(config.okType).toBe('danger');
+      void Promise.resolve(config.onOk?.());
+      return { destroy: vi.fn(), update: vi.fn() } as never;
+    });
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="row-overflow-s1"]').trigger('click');
     await flushPromises();

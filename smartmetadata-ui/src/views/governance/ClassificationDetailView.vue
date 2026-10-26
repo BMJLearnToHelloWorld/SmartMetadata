@@ -203,7 +203,7 @@ onMounted(() => {
     @ok="onSave"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
@@ -231,7 +231,7 @@ onMounted(() => {
       <Form.Item :label="t('crud.description')" required>
         <Input.TextArea v-model:value="tagForm.description" :rows="3" />
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="tagForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('governance.classifications.parentTag')">

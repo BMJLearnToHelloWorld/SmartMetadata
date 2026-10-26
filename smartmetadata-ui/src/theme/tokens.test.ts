@@ -84,7 +84,9 @@ describe('OM console theme tokens', () => {
     expect(smAntdTheme.components?.Input?.activeShadow).toContain(SM_SURFACES.focusRing);
     expect(smAntdTheme.components?.Select?.optionSelectedBg).toBe(SM_COLOR_PRIMARY_BG);
     expect(smAntdTheme.components?.Tabs?.inkBarColor).toBe(SM_COLOR_PRIMARY);
-    expect(smAntdTheme.components?.Tabs?.horizontalItemPadding).toBe('8px 4px');
+    expect(smAntdTheme.components?.Tabs?.horizontalItemPadding).toBe('10px 0');
+    expect(smAntdTheme.components?.Tabs?.horizontalItemGutter).toBe(20);
+    expect(smAntdTheme.components?.Spin?.dotSize).toBe(18);
     expect(SM_CHART_COLORS[0]).toBe(SM_COLOR_PRIMARY);
     expect(SM_CHART_COLORS).not.toContain('#1677ff');
     expect(smAntdTheme.components?.Dropdown?.controlItemBgHover).toBe(SM_SURFACES.rowHoverBg);
@@ -108,8 +110,14 @@ describe('OM console theme tokens', () => {
     expect(themeCss).toContain('.ant-dropdown');
     expect(themeCss).toContain('.ant-tabs');
     expect(themeCss).toContain('height: 3px');
+    expect(themeCss).toContain('border-bottom-width: 2px');
     expect(themeCss).toContain('.ant-modal-confirm .ant-modal-confirm-btns');
+    expect(themeCss).toContain('.sm-confirm-delete');
+    expect(themeCss).toContain('.ant-btn-primary.ant-btn-dangerous');
     expect(themeCss).toContain('.ant-empty-description');
+    expect(themeCss).toContain('.ant-empty-image');
+    expect(themeCss).toContain('.ant-spin-dot');
+    expect(themeCss).toContain('.ant-form-item-extra');
     expect(themeCss).toContain('.ant-form-item-explain-error');
     expect(themeCss).toContain(':focus-visible');
     expect(themeCss).toContain('.ant-btn-primary:not(:disabled):hover');

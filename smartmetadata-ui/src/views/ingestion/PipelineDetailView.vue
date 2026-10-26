@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Checkbox, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
+import { Alert, Button, Checkbox, Descriptions, Form, Input, Modal, Table, Tooltip, message } from 'ant-design-vue';
 import { getDatabaseService } from '@/api/databaseServices';
 import {
   deleteIngestionPipeline,
@@ -16,6 +16,7 @@ import {
   updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
 import { getMessagingService } from '@/api/messagingServices';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -181,7 +182,13 @@ async function onDelete(): Promise<void> {
   if (!pipeline.value) {
     return;
   }
-  if (!window.confirm(t('ingestion.pipelines.deleteConfirm', { name: pipeline.value.name }))) {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('ingestion.pipelines.deleteConfirm', { name: pipeline.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
     return;
   }
   deleting.value = true;
@@ -223,9 +230,18 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="edit-pipeline" :disabled="!pipeline" @click="openEdit">{{ t('crud.edit') }}</Button>
-      <Button data-testid="delete-pipeline" danger :disabled="!pipeline" :loading="deleting" @click="onDelete">
-        {{ t('crud.delete') }}
-      </Button>
+      <Tooltip :title="t('crud.deleteHelp')">
+        <Button
+          data-testid="delete-pipeline"
+          danger
+          :disabled="!pipeline"
+          :loading="deleting"
+          :aria-label="t('crud.deleteHelp')"
+          @click="onDelete"
+        >
+          {{ t('crud.delete') }}
+        </Button>
+      </Tooltip>
     </template>
     <template #overview>
       <Alert
@@ -280,10 +296,10 @@ onMounted(() => {
     @ok="onSave"
   >
     <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="editForm.description" :rows="3" />
       </Form.Item>
       <Form.Item v-if="editForm.serviceKind === 'database'">
@@ -291,13 +307,21 @@ onMounted(() => {
           {{ t('ingestion.pipelines.includeViews') }}
         </Checkbox>
       </Form.Item>
-      <Form.Item v-if="editForm.serviceKind === 'database'" :label="t('ingestion.pipelines.includeSchemas')">
+      <Form.Item
+        v-if="editForm.serviceKind === 'database'"
+        :label="t('ingestion.pipelines.includeSchemas')"
+        :extra="t('ingestion.pipelines.includeSchemasHelp')"
+      >
         <Input v-model:value="editForm.includeSchemas" />
       </Form.Item>
-      <Form.Item v-if="editForm.serviceKind === 'messaging'" :label="t('ingestion.pipelines.includeTopics')">
+      <Form.Item
+        v-if="editForm.serviceKind === 'messaging'"
+        :label="t('ingestion.pipelines.includeTopics')"
+        :extra="t('ingestion.pipelines.includeTopicsHelp')"
+      >
         <Input v-model:value="editForm.includeTopics" />
       </Form.Item>
-      <Form.Item :label="t('ingestion.pipelines.schedule')">
+      <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">
         <Input v-model:value="editForm.scheduleInterval" />
       </Form.Item>
     </Form>

@@ -10,6 +10,7 @@ import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createDatabaseService, deleteDatabaseService, listDatabaseServices } from '@/api/databaseServices';
 import { createMessagingService, deleteMessagingService, listMessagingServices } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import { entityLabel } from '@/features/crud/paging';
@@ -140,7 +141,13 @@ function openDetail(service: CatalogService): void {
 }
 
 async function onDelete(service: CatalogService): Promise<void> {
-  if (!window.confirm(t('ingestion.services.deleteConfirm', { name: service.name }))) {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('ingestion.services.deleteConfirm', { name: service.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
     return;
   }
   try {
@@ -219,10 +226,10 @@ onMounted(() => {
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-service-name" />
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="3" />
       </Form.Item>
       <ServiceConnectionFields :form="form" />

@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, markRaw, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Select, Space } from 'ant-design-vue';
+import { Button, Select, Space, Tooltip } from 'ant-design-vue';
 import { SM_COLOR_PRIMARY, SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
 import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
@@ -102,7 +102,7 @@ const edges = computed<Edge[]>(() => {
     class: props.highlightedEdgeIds.includes(edge.id) ? 'lineage-edge--active' : undefined,
     style: {
       stroke: props.highlightedEdgeIds.includes(edge.id) ? SM_COLOR_WARNING : SM_SURFACES.textQuaternary,
-      strokeWidth: props.highlightedEdgeIds.includes(edge.id) ? 2.25 : 1.75,
+      strokeWidth: props.highlightedEdgeIds.includes(edge.id) ? 2.5 : 2,
     },
   }));
   const columnEdges = visibleColumnEdges.value.map((edge) => ({
@@ -117,7 +117,7 @@ const edges = computed<Edge[]>(() => {
     class: 'lineage-edge--column',
     style: {
       stroke: SM_COLOR_PRIMARY,
-      strokeWidth: 1.5,
+      strokeWidth: 1.75,
       strokeDasharray: '5 4',
     },
   }));
@@ -190,12 +190,20 @@ watch(
           :placeholder="t('lineage.findNode')"
           @update:value="onFindNode"
         />
-        <Button data-testid="lineage-reset-layout" @click="resetLayout">
-          {{ t('lineage.resetLayout') }}
-        </Button>
-        <Button data-testid="lineage-fullscreen" @click="toggleFullscreen">
-          {{ fullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen') }}
-        </Button>
+        <Tooltip :title="t('lineage.resetLayoutHelp')">
+          <Button data-testid="lineage-reset-layout" :aria-label="t('lineage.resetLayoutHelp')" @click="resetLayout">
+            {{ t('lineage.resetLayout') }}
+          </Button>
+        </Tooltip>
+        <Tooltip :title="t('lineage.fullscreenHelp')">
+          <Button
+            data-testid="lineage-fullscreen"
+            :aria-label="t('lineage.fullscreenHelp')"
+            @click="toggleFullscreen"
+          >
+            {{ fullscreen ? t('lineage.exitFullscreen') : t('lineage.fullscreen') }}
+          </Button>
+        </Tooltip>
       </Space>
     </div>
     <VueFlow

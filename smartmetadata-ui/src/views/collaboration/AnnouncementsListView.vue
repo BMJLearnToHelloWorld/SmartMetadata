@@ -135,13 +135,13 @@ onMounted(() => {
       @ok="onCreate"
     >
       <Form layout="vertical">
-        <Form.Item :label="t('collaboration.announcements.displayName')">
+        <Form.Item :label="t('collaboration.announcements.displayName')" :extra="t('collaboration.announcements.displayNameHelp')">
           <Input v-model:value="form.displayName" data-testid="announcement-title" />
         </Form.Item>
         <Form.Item :label="t('collaboration.announcements.description')" :rules="requiredField(t, t('collaboration.announcements.description'))">
           <Input.TextArea v-model:value="form.description" data-testid="announcement-description" :rows="3" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.type')">
+        <Form.Item :label="t('collaboration.announcements.type')" :extra="t('collaboration.announcements.typeHelp')">
           <Select v-model:value="form.type">
             <Select.Option v-for="type in ANNOUNCEMENT_TYPES" :key="type" :value="type">
               {{ type }}
@@ -154,13 +154,13 @@ onMounted(() => {
         <Form.Item :label="t('collaboration.announcements.end')" :rules="requiredField(t, t('collaboration.announcements.end'))">
           <Input v-model:value="form.endLocal" type="datetime-local" data-testid="announcement-end" />
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.entityType')">
+        <Form.Item :label="t('collaboration.announcements.entityType')" :extra="t('collaboration.announcements.entityTypeHelp')">
           <Select v-model:value="form.entityType">
             <Select.Option value="table">table</Select.Option>
             <Select.Option value="topic">topic</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item :label="t('collaboration.announcements.fqn')">
+        <Form.Item :label="t('collaboration.announcements.fqn')" :extra="t('collaboration.announcements.fqnHelp')">
           <Input v-model:value="form.entityFqn" :placeholder="t('collaboration.announcements.fqnPlaceholder')" />
         </Form.Item>
       </Form>

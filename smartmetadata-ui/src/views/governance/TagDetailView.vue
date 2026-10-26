@@ -130,7 +130,7 @@ onMounted(() => {
       @ok="onSave"
     >
       <Form layout="vertical">
-        <Form.Item :label="t('crud.displayName')">
+        <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
           <Input v-model:value="editForm.displayName" />
         </Form.Item>
         <Form.Item :label="t('crud.description')" required>

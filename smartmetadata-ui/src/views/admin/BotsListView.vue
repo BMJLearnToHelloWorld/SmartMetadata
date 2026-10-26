@@ -160,10 +160,10 @@ onMounted(() => {
       <Form.Item :label="t('admin.bots.botUserEmail')" :rules="requiredField(t, t('admin.bots.botUserEmail'))">
         <Input v-model:value="form.botUserEmail" data-testid="create-bot-email" />
       </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
+      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
       </Form.Item>
-      <Form.Item :label="t('crud.description')">
+      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
     </Form>
