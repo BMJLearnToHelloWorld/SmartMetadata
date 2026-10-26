@@ -1102,7 +1102,7 @@ onMounted(() => {
   padding: 12px;
   font-size: 12px;
   white-space: pre-wrap;
-  background: var(--ant-color-fill-quaternary, #fafafa);
+  background: var(--sm-bg-elevated, #f7f8fa);
   border-radius: 6px;
 }
 </style>

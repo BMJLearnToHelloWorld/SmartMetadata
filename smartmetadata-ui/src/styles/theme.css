@@ -2,8 +2,9 @@
  * Copyright 2026 SmartMetadata authors.
  * Licensed under the Apache License, Version 2.0.
  *
- * Clean-room surface + interaction tokens aligned to the in-repo OM console
- * (brand-600 #1570ef, canvas #fafafa). Do not import openmetadata-ui CSS.
+ * Shared ant-design-vue look: OM brand-600 #1570ef + iPlatform soul accents
+ * (radius 6, quiet shadows, denser chrome, icore-inspired neutrals).
+ * Do not import @icore or openmetadata-ui CSS.
  * Dark values are a CSS hook only — no Settings appearance UI.
  */
 
@@ -11,22 +12,22 @@
   color-scheme: light;
   --sm-bg-base: #ffffff;
   --sm-bg-container: #ffffff;
-  --sm-bg-elevated: #ffffff;
-  --sm-content-bg: #fafafa;
+  --sm-bg-elevated: #f7f8fa;
+  --sm-content-bg: #f0f2f5;
   --sm-text-primary: #181d27;
   --sm-text-secondary: #414651;
   --sm-text-tertiary: #535862;
   --sm-text-quaternary: #717680;
-  --sm-border-color: #d5d7da;
-  --sm-border-secondary: #e9eaeb;
+  --sm-border-color: #f0f0f0;
+  --sm-border-secondary: #f0f0f0;
   --sm-layout-bg: #ffffff;
   --sm-sider-bg: #ffffff;
-  --sm-trigger-bg: #fafafa;
-  --sm-trigger-hover-bg: #f5f5f5;
+  --sm-trigger-bg: #f4f4f5;
+  --sm-trigger-hover-bg: #e3e6e8;
   --sm-menu-hover-bg: #eff8ff;
-  --sm-row-hover-bg: #fafafa;
+  --sm-row-hover-bg: #f7f8fa;
   --sm-row-selected-bg: #eff8ff;
-  --sm-table-header-bg: #fafafa;
+  --sm-table-header-bg: #f7f8fa;
   --sm-color-primary: #1570ef;
   --sm-color-primary-hover: #175cd3;
   --sm-color-primary-active: #1849a9;
@@ -37,34 +38,37 @@
   --sm-color-error: #d92d20;
   --sm-overlay: rgba(10, 13, 18, 0.55);
   --sm-focus-ring: rgba(21, 112, 239, 0.22);
-  --sm-border-radius: 8px;
-  --sm-radius-card: 12px;
-  --sm-radius-modal: 16px;
-  --sm-shadow-raised: 0 12px 32px rgba(10, 13, 18, 0.12), 0 2px 8px rgba(10, 13, 18, 0.06);
+  --sm-border-radius: 6px;
+  --sm-radius-card: 6px;
+  --sm-radius-modal: 6px;
+  --sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06);
+  --sm-shadow-raised: 0 6px 16px rgba(15, 17, 21, 0.08), 0 3px 6px -2px rgba(15, 17, 21, 0.06);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --sm-bg-base: #0c0e12;
-  --sm-bg-container: #13161b;
-  --sm-bg-elevated: #22262f;
-  --sm-content-bg: #0c0e12;
+  --sm-bg-base: #0f1115;
+  --sm-bg-container: #14171f;
+  --sm-bg-elevated: #1b1f2a;
+  --sm-content-bg: #0f1115;
   --sm-text-primary: #f0f0f0;
   --sm-text-secondary: #bfbfbf;
   --sm-text-tertiary: #a0a0a0;
   --sm-text-quaternary: #808080;
-  --sm-border-color: #373a41;
-  --sm-border-secondary: #22262f;
-  --sm-layout-bg: #13161b;
-  --sm-sider-bg: #13161b;
-  --sm-trigger-bg: #22262f;
-  --sm-trigger-hover-bg: #373a41;
+  --sm-border-color: #303030;
+  --sm-border-secondary: #303030;
+  --sm-layout-bg: #0f1115;
+  --sm-sider-bg: #14171f;
+  --sm-trigger-bg: #1f2430;
+  --sm-trigger-hover-bg: #2a3140;
   --sm-menu-hover-bg: rgba(21, 112, 239, 0.16);
-  --sm-row-hover-bg: #191919;
+  --sm-row-hover-bg: #1b1f2a;
   --sm-row-selected-bg: rgba(21, 112, 239, 0.16);
-  --sm-table-header-bg: #191919;
+  --sm-table-header-bg: #1b1f2a;
   --sm-overlay: rgba(10, 13, 18, 0.72);
   --sm-focus-ring: rgba(132, 202, 255, 0.28);
+  --sm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.36);
+  --sm-shadow-raised: 0 6px 16px rgba(0, 0, 0, 0.4), 0 3px 6px -2px rgba(0, 0, 0, 0.32);
 }
 
 html,
@@ -77,7 +81,7 @@ body,
 body {
   background: var(--sm-content-bg);
   color: var(--sm-text-primary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 :focus-visible {
@@ -127,7 +131,7 @@ body {
 }
 
 .ant-modal .ant-modal-header {
-  padding: 16px 20px 12px;
+  padding: 12px 16px;
   margin-bottom: 0;
   border-bottom: 1px solid var(--sm-border-secondary);
 }
@@ -138,11 +142,11 @@ body {
 }
 
 .ant-modal .ant-modal-body {
-  padding: 16px 20px;
+  padding: 12px 16px;
 }
 
 .ant-modal .ant-modal-footer {
-  padding: 12px 20px 16px;
+  padding: 10px 16px;
   margin-top: 0;
   border-top: 1px solid var(--sm-border-secondary);
 }
@@ -181,21 +185,22 @@ body {
 
 .ant-drawer .ant-drawer-header {
   border-bottom: 1px solid var(--sm-border-secondary);
-  padding: 16px 20px;
+  padding: 12px 16px;
 }
 
 .ant-drawer .ant-drawer-footer {
   border-top: 1px solid var(--sm-border-secondary);
-  padding: 12px 20px;
+  padding: 10px 16px;
 }
 
 .ant-card {
   border-radius: var(--sm-radius-card);
   border-color: var(--sm-border-secondary);
+  box-shadow: var(--sm-shadow-card);
 }
 
 .ant-card-head {
-  min-height: 48px;
+  min-height: 44px;
   border-bottom-color: var(--sm-border-secondary);
 }
 

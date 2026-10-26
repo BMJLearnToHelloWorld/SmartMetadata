@@ -6,16 +6,20 @@ Owner sequencing (authoritative):
    components, modals, all interactive details). Vue 3 + ant-design-vue
    native. Clean-room. OM primary. Do **not** blend iPlatform tokens/soul
    into this phase.
-2. **Only after** this residual matrix is largely closed (later batches /
-   separate PR) — layer **iPlatform3 shadow/soul** (feel/brand accents),
-   without undoing OM IA or becoming a literal IP3Layout clone.
+2. **After** this residual matrix is largely closed — layer **iPlatform3
+   shadow/soul** (feel/brand accents), without undoing OM IA or becoming a
+   literal IP3Layout clone. **Done** in `docs/rebuild/UI_IP3_SOUL.md`
+   (ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om). Primary stays
+   `#1570ef`.
 
-**This phase is OM-only.** Approximate the in-repo **openmetadata-ui** console
-with Vue 3 + ant-design-vue official native APIs. Clean-room: recreate
-look/feel; do not copy React/TSX/CSS. Keep IA and routes.
+**OM Batches 1–4 remain the IA / copy / chrome SoT.** Approximate the
+in-repo **openmetadata-ui** console with Vue 3 + ant-design-vue official
+native APIs. Clean-room: recreate look/feel; do not copy React/TSX/CSS.
+Keep IA and routes.
 
-**iPlatform3 shadow/soul is deferred.** Do not re-apply historical #37
-primary (`#005587`), `@icore` surfaces, or iPlatform tokens.
+**iPlatform3 shadow/soul is layered** (radius 6, shadows, denser ant
+chrome, iPlatform-inspired neutrals). Do **not** re-apply historical #37
+primary (`#005587`) or transplant `@icore` / IP3Layout.
 
 ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look.
 
@@ -56,9 +60,10 @@ Wiring: `src/theme/tokens.ts`, `src/styles/theme.css`,
 `SearchView`, `LineageGraph` / `LineageNode` / `LineageCanvas`, service and
 pipeline delete sites, create/edit forms that already had optional fields.
 
-## Residual matrix (Batch 5+ — still OM-only)
+## Residual matrix (still OM-only inventables)
 
-Walk these before any iPlatform soul pass. Do not invent missing APIs.
+Soul is layered (`docs/rebuild/UI_IP3_SOUL.md`). Remaining rows are
+invented-API / DROP residuals — do not fake them.
 
 ### Page text still off OM
 
@@ -99,8 +104,9 @@ theme PUT, notification inbox, persona switcher.
 
 ### Deferred after this matrix is largely closed
 
-iPlatform3 shadow/soul (feel/brand accents only). Must not undo OM IA or
-become a literal IP3Layout clone.
+iPlatform3 shadow/soul — **layered** (see `docs/rebuild/UI_IP3_SOUL.md`).
+Must not undo OM IA or become a literal IP3Layout clone. Primary stays
+`#1570ef`.
 
 ## How to verify
 
@@ -117,4 +123,5 @@ with detail tabs (3px ink on a 2px rule) → Users list empty (`No data` +
 spin hint) → Services list ⋯ Delete (Modal.confirm, danger OK) → lineage
 depth/reload tooltips → optional create fields show short extras → toggle
 locale. Primary buttons must be `#1570ef`. Residual Settings tiles stay
-labeled residual.
+labeled residual. Soul pass: canvas `#f0f2f5`, radius 6, raised modal
+shadow — without `#005587` or a layout transplant.

@@ -16,7 +16,7 @@ import { SM_BORDER_RADIUS, SM_COLOR_PRIMARY, smAntdTheme } from '@/theme/tokens'
 import App from './App.vue';
 
 describe('App', () => {
-  it('wires ConfigProvider to the shared OM console theme tokens', async () => {
+  it('wires ConfigProvider to the shared OM + iPlatform soul theme tokens', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/', component: { template: '<div />' } }],

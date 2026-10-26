@@ -267,8 +267,8 @@ watch(searchKey, () => {
   gap: 6px;
 }
 .explore__card {
-  border: 1px solid var(--sm-border-secondary, #e9eaeb);
-  border-radius: var(--sm-border-radius, 8px);
+  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-radius: var(--sm-border-radius, 6px);
   padding: 8px 12px;
   background: var(--sm-bg-container, #fff);
 }

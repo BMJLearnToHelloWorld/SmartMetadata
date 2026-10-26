@@ -1,13 +1,13 @@
 # SmartMetadata UI uses iPlatform @icore component tokens without a layout transplant
 
-**Historical.** Do not implement this record. This phase is OM-only
-(ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look).
+**Historical for primary `#005587`.** Do not re-apply that hex. Soul accents
+without that primary live in ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om.
 
 - **Status:** Superseded by ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
-- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (primary superseded; OM-only first)
+- **Revisions:** v1 2026-10-26 (initial) · v2 2026-10-26 (primary superseded; OM-only first) · v3 2026-10-26 (soul accents restored without `#005587`)
 - **Deciders:** Bernie Bai (owner)
 - **Guard:** historical — successor ADR owns the live token test; this record must not be used to re-apply #37 / `@icore` tokens
-- **Related:** `docs/rebuild/UI_STYLE_IPLATFORM.md`; ADR:2026-10-22-clean-room-vue-spa; ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look
+- **Related:** `docs/rebuild/UI_STYLE_IPLATFORM.md`; `docs/rebuild/UI_IP3_SOUL.md`; ADR:2026-10-22-clean-room-vue-spa; ADR:2026-10-26-smartmetadata-ui-aligns-om-console-look; ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om
 
 ## Context
 
@@ -42,3 +42,10 @@ surfaces are out of this phase
 **deferred** until the OM residual matrix is largely closed. The
 no-layout-transplant / no-Settings-appearance / no-@icore-import guards
 still hold.
+
+## Amendment (2026-10-26, v3)
+
+Soul accents (radius 6, shadows, denser chrome, icore-inspired neutrals)
+are restored by ADR:2026-10-26-smartmetadata-ui-layers-ip3-soul-on-om.
+Primary stays OM `#1570ef`; this record still must not be used to re-apply
+`#005587` or import `@icore`.
