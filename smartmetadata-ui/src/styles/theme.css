@@ -1,0 +1,95 @@
+/**
+ * Copyright 2026 SmartMetadata authors.
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * Clean-room surface tokens aligned to iPlatform @icore light theme.
+ * Do not import @icore packages. Dark values are a CSS hook only — no Settings UI.
+ */
+
+:root {
+  color-scheme: light;
+  --sm-bg-base: #ffffff;
+  --sm-bg-container: #ffffff;
+  --sm-bg-elevated: #f7f8fa;
+  --sm-content-bg: #f0f2f5;
+  --sm-text-primary: #1f1f1f;
+  --sm-text-secondary: #595959;
+  --sm-border-color: #f0f0f0;
+  --sm-layout-bg: #ffffff;
+  --sm-trigger-bg: #f4f4f5;
+  --sm-trigger-hover-bg: #e3e6e8;
+  --sm-menu-hover-bg: rgba(255, 255, 255, 0.5);
+  --sm-color-primary: #005587;
+  --sm-border-radius: 6px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --sm-bg-base: #0f1115;
+  --sm-bg-container: #14171f;
+  --sm-bg-elevated: #1b1f2a;
+  --sm-content-bg: #0f1115;
+  --sm-text-primary: #f0f0f0;
+  --sm-text-secondary: #bfbfbf;
+  --sm-border-color: #303030;
+  --sm-layout-bg: #0f1115;
+  --sm-trigger-bg: #1f2430;
+  --sm-trigger-hover-bg: #2a3140;
+  --sm-menu-hover-bg: rgba(255, 255, 255, 0.12);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--sm-content-bg);
+  color: var(--sm-text-primary);
+  font-size: 13px;
+}
+
+/* Modal density — global, not a FullModal port */
+.ant-modal .ant-modal-header {
+  padding: 12px 16px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--sm-border-color);
+}
+
+.ant-modal .ant-modal-body {
+  padding: 16px;
+}
+
+.ant-modal .ant-modal-footer {
+  padding: 10px 16px;
+  margin-top: 0;
+  border-top: 1px solid var(--sm-border-color);
+}
+
+.ant-modal .ant-modal-content {
+  border-radius: var(--sm-border-radius);
+}
+
+/* Card / Table / Input-Select borders use the same surface tokens */
+.ant-card {
+  border-radius: var(--sm-border-radius);
+  border-color: var(--sm-border-color);
+}
+
+.ant-card-head {
+  min-height: 44px;
+  border-bottom-color: var(--sm-border-color);
+}
+
+.ant-table-thead > tr > th {
+  background: var(--sm-bg-elevated);
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select:not(.ant-select-borderless) .ant-select-selector {
+  border-color: var(--sm-border-color);
+}

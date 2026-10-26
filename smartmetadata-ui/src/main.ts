@@ -16,6 +16,7 @@ import type { SupportedLocale } from './i18n/localePreference';
 import { router } from './router';
 import { useAuthStore } from './stores/auth';
 import 'ant-design-vue/dist/reset.css';
+import './styles/theme.css';
 
 const app = createApp(App);
 const pinia = createPinia();

@@ -244,9 +244,9 @@ async function onLogout(): Promise<void> {
   gap: 12px;
   height: 48px;
   line-height: 48px;
-  background: #fff;
+  background: var(--sm-layout-bg);
   padding-inline: 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--sm-border-color);
 }
 .shell__search {
   max-width: 520px;
