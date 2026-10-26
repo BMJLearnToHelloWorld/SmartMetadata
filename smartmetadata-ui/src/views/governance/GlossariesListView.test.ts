@@ -44,6 +44,14 @@ async function mountView() {
 describe('GlossariesListView', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('redirects to the first glossary detail', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -57,27 +65,24 @@ describe('GlossariesListView', () => {
         return new Response('not found', { status: 404 });
       }),
     );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    localStorage.clear();
-  });
-
-  it('renders glossaries from GET /v1/glossaries', async () => {
-    const { wrapper } = await mountView();
-    expect(wrapper.text()).toContain('Business Glossary');
-    expect(wrapper.find('[data-testid="glossaries-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(true);
-  });
-
-  it('opens glossary detail on name click', async () => {
-    const { wrapper, router } = await mountView();
-    const link = wrapper.find('[data-testid="glossary-row-g1"]');
-    expect(link.exists()).toBe(true);
-    await link.trigger('click');
-    await flushPromises();
+    const { router } = await mountView();
     expect(router.currentRoute.value.name).toBe('governance-glossary');
     expect(router.currentRoute.value.params.id).toBe('g1');
+  });
+
+  it('shows empty create CTA when no glossaries exist', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="glossaries-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(true);
   });
 });

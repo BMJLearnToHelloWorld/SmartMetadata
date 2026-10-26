@@ -20,6 +20,7 @@ export interface Glossary {
   mutuallyExclusive?: boolean;
   termCount?: number;
   owners: EntityRef[];
+  reviewers: EntityRef[];
   tags: TagRef[];
   domains: EntityRef[];
 }
@@ -45,6 +46,8 @@ export interface GlossaryTerm {
   tags: TagRef[];
   children: EntityRef[];
   usageCount?: number;
+  /** Present when the catalog returns entityStatus; never invent one. */
+  status?: string;
 }
 
 export interface CreateGlossaryTermRequest {

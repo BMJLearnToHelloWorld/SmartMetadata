@@ -35,6 +35,7 @@ function mapGlossary(raw: Record<string, unknown>): Glossary | null {
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),
     termCount: asNumber(raw.termCount),
     owners: mapEntityRefs(raw.owners),
+    reviewers: mapEntityRefs(raw.reviewers),
     tags: mapTags(raw.tags),
     domains: mapEntityRefs(raw.domains),
   };

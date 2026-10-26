@@ -15,7 +15,7 @@ import { apiRequest } from './client';
 import { mapTags } from './entities';
 
 export const GLOSSARY_TERM_FIELDS =
-  'children,relatedTerms,reviewers,owners,tags,usageCount,domains,childrenCount';
+  'children,relatedTerms,reviewers,owners,tags,usageCount,domains,childrenCount,entityStatus';
 
 export interface ListGlossaryTermsQuery {
   glossary?: string;
@@ -63,6 +63,7 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     tags: mapTags(raw.tags),
     children: mapEntityRefs(raw.children),
     usageCount: asNumber(raw.usageCount),
+    status: asString(raw.entityStatus) || asString(raw.status) || undefined,
   };
 }
 

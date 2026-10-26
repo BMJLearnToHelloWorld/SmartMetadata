@@ -3,34 +3,18 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Checkbox, Form, Input, Modal, message } from 'ant-design-vue';
+import { Alert, Button, Checkbox, Empty, Form, Input, Modal, Spin, message } from 'ant-design-vue';
 import { createGlossary, listGlossaries } from '@/api/glossaries';
-import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
-import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  entityLabel,
-  goNext,
-  goPrev,
-  type CursorPager,
-} from '@/features/crud/paging';
-import type { EntityListColumn } from '@/features/crud/types';
-import type { Glossary } from '@/types/governance';
 
 const { t } = useI18n();
 const router = useRouter();
-const loading = ref(false);
+const loading = ref(true);
 const errorMessage = ref('');
-const glossaries = ref<Glossary[]>([]);
-const total = ref<number | undefined>();
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
+const empty = ref(false);
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -40,42 +24,23 @@ const form = reactive({
   mutuallyExclusive: false,
 });
 
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
-  { title: t('governance.glossaries.terms'), key: 'termCount', width: 90 },
-  { title: t('governance.glossaries.exclusive'), key: 'mutuallyExclusive', width: 110 },
-]);
-
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
-
-async function load(): Promise<void> {
+async function bootstrap(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  empty.value = false;
   try {
-    const page = await listGlossaries({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
-    glossaries.value = page.data;
-    total.value = page.total;
-    pageAfter.value = page.after;
+    const page = await listGlossaries({ limit: 1 });
+    const first = page.data[0];
+    if (first?.id) {
+      await router.replace({ name: 'governance-glossary', params: { id: first.id } });
+      return;
+    }
+    empty.value = true;
   } catch (error) {
-    glossaries.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
-}
-
-function onNext(): void {
-  if (pageAfter.value) {
-    cursor.value = goNext(cursor.value, pageAfter.value);
-  }
-  void load();
-}
-
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -89,7 +54,11 @@ async function onCreate(): Promise<void> {
     });
     createOpen.value = false;
     message.success(t('governance.glossaries.created', { name: created.name }));
-    await load();
+    if (created.id) {
+      await router.push({ name: 'governance-glossary', params: { id: created.id } });
+    } else {
+      await bootstrap();
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
@@ -98,53 +67,25 @@ async function onCreate(): Promise<void> {
 }
 
 onMounted(() => {
-  void load();
+  void bootstrap();
 });
 </script>
 
 <template>
-  <EntityListShell
-    :title="t('governance.glossaries.title')"
-    :lead="t('governance.glossaries.lead')"
-    :loading="loading"
-    :error="errorMessage"
-    :columns="columns"
-    :data-source="glossaries"
-    table-test-id="glossaries-table"
-    show-row-actions
-    show-edit-action
-    :total="total"
-    :has-next="hasNext"
-    :has-prev="hasPrev"
-    @refresh="load"
-    @next="onNext"
-    @prev="onPrev"
-    @view="(record) => router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
-    @edit="(record) => router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
-  >
-    <template #actions>
-      <Button type="primary" data-testid="create-glossary" @click="createOpen = true">
-        {{ t('governance.glossaries.create') }}
-      </Button>
-    </template>
-    <template #bodyCell="{ column, record }">
-      <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`glossary-row-${(record as Glossary).id}`"
-          @click.prevent="router.push({ name: 'governance-glossary', params: { id: (record as Glossary).id } })"
-        >
-          {{ entityLabel(record as Glossary) }}
-        </a>
-      </template>
-      <template v-else-if="column.key === 'termCount'">
-        {{ (record as Glossary).termCount ?? '—' }}
-      </template>
-      <template v-else-if="column.key === 'mutuallyExclusive'">
-        {{ (record as Glossary).mutuallyExclusive ? t('crud.yes') : t('crud.no') }}
-      </template>
-    </template>
-  </EntityListShell>
+  <div class="glossaries-entry" data-testid="glossaries-entry">
+    <Spin :spinning="loading">
+      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
+      <Empty
+        v-else-if="empty"
+        data-testid="glossaries-table"
+        :description="t('governance.glossaries.emptyList')"
+      >
+        <Button type="primary" data-testid="create-glossary" @click="createOpen = true">
+          {{ t('governance.glossaries.create') }}
+        </Button>
+      </Empty>
+    </Spin>
+  </div>
   <Modal
     v-model:open="createOpen"
     :title="t('governance.glossaries.createTitle')"
@@ -171,3 +112,12 @@ onMounted(() => {
     </Form>
   </Modal>
 </template>
+
+<style scoped>
+.glossaries-entry {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+</style>
