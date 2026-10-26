@@ -3,7 +3,8 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { createTask, listTasks } from '@/api/tasks';
@@ -15,6 +16,7 @@ import {
 } from '@/types/collaboration';
 
 const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const tasks = ref<CollaborationTask[]>([]);
@@ -30,12 +32,12 @@ const form = reactive({
   assignees: '',
 });
 
-const columns = [
-  { title: 'Name', key: 'name' },
-  { title: 'Type', dataIndex: 'type', key: 'type', width: 180 },
-  { title: 'Status', dataIndex: 'status', key: 'status', width: 120 },
-  { title: 'About', key: 'about' },
-];
+const columns = computed(() => [
+  { title: t('collaboration.tasks.name'), key: 'name' },
+  { title: t('collaboration.tasks.type'), dataIndex: 'type', key: 'type', width: 180 },
+  { title: t('collaboration.tasks.status'), dataIndex: 'status', key: 'status', width: 120 },
+  { title: t('collaboration.tasks.about'), key: 'about' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -46,7 +48,7 @@ async function load(): Promise<void> {
     total.value = page.total;
   } catch (error) {
     tasks.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load tasks';
+    errorMessage.value = error instanceof Error ? error.message : t('collaboration.tasks.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -67,10 +69,10 @@ async function onCreate(): Promise<void> {
       assignees: assignees.length ? assignees : undefined,
     });
     createOpen.value = false;
-    message.success(`Created task ${created.name || created.id}`);
+    message.success(t('collaboration.tasks.created', { name: created.name || created.id }));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Create task failed');
+    message.error(error instanceof Error ? error.message : t('collaboration.tasks.createFailed'));
   } finally {
     creating.value = false;
   }
@@ -86,14 +88,14 @@ onMounted(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div class="collab-head">
         <div>
-          <Typography.Title :level="4">Tasks</Typography.Title>
+          <Typography.Title :level="4">{{ t('collaboration.tasks.title') }}</Typography.Title>
           <Typography.Paragraph type="secondary">
-            GET/POST /api/v1/tasks. Create requires <code>category</code> +
-            <code>type</code>. MemoryConflictReview and MetadataCompletion are
-            server-opened and are not offered here.
+            {{ t('collaboration.tasks.lead') }}
           </Typography.Paragraph>
         </div>
-        <Button type="primary" data-testid="create-task" @click="createOpen = true">Create task</Button>
+        <Button type="primary" data-testid="create-task" @click="createOpen = true">
+          {{ t('collaboration.tasks.create') }}
+        </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
       <Table
@@ -128,39 +130,50 @@ onMounted(() => {
         </template>
       </Table>
       <Typography.Text type="secondary">
-        {{ tasks.length }} shown<template v-if="total !== undefined"> of {{ total }}</template>
+        {{
+          total !== undefined
+            ? t('crud.shownOf', { shown: tasks.length, total })
+            : t('crud.shown', { shown: tasks.length })
+        }}
       </Typography.Text>
     </Space>
-    <Modal v-model:open="createOpen" title="Create task" :confirm-loading="creating" @ok="onCreate">
+    <Modal
+      v-model:open="createOpen"
+      :title="t('collaboration.tasks.createTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="creating"
+      @ok="onCreate"
+    >
       <Form layout="vertical">
-        <Form.Item label="Category" required>
+        <Form.Item :label="t('collaboration.tasks.category')" required>
           <Select v-model:value="form.category">
             <Select.Option v-for="category in TASK_CATEGORIES" :key="category" :value="category">
               {{ category }}
             </Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item label="Type" required>
+        <Form.Item :label="t('collaboration.tasks.type')" required>
           <Select v-model:value="form.type">
             <Select.Option v-for="type in CREATABLE_TASK_TYPES" :key="type" :value="type">
               {{ type }}
             </Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item label="Description">
+        <Form.Item :label="t('collaboration.tasks.description')">
           <Input.TextArea v-model:value="form.description" data-testid="create-task-description" :rows="3" />
         </Form.Item>
-        <Form.Item label="About entity type">
+        <Form.Item :label="t('collaboration.tasks.entityType')">
           <Select v-model:value="form.entityType">
             <Select.Option value="table">table</Select.Option>
             <Select.Option value="topic">topic</Select.Option>
           </Select>
         </Form.Item>
-        <Form.Item label="About FQN">
+        <Form.Item :label="t('collaboration.tasks.fqn')">
           <Input v-model:value="form.entityFqn" data-testid="create-task-fqn" />
         </Form.Item>
-        <Form.Item label="Assignee FQNs">
-          <Input v-model:value="form.assignees" placeholder="comma-separated user or team FQNs" />
+        <Form.Item :label="t('collaboration.tasks.assignees')">
+          <Input v-model:value="form.assignees" :placeholder="t('collaboration.tasks.assigneesPlaceholder')" />
         </Form.Item>
       </Form>
     </Modal>

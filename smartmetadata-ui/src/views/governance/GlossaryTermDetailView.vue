@@ -3,7 +3,8 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {
   Alert,
@@ -27,6 +28,7 @@ import type { GlossaryTerm } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
+const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const term = ref<GlossaryTerm | null>(null);
@@ -40,11 +42,11 @@ const editForm = reactive({
   relatedTermFqns: [] as string[],
 });
 
-const assetColumns = [
-  { title: 'Name', dataIndex: 'name', key: 'name' },
-  { title: 'Type', dataIndex: 'type', key: 'type', width: 140 },
-  { title: 'FQN', dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
-];
+const assetColumns = computed(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'type', key: 'type', width: 140 },
+  { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+]);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -65,7 +67,7 @@ async function load(): Promise<void> {
   } catch (error) {
     term.value = null;
     assets.value = [];
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load glossary term';
+    errorMessage.value = error instanceof Error ? error.message : t('terms.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -85,7 +87,7 @@ function openEdit(): void {
 
 async function onSave(): Promise<void> {
   if (!term.value?.glossary) {
-    message.error('This term has no glossary FQN; PUT /v1/glossaryTerms requires glossary');
+    message.error(t('terms.missingGlossary'));
     return;
   }
   saving.value = true;
@@ -99,10 +101,10 @@ async function onSave(): Promise<void> {
       relatedTerms: editForm.relatedTermFqns,
     });
     editOpen.value = false;
-    message.success('Term updated');
+    message.success(t('terms.updated'));
     await load();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Update failed');
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
     saving.value = false;
   }
@@ -135,32 +137,34 @@ onMounted(() => {
       <Space direction="vertical" size="middle" style="width: 100%">
         <div class="gov-head">
           <Typography.Title :level="4">
-            {{ term?.displayName || term?.name || 'Glossary term' }}
+            {{ term?.displayName || term?.name || t('terms.fallback') }}
           </Typography.Title>
           <Space>
             <Button
               v-if="term?.glossary?.id"
               @click="router.push({ name: 'governance-glossary', params: { id: term.glossary.id } })"
             >
-              Back to glossary
+              {{ t('terms.back') }}
             </Button>
-            <Button type="primary" data-testid="edit-term" :disabled="!term" @click="openEdit">Edit term</Button>
+            <Button type="primary" data-testid="edit-term" :disabled="!term" @click="openEdit">
+              {{ t('terms.edit') }}
+            </Button>
           </Space>
         </div>
         <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" />
         <Descriptions v-if="term" bordered :column="1" size="small">
-          <Descriptions.Item label="Name">{{ term.name }}</Descriptions.Item>
-          <Descriptions.Item label="FQN">{{ term.fullyQualifiedName }}</Descriptions.Item>
-          <Descriptions.Item label="Glossary">{{ term.glossary?.name || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Parent">{{ term.parent?.name || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Description">{{ term.description || '—' }}</Descriptions.Item>
-          <Descriptions.Item label="Related terms">
+          <Descriptions.Item :label="t('crud.name')">{{ term.name }}</Descriptions.Item>
+          <Descriptions.Item :label="t('crud.fqn')">{{ term.fullyQualifiedName }}</Descriptions.Item>
+          <Descriptions.Item :label="t('terms.glossary')">{{ term.glossary?.name || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('crud.parent')">{{ term.parent?.name || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('terms.relatedTerms')">
             {{ term.relatedTerms.map((item) => item.displayName || item.name).join(', ') || '—' }}
           </Descriptions.Item>
         </Descriptions>
-        <Typography.Title :level="5">Related entities</Typography.Title>
+        <Typography.Title :level="5">{{ t('terms.relatedEntities') }}</Typography.Title>
         <Typography.Paragraph type="secondary">
-          Assets returned by GET /api/v1/glossaryTerms/{id}/assets when this term is applied as a tag.
+          {{ t('terms.relatedLead') }}
         </Typography.Paragraph>
         <Table
           row-key="id"
@@ -183,18 +187,25 @@ onMounted(() => {
             </template>
           </template>
         </Table>
-        <Typography.Text v-if="!assets.length" type="secondary">No tagged assets returned.</Typography.Text>
+        <Typography.Text v-if="!assets.length" type="secondary">{{ t('terms.noAssets') }}</Typography.Text>
       </Space>
     </Card>
-    <Modal v-model:open="editOpen" title="Edit glossary term" :confirm-loading="saving" @ok="onSave">
+    <Modal
+      v-model:open="editOpen"
+      :title="t('terms.editTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="saving"
+      @ok="onSave"
+    >
       <Form layout="vertical">
-        <Form.Item label="Display name">
+        <Form.Item :label="t('crud.displayName')">
           <Input v-model:value="editForm.displayName" />
         </Form.Item>
-        <Form.Item label="Description" required>
+        <Form.Item :label="t('crud.description')" required>
           <Input.TextArea v-model:value="editForm.description" :rows="3" />
         </Form.Item>
-        <Form.Item label="Related terms">
+        <Form.Item :label="t('terms.relatedTerms')">
           <Select v-model:value="editForm.relatedTermFqns" mode="multiple" allow-clear>
             <Select.Option
               v-for="item in siblings.filter((candidate) => candidate.id !== term?.id)"

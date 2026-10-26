@@ -2,40 +2,69 @@
  * Copyright 2026 SmartMetadata authors.
  * Licensed under the Apache License, Version 2.0.
  *
- * Clean-room surface tokens aligned to iPlatform @icore light theme.
- * Do not import @icore packages. Dark values are a CSS hook only — no Settings UI.
+ * Clean-room surface + interaction tokens aligned to the in-repo OM console
+ * (brand-600 #1570ef, canvas #fafafa). Do not import openmetadata-ui CSS.
+ * Dark values are a CSS hook only — no Settings appearance UI.
  */
 
 :root {
   color-scheme: light;
   --sm-bg-base: #ffffff;
   --sm-bg-container: #ffffff;
-  --sm-bg-elevated: #f7f8fa;
-  --sm-content-bg: #f0f2f5;
-  --sm-text-primary: #1f1f1f;
-  --sm-text-secondary: #595959;
-  --sm-border-color: #f0f0f0;
+  --sm-bg-elevated: #ffffff;
+  --sm-content-bg: #fafafa;
+  --sm-text-primary: #181d27;
+  --sm-text-secondary: #414651;
+  --sm-text-tertiary: #535862;
+  --sm-text-quaternary: #717680;
+  --sm-border-color: #d5d7da;
+  --sm-border-secondary: #e9eaeb;
   --sm-layout-bg: #ffffff;
-  --sm-trigger-bg: #f4f4f5;
-  --sm-trigger-hover-bg: #e3e6e8;
-  --sm-menu-hover-bg: rgba(255, 255, 255, 0.5);
-  --sm-color-primary: #005587;
-  --sm-border-radius: 6px;
+  --sm-sider-bg: #ffffff;
+  --sm-trigger-bg: #fafafa;
+  --sm-trigger-hover-bg: #f5f5f5;
+  --sm-menu-hover-bg: #eff8ff;
+  --sm-row-hover-bg: #fafafa;
+  --sm-row-selected-bg: #eff8ff;
+  --sm-table-header-bg: #fafafa;
+  --sm-color-primary: #1570ef;
+  --sm-color-primary-hover: #175cd3;
+  --sm-color-primary-active: #1849a9;
+  --sm-color-primary-bg: #eff8ff;
+  --sm-color-primary-bg-hover: #d1e9ff;
+  --sm-color-success: #039855;
+  --sm-color-warning: #dc6803;
+  --sm-color-error: #d92d20;
+  --sm-overlay: rgba(10, 13, 18, 0.55);
+  --sm-focus-ring: rgba(21, 112, 239, 0.22);
+  --sm-border-radius: 8px;
+  --sm-radius-card: 12px;
+  --sm-radius-modal: 16px;
+  --sm-shadow-raised: 0 12px 32px rgba(10, 13, 18, 0.12), 0 2px 8px rgba(10, 13, 18, 0.06);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --sm-bg-base: #0f1115;
-  --sm-bg-container: #14171f;
-  --sm-bg-elevated: #1b1f2a;
-  --sm-content-bg: #0f1115;
+  --sm-bg-base: #0c0e12;
+  --sm-bg-container: #13161b;
+  --sm-bg-elevated: #22262f;
+  --sm-content-bg: #0c0e12;
   --sm-text-primary: #f0f0f0;
   --sm-text-secondary: #bfbfbf;
-  --sm-border-color: #303030;
-  --sm-layout-bg: #0f1115;
-  --sm-trigger-bg: #1f2430;
-  --sm-trigger-hover-bg: #2a3140;
-  --sm-menu-hover-bg: rgba(255, 255, 255, 0.12);
+  --sm-text-tertiary: #a0a0a0;
+  --sm-text-quaternary: #808080;
+  --sm-border-color: #373a41;
+  --sm-border-secondary: #22262f;
+  --sm-layout-bg: #13161b;
+  --sm-sider-bg: #13161b;
+  --sm-trigger-bg: #22262f;
+  --sm-trigger-hover-bg: #373a41;
+  --sm-menu-hover-bg: rgba(21, 112, 239, 0.16);
+  --sm-row-hover-bg: #191919;
+  --sm-row-selected-bg: rgba(21, 112, 239, 0.16);
+  --sm-table-header-bg: #191919;
+  --sm-overlay: rgba(10, 13, 18, 0.72);
+  --sm-focus-ring: rgba(132, 202, 255, 0.28);
 }
 
 html,
@@ -48,48 +77,235 @@ body,
 body {
   background: var(--sm-content-bg);
   color: var(--sm-text-primary);
-  font-size: 13px;
+  font-size: 14px;
 }
 
-/* Modal density — global, not a FullModal port */
-.ant-modal .ant-modal-header {
-  padding: 12px 16px;
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--sm-border-color);
+:focus-visible {
+  outline: 2px solid var(--sm-color-primary);
+  outline-offset: 2px;
 }
 
-.ant-modal .ant-modal-body {
-  padding: 16px;
+.ant-btn:focus-visible,
+.ant-input:focus-visible,
+.ant-input-affix-wrapper:focus-visible,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-checkbox-wrapper:focus-visible,
+.ant-radio-wrapper:focus-visible {
+  outline: 2px solid var(--sm-color-primary);
+  outline-offset: 2px;
 }
 
-.ant-modal .ant-modal-footer {
-  padding: 10px 16px;
-  margin-top: 0;
-  border-top: 1px solid var(--sm-border-color);
+.ant-btn-primary:not(:disabled):hover {
+  background: var(--sm-color-primary-hover);
+  border-color: var(--sm-color-primary-hover);
+}
+
+.ant-btn-primary:not(:disabled):active {
+  background: var(--sm-color-primary-active);
+  border-color: var(--sm-color-primary-active);
+}
+
+.ant-btn-default:not(:disabled):hover {
+  color: var(--sm-color-primary);
+  border-color: var(--sm-color-primary);
+}
+
+.ant-btn-link:not(:disabled):hover,
+.ant-btn-text:not(:disabled):hover {
+  color: var(--sm-color-primary-hover);
+}
+
+.ant-modal-mask {
+  background: var(--sm-overlay);
 }
 
 .ant-modal .ant-modal-content {
-  border-radius: var(--sm-border-radius);
+  border-radius: var(--sm-radius-modal);
+  box-shadow: var(--sm-shadow-raised);
+  overflow: hidden;
 }
 
-/* Card / Table / Input-Select borders use the same surface tokens */
+.ant-modal .ant-modal-header {
+  padding: 16px 20px 12px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--sm-border-secondary);
+}
+
+.ant-modal .ant-modal-title {
+  font-weight: 600;
+  color: var(--sm-text-primary);
+}
+
+.ant-modal .ant-modal-body {
+  padding: 16px 20px;
+}
+
+.ant-modal .ant-modal-footer {
+  padding: 12px 20px 16px;
+  margin-top: 0;
+  border-top: 1px solid var(--sm-border-secondary);
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns {
+  margin-top: 16px;
+}
+
+.ant-drawer .ant-drawer-header {
+  border-bottom: 1px solid var(--sm-border-secondary);
+  padding: 16px 20px;
+}
+
+.ant-drawer .ant-drawer-footer {
+  border-top: 1px solid var(--sm-border-secondary);
+  padding: 12px 20px;
+}
+
 .ant-card {
-  border-radius: var(--sm-border-radius);
-  border-color: var(--sm-border-color);
+  border-radius: var(--sm-radius-card);
+  border-color: var(--sm-border-secondary);
 }
 
 .ant-card-head {
-  min-height: 44px;
-  border-bottom-color: var(--sm-border-color);
+  min-height: 48px;
+  border-bottom-color: var(--sm-border-secondary);
+}
+
+.ant-card-head-title {
+  font-weight: 600;
 }
 
 .ant-table-thead > tr > th {
-  background: var(--sm-bg-elevated);
+  background: var(--sm-table-header-bg);
+  color: var(--sm-text-tertiary);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--sm-row-hover-bg);
+}
+
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--sm-row-selected-bg);
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom-color: var(--sm-border-secondary);
 }
 
 .ant-input,
 .ant-input-affix-wrapper,
 .ant-input-number,
+.ant-picker,
 .ant-select:not(.ant-select-borderless) .ant-select-selector {
   border-color: var(--sm-border-color);
+  border-radius: var(--sm-border-radius);
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-picker:hover,
+.ant-select:not(.ant-select-disabled):not(.ant-select-borderless):hover .ant-select-selector {
+  border-color: var(--sm-color-primary);
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-picker-focused,
+.ant-select-focused:not(.ant-select-disabled).ant-select:not(.ant-select-customize-input) .ant-select-selector {
+  border-color: var(--sm-color-primary);
+  box-shadow: 0 0 0 2px var(--sm-focus-ring);
+}
+
+.ant-dropdown .ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-picker-dropdown {
+  border-radius: var(--sm-border-radius);
+  box-shadow: var(--sm-shadow-raised);
+}
+
+.ant-dropdown-menu-item:hover,
+.ant-dropdown-menu-submenu-title:hover,
+.ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--sm-row-hover-bg);
+}
+
+.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--sm-color-primary-bg);
+  color: var(--sm-color-primary);
+  font-weight: 600;
+}
+
+.ant-popover .ant-popover-inner,
+.ant-tooltip .ant-tooltip-inner {
+  border-radius: var(--sm-border-radius);
+}
+
+.ant-tabs .ant-tabs-tab {
+  color: var(--sm-text-secondary);
+  padding: 10px 4px;
+}
+
+.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--sm-color-primary);
+  font-weight: 600;
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+  background: var(--sm-color-primary);
+}
+
+.ant-form-item-label > label {
+  color: var(--sm-text-secondary);
+}
+
+.ant-form-item-explain-error {
+  color: var(--sm-color-error);
+}
+
+.ant-empty-description {
+  color: var(--sm-text-tertiary);
+}
+
+.ant-alert {
+  border-radius: var(--sm-border-radius);
+}
+
+.ant-pagination .ant-pagination-item-active {
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
+}
+
+.ant-pagination .ant-pagination-item-active a {
+  color: var(--sm-color-primary);
+}
+
+.ant-menu-light .ant-menu-item-selected,
+.ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
+}
+
+.ant-menu-light .ant-menu-item:hover,
+.ant-menu-light .ant-menu-submenu-title:hover {
+  color: var(--sm-text-primary);
+  background: var(--sm-row-hover-bg);
+}
+
+.ant-descriptions-bordered .ant-descriptions-item-label {
+  background: var(--sm-table-header-bg);
+  color: var(--sm-text-secondary);
+}
+
+.ant-spin-dot-item {
+  background-color: var(--sm-color-primary);
+}
+
+.ant-breadcrumb a:hover {
+  color: var(--sm-color-primary-hover);
 }

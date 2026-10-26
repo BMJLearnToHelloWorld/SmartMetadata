@@ -98,7 +98,7 @@ describe('InsightsView', () => {
     expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Data Insights pipeline');
     const tabs = wrapper.findAll('.ant-tabs-tab');
-    expect(tabs.map((tab) => tab.text())).toEqual(['Data assets', 'App analytics', 'KPIs']);
+    expect(tabs.map((tab) => tab.text())).toEqual(['Data Assets', 'App analytics', 'KPIs']);
     await tabs[1]?.trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="insights-app-analytics-empty"]').exists()).toBe(true);

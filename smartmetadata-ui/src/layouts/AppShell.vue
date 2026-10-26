@@ -108,15 +108,15 @@ async function onLogout(): Promise<void> {
       breakpoint="lg"
       collapsible
       :collapsed-width="64"
-      :width="220"
-      theme="dark"
+      :width="228"
+      theme="light"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
         <span class="shell__brand-name">{{ collapsed ? 'SM' : t('product.name') }}</span>
         <span v-if="!collapsed" class="shell__brand-sub">{{ t('product.subtitle') }}</span>
       </div>
       <Menu
-        theme="dark"
+        theme="light"
         mode="inline"
         :inline-collapsed="collapsed"
         :selected-keys="selectedKeys"
@@ -149,14 +149,12 @@ async function onLogout(): Promise<void> {
           class="shell__search"
           :placeholder="t('chrome.searchPlaceholder')"
           allow-clear
-          size="small"
           :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
           @search="onSearch"
         />
-        <Space size="small" class="shell__toolbar">
+        <Space size="middle" class="shell__toolbar">
           <Select
             data-testid="locale-switcher"
-            size="small"
             class="shell__locale"
             :value="locale"
             :aria-label="t('chrome.locale')"
@@ -169,7 +167,7 @@ async function onLogout(): Promise<void> {
             :trigger="['click']"
             :get-popup-container="popupParent"
           >
-            <Button data-testid="user-menu-trigger" size="small" :aria-label="t('chrome.userMenu')">
+            <Button data-testid="user-menu-trigger" :aria-label="t('chrome.userMenu')">
               {{ displayName }}
             </Button>
             <template #overlay>
@@ -201,10 +199,26 @@ async function onLogout(): Promise<void> {
 }
 .shell__sider {
   min-height: 100vh;
+  background: var(--sm-sider-bg);
+  border-right: 1px solid var(--sm-border-secondary);
+}
+.shell__sider :deep(.ant-layout-sider-children) {
+  background: var(--sm-sider-bg);
 }
 .shell__sider :deep(.ant-layout-sider-trigger) {
-  height: 36px;
-  line-height: 36px;
+  height: 40px;
+  line-height: 40px;
+  background: var(--sm-trigger-bg);
+  color: var(--sm-text-secondary);
+  border-top: 1px solid var(--sm-border-secondary);
+}
+.shell__sider :deep(.ant-layout-sider-trigger:hover) {
+  background: var(--sm-trigger-hover-bg);
+  color: var(--sm-color-primary);
+}
+.shell__sider :deep(.ant-menu) {
+  background: transparent;
+  border-inline-end: none;
 }
 .shell__sider :deep(.ant-menu-item),
 .shell__sider :deep(.ant-menu-submenu-title) {
@@ -212,28 +226,30 @@ async function onLogout(): Promise<void> {
   line-height: 36px;
   margin-inline: 8px;
   width: calc(100% - 16px);
+  border-radius: var(--sm-border-radius);
 }
 .shell__brand {
   display: flex;
   flex-direction: column;
   gap: 0;
-  color: #fff;
-  padding: 12px 16px 8px;
-  min-height: 52px;
+  color: var(--sm-text-primary);
+  padding: 16px 16px 12px;
+  min-height: 56px;
 }
 .shell__brand--collapsed {
   align-items: center;
-  padding: 12px 8px 8px;
+  padding: 16px 8px 12px;
 }
 .shell__brand-name {
   font-weight: 650;
   letter-spacing: 0.01em;
   line-height: 1.2;
   font-size: 15px;
+  color: var(--sm-color-primary);
 }
 .shell__brand-sub {
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 11px;
+  color: var(--sm-text-tertiary);
+  font-size: 12px;
   line-height: 1.3;
   margin-top: 2px;
 }
@@ -241,12 +257,12 @@ async function onLogout(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  height: 48px;
-  line-height: 48px;
+  gap: 16px;
+  height: 56px;
+  line-height: 56px;
   background: var(--sm-layout-bg);
-  padding-inline: 16px;
-  border-bottom: 1px solid var(--sm-border-color);
+  padding-inline: 20px;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 .shell__search {
   max-width: 520px;

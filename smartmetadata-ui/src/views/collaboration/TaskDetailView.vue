@@ -4,11 +4,13 @@
 -->
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Alert, Button, Card, Descriptions, Form, Input, Select, Space, Spin, Table, Typography, message } from 'ant-design-vue';
 import { addTaskComment, getTask, resolveTask } from '@/api/tasks';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
 
 const props = defineProps<{ id: string }>();
+const { t } = useI18n();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -20,10 +22,10 @@ const form = reactive({
   message: '',
 });
 
-const commentColumns = [
-  { title: 'Author', key: 'author', width: 180 },
-  { title: 'Message', dataIndex: 'message', key: 'message' },
-];
+const commentColumns = computed(() => [
+  { title: t('collaboration.task.author'), key: 'author', width: 180 },
+  { title: t('collaboration.task.message'), dataIndex: 'message', key: 'message' },
+]);
 
 const title = computed(
   () => task.value?.displayName || task.value?.name || props.id,
@@ -36,7 +38,7 @@ async function load(): Promise<void> {
     task.value = await getTask(props.id);
   } catch (error) {
     task.value = null;
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to load task';
+    errorMessage.value = error instanceof Error ? error.message : t('collaboration.task.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -49,9 +51,9 @@ async function onResolve(): Promise<void> {
       resolutionType: form.resolutionType as (typeof TASK_RESOLUTIONS)[number],
       comment: form.comment.trim() || undefined,
     });
-    message.success('Task resolved');
+    message.success(t('collaboration.task.resolved'));
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Resolve failed');
+    message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
     saving.value = false;
   }
@@ -59,16 +61,16 @@ async function onResolve(): Promise<void> {
 
 async function onComment(): Promise<void> {
   if (!form.message.trim()) {
-    message.error('Comment message is required');
+    message.error(t('collaboration.task.commentRequired'));
     return;
   }
   saving.value = true;
   try {
     task.value = await addTaskComment(props.id, form.message.trim());
     form.message = '';
-    message.success('Comment added');
+    message.success(t('collaboration.task.commentAdded'));
   } catch (error) {
-    message.error(error instanceof Error ? error.message : 'Comment failed');
+    message.error(error instanceof Error ? error.message : t('collaboration.task.commentFailed'));
   } finally {
     saving.value = false;
   }
@@ -90,22 +92,21 @@ watch(
     <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="collab-alert" />
     <template v-if="task">
       <Descriptions bordered :column="1" size="small">
-        <Descriptions.Item label="Status">{{ task.status || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Category">{{ task.category || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Type">{{ task.type || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="Priority">{{ task.priority || '—' }}</Descriptions.Item>
-        <Descriptions.Item label="About">
+        <Descriptions.Item :label="t('collaboration.task.status')">{{ task.status || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('collaboration.task.category')">{{ task.category || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('collaboration.task.type')">{{ task.type || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('collaboration.task.priority')">{{ task.priority || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('collaboration.task.about')">
           {{ task.about?.fullyQualifiedName || task.about?.name || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="Assignees">
+        <Descriptions.Item :label="t('collaboration.task.assignees')">
           {{ task.assignees.map((assignee) => assignee.displayName || assignee.name).join(', ') || '—' }}
         </Descriptions.Item>
-        <Descriptions.Item label="Description">{{ task.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('collaboration.task.description')">{{ task.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <Typography.Title :level="5" class="collab-section">Resolve</Typography.Title>
+      <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.resolve') }}</Typography.Title>
       <Typography.Paragraph type="secondary">
-        POST /api/v1/tasks/{id}/resolve with <code>resolutionType</code>. Workflow-owned types may
-        reject a resolve that is not on their transition list.
+        {{ t('collaboration.task.resolveLead') }}
       </Typography.Paragraph>
       <Space>
         <Select v-model:value="form.resolutionType" style="width: 180px">
@@ -113,10 +114,12 @@ watch(
             {{ resolution }}
           </Select.Option>
         </Select>
-        <Input v-model:value="form.comment" placeholder="Optional comment" style="width: 280px" />
-        <Button data-testid="resolve-task" type="primary" :loading="saving" @click="onResolve">Resolve</Button>
+        <Input v-model:value="form.comment" :placeholder="t('collaboration.task.commentPlaceholder')" style="width: 280px" />
+        <Button data-testid="resolve-task" type="primary" :loading="saving" @click="onResolve">
+          {{ t('collaboration.task.resolve') }}
+        </Button>
       </Space>
-      <Typography.Title :level="5" class="collab-section">Comments</Typography.Title>
+      <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.comments') }}</Typography.Title>
       <Table
         row-key="id"
         data-testid="task-comments-table"
@@ -132,10 +135,12 @@ watch(
         </template>
       </Table>
       <Form layout="vertical" class="collab-section">
-        <Form.Item label="Add comment">
+        <Form.Item :label="t('collaboration.task.addComment')">
           <Input.TextArea v-model:value="form.message" data-testid="task-comment" :rows="2" />
         </Form.Item>
-        <Button data-testid="add-task-comment" :loading="saving" @click="onComment">Add comment</Button>
+        <Button data-testid="add-task-comment" type="primary" :loading="saving" @click="onComment">
+          {{ t('collaboration.task.addComment') }}
+        </Button>
       </Form>
     </template>
   </Card>

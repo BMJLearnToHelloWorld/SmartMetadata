@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import { createTestI18n } from '@/test/i18n';
 import enUS from './locales/en-US';
 import zhCN from './locales/zh-CN';
 
@@ -86,5 +87,45 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('explore.entity.dashboardDataModel');
     expect(keys).toContain('asset.fields.chartType');
     expect(keys).toContain('asset.relatedEmpty');
+    expect(keys).toContain('crud.cancel');
+    expect(keys).toContain('crud.save');
+    expect(keys).toContain('collaboration.activity.title');
+    expect(keys).toContain('collaboration.tasks.create');
+    expect(keys).toContain('collaboration.task.addComment');
+    expect(keys).toContain('collaboration.announcements.createTitle');
+    expect(keys).toContain('terms.editTitle');
+    expect(keys).toContain('tags.edit');
+    expect(keys).toContain('connection.hostPort');
+  });
+
+  it('aligns key shell and CRUD English to in-repo OM locale wording', () => {
+    expect(enUS.chrome.searchPlaceholder).toBe('Search for Data Assets');
+    expect(enUS.chrome.logout).toBe('Logout');
+    expect(enUS.login.submit).toBe('Sign In');
+    expect(enUS.nav.dataProducts).toBe('Data Products');
+    expect(enUS.nav.testCases).toBe('Test Cases');
+    expect(enUS.crud.displayName).toBe('Display Name');
+    expect(enUS.asset.tabs.customProperties).toBe('Custom Properties');
+    expect(zhCN.chrome.logout).toBe('退出');
+    expect(zhCN.login.submit).toBe('登入');
+    expect(zhCN.nav.lineage).toBe('血缘关系');
+    expect(zhCN.nav.governance).toBe('数据治理');
+    expect(zhCN.nav.glossaries).toBe('术语库');
+    expect(zhCN.crud.create).toBe('新建');
+  });
+
+  it('keeps leftover API placeholders literal after vue-i18n compile', () => {
+    const i18n = createTestI18n('en-US');
+    const t = i18n.global.t;
+    expect(t('connection.password')).toContain('${ENV}');
+    expect(t('connection.secretHint')).toContain('${VAR}');
+    expect(t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
+    expect(t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
+
+    const zh = createTestI18n('zh-CN');
+    expect(zh.global.t('connection.password')).toContain('${ENV}');
+    expect(zh.global.t('connection.secretHint')).toContain('${VAR}');
+    expect(zh.global.t('collaboration.task.resolveLead')).toContain('/tasks/{id}/resolve');
+    expect(zh.global.t('terms.relatedLead')).toContain('/glossaryTerms/{id}/assets');
   });
 });
