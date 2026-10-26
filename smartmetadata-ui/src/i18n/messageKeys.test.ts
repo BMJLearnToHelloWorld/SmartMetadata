@@ -28,7 +28,12 @@ describe('i18n catalogs', () => {
 
   it('covers shell, nav, login, Explore, and asset tabs', () => {
     const keys = leafKeys(enUS);
+    expect(keys).toContain('nav.home');
     expect(keys).toContain('nav.explore');
+    expect(keys).toContain('home.hiUser');
+    expect(keys).toContain('home.topicsTitle');
+    expect(keys).toContain('home.widgets.myTasks');
+    expect(keys).toContain('home.empty.kpi');
     expect(keys).toContain('nav.lineage');
     expect(keys).toContain('nav.observability');
     expect(keys).toContain('chrome.logout');
@@ -136,6 +141,13 @@ describe('i18n catalogs', () => {
     expect(enUS.ingestion.services.deleteConfirm).toMatch(/cannot be undone/);
     expect(enUS.observability.incidents.statusAck).toBe('Acknowledged');
     expect(enUS.observability.incidents.statusResolved).toBe('Resolved');
+    expect(enUS.home.hiUser).toBe('Hi {user}');
+    expect(enUS.home.subtitle).toBe("Here's what needs your attention across your data.");
+    expect(enUS.home.topicsTitle).toBe('Topics to catch up on');
+    expect(enUS.home.noActiveAnnouncements).toBe('No Active Announcements');
+    expect(enUS.home.widgets.yoursAndFollowed).toBe('Yours and Followed');
+    expect(zhCN.home.hiUser).toBe('你好 {user}');
+    expect(zhCN.home.topicsTitle).toBe('需要了解的主题');
     expect(enUS.insights.kpisEmpty).toBe(
       'Define key performance indicators to monitor impact and drive smarter decisions.',
     );

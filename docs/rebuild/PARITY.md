@@ -27,7 +27,7 @@ ship placeholder/half-wired “parity”.
 | Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`) | **4** (`postgres`, `mysql`, `kafka`, `snowflake`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
 | Product MCP tools | `smartmetadata-mcp/src/tools.ts` `TOOL_NAMES` | **7** |
-| Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs**), governance, quality, observability, ingestion console, collaboration |
+| Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, **My Data / home** (`/my-data` post-login default), Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs**), governance, quality, observability, ingestion console, collaboration |
 | Official UI pages | `openmetadata-ui/src/main/resources/ui/src/pages/` | 100+ page modules (React, CCL) — used only as an area list, not copied |
 
 Official connector families (file counts): 52 database, 19 dashboard, 16
@@ -69,7 +69,8 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 
 | Area | Official (reference) | Product | Status |
 |---|---|---|---|
-| Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1 |
+| Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1. Post-login default is `/my-data` |
+| Home / My Data | `MyDataPage` / `HomeLandingPage` | `views/home/MyDataView.vue` | **Shipped** — greeting, announcements rail, topic widgets on existing APIs. Residual: persona customize, Knowledge Center, curated-assets docStore, Needs you now, first-login welcome, invented DAU |
 | Search / catalog | Explore | `SearchView.vue` + `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`); **non-table shells + pipeline DAG** in batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`); **chart / metric / dashboardDataModel / database / databaseSchema GETs** in batch 3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Batch3 Alma gate: `UI_PARITY_BATCH3_HOLISTIC.md` |
 | Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` + shared `LineageCanvas` | Shipped (P3); **canvas thickening** in UI parity batch 2 (`UI_PARITY_BATCH2_LINEAGE.md`) |
 | Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); **users / teams / bots / roles** share list+detail chrome (`UI_PARITY_BATCH2_CRUD.md`, `UI_PARITY_BATCH3_CRUD.md`). **Settings hub + topbar user menu** in `UI_PARITY_BATCH2_CHROME.md`. **Policies + custom property definitions** (read-only) in `UI_PARITY_BATCH3_SETTINGS.md`. Admins / online-users / audit / appearance / Apps / SSO / Persona stay residual hub text |

@@ -23,6 +23,7 @@ async function mountLogin() {
     history: createMemoryHistory(),
     routes: [
       { path: '/login', name: 'login', component: LoginView },
+      { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
     ],
   });
@@ -93,7 +94,7 @@ describe('LoginView', () => {
     expect(fetch).toHaveBeenCalled();
     const stored = JSON.parse(localStorage.getItem('sm.auth.v1') ?? 'null') as { accessToken?: string };
     expect(stored.accessToken).toBe('jwt-1');
-    expect(router.currentRoute.value.name).toBe('search');
+    expect(router.currentRoute.value.name).toBe('home');
   });
 
   it('hides the password form and explains SSO when the server is OIDC-only', async () => {

@@ -86,7 +86,7 @@ No new Java/Python endpoints. Search still uses documented Lucene `q=` on
 | Gap | Why it stays |
 |---|---|
 | Collaboration Card+Table chrome | Out of Phase B; still not in Batch3 inventory (`UI_PARITY_BATCH3_HOLISTIC.md`) |
-| No Home / My Data landing | No product route; do not invent |
+| No Home / My Data landing | **Closed** — `/my-data` is the post-login default (`MyDataView`). Persona customize / Knowledge / curated-assets stay residual |
 | Insights / KPI | Snapshots + pipeline in `UI_PARITY_BATCH2_CHARTS.md`; KPI tab in `UI_PARITY_BATCH3_KPI.md`. App analytics / KPI write residual |
 | Official Marketplace landing | Domains + data products already under Governance |
 | Settings as one landing page | Closed in batch 2 step 3 (`UI_PARITY_BATCH2_CHROME.md`); Policies + custom-property defs in `UI_PARITY_BATCH3_SETTINGS.md` |

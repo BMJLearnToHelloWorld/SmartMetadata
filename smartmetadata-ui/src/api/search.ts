@@ -11,15 +11,25 @@ import { mapSearchResponse } from '@/catalog/searchHits';
 import type { SearchPage } from '@/types/api';
 import { apiRequest } from './client';
 
-export async function searchAssets(query: string, from = 0, size = 20): Promise<SearchPage> {
+export interface SearchAssetsOptions {
+  index?: string;
+  includeAggregations?: boolean;
+}
+
+export async function searchAssets(
+  query: string,
+  from = 0,
+  size = 20,
+  options: SearchAssetsOptions = {},
+): Promise<SearchPage> {
   const q = query.trim().length > 0 ? query.trim() : '*';
   const payload = await apiRequest<unknown>('/v1/search/query', {
     query: {
       q,
-      index: 'dataAsset',
+      index: options.index ?? 'dataAsset',
       from,
       size,
-      include_aggregations: true,
+      include_aggregations: options.includeAggregations ?? true,
     },
   });
   return mapSearchResponse(payload);
