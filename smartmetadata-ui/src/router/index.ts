@@ -46,12 +46,11 @@ import AlertDetailView from '@/views/observability/AlertDetailView.vue';
 import AlertsListView from '@/views/observability/AlertsListView.vue';
 import IncidentDetailView from '@/views/observability/IncidentDetailView.vue';
 import IncidentsListView from '@/views/observability/IncidentsListView.vue';
+import DataQualityLandingView from '@/views/quality/DataQualityLandingView.vue';
 import TestCaseDetailView from '@/views/quality/TestCaseDetailView.vue';
-import TestCasesListView from '@/views/quality/TestCasesListView.vue';
 import TestDefinitionDetailView from '@/views/quality/TestDefinitionDetailView.vue';
 import TestDefinitionsListView from '@/views/quality/TestDefinitionsListView.vue';
 import TestSuiteDetailView from '@/views/quality/TestSuiteDetailView.vue';
-import TestSuitesListView from '@/views/quality/TestSuitesListView.vue';
 import PipelineDetailView from '@/views/ingestion/PipelineDetailView.vue';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 import ServiceDetailView from '@/views/ingestion/ServiceDetailView.vue';
@@ -177,14 +176,21 @@ export const router = createRouter({
           component: TestDefinitionDetailView,
           props: true,
         },
-        { path: 'quality/test-cases', name: 'quality-test-cases', component: TestCasesListView },
+        { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView },
         {
           path: 'quality/test-cases/:id',
           name: 'quality-test-case',
           component: TestCaseDetailView,
           props: true,
         },
-        { path: 'quality/test-suites', name: 'quality-test-suites', component: TestSuitesListView },
+        {
+          path: 'quality/test-suites',
+          name: 'quality-test-suites',
+          redirect: (to) => ({
+            name: 'quality-test-cases',
+            query: { ...to.query, tab: 'test-suites' },
+          }),
+        },
         {
           path: 'quality/test-suites/:id',
           name: 'quality-test-suite',

@@ -75,6 +75,11 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('quality.testCases.title');
     expect(keys).toContain('quality.testDefinitions.title');
     expect(keys).toContain('quality.testSuites.title');
+    expect(keys).toContain('quality.landing.title');
+    expect(keys).toContain('quality.landing.tabs.summary');
+    expect(keys).toContain('quality.landing.residualReport');
+    expect(keys).toContain('quality.testCases.empty');
+    expect(keys).toContain('quality.testSuites.tableSuites');
     expect(keys).toContain('observability.alerts.title');
     expect(keys).toContain('observability.incidents.title');
     expect(keys).toContain('ingestion.services.title');

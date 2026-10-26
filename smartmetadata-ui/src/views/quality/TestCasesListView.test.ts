@@ -89,4 +89,10 @@ describe('TestCasesListView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('quality-test-case');
   });
+
+  it('exposes status and search filters', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-cases-status-filter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-list-search"]').exists()).toBe(true);
+  });
 });

@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createTestCase, listTestCases, updateTestCase } from './testCases';
+import { createTestCase, isTestCaseSearchListAvailable, listTestCases, listTestCasesBySearch, updateTestCase } from './testCases';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -107,5 +107,30 @@ describe('testCases API', () => {
     });
     expect(lastFetch().init?.method).toBe('PUT');
     expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases');
+  });
+
+  it('lists via GET /v1/dataQuality/testCases/search/list when the index is present', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [{ id: 'tc1', name: 'row_count' }], paging: { total: 1 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const page = await listTestCasesBySearch({ q: 'orders', testCaseStatus: 'Failed', offset: 0 });
+    expect(page.data[0]?.name).toBe('row_count');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testCases/search/list');
+    expect(lastFetch().url).toContain('q=orders');
+    expect(lastFetch().url).toContain('testCaseStatus=Failed');
+  });
+
+  it('treats search/list 404 as residual, not as a thrown list failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not found', { status: 404 })),
+    );
+    await expect(isTestCaseSearchListAvailable()).resolves.toBe(false);
   });
 });

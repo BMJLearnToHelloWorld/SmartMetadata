@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTestSuite, listTestSuites, updateTestSuite } from './testSuites';
+import { createTestSuite, isTestSuiteSearchListAvailable, listTestSuites, listTestSuitesBySearch, updateTestSuite } from './testSuites';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -79,5 +79,26 @@ describe('testSuites API', () => {
     );
     await updateTestSuite({ name: 'Nightly', description: 'Updated' });
     expect(lastFetch().init?.method).toBe('PUT');
+  });
+
+  it('lists via GET /v1/dataQuality/testSuites/search/list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [{ id: 'ts1', name: 'Critical' }], paging: { total: 1 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const page = await listTestSuitesBySearch({ q: 'Critical', testSuiteType: 'logical' });
+    expect(page.data[0]?.name).toBe('Critical');
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testSuites/search/list');
+    expect(lastFetch().url).toContain('testSuiteType=logical');
+  });
+
+  it('treats suite search/list 404 as residual', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
+    await expect(isTestSuiteSearchListAvailable()).resolves.toBe(false);
   });
 });

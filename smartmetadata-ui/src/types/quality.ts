@@ -95,6 +95,7 @@ export interface TestCase {
   testCaseResult?: TestCaseResult;
   testCaseStatus?: string;
   incidentId?: string;
+  owners?: EntityRef[];
 }
 
 export interface CreateTestCaseRequest {

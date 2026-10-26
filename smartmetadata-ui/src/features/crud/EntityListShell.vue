@@ -31,6 +31,7 @@ const props = withDefaults(
     showRowActions?: boolean;
     showEditAction?: boolean;
     showDeleteAction?: boolean;
+    hideHeading?: boolean;
   }>(),
   {
     lead: '',
@@ -47,6 +48,7 @@ const props = withDefaults(
     showRowActions: false,
     showEditAction: false,
     showDeleteAction: false,
+    hideHeading: false,
   },
 );
 
@@ -83,8 +85,8 @@ const tableColumns = computed<EntityListColumn[]>(() => {
 <template>
   <Card data-testid="entity-list-shell">
     <Space direction="vertical" size="middle" style="width: 100%">
-      <div class="entity-list__head">
-        <div>
+      <div v-if="!hideHeading || $slots.actions" class="entity-list__head">
+        <div v-if="!hideHeading">
           <Typography.Title :level="4" data-testid="entity-list-title">{{ title }}</Typography.Title>
           <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-list-lead">
             {{ lead }}
@@ -125,6 +127,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
           <div>{{ emptyDescription }}</div>
           <Typography.Text v-if="!emptyText" type="secondary">{{ t('crud.emptyHint') }}</Typography.Text>
         </template>
+        <slot name="emptyExtra" />
       </Empty>
       <Table
         v-else
