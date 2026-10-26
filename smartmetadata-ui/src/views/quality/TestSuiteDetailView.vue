@@ -29,7 +29,7 @@ const editForm = reactive({
 });
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('quality.testSuites.title'), to: { name: 'quality-test-suites' } },
+  { label: t('quality.testSuites.title'), to: { name: 'quality-test-cases', query: { tab: 'test-suites' } } },
   { label: entityLabel(suite.value) || t('quality.testSuites.title') },
 ]);
 

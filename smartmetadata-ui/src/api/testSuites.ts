@@ -10,7 +10,7 @@
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { CreateTestSuiteRequest, TestSuite, TestSummary } from '@/types/quality';
-import { apiRequest } from './client';
+import { ApiError, apiRequest } from './client';
 
 export const TEST_SUITE_FIELDS = 'owners,reviewers,tests,summary';
 
@@ -19,6 +19,17 @@ export interface ListTestSuitesQuery {
   after?: string;
   testSuiteType?: string;
   includeEmptyTestSuites?: boolean;
+}
+
+export interface SearchTestSuitesQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  owner?: string;
+  testSuiteType?: string;
+  includeEmptyTestSuites?: boolean;
+  sortField?: string;
+  sortType?: 'asc' | 'desc';
 }
 
 function mapSummary(value: unknown): TestSummary | undefined {
@@ -100,4 +111,32 @@ export async function updateTestSuite(body: CreateTestSuiteRequest): Promise<Tes
     throw new Error('Update test suite succeeded but the response had no suite');
   }
   return mapped;
+}
+
+export function listTestSuitesBySearch(query: SearchTestSuitesQuery = {}): Promise<Paged<TestSuite>> {
+  return apiRequest<unknown>('/v1/dataQuality/testSuites/search/list', {
+    query: {
+      fields: TEST_SUITE_FIELDS,
+      q: query.q,
+      limit: query.limit ?? 25,
+      offset: query.offset ?? 0,
+      owner: query.owner,
+      testSuiteType: query.testSuiteType,
+      includeEmptyTestSuites: query.includeEmptyTestSuites,
+      sortField: query.sortField ?? 'lastResultTimestamp',
+      sortType: query.sortType ?? 'desc',
+    },
+  }).then((payload) => parsePaged(payload, mapTestSuite));
+}
+
+export async function isTestSuiteSearchListAvailable(): Promise<boolean> {
+  try {
+    await listTestSuitesBySearch({ limit: 1, includeEmptyTestSuites: true });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+      return false;
+    }
+    throw error;
+  }
 }

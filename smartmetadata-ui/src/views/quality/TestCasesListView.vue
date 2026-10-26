@@ -3,12 +3,14 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createTestCase, listTestCases } from '@/api/testCases';
+import { createTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
 import { listTestDefinitions } from '@/api/testDefinitions';
+import { ApiError } from '@/api/client';
+import { formatChartTs } from '@/features/charts/series';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -22,8 +24,26 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { filterCasesForSearch } from '@/quality/landing';
 import { toEntityLink } from '@/quality/entityLink';
-import type { TestCase, TestDefinition } from '@/types/quality';
+import { TEST_CASE_STATUSES, type TestCase, type TestDefinition } from '@/types/quality';
+
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean;
+    preferSearch?: boolean;
+    ownerFqn?: string;
+    tier?: string;
+    tags?: string;
+    dataProductFqn?: string;
+    startTs?: number;
+    endTs?: number;
+  }>(),
+  {
+    embedded: false,
+    preferSearch: false,
+  },
+);
 
 const { t } = useI18n();
 const router = useRouter();
@@ -33,6 +53,10 @@ const cases = ref<TestCase[]>([]);
 const total = ref<number | undefined>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
+const offset = ref(0);
+const usingSearch = ref(false);
+const statusFilter = ref<string | undefined>();
+const searchValue = ref('');
 const definitions = ref<TestDefinition[]>([]);
 const createOpen = ref(false);
 const creating = ref(false);
@@ -48,14 +72,44 @@ const form = reactive({
 });
 
 const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  {
+    title: t('crud.name'),
+    dataIndex: 'name',
+    key: 'name',
+    sorter: (left, right) =>
+      entityLabel(left as TestCase).localeCompare(entityLabel(right as TestCase)),
+  },
   { title: t('quality.testCases.asset'), key: 'entityFQN' },
   { title: t('quality.testCases.definition'), key: 'testDefinition' },
-  { title: t('quality.testCases.latestStatus'), key: 'status', width: 140 },
+  {
+    title: t('quality.testCases.latestStatus'),
+    key: 'status',
+    width: 140,
+    sorter: (left, right) =>
+      String((left as TestCase).testCaseResult?.testCaseStatus || (left as TestCase).testCaseStatus || '').localeCompare(
+        String((right as TestCase).testCaseResult?.testCaseStatus || (right as TestCase).testCaseStatus || ''),
+      ),
+  },
+  {
+    title: t('quality.testCases.lastRun'),
+    key: 'lastRun',
+    width: 160,
+    sorter: (left, right) =>
+      ((left as TestCase).testCaseResult?.timestamp ?? 0) - ((right as TestCase).testCaseResult?.timestamp ?? 0),
+  },
 ]);
 
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
+const visibleCases = computed(() =>
+  usingSearch.value ? cases.value : filterCasesForSearch(cases.value, searchValue.value),
+);
+
+const hasNext = computed(() =>
+  usingSearch.value
+    ? offset.value + cases.value.length < (total.value ?? 0) ||
+      (total.value === undefined && cases.value.length === DEFAULT_PAGE_SIZE)
+    : canGoNext(pageAfter.value),
+);
+const hasPrev = computed(() => (usingSearch.value ? offset.value > 0 : canGoPrev(cursor.value)));
 
 function parseParameterValues(text: string) {
   return text
@@ -71,14 +125,49 @@ function parseParameterValues(text: string) {
     });
 }
 
+function resetPager(): void {
+  cursor.value = createCursorPager();
+  offset.value = 0;
+  pageAfter.value = undefined;
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
+    if (props.preferSearch) {
+      try {
+        const page = await listTestCasesBySearch({
+          q: searchValue.value.trim() || undefined,
+          limit: DEFAULT_PAGE_SIZE,
+          offset: offset.value,
+          includeAllTests: true,
+          testCaseStatus: statusFilter.value,
+          owner: props.ownerFqn,
+          tier: props.tier,
+          tags: props.tags,
+          dataProductFqn: props.dataProductFqn,
+          startTimestamp: props.startTs,
+          endTimestamp: props.endTs,
+          sortField: 'testCaseResult.timestamp',
+          sortType: 'desc',
+        });
+        cases.value = page.data;
+        total.value = page.total;
+        usingSearch.value = true;
+        return;
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status >= 400 && error.status < 500)) {
+          throw error;
+        }
+      }
+    }
+    usingSearch.value = false;
     const page = await listTestCases({
       limit: DEFAULT_PAGE_SIZE,
       after: cursor.value.after,
       includeAllTests: true,
+      testCaseStatus: statusFilter.value,
     });
     cases.value = page.data;
     total.value = page.total;
@@ -92,15 +181,33 @@ async function load(): Promise<void> {
 }
 
 function onNext(): void {
-  if (pageAfter.value) {
+  if (usingSearch.value) {
+    offset.value += DEFAULT_PAGE_SIZE;
+  } else if (pageAfter.value) {
     cursor.value = goNext(cursor.value, pageAfter.value);
   }
   void load();
 }
 
 function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
+  if (usingSearch.value) {
+    offset.value = Math.max(0, offset.value - DEFAULT_PAGE_SIZE);
+  } else {
+    cursor.value = goPrev(cursor.value);
+  }
   void load();
+}
+
+function onFilterChange(): void {
+  resetPager();
+  void load();
+}
+
+function onSearch(): void {
+  if (usingSearch.value || props.preferSearch) {
+    resetPager();
+    void load();
+  }
 }
 
 async function onCreate(): Promise<void> {
@@ -116,6 +223,7 @@ async function onCreate(): Promise<void> {
     });
     createOpen.value = false;
     message.success(t('quality.testCases.created', { name: created.name }));
+    resetPager();
     await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));
@@ -123,6 +231,27 @@ async function onCreate(): Promise<void> {
     creating.value = false;
   }
 }
+
+function openCreate(): void {
+  createOpen.value = true;
+}
+
+watch(
+  () =>
+    [
+      props.preferSearch,
+      props.ownerFqn,
+      props.tier,
+      props.tags,
+      props.dataProductFqn,
+      props.startTs,
+      props.endTs,
+    ].join('|'),
+  () => {
+    resetPager();
+    void load();
+  },
+);
 
 onMounted(() => {
   void load();
@@ -132,22 +261,31 @@ onMounted(() => {
     })
     .catch(() => undefined);
 });
+
+defineExpose({ openCreate });
 </script>
 
 <template>
   <EntityListShell
     :title="t('quality.testCases.title')"
     :lead="t('quality.testCases.lead')"
+    :hide-heading="embedded"
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
-    :data-source="cases"
+    :data-source="visibleCases"
     table-test-id="test-cases-table"
+    show-search
+    :search-value="searchValue"
+    :search-placeholder="t('quality.testCases.searchPlaceholder')"
     show-row-actions
     show-edit-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
+    :empty-text="t('quality.testCases.empty')"
+    @update:search-value="searchValue = $event"
+    @search="onSearch"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
@@ -155,7 +293,26 @@ onMounted(() => {
     @edit="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-test-case" @click="createOpen = true">
+      <Button type="primary" data-testid="create-test-case" @click="openCreate">
+        {{ t('quality.testCases.create') }}
+      </Button>
+    </template>
+    <template #filters>
+      <Select
+        v-model:value="statusFilter"
+        allow-clear
+        :placeholder="t('quality.testCases.statusFilter')"
+        data-testid="test-cases-status-filter"
+        style="width: 160px"
+        @change="onFilterChange"
+      >
+        <Select.Option v-for="status in TEST_CASE_STATUSES" :key="status" :value="status">
+          {{ status }}
+        </Select.Option>
+      </Select>
+    </template>
+    <template #emptyExtra>
+      <Button type="primary" data-testid="test-cases-empty-cta" @click="openCreate">
         {{ t('quality.testCases.create') }}
       </Button>
     </template>
@@ -183,6 +340,9 @@ onMounted(() => {
         {{
           (record as TestCase).testCaseResult?.testCaseStatus || (record as TestCase).testCaseStatus || '—'
         }}
+      </template>
+      <template v-else-if="column.key === 'lastRun'">
+        {{ formatChartTs((record as TestCase).testCaseResult?.timestamp) || '—' }}
       </template>
     </template>
   </EntityListShell>

@@ -91,6 +91,13 @@ describe('EntityListShell', () => {
     expect(wrapper.find('[data-testid="entity-list-prev"]').exists()).toBe(false);
   });
 
+  it('hides title and lead when hideHeading is set', async () => {
+    const wrapper = await mountShell({ hideHeading: true });
+    expect(wrapper.find('[data-testid="entity-list-title"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-lead"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
+  });
+
   it('renders actions and filters slots', async () => {
     const wrapper = await mountShell(
       {},

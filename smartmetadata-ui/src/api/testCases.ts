@@ -11,7 +11,7 @@ import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/j
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateTestCaseRequest, TestCase, TestCaseResult, TestParameterValue } from '@/types/quality';
-import { apiRequest } from './client';
+import { ApiError, apiRequest } from './client';
 
 export const TEST_CASE_FIELDS =
   'owners,testSuite,testDefinition,testSuites,incidentId,incidentStatus,testCaseResult';
@@ -24,6 +24,22 @@ export interface ListTestCasesQuery {
   testSuiteId?: string;
   includeAllTests?: boolean;
   testCaseStatus?: string;
+}
+
+export interface SearchTestCasesQuery {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  testCaseStatus?: string;
+  owner?: string;
+  tags?: string;
+  tier?: string;
+  dataProductFqn?: string;
+  startTimestamp?: number;
+  endTimestamp?: number;
+  includeAllTests?: boolean;
+  sortField?: string;
+  sortType?: 'asc' | 'desc';
 }
 
 function mapEntityRef(value: unknown): EntityRef | undefined {
@@ -88,6 +104,7 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     testCaseResult: mapTestCaseResult(raw.testCaseResult),
     testCaseStatus: asString(raw.testCaseStatus) || undefined,
     incidentId: asString(raw.incidentId) || undefined,
+    owners: mapEntityRefs(raw.owners),
   };
 }
 
@@ -139,4 +156,37 @@ export async function updateTestCase(body: CreateTestCaseRequest): Promise<TestC
     throw new Error('Update test case succeeded but the response had no test case');
   }
   return mapped;
+}
+
+export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise<Paged<TestCase>> {
+  return apiRequest<unknown>('/v1/dataQuality/testCases/search/list', {
+    query: {
+      fields: TEST_CASE_FIELDS,
+      q: query.q,
+      limit: query.limit ?? 25,
+      offset: query.offset ?? 0,
+      testCaseStatus: query.testCaseStatus,
+      owner: query.owner,
+      tags: query.tags,
+      tier: query.tier,
+      dataProductFqn: query.dataProductFqn,
+      startTimestamp: query.startTimestamp,
+      endTimestamp: query.endTimestamp,
+      includeAllTests: query.includeAllTests ?? true,
+      sortField: query.sortField,
+      sortType: query.sortType,
+    },
+  }).then((payload) => parsePaged(payload, mapTestCase));
+}
+
+export async function isTestCaseSearchListAvailable(): Promise<boolean> {
+  try {
+    await listTestCasesBySearch({ limit: 1, includeAllTests: true });
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+      return false;
+    }
+    throw error;
+  }
 }

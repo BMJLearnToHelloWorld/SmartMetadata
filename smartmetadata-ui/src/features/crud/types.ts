@@ -15,6 +15,7 @@ export interface EntityListColumn {
   key: string;
   width?: number;
   ellipsis?: boolean;
+  sorter?: boolean | ((a: unknown, b: unknown) => number);
 }
 
 export interface EntityBreadcrumb {
