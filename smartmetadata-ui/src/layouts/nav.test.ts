@@ -8,54 +8,116 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { isNavSectionKey, NAV_ENTRIES, sectionKeyForRoute, selectedNavKey } from './nav';
+import {
+  NAV_ENTRIES,
+  NAV_FOOTER_ENTRIES,
+  defaultOpenNavKeys,
+  isNavActionKey,
+  isNavSectionKey,
+  navRouteKeys,
+  sectionKeyForRoute,
+  selectedNavKey,
+} from './nav';
+
+function sectionItems(key: string): string[] {
+  const section = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === key);
+  return section?.kind === 'section' ? section.items.map((item) => item.key) : [];
+}
 
 describe('nav IA', () => {
-  it('puts Home then Explore and Lineage at the top and nests quality under Observability', () => {
-    expect(NAV_ENTRIES[0]).toMatchObject({ kind: 'item', key: 'home' });
-    expect(NAV_ENTRIES[1]).toMatchObject({ kind: 'item', key: 'search' });
-    expect(NAV_ENTRIES[2]).toMatchObject({ kind: 'item', key: 'lineage-home' });
-    expect(NAV_ENTRIES[3]).toMatchObject({ kind: 'item', key: 'insights' });
-    const observability = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === 'observability');
-    expect(observability?.kind === 'section' && observability.items.map((item) => item.key)).toEqual([
-      'quality-test-definitions',
+  it('follows the reference left-nav group order', () => {
+    expect(NAV_ENTRIES.map((entry) => entry.key)).toEqual([
+      'home',
+      'search',
+      'lineage-home',
+      'observability',
+      'insights',
+      'marketplace',
+      'governance',
+      'context-center',
+    ]);
+    expect(NAV_FOOTER_ENTRIES.map((entry) => entry.key)).toEqual(['admin-settings', 'logout']);
+    expect(NAV_FOOTER_ENTRIES[1]).toMatchObject({ kind: 'action', action: 'logout' });
+  });
+
+  it('nests Observability, Marketplace, Govern, and Context Center children', () => {
+    expect(sectionItems('observability')).toEqual([
       'quality-test-cases',
-      'quality-test-suites',
       'observability-incidents',
       'observability-alerts',
+      'quality-test-definitions',
+    ]);
+    expect(sectionItems('marketplace')).toEqual([
+      'marketplace-overview',
+      'governance-domains',
+      'governance-data-products',
+    ]);
+    expect(sectionItems('governance')).toEqual([
+      'governance-glossaries',
+      'ontology-explorer',
+      'governance-classifications',
+      'governance-metrics',
+      'column-bulk-ops',
+      'workflows',
+    ]);
+    expect(sectionItems('context-center')).toEqual([
+      'context-center-overview',
+      'context-center-articles',
+      'context-center-documents',
+      'context-center-memories',
+      'context-center-archive',
     ]);
   });
 
-  it('does not list Collate-only or unbuilt official surfaces', () => {
-    const keys = NAV_ENTRIES.flatMap((entry) =>
-      entry.kind === 'item' ? [entry.key] : [entry.key, ...entry.items.map((item) => item.key)],
-    );
-    expect(keys).toContain('insights');
-    expect(keys).toContain('home');
-    expect(keys).not.toContain('knowledge');
-    expect(keys).not.toContain('ontology');
-    expect(keys).not.toContain('marketplace');
+  it('drops extra top-level Ingestion, Collaboration, and Admin groups', () => {
+    const keys = navRouteKeys();
+    expect(keys).not.toContain('ingestion');
+    expect(keys).not.toContain('ingestion-services');
+    expect(keys).not.toContain('collaboration');
+    expect(keys).not.toContain('activity');
+    expect(keys).not.toContain('admin');
+    expect(keys).not.toContain('admin-users');
+    expect(keys).toContain('admin-settings');
+    expect(keys).toContain('marketplace-overview');
+    expect(keys).toContain('ontology-explorer');
+    expect(keys).not.toContain('logout');
   });
 
-  it('maps detail routes onto their list item', () => {
+  it('maps detail routes onto their list item and settings leaf', () => {
     expect(selectedNavKey('asset')).toBe('search');
     expect(selectedNavKey('lineage')).toBe('lineage-home');
     expect(selectedNavKey('governance-term')).toBe('governance-glossaries');
     expect(selectedNavKey('quality-test-case')).toBe('quality-test-cases');
-    expect(selectedNavKey('task')).toBe('tasks');
+    expect(selectedNavKey('quality-test-suite')).toBe('quality-test-cases');
     expect(selectedNavKey('search')).toBe('search');
     expect(selectedNavKey('home')).toBe('home');
     expect(selectedNavKey('admin-settings-system')).toBe('admin-settings');
     expect(selectedNavKey('admin-policy')).toBe('admin-settings');
+    expect(selectedNavKey('admin-user')).toBe('admin-settings');
     expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');
+    expect(selectedNavKey('governance-domain')).toBe('governance-domains');
+    expect(selectedNavKey('governance-data-product')).toBe('governance-data-products');
   });
 
   it('opens the section that owns the current route', () => {
     expect(sectionKeyForRoute('asset')).toBeNull();
     expect(sectionKeyForRoute('quality-test-case')).toBe('observability');
-    expect(sectionKeyForRoute('admin-user')).toBe('admin');
-    expect(sectionKeyForRoute('activity')).toBe('collaboration');
+    expect(sectionKeyForRoute('quality-test-suite')).toBe('observability');
+    expect(sectionKeyForRoute('governance-domain')).toBe('marketplace');
+    expect(sectionKeyForRoute('governance-glossary')).toBe('governance');
+    expect(sectionKeyForRoute('context-center-articles')).toBe('context-center');
+    expect(sectionKeyForRoute('admin-user')).toBeNull();
+    expect(sectionKeyForRoute('activity')).toBeNull();
     expect(isNavSectionKey('governance')).toBe(true);
+    expect(isNavSectionKey('marketplace')).toBe(true);
     expect(isNavSectionKey('search')).toBe(false);
+    expect(isNavActionKey('logout')).toBe(true);
+    expect(isNavActionKey('admin-settings')).toBe(false);
+    expect(defaultOpenNavKeys()).toEqual([
+      'observability',
+      'marketplace',
+      'governance',
+      'context-center',
+    ]);
   });
 });

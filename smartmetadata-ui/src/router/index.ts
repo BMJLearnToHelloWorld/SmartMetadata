@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { loadSession } from '@/auth/token';
+import { RESIDUAL_PAGES } from '@/layouts/residualPages';
 import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
 import InsightsView from '@/views/insights/InsightsView.vue';
@@ -37,6 +38,7 @@ import DataProductsListView from '@/views/governance/DataProductsListView.vue';
 import DomainDetailView from '@/views/governance/DomainDetailView.vue';
 import DomainsListView from '@/views/governance/DomainsListView.vue';
 import GlossariesListView from '@/views/governance/GlossariesListView.vue';
+import MetricsListView from '@/views/governance/MetricsListView.vue';
 import GlossaryDetailView from '@/views/governance/GlossaryDetailView.vue';
 import GlossaryTermDetailView from '@/views/governance/GlossaryTermDetailView.vue';
 import TagDetailView from '@/views/governance/TagDetailView.vue';
@@ -58,6 +60,7 @@ import ActivityFeedView from '@/views/collaboration/ActivityFeedView.vue';
 import AnnouncementsListView from '@/views/collaboration/AnnouncementsListView.vue';
 import TaskDetailView from '@/views/collaboration/TaskDetailView.vue';
 import TasksListView from '@/views/collaboration/TasksListView.vue';
+import ResidualPage from '@/views/shell/ResidualPage.vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -156,6 +159,13 @@ export const router = createRouter({
           component: DataProductDetailView,
           props: true,
         },
+        { path: 'governance/metrics', name: 'governance-metrics', component: MetricsListView },
+        ...RESIDUAL_PAGES.map((page) => ({
+          path: page.path,
+          name: page.name,
+          component: ResidualPage,
+          meta: { ...page },
+        })),
         {
           path: 'quality/test-definitions',
           name: 'quality-test-definitions',
