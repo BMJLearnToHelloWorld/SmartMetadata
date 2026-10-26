@@ -19,6 +19,10 @@ import LoginView from '@/views/LoginView.vue';
 import RoleDetailView from '@/views/admin/RoleDetailView.vue';
 import RolesListView from '@/views/admin/RolesListView.vue';
 import SearchView from '@/views/SearchView.vue';
+import CustomPropertyTypeDetailView from '@/views/admin/CustomPropertyTypeDetailView.vue';
+import CustomPropertyTypesListView from '@/views/admin/CustomPropertyTypesListView.vue';
+import PoliciesListView from '@/views/admin/PoliciesListView.vue';
+import PolicyDetailView from '@/views/admin/PolicyDetailView.vue';
 import SettingsHubView from '@/views/admin/SettingsHubView.vue';
 import SystemSettingsView from '@/views/admin/SystemSettingsView.vue';
 import TeamDetailView from '@/views/admin/TeamDetailView.vue';
@@ -94,6 +98,19 @@ export const router = createRouter({
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
         { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
+        { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
+        { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
+        {
+          path: 'admin/settings/custom-properties',
+          name: 'admin-settings-custom-properties',
+          component: CustomPropertyTypesListView,
+        },
+        {
+          path: 'admin/settings/custom-properties/:entityType',
+          name: 'admin-settings-custom-property-type',
+          component: CustomPropertyTypeDetailView,
+          props: true,
+        },
         { path: 'governance/glossaries', name: 'governance-glossaries', component: GlossariesListView },
         {
           path: 'governance/glossaries/:id',

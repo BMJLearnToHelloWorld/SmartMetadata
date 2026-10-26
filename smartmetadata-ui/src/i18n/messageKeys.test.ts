@@ -66,6 +66,8 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('settings.title');
     expect(keys).toContain('settings.categories.members.title');
     expect(keys).toContain('settings.system.saveLogin');
+    expect(keys).toContain('admin.policies.title');
+    expect(keys).toContain('settings.customProperties.title');
     expect(keys).toContain('nav.insights');
     expect(keys).toContain('insights.title');
     expect(keys).toContain('insights.tabs.dataAssets');

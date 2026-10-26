@@ -31,6 +31,12 @@ async function mountHub() {
       },
       { path: '/ingestion/services', name: 'ingestion-services', component: { template: '<div>svc</div>' } },
       { path: '/admin/roles', name: 'admin-roles', component: { template: '<div>roles</div>' } },
+      { path: '/admin/policies', name: 'admin-policies', component: { template: '<div>policies</div>' } },
+      {
+        path: '/admin/settings/custom-properties',
+        name: 'admin-settings-custom-properties',
+        component: { template: '<div>defs</div>' },
+      },
       { path: '/governance/glossaries', name: 'governance-glossaries', component: { template: '<div>glos</div>' } },
       { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>dom</div>' } },
       {
@@ -67,6 +73,8 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-link-classifications"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-system"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-services"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-link-policies"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(true);
   });
 
   it('navigates a live card to the existing Users list', async () => {
@@ -81,9 +89,11 @@ describe('SettingsHubView', () => {
     const apps = wrapper.find('[data-testid="settings-residual-apps"]');
     expect(apps.exists()).toBe(true);
     expect(apps.element.tagName.toLowerCase()).not.toBe('a');
-    expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-residual-sso"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-appearance"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('Ontology');
     expect(wrapper.text()).not.toContain('Knowledge');
     expect(wrapper.find('[data-testid="settings-link-apps"]').exists()).toBe(false);

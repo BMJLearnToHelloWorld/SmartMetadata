@@ -44,6 +44,8 @@ describe('nav IA', () => {
     expect(selectedNavKey('task')).toBe('tasks');
     expect(selectedNavKey('search')).toBe('search');
     expect(selectedNavKey('admin-settings-system')).toBe('admin-settings');
+    expect(selectedNavKey('admin-policy')).toBe('admin-settings');
+    expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');
   });
 
   it('opens the section that owns the current route', () => {
