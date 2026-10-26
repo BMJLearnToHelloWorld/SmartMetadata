@@ -1,5 +1,8 @@
 # UI parity batch 3.2 — remaining catalog asset detail GETs
 
+Holistic Alma gate after #32–#35: **READY_FOR_ALMA**
+(`UI_PARITY_BATCH3_HOLISTIC.md`). Residuals in this file stay deferred.
+
 Authorized Vue 3 console work (`smartmetadata-ui/`). Official
 `openmetadata-ui/` is **reference-only** for information architecture.
 No CCL React source was copied.

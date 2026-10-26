@@ -1,8 +1,12 @@
 # Capability parity (SmartMetadata vs official OpenMetadata surfaces)
 
-Evidence captured on `origin/main` at `4f4d7f1800` (this repository, **CCL
-trees still present as reference-only**). This is parity with official
-OpenMetadata **product surfaces**, not Collate-only AI/RDF scope.
+Connector / MCP / ingestion counts were captured on `origin/main` at
+`4f4d7f1800` (this repository, **CCL trees still present as
+reference-only**). **UI rows below were re-verified after Batch3.4** on
+`a235899df856ef9214067135729ad185be3c25bf` (PRs #32–#35). Holistic Alma
+gate: `UI_PARITY_BATCH3_HOLISTIC.md` (**READY_FOR_ALMA**). This is parity
+with official OpenMetadata **product surfaces**, not Collate-only AI/RDF
+scope.
 
 Closed PR #18 drafted an earlier `PARITY.md` on a purge branch. Counts below
 were **re-verified on main**; do not treat #18 as merged. Do **not** purge
@@ -23,7 +27,7 @@ ship placeholder/half-wired “parity”.
 | Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`) | **4** (`postgres`, `mysql`, `kafka`, `snowflake`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
 | Product MCP tools | `smartmetadata-mcp/src/tools.ts` `TOOL_NAMES` | **7** |
-| Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, search, table/topic asset, lineage, admin, governance, quality, observability, ingestion console, collaboration |
+| Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs**), governance, quality, observability, ingestion console, collaboration |
 | Official UI pages | `openmetadata-ui/src/main/resources/ui/src/pages/` | 100+ page modules (React, CCL) — used only as an area list, not copied |
 
 Official connector families (file counts): 52 database, 19 dashboard, 16
@@ -66,16 +70,16 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Area | Official (reference) | Product | Status |
 |---|---|---|---|
 | Login / session | `LoginPage` | `LoginView.vue` | Shipped (P1); zh-CN/en-US chrome + locale switcher in UI parity batch 1 |
-| Search / catalog | Explore | `SearchView.vue` + `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`); **non-table shells + pipeline DAG** in batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`); **chart / metric / dashboardDataModel / database / databaseSchema GETs** in batch 3.2 (`UI_PARITY_BATCH3_ASSETS.md`) |
+| Search / catalog | Explore | `SearchView.vue` + `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`); **non-table shells + pipeline DAG** in batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`); **chart / metric / dashboardDataModel / database / databaseSchema GETs** in batch 3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Batch3 Alma gate: `UI_PARITY_BATCH3_HOLISTIC.md` |
 | Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` + shared `LineageCanvas` | Shipped (P3); **canvas thickening** in UI parity batch 2 (`UI_PARITY_BATCH2_LINEAGE.md`) |
-| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); **users / teams / bots / roles** share list+detail chrome (`UI_PARITY_BATCH2_CRUD.md`, `UI_PARITY_BATCH3_CRUD.md`). **Settings hub + topbar user menu** in `UI_PARITY_BATCH2_CHROME.md`. **Policies + custom property definitions** (read-only) in `UI_PARITY_BATCH3_SETTINGS.md` |
-| Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4); **classifications / glossaries / domains / data products** on the same CRUD shells |
+| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); **users / teams / bots / roles** share list+detail chrome (`UI_PARITY_BATCH2_CRUD.md`, `UI_PARITY_BATCH3_CRUD.md`). **Settings hub + topbar user menu** in `UI_PARITY_BATCH2_CHROME.md`. **Policies + custom property definitions** (read-only) in `UI_PARITY_BATCH3_SETTINGS.md`. Admins / online-users / audit / appearance / Apps / SSO / Persona stay residual hub text |
+| Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4); **classifications / glossaries / domains / data products** on the same CRUD shells. GlossaryTerm / Tag child pages still one-off |
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **job execution residual** (`jobs.py` raises `WorkflowError`) |
 | Services / pipelines console | AddService / AddIngestion | `views/ingestion/*` | CRUD + CLI YAML shipped (P8); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **no Airflow `/trigger`** (ADR:2026-10-22-ingestion-console-runs-via-cli) |
-| Activity / tasks / announcements | Feed | `views/collaboration/*` | Shipped (P9); **persona landing skipped** |
-| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial**: batch 2 step 4 snapshots + `listChartData`; batch 3.3 (`UI_PARITY_BATCH3_KPI.md`) lists `GET /v1/kpi`. App analytics / KPI CRUD / history charts residual |
-| Profiler run UI | `ProfilerConfigurationPage` | Read of stored results only | **Gap** (runner residual) |
-| SSO deep config / persona customization | Appearance / Persona pages | Auth-provider-aware login only | **Gap** (P2/P9 residual) |
+| Activity / tasks / announcements | Feed | `views/collaboration/*` | Shipped (P9); **persona landing skipped**; list chrome still Card+Table (not in Batch3 inventory) |
+| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial**: batch 2 step 4 snapshots + `listChartData`; batch 3.3 (`UI_PARITY_BATCH3_KPI.md`) lists `GET /v1/kpi`. App analytics / KPI CRUD / history charts residual (deferred, not Alma must-fix) |
+| Profiler run UI | `ProfilerConfigurationPage` | Read of stored results only | **Gap** (runner residual; deferred) |
+| SSO deep config / persona customization | Appearance / Persona pages | Auth-provider-aware login only; Settings tiles residual text | **Gap** (P2/P9 residual; deferred) |
 | Knowledge / Context Center / Ontology Studio | Collate pages | — | **DROP** (Phase 10/11 Collate-only) |
 
 ## MCP
@@ -181,7 +185,9 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
    3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Insights KPI `GET /v1/kpi` list +
    tab is batch 3.3 (`UI_PARITY_BATCH3_KPI.md`). Settings Policies +
    custom property definitions are batch 3.4
-   (`UI_PARITY_BATCH3_SETTINGS.md`).
+   (`UI_PARITY_BATCH3_SETTINGS.md`). Batch3 #32–#35 holistic review is
+   **READY_FOR_ALMA** (`UI_PARITY_BATCH3_HOLISTIC.md`). Remaining UI
+   leftovers there are deferred, not a new Batch3 inventory.
 4. **If MCP:** wire generic Apache REST tools (`get_entity_details` for more
    entity types, `patch_entity`, `create_test_case`, …) on stdio only, or
    also HTTP/SSE (Phase 10 said no)? RDF/AI tools stay DROP unless you
