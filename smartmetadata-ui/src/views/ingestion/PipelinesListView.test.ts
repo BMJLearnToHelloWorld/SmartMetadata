@@ -84,7 +84,7 @@ describe('PipelinesListView', () => {
   it('renders pipelines from GET /v1/services/ingestionPipelines', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('warehouse-metadata');
-    expect(wrapper.text()).toContain('smartmetadata-ingest run');
+    expect(wrapper.text()).toContain('Jobs run with smartmetadata-ingest');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipelines-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-pipeline"]').exists()).toBe(true);
