@@ -29,93 +29,103 @@ export interface NavLeaf {
   testId?: string;
 }
 
-export type NavEntry = NavLeaf | NavSection;
+export interface NavAction {
+  kind: 'action';
+  key: string;
+  titleKey: string;
+  testId?: string;
+  action: 'logout';
+}
+
+export type NavEntry = NavLeaf | NavSection | NavAction;
 
 /**
- * Product information architecture aligned with official left-nav grouping
- * (Home / My Data first, then Explore and Lineage as siblings; quality under
- * Observability) using only routes already in `router/index.ts`. Collate-only
- * surfaces stay off this list: Marketplace landing, Ontology Studio,
- * Knowledge/Context Center, persona AI. Home / My Data is the official landing
- * at `/my-data` (route name `home`).
+ * Left-nav information architecture aligned with the IQVIA/OM reference
+ * sidebar: Home, Explore, Lineage, Observability, Insights, Data Marketplace,
+ * Govern, Context Center, then Settings/Logout in the footer. Extra catalog
+ * pages (ingestion, collaboration, members) stay reachable from Settings.
  */
 export const NAV_ENTRIES: NavEntry[] = [
   { kind: 'item', key: 'home', titleKey: 'nav.home' },
   { kind: 'item', key: 'search', titleKey: 'nav.explore' },
   { kind: 'item', key: 'lineage-home', titleKey: 'nav.lineage' },
-  { kind: 'item', key: 'insights', titleKey: 'nav.insights' },
   {
     kind: 'section',
     key: 'observability',
     titleKey: 'nav.observability',
     testId: 'observability-nav',
     items: [
-      { key: 'quality-test-definitions', titleKey: 'nav.testDefinitions', testId: 'quality-nav' },
-      { key: 'quality-test-cases', titleKey: 'nav.testCases' },
-      { key: 'quality-test-suites', titleKey: 'nav.testSuites' },
-      { key: 'observability-incidents', titleKey: 'nav.incidents' },
+      { key: 'quality-test-cases', titleKey: 'nav.dataQuality', testId: 'quality-nav' },
+      { key: 'observability-incidents', titleKey: 'nav.incidentManager' },
       { key: 'observability-alerts', titleKey: 'nav.alerts' },
+      { key: 'quality-test-definitions', titleKey: 'nav.testLibrary' },
     ],
   },
+  { kind: 'item', key: 'insights', titleKey: 'nav.insights' },
   {
     kind: 'section',
-    key: 'governance',
-    titleKey: 'nav.governance',
-    testId: 'governance-nav',
+    key: 'marketplace',
+    titleKey: 'nav.marketplace',
+    testId: 'marketplace-nav',
     items: [
-      { key: 'governance-glossaries', titleKey: 'nav.glossaries' },
-      { key: 'governance-classifications', titleKey: 'nav.classifications' },
+      { key: 'marketplace-overview', titleKey: 'nav.overview' },
       { key: 'governance-domains', titleKey: 'nav.domains' },
       { key: 'governance-data-products', titleKey: 'nav.dataProducts' },
     ],
   },
   {
     kind: 'section',
-    key: 'ingestion',
-    titleKey: 'nav.ingestion',
-    testId: 'ingestion-nav',
+    key: 'governance',
+    titleKey: 'nav.govern',
+    testId: 'governance-nav',
     items: [
-      { key: 'ingestion-services', titleKey: 'nav.services' },
-      { key: 'ingestion-pipelines', titleKey: 'nav.pipelines' },
+      { key: 'governance-glossaries', titleKey: 'nav.glossary' },
+      { key: 'ontology-explorer', titleKey: 'nav.ontologyExplorer' },
+      { key: 'governance-classifications', titleKey: 'nav.classification' },
+      { key: 'governance-metrics', titleKey: 'nav.metrics' },
+      { key: 'column-bulk-ops', titleKey: 'nav.columnBulkOps' },
+      { key: 'workflows', titleKey: 'nav.workflows' },
     ],
   },
   {
     kind: 'section',
-    key: 'collaboration',
-    titleKey: 'nav.collaboration',
-    testId: 'collaboration-nav',
+    key: 'context-center',
+    titleKey: 'nav.contextCenter',
+    testId: 'context-center-nav',
     items: [
-      { key: 'activity', titleKey: 'nav.activity' },
-      { key: 'tasks', titleKey: 'nav.tasks' },
-      { key: 'announcements', titleKey: 'nav.announcements' },
-    ],
-  },
-  {
-    kind: 'section',
-    key: 'admin',
-    titleKey: 'nav.admin',
-    testId: 'admin-nav',
-    items: [
-      { key: 'admin-users', titleKey: 'nav.users' },
-      { key: 'admin-teams', titleKey: 'nav.teams' },
-      { key: 'admin-roles', titleKey: 'nav.roles' },
-      { key: 'admin-bots', titleKey: 'nav.bots' },
-      { key: 'admin-settings', titleKey: 'nav.settings' },
+      { key: 'context-center-overview', titleKey: 'nav.overview' },
+      { key: 'context-center-articles', titleKey: 'nav.articles' },
+      { key: 'context-center-documents', titleKey: 'nav.documents' },
+      { key: 'context-center-memories', titleKey: 'nav.memories' },
+      { key: 'context-center-archive', titleKey: 'nav.archive' },
     ],
   },
 ];
 
+export const NAV_FOOTER_ENTRIES: NavEntry[] = [
+  { kind: 'item', key: 'admin-settings', titleKey: 'nav.settings', testId: 'nav-settings' },
+  { kind: 'action', key: 'logout', titleKey: 'nav.logout', testId: 'nav-logout', action: 'logout' },
+];
+
 const SECTION_KEYS = new Set(
-  NAV_ENTRIES.flatMap((entry) => (entry.kind === 'section' ? [entry.key] : [])),
+  [...NAV_ENTRIES, ...NAV_FOOTER_ENTRIES].flatMap((entry) => (entry.kind === 'section' ? [entry.key] : [])),
+);
+
+const ACTION_KEYS = new Set(
+  [...NAV_ENTRIES, ...NAV_FOOTER_ENTRIES].flatMap((entry) => (entry.kind === 'action' ? [entry.key] : [])),
 );
 
 const DETAIL_TO_LIST: Record<string, string> = {
   asset: 'search',
   lineage: 'lineage-home',
-  'admin-user': 'admin-users',
-  'admin-team': 'admin-teams',
-  'admin-role': 'admin-roles',
-  'admin-bot': 'admin-bots',
+  'admin-user': 'admin-settings',
+  'admin-users': 'admin-settings',
+  'admin-team': 'admin-settings',
+  'admin-teams': 'admin-settings',
+  'admin-role': 'admin-settings',
+  'admin-roles': 'admin-settings',
+  'admin-bot': 'admin-settings',
+  'admin-bots': 'admin-settings',
   'admin-settings-system': 'admin-settings',
   'admin-policies': 'admin-settings',
   'admin-policy': 'admin-settings',
@@ -129,7 +139,7 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'governance-data-product': 'governance-data-products',
   'quality-test-definition': 'quality-test-definitions',
   'quality-test-case': 'quality-test-cases',
-  'quality-test-suite': 'quality-test-suites',
+  'quality-test-suite': 'quality-test-cases',
   'observability-incident': 'observability-incidents',
   'observability-alert': 'observability-alerts',
   'ingestion-service': 'ingestion-services',
@@ -154,4 +164,24 @@ export function sectionKeyForRoute(routeName: string | symbol | undefined | null
 
 export function isNavSectionKey(key: string): boolean {
   return SECTION_KEYS.has(key);
+}
+
+export function isNavActionKey(key: string): boolean {
+  return ACTION_KEYS.has(key);
+}
+
+export function defaultOpenNavKeys(): string[] {
+  return NAV_ENTRIES.flatMap((entry) => (entry.kind === 'section' ? [entry.key] : []));
+}
+
+export function navRouteKeys(): string[] {
+  return [...NAV_ENTRIES, ...NAV_FOOTER_ENTRIES].flatMap((entry) => {
+    if (entry.kind === 'item') {
+      return [entry.key];
+    }
+    if (entry.kind === 'section') {
+      return [entry.key, ...entry.items.map((item) => item.key)];
+    }
+    return [];
+  });
 }

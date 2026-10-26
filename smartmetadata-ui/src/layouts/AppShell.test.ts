@@ -37,6 +37,20 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
             name: 'quality-test-cases',
             component: { template: '<div>tc</div>' },
           },
+          {
+            path: 'quality/test-definitions',
+            name: 'quality-test-definitions',
+            component: { template: '<div>td</div>' },
+          },
+          {
+            path: 'observability/incidents',
+            name: 'observability-incidents',
+            component: { template: '<div>inc</div>' },
+          },
+          { path: 'marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
+          { path: 'governance/domains', name: 'governance-domains', component: { template: '<div>dom</div>' } },
+          { path: 'governance/metrics', name: 'governance-metrics', component: { template: '<div>met</div>' } },
+          { path: 'context-center', name: 'context-center-overview', component: { template: '<div>cc</div>' } },
           { path: 'login', name: 'login', component: { template: '<div>login</div>' } },
           { path: 'admin/settings', name: 'admin-settings', component: { template: '<div>settings</div>' } },
           { path: 'admin/users/:id', name: 'admin-user', component: { template: '<div>profile</div>' } },
@@ -64,16 +78,32 @@ describe('AppShell', () => {
     localStorage.clear();
   });
 
-  it('renders Home then Explore (not Search) and groups quality under Observability', async () => {
+  it('renders reference left-nav groups, child labels, and footer Settings/Logout', async () => {
     const { wrapper } = await mountShell();
     expect(wrapper.text()).toContain('Home');
     expect(wrapper.text()).toContain('Explore');
     expect(wrapper.text()).toContain('Lineage');
-    expect(wrapper.text()).toContain('Insights');
     expect(wrapper.text()).toContain('Observability');
-    expect(wrapper.find('[data-testid="governance-nav"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Data Quality');
+    expect(wrapper.text()).toContain('Incident Manager');
+    expect(wrapper.text()).toContain('Test Library');
+    expect(wrapper.text()).toContain('Insights');
+    expect(wrapper.text()).toContain('Data Marketplace');
+    expect(wrapper.text()).toContain('Govern');
+    expect(wrapper.text()).toContain('Glossary');
+    expect(wrapper.text()).toContain('Ontology Explorer');
+    expect(wrapper.text()).toContain('Column Bulk Ops (Beta)');
+    expect(wrapper.text()).toContain('Context Center');
     expect(wrapper.find('[data-testid="observability-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="quality-nav"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-nav"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="governance-nav"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="context-center-nav"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="ingestion-nav"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="collaboration-nav"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="admin-nav"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="nav-settings"]').text()).toContain('Settings');
+    expect(wrapper.find('[data-testid="nav-logout"]').text()).toContain('Logout');
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
     expect(wrapper.find('.shell__search input').attributes('placeholder')).toBe(
@@ -150,5 +180,16 @@ describe('AppShell', () => {
     expect(wrapper.vm).toBeTruthy();
     const selected = wrapper.find('.ant-menu-item-selected');
     expect(selected.exists()).toBe(true);
+    expect(selected.text()).toContain('Data Quality');
+  });
+
+  it('navigates Settings from the sider footer and logs out from nav-logout', async () => {
+    const { wrapper, router } = await mountShell();
+    await wrapper.find('[data-testid="nav-settings"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings');
+    await wrapper.find('[data-testid="nav-logout"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('login');
   });
 });

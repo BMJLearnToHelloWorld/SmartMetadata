@@ -10,7 +10,15 @@ import { Button, Dropdown, Input, Layout, Menu, Select, Space, message } from 'a
 import { filtersFromQuery, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
-import { isNavSectionKey, NAV_ENTRIES, sectionKeyForRoute, selectedNavKey } from '@/layouts/nav';
+import {
+  defaultOpenNavKeys,
+  isNavActionKey,
+  isNavSectionKey,
+  NAV_ENTRIES,
+  NAV_FOOTER_ENTRIES,
+  sectionKeyForRoute,
+  selectedNavKey,
+} from '@/layouts/nav';
 import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
 
@@ -20,7 +28,7 @@ const auth = useAuthStore();
 const { t, locale } = useI18n();
 
 const collapsed = ref(false);
-const openKeys = ref<string[]>([]);
+const openKeys = ref<string[]>(defaultOpenNavKeys());
 
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
 const flushContent = computed(() => route.meta.flush === true);
@@ -38,6 +46,9 @@ onMounted(() => {
 watch(
   () => route.name,
   (name) => {
+    if (collapsed.value) {
+      return;
+    }
     const section = sectionKeyForRoute(name);
     if (section && !openKeys.value.includes(section)) {
       openKeys.value = [...openKeys.value, section];
@@ -46,9 +57,25 @@ watch(
   { immediate: true },
 );
 
+watch(collapsed, (isCollapsed) => {
+  if (isCollapsed) {
+    openKeys.value = [];
+    return;
+  }
+  const section = sectionKeyForRoute(route.name);
+  const next = defaultOpenNavKeys();
+  openKeys.value = section && !next.includes(section) ? [...next, section] : next;
+});
+
 function onMenuClick({ key }: { key: string | number }): void {
   const name = String(key);
   if (isNavSectionKey(name)) {
+    return;
+  }
+  if (isNavActionKey(name)) {
+    if (name === 'logout') {
+      void onLogout();
+    }
     return;
   }
   void router.push({ name });
@@ -117,32 +144,55 @@ async function onLogout(): Promise<void> {
         <span class="shell__brand-name">{{ collapsed ? 'SM' : t('product.name') }}</span>
         <span v-if="!collapsed" class="shell__brand-sub">{{ t('product.subtitle') }}</span>
       </div>
-      <Menu
-        theme="light"
-        mode="inline"
-        :inline-collapsed="collapsed"
-        :selected-keys="selectedKeys"
-        v-model:openKeys="openKeys"
-        @click="onMenuClick"
-      >
-        <template v-for="entry in NAV_ENTRIES" :key="entry.key">
-          <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
+      <div class="shell__nav">
+        <Menu
+          class="shell__nav-main"
+          theme="light"
+          mode="inline"
+          :inline-collapsed="collapsed"
+          :selected-keys="selectedKeys"
+          v-model:openKeys="openKeys"
+          @click="onMenuClick"
+        >
+          <template v-for="entry in NAV_ENTRIES" :key="entry.key">
+            <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
+              <template #icon>
+                <component :is="navIcon(entry.key)" />
+              </template>
+              {{ t(entry.titleKey) }}
+            </Menu.Item>
+            <Menu.SubMenu v-else-if="entry.kind === 'section'" :key="entry.key" :data-testid="entry.testId">
+              <template #icon>
+                <component :is="navIcon(entry.key)" />
+              </template>
+              <template #title>{{ t(entry.titleKey) }}</template>
+              <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
+                <template #icon>
+                  <component :is="navIcon(item.key)" />
+                </template>
+                {{ t(item.titleKey) }}
+              </Menu.Item>
+            </Menu.SubMenu>
+          </template>
+        </Menu>
+        <Menu
+          class="shell__nav-footer"
+          data-testid="nav-footer"
+          theme="light"
+          mode="inline"
+          :inline-collapsed="collapsed"
+          :selected-keys="selectedKeys"
+          :selectable="true"
+          @click="onMenuClick"
+        >
+          <Menu.Item v-for="entry in NAV_FOOTER_ENTRIES" :key="entry.key" :data-testid="entry.testId">
             <template #icon>
               <component :is="navIcon(entry.key)" />
             </template>
             {{ t(entry.titleKey) }}
           </Menu.Item>
-          <Menu.SubMenu v-else :key="entry.key" :data-testid="entry.testId">
-            <template #icon>
-              <component :is="navIcon(entry.key)" />
-            </template>
-            <template #title>{{ t(entry.titleKey) }}</template>
-            <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
-              {{ t(item.titleKey) }}
-            </Menu.Item>
-          </Menu.SubMenu>
-        </template>
-      </Menu>
+        </Menu>
+      </div>
     </Layout.Sider>
     <Layout>
       <Layout.Header class="shell__header">
@@ -207,7 +257,26 @@ async function onLogout(): Promise<void> {
   border-right: 1px solid var(--sm-border-secondary);
 }
 .shell__sider :deep(.ant-layout-sider-children) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
   background: var(--sm-sider-bg);
+}
+.shell__nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.shell__nav-main {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.shell__nav-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--sm-border-secondary);
 }
 .shell__sider :deep(.ant-layout-sider-trigger) {
   height: 40px;
