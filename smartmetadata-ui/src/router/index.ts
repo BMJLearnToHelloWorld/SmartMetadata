@@ -74,7 +74,7 @@ export const router = createRouter({
       component: AppShell,
       children: [
         { path: '', redirect: { name: 'home' } },
-        { path: 'my-data', name: 'home', component: MyDataView },
+        { path: 'my-data', name: 'home', component: MyDataView, meta: { flush: true } },
         { path: 'search', name: 'search', component: SearchView },
         {
           path: 'assets/:entityType/:fqn',

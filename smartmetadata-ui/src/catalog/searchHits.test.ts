@@ -33,6 +33,7 @@ describe('mapSearchResponse', () => {
               tier: { tagFQN: 'Tier.Tier1' },
               owners: [{ name: 'data-eng', displayName: 'Data Eng', type: 'team' }],
               tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive' }],
+              updatedAt: 1710000000000,
             },
           },
           {
@@ -69,6 +70,7 @@ describe('mapSearchResponse', () => {
       databaseName: 'analytics',
       schemaName: 'marts',
       tier: 'Tier.Tier1',
+      updatedAt: 1710000000000,
     });
     expect(mapped.hits[1].entityType).toBe('topic');
     expect(mapped.hits[1].fullyQualifiedName).toBe('kafka.events');

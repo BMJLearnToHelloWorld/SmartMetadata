@@ -23,6 +23,8 @@ const collapsed = ref(false);
 const openKeys = ref<string[]>([]);
 
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
+const flushContent = computed(() => route.meta.flush === true);
+const hideHeaderSearch = computed(() => route.name === 'home');
 
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
 const profileUserId = computed(() => auth.user?.id || '');
@@ -145,6 +147,7 @@ async function onLogout(): Promise<void> {
     <Layout>
       <Layout.Header class="shell__header">
         <Input.Search
+          v-if="!hideHeaderSearch"
           data-testid="global-search"
           class="shell__search"
           :placeholder="t('chrome.searchPlaceholder')"
@@ -152,6 +155,7 @@ async function onLogout(): Promise<void> {
           :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
           @search="onSearch"
         />
+        <div v-else class="shell__search-spacer" />
         <Space size="middle" class="shell__toolbar">
           <Select
             data-testid="locale-switcher"
@@ -186,7 +190,7 @@ async function onLogout(): Promise<void> {
           </Dropdown>
         </Space>
       </Layout.Header>
-      <Layout.Content class="shell__content">
+      <Layout.Content class="shell__content" :class="{ 'shell__content--flush': flushContent }">
         <router-view />
       </Layout.Content>
     </Layout>
@@ -274,7 +278,13 @@ async function onLogout(): Promise<void> {
 .shell__locale {
   min-width: 104px;
 }
+.shell__search-spacer {
+  flex: 1;
+}
 .shell__content {
   margin: 16px;
+}
+.shell__content--flush {
+  margin: 0;
 }
 </style>

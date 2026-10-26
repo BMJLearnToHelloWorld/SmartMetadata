@@ -3,76 +3,69 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { Empty, Spin, Typography } from 'ant-design-vue';
+import { Card } from 'ant-design-vue';
 
-defineProps<{
-  title: string;
-  testId: string;
-  loading?: boolean;
-  error?: string;
-  empty?: boolean;
-  emptyText?: string;
-  meta?: string;
-  summary?: string;
-}>();
+withDefaults(
+  defineProps<{
+    title: string;
+    testId?: string;
+  }>(),
+  {
+    testId: 'home-widget',
+  },
+);
 </script>
 
 <template>
-  <section class="home-widget" :data-testid="testId">
-    <header class="home-widget__head">
-      <div>
-        <Typography.Title :level="5" class="home-widget__title">{{ title }}</Typography.Title>
-        <Typography.Text v-if="meta" type="secondary" class="home-widget__meta">{{ meta }}</Typography.Text>
-      </div>
-      <div class="home-widget__extra">
+  <Card :data-testid="testId" class="home-widget-card" :bordered="true">
+    <template #title>
+      <span class="home-widget-card__title">{{ title }}</span>
+    </template>
+    <template #extra>
+      <div class="home-widget-card__extra">
         <slot name="extra" />
       </div>
-    </header>
-    <Typography.Paragraph v-if="summary" type="secondary" class="home-widget__summary">
-      {{ summary }}
-    </Typography.Paragraph>
-    <Spin :spinning="Boolean(loading)">
-      <Empty
-        v-if="!loading && (error || empty)"
-        :data-testid="`${testId}-empty`"
-        :description="error || emptyText"
-      />
-      <div v-else-if="!loading" class="home-widget__body">
-        <slot />
-      </div>
-    </Spin>
-  </section>
+    </template>
+    <div class="home-widget-card__body">
+      <slot />
+    </div>
+  </Card>
 </template>
 
 <style scoped>
-.home-widget {
+.home-widget-card {
   height: 100%;
-  min-height: 220px;
-  padding: 16px 16px 12px;
-  background: var(--sm-bg-container);
-  border: 1px solid var(--sm-border-secondary);
+  min-height: 320px;
   border-radius: var(--sm-radius-card);
+  border-color: var(--sm-border-secondary);
   box-shadow: 0 1px 2px rgba(10, 13, 18, 0.04);
 }
-.home-widget__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+.home-widget-card :deep(.ant-card-head) {
+  min-height: 48px;
+  padding-inline: 16px;
+  border-bottom-color: var(--sm-border-secondary);
 }
-.home-widget__title {
-  margin: 0 !important;
+.home-widget-card :deep(.ant-card-head-title) {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sm-text-primary);
 }
-.home-widget__meta,
-.home-widget__summary {
-  display: block;
-  font-size: 12px;
-  margin-bottom: 8px;
+.home-widget-card :deep(.ant-card-body) {
+  padding: 16px;
+  height: calc(100% - 48px);
 }
-.home-widget__body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.home-widget-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-widget-card__extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-widget-card__body {
+  min-height: 240px;
+  height: 100%;
 }
 </style>

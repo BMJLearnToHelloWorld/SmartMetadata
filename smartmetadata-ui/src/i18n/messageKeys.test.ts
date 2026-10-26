@@ -29,6 +29,9 @@ describe('i18n catalogs', () => {
   it('covers shell, nav, login, Explore, and asset tabs', () => {
     const keys = leafKeys(enUS);
     expect(keys).toContain('nav.home');
+    expect(keys).toContain('home.welcome');
+    expect(keys).toContain('home.activityEmptyTitle');
+    expect(keys).toContain('home.setupKpi');
     expect(keys).toContain('nav.explore');
     expect(keys).toContain('home.hiUser');
     expect(keys).toContain('home.topicsTitle');
@@ -120,6 +123,10 @@ describe('i18n catalogs', () => {
   });
 
   it('aligns key shell and CRUD English to in-repo OM locale wording', () => {
+    expect(enUS.home.welcome).toBe('Welcome, {name}!');
+    expect(enUS.home.searchPlaceholder).toBe('Search for Tables, Database, Schema...');
+    expect(enUS.home.activityEmptyTitle).toBe('No Recent Activity');
+    expect(zhCN.home.welcome).toBe('欢迎，{name}!');
     expect(enUS.chrome.searchPlaceholder).toBe('Search for Data Assets');
     expect(enUS.chrome.logout).toBe('Logout');
     expect(enUS.login.submit).toBe('Sign In');
