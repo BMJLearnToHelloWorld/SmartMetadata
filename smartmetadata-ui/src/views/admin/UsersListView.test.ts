@@ -81,6 +81,7 @@ describe('UsersListView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    document.querySelectorAll('.ant-dropdown').forEach((node) => node.remove());
   });
 
   it('renders users from GET /v1/users', async () => {
@@ -108,7 +109,8 @@ describe('UsersListView', () => {
     const { wrapper, router } = await mountUsers();
     await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
     await flushPromises();
-    document.querySelector<HTMLElement>('[data-testid="row-overflow-edit"]')?.click();
+    const edits = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]');
+    edits[edits.length - 1]?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-user');
     expect(router.currentRoute.value.params.id).toBe('u1');
