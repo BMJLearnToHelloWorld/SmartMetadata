@@ -326,7 +326,11 @@ def _pymysql_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = host_port, 3306
-    database = connection.get("database") or connection.get("databaseSchema")
+    database = (
+        connection.get("databaseName")
+        or connection.get("database")
+        or connection.get("databaseSchema")
+    )
 
     def connect():
         return pymysql.connect(

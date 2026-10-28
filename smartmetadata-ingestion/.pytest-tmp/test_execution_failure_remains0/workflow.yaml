@@ -1,0 +1,29 @@
+lineage:
+- fromEntity:
+    fqn: warehouse.analytics.public.orders
+    type: table
+  source: Manual
+  toEntity:
+    fqn: warehouse.analytics.public.orders_v
+    type: table
+server:
+  auth:
+    jwtToken: ${OM_JWT}
+    type: jwt
+  hostPort: ${OM_API_URL}
+sink:
+  type: metadata-rest
+source:
+  connection:
+    database: ${PG_DATABASE}
+    hostPort: ${PG_HOSTPORT}
+    password: ${PG_PASSWORD}
+    username: ${PG_USER}
+  includeSchemas:
+  - public
+  includeViewLineage: true
+  serviceName: warehouse
+  type: postgres
+workflow:
+  name: warehouse-metadata
+  type: metadata
