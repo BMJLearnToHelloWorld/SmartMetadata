@@ -100,11 +100,12 @@ get_test_definitions, create_conversation.
 | Official tool | Product status |
 |---|---|
 | Keyword search | Shipped as `search_entities` (`GET /v1/search/query`) |
-| `get_entity_details` | **Subset:** table + topic only |
+| get_entity_details | Shipped (Apache allowlist; Collate/RDF types rejected) |
 | `get_entity_lineage` | Shipped as `get_lineage` (FQN GET, depth clamped 0–3) |
 | Glossary / tags list | Shipped |
 | `create_conversation` | Shipped (OSS Feed, not `/v1/feed`) |
-| `create_entity` / `patch_entity` / `create_test_case` / `get_test_definitions` / `create_lineage` / `find_by_tag` | **Gap** (Apache REST exists; not wired in Phase 10) |
+| get_test_definitions / create_lineage / ind_by_tag | Shipped (backend-08) |
+| create_entity / patch_entity / create_test_case | **Partial** (Apache REST exists; richer write schema deferred) |
 | `semantic_search`, persona/user/company/concept context, NLQ | **DROP** (Phase 10 non-goal: Collate AI) |
 | `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis` | **DROP** (Phase 10: RDF / Collate) |
 | HTTP `/mcp` on the Java server | **Unregistered** (slim dist has no CCL jar) |
