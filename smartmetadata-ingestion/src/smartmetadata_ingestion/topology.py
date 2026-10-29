@@ -23,6 +23,9 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     ProfileRecord,
     TestCaseResultRecord,
+    ClassificationRecord,
+    TagRecord,
+    AppRecord,
     WorkflowRecord,
 )
 
@@ -30,8 +33,11 @@ from smartmetadata_ingestion.records import (
 STAGE_ORDER: dict[str, int] = {
     "databaseService": 0,
     "messagingService": 0,
+    "classification": 0,
+    "app": 0,
     "database": 1,
     "topic": 1,
+    "tag": 1,
     "schema": 2,
     "table": 3,
     "usage": 4,
@@ -53,6 +59,14 @@ def order_records(records: Iterable[WorkflowRecord]) -> list[WorkflowRecord]:
 
 
 def record_fqn(record: WorkflowRecord) -> str | None:
+    if isinstance(record, ClassificationRecord):
+        return record.name
+    if isinstance(record, TagRecord):
+        if record.classification:
+            return f"{record.classification}.{record.name}"
+        return record.name
+    if isinstance(record, AppRecord):
+        return record.name
     if isinstance(record, DatabaseServiceRecord):
         return record.name
     if isinstance(record, MessagingServiceRecord):

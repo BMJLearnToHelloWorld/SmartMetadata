@@ -27,6 +27,9 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     ProfileRecord,
     TestCaseResultRecord,
+    ClassificationRecord,
+    TagRecord,
+    AppRecord,
     WorkflowRecord,
 )
 
@@ -164,6 +167,44 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
                 "failedRowsPercentage", raw.get("failed_rows_percentage")
             ),
             duration=raw.get("duration"),
+        )
+    if kind == "classification":
+        return ClassificationRecord(
+            name=raw["name"],
+            description=raw["description"],
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            provider=raw.get("provider"),
+            mutually_exclusive=raw.get(
+                "mutuallyExclusive", raw.get("mutually_exclusive")
+            ),
+        )
+    if kind == "tag":
+        return TagRecord(
+            name=raw["name"],
+            description=raw["description"],
+            classification=raw.get("classification"),
+            parent=raw.get("parent"),
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            provider=raw.get("provider"),
+            mutually_exclusive=raw.get(
+                "mutuallyExclusive", raw.get("mutually_exclusive")
+            ),
+        )
+    if kind == "app":
+        return AppRecord(
+            name=raw["name"],
+            display_name=raw.get("displayName") or raw.get("display_name"),
+            description=raw.get("description"),
+            bot=raw.get("bot"),
+            app_configuration=raw.get("appConfiguration")
+            or raw.get("app_configuration"),
+            app_schedule=raw.get("appSchedule") or raw.get("app_schedule"),
+            supports_interrupt=raw.get(
+                "supportsInterrupt", raw.get("supports_interrupt")
+            ),
+            allow_bot_impersonation=raw.get(
+                "allowBotImpersonation", raw.get("allow_bot_impersonation")
+            ),
         )
     raise WorkflowError(f"unsupported static record kind {kind!r}")
 

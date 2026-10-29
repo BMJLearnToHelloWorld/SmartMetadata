@@ -207,6 +207,55 @@ class TopicRecord(Record):
         return f"topic:{self.service}.{self.name}"
 
 
+
+class ClassificationRecord(Record):
+    """Apache CreateClassification → PUT /v1/classifications."""
+
+    kind: Literal["classification"] = "classification"
+    name: str
+    description: str
+    display_name: str | None = None
+    provider: str | None = None
+    mutually_exclusive: bool | None = None
+
+    def label(self) -> str:
+        return f"classification:{self.name}"
+
+
+class TagRecord(Record):
+    """Apache CreateTag → PUT /v1/tags."""
+
+    kind: Literal["tag"] = "tag"
+    name: str
+    description: str
+    classification: str | None = None
+    parent: str | None = None
+    display_name: str | None = None
+    provider: str | None = None
+    mutually_exclusive: bool | None = None
+
+    def label(self) -> str:
+        scope = self.classification or self.parent or "?"
+        return f"tag:{scope}.{self.name}"
+
+
+class AppRecord(Record):
+    """Apache CreateApp → PUT /v1/apps (no Collate-only AI/RDF invent)."""
+
+    kind: Literal["app"] = "app"
+    name: str
+    display_name: str | None = None
+    description: str | None = None
+    bot: str | None = None
+    app_configuration: dict[str, Any] | None = None
+    app_schedule: dict[str, Any] | None = None
+    supports_interrupt: bool | None = None
+    allow_bot_impersonation: bool | None = None
+
+    def label(self) -> str:
+        return f"app:{self.name}"
+
+
 WorkflowRecord = (
     DatabaseServiceRecord
     | DatabaseRecord
@@ -218,4 +267,7 @@ WorkflowRecord = (
     | TestCaseResultRecord
     | MessagingServiceRecord
     | TopicRecord
+    | ClassificationRecord
+    | TagRecord
+    | AppRecord
 )

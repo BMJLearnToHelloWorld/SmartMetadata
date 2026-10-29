@@ -198,6 +198,35 @@ class TestCaseResultSpec(CamelModel):
     duration: float | None = None
 
 
+class ClassificationSpec(CamelModel):
+    name: str
+    description: str
+    display_name: str | None = None
+    provider: str | None = None
+    mutually_exclusive: bool | None = None
+
+
+class TagSpec(CamelModel):
+    name: str
+    description: str
+    classification: str | None = None
+    parent: str | None = None
+    display_name: str | None = None
+    provider: str | None = None
+    mutually_exclusive: bool | None = None
+
+
+class AppSpec(CamelModel):
+    name: str
+    display_name: str | None = None
+    description: str | None = None
+    bot: str | None = None
+    app_configuration: dict[str, Any] | None = None
+    app_schedule: dict[str, Any] | None = None
+    supports_interrupt: bool | None = None
+    allow_bot_impersonation: bool | None = None
+
+
 class WorkflowConfig(CamelModel):
     workflow: WorkflowSettings
     server: ServerConfig
@@ -208,6 +237,9 @@ class WorkflowConfig(CamelModel):
     usage: list[UsageSpec] = Field(default_factory=list)
     profiles: list[ProfileSpec] = Field(default_factory=list)
     test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
+    classifications: list[ClassificationSpec] = Field(default_factory=list)
+    tags: list[TagSpec] = Field(default_factory=list)
+    apps: list[AppSpec] = Field(default_factory=list)
 
 
 def load_raw_config(path: Path) -> dict[str, Any]:

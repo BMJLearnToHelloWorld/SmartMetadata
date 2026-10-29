@@ -34,6 +34,9 @@ ENTITY_PROFILES_PATH = "/v1/entity/profiles"
 TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
 TABLES_PROFILE_PATH = TABLES_PATH  # /v1/tables/{id}/tableProfile
 INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
+CLASSIFICATIONS_PATH = "/v1/classifications"
+TAGS_PATH = "/v1/tags"
+APPS_PATH = "/v1/apps"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 
@@ -294,6 +297,15 @@ class RestClient:
             f"{encode_path_segment(str(fqn).strip())}/pipelineStatus"
         )
         return self.request("PUT", path, json=status)
+
+    def upsert_classification(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", CLASSIFICATIONS_PATH, json=payload))
+
+    def upsert_tag(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", TAGS_PATH, json=payload))
+
+    def upsert_app(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", APPS_PATH, json=payload))
 
     @staticmethod
     def _as_object(payload: Any) -> dict[str, Any]:

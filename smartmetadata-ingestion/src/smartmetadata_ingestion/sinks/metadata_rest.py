@@ -25,6 +25,9 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     ProfileRecord,
     TestCaseResultRecord,
+    ClassificationRecord,
+    TagRecord,
+    AppRecord,
     WorkflowRecord,
 )
 
@@ -75,6 +78,14 @@ class MetadataRestSink:
                 record.test_case_fqn,
                 _test_case_result_payload(record),
             )
+        elif isinstance(record, ClassificationRecord):
+            result = self._client.upsert_classification(
+                _classification_payload(record)
+            )
+        elif isinstance(record, TagRecord):
+            result = self._client.upsert_tag(_tag_payload(record))
+        elif isinstance(record, AppRecord):
+            result = self._client.upsert_app(_app_payload(record))
         else:
             raise WorkflowError(f"sink cannot write {type(record).__name__}")
         self.written.append(record.label())
@@ -155,6 +166,58 @@ class BulkMetadataRestSink:
         return None
 
 
+
+
+
+def _classification_payload(record: ClassificationRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": record.name,
+        "description": record.description,
+    }
+    if record.display_name is not None:
+        payload["displayName"] = record.display_name
+    if record.provider is not None:
+        payload["provider"] = record.provider
+    if record.mutually_exclusive is not None:
+        payload["mutuallyExclusive"] = record.mutually_exclusive
+    return payload
+
+
+def _tag_payload(record: TagRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": record.name,
+        "description": record.description,
+    }
+    if record.classification is not None:
+        payload["classification"] = record.classification
+    if record.parent is not None:
+        payload["parent"] = record.parent
+    if record.display_name is not None:
+        payload["displayName"] = record.display_name
+    if record.provider is not None:
+        payload["provider"] = record.provider
+    if record.mutually_exclusive is not None:
+        payload["mutuallyExclusive"] = record.mutually_exclusive
+    return payload
+
+
+def _app_payload(record: AppRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name}
+    if record.display_name is not None:
+        payload["displayName"] = record.display_name
+    if record.description is not None:
+        payload["description"] = record.description
+    if record.bot is not None:
+        payload["bot"] = record.bot
+    if record.app_configuration is not None:
+        payload["appConfiguration"] = record.app_configuration
+    if record.app_schedule is not None:
+        payload["appSchedule"] = record.app_schedule
+    if record.supports_interrupt is not None:
+        payload["supportsInterrupt"] = record.supports_interrupt
+    if record.allow_bot_impersonation is not None:
+        payload["allowBotImpersonation"] = record.allow_bot_impersonation
+    return payload
 
 
 def _write_profile(client: RestClient, record: ProfileRecord) -> Any:

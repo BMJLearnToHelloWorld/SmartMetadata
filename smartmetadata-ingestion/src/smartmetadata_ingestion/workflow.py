@@ -15,8 +15,11 @@ from collections.abc import Iterable, Iterator
 
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import (
+    AppSpec,
+    ClassificationSpec,
     LineageSpec,
     ProfileSpec,
+    TagSpec,
     TestCaseResultSpec,
     UsageSpec,
     WorkflowConfig,
@@ -49,6 +52,9 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     ProfileRecord,
     TestCaseResultRecord,
+    ClassificationRecord,
+    TagRecord,
+    AppRecord,
     WorkflowRecord,
 )
 from smartmetadata_ingestion.reconcile import reconcile_stale
@@ -269,6 +275,9 @@ class MetadataWorkflow:
         produced.extend(self._configured_usage())
         produced.extend(self._configured_profiles())
         produced.extend(self._configured_test_case_results())
+        produced.extend(self._configured_classifications())
+        produced.extend(self._configured_tags())
+        produced.extend(self._configured_apps())
         for record in order_records(produced):
             self.source_status.records += 1
             self._handle_record(record)
@@ -381,6 +390,18 @@ class MetadataWorkflow:
         for spec in self.config.test_case_results:
             yield _test_case_result_from_spec(spec)
 
+    def _configured_classifications(self) -> Iterable[ClassificationRecord]:
+        for spec in self.config.classifications:
+            yield _classification_from_spec(spec)
+
+    def _configured_tags(self) -> Iterable[TagRecord]:
+        for spec in self.config.tags:
+            yield _tag_from_spec(spec)
+
+    def _configured_apps(self) -> Iterable[AppRecord]:
+        for spec in self.config.apps:
+            yield _app_from_spec(spec)
+
     @staticmethod
     def _record_failure(
         status: StepStatus,
@@ -462,5 +483,40 @@ def _test_case_result_from_spec(spec: TestCaseResultSpec) -> TestCaseResultRecor
         passed_rows_percentage=spec.passed_rows_percentage,
         failed_rows_percentage=spec.failed_rows_percentage,
         duration=spec.duration,
+    )
+
+
+def _classification_from_spec(spec: ClassificationSpec) -> ClassificationRecord:
+    return ClassificationRecord(
+        name=spec.name,
+        description=spec.description,
+        display_name=spec.display_name,
+        provider=spec.provider,
+        mutually_exclusive=spec.mutually_exclusive,
+    )
+
+
+def _tag_from_spec(spec: TagSpec) -> TagRecord:
+    return TagRecord(
+        name=spec.name,
+        description=spec.description,
+        classification=spec.classification,
+        parent=spec.parent,
+        display_name=spec.display_name,
+        provider=spec.provider,
+        mutually_exclusive=spec.mutually_exclusive,
+    )
+
+
+def _app_from_spec(spec: AppSpec) -> AppRecord:
+    return AppRecord(
+        name=spec.name,
+        display_name=spec.display_name,
+        description=spec.description,
+        bot=spec.bot,
+        app_configuration=spec.app_configuration,
+        app_schedule=spec.app_schedule,
+        supports_interrupt=spec.supports_interrupt,
+        allow_bot_impersonation=spec.allow_bot_impersonation,
     )
 
