@@ -37,13 +37,17 @@ describe('tool catalog', () => {
         'search_entities',
         'get_table',
         'get_topic',
+        'get_entity_details',
         'get_lineage',
+        'create_lineage',
         'list_glossaries',
         'list_tags',
+        'find_by_tag',
+        'get_test_definitions',
         'create_conversation',
       ]),
     );
-    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio/i);
+    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio|sparql_query|semantic_search|ontology_describe/i);
   });
 });
 
@@ -173,5 +177,66 @@ describe('create_conversation', () => {
       message: 'note',
       about: '<#E::topic::kafka.orders>',
     });
+  });
+});
+
+describe('get_entity_details', () => {
+  it('GETs allowlisted collection by entityType + FQN', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ name: 'orders' }));
+    await handlers(fetchImpl).get_entity_details({ entityType: 'pipeline', fqn: 'airflow.etl.orders' });
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'http://om.example/api/v1/pipelines/name/airflow.etl.orders?fields=owners%2Ctags%2Cdomains',
+    );
+  });
+
+  it('rejects Collate/RDF types that are OutOfScope', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({}));
+    await expect(
+      handlers(fetchImpl).get_entity_details({ entityType: 'knowledgeGraph', fqn: 'x' }),
+    ).rejects.toThrow(/Unsupported entityType/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('find_by_tag', () => {
+  it('GETs search with tags.tagFQN query_filter', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ hits: {} }));
+    await handlers(fetchImpl).find_by_tag({ tagFqn: 'PII.Sensitive', size: 5 });
+    const [url] = fetchImpl.mock.calls[0] as [string];
+    expect(url).toContain('/v1/search/query?');
+    expect(url).toContain('q=*');
+    expect(url).toContain('index=dataAsset');
+    expect(url).toContain('size=5');
+    expect(decodeURIComponent(url)).toContain('tags.tagFQN');
+    expect(decodeURIComponent(url)).toContain('PII.Sensitive');
+  });
+});
+
+describe('get_test_definitions', () => {
+  it('GETs /v1/dataQuality/testDefinitions', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ data: [] }));
+    await handlers(fetchImpl).get_test_definitions({ limit: 10, entityType: 'table' });
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'http://om.example/api/v1/dataQuality/testDefinitions?limit=10&entityType=table',
+    );
+  });
+});
+
+describe('create_lineage', () => {
+  it('PUTs /v1/lineage/{from}/name/{fqn}/{to}/name/{fqn} with Manual source', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    await handlers(fetchImpl).create_lineage({
+      fromEntityType: 'table',
+      fromFqn: 'svc.db.schema.a',
+      toEntityType: 'table',
+      toFqn: 'svc.db.schema.b',
+      description: 'derived',
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      'http://om.example/api/v1/lineage/table/name/svc.db.schema.a/table/name/svc.db.schema.b',
+    );
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(String(init.body))).toEqual({ source: 'Manual', description: 'derived' });
   });
 });

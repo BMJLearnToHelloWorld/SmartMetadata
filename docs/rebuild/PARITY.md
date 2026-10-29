@@ -26,7 +26,7 @@ ship placeholder/half-wired “parity”.
 | Official connectors | `ingestion/src/metadata/ingestion/source/**/service_spec.py` | **106** files |
 | Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`) | **4** (`postgres`, `mysql`, `kafka`, `snowflake`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
-| Product MCP tools | `smartmetadata-mcp/src/tools.ts` `TOOL_NAMES` | **7** |
+| Product MCP tools | smartmetadata-mcp/src/tools.ts TOOL_NAMES | **11** |
 | Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, **My Data / home** (`/my-data` post-login default), Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs**), governance, quality, observability, ingestion console, collaboration |
 | Official UI pages | `openmetadata-ui/src/main/resources/ui/src/pages/` | 100+ page modules (React, CCL) — used only as an area list, not copied |
 
@@ -93,17 +93,19 @@ Official tools (21): `company_context`, `search_metadata`, `semantic_search`,
 `root_cause_analysis`, `sparql_query`, `entity_neighborhood`, `find_by_tag`,
 `shacl_validate`, `ontology_describe`.
 
-Product tools (7): `search_entities`, `get_table`, `get_topic`, `get_lineage`,
-`list_glossaries`, `list_tags`, `create_conversation`.
+Product tools (11): search_entities, get_table, get_topic, get_entity_details,
+get_lineage, create_lineage, list_glossaries, list_tags, ind_by_tag,
+get_test_definitions, create_conversation.
 
 | Official tool | Product status |
 |---|---|
 | Keyword search | Shipped as `search_entities` (`GET /v1/search/query`) |
-| `get_entity_details` | **Subset:** table + topic only |
+| get_entity_details | Shipped (Apache allowlist; Collate/RDF types rejected) |
 | `get_entity_lineage` | Shipped as `get_lineage` (FQN GET, depth clamped 0–3) |
 | Glossary / tags list | Shipped |
 | `create_conversation` | Shipped (OSS Feed, not `/v1/feed`) |
-| `create_entity` / `patch_entity` / `create_test_case` / `get_test_definitions` / `create_lineage` / `find_by_tag` | **Gap** (Apache REST exists; not wired in Phase 10) |
+| get_test_definitions / create_lineage / ind_by_tag | Shipped (backend-08) |
+| create_entity / patch_entity / create_test_case | **Partial** (Apache REST exists; richer write schema deferred) |
 | `semantic_search`, persona/user/company/concept context, NLQ | **DROP** (Phase 10 non-goal: Collate AI) |
 | `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis` | **DROP** (Phase 10: RDF / Collate) |
 | HTTP `/mcp` on the Java server | **Unregistered** (slim dist has no CCL jar) |
