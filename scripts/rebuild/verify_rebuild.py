@@ -61,6 +61,10 @@ def install_steps() -> list[Step]:
             argv=(PYTHON, "-m", "pip", "install", "-e", "smartmetadata-ingestion/[dev]"),
         ),
         Step(id="mcp-install", argv=npm_argv("ci"), cwd="smartmetadata-mcp"),
+        Step(
+            id="airflow-apis-install",
+            argv=(PYTHON, "-m", "pip", "install", "-e", "smartmetadata-airflow-apis/[test]"),
+        ),
     ]
 
 
@@ -133,6 +137,15 @@ def ingestion_importable() -> bool:
     return probe.returncode == 0
 
 
+def airflow_apis_importable() -> bool:
+    probe = subprocess.run(
+        [PYTHON, "-c", "import flask; import smartmetadata_airflow_apis"],
+        check=False,
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
 def needed_install_steps() -> list[Step]:
     needed: list[Step] = []
     by_id = {step.id: step for step in install_steps()}
@@ -142,6 +155,8 @@ def needed_install_steps() -> list[Step]:
         needed.append(by_id["ingest-install"])
     if not node_modules_ready(REPO / "smartmetadata-mcp"):
         needed.append(by_id["mcp-install"])
+    if not airflow_apis_importable():
+        needed.append(by_id["airflow-apis-install"])
     return needed
 
 

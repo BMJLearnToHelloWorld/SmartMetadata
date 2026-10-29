@@ -46,8 +46,9 @@ Not ProductVerified. Not IntegrationVerified.
 ```bash
 python3 scripts/rebuild/check_apache_positive_regression.py
 python3 scripts/rebuild/test_apache_positive_regression.py
+python3 -m pip install -e smartmetadata-airflow-apis/[test]
 cd smartmetadata-airflow-apis && python3 -m pytest -q
-# or the full offline matrix:
+# or the full offline matrix (auto-installs airflow-apis when flask missing):
 make verify-rebuild
 # Windows:
 py -3 scripts/rebuild/check_apache_positive_regression.py
