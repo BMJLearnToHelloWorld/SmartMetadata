@@ -78,7 +78,7 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **job execution residual** (`jobs.py` raises `WorkflowError`) |
 | Services / pipelines console | AddService / AddIngestion | `views/ingestion/*` | CRUD + CLI YAML shipped (P8); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **no Airflow `/trigger`** (ADR:2026-10-22-ingestion-console-runs-via-cli) |
 | Activity / tasks / announcements | Feed | `views/collaboration/*` | Shipped (P9); **persona landing skipped**; list chrome still Card+Table (not in Batch3 inventory) |
-| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial**: batch 2 step 4 snapshots + `listChartData`; batch 3.3 (`UI_PARITY_BATCH3_KPI.md`) lists `GET /v1/kpi`. App analytics / KPI CRUD / history charts residual (deferred, not Alma must-fix) |
+| Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial** (charts/analytics) / **BehaviorMatched (unit)** (KPI CRUD client): batch 2 step 4 snapshots + `listChartData`; batch 3.3 list; Partial #3 (`PARTIAL_KPI_CRUD_REVIEW.md`) adds POST/PUT/PATCH/DELETE + kpiResult/latest helpers. App analytics / history **charts** / Add-Edit KPI pages residual or OutOfScope invent (deferred, not Alma must-fix) |
 | Profiler run UI | `ProfilerConfigurationPage` | Read of stored results only | **Gap** (runner residual; deferred) |
 | SSO deep config / persona customization | Appearance / Persona pages | Auth-provider-aware login only; Settings tiles residual text | **Gap** (P2/P9 residual; deferred) |
 | Knowledge / Context Center / Ontology Studio | Collate pages | — | **DROP** (Phase 10/11 Collate-only) |
@@ -202,7 +202,8 @@ extras until Bernie says otherwise. `psycopg` is already shipped.
    (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`). Chart / metric /
    dashboardDataModel / database / databaseSchema detail GETs are batch
    3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Insights KPI `GET /v1/kpi` list +
-   tab is batch 3.3 (`UI_PARITY_BATCH3_KPI.md`). Settings Policies +
+   tab is batch 3.3 (`UI_PARITY_BATCH3_KPI.md`). KPI CRUD client BehaviorMatched (unit) in
+   `PARTIAL_KPI_CRUD_REVIEW.md`. Settings Policies +
    custom property definitions are batch 3.4
    (`UI_PARITY_BATCH3_SETTINGS.md`). Batch3 #32–#35 holistic review is
    **READY_FOR_ALMA** (`UI_PARITY_BATCH3_HOLISTIC.md`). Remaining UI

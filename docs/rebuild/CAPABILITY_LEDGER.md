@@ -127,7 +127,8 @@ Rebuild trees are product evidence, not a second authority.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Insights KPI CRUD / history / app analytics | Partial | batch 3.3 list only |
+| Insights KPI CRUD | BehaviorMatched (unit) | `api/kpi.ts` POST/PUT/PATCH/DELETE + result GETs; `PARTIAL_KPI_CRUD_REVIEW.md` |
+| Insights KPI history **charts** / app analytics | Partial / OutOfScope invent | result GET helpers exist; chart UI + web-analytics residual |
 | Profiler run UI | Gap | runner residual |
 | SSO / Persona / Appearance | Gap / OutOfScope invent | residual tiles |
 | Knowledge / Ontology / AI / Context Center | DROP / OutOfScope | Collate-only |
@@ -151,12 +152,13 @@ Rebuild trees are product evidence, not a second authority.
 - dbt full parser
 - ~~MCP `create_entity` / `patch_entity` / `create_test_case`~~ → BehaviorMatched (unit); see Partial MCP writes
 - Profiler/DQ **execution** (`jobs.py` raises)
-- Insights KPI CRUD beyond list
+- ~~Insights KPI CRUD beyond list~~ → BehaviorMatched (unit); see `PARTIAL_KPI_CRUD_REVIEW.md` (history charts / app analytics / write UI still residual or OutOfScope)
 - Live IntegrationVerified / ProductVerified for #49–#58 claims
 
 ## Next (optional; require written scope)
 
 - (done) MCP write tools without inventing payloads — BehaviorMatched unit
+- (done) Insights KPI CRUD client — BehaviorMatched unit
 - Profiler/DQ execution ADR
 - One connector family **only after Bernie names type + OSS client**
 - Alma tip upgrade when asked (still @ #48 `36a93d5f` as of ledger draft)
