@@ -2,7 +2,7 @@
 """Run the offline Phase 11 rebuild verification matrix.
 
 Runs the product-package tests, the three CCL-free gates, the product-path
-hint check, and the decision-record check. Does **not** start Docker, MySQL,
+hint check, the decision-record check, and the Apache positive-regression lock. Does **not** start Docker, MySQL,
 Elasticsearch, Airflow, or a live catalog, and does not build
 ``openmetadata-dist`` unless ``--require-tarball`` is passed.
 
@@ -103,6 +103,19 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
         Step(
             id="pr-hygiene-contract",
             argv=(PYTHON, "scripts/rebuild/test_pr_hygiene_workflows.py"),
+        ),
+        Step(
+            id="apache-positive-regression",
+            argv=(PYTHON, "scripts/rebuild/check_apache_positive_regression.py"),
+        ),
+        Step(
+            id="apache-positive-regression-contract",
+            argv=(PYTHON, "scripts/rebuild/test_apache_positive_regression.py"),
+        ),
+        Step(
+            id="airflow-apis-test",
+            argv=(PYTHON, "-m", "pytest"),
+            cwd="smartmetadata-airflow-apis",
         ),
     ]
 
