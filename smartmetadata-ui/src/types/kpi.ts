@@ -12,6 +12,19 @@ import type { EntityRef } from './api';
 /** Schema `kpiTargetType`: NUMBER | PERCENTAGE. Mapped as string so unknown values pass through. */
 export type KpiMetricType = 'NUMBER' | 'PERCENTAGE' | string;
 
+/**
+ * Apache CreateKpiRequest.dataInsightChart enum
+ * (`openmetadata-spec/.../createKpiRequest.json`).
+ */
+export const KPI_DATA_INSIGHT_CHARTS = [
+  'percentage_of_data_asset_with_description_kpi',
+  'percentage_of_data_asset_with_owner_kpi',
+  'number_of_data_asset_with_description_kpi',
+  'number_of_data_asset_with_owner_kpi',
+] as const;
+
+export type KpiDataInsightChart = (typeof KPI_DATA_INSIGHT_CHARTS)[number] | string;
+
 export interface KpiTarget {
   name: string;
   value: string;
@@ -37,4 +50,29 @@ export interface Kpi {
   dataInsightChart?: EntityRef;
   kpiResult?: KpiResult;
   owners: EntityRef[];
+}
+
+/** Apache CreateKpiRequest — required fields match the JSON schema. */
+export interface CreateKpiRequest {
+  name: string;
+  description: string;
+  dataInsightChart: KpiDataInsightChart;
+  startDate: number;
+  endDate: number;
+  targetValue: number;
+  metricType: KpiMetricType;
+  displayName?: string;
+  owners?: EntityRef[];
+  domains?: string[];
+}
+
+export interface ListKpiResultsQuery {
+  startTs: number;
+  endTs: number;
+  orderBy?: 'ASC' | 'DESC';
+}
+
+export interface DeleteKpiOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
 }
