@@ -152,3 +152,29 @@ def test_http_error_includes_status() -> None:
         with pytest.raises(RestError, match="409") as exc:
             client.upsert_table({"name": "x", "databaseSchema": "s", "columns": []})
     assert exc.value.status_code == 409
+
+
+def test_add_pipeline_status_puts_encoded_fqn() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["raw_path"] = request.url.raw_path.decode("ascii")
+        seen["body"] = request.read()
+        return httpx.Response(200, json={"fullyQualifiedName": "svc.pipeline"})
+
+    payload = {
+        "runId": "run-1",
+        "pipelineState": "running",
+        "startDate": 1,
+        "timestamp": 1,
+    }
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        result = client.add_pipeline_status("service.my pipeline", payload)
+    assert result["fullyQualifiedName"] == "svc.pipeline"
+    assert seen["method"] == "PUT"
+    assert (
+        seen["raw_path"]
+        == "/api/v1/services/ingestionPipelines/service.my%20pipeline/pipelineStatus"
+    )
+    assert b'"runId":"run-1"' in seen["body"]

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+import uuid
 from collections.abc import Iterable, Iterator
 
 from smartmetadata_ingestion.client.rest import RestClient
@@ -21,6 +22,12 @@ from smartmetadata_ingestion.errors import (
     WorkflowTeardownError,
 )
 from smartmetadata_ingestion.processors.identity import Processor, build_processors
+from smartmetadata_ingestion.pipeline_status import (
+    PipelineState,
+    build_pipeline_status,
+    final_pipeline_state,
+    now_ms,
+)
 from smartmetadata_ingestion.progress import (
     NullHook,
     ProgressHook,
@@ -61,6 +68,8 @@ class MetadataWorkflow:
         self._steps_closed = False
         self._stopped = False
         self._hook = hook or NullHook()
+        self.run_id: str | None = None
+        self._run_start_ms: int | None = None
         self.report = RunReport(workflow_name=config.workflow.name)
         self.source_status = StepStatus(name="Source")
         self.processor_status = StepStatus(name="Processor")
@@ -104,6 +113,14 @@ class MetadataWorkflow:
             raise WorkflowExecutionError("metadata workflow has already executed")
         self._executed = True
         self.prepare()
+        self.run_id = str(uuid.uuid4())
+        self._run_start_ms = now_ms()
+        logger.info(
+            "metadata workflow %s starting runId=%s",
+            self.config.workflow.name,
+            self.run_id,
+        )
+        self._report_pipeline_status("running")
         pending: BaseException | None = None
         try:
             self._execute_records()
@@ -114,6 +131,21 @@ class MetadataWorkflow:
         except BaseException as exc:
             if pending is None:
                 pending = exc
+        final_state = final_pipeline_state(
+            self.report,
+            stopped=isinstance(pending, KeyboardInterrupt),
+        )
+        if pending is not None and final_state == "success":
+            final_state = "failed"
+        self._report_pipeline_status(final_state, finished=True)
+        logger.info(
+            "metadata workflow %s finished runId=%s state=%s succeeded=%s failed=%s",
+            self.config.workflow.name,
+            self.run_id,
+            final_state,
+            self.report.succeeded,
+            self.report.failed,
+        )
         try:
             self._hook.on_complete(self.report)
         except Exception as exc:
@@ -121,6 +153,51 @@ class MetadataWorkflow:
         if pending is not None:
             raise pending
         return self.report
+
+    def _report_pipeline_status(
+        self,
+        pipeline_state: PipelineState,
+        *,
+        finished: bool = False,
+    ) -> None:
+        fqn = self.config.workflow.ingestion_pipeline_fqn
+        if not fqn or not self.run_id or self._run_start_ms is None:
+            return
+        client = getattr(self._client, "add_pipeline_status", None)
+        if not callable(client):
+            logger.debug(
+                "catalog client has no add_pipeline_status; skip writeback for %s",
+                fqn,
+            )
+            return
+        end_ms = now_ms() if finished else None
+        steps = (
+            [self.source_status, self.processor_status, self.sink_status]
+            if finished
+            else None
+        )
+        payload = build_pipeline_status(
+            run_id=self.run_id,
+            pipeline_state=pipeline_state,
+            start_ms=self._run_start_ms,
+            end_ms=end_ms,
+            steps=steps,
+        )
+        try:
+            self._client.add_pipeline_status(fqn, payload)
+            logger.info(
+                "wrote pipelineStatus fqn=%s runId=%s state=%s",
+                fqn,
+                self.run_id,
+                pipeline_state,
+            )
+        except Exception as exc:
+            logger.warning(
+                "pipelineStatus writeback failed for %s runId=%s: %s",
+                fqn,
+                self.run_id,
+                exc,
+            )
 
     def _execute_records(self) -> None:
         if self._source is None:

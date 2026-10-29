@@ -297,3 +297,128 @@ def test_processor_failure_is_attributed_to_processor_status(workflow_config) ->
     assert "processor failed" in report.failures[0].message
     assert report.failures[0].stack_trace
 
+
+
+class StatusClient(RecordingClient):
+    def __init__(self, events: list[str], statuses: list[dict] | None = None) -> None:
+        super().__init__(events)
+        self.statuses = statuses if statuses is not None else []
+        self.fail_write = False
+
+    def add_pipeline_status(self, fqn: str, status: dict) -> dict:
+        if self.fail_write:
+            raise RuntimeError(f"writeback failed for {fqn}")
+        self.events.append(f"status:{status['pipelineState']}")
+        self.statuses.append({"fqn": fqn, **status})
+        return {"ok": True}
+
+
+def test_pipeline_status_writeback_running_then_success(workflow_config) -> None:
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    client = StatusClient(events, statuses)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=RecordingSource(events),
+        sink=RecordingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.ok()
+    assert [item["pipelineState"] for item in statuses] == ["running", "success"]
+    assert statuses[0]["fqn"] == "svc.meta"
+    assert statuses[0]["runId"] == statuses[1]["runId"]
+    assert "status" not in statuses[0]
+    assert statuses[1]["status"][0]["name"] == "Source"
+    assert "triggeredBy" not in statuses[1]
+
+
+def test_pipeline_status_skipped_without_fqn(workflow_config) -> None:
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    assert workflow_config.workflow.ingestion_pipeline_fqn is None
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=RecordingSource(events),
+        sink=RecordingSink(events),
+    )
+
+    workflow.execute()
+
+    assert statuses == []
+    assert not any(item.startswith("status:") for item in events)
+
+
+def test_pipeline_status_writeback_failure_is_soft(workflow_config) -> None:
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    client = StatusClient(events)
+    client.fail_write = True
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=RecordingSource(events),
+        sink=RecordingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.ok()
+    assert report.succeeded == 1
+
+
+def test_pipeline_status_failed_when_all_records_fail(workflow_config) -> None:
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=RecordingSource(events),
+        sink=FailingSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.failed == 1
+    assert report.succeeded == 0
+    assert statuses[-1]["pipelineState"] == "failed"
+
+
+class MixedSink(RecordingSink):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self._writes = 0
+
+    def write(self, record) -> None:
+        self._writes += 1
+        if self._writes == 1:
+            raise RuntimeError("first write failed")
+        super().write(record)
+
+
+def test_pipeline_status_partial_success_when_some_records_succeed(workflow_config) -> None:
+    events: list[str] = []
+    statuses: list[dict] = []
+    # keep configured lineage so one sink write can succeed after the first fails
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=RecordingSource(events),
+        sink=MixedSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.failed == 1
+    assert report.succeeded >= 1
+    assert statuses[-1]["pipelineState"] == "partialSuccess"
