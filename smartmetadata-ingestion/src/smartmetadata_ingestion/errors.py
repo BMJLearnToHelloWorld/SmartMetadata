@@ -15,6 +15,18 @@ class WorkflowError(IngestError):
     """Invalid workflow configuration or run setup."""
 
 
+class WorkflowInitializationError(WorkflowError):
+    """A workflow source, processor, or sink could not be prepared."""
+
+
+class WorkflowExecutionError(WorkflowError):
+    """A prepared workflow could not finish successfully."""
+
+
+class WorkflowTeardownError(WorkflowError):
+    """A workflow step could not flush or close."""
+
+
 class RestError(IngestError):
     """A catalog REST call failed."""
 

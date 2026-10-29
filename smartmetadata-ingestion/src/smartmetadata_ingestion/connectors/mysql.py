@@ -195,6 +195,12 @@ class MysqlSource:
         self._config = config
         self._reader = reader or (CursorCatalogReader(connect) if connect is not None else None)
 
+    def prepare(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         database_name = self._database_name()
@@ -326,7 +332,11 @@ def _pymysql_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = host_port, 3306
-    database = connection.get("database") or connection.get("databaseSchema")
+    database = (
+        connection.get("databaseName")
+        or connection.get("database")
+        or connection.get("databaseSchema")
+    )
 
     def connect():
         return pymysql.connect(

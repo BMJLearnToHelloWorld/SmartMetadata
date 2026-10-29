@@ -29,6 +29,12 @@ from smartmetadata_ingestion.records import (
 class Source(Protocol):
     def produce(self) -> Iterable[WorkflowRecord]: ...
 
+    def prepare(self) -> None:
+        """Optional setup before produce. Default is a no-op."""
+
+    def close(self) -> None:
+        """Optional teardown after produce. Default is a no-op."""
+
 
 @register_source("static")
 class StaticSource:
@@ -36,6 +42,12 @@ class StaticSource:
 
     def __init__(self, config: SourceConfig):
         self._config = config
+
+    def prepare(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
     def produce(self) -> Iterable[WorkflowRecord]:
         yield DatabaseServiceRecord(

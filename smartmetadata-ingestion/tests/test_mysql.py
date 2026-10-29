@@ -8,7 +8,11 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
+
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.mysql import (
     ColumnRow,
@@ -156,6 +160,24 @@ def test_mysql_cursor_reader_uses_information_schema() -> None:
     cursor.rows = [("app", "orders_v", "SELECT 1")]
     assert reader.list_views()[0].name == "orders_v"
     assert cursor.closed is True
+
+
+def test_mysql_live_connection_uses_database_name(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = _pymysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "shop"
 
 
 def test_mysql_live_reader_requires_extra(monkeypatch) -> None:

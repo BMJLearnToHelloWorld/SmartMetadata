@@ -19,6 +19,19 @@ class RecordFailure:
     label: str
     kind: str
     message: str
+    stack_trace: str | None = None
+
+
+@dataclass
+class StepStatus:
+    name: str
+    records: int = 0
+    filtered: int = 0
+    failures: list[RecordFailure] = field(default_factory=list)
+
+    @property
+    def errors(self) -> int:
+        return len(self.failures)
 
 
 @dataclass

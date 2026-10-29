@@ -61,6 +61,10 @@ class SequenceTopicReader:
         return self._topics
 
 
+class SchemaSubjectNotFoundError(WorkflowError):
+    """A Schema Registry subject does not exist."""
+
+
 class ConfluentHttpTopicReader:
     """Reads topics from Confluent REST Proxy v2 and optional Schema Registry."""
 
@@ -176,7 +180,7 @@ class ConfluentHttpTopicReader:
                     ),
                     auth=self._schema_registry_auth,
                 )
-            except WorkflowError:
+            except SchemaSubjectNotFoundError:
                 continue
             if not isinstance(payload, dict):
                 continue
@@ -193,7 +197,7 @@ class ConfluentHttpTopicReader:
     def _get(self, url: str, *, auth: tuple[str, str] | None) -> Any:
         response = self._client.get(url, auth=auth)
         if response.status_code == 404:
-            raise WorkflowError(f"GET {url} returned HTTP 404")
+            raise SchemaSubjectNotFoundError(f"GET {url} returned HTTP 404")
         if response.status_code >= 400:
             raise WorkflowError(f"GET {url} failed with HTTP {response.status_code}")
         if not response.content:
@@ -246,6 +250,12 @@ class KafkaSource:
         self._config = config
         self._reader = reader
         self._transport = transport
+
+    def prepare(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()

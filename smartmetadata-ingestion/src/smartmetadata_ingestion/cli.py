@@ -54,7 +54,16 @@ def _print_report(report: RunReport) -> None:
         "skipped": report.skipped,
         "failed": report.failed,
         "failures": [
-            {"label": item.label, "kind": item.kind, "message": item.message}
+            {
+                "label": item.label,
+                "kind": item.kind,
+                "message": item.message,
+                **(
+                    {"stack_trace": item.stack_trace}
+                    if item.stack_trace
+                    else {}
+                ),
+            }
             for item in report.failures
         ],
     }

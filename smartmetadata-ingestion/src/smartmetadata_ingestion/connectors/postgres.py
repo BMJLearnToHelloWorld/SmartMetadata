@@ -187,6 +187,12 @@ class PostgresSource:
         self._config = config
         self._reader = reader or (CursorCatalogReader(connect) if connect is not None else None)
 
+    def prepare(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         database_name = self._database_name()

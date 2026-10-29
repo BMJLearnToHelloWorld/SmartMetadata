@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.kafka import (
     ConfluentHttpTopicReader,
@@ -111,6 +112,49 @@ def test_confluent_http_reader_uses_rest_proxy_and_schema_registry() -> None:
     }
     assert topics["payments"].partitions == 1
     assert topics["payments"].message_schema is None
+
+
+def test_schema_registry_404_tries_the_next_subject() -> None:
+    requested_subjects: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/topics"):
+            return httpx.Response(200, json=["orders"])
+        if request.url.host == "proxy.test":
+            return httpx.Response(200, json={"partitions": 1, "configs": {}})
+        requested_subjects.append(request.url.path)
+        if request.url.path.endswith("/orders-value/versions/latest"):
+            return httpx.Response(404, json={"error_code": 40401})
+        return httpx.Response(200, json={"schemaType": "AVRO", "schema": "{}"})
+
+    reader = ConfluentHttpTopicReader(
+        rest_proxy_url="http://proxy.test",
+        schema_registry_url="http://schema.test",
+        transport=httpx.MockTransport(handler),
+    )
+    topics = reader.list_topics()
+    reader.close()
+
+    assert topics[0].message_schema == {"schemaType": "Avro", "schemaText": "{}"}
+    assert len(requested_subjects) == 2
+
+
+def test_schema_registry_non_404_failure_is_not_reported_as_missing_schema() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/topics"):
+            return httpx.Response(200, json=["orders"])
+        if request.url.host == "proxy.test":
+            return httpx.Response(200, json={"partitions": 1, "configs": {}})
+        return httpx.Response(401, json={"message": "unauthorized"})
+
+    reader = ConfluentHttpTopicReader(
+        rest_proxy_url="http://proxy.test",
+        schema_registry_url="http://schema.test",
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(WorkflowError, match="HTTP 401"):
+        reader.list_topics()
+    reader.close()
 
 
 def test_kafka_http_source_wires_mocked_transport() -> None:
