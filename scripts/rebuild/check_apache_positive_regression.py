@@ -141,6 +141,9 @@ REQUIRED_MCP_TOOLS = (
     "find_by_tag",
     "get_test_definitions",
     "create_conversation",
+    "create_entity",
+    "patch_entity",
+    "create_test_case",
 )
 
 FORBIDDEN_MCP_TOOLS = (

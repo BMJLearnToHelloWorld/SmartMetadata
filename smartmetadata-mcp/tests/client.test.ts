@@ -74,4 +74,17 @@ describe('RestClient', () => {
       message: 'Expired token',
     } satisfies Partial<RestError>);
   });
+
+  it('honors contentType override for JSON Patch', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    const client = new RestClient(config, fetchImpl);
+    await client.request('/v1/glossaries/name/Finance', {
+      method: 'PATCH',
+      json: [{ op: 'replace', path: '/description', value: 'x' }],
+      contentType: 'application/json-patch+json',
+    });
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('PATCH');
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json-patch+json');
+  });
 });

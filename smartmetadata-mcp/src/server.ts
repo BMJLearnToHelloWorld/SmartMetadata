@@ -14,7 +14,7 @@ import type { RestClient } from './client.js';
 import { createToolHandlers, TOOL_NAMES } from './tools.js';
 
 export const SERVER_NAME = 'smartmetadata';
-export const SERVER_VERSION = '0.11.0';
+export const SERVER_VERSION = '0.12.0';
 
 export interface RegisteredToolConfig {
   description: string;
@@ -95,6 +95,38 @@ const conversationSchema = z.object({
   about: z.string().optional().describe('MessageParser entity link <#E::type::fqn>'),
   entityType: z.string().optional().describe('Used with fqn when about is omitted'),
   fqn: z.string().optional().describe('Used with entityType when about is omitted'),
+});
+
+const createEntitySchema = z.object({
+  entityType: z.string().describe('Apache allowlisted entity type (same as get_entity_details)'),
+  name: z.string().describe('Create*Request.name'),
+  description: z.string().optional().describe('Create*Request.description when the schema requires/allows it'),
+  displayName: z.string().optional().describe('Create*Request.displayName'),
+  fields: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Additional Apache Create*Request properties (e.g. glossary FQN for glossaryTerm). No invent.'),
+});
+
+const patchEntitySchema = z.object({
+  entityType: z.string().describe('Apache allowlisted entity type'),
+  fqn: z.string().describe('Fully qualified name'),
+  patch: z
+    .union([z.string(), z.array(z.record(z.string(), z.unknown()))])
+    .describe('RFC 6902 JSON Patch array or JSON-array string'),
+});
+
+const createTestCaseSchema = z.object({
+  name: z.string().describe('CreateTestCaseRequest.name'),
+  fqn: z.string().describe('FQN of the tested asset (usually a table)'),
+  testDefinitionName: z.string().describe('CreateTestCaseRequest.testDefinition (FQN)'),
+  columnName: z.string().optional().describe('Column name for column-level tests'),
+  entityType: z.string().optional().describe('entityLink type segment; default table'),
+  description: z.string().optional().describe('CreateTestCaseRequest.description'),
+  parameterValues: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('CreateTestCaseRequest.parameterValues'),
 });
 
 function toolResult(payload: unknown, isError = false): ToolCallResult {
@@ -194,6 +226,27 @@ export function registerCatalogTools(server: ToolRegistrar, client: RestClient):
       description: 'Create a user conversation comment via POST /v1/conversations',
       inputSchema: conversationSchema,
       handler: (args) => tools.create_conversation(conversationSchema.parse(args)),
+    },
+    {
+      name: 'create_entity',
+      description:
+        'Create an Apache catalog entity via POST /v1/{collection} (Create*Request). Collate/RDF types rejected. Does not invent owner/tag name resolution.',
+      inputSchema: createEntitySchema,
+      handler: (args) => tools.create_entity(createEntitySchema.parse(args)),
+    },
+    {
+      name: 'patch_entity',
+      description:
+        'Patch an Apache catalog entity via PATCH /v1/{collection}/name/{fqn} with application/json-patch+json (RFC 6902).',
+      inputSchema: patchEntitySchema,
+      handler: (args) => tools.patch_entity(patchEntitySchema.parse(args)),
+    },
+    {
+      name: 'create_test_case',
+      description:
+        'Create a data-quality test case via POST /v1/dataQuality/testCases (CreateTestCaseRequest: name, testDefinition, entityLink).',
+      inputSchema: createTestCaseSchema,
+      handler: (args) => tools.create_test_case(createTestCaseSchema.parse(args)),
     },
   ];
 

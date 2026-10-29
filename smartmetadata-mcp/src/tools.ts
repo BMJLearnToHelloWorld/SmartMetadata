@@ -74,6 +74,9 @@ export const TOOL_NAMES = [
   'find_by_tag',
   'get_test_definitions',
   'create_conversation',
+  'create_entity',
+  'patch_entity',
+  'create_test_case',
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -138,6 +141,34 @@ export interface ConversationArgs {
   fqn?: string;
 }
 
+export interface CreateEntityArgs {
+  entityType: string;
+  name: string;
+  description?: string;
+  displayName?: string;
+  /** Additional Apache Create*Request fields (glossary, parent, …). No Collate invent. */
+  fields?: Record<string, unknown>;
+}
+
+export interface PatchEntityArgs {
+  entityType: string;
+  fqn: string;
+  /** RFC 6902 JSON Patch document: array or JSON-array string. */
+  patch: unknown;
+}
+
+export interface CreateTestCaseArgs {
+  name: string;
+  /** Table (or other tested asset) FQN for the Apache entityLink. */
+  fqn: string;
+  testDefinitionName: string;
+  columnName?: string;
+  /** Entity type segment in entityLink; default table. */
+  entityType?: string;
+  description?: string;
+  parameterValues?: Array<Record<string, unknown>>;
+}
+
 export interface ToolHandlers {
   search_entities: (args: SearchArgs) => Promise<unknown>;
   get_table: (args: FqnArgs) => Promise<unknown>;
@@ -150,6 +181,9 @@ export interface ToolHandlers {
   find_by_tag: (args: FindByTagArgs) => Promise<unknown>;
   get_test_definitions: (args: TestDefinitionsArgs) => Promise<unknown>;
   create_conversation: (args: ConversationArgs) => Promise<unknown>;
+  create_entity: (args: CreateEntityArgs) => Promise<unknown>;
+  patch_entity: (args: PatchEntityArgs) => Promise<unknown>;
+  create_test_case: (args: CreateTestCaseArgs) => Promise<unknown>;
 }
 
 export function resolveEntityCollection(entityType: string): string {
@@ -162,6 +196,55 @@ export function resolveEntityCollection(entityType: string): string {
   }
   return collection;
 }
+
+export const JSON_PATCH_CONTENT_TYPE = 'application/json-patch+json';
+
+export function parseJsonPatch(patch: unknown): unknown[] {
+  let value: unknown = patch;
+  if (typeof patch === 'string') {
+    const trimmed = patch.trim();
+    if (!trimmed) {
+      throw new Error('patch is required');
+    }
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      throw new Error('patch must be a JSON array of RFC 6902 operations');
+    }
+  }
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('patch must be a non-empty JSON array of RFC 6902 operations');
+  }
+  for (const op of value) {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) {
+      throw new Error('each patch entry must be an object with op and path');
+    }
+    const rec = op as Record<string, unknown>;
+    if (typeof rec.op !== 'string' || typeof rec.path !== 'string' || !rec.path.startsWith('/')) {
+      throw new Error('each patch entry needs string op and path starting with /');
+    }
+  }
+  return value;
+}
+
+/**
+ * Apache CreateTestCase.entityLink (MessageParser): <#E::table::fqn> or
+ * <#E::table::fqn::columns::col>.
+ */
+export function buildTestCaseEntityLink(args: {
+  fqn: string;
+  columnName?: string;
+  entityType?: string;
+}): string {
+  const entityType = (args.entityType?.trim() || 'table').toLowerCase();
+  const fqn = requireFqn(args.fqn);
+  const column = args.columnName?.trim();
+  if (column) {
+    return `<#E::${entityType}::${fqn}::columns::${column}>`;
+  }
+  return `<#E::${entityType}::${fqn}>`;
+}
+
 
 function entityFields(entityType: string, override?: string): string {
   if (override?.trim()) {
@@ -281,6 +364,57 @@ export function createToolHandlers(client: RestClient): ToolHandlers {
         method: 'POST',
         json: { message, about },
       });
+    },
+    async create_entity(args) {
+      const entityType = requireToken(args.entityType, 'entityType');
+      const collection = resolveEntityCollection(entityType);
+      const name = requireToken(args.name, 'name');
+      const body: Record<string, unknown> = { name };
+      if (args.description?.trim()) {
+        body.description = args.description.trim();
+      }
+      if (args.displayName?.trim()) {
+        body.displayName = args.displayName.trim();
+      }
+      if (args.fields) {
+        if (typeof args.fields !== 'object' || Array.isArray(args.fields)) {
+          throw new Error('fields must be an object of Apache Create*Request properties');
+        }
+        for (const [key, value] of Object.entries(args.fields)) {
+          if (key === 'name' || key === 'description' || key === 'displayName') {
+            continue;
+          }
+          body[key] = value;
+        }
+      }
+      return client.request(`/v1/${collection}`, { method: 'POST', json: body });
+    },
+    async patch_entity(args) {
+      const entityType = requireToken(args.entityType, 'entityType');
+      const collection = resolveEntityCollection(entityType);
+      const fqn = requireFqn(args.fqn);
+      const patch = parseJsonPatch(args.patch);
+      return client.request(`/v1/${collection}/name/${encodeURIComponent(fqn)}`, {
+        method: 'PATCH',
+        json: patch,
+        contentType: JSON_PATCH_CONTENT_TYPE,
+      });
+    },
+    async create_test_case(args) {
+      const name = requireToken(args.name, 'name');
+      const testDefinition = requireToken(args.testDefinitionName, 'testDefinitionName');
+      const entityLink = buildTestCaseEntityLink(args);
+      const body: Record<string, unknown> = { name, testDefinition, entityLink };
+      if (args.description?.trim()) {
+        body.description = args.description.trim();
+      }
+      if (args.parameterValues !== undefined) {
+        if (!Array.isArray(args.parameterValues)) {
+          throw new Error('parameterValues must be an array');
+        }
+        body.parameterValues = args.parameterValues;
+      }
+      return client.request('/v1/dataQuality/testCases', { method: 'POST', json: body });
     },
   };
 }
