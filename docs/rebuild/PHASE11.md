@@ -71,6 +71,8 @@ python3 scripts/rebuild/verify_rebuild.py
 6. `check_product_path_hints.py` (docs + docker ack; does not re-scan dist)
 7. `scripts/harness/check_decision_records.py`
 8. `scripts/rebuild/test_live_smoke.py` and `test_rebuild_workflows.py` (offline contracts; not live e2e)
+9. `check_apache_positive_regression.py` + its contract test (backend-01..09 Apache path lock)
+10. `smartmetadata-airflow-apis` `pytest` (AirflowRESTClient route contract)
 
 Install steps (`npm ci` in the two Node packages, `pip install -e smartmetadata-ingestion/[dev]`)
 run automatically when `node_modules` or the Python package is missing. Force or skip:

@@ -2,7 +2,7 @@
 """Run the offline Phase 11 rebuild verification matrix.
 
 Runs the product-package tests, the three CCL-free gates, the product-path
-hint check, and the decision-record check. Does **not** start Docker, MySQL,
+hint check, the decision-record check, and the Apache positive-regression lock. Does **not** start Docker, MySQL,
 Elasticsearch, Airflow, or a live catalog, and does not build
 ``openmetadata-dist`` unless ``--require-tarball`` is passed.
 
@@ -61,6 +61,10 @@ def install_steps() -> list[Step]:
             argv=(PYTHON, "-m", "pip", "install", "-e", "smartmetadata-ingestion/[dev]"),
         ),
         Step(id="mcp-install", argv=npm_argv("ci"), cwd="smartmetadata-mcp"),
+        Step(
+            id="airflow-apis-install",
+            argv=(PYTHON, "-m", "pip", "install", "-e", "smartmetadata-airflow-apis/[test]"),
+        ),
     ]
 
 
@@ -104,6 +108,19 @@ def verify_steps(*, require_tarball: bool = False) -> list[Step]:
             id="pr-hygiene-contract",
             argv=(PYTHON, "scripts/rebuild/test_pr_hygiene_workflows.py"),
         ),
+        Step(
+            id="apache-positive-regression",
+            argv=(PYTHON, "scripts/rebuild/check_apache_positive_regression.py"),
+        ),
+        Step(
+            id="apache-positive-regression-contract",
+            argv=(PYTHON, "scripts/rebuild/test_apache_positive_regression.py"),
+        ),
+        Step(
+            id="airflow-apis-test",
+            argv=(PYTHON, "-m", "pytest"),
+            cwd="smartmetadata-airflow-apis",
+        ),
     ]
 
 
@@ -120,6 +137,15 @@ def ingestion_importable() -> bool:
     return probe.returncode == 0
 
 
+def airflow_apis_importable() -> bool:
+    probe = subprocess.run(
+        [PYTHON, "-c", "import flask; import smartmetadata_airflow_apis"],
+        check=False,
+        capture_output=True,
+    )
+    return probe.returncode == 0
+
+
 def needed_install_steps() -> list[Step]:
     needed: list[Step] = []
     by_id = {step.id: step for step in install_steps()}
@@ -129,6 +155,8 @@ def needed_install_steps() -> list[Step]:
         needed.append(by_id["ingest-install"])
     if not node_modules_ready(REPO / "smartmetadata-mcp"):
         needed.append(by_id["mcp-install"])
+    if not airflow_apis_importable():
+        needed.append(by_id["airflow-apis-install"])
     return needed
 
 

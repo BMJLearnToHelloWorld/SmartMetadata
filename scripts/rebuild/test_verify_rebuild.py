@@ -48,6 +48,9 @@ class VerifyRebuildContract(unittest.TestCase):
             "live-smoke-contract",
             "rebuild-ci-contract",
             "pr-hygiene-contract",
+            "apache-positive-regression",
+            "apache-positive-regression-contract",
+            "airflow-apis-test",
         ):
             self.assertIn(required, ids)
 
@@ -59,6 +62,7 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("check_product_path_hints.py", joined)
         self.assertIn("test_require_reference_stack.py", joined)
         self.assertIn("check_decision_records.py", joined)
+        self.assertIn("check_apache_positive_regression.py", joined)
 
     def test_steps_never_cd_into_reference_trees(self) -> None:
         verify = load_verify()
@@ -142,6 +146,8 @@ class VerifyRebuildContract(unittest.TestCase):
         self.assertIn("live-smoke-contract", completed.stdout)
         self.assertIn("rebuild-ci-contract", completed.stdout)
         self.assertIn("pr-hygiene-contract", completed.stdout)
+        self.assertIn("apache-positive-regression", completed.stdout)
+        self.assertIn("airflow-apis-test", completed.stdout)
 
 
 if __name__ == "__main__":

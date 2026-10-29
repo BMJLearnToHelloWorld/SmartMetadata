@@ -110,6 +110,15 @@ get_test_definitions, create_conversation.
 | `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis` | **DROP** (Phase 10: RDF / Collate) |
 | HTTP `/mcp` on the Java server | **Unregistered** (slim dist has no CCL jar) |
 
+## Apache positive regression (backend-10)
+
+Offline gate `scripts/rebuild/check_apache_positive_regression.py` (wired into
+`make verify-rebuild`) locks RestClient paths, `STAGE_ORDER`, bulk default,
+Airflow route catalog, MCP Apache-only `TOOL_NAMES`, and Settings Policies/CP/Apps
+clients claimed BehaviorMatched in `BACKEND_01`..`09`. Status:
+**BehaviorMatched (static/unit)** — not ProductVerified. See
+`BACKEND_10_REVIEW.md`.
+
 ## Ingestion framework
 
 | Capability | Official (reference) | Product | Status |
@@ -117,7 +126,7 @@ get_test_definitions, create_conversation.
 | Source→Sink runner | `ingestion/` workflow | `smartmetadata_ingestion/runner.py` | Shipped (P6) |
 | REST sink | metadata REST | `sinks/metadata_rest.py` | Shipped |
 | Connector registry | `service_spec.py` + entry points | in-process `register_source` | Shipped (P7); **no setuptools plugins** |
-| Airflow / Prefect operator | `openmetadata-airflow-apis` (Python headers point at CCL `ingestion/LICENSE`) | — | **Gap**; Phase 11: “later ADR”. Console runs via CLI |
+| Airflow / Prefect operator | `openmetadata-airflow-apis` (Python headers point at CCL `ingestion/LICENSE`) | `smartmetadata-airflow-apis` route contract (MemoryDagStore) | **Partial**: backend-07 BehaviorMatched (unit) for AirflowRESTClient paths; full operator / scheduler still Gap. Locked by backend-10 positive regression |
 | Profiler / DQ execution | official pipelines | `jobs.py` stubs that **raise** | **Residual, not shipped.** Do not pretend they run |
 | Sample-data loader | official | seed via API or `smartmetadata-ingest` | **Gap** vs one-click sample stack |
 
