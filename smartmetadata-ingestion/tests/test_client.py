@@ -178,3 +178,31 @@ def test_add_pipeline_status_puts_encoded_fqn() -> None:
         == "/api/v1/services/ingestionPipelines/service.my%20pipeline/pipelineStatus"
     )
     assert b'"runId":"run-1"' in seen["body"]
+
+
+def test_bulk_upsert_and_delete_stale_paths() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json={"status": "success", "numberOfRowsProcessed": 1})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        client.bulk_upsert_tables([{"name": "t", "databaseSchema": "s", "columns": []}])
+        client.bulk_upsert_databases([{"name": "d", "service": "svc"}])
+        client.bulk_upsert_schemas([{"name": "public", "database": "svc.d"}])
+        client.bulk_upsert_topics([{"name": "orders", "service": "events", "partitions": 1}])
+        client.delete_stale(
+            "/v1/tables",
+            scope_fqn="svc",
+            scope_entity_type="databaseService",
+            seen_fqns=["svc.d.public.t"],
+            dry_run=True,
+        )
+    assert seen == [
+        ("PUT", "/api/v1/tables/bulk"),
+        ("PUT", "/api/v1/databases/bulk"),
+        ("PUT", "/api/v1/databaseSchemas/bulk"),
+        ("PUT", "/api/v1/topics/bulk"),
+        ("DELETE", "/api/v1/tables/deleteStale"),
+    ]

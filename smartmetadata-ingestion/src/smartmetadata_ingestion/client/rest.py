@@ -182,6 +182,41 @@ class RestClient:
         )
         return self.request("PUT", path, json=lineage_details or {})
 
+
+    def bulk_upsert_databases(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{DATABASES_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_schemas(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{SCHEMAS_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_tables(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{TABLES_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_topics(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{TOPICS_PATH}/bulk", json=payloads)
+
+    def delete_stale(
+        self,
+        entity_path: str,
+        *,
+        scope_fqn: str,
+        scope_entity_type: str,
+        seen_fqns: list[str],
+        dry_run: bool = False,
+        hard_delete: bool = False,
+        recursive: bool = True,
+    ) -> Any:
+        """DELETE {entity_path}/deleteStale with BulkDeleteStaleRequest body."""
+        body = {
+            "scopeFqn": scope_fqn,
+            "scopeEntityType": scope_entity_type,
+            "seenFqns": list(seen_fqns),
+            "dryRun": dry_run,
+            "hardDelete": hard_delete,
+            "recursive": recursive,
+        }
+        return self.request("DELETE", f"{entity_path}/deleteStale", json=body)
+
     def add_pipeline_status(self, fqn: str, status: dict[str, Any]) -> Any:
         """PUT /v1/services/ingestionPipelines/{fqn}/pipelineStatus (Apache contract)."""
         if not fqn or not str(fqn).strip():

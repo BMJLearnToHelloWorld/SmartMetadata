@@ -83,6 +83,8 @@ class WorkflowSettings(CamelModel):
     type: Literal["metadata"] = "metadata"
     fail_fast: bool = False
     ingestion_pipeline_fqn: str | None = None
+    reconcile_stale: bool = False
+    reconcile_dry_run: bool = False
 
 
 class SourceConfig(CamelModel):
@@ -124,6 +126,15 @@ class ProcessorConfig(CamelModel):
 
 class SinkConfig(CamelModel):
     type: Literal["metadata-rest"] = "metadata-rest"
+    use_bulk: bool = True
+    bulk_batch_size: int = 50
+
+    @field_validator("bulk_batch_size")
+    @classmethod
+    def require_batch(cls, value: int) -> int:
+        if value < 1 or value > 500:
+            raise ValueError("sink.bulkBatchSize must be between 1 and 500")
+        return value
 
 
 class LineageEndpointConfig(CamelModel):
