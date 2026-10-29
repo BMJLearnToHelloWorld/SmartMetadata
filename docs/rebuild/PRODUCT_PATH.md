@@ -26,7 +26,7 @@ ADR:2026-10-23-product-docker-is-rebuild-only.
 
 Go-live matrix: [PHASE11.md](PHASE11.md) (`make verify-rebuild`). Slim server
 runbook: [PHASE0.md](PHASE0.md). Gap matrix vs official surfaces:
-[PARITY.md](PARITY.md).
+[PARITY.md](PARITY.md). Capability inventory after backend #49–#58: [CAPABILITY_LEDGER.md](CAPABILITY_LEDGER.md).
 ADR:2026-10-23-product-docker-is-rebuild-only.
 
 Local Docker — one command starts the **already-rebuilt** surfaces (server,

@@ -119,6 +119,12 @@ clients claimed BehaviorMatched in `BACKEND_01`..`09`. Status:
 **BehaviorMatched (static/unit)** — not ProductVerified. See
 `BACKEND_10_REVIEW.md`.
 
+## Capability ledger (backend-00)
+
+Factual inventory after fused backend #49–#58: [CAPABILITY_LEDGER.md](./CAPABILITY_LEDGER.md)
+(review: [BACKEND_00_REVIEW.md](./BACKEND_00_REVIEW.md)). Docs-only; does not invent batches.
+OutOfScope (AI/RDF/SSO invent/…) is not debt. Status vocab unchanged.
+
 ## Ingestion framework
 
 | Capability | Official (reference) | Product | Status |
