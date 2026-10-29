@@ -34,10 +34,11 @@ Intentionally **not** copied: policy rule authoring, PUT
 
 | Item | Official (reference) | Product now | Residual |
 |---|---|---|---|
-| Policies list | Settings → Access → Policies | `PoliciesListView` at `/admin/policies` via `listPolicies` | No POST/PUT/PATCH/DELETE, no `/search` box |
-| Policy detail | Policy page + rules | `PolicyDetailView` Overview / Rules / Roles / Teams | No editor; assignment stays on role/team |
-| Custom property defs | Settings → Custom properties | `CustomPropertyTypesListView` + type detail | No add/edit definition form |
-| Settings hub | Category cards | Policies + Custom properties are live `RouterLink`s | Other residual tiles stay text |
+| Policies list | Settings → Access → Policies | `PoliciesListView` create/delete + list | No `/search` box |
+| Policy detail | Policy page + rules | `PolicyDetailView` edit (PUT) / delete | Assignment stays on role/team |
+| Custom property defs | Settings → Custom properties | Type detail add/update definition (PUT) | Asset tab still values-only |
+| Applications | Settings → Applications | `AppsListView` + detail (GET) | No marketplace install |
+| Settings hub | Category cards | Policies + Custom properties + Apps live | SSO/Persona/Appearance/inbox residual |
 
 Existing `listCustomProperties` (asset tab values) is unchanged. Asset
 Custom properties still PATCH **values**. This page only **reads**
@@ -52,14 +53,16 @@ No new Java/Python endpoints.
 
 | Gap | Why it stays |
 |---|---|
-| Policy create / edit / delete | Official write APIs exist; product had no policy write client |
 | Policy `/search` | No product search client (unlike roles) |
-| Custom property definition PUT | `TypeResource.addOrUpdateProperty` is not called anywhere in this console |
 | Admins / online-users / audit logs | Still residual hub text |
 | Appearance / search-settings / profiler-run | Still residual; profiler `jobs.py` still raises |
 | Notification inbox websocket | Still residual |
-| Applications / SSO / Persona | Still residual; do not invent save forms |
+| Apps marketplace install / trigger / configure | List+detail only (`BACKEND_09_REVIEW.md`); do not invent Collate marketplace |
+| SSO / Persona | Still residual; do not invent save forms |
 | Knowledge / Ontology / AI | Collate-only **DROP** |
+
+Closed by backend-09 (`BACKEND_09_REVIEW.md`): Policy POST/PUT/DELETE,
+Custom property definition PUT, Applications GET list+detail + hub route.
 
 ## How to verify
 

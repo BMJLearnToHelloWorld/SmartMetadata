@@ -21,6 +21,8 @@ import LoginView from '@/views/LoginView.vue';
 import RoleDetailView from '@/views/admin/RoleDetailView.vue';
 import RolesListView from '@/views/admin/RolesListView.vue';
 import SearchView from '@/views/SearchView.vue';
+import AppDetailView from '@/views/admin/AppDetailView.vue';
+import AppsListView from '@/views/admin/AppsListView.vue';
 import CustomPropertyTypeDetailView from '@/views/admin/CustomPropertyTypeDetailView.vue';
 import CustomPropertyTypesListView from '@/views/admin/CustomPropertyTypesListView.vue';
 import PoliciesListView from '@/views/admin/PoliciesListView.vue';
@@ -104,6 +106,8 @@ export const router = createRouter({
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
         { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
         { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
+        { path: 'admin/apps', name: 'admin-apps', component: AppsListView },
+        { path: 'admin/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
         {
           path: 'admin/settings/custom-properties',
           name: 'admin-settings-custom-properties',

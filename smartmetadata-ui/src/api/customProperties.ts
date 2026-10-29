@@ -9,11 +9,17 @@
  */
 import { asRecord, asString, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
-import type { CustomPropertyDef, MetadataType } from '@/types/collaboration';
+import type {
+  CreateCustomPropertyRequest,
+  CustomPropertyDef,
+  MetadataType,
+} from '@/types/collaboration';
 import { apiRequest } from './client';
 
 /** TypeResource list filter for entity types that may carry customProperties. */
 export const ENTITY_TYPE_CATEGORY = 'entity';
+/** TypeResource category for property types (string, integer, …). */
+export const FIELD_TYPE_CATEGORY = 'field';
 export const TYPE_FIELDS = 'customProperties';
 
 export interface ListMetadataTypesQuery {
@@ -80,4 +86,41 @@ export async function listCustomProperties(entityType: string): Promise<CustomPr
     const mapped = rec ? mapCustomProperty(rec) : null;
     return mapped ? [mapped] : [];
   });
+}
+
+export async function getMetadataTypeByName(name: string): Promise<MetadataType> {
+  const raw = await apiRequest<unknown>(`/v1/metadata/types/name/${encodeURIComponent(name)}`, {
+    query: { fields: TYPE_FIELDS },
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapMetadataType(rec) : null;
+  if (!mapped) {
+    throw new Error('Type response was missing name');
+  }
+  return mapped;
+}
+
+/** Property types usable as CustomProperty.propertyType (category=field). */
+export function listPropertyTypes(limit = 100): Promise<Paged<MetadataType>> {
+  return listMetadataTypes({ category: FIELD_TYPE_CATEGORY, limit });
+}
+
+/**
+ * Apache TypeResource.addOrUpdateProperty —
+ * PUT /v1/metadata/types/{id} with CustomProperty body.
+ */
+export async function addOrUpdateCustomProperty(
+  typeId: string,
+  body: CreateCustomPropertyRequest,
+): Promise<MetadataType> {
+  const raw = await apiRequest<unknown>(`/v1/metadata/types/${encodeURIComponent(typeId)}`, {
+    method: 'PUT',
+    json: body,
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapMetadataType(rec) : null;
+  if (!mapped) {
+    throw new Error('Add/update custom property succeeded but the response had no type');
+  }
+  return mapped;
 }

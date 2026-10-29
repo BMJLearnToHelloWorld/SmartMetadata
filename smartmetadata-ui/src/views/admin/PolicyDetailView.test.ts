@@ -83,7 +83,7 @@ describe('PolicyDetailView', () => {
     localStorage.clear();
   });
 
-  it('renders GET /v1/policies/{id} rules and does not invent an editor', async () => {
+  it('renders GET /v1/policies/{id} rules and exposes Apache-backed edit/delete', async () => {
     const { wrapper } = await mountPolicy();
     expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Data Consumer');
@@ -91,8 +91,8 @@ describe('PolicyDetailView', () => {
     expect(wrapper.text()).toContain('ViewAll');
     expect(wrapper.text()).toContain('isOwner()');
     expect(wrapper.find('[data-testid="policy-rules-table"]').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain('Save policy');
-    expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-policy"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="delete-policy"]').exists()).toBe(true);
   });
 
   it('shows Empty when the policy GET has no usable payload', async () => {
