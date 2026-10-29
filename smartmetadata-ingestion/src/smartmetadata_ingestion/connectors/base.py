@@ -15,13 +15,16 @@ from smartmetadata_ingestion.config import SourceConfig, WorkflowConfig
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
+    ColumnLineage,
     ColumnRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
+    EntityRef,
     LineageEndpoint,
     LineageRecord,
     SchemaRecord,
     TableRecord,
+    UsageRecord,
     WorkflowRecord,
 )
 
@@ -94,12 +97,39 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
     if kind == "lineage":
         from_entity = raw["fromEntity"]
         to_entity = raw["toEntity"]
+        columns_lineage = [
+            ColumnLineage(
+                from_columns=list(col.get("fromColumns") or col.get("from_columns") or []),
+                to_column=col.get("toColumn") or col["to_column"],
+                function=col.get("function"),
+            )
+            for col in raw.get("columnsLineage") or raw.get("columns_lineage") or []
+        ]
+        pipeline = None
+        raw_pipeline = raw.get("pipeline")
+        if isinstance(raw_pipeline, dict):
+            pipeline = EntityRef(
+                type=raw_pipeline["type"],
+                fully_qualified_name=raw_pipeline.get("fullyQualifiedName")
+                or raw_pipeline.get("fully_qualified_name"),
+                id=raw_pipeline.get("id"),
+                name=raw_pipeline.get("name"),
+            )
         return LineageRecord(
             from_entity=LineageEndpoint(type=from_entity["type"], fqn=from_entity["fqn"]),
             to_entity=LineageEndpoint(type=to_entity["type"], fqn=to_entity["fqn"]),
             description=raw.get("description"),
             source=raw.get("source", "Manual"),
             sql_query=raw.get("sqlQuery"),
+            columns_lineage=columns_lineage,
+            pipeline=pipeline,
+        )
+    if kind == "usage":
+        return UsageRecord(
+            entity_type=raw.get("entityType") or raw.get("entity_type") or "table",
+            fqn=raw["fqn"],
+            date=raw["date"],
+            count=int(raw["count"]),
         )
     raise WorkflowError(f"unsupported static record kind {kind!r}")
 

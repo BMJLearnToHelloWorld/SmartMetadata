@@ -86,6 +86,27 @@ class LineageEndpoint(BaseModel):
     fqn: str
 
 
+class ColumnLineage(BaseModel):
+    """Apache ColumnLineage: fromColumns FQNs → toColumn FQN (+ optional function)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    from_columns: list[str] = Field(default_factory=list)
+    to_column: str
+    function: str | None = None
+
+
+class EntityRef(BaseModel):
+    """Minimal EntityReference used in LineageDetails.pipeline."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str
+    fully_qualified_name: str | None = None
+    id: str | None = None
+    name: str | None = None
+
+
 class LineageRecord(Record):
     kind: Literal["lineage"] = "lineage"
     from_entity: LineageEndpoint
@@ -93,9 +114,24 @@ class LineageRecord(Record):
     description: str | None = None
     source: str = "Manual"
     sql_query: str | None = None
+    columns_lineage: list[ColumnLineage] = Field(default_factory=list)
+    pipeline: EntityRef | None = None
 
     def label(self) -> str:
         return f"lineage:{self.from_entity.fqn}->{self.to_entity.fqn}"
+
+
+class UsageRecord(Record):
+    """Apache DailyCount report: PUT /v1/usage/{entity}/name/{fqn}."""
+
+    kind: Literal["usage"] = "usage"
+    entity_type: str = "table"
+    fqn: str
+    date: str
+    count: int
+
+    def label(self) -> str:
+        return f"usage:{self.entity_type}:{self.fqn}@{self.date}"
 
 
 class MessagingServiceRecord(Record):
@@ -133,6 +169,7 @@ WorkflowRecord = (
     | SchemaRecord
     | TableRecord
     | LineageRecord
+    | UsageRecord
     | MessagingServiceRecord
     | TopicRecord
 )
