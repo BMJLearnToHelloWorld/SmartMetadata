@@ -19,10 +19,16 @@ from smartmetadata_ingestion.records import WorkflowRecord
 class Processor(Protocol):
     def process(self, record: WorkflowRecord) -> WorkflowRecord | None: ...
 
+    def close(self) -> None:
+        """Optional teardown. Default is a no-op."""
+
 
 class IdentityProcessor:
     def process(self, record: WorkflowRecord) -> WorkflowRecord:
         return record
+
+    def close(self) -> None:
+        return None
 
 
 class DropKindsProcessor:
@@ -33,6 +39,9 @@ class DropKindsProcessor:
         if record.kind in self._kinds:
             return None
         return record
+
+    def close(self) -> None:
+        return None
 
 
 def build_processors(config: WorkflowConfig) -> list[Processor]:

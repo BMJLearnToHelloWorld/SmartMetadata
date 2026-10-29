@@ -269,3 +269,31 @@ def test_flush_failure_is_fatal_and_recorded(workflow_config) -> None:
         workflow.execute()
 
     assert workflow.sink_status.errors == 1
+
+class FailingProcessor:
+    def process(self, record):
+        raise RuntimeError("processor failed")
+
+    def close(self) -> None:
+        return None
+
+
+def test_processor_failure_is_attributed_to_processor_status(workflow_config) -> None:
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=RecordingClient(events),
+        source=RecordingSource(events),
+        sink=RecordingSink(events),
+        processors=[FailingProcessor()],
+    )
+
+    report = workflow.execute()
+
+    assert report.failed == 1
+    assert workflow.processor_status.errors == 1
+    assert workflow.sink_status.errors == 0
+    assert "processor failed" in report.failures[0].message
+    assert report.failures[0].stack_trace
+

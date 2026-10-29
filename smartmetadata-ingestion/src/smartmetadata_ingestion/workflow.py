@@ -63,6 +63,7 @@ class MetadataWorkflow:
         self._hook = hook or NullHook()
         self.report = RunReport(workflow_name=config.workflow.name)
         self.source_status = StepStatus(name="Source")
+        self.processor_status = StepStatus(name="Processor")
         self.sink_status = StepStatus(name="Sink")
         try:
             self.prepare()
@@ -90,9 +91,7 @@ class MetadataWorkflow:
                 else build_processors(self.config)
             )
             self._sink = build_sink(self.config, self._client, self._provided_sink)
-            prepare = getattr(self._source, "prepare", None)
-            if callable(prepare):
-                prepare()
+            self._source.prepare()
             self._prepared = True
         except Exception as exc:
             self._record_failure(self.source_status, "Source", "source", exc)
@@ -173,11 +172,21 @@ class MetadataWorkflow:
                 if current is None:
                     break
                 current = processor.process(current)
-            if current is None:
-                self.report.skipped += 1
-                self.source_status.filtered += 1
-                self._notify_record(record, "skipped")
-                return
+        except Exception as exc:
+            failure = self._record_failure(
+                self.processor_status, record.label(), record.kind, exc
+            )
+            self.report.failures.append(failure)
+            self._notify_record(record, "failed")
+            if self.config.workflow.fail_fast:
+                raise
+            return
+        if current is None:
+            self.report.skipped += 1
+            self.source_status.filtered += 1
+            self._notify_record(record, "skipped")
+            return
+        try:
             self._sink.write(current)
             self.sink_status.records += 1
             self.report.succeeded += 1
@@ -201,21 +210,17 @@ class MetadataWorkflow:
         self._steps_closed = True
         failures: list[BaseException] = []
         if self._source is not None:
-            close = getattr(self._source, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception as exc:
-                    self._record_failure(self.source_status, "Source", "source", exc)
-                    failures.append(exc)
+            try:
+                self._source.close()
+            except Exception as exc:
+                self._record_failure(self.source_status, "Source", "source", exc)
+                failures.append(exc)
         for processor in self._processors:
-            close = getattr(processor, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception as exc:
-                    self._record_failure(self.sink_status, "Processor", "processor", exc)
-                    failures.append(exc)
+            try:
+                processor.close()
+            except Exception as exc:
+                self._record_failure(self.processor_status, "Processor", "processor", exc)
+                failures.append(exc)
         if self._sink is not None:
             try:
                 self._sink.flush()

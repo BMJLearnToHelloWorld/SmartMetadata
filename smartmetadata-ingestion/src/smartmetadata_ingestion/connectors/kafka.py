@@ -251,6 +251,12 @@ class KafkaSource:
         self._reader = reader
         self._transport = transport
 
+    def prepare(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         reader = self._require_reader()
