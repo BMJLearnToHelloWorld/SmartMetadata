@@ -172,6 +172,32 @@ class UsageSpec(CamelModel):
     count: int
 
 
+class ProfileSpec(CamelModel):
+    entity_type: str = "table"
+    fqn: str | None = None
+    table_id: str | None = None
+    profile_data: dict[str, Any] | None = None
+    profile_type: str | None = None
+    timestamp: int | None = None
+    table_profile: dict[str, Any] | None = None
+    column_profile: list[dict[str, Any]] = Field(default_factory=list)
+    system_profile: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TestCaseResultSpec(CamelModel):
+    test_case_fqn: str
+    timestamp: int
+    test_case_status: str
+    test_result_value: list[dict[str, Any]] = Field(default_factory=list)
+    result: str | None = None
+    sample_data: str | None = None
+    passed_rows: int | None = None
+    failed_rows: int | None = None
+    passed_rows_percentage: float | None = None
+    failed_rows_percentage: float | None = None
+    duration: float | None = None
+
+
 class WorkflowConfig(CamelModel):
     workflow: WorkflowSettings
     server: ServerConfig
@@ -180,6 +206,8 @@ class WorkflowConfig(CamelModel):
     sink: SinkConfig = Field(default_factory=SinkConfig)
     lineage: list[LineageSpec] = Field(default_factory=list)
     usage: list[UsageSpec] = Field(default_factory=list)
+    profiles: list[ProfileSpec] = Field(default_factory=list)
+    test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
 
 
 def load_raw_config(path: Path) -> dict[str, Any]:

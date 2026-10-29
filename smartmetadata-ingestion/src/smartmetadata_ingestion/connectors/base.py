@@ -25,6 +25,8 @@ from smartmetadata_ingestion.records import (
     SchemaRecord,
     TableRecord,
     UsageRecord,
+    ProfileRecord,
+    TestCaseResultRecord,
     WorkflowRecord,
 )
 
@@ -130,6 +132,38 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
             fqn=raw["fqn"],
             date=raw["date"],
             count=int(raw["count"]),
+        )
+    if kind == "profile":
+        return ProfileRecord(
+            entity_type=raw.get("entityType") or raw.get("entity_type") or "table",
+            fqn=raw.get("fqn"),
+            table_id=raw.get("tableId") or raw.get("table_id"),
+            profile_data=raw.get("profileData") or raw.get("profile_data"),
+            profile_type=raw.get("profileType") or raw.get("profile_type"),
+            timestamp=raw.get("timestamp"),
+            table_profile=raw.get("tableProfile") or raw.get("table_profile"),
+            column_profile=list(raw.get("columnProfile") or raw.get("column_profile") or []),
+            system_profile=list(raw.get("systemProfile") or raw.get("system_profile") or []),
+        )
+    if kind in {"testCaseResult", "test_case_result"}:
+        return TestCaseResultRecord(
+            test_case_fqn=raw.get("testCaseFqn") or raw.get("test_case_fqn") or raw["fqn"],
+            timestamp=int(raw["timestamp"]),
+            test_case_status=raw.get("testCaseStatus") or raw["test_case_status"],
+            test_result_value=list(
+                raw.get("testResultValue") or raw.get("test_result_value") or []
+            ),
+            result=raw.get("result"),
+            sample_data=raw.get("sampleData") or raw.get("sample_data"),
+            passed_rows=raw.get("passedRows", raw.get("passed_rows")),
+            failed_rows=raw.get("failedRows", raw.get("failed_rows")),
+            passed_rows_percentage=raw.get(
+                "passedRowsPercentage", raw.get("passed_rows_percentage")
+            ),
+            failed_rows_percentage=raw.get(
+                "failedRowsPercentage", raw.get("failed_rows_percentage")
+            ),
+            duration=raw.get("duration"),
         )
     raise WorkflowError(f"unsupported static record kind {kind!r}")
 

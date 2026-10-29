@@ -30,6 +30,9 @@ TABLES_PATH = "/v1/tables"
 TOPICS_PATH = "/v1/topics"
 LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
+ENTITY_PROFILES_PATH = "/v1/entity/profiles"
+TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
+TABLES_PROFILE_PATH = TABLES_PATH  # /v1/tables/{id}/tableProfile
 INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
@@ -213,6 +216,39 @@ class RestClient:
             f"/name/{encode_path_segment(fqn)}"
         )
         return self.request("PUT", path, json={"date": date, "count": int(count)})
+
+    def post_entity_profile_by_name(
+        self,
+        entity_type: str,
+        fqn: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """POST /v1/entity/profiles/name/{entityType}/{fqn} (CreateEntityProfile)."""
+        path = (
+            f"{ENTITY_PROFILES_PATH}/name/{encode_path_segment(entity_type)}"
+            f"/{encode_path_segment(fqn)}"
+        )
+        return self.request("POST", path, json=payload)
+
+    def put_table_profile(
+        self,
+        table_id: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """PUT /v1/tables/{id}/tableProfile (CreateTableProfile; legacy id path)."""
+        path = f"{TABLES_PATH}/{encode_path_segment(table_id)}/tableProfile"
+        return self.request("PUT", path, json=payload)
+
+    def post_test_case_result(
+        self,
+        test_case_fqn: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """POST /v1/dataQuality/testCases/testCaseResults/{fqn} (CreateTestCaseResult)."""
+        path = f"{TEST_CASE_RESULTS_PATH}/{encode_path_segment(test_case_fqn)}"
+        body = dict(payload)
+        body.setdefault("fqn", test_case_fqn)
+        return self.request("POST", path, json=body)
 
 
     def bulk_upsert_databases(self, payloads: list[dict[str, Any]]) -> Any:

@@ -121,6 +121,50 @@ class LineageRecord(Record):
         return f"lineage:{self.from_entity.fqn}->{self.to_entity.fqn}"
 
 
+
+
+class ProfileRecord(Record):
+    """Apache CreateEntityProfile (preferred) or CreateTableProfile (legacy id)."""
+
+    kind: Literal["profile"] = "profile"
+    entity_type: str = "table"
+    fqn: str | None = None
+    table_id: str | None = None
+    # CreateEntityProfile fields
+    profile_data: dict[str, Any] | None = None
+    profile_type: str | None = None
+    timestamp: int | None = None
+    # CreateTableProfile fields (legacy)
+    table_profile: dict[str, Any] | None = None
+    column_profile: list[dict[str, Any]] = Field(default_factory=list)
+    system_profile: list[dict[str, Any]] = Field(default_factory=list)
+
+    def label(self) -> str:
+        target = self.fqn or self.table_id or "?"
+        return f"profile:{self.entity_type}:{target}"
+
+
+class TestCaseResultRecord(Record):
+    __test__ = False
+
+    """Apache CreateTestCaseResult posted under a test-case FQN."""
+
+    kind: Literal["testCaseResult"] = "testCaseResult"
+    test_case_fqn: str
+    timestamp: int
+    test_case_status: str
+    test_result_value: list[dict[str, Any]] = Field(default_factory=list)
+    result: str | None = None
+    sample_data: str | None = None
+    passed_rows: int | None = None
+    failed_rows: int | None = None
+    passed_rows_percentage: float | None = None
+    failed_rows_percentage: float | None = None
+    duration: float | None = None
+
+    def label(self) -> str:
+        return f"testCaseResult:{self.test_case_fqn}@{self.timestamp}"
+
 class UsageRecord(Record):
     """Apache DailyCount report: PUT /v1/usage/{entity}/name/{fqn}."""
 
@@ -170,6 +214,8 @@ WorkflowRecord = (
     | TableRecord
     | LineageRecord
     | UsageRecord
+    | ProfileRecord
+    | TestCaseResultRecord
     | MessagingServiceRecord
     | TopicRecord
 )

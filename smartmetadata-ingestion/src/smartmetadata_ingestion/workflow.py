@@ -14,7 +14,13 @@ import uuid
 from collections.abc import Iterable, Iterator
 
 from smartmetadata_ingestion.client.rest import RestClient
-from smartmetadata_ingestion.config import LineageSpec, UsageSpec, WorkflowConfig
+from smartmetadata_ingestion.config import (
+    LineageSpec,
+    ProfileSpec,
+    TestCaseResultSpec,
+    UsageSpec,
+    WorkflowConfig,
+)
 from smartmetadata_ingestion.connectors.base import Source, build_source
 from smartmetadata_ingestion.errors import (
     WorkflowExecutionError,
@@ -41,6 +47,8 @@ from smartmetadata_ingestion.records import (
     LineageEndpoint,
     LineageRecord,
     UsageRecord,
+    ProfileRecord,
+    TestCaseResultRecord,
     WorkflowRecord,
 )
 from smartmetadata_ingestion.reconcile import reconcile_stale
@@ -259,6 +267,8 @@ class MetadataWorkflow:
             produced.append(record)
         produced.extend(self._configured_lineage())
         produced.extend(self._configured_usage())
+        produced.extend(self._configured_profiles())
+        produced.extend(self._configured_test_case_results())
         for record in order_records(produced):
             self.source_status.records += 1
             self._handle_record(record)
@@ -363,6 +373,14 @@ class MetadataWorkflow:
         for spec in self.config.usage:
             yield _usage_from_spec(spec)
 
+    def _configured_profiles(self) -> Iterable[ProfileRecord]:
+        for spec in self.config.profiles:
+            yield _profile_from_spec(spec)
+
+    def _configured_test_case_results(self) -> Iterable[TestCaseResultRecord]:
+        for spec in self.config.test_case_results:
+            yield _test_case_result_from_spec(spec)
+
     @staticmethod
     def _record_failure(
         status: StepStatus,
@@ -415,3 +433,34 @@ def _usage_from_spec(spec: UsageSpec) -> UsageRecord:
         date=spec.date,
         count=spec.count,
     )
+
+
+def _profile_from_spec(spec: ProfileSpec) -> ProfileRecord:
+    return ProfileRecord(
+        entity_type=spec.entity_type,
+        fqn=spec.fqn,
+        table_id=spec.table_id,
+        profile_data=spec.profile_data,
+        profile_type=spec.profile_type,
+        timestamp=spec.timestamp,
+        table_profile=spec.table_profile,
+        column_profile=list(spec.column_profile),
+        system_profile=list(spec.system_profile),
+    )
+
+
+def _test_case_result_from_spec(spec: TestCaseResultSpec) -> TestCaseResultRecord:
+    return TestCaseResultRecord(
+        test_case_fqn=spec.test_case_fqn,
+        timestamp=spec.timestamp,
+        test_case_status=spec.test_case_status,
+        test_result_value=list(spec.test_result_value),
+        result=spec.result,
+        sample_data=spec.sample_data,
+        passed_rows=spec.passed_rows,
+        failed_rows=spec.failed_rows,
+        passed_rows_percentage=spec.passed_rows_percentage,
+        failed_rows_percentage=spec.failed_rows_percentage,
+        duration=spec.duration,
+    )
+
