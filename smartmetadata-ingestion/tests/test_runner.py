@@ -59,9 +59,9 @@ def test_runner_writes_source_and_config_lineage(workflow_config) -> None:
     paths = [call["path"] for call in transport.calls]
     assert paths == [
         "/api/v1/services/databaseServices",
-        "/api/v1/databases",
-        "/api/v1/databaseSchemas",
-        "/api/v1/tables",
+        "/api/v1/databases/bulk",
+        "/api/v1/databaseSchemas/bulk",
+        "/api/v1/tables/bulk",
         "/api/v1/lineage/table/name/warehouse.analytics.public.orders/"
         "table/name/warehouse.analytics.public.orders_v",
     ]
@@ -124,7 +124,7 @@ def test_runner_writes_kafka_topics(workflow_config) -> None:
     paths = [call["path"] for call in transport.calls]
     assert paths == [
         "/api/v1/services/messagingServices",
-        "/api/v1/topics",
+        "/api/v1/topics/bulk",
     ]
     assert '"serviceType":"Kafka"' in transport.calls[0]["body"]
     assert '"partitions":2' in transport.calls[1]["body"].replace(" ", "")

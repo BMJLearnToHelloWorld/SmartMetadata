@@ -422,3 +422,71 @@ def test_pipeline_status_partial_success_when_some_records_succeed(workflow_conf
     assert report.failed == 1
     assert report.succeeded >= 1
     assert statuses[-1]["pipelineState"] == "partialSuccess"
+
+
+
+class ReconcileClient(StatusClient):
+    def __init__(self, events: list[str], statuses: list[dict] | None = None) -> None:
+        super().__init__(events, statuses)
+        self.delete_calls: list[dict] = []
+
+    def delete_stale(self, entity_path, **kwargs):
+        self.delete_calls.append({"path": entity_path, **kwargs})
+        self.events.append(f"deleteStale:{entity_path}")
+        return {"ok": True}
+
+
+def test_reconcile_stale_is_invoked_when_configured(workflow_config) -> None:
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.reconcile_stale = True
+    workflow_config.workflow.reconcile_dry_run = True
+    client = ReconcileClient(events)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=RecordingSource(events),
+        sink=RecordingSink(events),
+    )
+    workflow.execute()
+    assert any(item.startswith("deleteStale:") for item in events)
+    assert client.delete_calls
+    assert client.delete_calls[0]["dry_run"] is True
+
+
+def test_topology_orders_out_of_order_static_records(workflow_config) -> None:
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.source.type = "static"
+    workflow_config.source.records = [
+        {
+            "kind": "table",
+            "name": "orders",
+            "databaseSchema": "warehouse.analytics.public",
+            "columns": [{"name": "id", "dataType": "INT"}],
+        },
+        {"kind": "schema", "name": "public", "database": "warehouse.analytics"},
+        {"kind": "database", "name": "analytics", "service": "warehouse"},
+    ]
+
+    class CapturingSink(RecordingSink):
+        def __init__(self) -> None:
+            super().__init__(events)
+            self.kinds: list[str] = []
+
+        def write(self, record) -> None:
+            self.kinds.append(record.kind)
+            super().write(record)
+
+    sink = CapturingSink()
+    from smartmetadata_ingestion.connectors.base import StaticSource
+
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=RecordingClient(events),
+        source=StaticSource(workflow_config.source),
+        sink=sink,
+    )
+    workflow.execute()
+    # StaticSource yields service first, then configured records reordered
+    assert sink.kinds == ["databaseService", "database", "schema", "table"]

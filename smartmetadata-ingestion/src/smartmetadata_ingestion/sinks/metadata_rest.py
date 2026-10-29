@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import WorkflowConfig
 from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.topology import SeenSet
 from smartmetadata_ingestion.records import (
     DatabaseRecord,
     DatabaseServiceRecord,
@@ -76,7 +77,70 @@ def build_sink(config: WorkflowConfig, client: RestClient, sink: Sink | None = N
         return sink
     if config.sink.type != "metadata-rest":
         raise WorkflowError(f"unsupported sink type {config.sink.type}")
+    if config.sink.use_bulk:
+        return BulkMetadataRestSink(client, batch_size=config.sink.bulk_batch_size)
     return MetadataRestSink(client)
+
+
+class BulkMetadataRestSink:
+    """Buffer create/update payloads and flush via Apache /bulk endpoints."""
+
+    def __init__(self, client: RestClient, *, batch_size: int = 50) -> None:
+        self._inner = MetadataRestSink(client)
+        self._client = client
+        self._batch_size = batch_size
+        self.written: list[str] = self._inner.written
+        self.seen = SeenSet()
+        self._buffers: dict[str, list[dict]] = {
+            "database": [],
+            "schema": [],
+            "table": [],
+            "topic": [],
+        }
+
+    def write(self, record: WorkflowRecord) -> Any:
+        self.seen.add(record)
+        if isinstance(record, DatabaseRecord):
+            self._buffers["database"].append(_database_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("database", force=False)
+        if isinstance(record, SchemaRecord):
+            self._buffers["schema"].append(_schema_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("schema", force=False)
+        if isinstance(record, TableRecord):
+            self._buffers["table"].append(_table_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("table", force=False)
+        if isinstance(record, TopicRecord):
+            self._buffers["topic"].append(_topic_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("topic", force=False)
+        # Flush buffered parents before services/lineage so wire order stays parent-first.
+        self.flush()
+        return self._inner.write(record)
+
+    def flush(self) -> None:
+        for kind in ("database", "schema", "table", "topic"):
+            self._flush_kind(kind, force=True)
+
+    def _flush_kind(self, kind: str, *, force: bool) -> Any:
+        buf = self._buffers[kind]
+        if not buf:
+            return None
+        if not force and len(buf) < self._batch_size:
+            return None
+        payloads = list(buf)
+        buf.clear()
+        if kind == "database":
+            return self._client.bulk_upsert_databases(payloads)
+        if kind == "schema":
+            return self._client.bulk_upsert_schemas(payloads)
+        if kind == "table":
+            return self._client.bulk_upsert_tables(payloads)
+        if kind == "topic":
+            return self._client.bulk_upsert_topics(payloads)
+        return None
 
 
 def _service_payload(record: DatabaseServiceRecord) -> dict[str, Any]:

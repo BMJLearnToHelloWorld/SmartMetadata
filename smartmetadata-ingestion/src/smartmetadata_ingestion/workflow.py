@@ -36,7 +36,9 @@ from smartmetadata_ingestion.progress import (
     StepStatus,
 )
 from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.reconcile import reconcile_stale
 from smartmetadata_ingestion.sinks.metadata_rest import Sink, build_sink
+from smartmetadata_ingestion.topology import SeenSet, order_records
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class MetadataWorkflow:
         self._hook = hook or NullHook()
         self.run_id: str | None = None
         self._run_start_ms: int | None = None
+        self.seen = SeenSet()
         self.report = RunReport(workflow_name=config.workflow.name)
         self.source_status = StepStatus(name="Source")
         self.processor_status = StepStatus(name="Processor")
@@ -131,6 +134,10 @@ class MetadataWorkflow:
         except BaseException as exc:
             if pending is None:
                 pending = exc
+        try:
+            self._reconcile_if_configured()
+        except Exception as exc:
+            logger.warning("stale reconcile failed: %s", exc)
         final_state = final_pipeline_state(
             self.report,
             stopped=isinstance(pending, KeyboardInterrupt),
@@ -199,9 +206,33 @@ class MetadataWorkflow:
                 exc,
             )
 
+
+    def _reconcile_if_configured(self) -> None:
+        if not self.config.workflow.reconcile_stale:
+            return
+        scope_fqn = self.config.source.service_name
+        source_type = self.config.source.type
+        if source_type in {"kafka"}:
+            scope_entity_type = "messagingService"
+        else:
+            scope_entity_type = "databaseService"
+        seen = getattr(self._sink, "seen", None)
+        if isinstance(seen, SeenSet):
+            for kind, fqns in seen.by_kind.items():
+                for fqn in fqns:
+                    self.seen.by_kind.setdefault(kind, set()).add(fqn)
+        reconcile_stale(
+            self._client,
+            scope_fqn=scope_fqn,
+            scope_entity_type=scope_entity_type,
+            seen=self.seen,
+            dry_run=self.config.workflow.reconcile_dry_run,
+        )
+
     def _execute_records(self) -> None:
         if self._source is None:
             raise WorkflowInitializationError("workflow source is not prepared")
+        produced: list = []
         iterator = iter(self._source.produce())
         while True:
             try:
@@ -218,13 +249,9 @@ class MetadataWorkflow:
                 failure = self._record_failure(self.source_status, "Source", "source", exc)
                 self.report.failures.append(failure)
                 raise WorkflowExecutionError(f"source execution failed: {exc}") from exc
-            self.source_status.records += 1
-            try:
-                self._handle_record(record)
-            except BaseException:
-                self._close_iterator(iterator)
-                raise
-        for record in self._configured_lineage():
+            produced.append(record)
+        produced.extend(self._configured_lineage())
+        for record in order_records(produced):
             self.source_status.records += 1
             self._handle_record(record)
 
@@ -243,6 +270,7 @@ class MetadataWorkflow:
     def _handle_record(self, record: WorkflowRecord) -> None:
         if self._sink is None:
             raise WorkflowInitializationError("workflow sink is not prepared")
+        self.seen.add(record)
         current: WorkflowRecord | None = record
         try:
             for processor in self._processors:
