@@ -25,6 +25,8 @@ export interface RequestOptions {
   method?: string;
   query?: Record<string, string | number | boolean | undefined>;
   json?: unknown;
+  /** Override Content-Type (e.g. application/json-patch+json for RFC 6902 PATCH). */
+  contentType?: string;
 }
 
 function errorMessage(body: string, status: number): string {
@@ -56,7 +58,7 @@ export class RestClient {
       Authorization: `Bearer ${this.config.jwt}`,
     };
     if (options.json !== undefined) {
-      headers['Content-Type'] = 'application/json';
+      headers['Content-Type'] = options.contentType ?? 'application/json';
     }
     const method = options.method ?? (options.json !== undefined ? 'POST' : 'GET');
     const response = await this.fetchImpl(url.toString(), {

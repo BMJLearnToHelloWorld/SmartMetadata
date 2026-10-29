@@ -15,7 +15,7 @@ Partial | BehaviorMatched | IntegrationVerified | ProductVerified.
 | Topology `STAGE_ORDER` | parent-before-child ranks (service/class/app → … → lineage last) | BehaviorMatched (static) |
 | Bulk sink default | `SinkConfig.use_bulk=True` + `BulkMetadataRestSink` / `columnsLineage` retained | BehaviorMatched (static) |
 | AirflowRESTClient routes | `smartmetadata-airflow-apis` `API_PREFIXES` + `ENDPOINTS` catalog; pytest wired into `verify-rebuild` | BehaviorMatched (static + unit) |
-| MCP allowlist | exact `TOOL_NAMES` (11 Apache tools); forbidden Collate AI/RDF names absent | BehaviorMatched (static) |
+| MCP allowlist | exact `TOOL_NAMES` (14 Apache tools); forbidden Collate AI/RDF names absent | BehaviorMatched (static) |
 | Settings/UI clients | Policies POST/PUT/DELETE `/v1/policies`; CP defs PUT `/v1/metadata/types`; Apps GET `/v1/apps` | BehaviorMatched (static) |
 
 Harness entry points:

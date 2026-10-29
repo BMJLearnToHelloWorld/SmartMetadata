@@ -3,7 +3,7 @@
 ## Scope
 Wire Apache-REST-backed MCP tools onto clean-room `smartmetadata-mcp` and document Collate AI/RDF as **OutOfScope**. Does **not** copy `openmetadata-mcp`, does **not** invent Collate NLQ/persona/RDF tools, does **not** register Java `/mcp` (slim dist stays jar-free).
 
-## Shipped tools (11)
+## Shipped tools (14)
 | Tool | Apache contract |
 |---|---|
 | `search_entities` | `GET /v1/search/query` (existing) |
@@ -15,14 +15,18 @@ Wire Apache-REST-backed MCP tools onto clean-room `smartmetadata-mcp` and docume
 | `find_by_tag` | `GET /v1/search/query` + `query_filter` on `tags.tagFQN` |
 | `get_test_definitions` | `GET /v1/dataQuality/testDefinitions` |
 | `create_conversation` | existing OSS feed POST |
+| `create_entity` | `POST /v1/{collection}` Create*Request (allowlisted types) |
+| `patch_entity` | `PATCH /v1/{collection}/name/{fqn}` RFC 6902 `application/json-patch+json` |
+| `create_test_case` | `POST /v1/dataQuality/testCases` CreateTestCaseRequest |
 
 ## Explicit OutOfScope (not debt unless scope expands in writing)
 - Collate AI: `semantic_search`, persona/user/company/concept context, NLQ
 - RDF / Knowledge Graph: `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis`
-- Still **Partial / later**: `create_entity`, `patch_entity`, `create_test_case` (write surfaces need richer schema; not inventing payloads this slice)
+- Write tools above are **BehaviorMatched (unit)** as of Partial MCP writes; still not ProductVerified.
 
 ## Status
 **BehaviorMatched (unit)** for the Apache-backed tools above. Not ProductVerified. Not IntegrationVerified.
+See also `PARTIAL_MCP_WRITES_REVIEW.md`.
 
 ## Tests
 `cd smartmetadata-mcp && npm test`

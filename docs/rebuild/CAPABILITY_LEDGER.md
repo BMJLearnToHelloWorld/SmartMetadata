@@ -91,8 +91,8 @@ Rebuild trees are product evidence, not a second authority.
 
 | Capability | Apache contract | Product | Status | Evidence | Notes |
 |---|---|---|---|---|---|
-| 11 Apache-backed tools | search / entity / lineage / tags / DQ defs / conversation | `smartmetadata-mcp` | BehaviorMatched (unit/static) | #56 / #58 | TOOL_NAMES locked |
-| `create_entity` / `patch_entity` / `create_test_case` | Apache write REST | MCP | Partial | #56 | richer schema deferred |
+| 14 Apache-backed tools | search / entity / lineage / tags / DQ defs / conversation / writes | `smartmetadata-mcp` | BehaviorMatched (unit/static) | #56 / #58 / Partial MCP writes | TOOL_NAMES locked |
+| `create_entity` / `patch_entity` / `create_test_case` | Apache write REST (POST/PATCH/CreateTestCase) | MCP | BehaviorMatched (unit) | Partial MCP writes | not ProductVerified |
 | Collate AI MCP tools | semantic_search, persona/context, NLQ | — | OutOfScope | #56 / PARITY DROP | not debt |
 | RDF / KG MCP tools | sparql / shacl / ontology / neighborhood / RCA | — | OutOfScope | #56 / PARITY DROP | not debt |
 | Java `/mcp` on slim server | CCL jar registration | unregistered | OutOfScope (intentional) | #56 | slim stays jar-free |
@@ -149,14 +149,14 @@ Rebuild trees are product evidence, not a second authority.
 
 - Airflow MemoryDagStore / real scheduler / plugin wheel
 - dbt full parser
-- MCP `create_entity` / `patch_entity` / `create_test_case`
+- ~~MCP `create_entity` / `patch_entity` / `create_test_case`~~ → BehaviorMatched (unit); see Partial MCP writes
 - Profiler/DQ **execution** (`jobs.py` raises)
 - Insights KPI CRUD beyond list
 - Live IntegrationVerified / ProductVerified for #49–#58 claims
 
 ## Next (optional; require written scope)
 
-- MCP richer write tools **without inventing payloads**
+- (done) MCP write tools without inventing payloads — BehaviorMatched unit
 - Profiler/DQ execution ADR
 - One connector family **only after Bernie names type + OSS client**
 - Alma tip upgrade when asked (still @ #48 `36a93d5f` as of ledger draft)

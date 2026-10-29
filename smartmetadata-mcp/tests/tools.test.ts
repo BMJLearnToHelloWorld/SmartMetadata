@@ -32,6 +32,7 @@ function handlers(fetchImpl: typeof fetch) {
 describe('tool catalog', () => {
   it('exposes at least four OSS tools and no Collate AI Studio names', () => {
     expect(TOOL_NAMES.length).toBeGreaterThanOrEqual(4);
+    expect(TOOL_NAMES).toHaveLength(14);
     expect(TOOL_NAMES).toEqual(
       expect.arrayContaining([
         'search_entities',
@@ -45,6 +46,9 @@ describe('tool catalog', () => {
         'find_by_tag',
         'get_test_definitions',
         'create_conversation',
+        'create_entity',
+        'patch_entity',
+        'create_test_case',
       ]),
     );
     expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio|sparql_query|semantic_search|ontology_describe/i);
@@ -238,5 +242,106 @@ describe('create_lineage', () => {
     );
     expect(init.method).toBe('PUT');
     expect(JSON.parse(String(init.body))).toEqual({ source: 'Manual', description: 'derived' });
+  });
+});
+
+describe('create_entity', () => {
+  it('POSTs /v1/{collection} with Apache Create fields only', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 'g1', name: 'Finance' }));
+    const created = await handlers(fetchImpl).create_entity({
+      entityType: 'glossary',
+      name: 'Finance',
+      description: 'Finance glossary',
+      displayName: 'Finance',
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://om.example/api/v1/glossaries');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'Finance',
+      description: 'Finance glossary',
+      displayName: 'Finance',
+    });
+    expect(created).toMatchObject({ id: 'g1' });
+  });
+
+  it('merges type-specific Create* fields and rejects Collate/RDF types', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 't1' }));
+    await handlers(fetchImpl).create_entity({
+      entityType: 'glossaryTerm',
+      name: 'Revenue',
+      description: 'Revenue term',
+      fields: { glossary: 'Finance' },
+    });
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({
+      name: 'Revenue',
+      description: 'Revenue term',
+      glossary: 'Finance',
+    });
+    await expect(
+      handlers(fetchImpl).create_entity({ entityType: 'knowledgeGraph', name: 'x', description: 'y' }),
+    ).rejects.toThrow(/Unsupported entityType/);
+  });
+});
+
+describe('patch_entity', () => {
+  it('PATCHes /v1/{collection}/name/{fqn} with json-patch+json', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 'g1', description: 'updated' }));
+    await handlers(fetchImpl).patch_entity({
+      entityType: 'glossary',
+      fqn: 'Finance',
+      patch: '[{"op":"replace","path":"/description","value":"updated"}]',
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://om.example/api/v1/glossaries/name/Finance');
+    expect(init.method).toBe('PATCH');
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json-patch+json');
+    expect(JSON.parse(String(init.body))).toEqual([
+      { op: 'replace', path: '/description', value: 'updated' },
+    ]);
+  });
+
+  it('rejects empty or invalid patch before HTTP', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({}));
+    await expect(
+      handlers(fetchImpl).patch_entity({ entityType: 'glossary', fqn: 'Finance', patch: [] }),
+    ).rejects.toThrow(/non-empty/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('create_test_case', () => {
+  it('POSTs CreateTestCaseRequest to /v1/dataQuality/testCases', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 'tc1' }));
+    await handlers(fetchImpl).create_test_case({
+      name: 'orders_row_count',
+      fqn: 'svc.db.schema.orders',
+      testDefinitionName: 'tableRowCountToBeBetween',
+      description: 'row count gate',
+      parameterValues: [{ name: 'minValue', value: '1' }],
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://om.example/api/v1/dataQuality/testCases');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'orders_row_count',
+      testDefinition: 'tableRowCountToBeBetween',
+      entityLink: '<#E::table::svc.db.schema.orders>',
+      description: 'row count gate',
+      parameterValues: [{ name: 'minValue', value: '1' }],
+    });
+  });
+
+  it('builds column entityLink when columnName is set', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 'tc2' }));
+    await handlers(fetchImpl).create_test_case({
+      name: 'shop_id_not_null',
+      fqn: 'svc.db.schema.orders',
+      columnName: 'shop_id',
+      testDefinitionName: 'columnValuesToBeNotNull',
+    });
+    expect(JSON.parse(String((fetchImpl.mock.calls[0] as [string, RequestInit])[1].body)).entityLink).toBe(
+      '<#E::table::svc.db.schema.orders::columns::shop_id>',
+    );
   });
 });
