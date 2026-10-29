@@ -26,7 +26,7 @@ ship placeholder/half-wired “parity”.
 | Official connectors | `ingestion/src/metadata/ingestion/source/**/service_spec.py` | **106** files |
 | Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`) | **4** (`postgres`, `mysql`, `kafka`, `snowflake`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
-| Product MCP tools | `smartmetadata-mcp/src/tools.ts` `TOOL_NAMES` | **7** |
+| Product MCP tools | smartmetadata-mcp/src/tools.ts TOOL_NAMES | **11** |
 | Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, **My Data / home** (`/my-data` post-login default), Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs**), governance, quality, observability, ingestion console, collaboration |
 | Official UI pages | `openmetadata-ui/src/main/resources/ui/src/pages/` | 100+ page modules (React, CCL) — used only as an area list, not copied |
 
@@ -93,8 +93,9 @@ Official tools (21): `company_context`, `search_metadata`, `semantic_search`,
 `root_cause_analysis`, `sparql_query`, `entity_neighborhood`, `find_by_tag`,
 `shacl_validate`, `ontology_describe`.
 
-Product tools (7): `search_entities`, `get_table`, `get_topic`, `get_lineage`,
-`list_glossaries`, `list_tags`, `create_conversation`.
+Product tools (11): search_entities, get_table, get_topic, get_entity_details,
+get_lineage, create_lineage, list_glossaries, list_tags, ind_by_tag,
+get_test_definitions, create_conversation.
 
 | Official tool | Product status |
 |---|---|

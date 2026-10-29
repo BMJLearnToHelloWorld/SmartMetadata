@@ -14,7 +14,7 @@ import type { RestClient } from './client.js';
 import { createToolHandlers, TOOL_NAMES } from './tools.js';
 
 export const SERVER_NAME = 'smartmetadata';
-export const SERVER_VERSION = '0.10.0';
+export const SERVER_VERSION = '0.11.0';
 
 export interface RegisteredToolConfig {
   description: string;
@@ -45,11 +45,26 @@ const fqnSchema = z.object({
   fqn: z.string().describe('Fully qualified name'),
 });
 
+const entityDetailsSchema = z.object({
+  entityType: z.string().describe('Apache catalog entity type such as table, pipeline, glossaryTerm'),
+  fqn: z.string().describe('Fully qualified name'),
+  fields: z.string().optional().describe('Optional fields query; defaults per entity type'),
+});
+
 const lineageSchema = z.object({
   entityType: z.string().describe('Entity type such as table or topic'),
   fqn: z.string().describe('Fully qualified name'),
-  upstreamDepth: z.number().int().optional().describe('Upstream hops, clamped 0–3, default 1'),
-  downstreamDepth: z.number().int().optional().describe('Downstream hops, clamped 0–3, default 1'),
+  upstreamDepth: z.number().int().optional().describe('Upstream hops, clamped 0-3, default 1'),
+  downstreamDepth: z.number().int().optional().describe('Downstream hops, clamped 0-3, default 1'),
+});
+
+const createLineageSchema = z.object({
+  fromEntityType: z.string().describe('Source entity type'),
+  fromFqn: z.string().describe('Source FQN'),
+  toEntityType: z.string().describe('Target entity type'),
+  toFqn: z.string().describe('Target FQN'),
+  description: z.string().optional().describe('Optional edge description'),
+  source: z.string().optional().describe('LineageDetails.source, default Manual'),
 });
 
 const glossaryListSchema = z.object({
@@ -59,6 +74,20 @@ const glossaryListSchema = z.object({
 
 const tagListSchema = glossaryListSchema.extend({
   parent: z.string().optional().describe('Classification FQN to filter tags'),
+});
+
+const findByTagSchema = z.object({
+  tagFqn: z.string().describe('Tag FQN such as PII.Sensitive'),
+  index: z.string().optional().describe('Search index. Default dataAsset'),
+  from: z.number().int().optional().describe('Result offset, default 0'),
+  size: z.number().int().optional().describe('Page size, default 10, max 50'),
+});
+
+const testDefinitionsSchema = z.object({
+  limit: z.number().int().optional().describe('Page size, default 25, max 100'),
+  after: z.string().optional().describe('Pagination cursor'),
+  entityType: z.string().optional().describe('Optional entity type filter'),
+  testPlatform: z.string().optional().describe('Optional test platform filter'),
 });
 
 const conversationSchema = z.object({
@@ -117,10 +146,24 @@ export function registerCatalogTools(server: ToolRegistrar, client: RestClient):
       handler: (args) => tools.get_topic(fqnSchema.parse(args)),
     },
     {
+      name: 'get_entity_details',
+      description:
+        'Get any Apache-backed catalog entity by type+FQN via GET /v1/{collection}/name/{fqn}. Collate AI/RDF types are OutOfScope.',
+      inputSchema: entityDetailsSchema,
+      handler: (args) => tools.get_entity_details(entityDetailsSchema.parse(args)),
+    },
+    {
       name: 'get_lineage',
-      description: 'Get entity lineage by FQN via GET /v1/lineage/{entity}/name/{fqn}. Depth is clamped to 0–3.',
+      description: 'Get entity lineage by FQN via GET /v1/lineage/{entity}/name/{fqn}. Depth is clamped to 0-3.',
       inputSchema: lineageSchema,
       handler: (args) => tools.get_lineage(lineageSchema.parse(args)),
+    },
+    {
+      name: 'create_lineage',
+      description:
+        'Create or update a lineage edge via PUT /v1/lineage/{from}/name/{fqn}/{to}/name/{fqn} (same contract as product ingestion RestClient.put_lineage).',
+      inputSchema: createLineageSchema,
+      handler: (args) => tools.create_lineage(createLineageSchema.parse(args)),
     },
     {
       name: 'list_glossaries',
@@ -133,6 +176,18 @@ export function registerCatalogTools(server: ToolRegistrar, client: RestClient):
       description: 'List classification tags via GET /v1/tags (read)',
       inputSchema: tagListSchema,
       handler: (args) => tools.list_tags(tagListSchema.parse(args)),
+    },
+    {
+      name: 'find_by_tag',
+      description: 'Find catalog assets carrying a tag FQN via GET /v1/search/query with tags.tagFQN query_filter',
+      inputSchema: findByTagSchema,
+      handler: (args) => tools.find_by_tag(findByTagSchema.parse(args)),
+    },
+    {
+      name: 'get_test_definitions',
+      description: 'List data-quality test definitions via GET /v1/dataQuality/testDefinitions',
+      inputSchema: testDefinitionsSchema,
+      handler: (args) => tools.get_test_definitions(testDefinitionsSchema.parse(args)),
     },
     {
       name: 'create_conversation',
