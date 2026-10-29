@@ -54,7 +54,7 @@ No new Java/Python endpoints.
 | Load-more nodes per layer | Official uses `nodesPerLayer` + extra expand calls; GET depth 0–3 is the honest cap |
 | Impact Analysis table / time filter / PNG export | Explicitly out of this step; no product client for the first two |
 | Full column list on every node | Lineage GET returns mappings, not each table’s schema |
-| Edit lineage / pipeline edge editor | No create/patch lineage wiring in this batch |
+| Edit lineage / pipeline edge editor | Entity-edge create via canvas connect ? Apache PUT shipped in partial-lineage-canvas-write; pipeline/column editors + delete UI still out |
 | Knowledge / Ontology / AI lineage layers | Collate-only **DROP** |
 
 ## How to verify

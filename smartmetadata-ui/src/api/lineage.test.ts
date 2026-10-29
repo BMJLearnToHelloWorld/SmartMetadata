@@ -9,7 +9,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { fetchEntityLineage } from './lineage';
+import {
+  deleteEntityLineageByName,
+  fetchEntityLineage,
+  putEntityLineage,
+} from './lineage';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -66,7 +70,7 @@ describe('lineage API', () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer tok');
   });
 
-  it('clamps depths to the LineageResource 0–3 range', async () => {
+  it('clamps depths to the LineageResource 0-3 range', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify(SAMPLE), { status: 200 })),
@@ -89,6 +93,58 @@ describe('lineage API', () => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(fetchEntityLineage({ entityType: '', fqn: 'x' })).rejects.toThrow(/entity type/i);
     await expect(fetchEntityLineage({ entityType: 'table', fqn: '' })).rejects.toThrow(/fqn/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('PUTs /v1/lineage/{from}/name/{fqn}/{to}/name/{fqn} with Manual source', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    await putEntityLineage({
+      fromType: 'table',
+      fromFqn: 'svc.db."Sales Schema".a',
+      toType: 'table',
+      toFqn: 'svc.db.schema.b',
+    });
+
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/lineage/table/name/');
+    expect(url).toContain(encodeURIComponent('svc.db."Sales Schema".a'));
+    expect(url).toContain('/table/name/');
+    expect(url).toContain(encodeURIComponent('svc.db.schema.b'));
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({ source: 'Manual' });
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer tok');
+  });
+
+  it('DELETEs lineage edge by name matching RestClient.delete_lineage_by_name', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 200 })),
+    );
+
+    await deleteEntityLineageByName({
+      fromType: 'table',
+      fromFqn: 'svc.db.schema.a',
+      toType: 'table',
+      toFqn: 'svc.db.schema.b',
+    });
+
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/lineage/table/name/svc.db.schema.a/table/name/svc.db.schema.b');
+    expect(init?.method).toBe('DELETE');
+  });
+
+  it('rejects incomplete write endpoints without calling fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(
+      putEntityLineage({ fromType: '', fromFqn: 'a', toType: 'table', toFqn: 'b' }),
+    ).rejects.toThrow(/entity types/i);
+    await expect(
+      deleteEntityLineageByName({ fromType: 'table', fromFqn: '', toType: 'table', toFqn: 'b' }),
+    ).rejects.toThrow(/FQN/i);
     expect(fetch).not.toHaveBeenCalled();
   });
 });

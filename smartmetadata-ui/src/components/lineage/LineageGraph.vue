@@ -11,7 +11,7 @@ import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
-import type { Edge, Node } from '@vue-flow/core';
+import type { Connection, Edge, Node } from '@vue-flow/core';
 import { columnLineageEdges } from '@/lineage/columnPorts';
 import { filterCanvasNodes } from '@/lineage/nodeChrome';
 import {
@@ -44,6 +44,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   navigate: [node: LineageGraphNode];
   'select-node': [node: LineageGraphNode];
+  connect: [payload: { from: LineageGraphNode; to: LineageGraphNode }];
 }>();
 
 const { t } = useI18n();
@@ -139,6 +140,27 @@ function onNodeClick(payload: { node: Node<LineageNodeData> }): void {
   }
 }
 
+function onConnect(connection: Connection): void {
+  const sourceId = connection.source;
+  const targetId = connection.target;
+  if (!sourceId || !targetId || sourceId === targetId) {
+    return;
+  }
+  const from = props.model.nodes.find((node) => node.id === sourceId);
+  const to = props.model.nodes.find((node) => node.id === targetId);
+  if (
+    !from ||
+    !to ||
+    !from.entityType ||
+    !from.fullyQualifiedName ||
+    !to.entityType ||
+    !to.fullyQualifiedName
+  ) {
+    return;
+  }
+  emit('connect', { from, to });
+}
+
 function onFindNode(value: unknown): void {
   const id = typeof value === 'string' ? value : '';
   const node = props.model.nodes.find((item) => item.id === id);
@@ -179,6 +201,7 @@ watch(
   >
     <div class="lineage-graph__toolbar">
       <Space wrap align="center">
+        <span class="lineage-graph__hint" data-testid="lineage-connect-hint">{{ t('lineage.connectHelp') }}</span>
         <Select
           :value="selectedNodeId"
           allow-clear
@@ -211,11 +234,12 @@ watch(
       :edges="edges"
       :node-types="nodeTypes"
       :nodes-draggable="true"
-      :nodes-connectable="false"
+      :nodes-connectable="true"
       fit-view-on-init
       :min-zoom="0.3"
       :max-zoom="2"
       @node-click="onNodeClick"
+      @connect="onConnect"
     >
       <Background :color="SM_SURFACES.borderSecondary" :gap="18" :size="1" />
       <Controls />
@@ -257,6 +281,10 @@ watch(
 }
 .lineage-graph__find {
   min-width: 220px;
+}
+.lineage-graph__hint {
+  color: var(--sm-text-tertiary, #535862);
+  font-size: 12px;
 }
 .lineage-graph :deep(.vue-flow) {
   flex: 1 1 auto;

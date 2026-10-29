@@ -17,7 +17,7 @@ import {
   Tooltip,
   Typography,
 } from 'ant-design-vue';
-import { fetchEntityLineage } from '@/api/lineage';
+import { fetchEntityLineage, putEntityLineage } from '@/api/lineage';
 import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import { highlightForColumn } from '@/lineage/columnPorts';
 import {
@@ -46,6 +46,7 @@ const props = withDefaults(
 const router = useRouter();
 const { t } = useI18n();
 const loading = ref(false);
+const writing = ref(false);
 const errorMessage = ref('');
 const graph = ref<LineageGraphModel | null>(null);
 const upstreamDepth = ref(LINEAGE_DEPTH_DEFAULT);
@@ -108,6 +109,24 @@ function openFullPage(): void {
   void router.push(lineageLocation(props.entityType, props.fqn));
 }
 
+async function onConnectEdge(payload: { from: LineageGraphNode; to: LineageGraphNode }): Promise<void> {
+  writing.value = true;
+  errorMessage.value = '';
+  try {
+    await putEntityLineage({
+      fromType: payload.from.entityType,
+      fromFqn: payload.from.fullyQualifiedName,
+      toType: payload.to.entityType,
+      toFqn: payload.to.fullyQualifiedName,
+    });
+    await load();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : t('lineage.writeFailed');
+  } finally {
+    writing.value = false;
+  }
+}
+
 function bumpDepth(side: 'upstream' | 'downstream', delta: number): void {
   if (side === 'upstream') {
     upstreamDepth.value = clampLineageDepth(upstreamDepth.value + delta);
@@ -137,7 +156,7 @@ watch(
 </script>
 
 <template>
-  <Spin :spinning="loading">
+  <Spin :spinning="loading || writing">
     <Space direction="vertical" size="middle" class="lineage-canvas">
       <div v-if="variant === 'page'">
         <Typography.Title :level="4">{{ t('lineage.title') }}</Typography.Title>
@@ -220,6 +239,7 @@ watch(
         :highlighted-node-ids="highlightedNodeIds"
         :highlighted-edge-ids="highlightedEdgeIds"
         @navigate="openAsset"
+        @connect="onConnectEdge"
       />
       <template v-if="graph?.hasColumnLineage">
         <Typography.Title :level="5">{{ t('lineage.columnsTitle') }}</Typography.Title>

@@ -17,26 +17,25 @@ export const vueFlowStubs = {
         nodes: { type: Array, default: () => [] },
         edges: { type: Array, default: () => [] },
       },
-      emits: ['node-click'],
+      emits: ['node-click', 'connect'],
       setup(props, { emit, slots }) {
+        const nodes = props.nodes as {
+          id: string;
+          data: {
+            name: string;
+            entityType?: string;
+            fullyQualifiedName?: string;
+            displayName?: string;
+            pathLabel?: string;
+            truncatedFqn?: string;
+            columns?: { fqn: string; name: string }[];
+            expanded?: boolean;
+            testId?: string;
+          };
+        }[];
         return () =>
           h('div', { 'data-testid': 'vue-flow-stub' }, [
-            ...(
-              props.nodes as {
-                id: string;
-                data: {
-                  name: string;
-                  entityType?: string;
-                  fullyQualifiedName?: string;
-                  displayName?: string;
-                  pathLabel?: string;
-                  truncatedFqn?: string;
-                  columns?: { fqn: string; name: string }[];
-                  expanded?: boolean;
-                  testId?: string;
-                };
-              }[]
-            ).map((node) =>
+            ...nodes.map((node) =>
               h(
                 'button',
                 {
@@ -55,6 +54,23 @@ export const vueFlowStubs = {
                 ],
               ),
             ),
+            nodes.length >= 2
+              ? h(
+                  'button',
+                  {
+                    'data-testid': 'vue-flow-connect-stub',
+                    type: 'button',
+                    onClick: () =>
+                      emit('connect', {
+                        source: nodes[0].id,
+                        target: nodes[1].id,
+                        sourceHandle: null,
+                        targetHandle: null,
+                      }),
+                  },
+                  'connect',
+                )
+              : null,
             slots.default?.(),
           ]);
       },
