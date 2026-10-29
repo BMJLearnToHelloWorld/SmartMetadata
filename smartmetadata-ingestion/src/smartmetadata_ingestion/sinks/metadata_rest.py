@@ -22,6 +22,7 @@ from smartmetadata_ingestion.records import (
     SchemaRecord,
     TableRecord,
     TopicRecord,
+    UsageRecord,
     WorkflowRecord,
 )
 
@@ -51,17 +52,19 @@ class MetadataRestSink:
         elif isinstance(record, TopicRecord):
             result = self._client.upsert_topic(_topic_payload(record))
         elif isinstance(record, LineageRecord):
-            details: dict[str, Any] = {"source": record.source}
-            if record.sql_query:
-                details["sqlQuery"] = record.sql_query
-            if record.description:
-                details["description"] = record.description
             result = self._client.put_lineage(
                 record.from_entity.type,
                 record.from_entity.fqn,
                 record.to_entity.type,
                 record.to_entity.fqn,
-                details,
+                _lineage_details(record),
+            )
+        elif isinstance(record, UsageRecord):
+            result = self._client.put_usage_by_name(
+                record.entity_type,
+                record.fqn,
+                date=record.date,
+                count=record.count,
             )
         else:
             raise WorkflowError(f"sink cannot write {type(record).__name__}")
@@ -141,6 +144,34 @@ class BulkMetadataRestSink:
         if kind == "topic":
             return self._client.bulk_upsert_topics(payloads)
         return None
+
+
+
+def _lineage_details(record: LineageRecord) -> dict[str, Any]:
+    details: dict[str, Any] = {"source": record.source}
+    if record.sql_query:
+        details["sqlQuery"] = record.sql_query
+    if record.description:
+        details["description"] = record.description
+    if record.columns_lineage:
+        details["columnsLineage"] = [
+            {
+                "fromColumns": list(col.from_columns),
+                "toColumn": col.to_column,
+                **({"function": col.function} if col.function else {}),
+            }
+            for col in record.columns_lineage
+        ]
+    if record.pipeline is not None:
+        ref: dict[str, Any] = {"type": record.pipeline.type}
+        if record.pipeline.fully_qualified_name:
+            ref["fullyQualifiedName"] = record.pipeline.fully_qualified_name
+        if record.pipeline.id:
+            ref["id"] = record.pipeline.id
+        if record.pipeline.name:
+            ref["name"] = record.pipeline.name
+        details["pipeline"] = ref
+    return details
 
 
 def _service_payload(record: DatabaseServiceRecord) -> dict[str, Any]:

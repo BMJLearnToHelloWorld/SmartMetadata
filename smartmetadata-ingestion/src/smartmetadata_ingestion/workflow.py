@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Iterable, Iterator
 
 from smartmetadata_ingestion.client.rest import RestClient
-from smartmetadata_ingestion.config import LineageSpec, WorkflowConfig
+from smartmetadata_ingestion.config import LineageSpec, UsageSpec, WorkflowConfig
 from smartmetadata_ingestion.connectors.base import Source, build_source
 from smartmetadata_ingestion.errors import (
     WorkflowExecutionError,
@@ -35,7 +35,14 @@ from smartmetadata_ingestion.progress import (
     RunReport,
     StepStatus,
 )
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.records import (
+    ColumnLineage,
+    EntityRef,
+    LineageEndpoint,
+    LineageRecord,
+    UsageRecord,
+    WorkflowRecord,
+)
 from smartmetadata_ingestion.reconcile import reconcile_stale
 from smartmetadata_ingestion.sinks.metadata_rest import Sink, build_sink
 from smartmetadata_ingestion.topology import SeenSet, order_records
@@ -251,6 +258,7 @@ class MetadataWorkflow:
                 raise WorkflowExecutionError(f"source execution failed: {exc}") from exc
             produced.append(record)
         produced.extend(self._configured_lineage())
+        produced.extend(self._configured_usage())
         for record in order_records(produced):
             self.source_status.records += 1
             self._handle_record(record)
@@ -351,6 +359,10 @@ class MetadataWorkflow:
         for spec in self.config.lineage:
             yield _lineage_from_spec(spec)
 
+    def _configured_usage(self) -> Iterable[UsageRecord]:
+        for spec in self.config.usage:
+            yield _usage_from_spec(spec)
+
     @staticmethod
     def _record_failure(
         status: StepStatus,
@@ -370,10 +382,36 @@ class MetadataWorkflow:
 
 
 def _lineage_from_spec(spec: LineageSpec) -> LineageRecord:
+    pipeline = None
+    if spec.pipeline is not None:
+        pipeline = EntityRef(
+            type=spec.pipeline.type,
+            fully_qualified_name=spec.pipeline.fully_qualified_name,
+            id=spec.pipeline.id,
+            name=spec.pipeline.name,
+        )
     return LineageRecord(
         from_entity=LineageEndpoint(type=spec.from_entity.type, fqn=spec.from_entity.fqn),
         to_entity=LineageEndpoint(type=spec.to_entity.type, fqn=spec.to_entity.fqn),
         description=spec.description,
         source=spec.source,
         sql_query=spec.sql_query,
+        columns_lineage=[
+            ColumnLineage(
+                from_columns=list(col.from_columns),
+                to_column=col.to_column,
+                function=col.function,
+            )
+            for col in spec.columns_lineage
+        ],
+        pipeline=pipeline,
+    )
+
+
+def _usage_from_spec(spec: UsageSpec) -> UsageRecord:
+    return UsageRecord(
+        entity_type=spec.entity_type,
+        fqn=spec.fqn,
+        date=spec.date,
+        count=spec.count,
     )

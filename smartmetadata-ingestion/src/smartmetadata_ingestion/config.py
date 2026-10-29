@@ -142,12 +142,34 @@ class LineageEndpointConfig(CamelModel):
     fqn: str
 
 
+class ColumnLineageSpec(CamelModel):
+    from_columns: list[str] = Field(default_factory=list)
+    to_column: str
+    function: str | None = None
+
+
+class EntityRefSpec(CamelModel):
+    type: str
+    fully_qualified_name: str | None = None
+    id: str | None = None
+    name: str | None = None
+
+
 class LineageSpec(CamelModel):
     from_entity: LineageEndpointConfig
     to_entity: LineageEndpointConfig
     description: str | None = None
     source: str = "Manual"
     sql_query: str | None = None
+    columns_lineage: list[ColumnLineageSpec] = Field(default_factory=list)
+    pipeline: EntityRefSpec | None = None
+
+
+class UsageSpec(CamelModel):
+    entity_type: str = "table"
+    fqn: str
+    date: str
+    count: int
 
 
 class WorkflowConfig(CamelModel):
@@ -157,6 +179,7 @@ class WorkflowConfig(CamelModel):
     processors: list[ProcessorConfig] = Field(default_factory=list)
     sink: SinkConfig = Field(default_factory=SinkConfig)
     lineage: list[LineageSpec] = Field(default_factory=list)
+    usage: list[UsageSpec] = Field(default_factory=list)
 
 
 def load_raw_config(path: Path) -> dict[str, Any]:

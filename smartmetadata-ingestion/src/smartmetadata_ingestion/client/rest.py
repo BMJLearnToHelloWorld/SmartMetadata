@@ -29,6 +29,7 @@ SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
 TOPICS_PATH = "/v1/topics"
 LINEAGE_PATH = "/v1/lineage"
+USAGE_PATH = "/v1/usage"
 INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
@@ -181,6 +182,37 @@ class RestClient:
             f"/{encode_path_segment(to_type)}/name/{encode_path_segment(to_fqn)}"
         )
         return self.request("PUT", path, json=lineage_details or {})
+
+    def delete_lineage_by_name(
+        self,
+        from_type: str,
+        from_fqn: str,
+        to_type: str,
+        to_fqn: str,
+    ) -> Any:
+        """DELETE /v1/lineage/{from}/name/{fqn}/{to}/name/{fqn} (Apache deleteLineageEdgeByName)."""
+        path = (
+            f"{LINEAGE_PATH}/{encode_path_segment(from_type)}/name/{encode_path_segment(from_fqn)}"
+            f"/{encode_path_segment(to_type)}/name/{encode_path_segment(to_fqn)}"
+        )
+        return self.request("DELETE", path)
+
+    def put_usage_by_name(
+        self,
+        entity_type: str,
+        fqn: str,
+        *,
+        date: str,
+        count: int,
+    ) -> Any:
+        """PUT /v1/usage/{entity}/name/{fqn} with DailyCount body (Apache contract)."""
+        if count < 0:
+            raise WorkflowError("usage count must be >= 0")
+        path = (
+            f"{USAGE_PATH}/{encode_path_segment(entity_type)}"
+            f"/name/{encode_path_segment(fqn)}"
+        )
+        return self.request("PUT", path, json={"date": date, "count": int(count)})
 
 
     def bulk_upsert_databases(self, payloads: list[dict[str, Any]]) -> Any:
