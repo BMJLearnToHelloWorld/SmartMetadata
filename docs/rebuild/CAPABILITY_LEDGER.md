@@ -60,7 +60,7 @@ Rebuild trees are product evidence, not a second authority.
 | Usage DailyCount | `PUT /v1/usage` | RestClient | BehaviorMatched (unit/static) | #52 / #58 | — |
 | `delete_lineage_by_name` client | Official delete-by-name | RestClient | BehaviorMatched (unit) | #52 | — |
 | Query-log invent | — | — | OutOfScope | #52 | not invented |
-| Lineage canvas UI write | Existing lineage PUT | Vue canvas | Partial | `BACKEND_09` Next / PARITY | server writable; UI edit deferred |
+| Lineage canvas UI write | Existing lineage PUT (`put_lineage` / MCP `create_lineage`) | Vue canvas connect -> PUT | BehaviorMatched (unit) | partial-lineage-canvas-write / `PARTIAL_LINEAGE_CANVAS_REVIEW.md` | delete API helper only; no delete UI invent |
 
 ## 5. Profiler / quality writes (backend-05 · #53)
 
@@ -128,7 +128,6 @@ Rebuild trees are product evidence, not a second authority.
 | Capability | Status | Notes |
 |---|---|---|
 | Insights KPI CRUD / history / app analytics | Partial | batch 3.3 list only |
-| Lineage canvas UI write | Partial | backend writable |
 | Profiler run UI | Gap | runner residual |
 | SSO / Persona / Appearance | Gap / OutOfScope invent | residual tiles |
 | Knowledge / Ontology / AI / Context Center | DROP / OutOfScope | Collate-only |
@@ -152,13 +151,11 @@ Rebuild trees are product evidence, not a second authority.
 - dbt full parser
 - MCP `create_entity` / `patch_entity` / `create_test_case`
 - Profiler/DQ **execution** (`jobs.py` raises)
-- Lineage canvas UI write
 - Insights KPI CRUD beyond list
 - Live IntegrationVerified / ProductVerified for #49–#58 claims
 
 ## Next (optional; require written scope)
 
-- Wire lineage canvas to existing lineage PUT (tiny UI)
 - MCP richer write tools **without inventing payloads**
 - Profiler/DQ execution ADR
 - One connector family **only after Bernie names type + OSS client**

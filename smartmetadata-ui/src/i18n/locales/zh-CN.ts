@@ -508,6 +508,8 @@ const zhCN = {
     function: '函数',
     mappedColumns: '{count} 个已映射列',
     entityFallback: '实体',
+    connectHelp: '从节点手柄拖到另一节点即可创建血缘边（PUT）。',
+    writeFailed: '保存血缘边失败',
   },
   crud: {
     searchPlaceholder: '搜索',

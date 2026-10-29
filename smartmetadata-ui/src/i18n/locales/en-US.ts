@@ -511,6 +511,8 @@ const enUS = {
     function: 'Function',
     mappedColumns: '{count} mapped columns',
     entityFallback: 'entity',
+    connectHelp: 'Drag from a node handle to another node to create a lineage edge (PUT).',
+    writeFailed: 'Failed to save lineage edge',
   },
   crud: {
     searchPlaceholder: 'Search',

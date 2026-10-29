@@ -55,6 +55,7 @@ describe('LineageGraph', () => {
     expect(wrapper.get('[data-testid="lineage-graph"]').classes()).toContain('lineage-graph--om-chrome');
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="lineage-connect-hint"]').text()).toContain('Drag from a node handle');
     expect(wrapper.find('[data-testid="lineage-fullscreen"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="lineage-fullscreen"]').attributes('aria-label')).toBe(
       'Expand the canvas',

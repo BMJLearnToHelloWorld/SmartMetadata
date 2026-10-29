@@ -152,4 +152,32 @@ describe('LineageView', () => {
     const lastUrl = String(fetchMock.mock.calls.at(-1)?.[0]);
     expect(lastUrl).toContain('upstreamDepth=3');
   });
+
+  it('connect stub PUTs lineage edge then reloads GET', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'PUT' && String(input).includes('/api/v1/lineage/')) {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse(GRAPH);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountLineage();
+    await wrapper.get('[data-testid="vue-flow-connect-stub"]').trigger('click');
+    await flushPromises();
+    const putCall = fetchMock.mock.calls.find(
+      (call) => (call[1] as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(putCall).toBeTruthy();
+    expect(String(putCall?.[0])).toContain(
+      '/api/v1/lineage/table/name/svc.db.schema.orders/table/name/svc.db.schema.raw_orders',
+    );
+    expect(JSON.parse(String((putCall?.[1] as RequestInit).body))).toEqual({ source: 'Manual' });
+    expect(
+      fetchMock.mock.calls.filter(
+        (call) => ((call[1] as RequestInit | undefined)?.method ?? 'GET') === 'GET',
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
 });
