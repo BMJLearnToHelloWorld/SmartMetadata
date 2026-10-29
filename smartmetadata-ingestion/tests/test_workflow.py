@@ -299,7 +299,6 @@ def test_processor_failure_is_attributed_to_processor_status(workflow_config) ->
 
 
 
-
 class StatusClient(RecordingClient):
     def __init__(self, events: list[str], statuses: list[dict] | None = None) -> None:
         super().__init__(events)
@@ -375,7 +374,7 @@ def test_pipeline_status_writeback_failure_is_soft(workflow_config) -> None:
     assert report.succeeded == 1
 
 
-def test_pipeline_status_partial_success_on_record_failure(workflow_config) -> None:
+def test_pipeline_status_failed_when_all_records_fail(workflow_config) -> None:
     events: list[str] = []
     statuses: list[dict] = []
     workflow_config.lineage = []
@@ -390,4 +389,36 @@ def test_pipeline_status_partial_success_on_record_failure(workflow_config) -> N
     report = workflow.execute()
 
     assert report.failed == 1
+    assert report.succeeded == 0
     assert statuses[-1]["pipelineState"] == "failed"
+
+
+class MixedSink(RecordingSink):
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self._writes = 0
+
+    def write(self, record) -> None:
+        self._writes += 1
+        if self._writes == 1:
+            raise RuntimeError("first write failed")
+        super().write(record)
+
+
+def test_pipeline_status_partial_success_when_some_records_succeed(workflow_config) -> None:
+    events: list[str] = []
+    statuses: list[dict] = []
+    # keep configured lineage so one sink write can succeed after the first fails
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=RecordingSource(events),
+        sink=MixedSink(events),
+    )
+
+    report = workflow.execute()
+
+    assert report.failed == 1
+    assert report.succeeded >= 1
+    assert statuses[-1]["pipelineState"] == "partialSuccess"
