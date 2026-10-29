@@ -82,6 +82,7 @@ class WorkflowSettings(CamelModel):
     name: str
     type: Literal["metadata"] = "metadata"
     fail_fast: bool = False
+    ingestion_pipeline_fqn: str | None = None
 
 
 class SourceConfig(CamelModel):

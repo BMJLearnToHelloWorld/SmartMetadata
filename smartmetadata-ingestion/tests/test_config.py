@@ -111,3 +111,25 @@ def test_rejects_unknown_suffix(tmp_path: Path) -> None:
     path.write_text("workflow: {}", encoding="utf-8")
     with pytest.raises(WorkflowError, match="unsupported config suffix"):
         load_workflow_config(path, environ={})
+
+
+def test_optional_ingestion_pipeline_fqn(tmp_path: Path) -> None:
+    path = tmp_path / "wf.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "workflow": {
+                    "name": "demo",
+                    "ingestionPipelineFqn": "service.metadata",
+                },
+                "server": {
+                    "hostPort": "http://localhost:8585/api",
+                    "auth": {"type": "jwt", "jwtToken": "t"},
+                },
+                "source": {"type": "static", "serviceName": "demo"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_workflow_config(path, environ={})
+    assert config.workflow.ingestion_pipeline_fqn == "service.metadata"

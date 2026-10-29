@@ -29,6 +29,7 @@ SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
 TOPICS_PATH = "/v1/topics"
 LINEAGE_PATH = "/v1/lineage"
+INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 
@@ -180,6 +181,16 @@ class RestClient:
             f"/{encode_path_segment(to_type)}/name/{encode_path_segment(to_fqn)}"
         )
         return self.request("PUT", path, json=lineage_details or {})
+
+    def add_pipeline_status(self, fqn: str, status: dict[str, Any]) -> Any:
+        """PUT /v1/services/ingestionPipelines/{fqn}/pipelineStatus (Apache contract)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("ingestion pipeline fqn is required for pipelineStatus")
+        path = (
+            f"{INGESTION_PIPELINES_PATH}/"
+            f"{encode_path_segment(str(fqn).strip())}/pipelineStatus"
+        )
+        return self.request("PUT", path, json=status)
 
     @staticmethod
     def _as_object(payload: Any) -> dict[str, Any]:
