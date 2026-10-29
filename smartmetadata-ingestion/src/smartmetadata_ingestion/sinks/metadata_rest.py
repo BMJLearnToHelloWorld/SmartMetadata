@@ -23,6 +23,8 @@ from smartmetadata_ingestion.records import (
     TableRecord,
     TopicRecord,
     UsageRecord,
+    ProfileRecord,
+    TestCaseResultRecord,
     WorkflowRecord,
 )
 
@@ -65,6 +67,13 @@ class MetadataRestSink:
                 record.fqn,
                 date=record.date,
                 count=record.count,
+            )
+        elif isinstance(record, ProfileRecord):
+            result = _write_profile(self._client, record)
+        elif isinstance(record, TestCaseResultRecord):
+            result = self._client.post_test_case_result(
+                record.test_case_fqn,
+                _test_case_result_payload(record),
             )
         else:
             raise WorkflowError(f"sink cannot write {type(record).__name__}")
@@ -145,6 +154,58 @@ class BulkMetadataRestSink:
             return self._client.bulk_upsert_topics(payloads)
         return None
 
+
+
+
+def _write_profile(client: RestClient, record: ProfileRecord) -> Any:
+    if record.fqn:
+        payload: dict[str, Any] = {
+            "entityType": record.entity_type,
+        }
+        if record.profile_data is not None:
+            payload["profileData"] = record.profile_data
+        elif record.table_profile is not None:
+            payload["profileData"] = record.table_profile
+        else:
+            raise WorkflowError("profile record requires profileData or tableProfile")
+        if record.profile_type:
+            payload["profileType"] = record.profile_type
+        if record.timestamp is not None:
+            payload["timestamp"] = record.timestamp
+        return client.post_entity_profile_by_name(record.entity_type, record.fqn, payload)
+    if record.table_id:
+        if record.table_profile is None:
+            raise WorkflowError("legacy table profile requires tableProfile + tableId")
+        payload = {"tableProfile": record.table_profile}
+        if record.column_profile:
+            payload["columnProfile"] = list(record.column_profile)
+        if record.system_profile:
+            payload["systemProfile"] = list(record.system_profile)
+        return client.put_table_profile(record.table_id, payload)
+    raise WorkflowError("profile record requires fqn or tableId")
+
+
+def _test_case_result_payload(record: TestCaseResultRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "timestamp": record.timestamp,
+        "testCaseStatus": record.test_case_status,
+        "testResultValue": list(record.test_result_value),
+    }
+    if record.result is not None:
+        payload["result"] = record.result
+    if record.sample_data is not None:
+        payload["sampleData"] = record.sample_data
+    if record.passed_rows is not None:
+        payload["passedRows"] = record.passed_rows
+    if record.failed_rows is not None:
+        payload["failedRows"] = record.failed_rows
+    if record.passed_rows_percentage is not None:
+        payload["passedRowsPercentage"] = record.passed_rows_percentage
+    if record.failed_rows_percentage is not None:
+        payload["failedRowsPercentage"] = record.failed_rows_percentage
+    if record.duration is not None:
+        payload["duration"] = record.duration
+    return payload
 
 
 def _lineage_details(record: LineageRecord) -> dict[str, Any]:

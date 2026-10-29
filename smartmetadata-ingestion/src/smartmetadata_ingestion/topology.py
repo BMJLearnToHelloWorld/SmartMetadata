@@ -21,6 +21,8 @@ from smartmetadata_ingestion.records import (
     TableRecord,
     TopicRecord,
     UsageRecord,
+    ProfileRecord,
+    TestCaseResultRecord,
     WorkflowRecord,
 )
 
@@ -33,6 +35,8 @@ STAGE_ORDER: dict[str, int] = {
     "schema": 2,
     "table": 3,
     "usage": 4,
+    "profile": 4,
+    "testCaseResult": 4,
     "lineage": 5,
 }
 
@@ -63,6 +67,10 @@ def record_fqn(record: WorkflowRecord) -> str | None:
         return f"{record.service}.{record.name}"
     if isinstance(record, UsageRecord):
         return record.fqn
+    if isinstance(record, ProfileRecord):
+        return record.fqn
+    if isinstance(record, TestCaseResultRecord):
+        return record.test_case_fqn
     if isinstance(record, LineageRecord):
         return None
     return None
