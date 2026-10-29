@@ -159,4 +159,13 @@ export interface MetadataType {
   customProperties: CustomPropertyDef[];
 }
 
+/** Apache CustomProperty body for PUT /v1/metadata/types/{id}. */
+export interface CreateCustomPropertyRequest {
+  name: string;
+  description: string;
+  propertyType: { id: string; type: string; name: string };
+  displayName?: string;
+}
+
 export type ExtensionValues = Record<string, unknown>;
+

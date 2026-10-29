@@ -11,8 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   ENTITY_TYPE_CATEGORY,
+  FIELD_TYPE_CATEGORY,
+  addOrUpdateCustomProperty,
+  getMetadataTypeByName,
   listCustomProperties,
   listMetadataTypes,
+  listPropertyTypes,
   mapMetadataType,
   TYPE_FIELDS,
 } from './customProperties';
@@ -103,5 +107,63 @@ describe('custom properties API', () => {
       before: undefined,
       total: undefined,
     });
+  });
+
+  it('loads one type by name including customProperties', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'tid',
+            name: 'table',
+            customProperties: [{ name: 'retentionDays', propertyType: { name: 'integer' } }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const meta = await getMetadataTypeByName('table');
+    expect(meta.id).toBe('tid');
+    expect(meta.customProperties[0]?.name).toBe('retentionDays');
+    expect(decodeURIComponent(lastFetch().url)).toContain('/api/v1/metadata/types/name/table');
+  });
+
+  it('lists field property types with category=field', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ data: [{ id: 'f1', name: 'string', category: 'field' }], paging: { total: 1 } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listPropertyTypes();
+    expect(page.data[0]?.name).toBe('string');
+    expect(decodeURIComponent(lastFetch().url)).toContain(`category=${FIELD_TYPE_CATEGORY}`);
+  });
+
+  it('adds or updates a custom property with PUT /v1/metadata/types/{id}', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          id: 'tid',
+          name: 'table',
+          customProperties: [{ name: 'retentionDays', description: 'days', propertyType: { name: 'integer' } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const updated = await addOrUpdateCustomProperty('tid', {
+      name: 'retentionDays',
+      description: 'days',
+      propertyType: { id: 'f1', type: 'type', name: 'integer' },
+    });
+    expect(updated.customProperties[0]?.name).toBe('retentionDays');
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/api/v1/metadata/types/tid');
+    expect(init?.method).toBe('PUT');
   });
 });

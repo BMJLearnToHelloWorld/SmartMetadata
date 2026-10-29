@@ -57,16 +57,21 @@ describe('settings hub catalog', () => {
         'services',
         'policies',
         'custom-properties',
+        'apps',
       ]),
     );
   });
 
   it('does not expose Collate-only or unbuilt Insights surfaces as live routes', () => {
     const liveKeys = liveSettingsItems().map((item) => item.key);
-    expect(liveKeys).not.toEqual(expect.arrayContaining(['insights', 'knowledge', 'ontology', 'apps']));
+    expect(liveKeys).not.toEqual(expect.arrayContaining(['insights', 'knowledge', 'ontology']));
+    expect(liveKeys).toEqual(expect.arrayContaining(['apps']));
     expect(isDroppedSettingsKey('knowledge')).toBe(true);
     expect(isDroppedSettingsKey('users')).toBe(false);
     expect(SETTINGS_CATEGORIES.some((category) => category.key === 'applications')).toBe(true);
-    expect(residualSettingsItems().some((item) => item.key === 'apps')).toBe(true);
+    expect(residualSettingsItems().some((item) => item.key === 'apps')).toBe(false);
+    expect(residualSettingsItems().map((item) => item.key)).toEqual(
+      expect.arrayContaining(['sso', 'persona', 'appearance', 'inbox']),
+    );
   });
 });

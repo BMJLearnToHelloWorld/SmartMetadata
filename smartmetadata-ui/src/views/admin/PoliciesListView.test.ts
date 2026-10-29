@@ -85,6 +85,37 @@ describe('PoliciesListView', () => {
     expect(wrapper.text()).toContain('Data Consumer');
     expect(wrapper.find('[data-testid="admin-policies-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="entity-list-search"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="create-policy"]').exists()).toBe(true);
+  });
+
+  it('posts CreatePolicy when the create modal is submitted', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/v1/policies') && (init?.method === 'POST' || init?.method === 'post')) {
+        return jsonResponse(policyRow('p9', 'NewPolicy', 'New'), 201);
+      }
+      if (url.includes('/api/v1/policies')) {
+        return jsonResponse({ data: [policyRow('p1', 'DataConsumerPolicy', 'Data Consumer')], paging: { total: 1 } });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountPolicies();
+    await wrapper.get('[data-testid="create-policy"]').trigger('click');
+    await flushPromises();
+    const nameInput = wrapper.get('[data-testid="create-policy-name"]');
+    await nameInput.setValue('NewPolicy');
+    const ok = wrapper.findAll('button').find((b) => b.text().includes('Create') || b.text().includes('创建'));
+    // Ant Modal OK triggers @ok — call via Modal ok button with primary type inside modal
+    const modalOk = wrapper.findAll('.ant-modal-footer button').find((b) => b.classes().includes('ant-btn-primary'));
+    expect(modalOk).toBeTruthy();
+    await modalOk!.trigger('click');
+    await flushPromises();
+    const postCalls = fetchMock.mock.calls.filter((call) => {
+      const init = call[1] as RequestInit | undefined;
+      return String(call[0]).includes('/api/v1/policies') && String(init?.method || 'GET').toUpperCase() === 'POST';
+    });
+    expect(postCalls.length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows Empty when GET /v1/policies returns no data', async () => {

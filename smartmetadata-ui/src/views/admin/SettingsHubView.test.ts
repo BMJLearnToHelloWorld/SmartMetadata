@@ -20,6 +20,7 @@ async function mountHub() {
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/settings', name: 'admin-settings', component: SettingsHubView },
+      { path: '/admin/apps', name: 'admin-apps', component: { template: '<div>apps</div>' } },
       { path: '/admin/users', name: 'admin-users', component: { template: '<div>users</div>' } },
       { path: '/admin/teams', name: 'admin-teams', component: { template: '<div>teams</div>' } },
       { path: '/admin/bots', name: 'admin-bots', component: { template: '<div>bots</div>' } },
@@ -86,9 +87,8 @@ describe('SettingsHubView', () => {
 
   it('shows residual sections as text, not fake forms or dead buttons', async () => {
     const { wrapper } = await mountHub();
-    const apps = wrapper.find('[data-testid="settings-residual-apps"]');
-    expect(apps.exists()).toBe(true);
-    expect(apps.element.tagName.toLowerCase()).not.toBe('a');
+    expect(wrapper.find('[data-testid="settings-link-apps"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-apps"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(true);
@@ -96,6 +96,5 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-residual-appearance"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('Ontology');
     expect(wrapper.text()).not.toContain('Knowledge');
-    expect(wrapper.find('[data-testid="settings-link-apps"]').exists()).toBe(false);
   });
 });

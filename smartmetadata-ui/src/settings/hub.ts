@@ -40,6 +40,7 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'admin-settings-system',
   'admin-policies',
   'admin-settings-custom-properties',
+  'admin-apps',
   'governance-glossaries',
   'governance-classifications',
   'governance-domains',
@@ -159,8 +160,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: 'apps',
         titleKey: 'settings.items.applications',
-        kind: 'residual',
-        residualKey: 'settings.residual.applications',
+        kind: 'route',
+        routeName: 'admin-apps',
       },
     ],
   },

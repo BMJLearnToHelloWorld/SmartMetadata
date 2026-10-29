@@ -91,6 +91,7 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('settings.system.saveLogin');
     expect(keys).toContain('admin.policies.title');
     expect(keys).toContain('settings.customProperties.title');
+    expect(keys).toContain('admin.apps.title');
     expect(keys).toContain('nav.insights');
     expect(keys).toContain('nav.govern');
     expect(keys).toContain('nav.marketplace');

@@ -60,18 +60,28 @@ describe('CustomPropertyTypeDetailView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/metadata/types/name/table/customProperties')) {
-          return jsonResponse([
-            {
-              name: 'retentionDays',
-              displayName: 'Retention days',
-              description: 'How long to keep rows',
-              propertyType: { name: 'integer' },
-            },
-          ]);
+        if (url.includes('/api/v1/metadata/types?') && url.includes('category=field')) {
+          return jsonResponse({
+            data: [{ id: 'f1', name: 'integer', category: 'field', displayName: 'Integer' }],
+            paging: { total: 1 },
+          });
         }
-        if (url.includes('/customProperties')) {
-          return jsonResponse([]);
+        if (url.includes('/api/v1/metadata/types/name/table')) {
+          return jsonResponse({
+            id: 'tid',
+            name: 'table',
+            customProperties: [
+              {
+                name: 'retentionDays',
+                displayName: 'Retention days',
+                description: 'How long to keep rows',
+                propertyType: { name: 'integer' },
+              },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/metadata/types/name/')) {
+          return jsonResponse({ id: 'tid2', name: entityTypeFrom(url), customProperties: [] });
         }
         return new Response('not found', { status: 404 });
       }),
@@ -83,19 +93,73 @@ describe('CustomPropertyTypeDetailView', () => {
     localStorage.clear();
   });
 
-  it('renders definitions from GET /v1/metadata/types/name/{type}/customProperties', async () => {
+  it('renders definitions and exposes add definition action', async () => {
     const { wrapper } = await mountDefs();
     expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('retentionDays');
     expect(wrapper.text()).toContain('integer');
     expect(wrapper.find('[data-testid="admin-custom-property-defs-table"]').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain('Add property');
-    expect(wrapper.find('form').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(true);
   });
 
-  it('shows Empty when the type has no definitions', async () => {
+  it('shows Empty when the type has no definitions but still allows add', async () => {
     const { wrapper } = await mountDefs('topic');
     expect(wrapper.find('[data-testid="entity-detail-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="admin-custom-property-defs-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(true);
+  });
+
+  it('PUTs a custom property definition to /v1/metadata/types/{id}', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/v1/metadata/types/tid') && String(init?.method || '').toUpperCase() === 'PUT') {
+        return jsonResponse({
+          id: 'tid',
+          name: 'table',
+          customProperties: [
+            { name: 'ownerTeam', description: 'Owning team', propertyType: { name: 'string' } },
+          ],
+        });
+      }
+      if (url.includes('category=field')) {
+        return jsonResponse({
+          data: [
+            { id: 'f1', name: 'integer', category: 'field' },
+            { id: 'f2', name: 'string', category: 'field' },
+          ],
+          paging: { total: 2 },
+        });
+      }
+      if (url.includes('/api/v1/metadata/types/name/table')) {
+        return jsonResponse({ id: 'tid', name: 'table', customProperties: [] });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountDefs();
+    await wrapper.get('[data-testid="add-custom-property"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-testid="custom-property-name"]').setValue('ownerTeam');
+    await wrapper.get('[data-testid="custom-property-description"]').setValue('Owning team');
+    const modalOk = wrapper.findAll('.ant-modal-footer button').find((b) => b.classes().includes('ant-btn-primary'));
+    expect(modalOk).toBeTruthy();
+    await modalOk!.trigger('click');
+    await flushPromises();
+    const putCalls = fetchMock.mock.calls.filter(
+      (call) =>
+        String(call[0]).includes('/api/v1/metadata/types/tid') &&
+        String((call[1] as RequestInit | undefined)?.method || '').toUpperCase() === 'PUT',
+    );
+    expect(putCalls.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+function entityTypeFrom(url: string): string {
+  const marker = '/metadata/types/name/';
+  const start = url.indexOf(marker);
+  if (start < 0) {
+    return 'unknown';
+  }
+  const rest = url.slice(start + marker.length);
+  return decodeURIComponent(rest.split(/[/?]/)[0] || 'unknown');
+}

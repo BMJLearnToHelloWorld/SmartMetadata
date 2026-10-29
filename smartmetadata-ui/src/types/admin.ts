@@ -129,6 +129,36 @@ export interface JwtAuthMechanism {
   JWTTokenExpiresAt?: number;
 }
 
+export interface CreatePolicyRuleRequest {
+  name: string;
+  effect: 'allow' | 'deny';
+  operations: string[];
+  resources: string[];
+  description?: string;
+  condition?: string;
+}
+
+/** Apache CreatePolicy — required name + rules. */
+export interface CreatePolicyRequest {
+  name: string;
+  rules: CreatePolicyRuleRequest[];
+  displayName?: string;
+  description?: string;
+  enabled?: boolean;
+}
+
+/** Apache App list/detail (GET /v1/apps). No marketplace invent. */
+export interface AdminApp {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  deleted?: boolean;
+  appType?: string;
+  scheduleType?: string;
+  fullyQualifiedName?: string;
+}
+
 export interface AuthConfiguration {
   provider?: string;
   providerName?: string;

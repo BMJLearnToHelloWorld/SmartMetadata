@@ -8,7 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
-import type { AdminPolicy, Paged, PolicyRule } from '@/types/admin';
+import type {
+  AdminPolicy,
+  CreatePolicyRequest,
+  Paged,
+  PolicyRule,
+} from '@/types/admin';
 import { apiRequest } from './client';
 
 /** Matches `PolicyResource.FIELDS` so list/detail include role and team refs. */
@@ -91,4 +96,35 @@ export async function getPolicy(id: string): Promise<AdminPolicy> {
     throw new Error('Policy response was missing id and name');
   }
   return mapped;
+}
+
+export async function createPolicy(body: CreatePolicyRequest): Promise<AdminPolicy> {
+  const raw = await apiRequest<unknown>('/v1/policies', {
+    method: 'POST',
+    json: body,
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapPolicy(rec) : null;
+  if (!mapped) {
+    throw new Error('Create policy succeeded but the response had no policy');
+  }
+  return mapped;
+}
+
+/** Apache createOrUpdate — PUT /v1/policies with CreatePolicy body. */
+export async function updatePolicy(body: CreatePolicyRequest): Promise<AdminPolicy> {
+  const raw = await apiRequest<unknown>('/v1/policies', {
+    method: 'PUT',
+    json: body,
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapPolicy(rec) : null;
+  if (!mapped) {
+    throw new Error('Update policy succeeded but the response had no policy');
+  }
+  return mapped;
+}
+
+export function deletePolicy(id: string): Promise<unknown> {
+  return apiRequest(`/v1/policies/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

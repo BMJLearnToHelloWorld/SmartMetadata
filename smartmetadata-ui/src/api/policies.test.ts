@@ -9,7 +9,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getPolicy, listPolicies, mapPolicy, POLICY_FIELDS } from './policies';
+import {
+  createPolicy,
+  deletePolicy,
+  getPolicy,
+  listPolicies,
+  mapPolicy,
+  POLICY_FIELDS,
+  updatePolicy,
+} from './policies';
 
 function lastFetch(): string {
   const call = vi.mocked(fetch).mock.calls.at(-1);
@@ -114,5 +122,51 @@ describe('policies API', () => {
     const policy = await getPolicy('p1');
     expect(policy.roles[0]?.name).toBe('DataConsumer');
     expect(decodeURIComponent(lastFetch())).toContain('/api/v1/policies/p1');
+  });
+
+  it('creates a policy with POST /v1/policies', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(samplePolicy), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const created = await createPolicy({
+      name: 'DataConsumerPolicy',
+      rules: [{ name: 'DataConsumerPolicy-Rule', effect: 'allow', operations: ['ViewAll'], resources: ['all'] }],
+    });
+    expect(created.name).toBe('DataConsumerPolicy');
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/policies');
+    expect(init?.method).toBe('POST');
+  });
+
+  it('updates a policy with PUT /v1/policies', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(samplePolicy), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await updatePolicy({
+      name: 'DataConsumerPolicy',
+      enabled: false,
+      rules: [{ name: 'r1', effect: 'deny', operations: ['Delete'], resources: ['table'] }],
+    });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init?.method).toBe('PUT');
+  });
+
+  it('deletes a policy with DELETE /v1/policies/{id}', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await deletePolicy('p1');
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/api/v1/policies/p1');
+    expect(init?.method).toBe('DELETE');
   });
 });
