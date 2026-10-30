@@ -15,6 +15,8 @@ describe('CLI workflow export', () => {
   it('maps catalog service types to smartmetadata-ingest source.type', () => {
     expect(cliSourceType('Postgres')).toBe('postgres');
     expect(cliSourceType('Mysql')).toBe('mysql');
+  expect(cliSourceType('Doris')).toBe('doris');
+  expect(cliSourceType('Mssql')).toBe('mssql');
     expect(cliSourceType('Snowflake')).toBe('snowflake');
     expect(cliSourceType('Kafka')).toBe('kafka');
     expect(cliSourceType('Redshift')).toBeUndefined();

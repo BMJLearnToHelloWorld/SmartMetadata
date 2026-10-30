@@ -1576,6 +1576,12 @@ const enUS = {
     azureClientId: 'Azure client ID',
     azureClientSecret: 'Azure client secret',
     azureTenantId: 'Azure tenant ID',
+    scheme: 'Connection scheme',
+    driver: 'ODBC driver',
+    encrypt: 'Encrypt connection',
+    trustServerCertificate: 'Trust server certificate',
+    ingestAllDatabases: 'Ingest all databases',
+    includeSynonyms: 'Include synonyms',
   },
 } as const;
 

@@ -111,6 +111,57 @@ describe('service connections', () => {
     expect(redacted?.config?.password).toBe('********');
   });
 
+  it('builds Doris and Mssql connection subsets', () => {
+    const doris = buildServiceConnection({
+      name: 'd1',
+      kind: 'database',
+      serviceType: 'Doris',
+      hostPort: 'localhost:9030',
+      username: 'root',
+      databaseName: 'default',
+      databaseSchema: 'sales',
+      password: '${DORIS_PASSWORD}',
+      storeConnectionSecrets: true,
+    });
+    expect(doris?.config).toMatchObject({
+      type: 'Doris',
+      hostPort: 'localhost:9030',
+      username: 'root',
+      databaseName: 'default',
+      databaseSchema: 'sales',
+      scheme: 'doris',
+      password: '${DORIS_PASSWORD}',
+    });
+
+    const mssql = buildServiceConnection({
+      name: 'm1',
+      kind: 'database',
+      serviceType: 'Mssql',
+      hostPort: 'localhost:1433',
+      username: 'sa',
+      database: 'AdventureWorks',
+      scheme: 'mssql+pytds',
+      ingestAllDatabases: true,
+      includeSynonyms: true,
+      encrypt: false,
+      trustServerCertificate: true,
+      password: '${MSSQL_PASSWORD}',
+      storeConnectionSecrets: true,
+    });
+    expect(mssql?.config).toMatchObject({
+      type: 'Mssql',
+      hostPort: 'localhost:1433',
+      username: 'sa',
+      database: 'AdventureWorks',
+      scheme: 'mssql+pytds',
+      ingestAllDatabases: true,
+      includeSynonyms: true,
+      encrypt: false,
+      trustServerCertificate: true,
+      password: '${MSSQL_PASSWORD}',
+    });
+  });
+
   it('builds Databricks PAT and Unity Catalog connection subsets', () => {
     expect(
       buildServiceConnection({

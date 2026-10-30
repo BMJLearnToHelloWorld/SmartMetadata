@@ -38,6 +38,13 @@ databricks = [
   "pyOpenSSL>=23,<26",
   "pyasn1>=0.4,<1",
 ]
+doris = [
+  "pydoris==1.2.0",
+  "pymysql>=1.1,<2",
+]
+mssql = ["sqlalchemy-pytds~=1.0"]
+mssql-odbc = ["pyodbc~=5.3"]
+mssql-pymssql = ["pymssql~=2.3.9"]
 dev = [
   "pytest>=8,<9",
   "pytest-cov>=5,<7",

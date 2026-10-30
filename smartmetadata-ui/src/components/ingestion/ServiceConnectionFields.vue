@@ -23,6 +23,12 @@ const passwordPlaceholder = computed(() => {
   if (type.value === 'Snowflake') {
     return '${SNOWFLAKE_PASSWORD}';
   }
+  if (type.value === 'Doris') {
+    return '${DORIS_PASSWORD}';
+  }
+  if (type.value === 'Mssql') {
+    return '${MSSQL_PASSWORD}';
+  }
   return '';
 });
 </script>
@@ -68,6 +74,65 @@ const passwordPlaceholder = computed(() => {
     </Form.Item>
     <Form.Item :label="t('connection.role')">
       <Input v-model:value="form.role" data-testid="service-role" />
+    </Form.Item>
+  </template>
+  <template v-else-if="type === 'Doris'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input v-model:value="form.hostPort" data-testid="service-host-port" placeholder="localhost:9030" />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Form.Item :label="t('connection.databaseName')">
+      <Input v-model:value="form.databaseName" data-testid="service-database-name" placeholder="default" />
+    </Form.Item>
+    <Form.Item :label="t('connection.databaseSchema')">
+      <Input v-model:value="form.databaseSchema" data-testid="service-database-schema" />
+    </Form.Item>
+  </template>
+  <template v-else-if="type === 'Mssql'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input v-model:value="form.hostPort" data-testid="service-host-port" placeholder="localhost:1433" />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Form.Item :label="t('connection.database')" :rules="requiredField(t, t('connection.database'))">
+      <Input v-model:value="form.database" data-testid="service-database" />
+    </Form.Item>
+    <Form.Item :label="t('connection.scheme')">
+      <Select
+        v-model:value="form.scheme"
+        data-testid="service-scheme"
+        :options="[
+          { value: 'mssql+pytds', label: 'mssql+pytds' },
+          { value: 'mssql+pyodbc', label: 'mssql+pyodbc' },
+          { value: 'mssql+pymssql', label: 'mssql+pymssql' },
+        ]"
+        allow-clear
+        placeholder="mssql+pytds"
+      />
+    </Form.Item>
+    <Form.Item v-if="(form.scheme || 'mssql+pytds') === 'mssql+pyodbc'" :label="t('connection.driver')">
+      <Input v-model:value="form.driver" data-testid="service-driver" placeholder="ODBC Driver 18 for SQL Server" />
+    </Form.Item>
+    <Form.Item :label="t('connection.encrypt')">
+      <Checkbox v-model:checked="form.encrypt" data-testid="service-encrypt">{{ t('connection.encrypt') }}</Checkbox>
+    </Form.Item>
+    <Form.Item :label="t('connection.trustServerCertificate')">
+      <Checkbox v-model:checked="form.trustServerCertificate" data-testid="service-trust-cert">
+        {{ t('connection.trustServerCertificate') }}
+      </Checkbox>
+    </Form.Item>
+    <Form.Item :label="t('connection.ingestAllDatabases')">
+      <Checkbox v-model:checked="form.ingestAllDatabases" data-testid="service-ingest-all-dbs">
+        {{ t('connection.ingestAllDatabases') }}
+      </Checkbox>
+    </Form.Item>
+    <Form.Item :label="t('connection.includeSynonyms')">
+      <Checkbox v-model:checked="form.includeSynonyms" data-testid="service-include-synonyms">
+        {{ t('connection.includeSynonyms') }}
+      </Checkbox>
     </Form.Item>
   </template>
   <template v-else-if="type === 'Kafka'">

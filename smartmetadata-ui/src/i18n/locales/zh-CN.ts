@@ -1568,6 +1568,12 @@ const zhCN = {
     azureClientId: 'Azure Client ID',
     azureClientSecret: 'Azure Client Secret',
     azureTenantId: 'Azure Tenant ID',
+    scheme: '连接协议',
+    driver: 'ODBC 驱动',
+    encrypt: '加密连接',
+    trustServerCertificate: '信任服务器证书',
+    ingestAllDatabases: '摄取全部数据库',
+    includeSynonyms: '包含同义词',
   },
 } as const;
 
