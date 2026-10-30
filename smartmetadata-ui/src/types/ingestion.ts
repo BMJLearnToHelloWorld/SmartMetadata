@@ -9,7 +9,7 @@
  */
 import type { EntityRef } from './api';
 
-export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql'] as const;
+export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql', 'Redshift', 'MariaDB', 'Greenplum', 'Timescale'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
 
 export const MESSAGING_SERVICE_TYPES = ['Kafka'] as const;
@@ -28,6 +28,10 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   UnityCatalog: 'unitycatalog',
   Doris: 'doris',
   Mssql: 'mssql',
+  Redshift: 'redshift',
+  MariaDB: 'mariadb',
+  Greenplum: 'greenplum',
+  Timescale: 'timescale',
   Kafka: 'kafka',
 };
 
@@ -39,6 +43,10 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   unitycatalog: 'UnityCatalog',
   doris: 'Doris',
   mssql: 'Mssql',
+  redshift: 'Redshift',
+  mariadb: 'MariaDB',
+  greenplum: 'Greenplum',
+  timescale: 'Timescale',
   kafka: 'Kafka',
 };
 

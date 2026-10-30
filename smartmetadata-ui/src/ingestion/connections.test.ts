@@ -213,4 +213,82 @@ describe('service connections', () => {
     expect(redacted?.config?.authType).toEqual({ token: '********' });
   });
 
+
+  it('builds Redshift MariaDB Greenplum Timescale connection subsets', () => {
+    expect(
+      buildServiceConnection({
+        name: 'r1',
+        kind: 'database',
+        serviceType: 'Redshift',
+        hostPort: 'localhost:5439',
+        username: 'awsuser',
+        database: 'dev',
+        ingestAllDatabases: true,
+        password: '${REDSHIFT_PASSWORD}',
+        storeConnectionSecrets: true,
+      })?.config,
+    ).toMatchObject({
+      type: 'Redshift',
+      hostPort: 'localhost:5439',
+      username: 'awsuser',
+      database: 'dev',
+      scheme: 'redshift+psycopg2',
+      ingestAllDatabases: true,
+      authType: { password: '${REDSHIFT_PASSWORD}' },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'm1',
+        kind: 'database',
+        serviceType: 'MariaDB',
+        hostPort: 'localhost:3306',
+        username: 'root',
+        databaseName: 'default',
+        password: '${MARIADB_PASSWORD}',
+        storeConnectionSecrets: true,
+      })?.config,
+    ).toMatchObject({
+      type: 'MariaDB',
+      hostPort: 'localhost:3306',
+      username: 'root',
+      databaseName: 'default',
+      scheme: 'mysql+pymysql',
+      password: '${MARIADB_PASSWORD}',
+    });
+    expect(
+      buildServiceConnection({
+        name: 'g1',
+        kind: 'database',
+        serviceType: 'Greenplum',
+        hostPort: 'localhost:5432',
+        username: 'gpadmin',
+        database: 'gpdb',
+        password: '${GREENPLUM_PASSWORD}',
+        storeConnectionSecrets: true,
+      })?.config,
+    ).toMatchObject({
+      type: 'Greenplum',
+      scheme: 'postgresql+psycopg2',
+      database: 'gpdb',
+      authType: { password: '${GREENPLUM_PASSWORD}' },
+    });
+    expect(
+      buildServiceConnection({
+        name: 't1',
+        kind: 'database',
+        serviceType: 'Timescale',
+        hostPort: 'localhost:5432',
+        username: 'tsdb',
+        database: 'ts',
+        password: '${TIMESCALE_PASSWORD}',
+        storeConnectionSecrets: true,
+      })?.config,
+    ).toMatchObject({
+      type: 'Timescale',
+      scheme: 'postgresql+psycopg2',
+      database: 'ts',
+      authType: { password: '${TIMESCALE_PASSWORD}' },
+    });
+  });
+
 });
