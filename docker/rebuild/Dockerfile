@@ -6,7 +6,12 @@
 
 # Image refs are overridable so the China compose overlay can pin DaoCloud
 # proxies without a second Dockerfile. Defaults stay official (CI / intl).
+# FROM-scope ARGs must sit above the first FROM. Docker 29 / BuildKit treats
+# a between-stage ARG as stage-local and blanks compose-passed TEMURIN_IMAGE /
+# DISTROLESS_IMAGE (China overlay), matching the Dockerfile.ui fix pattern.
 ARG ALPINE_IMAGE=alpine:3
+ARG TEMURIN_IMAGE=eclipse-temurin:21-jdk
+ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian13:debug-nonroot
 FROM ${ALPINE_IMAGE} AS dist
 
 COPY openmetadata-dist/target/openmetadata-*.tar.gz /
@@ -23,7 +28,6 @@ RUN mkdir -p /opt/openmetadata && \
     mkdir -p /shim/usr/bin && \
     ln -s /busybox/env /shim/usr/bin/env
 
-ARG TEMURIN_IMAGE=eclipse-temurin:21-jdk
 FROM ${TEMURIN_IMAGE} AS jre-builder
 
 RUN jlink \
@@ -39,11 +43,10 @@ RUN find /javaruntime/bin -type f \
       ! -name jinfo ! -name jps ! -name jstat ! -name jfr ! -name keytool \
       -delete
 
-ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian13:debug-nonroot
 FROM ${DISTROLESS_IMAGE}
 
 ENV JAVA_HOME=/opt/java/openjdk
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
+ENV PATH="/bin:${PATH}"
 
 COPY --from=jre-builder /javaruntime ${JAVA_HOME}
 COPY --from=dist /shim/bin /bin
