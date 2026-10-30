@@ -122,6 +122,8 @@ Rebuild trees are product evidence, not a second authority.
 | postgres / mysql / kafka / snowflake | Official service types | `smartmetadata-ingestion` connectors | BehaviorMatched / Shipped | PARITY Phase 6-7 | - |
 | Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified |
 | Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
+| Doris (full chain) | OM `database/doris` service_spec (metadata+lineage+connection; schema supportsProfiler) | `doris` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | No invent Usage/DataDiff/sampler_class; OSS pydoris==1.2.0 + PyMySQL live; job execution Partial |
+| MSSQL (full chain) | OM `database/mssql` service_spec (metadata+lineage+usage+sampler+data_diff+connection) | `mssql` + lineage/usage/profiler/sampler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | OSS sqlalchemy-pytds~=1.0 (+ optional pyodbc/pymssql); no collate-data-diff; live Cursor* IntegrationVerified deferred |
 | ~100 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
 | Sample-data one-click | official sample stack | seed via API / ingest | Gap | PARITY | — |
 
@@ -171,3 +173,5 @@ Rebuild trees are product evidence, not a second authority.
 - Matrix / stop-list: [PARITY.md](./PARITY.md)
 - Per-slice reviews: `BACKEND_01_REVIEW.md` … `BACKEND_10_REVIEW.md`
 - Product run path: [PRODUCT_PATH.md](./PRODUCT_PATH.md)
+
+- (done 2026-10-30) Doris + MSSQL full chain after Bernie t215u named types + OSS lock

@@ -138,6 +138,52 @@ def map_databricks_type(data_type: str | None) -> str:
     return _map_databricks(data_type)
 
 
+_MSSQL_TO_OM: dict[str, str] = {
+    "bit": "BOOLEAN",
+    "tinyint": "TINYINT",
+    "smallint": "SMALLINT",
+    "int": "INT",
+    "integer": "INT",
+    "bigint": "BIGINT",
+    "decimal": "DECIMAL",
+    "numeric": "NUMERIC",
+    "money": "NUMERIC",
+    "smallmoney": "NUMERIC",
+    "float": "FLOAT",
+    "real": "FLOAT",
+    "date": "DATE",
+    "time": "TIME",
+    "datetime": "DATETIME",
+    "datetime2": "DATETIME",
+    "smalldatetime": "DATETIME",
+    "datetimeoffset": "TIMESTAMPZ",
+    "char": "CHAR",
+    "varchar": "VARCHAR",
+    "text": "TEXT",
+    "nchar": "CHAR",
+    "nvarchar": "VARCHAR",
+    "ntext": "TEXT",
+    "binary": "BINARY",
+    "varbinary": "VARBINARY",
+    "image": "BLOB",
+    "uniqueidentifier": "UUID",
+    "xml": "STRING",
+    "sql_variant": "STRING",
+    "hierarchyid": "STRING",
+    "geometry": "GEOGRAPHY",
+    "geography": "GEOGRAPHY",
+}
+
+
+def map_doris_type(data_type: str | None) -> str:
+    """Doris uses MySQL-compatible type names."""
+    return map_mysql_type(data_type)
+
+
+def map_mssql_type(data_type: str | None) -> str:
+    return _map_simple(data_type, _MSSQL_TO_OM)
+
+
 
 _DATABRICKS_TO_OM = {
     "boolean": "BOOLEAN",

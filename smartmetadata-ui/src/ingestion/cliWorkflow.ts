@@ -19,6 +19,8 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   kafka: '${KAFKA_REST_PASSWORD}',
   databricks: '${DATABRICKS_TOKEN}',
   unitycatalog: '${DATABRICKS_TOKEN}',
+  doris: '${DORIS_PASSWORD}',
+  mssql: '${MSSQL_PASSWORD}',
 };
 
 function yamlScalar(value: string): string {
@@ -60,8 +62,22 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
   write('httpPath', config.httpPath);
   write('catalog', config.catalog);
   write('queryHistoryTable', config.queryHistoryTable);
+  write('scheme', config.scheme);
+  write('driver', config.driver);
   if (typeof config.includeMetricViews === 'boolean') {
     out += yamlLine(4, 'includeMetricViews', config.includeMetricViews);
+  }
+  if (typeof config.encrypt === 'boolean') {
+    out += yamlLine(4, 'encrypt', config.encrypt);
+  }
+  if (typeof config.trustServerCertificate === 'boolean') {
+    out += yamlLine(4, 'trustServerCertificate', config.trustServerCertificate);
+  }
+  if (typeof config.ingestAllDatabases === 'boolean') {
+    out += yamlLine(4, 'ingestAllDatabases', config.ingestAllDatabases);
+  }
+  if (typeof config.includeSynonyms === 'boolean') {
+    out += yamlLine(4, 'includeSynonyms', config.includeSynonyms);
   }
   if (sourceType === 'kafka') {
     out += yamlLine(4, 'restProxyUrl', '${KAFKA_REST_PROXY_URL:-http://localhost:8082}');

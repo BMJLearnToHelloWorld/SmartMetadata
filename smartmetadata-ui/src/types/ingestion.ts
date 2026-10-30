@@ -9,7 +9,7 @@
  */
 import type { EntityRef } from './api';
 
-export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog'] as const;
+export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
 
 export const MESSAGING_SERVICE_TYPES = ['Kafka'] as const;
@@ -26,6 +26,8 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Snowflake: 'snowflake',
   Databricks: 'databricks',
   UnityCatalog: 'unitycatalog',
+  Doris: 'doris',
+  Mssql: 'mssql',
   Kafka: 'kafka',
 };
 
@@ -35,6 +37,8 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   snowflake: 'Snowflake',
   databricks: 'Databricks',
   unitycatalog: 'UnityCatalog',
+  doris: 'Doris',
+  mssql: 'Mssql',
   kafka: 'Kafka',
 };
 
@@ -57,6 +61,12 @@ export interface ServiceConnectionConfig {
   catalog?: string;
   queryHistoryTable?: string;
   includeMetricViews?: boolean;
+  scheme?: string;
+  driver?: string;
+  encrypt?: boolean;
+  trustServerCertificate?: boolean;
+  ingestAllDatabases?: boolean;
+  includeSynonyms?: boolean;
   authType?: {
     password?: string;
     token?: string;
@@ -105,6 +115,12 @@ export interface ServiceFormValues {
   catalog?: string;
   queryHistoryTable?: string;
   includeMetricViews?: boolean;
+  scheme?: string;
+  driver?: string;
+  encrypt?: boolean;
+  trustServerCertificate?: boolean;
+  ingestAllDatabases?: boolean;
+  includeSynonyms?: boolean;
   authMode?: 'pat' | 'oauth' | 'azure';
   clientId?: string;
   clientSecret?: string;

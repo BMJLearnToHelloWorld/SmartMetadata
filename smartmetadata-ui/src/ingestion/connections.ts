@@ -72,6 +72,12 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     catalog: typeof config.catalog === 'string' ? config.catalog : '',
     queryHistoryTable: typeof config.queryHistoryTable === 'string' ? config.queryHistoryTable : '',
     includeMetricViews: typeof config.includeMetricViews === 'boolean' ? config.includeMetricViews : true,
+    scheme: typeof config.scheme === 'string' ? config.scheme : '',
+    driver: typeof config.driver === 'string' ? config.driver : '',
+    encrypt: typeof config.encrypt === 'boolean' ? config.encrypt : false,
+    trustServerCertificate: typeof config.trustServerCertificate === 'boolean' ? config.trustServerCertificate : false,
+    ingestAllDatabases: typeof config.ingestAllDatabases === 'boolean' ? config.ingestAllDatabases : false,
+    includeSynonyms: typeof config.includeSynonyms === 'boolean' ? config.includeSynonyms : false,
     authMode: authModeFromConfig(config),
     clientId: typeof config.authType?.clientId === 'string' ? config.authType.clientId : '',
     clientSecret: '',
@@ -106,7 +112,7 @@ function applyPassword(
     return;
   }
   if (shouldPersistSecret(typed, Boolean(form.storeConnectionSecrets))) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka') {
+    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql') {
       config.password = typed;
     } else {
       config.authType = { password: typed };
@@ -118,7 +124,7 @@ function applyPassword(
   }
   const previous = pickPassword(existing);
   if (previous && isMaskedSecret(previous)) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka') {
+    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql') {
       config.password = previous;
     } else {
       config.authType = { password: previous };
@@ -235,6 +241,46 @@ export function buildServiceConnection(
     }
     if (form.schemaRegistryURL?.trim()) {
       config.schemaRegistryURL = form.schemaRegistryURL.trim();
+    }
+  } else if (type === 'Doris') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    if (form.databaseName?.trim()) {
+      config.databaseName = form.databaseName.trim();
+    }
+    if (form.databaseSchema?.trim()) {
+      config.databaseSchema = form.databaseSchema.trim();
+    }
+    config.scheme = 'doris';
+  } else if (type === 'Mssql') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    if (form.database?.trim()) {
+      config.database = form.database.trim();
+    }
+    config.scheme = (form.scheme?.trim() || 'mssql+pytds');
+    if (form.driver?.trim()) {
+      config.driver = form.driver.trim();
+    }
+    if (typeof form.encrypt === 'boolean') {
+      config.encrypt = form.encrypt;
+    }
+    if (typeof form.trustServerCertificate === 'boolean') {
+      config.trustServerCertificate = form.trustServerCertificate;
+    }
+    if (typeof form.ingestAllDatabases === 'boolean') {
+      config.ingestAllDatabases = form.ingestAllDatabases;
+    }
+    if (typeof form.includeSynonyms === 'boolean') {
+      config.includeSynonyms = form.includeSynonyms;
     }
   } else if (type === 'Databricks' || type === 'UnityCatalog') {
     if (form.hostPort?.trim()) {
