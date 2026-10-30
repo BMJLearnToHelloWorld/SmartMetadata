@@ -199,3 +199,177 @@ export interface ServerVersion {
   revision?: string;
   timestamp?: number;
 }
+
+export interface LogoConfiguration {
+  customLogoUrlPath?: string;
+  customFaviconUrlPath?: string;
+  customMonogramUrlPath?: string;
+}
+
+export interface ThemeConfiguration {
+  primaryColor?: string;
+  hoverColor?: string;
+  selectedColor?: string;
+  errorColor?: string;
+  successColor?: string;
+  warningColor?: string;
+  infoColor?: string;
+  panelBackgroundColor?: string;
+}
+
+export interface UiThemePreference {
+  customLogoConfig: LogoConfiguration;
+  customTheme: ThemeConfiguration;
+}
+
+export interface OmBaseUrlConfiguration {
+  openMetadataUrl?: string;
+}
+
+export interface LineageSettings {
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  lineageLayer?: 'EntityLineage' | 'ColumnLevelLineage' | 'DataObservability';
+  pipelineViewMode?: 'Edge' | 'Node';
+}
+
+export interface MetricConfigurationDefinition {
+  dataType?: string;
+  metrics?: string[];
+  disabled?: boolean;
+}
+
+export interface SampleDataIngestionConfig {
+  storeSampleData?: boolean;
+  readSampleData?: boolean;
+}
+
+export interface ProfilerConfiguration {
+  metricConfiguration?: MetricConfigurationDefinition[];
+  sampleDataConfig?: SampleDataIngestionConfig;
+}
+
+export interface SearchGlobalSettings {
+  enableAccessControl?: boolean;
+  enableColumnIndexing?: boolean;
+  maxAggregateSize?: number;
+  maxResultHits?: number;
+  maxAnalyzedOffset?: number;
+  highlightFields?: string[];
+  keywordWeight?: number;
+  semanticWeight?: number;
+  termBoosts?: Array<{ field?: string; value?: string; boost?: number }>;
+  fieldValueBoosts?: Array<{ field?: string; factor?: number; modifier?: string; missing?: number }>;
+  aggregations?: Array<{ name?: string; type?: string; field?: string }>;
+}
+
+export interface AssetTypeConfiguration {
+  assetType: string;
+  searchFields?: Array<{ field?: string; boost?: number }>;
+  highlightFields?: string[];
+  scoreMode?: string;
+  boostMode?: string;
+  termBoosts?: SearchGlobalSettings['termBoosts'];
+  fieldValueBoosts?: SearchGlobalSettings['fieldValueBoosts'];
+  aggregations?: SearchGlobalSettings['aggregations'];
+}
+
+export interface AllowedSearchField {
+  name: string;
+  description?: string;
+  highlight?: boolean;
+}
+
+export interface AllowedSearchFields {
+  entityType: string;
+  fields: AllowedSearchField[];
+}
+
+export interface SearchSettings {
+  globalSettings?: SearchGlobalSettings;
+  assetTypeConfigurations?: AssetTypeConfiguration[];
+  defaultConfiguration?: AssetTypeConfiguration;
+  allowedFields?: AllowedSearchFields[];
+}
+
+export interface GlossarySettings {
+  enableTagPropagation?: boolean;
+}
+
+export interface SemanticsRule {
+  name: string;
+  description?: string;
+  rule?: string;
+  enabled?: boolean;
+  entityType?: string;
+  ignoredEntities?: string[];
+}
+
+export interface EntityRulesSettings {
+  entitySemantics: SemanticsRule[];
+}
+
+export interface AppConfiguration {
+  defaultAppMode?: 'ai' | 'classic' | null;
+  defaultColumnOrder?: 'alphabetical' | 'sourceOrder' | null;
+  defaultTimeFormat?: '12h' | '24h';
+}
+
+export interface StepValidation {
+  description?: string;
+  passed?: boolean;
+  message?: string;
+}
+
+export interface SystemValidationResponse {
+  database?: StepValidation;
+  searchInstance?: StepValidation;
+  pipelineServiceClient?: StepValidation;
+  jwks?: StepValidation;
+  migrations?: StepValidation;
+  logStorage?: StepValidation;
+}
+
+export interface DataQualityDimension {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  fullyQualifiedName?: string;
+  deleted?: boolean;
+  style?: { color?: string };
+  provider?: string;
+}
+
+export interface CreateDataQualityDimensionRequest {
+  name: string;
+  displayName?: string;
+  description?: string;
+  style?: { color?: string };
+}
+
+export interface LearningResource {
+  id: string;
+  name: string;
+  displayName?: string;
+  description?: string;
+  fullyQualifiedName?: string;
+  resourceType: string;
+  categories?: string[];
+  difficulty?: string;
+  source: { provider?: string; url: string };
+  status?: string;
+  deleted?: boolean;
+}
+
+export interface CreateLearningResourceRequest {
+  name: string;
+  resourceType: string;
+  source: { provider?: string; url: string };
+  categories?: string[];
+  displayName?: string;
+  description?: string;
+  difficulty?: string;
+  status?: string;
+}
+
