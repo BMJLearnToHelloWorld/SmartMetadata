@@ -56,3 +56,9 @@ def load_builtin_sources() -> None:
     from smartmetadata_ingestion.connectors import mysql as _mysql  # noqa: F401
     from smartmetadata_ingestion.connectors import postgres as _postgres  # noqa: F401
     from smartmetadata_ingestion.connectors import snowflake as _snowflake  # noqa: F401
+    from smartmetadata_ingestion.connectors import databricks as _databricks  # noqa: F401
+    from smartmetadata_ingestion.connectors import databricks_lineage as _databricks_lineage  # noqa: F401
+    from smartmetadata_ingestion.connectors import databricks_usage as _databricks_usage  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog as _unitycatalog  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog_lineage as _unitycatalog_lineage  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog_usage as _unitycatalog_usage  # noqa: F401

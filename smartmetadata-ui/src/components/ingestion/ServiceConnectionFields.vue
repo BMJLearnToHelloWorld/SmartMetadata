@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Checkbox, Form, Input, Typography } from 'ant-design-vue';
+import { Checkbox, Form, Input, Select, Typography } from 'ant-design-vue';
 import { requiredField } from '@/features/crud/formRules';
 import type { ServiceFormValues } from '@/types/ingestion';
 
@@ -89,7 +89,110 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.confluentNote') }}
     </Typography.Paragraph>
   </template>
-  <Form.Item v-if="type !== 'Kafka'" :label="t('connection.password')">
+  <template v-else-if="type === 'Databricks' || type === 'UnityCatalog'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input
+        v-model:value="form.hostPort"
+        data-testid="service-host-port"
+        placeholder="adb-xxxx.azuredatabricks.net"
+      />
+    </Form.Item>
+    <Form.Item
+      v-if="type === 'Databricks'"
+      :label="t('connection.httpPath')"
+      :rules="requiredField(t, t('connection.httpPath'))"
+    >
+      <Input
+        v-model:value="form.httpPath"
+        data-testid="service-http-path"
+        placeholder="/sql/1.0/warehouses/..."
+      />
+    </Form.Item>
+    <Form.Item v-else :label="t('connection.httpPath')">
+      <Input
+        v-model:value="form.httpPath"
+        data-testid="service-http-path"
+        placeholder="/sql/1.0/warehouses/..."
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.catalog')">
+      <Input v-model:value="form.catalog" data-testid="service-catalog" placeholder="hive_metastore" />
+    </Form.Item>
+    <Form.Item :label="t('connection.databaseSchema')">
+      <Input v-model:value="form.databaseSchema" data-testid="service-database-schema" />
+    </Form.Item>
+    <Form.Item :label="t('connection.queryHistoryTable')">
+      <Input
+        v-model:value="form.queryHistoryTable"
+        data-testid="service-query-history"
+        placeholder="system.query.history"
+      />
+    </Form.Item>
+    <Form.Item v-if="type === 'UnityCatalog'" :label="t('connection.includeMetricViews')">
+      <Checkbox v-model:checked="form.includeMetricViews" data-testid="service-include-metric-views">
+        {{ t('connection.includeMetricViews') }}
+      </Checkbox>
+    </Form.Item>
+    <Form.Item :label="t('connection.authMode')" :rules="requiredField(t, t('connection.authMode'))">
+      <Select
+        v-model:value="form.authMode"
+        data-testid="service-auth-mode"
+        :options="[
+          { value: 'pat', label: t('connection.authPat') },
+          { value: 'oauth', label: t('connection.authOauth') },
+          { value: 'azure', label: t('connection.authAzure') },
+        ]"
+      />
+    </Form.Item>
+    <template v-if="(form.authMode || 'pat') === 'pat'">
+      <Form.Item :label="t('connection.token')">
+        <Input.Password
+          v-model:value="form.password"
+          data-testid="service-password"
+          :placeholder="passwordPlaceholder"
+          autocomplete="new-password"
+        />
+        <Typography.Paragraph type="secondary" class="svc-hint">
+          {{ t('connection.secretHint') }}
+        </Typography.Paragraph>
+      </Form.Item>
+    </template>
+    <template v-else-if="form.authMode === 'oauth'">
+      <Form.Item :label="t('connection.clientId')" :rules="requiredField(t, t('connection.clientId'))">
+        <Input v-model:value="form.clientId" data-testid="service-client-id" />
+      </Form.Item>
+      <Form.Item :label="t('connection.clientSecret')">
+        <Input.Password
+          v-model:value="form.clientSecret"
+          data-testid="service-client-secret"
+          :placeholder="passwordPlaceholder"
+          autocomplete="new-password"
+        />
+      </Form.Item>
+    </template>
+    <template v-else>
+      <Form.Item :label="t('connection.azureClientId')" :rules="requiredField(t, t('connection.azureClientId'))">
+        <Input v-model:value="form.azureClientId" data-testid="service-azure-client-id" />
+      </Form.Item>
+      <Form.Item :label="t('connection.azureTenantId')" :rules="requiredField(t, t('connection.azureTenantId'))">
+        <Input v-model:value="form.azureTenantId" data-testid="service-azure-tenant-id" />
+      </Form.Item>
+      <Form.Item :label="t('connection.azureClientSecret')">
+        <Input.Password
+          v-model:value="form.azureClientSecret"
+          data-testid="service-azure-client-secret"
+          :placeholder="passwordPlaceholder"
+          autocomplete="new-password"
+        />
+      </Form.Item>
+    </template>
+    <Form.Item>
+      <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
+        {{ t('connection.persistSecrets') }}
+      </Checkbox>
+    </Form.Item>
+  </template>
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog'" :label="t('connection.password')">
     <Input.Password
       v-model:value="form.password"
       data-testid="service-password"
@@ -100,7 +203,7 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.secretHint') }}
     </Typography.Paragraph>
   </Form.Item>
-  <Form.Item v-if="type !== 'Kafka'">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog'">
     <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
       {{ t('connection.persistSecrets') }}
     </Checkbox>

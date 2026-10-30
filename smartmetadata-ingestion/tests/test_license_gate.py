@@ -24,6 +24,12 @@ def test_package_does_not_import_ccl_modules() -> None:
     importlib.import_module("smartmetadata_ingestion.connectors.mysql")
     importlib.import_module("smartmetadata_ingestion.connectors.kafka")
     importlib.import_module("smartmetadata_ingestion.connectors.snowflake")
+    importlib.import_module("smartmetadata_ingestion.connectors.databricks")
+    importlib.import_module("smartmetadata_ingestion.connectors.databricks_lineage")
+    importlib.import_module("smartmetadata_ingestion.connectors.databricks_usage")
+    importlib.import_module("smartmetadata_ingestion.connectors.unitycatalog")
+    importlib.import_module("smartmetadata_ingestion.connectors.unitycatalog_lineage")
+    importlib.import_module("smartmetadata_ingestion.connectors.unitycatalog_usage")
     importlib.import_module("smartmetadata_ingestion.connectors.registry")
     banned = {
         name

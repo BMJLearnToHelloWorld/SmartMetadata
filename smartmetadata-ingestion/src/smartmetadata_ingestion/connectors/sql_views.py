@@ -43,6 +43,8 @@ def _unquote(name: str) -> str:
 
 def map_table_type(table_type: str) -> str:
     kind = (table_type or "").upper()
-    if kind == "VIEW":
+    if kind in {"VIEW", "METRIC_VIEW"}:
         return "View"
+    if kind in {"MATERIALIZED_VIEW", "MATERIALIZED VIEW"}:
+        return "MaterializedView"
     return "Regular"

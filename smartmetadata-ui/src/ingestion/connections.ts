@@ -36,8 +36,13 @@ function pickPassword(config: ServiceConnectionConfig | undefined): string | und
     return undefined;
   }
   const auth = config.authType;
-  if (auth && typeof auth === 'object' && typeof auth.password === 'string') {
-    return auth.password;
+  if (auth && typeof auth === 'object') {
+    if (typeof auth.password === 'string') {
+      return auth.password;
+    }
+    if (typeof auth.token === 'string') {
+      return auth.token;
+    }
   }
   if (typeof config.password === 'string') {
     return config.password;
@@ -63,10 +68,32 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     role: typeof config.role === 'string' ? config.role : '',
     bootstrapServers: typeof config.bootstrapServers === 'string' ? config.bootstrapServers : '',
     schemaRegistryURL: typeof config.schemaRegistryURL === 'string' ? config.schemaRegistryURL : '',
+    httpPath: typeof config.httpPath === 'string' ? config.httpPath : '',
+    catalog: typeof config.catalog === 'string' ? config.catalog : '',
+    queryHistoryTable: typeof config.queryHistoryTable === 'string' ? config.queryHistoryTable : '',
+    includeMetricViews: typeof config.includeMetricViews === 'boolean' ? config.includeMetricViews : true,
+    authMode: authModeFromConfig(config),
+    clientId: typeof config.authType?.clientId === 'string' ? config.authType.clientId : '',
+    clientSecret: '',
+    azureClientId: typeof config.authType?.azureClientId === 'string' ? config.authType.azureClientId : '',
+    azureClientSecret: '',
+    azureTenantId: typeof config.authType?.azureTenantId === 'string' ? config.authType.azureTenantId : '',
     password: '',
     storeConnectionSecrets: false,
   };
 }
+
+function authModeFromConfig(config: ServiceConnectionConfig): 'pat' | 'oauth' | 'azure' {
+  const auth = config.authType;
+  if (auth?.azureClientId || auth?.azureTenantId) {
+    return 'azure';
+  }
+  if (auth?.clientId) {
+    return 'oauth';
+  }
+  return 'pat';
+}
+
 
 function applyPassword(
   config: ServiceConnectionConfig,
@@ -74,6 +101,10 @@ function applyPassword(
   existing?: ServiceConnectionConfig,
 ): void {
   const typed = form.password?.trim() ?? '';
+  if (form.serviceType === 'Databricks' || form.serviceType === 'UnityCatalog') {
+    applyDatabricksAuth(config, form, existing);
+    return;
+  }
   if (shouldPersistSecret(typed, Boolean(form.storeConnectionSecrets))) {
     if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka') {
       config.password = typed;
@@ -94,6 +125,63 @@ function applyPassword(
     }
   }
 }
+
+function applyDatabricksAuth(
+  config: ServiceConnectionConfig,
+  form: ServiceFormValues,
+  existing?: ServiceConnectionConfig,
+): void {
+  const mode = form.authMode || 'pat';
+  if (mode === 'oauth') {
+    const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+    if (form.clientId?.trim()) {
+      auth.clientId = form.clientId.trim();
+    }
+    const secret = form.clientSecret?.trim() ?? '';
+    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+      auth.clientSecret = secret;
+    } else if (!secret) {
+      const prev = existing?.authType?.clientSecret;
+      if (prev && isMaskedSecret(prev)) {
+        auth.clientSecret = prev;
+      }
+    }
+    config.authType = auth;
+    return;
+  }
+  if (mode === 'azure') {
+    const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+    if (form.azureClientId?.trim()) {
+      auth.azureClientId = form.azureClientId.trim();
+    }
+    if (form.azureTenantId?.trim()) {
+      auth.azureTenantId = form.azureTenantId.trim();
+    }
+    const secret = form.azureClientSecret?.trim() ?? '';
+    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+      auth.azureClientSecret = secret;
+    } else if (!secret) {
+      const prev = existing?.authType?.azureClientSecret;
+      if (prev && isMaskedSecret(prev)) {
+        auth.azureClientSecret = prev;
+      }
+    }
+    config.authType = auth;
+    return;
+  }
+  const token = form.password?.trim() ?? '';
+  if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+    config.authType = { token };
+    return;
+  }
+  if (!token) {
+    const prev = existing?.authType?.token;
+    if (prev && isMaskedSecret(prev)) {
+      config.authType = { token: prev };
+    }
+  }
+}
+
 
 export function buildServiceConnection(
   form: ServiceFormValues,
@@ -148,6 +236,25 @@ export function buildServiceConnection(
     if (form.schemaRegistryURL?.trim()) {
       config.schemaRegistryURL = form.schemaRegistryURL.trim();
     }
+  } else if (type === 'Databricks' || type === 'UnityCatalog') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.httpPath?.trim()) {
+      config.httpPath = form.httpPath.trim();
+    }
+    if (form.catalog?.trim()) {
+      config.catalog = form.catalog.trim();
+    }
+    if (form.databaseSchema?.trim()) {
+      config.databaseSchema = form.databaseSchema.trim();
+    }
+    if (form.queryHistoryTable?.trim()) {
+      config.queryHistoryTable = form.queryHistoryTable.trim();
+    }
+    if (type === 'UnityCatalog' && typeof form.includeMetricViews === 'boolean') {
+      config.includeMetricViews = form.includeMetricViews;
+    }
   } else {
     return existing;
   }
@@ -166,8 +273,10 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   const config = { ...connection.config };
   if (config.authType && typeof config.authType === 'object') {
     const auth = { ...config.authType };
-    if (typeof auth.password === 'string') {
-      auth.password = '********';
+    for (const key of ['password', 'token', 'clientSecret', 'azureClientSecret'] as const) {
+      if (typeof auth[key] === 'string') {
+        auth[key] = '********';
+      }
     }
     config.authType = auth;
   }

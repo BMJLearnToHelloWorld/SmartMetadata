@@ -48,6 +48,16 @@ const form = reactive<ServiceFormValues>({
   role: '',
   bootstrapServers: '',
   schemaRegistryURL: '',
+  httpPath: '',
+  catalog: '',
+  queryHistoryTable: '',
+  includeMetricViews: true,
+  authMode: 'pat',
+  clientId: '',
+  clientSecret: '',
+  azureClientId: '',
+  azureClientSecret: '',
+  azureTenantId: '',
   password: '',
   storeConnectionSecrets: false,
 });
@@ -79,6 +89,16 @@ function resetForm(): void {
   form.role = '';
   form.bootstrapServers = '';
   form.schemaRegistryURL = '';
+  form.httpPath = '';
+  form.catalog = '';
+  form.queryHistoryTable = '';
+  form.includeMetricViews = true;
+  form.authMode = 'pat';
+  form.clientId = '';
+  form.clientSecret = '';
+  form.azureClientId = '';
+  form.azureClientSecret = '';
+  form.azureTenantId = '';
   form.password = '';
   form.storeConnectionSecrets = false;
 }

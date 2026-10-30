@@ -110,4 +110,56 @@ describe('service connections', () => {
     expect(redacted?.config?.authType).toEqual({ password: '********' });
     expect(redacted?.config?.password).toBe('********');
   });
+
+  it('builds Databricks PAT and Unity Catalog connection subsets', () => {
+    expect(
+      buildServiceConnection({
+        name: 'lake',
+        kind: 'database',
+        serviceType: 'Databricks',
+        hostPort: 'adb-xxxx.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        catalog: 'main',
+        authMode: 'pat',
+        password: '${DATABRICKS_TOKEN}',
+      }),
+    ).toEqual({
+      config: {
+        type: 'Databricks',
+        hostPort: 'adb-xxxx.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        catalog: 'main',
+        authType: { token: '${DATABRICKS_TOKEN}' },
+      },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'uc',
+        kind: 'database',
+        serviceType: 'UnityCatalog',
+        hostPort: 'dbc.example.com',
+        catalog: 'main',
+        includeMetricViews: true,
+        authMode: 'pat',
+        password: 'dapi-secret',
+        storeConnectionSecrets: true,
+      }),
+    ).toEqual({
+      config: {
+        type: 'UnityCatalog',
+        hostPort: 'dbc.example.com',
+        catalog: 'main',
+        includeMetricViews: true,
+        authType: { token: 'dapi-secret' },
+      },
+    });
+  });
+
+  it('redacts Databricks token for display JSON', () => {
+    const redacted = redactConnectionForDisplay({
+      config: { type: 'Databricks', authType: { token: 'dapi-secret' } },
+    });
+    expect(redacted?.config?.authType).toEqual({ token: '********' });
+  });
+
 });

@@ -134,6 +134,52 @@ def map_snowflake_type(data_type: str | None) -> str:
     return _map_simple(data_type, _SNOWFLAKE_TO_OM)
 
 
+def map_databricks_type(data_type: str | None) -> str:
+    return _map_databricks(data_type)
+
+
+
+_DATABRICKS_TO_OM = {
+    "boolean": "BOOLEAN",
+    "byte": "NUMBER",
+    "tinyint": "NUMBER",
+    "short": "NUMBER",
+    "smallint": "NUMBER",
+    "int": "NUMBER",
+    "integer": "NUMBER",
+    "long": "BIGINT",
+    "bigint": "BIGINT",
+    "float": "FLOAT",
+    "double": "DOUBLE",
+    "decimal": "NUMERIC",
+    "numeric": "NUMERIC",
+    "string": "STRING",
+    "varchar": "VARCHAR",
+    "char": "CHAR",
+    "binary": "BINARY",
+    "date": "DATE",
+    "timestamp": "TIMESTAMP",
+    "timestamp_ntz": "TIMESTAMP",
+    "void": "NULL",
+}
+
+
+def _map_databricks(data_type: str | None) -> str:
+    if not data_type:
+        return "STRING"
+    key = data_type.strip().lower()
+    base = key.split("(", 1)[0].strip()
+    if base.startswith("array"):
+        return "ARRAY"
+    if base.startswith("map"):
+        return "MAP"
+    if base.startswith("struct"):
+        return "RECORD"
+    if base.startswith("decimal") or base.startswith("numeric"):
+        return "NUMERIC"
+    return _DATABRICKS_TO_OM.get(base, "STRING")
+
+
 def _map_simple(data_type: str | None, mapping: dict[str, str]) -> str:
     if not data_type:
         return "STRING"
