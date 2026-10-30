@@ -1363,6 +1363,20 @@ const zhCN = {
       'Confluent REST Proxy URL 是 CLI 工作流键（restProxyUrl），不是目录 MessagingService 字段。它会出现在生成的 smartmetadata-ingest YAML 中。',
     secretHint:
       "已存储密钥不会显示。留空以保留现有密码。{'${VAR}'} 占位符按原样存储。只有勾选持久化密钥时才会发送字面密码 — 默认关闭，与第 6–7 阶段一致。",
+    httpPath: 'HTTP 路径',
+    catalog: 'Catalog',
+    queryHistoryTable: '查询历史表',
+    includeMetricViews: '包含 Metric View',
+    authMode: '认证方式',
+    authPat: '个人访问令牌 (PAT)',
+    authOauth: 'Databricks OAuth（服务主体）',
+    authAzure: 'Azure Active Directory',
+    token: '访问令牌',
+    clientId: 'Client ID',
+    clientSecret: 'Client Secret',
+    azureClientId: 'Azure Client ID',
+    azureClientSecret: 'Azure Client Secret',
+    azureTenantId: 'Azure Tenant ID',
   },
 } as const;
 

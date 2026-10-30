@@ -24,7 +24,7 @@ ship placeholder/half-wired “parity”.
 | Surface | Command / path | Result |
 |---|---|---|
 | Official connectors | `ingestion/src/metadata/ingestion/source/**/service_spec.py` | **106** files |
-| Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`) | **4** (`postgres`, `mysql`, `kafka`, `snowflake`) |
+| Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`, `*_common`) | **6** families (`postgres`, `mysql`, `kafka`, `snowflake`, `databricks`, `unitycatalog`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
 | Product MCP tools | smartmetadata-mcp/src/tools.ts TOOL_NAMES | **14** |
 | Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, **My Data / home** (`/my-data` post-login default), Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs** + **apps**), governance, quality, observability, ingestion console, collaboration |
@@ -44,10 +44,12 @@ Product `source.type` registry: `connectors/registry.py` `load_builtin_sources()
 | `mysql` | DatabaseService Mysql | Shipped (Phase 7) | `connectors/mysql.py` |
 | `kafka` | MessagingService Kafka | Shipped (Phase 7) | `connectors/kafka.py` |
 | `snowflake` | DatabaseService Snowflake | Shipped (Phase 7) | `connectors/snowflake.py` |
+| `databricks` (+ lineage/usage) | DatabaseService Databricks | BehaviorMatched (unit) | `connectors/databricks*.py`; OSS `databricks-sql-connector` / `databricks-sdk` / `databricks-sqlalchemy` (Bernie t210u) |
+| `unitycatalog` (+ lineage/usage) | DatabaseService UnityCatalog | BehaviorMatched (unit) | `connectors/unitycatalog*.py`; same OSS; metric-view flag |
 
-**Gap (102 official `service_spec.py` families):** every other official
-connector is absent. Phase 7 explicitly deferred filesystem/object storage,
-dashboards, BigQuery, Redshift, Databricks, Airflow, profiler/DQ execution.
+**Gap (~100 remaining official `service_spec.py` families):** other official
+connectors remain absent. Phase 7 deferred filesystem/object storage,
+dashboards, BigQuery, Redshift, Airflow, profiler/DQ **execution**. Databricks + Unity Catalog landed 2026-10-30 per written scope.
 
 Official database `service_spec` parents (52): athena, azuresql, bigquery,
 bigtable, burstiq, cassandra, clickhouse, clickzetta, cockroach, couchbase,
@@ -164,7 +166,7 @@ Do not treat this list as an implementation order:
 | BigQuery | `google-cloud-bigquery` | Auth surface (ADC vs key file) and catalog mapping not decided |
 | Redshift | existing `psycopg` extra | Warehouse SQL dialect / `information_schema` differences vs Postgres |
 | S3 / GCS | `boto3` / `google-cloud-storage` | Needs Container entity + sink path (Phase 7 skipped) |
-| Databricks | vendor SQL connector | Service type (database vs pipeline vs unitycatalog) is ambiguous |
+| Databricks / Unity Catalog | `databricks-sql-connector` + `databricks-sdk` + `databricks-sqlalchemy` | **Landed** BehaviorMatched (unit) 2026-10-30; two official tiles, not one |
 | Superset / Metabase | HTTP + their OSS clients | Dashboard entity + auth; extra HTTP surface |
 | Airflow operator | Apache Airflow itself (Apache-2.0) | `openmetadata-airflow-apis` headers are CCL-tainted; wrapping Airflow without copying that package needs an ADR |
 

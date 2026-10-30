@@ -17,6 +17,8 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   mysql: '${MYSQL_PASSWORD}',
   snowflake: '${SNOWFLAKE_PASSWORD}',
   kafka: '${KAFKA_REST_PASSWORD}',
+  databricks: '${DATABRICKS_TOKEN}',
+  unitycatalog: '${DATABRICKS_TOKEN}',
 };
 
 function yamlScalar(value: string): string {
@@ -55,8 +57,25 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
   write('role', config.role);
   write('bootstrapServers', config.bootstrapServers);
   write('schemaRegistryURL', config.schemaRegistryURL);
+  write('httpPath', config.httpPath);
+  write('catalog', config.catalog);
+  write('queryHistoryTable', config.queryHistoryTable);
+  if (typeof config.includeMetricViews === 'boolean') {
+    out += yamlLine(4, 'includeMetricViews', config.includeMetricViews);
+  }
   if (sourceType === 'kafka') {
     out += yamlLine(4, 'restProxyUrl', '${KAFKA_REST_PROXY_URL:-http://localhost:8082}');
+  }
+  if (sourceType === 'databricks' || sourceType === 'unitycatalog') {
+    const auth = config.authType;
+    const tokenStored =
+      typeof auth === 'object' && auth && typeof auth.token === 'string' ? auth.token : '';
+    const token = isEnvPlaceholder(tokenStored) ? tokenStored : DEFAULT_PASSWORD_ENV[sourceType];
+    if (token) {
+      out += '    authType:\n';
+      out += yamlLine(6, 'token', token);
+    }
+    return out;
   }
   const stored =
     (typeof config.authType === 'object' && config.authType && 'password' in config.authType

@@ -1371,6 +1371,20 @@ const enUS = {
       'Confluent REST Proxy URL is a CLI workflow key (restProxyUrl), not a catalog MessagingService field. It appears on the generated smartmetadata-ingest YAML.',
     secretHint:
       "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.",
+    httpPath: 'HTTP path',
+    catalog: 'Catalog',
+    queryHistoryTable: 'Query history table',
+    includeMetricViews: 'Include metric views',
+    authMode: 'Authentication',
+    authPat: 'Personal Access Token',
+    authOauth: 'Databricks OAuth (service principal)',
+    authAzure: 'Azure Active Directory',
+    token: 'Access token',
+    clientId: 'Client ID',
+    clientSecret: 'Client secret',
+    azureClientId: 'Azure client ID',
+    azureClientSecret: 'Azure client secret',
+    azureTenantId: 'Azure tenant ID',
   },
 } as const;
 

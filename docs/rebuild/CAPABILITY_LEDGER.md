@@ -119,8 +119,10 @@ Rebuild trees are product evidence, not a second authority.
 
 | Capability | Apache contract | Product | Status | Evidence | Notes |
 |---|---|---|---|---|---|
-| postgres / mysql / kafka / snowflake | Official service types | `smartmetadata-ingestion` connectors | BehaviorMatched / Shipped | PARITY Phase 6–7 | — |
-| ~102 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
+| postgres / mysql / kafka / snowflake | Official service types | `smartmetadata-ingestion` connectors | BehaviorMatched / Shipped | PARITY Phase 6-7 | - |
+| Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified |
+| Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
+| ~100 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
 | Sample-data one-click | official sample stack | seed via API / ingest | Gap | PARITY | — |
 
 ## 12. UI residuals (PARITY; not invent)
@@ -160,8 +162,9 @@ Rebuild trees are product evidence, not a second authority.
 - (done) MCP write tools without inventing payloads — BehaviorMatched unit
 - (done) Insights KPI CRUD client — BehaviorMatched unit
 - Profiler/DQ execution ADR
-- One connector family **only after Bernie names type + OSS client**
-- Alma tip upgrade when asked (still @ #48 `36a93d5f` as of ledger draft)
+- (done 2026-10-30) Databricks + Unity Catalog full chain after Bernie t210u named type + OSS
+- Further connector families **only after Bernie names type + OSS client**
+- Alma tip: Dockerfile ARG fix on main `1f737fb` (#63); product stack was @ `bed0b267` + local hot-fix before that merge
 
 ## Pointers
 

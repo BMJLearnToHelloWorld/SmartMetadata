@@ -9,7 +9,7 @@
  */
 import type { EntityRef } from './api';
 
-export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake'] as const;
+export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
 
 export const MESSAGING_SERVICE_TYPES = ['Kafka'] as const;
@@ -24,6 +24,8 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Postgres: 'postgres',
   Mysql: 'mysql',
   Snowflake: 'snowflake',
+  Databricks: 'databricks',
+  UnityCatalog: 'unitycatalog',
   Kafka: 'kafka',
 };
 
@@ -31,6 +33,8 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   postgres: 'Postgres',
   mysql: 'Mysql',
   snowflake: 'Snowflake',
+  databricks: 'Databricks',
+  unitycatalog: 'UnityCatalog',
   kafka: 'Kafka',
 };
 
@@ -49,7 +53,19 @@ export interface ServiceConnectionConfig {
   role?: string;
   bootstrapServers?: string;
   schemaRegistryURL?: string;
-  authType?: { password?: string };
+  httpPath?: string;
+  catalog?: string;
+  queryHistoryTable?: string;
+  includeMetricViews?: boolean;
+  authType?: {
+    password?: string;
+    token?: string;
+    clientId?: string;
+    clientSecret?: string;
+    azureClientId?: string;
+    azureClientSecret?: string;
+    azureTenantId?: string;
+  };
   password?: string;
   [key: string]: unknown;
 }
@@ -85,6 +101,16 @@ export interface ServiceFormValues {
   role?: string;
   bootstrapServers?: string;
   schemaRegistryURL?: string;
+  httpPath?: string;
+  catalog?: string;
+  queryHistoryTable?: string;
+  includeMetricViews?: boolean;
+  authMode?: 'pat' | 'oauth' | 'azure';
+  clientId?: string;
+  clientSecret?: string;
+  azureClientId?: string;
+  azureClientSecret?: string;
+  azureTenantId?: string;
   password?: string;
   storeConnectionSecrets?: boolean;
 }
