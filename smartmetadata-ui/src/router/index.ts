@@ -29,6 +29,22 @@ import PoliciesListView from '@/views/admin/PoliciesListView.vue';
 import PolicyDetailView from '@/views/admin/PolicyDetailView.vue';
 import SettingsHubView from '@/views/admin/SettingsHubView.vue';
 import SystemSettingsView from '@/views/admin/SystemSettingsView.vue';
+import AppearanceSettingsView from '@/views/admin/AppearanceSettingsView.vue';
+import AppModeConfigView from '@/views/admin/AppModeConfigView.vue';
+import DataQualityDimensionsView from '@/views/admin/DataQualityDimensionsView.vue';
+import EmailConfigurationView from '@/views/admin/EmailConfigurationView.vue';
+import EntityRulesSettingsView from '@/views/admin/EntityRulesSettingsView.vue';
+import GlossarySettingsView from '@/views/admin/GlossarySettingsView.vue';
+import LearningResourcesView from '@/views/admin/LearningResourcesView.vue';
+import LineageConfigView from '@/views/admin/LineageConfigView.vue';
+import LoginConfigurationView from '@/views/admin/LoginConfigurationView.vue';
+import OmHealthView from '@/views/admin/OmHealthView.vue';
+import OmUrlConfigView from '@/views/admin/OmUrlConfigView.vue';
+import ProfilerConfigurationView from '@/views/admin/ProfilerConfigurationView.vue';
+import SearchEntitySettingsView from '@/views/admin/SearchEntitySettingsView.vue';
+import SearchSettingsView from '@/views/admin/SearchSettingsView.vue';
+import TimeFormatSettingsView from '@/views/admin/TimeFormatSettingsView.vue';
+
 import TeamDetailView from '@/views/admin/TeamDetailView.vue';
 import TeamsListView from '@/views/admin/TeamsListView.vue';
 import UserDetailView from '@/views/admin/UserDetailView.vue';
@@ -104,6 +120,27 @@ export const router = createRouter({
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
         { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
+        { path: 'admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView },
+        { path: 'admin/settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView },
+        { path: 'admin/settings/preferences/login', name: 'settings-preferences-login', component: LoginConfigurationView },
+        { path: 'admin/settings/preferences/health', name: 'settings-preferences-health', component: OmHealthView },
+        { path: 'admin/settings/preferences/profiler', name: 'settings-preferences-profiler', component: ProfilerConfigurationView },
+        { path: 'admin/settings/preferences/dq-dimensions', name: 'settings-preferences-dq-dimensions', component: DataQualityDimensionsView },
+        { path: 'admin/settings/preferences/search', name: 'settings-preferences-search', component: SearchSettingsView },
+        {
+          path: 'admin/settings/preferences/search/:entityType',
+          name: 'settings-preferences-search-entity',
+          component: SearchEntitySettingsView,
+          props: true,
+        },
+        { path: 'admin/settings/preferences/lineage', name: 'settings-preferences-lineage', component: LineageConfigView },
+        { path: 'admin/settings/preferences/om-url', name: 'settings-preferences-om-url', component: OmUrlConfigView },
+        { path: 'admin/settings/preferences/entity-rules', name: 'settings-preferences-entity-rules', component: EntityRulesSettingsView },
+        { path: 'admin/settings/preferences/learning', name: 'settings-preferences-learning', component: LearningResourcesView },
+        { path: 'admin/settings/preferences/app-mode', name: 'settings-preferences-app-mode', component: AppModeConfigView },
+        { path: 'admin/settings/preferences/glossary', name: 'settings-preferences-glossary', component: GlossarySettingsView },
+        { path: 'admin/settings/preferences/time-format', name: 'settings-preferences-time-format', component: TimeFormatSettingsView },
+
         { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
         { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
         { path: 'admin/apps', name: 'admin-apps', component: AppsListView },

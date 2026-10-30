@@ -13,6 +13,11 @@
  * (Members / Access / Services / Preferences / …). Only items with a
  * product Vue route + already-used REST client are `route`. Everything
  * else is residual text — no fake save forms, no invented APIs.
+ *
+ * Preferences children follow Apache GlobalSettingsClassBase Preference
+ * cards (Appearance, Email, Login, Health, Profiler, DQ, Search, Lineage,
+ * Brand URL, Data Asset Rules, Learning, App Mode, Glossary, Time Format).
+ * Collate CustomizeAppModeSidebar and SSO/Persona stay residual / out of scope.
  */
 export type SettingsItemKind = 'route' | 'residual';
 
@@ -49,6 +54,20 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'ingestion-pipelines',
   'observability-alerts',
   'announcements',
+  'settings-preferences-appearance',
+  'settings-preferences-email',
+  'settings-preferences-login',
+  'settings-preferences-health',
+  'settings-preferences-profiler',
+  'settings-preferences-dq-dimensions',
+  'settings-preferences-search',
+  'settings-preferences-lineage',
+  'settings-preferences-om-url',
+  'settings-preferences-entity-rules',
+  'settings-preferences-learning',
+  'settings-preferences-app-mode',
+  'settings-preferences-glossary',
+  'settings-preferences-time-format',
 ] as const;
 
 export type SettingsLiveRouteName = (typeof SETTINGS_LIVE_ROUTE_NAMES)[number];
@@ -121,24 +140,89 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     titleKey: 'settings.categories.preferences.title',
     descriptionKey: 'settings.categories.preferences.description',
     items: [
-      { key: 'system', titleKey: 'settings.items.system', kind: 'route', routeName: 'admin-settings-system' },
       {
         key: 'appearance',
         titleKey: 'settings.items.appearance',
-        kind: 'residual',
-        residualKey: 'settings.residual.appearance',
+        kind: 'route',
+        routeName: 'settings-preferences-appearance',
       },
       {
-        key: 'search-settings',
-        titleKey: 'settings.items.searchSettings',
-        kind: 'residual',
-        residualKey: 'settings.residual.searchSettings',
+        key: 'email',
+        titleKey: 'settings.items.email',
+        kind: 'route',
+        routeName: 'settings-preferences-email',
+      },
+      {
+        key: 'login',
+        titleKey: 'settings.items.login',
+        kind: 'route',
+        routeName: 'settings-preferences-login',
+      },
+      {
+        key: 'om-health',
+        titleKey: 'settings.items.health',
+        kind: 'route',
+        routeName: 'settings-preferences-health',
       },
       {
         key: 'profiler',
         titleKey: 'settings.items.profiler',
-        kind: 'residual',
-        residualKey: 'settings.residual.profiler',
+        kind: 'route',
+        routeName: 'settings-preferences-profiler',
+      },
+      {
+        key: 'dq-dimensions',
+        titleKey: 'settings.items.dqDimensions',
+        kind: 'route',
+        routeName: 'settings-preferences-dq-dimensions',
+      },
+      {
+        key: 'search-settings',
+        titleKey: 'settings.items.searchSettings',
+        kind: 'route',
+        routeName: 'settings-preferences-search',
+      },
+      {
+        key: 'lineage-config',
+        titleKey: 'settings.items.lineage',
+        kind: 'route',
+        routeName: 'settings-preferences-lineage',
+      },
+      {
+        key: 'om-url',
+        titleKey: 'settings.items.omUrl',
+        kind: 'route',
+        routeName: 'settings-preferences-om-url',
+      },
+      {
+        key: 'entity-rules',
+        titleKey: 'settings.items.entityRules',
+        kind: 'route',
+        routeName: 'settings-preferences-entity-rules',
+      },
+      {
+        key: 'learning',
+        titleKey: 'settings.items.learning',
+        kind: 'route',
+        routeName: 'settings-preferences-learning',
+      },
+      {
+        key: 'app-mode',
+        titleKey: 'settings.items.appMode',
+        kind: 'route',
+        routeName: 'settings-preferences-app-mode',
+      },
+      {
+        key: 'glossary-prefs',
+        titleKey: 'settings.items.glossaryPrefs',
+        kind: 'route',
+        routeName: 'settings-preferences-glossary',
+      },
+      {
+        key: 'time-format',
+        titleKey: 'settings.items.timeFormat',
+        kind: 'route',
+        routeName: 'settings-preferences-time-format',
       },
     ],
   },

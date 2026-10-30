@@ -53,13 +53,42 @@ describe('settings hub catalog', () => {
         'bots',
         'glossaries',
         'classifications',
-        'system',
         'services',
         'policies',
         'custom-properties',
         'apps',
+        'appearance',
+        'email',
+        'login',
+        'profiler',
+        'search-settings',
       ]),
     );
+  });
+
+  it('wires Apache Preferences children as live routes (not residual)', () => {
+    const prefs = SETTINGS_CATEGORIES.find((c) => c.key === 'preferences');
+    expect(prefs).toBeTruthy();
+    const liveKeys = (prefs?.items ?? []).filter((i) => i.kind === 'route').map((i) => i.key);
+    expect(liveKeys).toEqual(
+      expect.arrayContaining([
+        'appearance',
+        'email',
+        'login',
+        'om-health',
+        'profiler',
+        'dq-dimensions',
+        'search-settings',
+        'lineage-config',
+        'om-url',
+        'entity-rules',
+        'learning',
+        'app-mode',
+        'glossary-prefs',
+        'time-format',
+      ]),
+    );
+    expect(liveKeys).not.toEqual(expect.arrayContaining(['system']));
   });
 
   it('does not expose Collate-only or unbuilt Insights surfaces as live routes', () => {
@@ -71,7 +100,10 @@ describe('settings hub catalog', () => {
     expect(SETTINGS_CATEGORIES.some((category) => category.key === 'applications')).toBe(true);
     expect(residualSettingsItems().some((item) => item.key === 'apps')).toBe(false);
     expect(residualSettingsItems().map((item) => item.key)).toEqual(
-      expect.arrayContaining(['sso', 'persona', 'appearance', 'inbox']),
+      expect.arrayContaining(['sso', 'persona', 'inbox']),
+    );
+    expect(residualSettingsItems().map((item) => item.key)).not.toEqual(
+      expect.arrayContaining(['appearance', 'search-settings', 'profiler']),
     );
   });
 });
