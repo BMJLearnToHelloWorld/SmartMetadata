@@ -19,6 +19,11 @@ import {
   deleteStorageService,
   listStorageServices,
 } from '@/api/storageServices';
+import {
+  createPipelineService,
+  deletePipelineService,
+  listPipelineServices,
+} from '@/api/pipelineServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -31,6 +36,7 @@ import {
   DASHBOARD_SERVICE_TYPES,
   MESSAGING_SERVICE_TYPES,
   STORAGE_SERVICE_TYPES,
+  PIPELINE_SERVICE_TYPES,
   type CatalogService,
   type ServiceFormValues,
   type ServiceKind,
@@ -86,6 +92,13 @@ const form = reactive<ServiceFormValues>({
   awsIamEnabled: false,
   bucketNames: '',
   consoleEndpointURL: '',
+  prefectAuthMode: 'server',
+  prefectAccountId: '',
+  prefectWorkspaceId: '',
+  prefectAuthString: '',
+  numberOfStatus: 10,
+  dagsterTimeout: 1000,
+  stripAssetKeyPrefixLength: 0,
   storeConnectionSecrets: false,
 });
 
@@ -98,6 +111,9 @@ const typeOptions = computed(() => {
   }
   if (form.kind === 'storage') {
     return STORAGE_SERVICE_TYPES;
+  }
+  if (form.kind === 'pipeline') {
+    return PIPELINE_SERVICE_TYPES;
   }
   return DATABASE_SERVICE_TYPES;
 });
@@ -162,6 +178,8 @@ function onKindChange(kind: ServiceKind): void {
     form.serviceType = 'Superset';
   } else if (kind === 'storage') {
     form.serviceType = 'S3';
+  } else if (kind === 'pipeline') {
+    form.serviceType = 'Prefect';
   } else {
     form.serviceType = 'Postgres';
   }
@@ -171,33 +189,48 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [databasesResult, messagingResult, dashboardsResult, storageResult] = await Promise.allSettled([
-      listDatabaseServices({ limit: 100 }),
-      listMessagingServices({ limit: 100 }),
-      listDashboardServices({ limit: 100 }),
-      listStorageServices({ limit: 100 }),
-    ]);
+    const [databasesResult, messagingResult, dashboardsResult, storageResult, pipelinesResult] =
+      await Promise.allSettled([
+        listDatabaseServices({ limit: 100 }),
+        listMessagingServices({ limit: 100 }),
+        listDashboardServices({ limit: 100 }),
+        listStorageServices({ limit: 100 }),
+        listPipelineServices({ limit: 100 }),
+      ]);
     const databases = databasesResult.status === 'fulfilled' ? databasesResult.value : { data: [], total: undefined };
     const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value : { data: [], total: undefined };
     const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value : { data: [], total: undefined };
     const storage = storageResult.status === 'fulfilled' ? storageResult.value : { data: [], total: undefined };
-    services.value = [...databases.data, ...messaging.data, ...dashboards.data, ...storage.data];
+    const pipelines = pipelinesResult.status === 'fulfilled' ? pipelinesResult.value : { data: [], total: undefined };
+    services.value = [
+      ...databases.data,
+      ...messaging.data,
+      ...dashboards.data,
+      ...storage.data,
+      ...pipelines.data,
+    ];
     total.value =
       databases.total !== undefined &&
       messaging.total !== undefined &&
       dashboards.total !== undefined &&
-      storage.total !== undefined
-        ? databases.total + messaging.total + dashboards.total + storage.total
+      storage.total !== undefined &&
+      pipelines.total !== undefined
+        ? databases.total + messaging.total + dashboards.total + storage.total + pipelines.total
         : undefined;
     if (
       databasesResult.status !== 'fulfilled' &&
       messagingResult.status !== 'fulfilled' &&
       dashboardsResult.status !== 'fulfilled' &&
-      storageResult.status !== 'fulfilled'
+      storageResult.status !== 'fulfilled' &&
+      pipelinesResult.status !== 'fulfilled'
     ) {
-      const first = [databasesResult, messagingResult, dashboardsResult, storageResult].find(
-        (item) => item.status === 'rejected',
-      ) as PromiseRejectedResult;
+      const first = [
+        databasesResult,
+        messagingResult,
+        dashboardsResult,
+        storageResult,
+        pipelinesResult,
+      ].find((item) => item.status === 'rejected') as PromiseRejectedResult;
       throw first.reason instanceof Error ? first.reason : new Error(String(first.reason));
     }
   } catch (error) {
@@ -226,7 +259,9 @@ async function onCreate(): Promise<void> {
           ? await createMessagingService(body)
           : form.kind === 'storage'
             ? await createStorageService(body)
-            : await createDatabaseService(body);
+            : form.kind === 'pipeline'
+              ? await createPipelineService(body)
+              : await createDatabaseService(body);
     createOpen.value = false;
     resetForm();
     message.success(t('ingestion.services.created', { name: created.name }));
@@ -262,6 +297,8 @@ async function onDelete(service: CatalogService): Promise<void> {
       await deleteDashboardService(service.id);
     } else if (service.kind === 'storage') {
       await deleteStorageService(service.id);
+    } else if (service.kind === 'pipeline') {
+      await deletePipelineService(service.id);
     } else {
       await deleteDatabaseService(service.id);
     }
@@ -327,6 +364,7 @@ onMounted(() => {
           <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
           <Select.Option value="dashboard">{{ t('ingestion.services.dashboard') }}</Select.Option>
           <Select.Option value="storage">{{ t('ingestion.services.storage') }}</Select.Option>
+          <Select.Option value="pipeline">{{ t('ingestion.services.pipeline') }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item :label="t('crud.type')" required>

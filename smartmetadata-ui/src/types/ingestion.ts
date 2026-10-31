@@ -21,15 +21,19 @@ export type DashboardServiceType = (typeof DASHBOARD_SERVICE_TYPES)[number];
 export const STORAGE_SERVICE_TYPES = ['S3'] as const;
 export type StorageServiceType = (typeof STORAGE_SERVICE_TYPES)[number];
 
+export const PIPELINE_SERVICE_TYPES = ['Prefect', 'Dagster'] as const;
+export type PipelineServiceType = (typeof PIPELINE_SERVICE_TYPES)[number];
+
 export const SUPPORTED_SERVICE_TYPES = [
   ...DATABASE_SERVICE_TYPES,
   ...MESSAGING_SERVICE_TYPES,
   ...DASHBOARD_SERVICE_TYPES,
   ...STORAGE_SERVICE_TYPES,
+  ...PIPELINE_SERVICE_TYPES,
 ] as const;
 export type SupportedServiceType = (typeof SUPPORTED_SERVICE_TYPES)[number];
 
-export type ServiceKind = 'database' | 'messaging' | 'dashboard' | 'storage';
+export type ServiceKind = 'database' | 'messaging' | 'dashboard' | 'storage' | 'pipeline';
 
 export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = {
   Postgres: 'postgres',
@@ -48,6 +52,8 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Superset: 'superset',
   Metabase: 'metabase',
   S3: 's3',
+  Prefect: 'prefect',
+  Dagster: 'dagster',
 };
 
 export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = {
@@ -67,6 +73,8 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   superset: 'Superset',
   metabase: 'Metabase',
   s3: 'S3',
+  prefect: 'Prefect',
+  dagster: 'Dagster',
 };
 
 export const PIPELINE_TYPES = ['metadata'] as const;
@@ -126,6 +134,11 @@ export interface ServiceConnectionConfig {
   };
   bucketNames?: string[];
   consoleEndpointURL?: string;
+  host?: string;
+  token?: string;
+  timeout?: number;
+  stripAssetKeyPrefixLength?: number;
+  numberOfStatus?: number;
   [key: string]: unknown;
 }
 
@@ -192,6 +205,13 @@ export interface ServiceFormValues {
   awsIamEnabled?: boolean;
   bucketNames?: string;
   consoleEndpointURL?: string;
+  prefectAuthMode?: 'cloud' | 'server';
+  prefectAccountId?: string;
+  prefectWorkspaceId?: string;
+  prefectAuthString?: string;
+  numberOfStatus?: number;
+  dagsterTimeout?: number;
+  stripAssetKeyPrefixLength?: number;
   storeConnectionSecrets?: boolean;
 }
 
@@ -220,6 +240,14 @@ export interface CreateDashboardServiceRequest {
 }
 
 export interface CreateStorageServiceRequest {
+  name: string;
+  serviceType: string;
+  displayName?: string;
+  description?: string;
+  connection?: ServiceConnection;
+}
+
+export interface CreatePipelineServiceRequest {
   name: string;
   serviceType: string;
   displayName?: string;

@@ -239,6 +239,8 @@ class MetadataWorkflow:
             scope_entity_type = "dashboardService"
         elif source_type in {"s3"}:
             scope_entity_type = "storageService"
+        elif source_type in {"prefect", "dagster"}:
+            scope_entity_type = "pipelineService"
         else:
             scope_entity_type = "databaseService"
         seen = getattr(self._sink, "seen", None)

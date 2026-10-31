@@ -21,11 +21,23 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   superset: '${SUPERSET_PASSWORD}',
   metabase: '${METABASE_PASSWORD}',
   s3: '${AWS_SECRET_ACCESS_KEY}',
+  prefect: '${PREFECT_API_KEY}',
+  dagster: '${DAGSTER_TOKEN}',
   databricks: '${DATABRICKS_TOKEN}',
   unitycatalog: '${DATABRICKS_TOKEN}',
   doris: '${DORIS_PASSWORD}',
   mssql: '${MSSQL_PASSWORD}',
 };
+
+function str(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '';
+}
 
 function yamlScalar(value: string): string {
   if (value === '') {
@@ -114,6 +126,39 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
       const apiKey = isEnvPlaceholder(apiKeyStored) ? apiKeyStored : '${METABASE_API_KEY}';
       out += yamlLine(4, 'apiKey', apiKey);
     }
+  }
+  if (sourceType === 'prefect') {
+    out += yamlLine(4, 'hostPort', str(config.hostPort));
+    const auth = (config.authType && typeof config.authType === 'object' ? config.authType : {}) as Record<string, unknown>;
+    out += '    authType:\n';
+    if (typeof auth.accountId === 'string' || typeof auth.workspaceId === 'string' || typeof auth.apiKey === 'string') {
+      out += yamlLine(6, 'accountId', str(auth.accountId));
+      out += yamlLine(6, 'workspaceId', str(auth.workspaceId));
+      const apiKeyStored = str(auth.apiKey);
+      const apiKey = isEnvPlaceholder(apiKeyStored) ? apiKeyStored : DEFAULT_PASSWORD_ENV.prefect;
+      out += yamlLine(6, 'apiKey', apiKey);
+    } else {
+      const authStringStored = str(auth.authString);
+      const authString = isEnvPlaceholder(authStringStored) ? authStringStored : '${PREFECT_AUTH_STRING}';
+      out += yamlLine(6, 'authString', authString);
+    }
+    if (typeof config.numberOfStatus === 'number') {
+      out += yamlLine(4, 'numberOfStatus', config.numberOfStatus);
+    }
+    return out;
+  }
+  if (sourceType === 'dagster') {
+    out += yamlLine(4, 'host', str(config.host ?? config.hostPort));
+    const tokenStored = str(config.token);
+    const token = isEnvPlaceholder(tokenStored) ? tokenStored : DEFAULT_PASSWORD_ENV.dagster;
+    out += yamlLine(4, 'token', token);
+    if (typeof config.timeout === 'number') {
+      out += yamlLine(4, 'timeout', config.timeout);
+    }
+    if (typeof config.stripAssetKeyPrefixLength === 'number') {
+      out += yamlLine(4, 'stripAssetKeyPrefixLength', config.stripAssetKeyPrefixLength);
+    }
+    return out;
   }
   if (sourceType === 's3') {
     const aws = config.awsConfig;
@@ -221,6 +266,8 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
   } else if (sourceType === 'superset' || sourceType === 'metabase') {
     body += includeList(config.dashboardFilterPattern?.includes, 'includeDashboards');
     body += includeList(config.chartFilterPattern?.includes, 'includeCharts');
+  } else if (sourceType === 'prefect' || sourceType === 'dagster') {
+    // filters via include_pipelines in YAML extras when UI lands them
   } else if (sourceType === 's3') {
     body += includeList(config.containerFilterPattern?.includes, 'includeContainers');
   } else {

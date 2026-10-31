@@ -989,7 +989,7 @@ const enUS = {
   ingestion: {
     services: {
       title: 'Services',
-      lead: 'Connect database, messaging, dashboard, and storage services. Pipeline services are not wired.',
+      lead: 'Connect database, messaging, dashboard, storage, and pipeline services.',
       create: 'Create service',
       createTitle: 'Create service',
       editTitle: 'Edit service',
@@ -998,6 +998,7 @@ const enUS = {
       messaging: 'Messaging',
       dashboard: 'Dashboard',
       storage: 'Storage',
+      pipeline: 'Pipeline',
       created: 'Created service {name}',
       updated: 'Service updated',
       deleted: 'Deleted {name}',
@@ -1615,6 +1616,22 @@ const enUS = {
     bucketNames: 'Bucket names',
     bucketNamesHelp: 'Comma-separated S3 bucket names. Leave blank to discover all accessible buckets.',
     consoleEndpointURL: 'Console endpoint URL',
+    host: 'Host',
+    token: 'Token',
+    timeout: 'Timeout (seconds)',
+    stripAssetKeyPrefixLength: 'Strip asset key prefix length',
+    numberOfStatus: 'Number of status',
+    prefectAuthMode: 'Prefect auth',
+    prefectCloud: 'Prefect Cloud',
+    prefectServer: 'Prefect Server',
+    prefectAccountId: 'Account ID',
+    prefectWorkspaceId: 'Workspace ID',
+    prefectAuthString: 'Basic auth string',
+    prefectAuthStringHint: 'user:password (empty if no auth)',
+    prefectNote:
+      '1:1 with official prefectConnection: hostPort + authType (cloud apiKey/accountId/workspaceId or server authString) + numberOfStatus.',
+    dagsterNote:
+      '1:1 with official dagsterConnection: host + token/timeout/stripAssetKeyPrefixLength.',
     s3Note:
       'P0 wires official s3Connection fields (awsConfig required, bucketNames, consoleEndpointURL). Live boto3 sampling stays Partial until IntegrationVerified.',
   },

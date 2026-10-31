@@ -82,3 +82,5 @@ def load_builtin_sources() -> None:
     from smartmetadata_ingestion.connectors import metabase as _metabase  # noqa: F401
     from smartmetadata_ingestion.connectors import s3 as _s3  # noqa: F401
     from smartmetadata_ingestion.connectors import redpanda as _redpanda  # noqa: F401
+    from smartmetadata_ingestion.connectors import prefect as _prefect  # noqa: F401
+    from smartmetadata_ingestion.connectors import dagster as _dagster  # noqa: F401

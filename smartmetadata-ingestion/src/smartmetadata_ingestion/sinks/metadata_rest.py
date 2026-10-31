@@ -20,6 +20,8 @@ from smartmetadata_ingestion.records import (
     DashboardServiceRecord,
     StorageServiceRecord,
     ContainerRecord,
+    PipelineServiceRecord,
+    PipelineRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
@@ -57,6 +59,8 @@ class MetadataRestSink:
             result = self._client.upsert_dashboard_service(_dashboard_service_payload(record))
         elif isinstance(record, StorageServiceRecord):
             result = self._client.upsert_storage_service(_storage_service_payload(record))
+        elif isinstance(record, PipelineServiceRecord):
+            result = self._client.upsert_pipeline_service(_pipeline_service_payload(record))
         elif isinstance(record, DatabaseRecord):
             result = self._client.upsert_database(_database_payload(record))
         elif isinstance(record, SchemaRecord):
@@ -71,6 +75,8 @@ class MetadataRestSink:
             result = self._client.upsert_dashboard(_dashboard_payload(record))
         elif isinstance(record, ContainerRecord):
             result = self._client.upsert_container(_container_payload(record))
+        elif isinstance(record, PipelineRecord):
+            result = self._client.upsert_pipeline(_pipeline_payload(record))
         elif isinstance(record, LineageRecord):
             result = self._client.put_lineage(
                 record.from_entity.type,
@@ -137,6 +143,7 @@ class BulkMetadataRestSink:
             "chart": [],
             "dashboard": [],
             "container": [],
+            "pipeline": [],
         }
 
     def write(self, record: WorkflowRecord) -> Any:
@@ -169,12 +176,16 @@ class BulkMetadataRestSink:
             self._buffers["container"].append(_container_payload(record))
             self.written.append(record.label())
             return self._flush_kind("container", force=False)
+        if isinstance(record, PipelineRecord):
+            self._buffers["pipeline"].append(_pipeline_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("pipeline", force=False)
         # Flush buffered parents before services/lineage so wire order stays parent-first.
         self.flush()
         return self._inner.write(record)
 
     def flush(self) -> None:
-        for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container"):
+        for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container", "pipeline"):
             self._flush_kind(kind, force=True)
 
     def _flush_kind(self, kind: str, *, force: bool) -> Any:
@@ -199,6 +210,8 @@ class BulkMetadataRestSink:
             return self._client.bulk_upsert_dashboards(payloads)
         if kind == "container":
             return self._client.bulk_upsert_containers(payloads)
+        if kind == "pipeline":
+            return self._client.bulk_upsert_pipelines(payloads)
         return None
 
 
@@ -461,3 +474,71 @@ def _table_payload(record: TableRecord) -> dict[str, Any]:
     if record.description:
         payload["description"] = record.description
     return payload
+
+def _storage_service_payload(record: StorageServiceRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "serviceType": record.service_type}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.connection:
+        payload["connection"] = record.connection
+    return payload
+
+
+def _container_payload(record: ContainerRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "service": record.service}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.parent_fqn:
+        payload["parent"] = record.parent_fqn
+    if record.prefix:
+        payload["prefix"] = record.prefix
+    if record.number_of_objects is not None:
+        payload["numberOfObjects"] = record.number_of_objects
+    if record.size is not None:
+        payload["size"] = record.size
+    if record.file_formats:
+        payload["fileFormats"] = record.file_formats
+    if record.source_url:
+        payload["sourceUrl"] = record.source_url
+    if record.full_path:
+        payload["fullPath"] = record.full_path
+    if record.data_model:
+        payload["dataModel"] = record.data_model
+    return payload
+
+
+def _pipeline_service_payload(record: PipelineServiceRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "serviceType": record.service_type}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.connection:
+        payload["connection"] = record.connection
+    return payload
+
+
+def _pipeline_payload(record: PipelineRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "service": record.service}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.source_url:
+        payload["sourceUrl"] = record.source_url
+    if record.concurrency is not None:
+        payload["concurrency"] = record.concurrency
+    if record.pipeline_location:
+        payload["pipelineLocation"] = record.pipeline_location
+    if record.schedule_interval:
+        payload["scheduleInterval"] = record.schedule_interval
+    if record.tasks:
+        payload["tasks"] = record.tasks
+    if record.state:
+        payload["state"] = record.state
+    return payload
+

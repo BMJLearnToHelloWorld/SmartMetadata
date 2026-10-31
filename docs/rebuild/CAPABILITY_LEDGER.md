@@ -132,6 +132,8 @@ Rebuild trees are product evidence, not a second authority.
 | Metabase (full chain) | OM `dashboard/metabase` BaseSpec (metadata+connection) | `metabase` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | live IntegrationVerified deferred |
 | S3 (full chain) | OM `storage/s3` BaseSpec (metadata+sampler+connection; schema awsConfig required) | `s3` + storageService/container + UI tile + sampler registration | BehaviorMatched (unit); live boto3 Partial | Storage S3 P0 | live IntegrationVerified deferred |
 | Redpanda (full chain) | OM `messaging/redpanda` BaseSpec (metadata+sampler+connection; schema bootstrapServers required) | `redpanda` + messagingService/topic + UI tile + sampler registration | BehaviorMatched (unit); live consumer Partial | Messaging Redpanda P0 | live IntegrationVerified deferred |
+| Prefect (full chain) | OM `pipeline/prefect` BaseSpec (metadata+connection; schema hostPort+authType required) | `prefect` + pipelineService/pipeline + UI tile | BehaviorMatched (unit); live HTTP Partial | Pipeline P0 | live IntegrationVerified deferred |
+| Dagster (full chain) | OM `pipeline/dagster` BaseSpec (metadata+connection; schema host required) | `dagster` + pipelineService/pipeline + UI tile | BehaviorMatched (unit); live GraphQL/`dagster_graphql` Partial | Pipeline P0 | live IntegrationVerified deferred |
 | ~100 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
 | Sample-data one-click | official sample stack | seed via API / ingest | Gap | PARITY | — |
 
@@ -185,4 +187,5 @@ Rebuild trees are product evidence, not a second authority.
 - (done 2026-10-30) Doris + MSSQL full chain after Bernie t215u named types + OSS lock
 - (done 2026-10-30) Database P0 Redshift/MariaDB/Greenplum/Timescale full chain after Bernie t219u
 - (shipped 2026-11-01) Storage S3 P0 full chain after Bernie t225u
-- (shipped 2026-11-01) Messaging Redpanda P0 full chain after Bernie t225u; next leftovers Prefect|Dagster / other messaging
+- (shipped 2026-11-01) Messaging Redpanda P0 full chain after Bernie t225u
+- (shipped 2026-11-01) Pipeline P0 Prefect+Dagster full chain after Bernie t225u; next leftovers other messaging/pipeline tiles
