@@ -19,6 +19,11 @@ import {
   getStorageService,
   updateStorageService,
 } from '@/api/storageServices';
+import {
+  deletePipelineService,
+  getPipelineService,
+  updatePipelineService,
+} from '@/api/pipelineServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -56,6 +61,9 @@ const kind = computed<ServiceKind>(() => {
   if (props.kind === 'storage') {
     return 'storage';
   }
+  if (props.kind === 'pipeline') {
+    return 'pipeline';
+  }
   return 'database';
 });
 const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
@@ -83,6 +91,8 @@ async function load(): Promise<void> {
       service.value = await getDashboardService(props.id);
     } else if (kind.value === 'storage') {
       service.value = await getStorageService(props.id);
+    } else if (kind.value === 'pipeline') {
+      service.value = await getPipelineService(props.id);
     } else {
       service.value = await getDatabaseService(props.id);
     }
@@ -121,6 +131,8 @@ async function onSave(): Promise<void> {
       await updateDashboardService(body);
     } else if (kind.value === 'storage') {
       await updateStorageService(body);
+    } else if (kind.value === 'pipeline') {
+      await updatePipelineService(body);
     } else {
       await updateDatabaseService(body);
     }
@@ -155,6 +167,8 @@ async function onDelete(): Promise<void> {
       await deleteDashboardService(service.value.id);
     } else if (kind.value === 'storage') {
       await deleteStorageService(service.value.id);
+    } else if (kind.value === 'pipeline') {
+      await deletePipelineService(service.value.id);
     } else {
       await deleteDatabaseService(service.value.id);
     }

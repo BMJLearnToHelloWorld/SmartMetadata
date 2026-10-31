@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Checkbox, Form, Input, Select, Typography } from 'ant-design-vue';
+import { Checkbox, Form, Input, InputNumber, Select, Typography } from 'ant-design-vue';
 import { requiredField } from '@/features/crud/formRules';
 import type { ServiceFormValues } from '@/types/ingestion';
 
@@ -49,6 +49,12 @@ const passwordPlaceholder = computed(() => {
   }
   if (type.value === 'S3') {
     return '${AWS_SECRET_ACCESS_KEY}';
+  }
+  if (type.value === 'Prefect') {
+    return '${PREFECT_API_KEY}';
+  }
+  if (type.value === 'Dagster') {
+    return '${DAGSTER_TOKEN}';
   }
   return '';
 });
@@ -334,6 +340,52 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.s3Note') }}
     </Typography.Paragraph>
   </template>
+  <template v-else-if="type === 'Prefect'">
+    <Form.Item :label="t('connection.hostPort')" name="hostPort" :rules="[requiredField(t('connection.hostPort'))]">
+      <Input v-model:value="form.hostPort" placeholder="https://api.prefect.cloud or http://localhost:4200" data-testid="service-host-port" />
+    </Form.Item>
+    <Form.Item :label="t('connection.prefectAuthMode')" name="prefectAuthMode">
+      <Select v-model:value="form.prefectAuthMode" style="width: 100%" data-testid="service-prefect-auth-mode">
+        <Select.Option value="cloud">{{ t('connection.prefectCloud') }}</Select.Option>
+        <Select.Option value="server">{{ t('connection.prefectServer') }}</Select.Option>
+      </Select>
+    </Form.Item>
+    <template v-if="form.prefectAuthMode === 'cloud'">
+      <Form.Item :label="t('connection.prefectAccountId')" name="prefectAccountId" :rules="[requiredField(t('connection.prefectAccountId'))]">
+        <Input v-model:value="form.prefectAccountId" data-testid="service-prefect-account-id" />
+      </Form.Item>
+      <Form.Item :label="t('connection.prefectWorkspaceId')" name="prefectWorkspaceId" :rules="[requiredField(t('connection.prefectWorkspaceId'))]">
+        <Input v-model:value="form.prefectWorkspaceId" data-testid="service-prefect-workspace-id" />
+      </Form.Item>
+      <Form.Item :label="t('connection.apiKey')" name="apiKey">
+        <Input.Password v-model:value="form.apiKey" :placeholder="passwordPlaceholder" data-testid="service-api-key" />
+      </Form.Item>
+    </template>
+    <template v-else>
+      <Form.Item :label="t('connection.prefectAuthString')" name="prefectAuthString">
+        <Input.Password v-model:value="form.prefectAuthString" :placeholder="t('connection.prefectAuthStringHint')" data-testid="service-prefect-auth-string" />
+      </Form.Item>
+    </template>
+    <Form.Item :label="t('connection.numberOfStatus')" name="numberOfStatus">
+      <InputNumber v-model:value="form.numberOfStatus" :min="1" :max="100" style="width: 100%" data-testid="service-number-of-status" />
+    </Form.Item>
+    <p class="form-hint">{{ t('connection.prefectNote') }}</p>
+  </template>
+  <template v-else-if="type === 'Dagster'">
+    <Form.Item :label="t('connection.host')" name="hostPort" :rules="[requiredField(t('connection.host'))]">
+      <Input v-model:value="form.hostPort" placeholder="http://localhost:3000" data-testid="service-host-port" />
+    </Form.Item>
+    <Form.Item :label="t('connection.token')" name="apiKey">
+      <Input.Password v-model:value="form.apiKey" :placeholder="passwordPlaceholder" data-testid="service-api-key" />
+    </Form.Item>
+    <Form.Item :label="t('connection.timeout')" name="dagsterTimeout">
+      <InputNumber v-model:value="form.dagsterTimeout" :min="1" style="width: 100%" data-testid="service-dagster-timeout" />
+    </Form.Item>
+    <Form.Item :label="t('connection.stripAssetKeyPrefixLength')" name="stripAssetKeyPrefixLength">
+      <InputNumber v-model:value="form.stripAssetKeyPrefixLength" :min="0" style="width: 100%" data-testid="service-strip-prefix" />
+    </Form.Item>
+    <p class="form-hint">{{ t('connection.dagsterNote') }}</p>
+  </template>
   <template v-else-if="type === 'Metabase'">
     <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
       <Input
@@ -460,7 +512,7 @@ const passwordPlaceholder = computed(() => {
       </Checkbox>
     </Form.Item>
   </template>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'" :label="t('connection.password')">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3' && type !== 'Prefect' && type !== 'Dagster' && type !== 'Metabase'" :label="t('connection.password')">
     <Input.Password
       v-model:value="form.password"
       data-testid="service-password"
@@ -471,7 +523,7 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.secretHint') }}
     </Typography.Paragraph>
   </Form.Item>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3' && type !== 'Prefect' && type !== 'Dagster' && type !== 'Metabase'">
     <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
       {{ t('connection.persistSecrets') }}
     </Checkbox>

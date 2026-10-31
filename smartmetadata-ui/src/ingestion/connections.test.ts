@@ -395,3 +395,53 @@ it('redacts awsConfig secrets for display', () => {
     awsSessionToken: '********',
   });
 });
+
+it('builds Prefect cloud connection 1:1 (hostPort + authType cloud)', () => {
+  const connection = buildServiceConnection({
+    name: 'pf',
+    kind: 'pipeline',
+    serviceType: 'Prefect',
+    hostPort: 'https://api.prefect.cloud',
+    prefectAuthMode: 'cloud',
+    prefectAccountId: 'acct',
+    prefectWorkspaceId: 'ws',
+    apiKey: '${PREFECT_API_KEY}',
+    numberOfStatus: 10,
+    storeConnectionSecrets: false,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Prefect',
+      hostPort: 'https://api.prefect.cloud',
+      authType: {
+        accountId: 'acct',
+        workspaceId: 'ws',
+        apiKey: '${PREFECT_API_KEY}',
+      },
+      numberOfStatus: 10,
+    },
+  });
+});
+
+it('builds Dagster connection with host + token', () => {
+  const connection = buildServiceConnection({
+    name: 'dg',
+    kind: 'pipeline',
+    serviceType: 'Dagster',
+    hostPort: 'http://localhost:3000',
+    apiKey: '${DAGSTER_TOKEN}',
+    dagsterTimeout: 1000,
+    stripAssetKeyPrefixLength: 0,
+    storeConnectionSecrets: false,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Dagster',
+      host: 'http://localhost:3000',
+      token: '${DAGSTER_TOKEN}',
+      timeout: 1000,
+      stripAssetKeyPrefixLength: 0,
+    },
+  });
+});
+

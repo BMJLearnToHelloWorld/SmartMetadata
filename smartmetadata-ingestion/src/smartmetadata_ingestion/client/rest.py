@@ -26,6 +26,7 @@ DATABASE_SERVICES_PATH = "/v1/services/databaseServices"
 MESSAGING_SERVICES_PATH = "/v1/services/messagingServices"
 DASHBOARD_SERVICES_PATH = "/v1/services/dashboardServices"
 STORAGE_SERVICES_PATH = "/v1/services/storageServices"
+PIPELINE_SERVICES_PATH = "/v1/services/pipelineServices"
 DATABASES_PATH = "/v1/databases"
 SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
@@ -33,6 +34,7 @@ TOPICS_PATH = "/v1/topics"
 DASHBOARDS_PATH = "/v1/dashboards"
 CHARTS_PATH = "/v1/charts"
 CONTAINERS_PATH = "/v1/containers"
+PIPELINES_PATH = "/v1/pipelines"
 LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
@@ -195,6 +197,12 @@ class RestClient:
     def upsert_container(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", CONTAINERS_PATH, json=payload))
 
+    def upsert_pipeline_service(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", PIPELINE_SERVICES_PATH, json=payload))
+
+    def upsert_pipeline(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", PIPELINES_PATH, json=payload))
+
     def put_lineage(
         self,
         from_type: str,
@@ -294,6 +302,9 @@ class RestClient:
 
     def bulk_upsert_containers(self, payloads: list[dict[str, Any]]) -> Any:
         return self.request("PUT", f"{CONTAINERS_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_pipelines(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{PIPELINES_PATH}/bulk", json=payloads)
 
     def delete_stale(
         self,

@@ -17,6 +17,7 @@ from smartmetadata_ingestion.client.rest import (
     CHARTS_PATH,
     DASHBOARDS_PATH,
     CONTAINERS_PATH,
+    PIPELINES_PATH,
     DATABASES_PATH,
     SCHEMAS_PATH,
     TABLES_PATH,
@@ -36,6 +37,7 @@ _RECONCILE_TARGETS: list[tuple[str, str, str]] = [
     (CHARTS_PATH, "chart", "dashboardService"),
     (DASHBOARDS_PATH, "dashboard", "dashboardService"),
     (CONTAINERS_PATH, "container", "storageService"),
+    (PIPELINES_PATH, "pipeline", "pipelineService"),
 ]
 
 

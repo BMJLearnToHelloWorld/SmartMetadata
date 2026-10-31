@@ -20,6 +20,7 @@ import {
   DASHBOARD_SERVICE_TYPES,
   MESSAGING_SERVICE_TYPES,
   STORAGE_SERVICE_TYPES,
+  PIPELINE_SERVICE_TYPES,
 } from '@/types/ingestion';
 
 export function kindForServiceType(serviceType: string): ServiceKind | undefined {
@@ -35,6 +36,9 @@ export function kindForServiceType(serviceType: string): ServiceKind | undefined
   if ((STORAGE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
     return 'storage';
   }
+  if ((PIPELINE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
+    return 'pipeline';
+  }
   return undefined;
 }
 
@@ -47,6 +51,9 @@ export function entityTypeForKind(kind: ServiceKind): string {
   }
   if (kind === 'storage') {
     return 'storageService';
+  }
+  if (kind === 'pipeline') {
+    return 'pipelineService';
   }
   return 'databaseService';
 }
@@ -136,9 +143,34 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     awsIamEnabled: typeof config.awsConfig?.enabled === 'boolean' ? config.awsConfig.enabled : false,
     bucketNames: Array.isArray(config.bucketNames) ? config.bucketNames.join(', ') : '',
     consoleEndpointURL: typeof config.consoleEndpointURL === 'string' ? config.consoleEndpointURL : '',
+    prefectAuthMode: prefectAuthModeFromConfig(config),
+    prefectAccountId:
+      typeof (config.authType as { accountId?: string } | undefined)?.accountId === 'string'
+        ? (config.authType as { accountId?: string }).accountId!
+        : '',
+    prefectWorkspaceId:
+      typeof (config.authType as { workspaceId?: string } | undefined)?.workspaceId === 'string'
+        ? (config.authType as { workspaceId?: string }).workspaceId!
+        : '',
+    prefectAuthString: '',
+    numberOfStatus: typeof config.numberOfStatus === 'number' ? config.numberOfStatus : 10,
+    dagsterTimeout: typeof config.timeout === 'number' ? config.timeout : 1000,
+    stripAssetKeyPrefixLength:
+      typeof config.stripAssetKeyPrefixLength === 'number' ? config.stripAssetKeyPrefixLength : 0,
     storeConnectionSecrets: false,
   };
 }
+
+function prefectAuthModeFromConfig(config: ServiceConnectionConfig): 'cloud' | 'server' {
+  const auth = config.authType;
+  if (auth && typeof auth === 'object') {
+    if ('accountId' in auth || 'workspaceId' in auth || 'apiKey' in auth) {
+      return 'cloud';
+    }
+  }
+  return 'server';
+}
+
 
 function authModeFromConfig(config: ServiceConnectionConfig): 'pat' | 'oauth' | 'azure' {
   const auth = config.authType;
@@ -476,6 +508,71 @@ export function buildServiceConnection(
     if (form.consoleEndpointURL?.trim()) {
       config.consoleEndpointURL = form.consoleEndpointURL.trim();
     }
+  } else if (type === 'Prefect') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const mode = form.prefectAuthMode === 'cloud' ? 'cloud' : 'server';
+    if (mode === 'cloud') {
+      const auth: Record<string, string> = {};
+      if (form.prefectAccountId?.trim()) {
+        auth.accountId = form.prefectAccountId.trim();
+      }
+      if (form.prefectWorkspaceId?.trim()) {
+        auth.workspaceId = form.prefectWorkspaceId.trim();
+      }
+      const apiKey = form.apiKey?.trim() ?? '';
+      if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+        auth.apiKey = apiKey;
+      } else if (!apiKey) {
+        const prev = existing?.config?.authType;
+        if (prev && typeof prev === 'object' && typeof (prev as { apiKey?: string }).apiKey === 'string') {
+          const prevKey = (prev as { apiKey?: string }).apiKey!;
+          if (isMaskedSecret(prevKey)) {
+            auth.apiKey = prevKey;
+          }
+        }
+      }
+      config.authType = auth;
+    } else {
+      const auth: Record<string, string> = {};
+      const authString = form.prefectAuthString?.trim() ?? '';
+      if (shouldPersistSecret(authString, Boolean(form.storeConnectionSecrets))) {
+        auth.authString = authString;
+      } else if (!authString) {
+        const prev = existing?.config?.authType;
+        if (prev && typeof prev === 'object' && typeof (prev as { authString?: string }).authString === 'string') {
+          const prevAuth = (prev as { authString?: string }).authString!;
+          if (isMaskedSecret(prevAuth)) {
+            auth.authString = prevAuth;
+          }
+        }
+      }
+      config.authType = auth;
+    }
+    if (typeof form.numberOfStatus === 'number') {
+      config.numberOfStatus = form.numberOfStatus;
+    }
+  } else if (type === 'Dagster') {
+    const host = form.hostPort?.trim() || '';
+    if (host) {
+      config.host = host;
+    }
+    const token = form.apiKey?.trim() || form.password?.trim() || '';
+    if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+      config.token = token;
+    } else if (!token) {
+      const prev = existing?.config?.token;
+      if (prev && isMaskedSecret(prev)) {
+        config.token = prev;
+      }
+    }
+    if (typeof form.dagsterTimeout === 'number') {
+      config.timeout = form.dagsterTimeout;
+    }
+    if (typeof form.stripAssetKeyPrefixLength === 'number') {
+      config.stripAssetKeyPrefixLength = form.stripAssetKeyPrefixLength;
+    }
   } else if (type === 'Databricks' || type === 'UnityCatalog') {
 
     if (form.hostPort?.trim()) {
@@ -500,7 +597,7 @@ export function buildServiceConnection(
     return existing;
   }
 
-  if (type !== 'S3') {
+  if (type !== 'S3' && type !== 'Prefect' && type !== 'Dagster') {
     applyPassword(config, form, existing?.config);
   }
   if (Object.keys(config).length <= 1) {
@@ -516,7 +613,7 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   const config = { ...connection.config };
   if (config.authType && typeof config.authType === 'object') {
     const auth = { ...config.authType };
-    for (const key of ['password', 'token', 'clientSecret', 'azureClientSecret'] as const) {
+    for (const key of ['password', 'token', 'clientSecret', 'azureClientSecret', 'apiKey', 'authString'] as const) {
       if (typeof auth[key] === 'string') {
         auth[key] = '********';
       }
@@ -528,6 +625,9 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (typeof config.apiKey === 'string') {
     config.apiKey = '********';
+  }
+  if (typeof config.token === 'string') {
+    config.token = '********';
   }
   if (config.connection && typeof config.connection === 'object') {
     const nested = { ...config.connection };

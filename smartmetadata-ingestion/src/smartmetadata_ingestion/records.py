@@ -281,6 +281,36 @@ class ContainerRecord(Record):
             return f"container:{self.parent_fqn}.{self.name}"
         return f"container:{self.service}.{self.name}"
 
+
+
+class PipelineServiceRecord(Record):
+    kind: Literal["pipelineService"] = "pipelineService"
+    name: str
+    service_type: str
+    description: str | None = None
+    display_name: str | None = None
+    connection: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"pipelineService:{self.name}"
+
+
+class PipelineRecord(Record):
+    kind: Literal["pipeline"] = "pipeline"
+    name: str
+    service: str
+    display_name: str | None = None
+    description: str | None = None
+    source_url: str | None = None
+    concurrency: int | None = None
+    pipeline_location: str | None = None
+    schedule_interval: str | None = None
+    tasks: list[dict[str, Any]] | None = None
+    state: str | None = None
+
+    def label(self) -> str:
+        return f"pipeline:{self.service}.{self.name}"
+
 class ClassificationRecord(Record):
     """Apache CreateClassification → PUT /v1/classifications."""
 
@@ -345,6 +375,8 @@ WorkflowRecord = (
     | DashboardRecord
     | StorageServiceRecord
     | ContainerRecord
+    | PipelineServiceRecord
+    | PipelineRecord
     | ClassificationRecord
     | TagRecord
     | AppRecord

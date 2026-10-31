@@ -984,7 +984,7 @@ const zhCN = {
   ingestion: {
     services: {
       title: '服务',
-      lead: '连接数据库、消息、仪表盘与存储服务。流水线服务尚未接入。',
+      lead: '连接数据库、消息、仪表盘、存储与 Pipeline 服务。',
       create: '创建服务',
       createTitle: '创建服务',
       editTitle: '编辑服务',
@@ -993,6 +993,7 @@ const zhCN = {
       messaging: '消息',
       dashboard: '仪表盘',
       storage: '存储',
+      pipeline: '管道',
       created: '已创建服务 {name}',
       updated: '服务已更新',
       deleted: '已删除 {name}',
@@ -1607,6 +1608,22 @@ const zhCN = {
     bucketNames: '桶名称',
     bucketNamesHelp: '逗号分隔的 S3 桶名称。留空则发现所有可访问的桶。',
     consoleEndpointURL: '控制台 Endpoint URL',
+    host: 'Host',
+    token: 'Token',
+    timeout: 'Timeout (seconds)',
+    stripAssetKeyPrefixLength: 'Strip asset key prefix length',
+    numberOfStatus: 'Number of status',
+    prefectAuthMode: 'Prefect auth',
+    prefectCloud: 'Prefect Cloud',
+    prefectServer: 'Prefect Server',
+    prefectAccountId: 'Account ID',
+    prefectWorkspaceId: 'Workspace ID',
+    prefectAuthString: 'Basic auth string',
+    prefectAuthStringHint: 'user:password (empty if no auth)',
+    prefectNote:
+      '1:1 with official prefectConnection: hostPort + authType (cloud apiKey/accountId/workspaceId or server authString) + numberOfStatus.',
+    dagsterNote:
+      '1:1 with official dagsterConnection: host + token/timeout/stripAssetKeyPrefixLength.',
     s3Note:
       'P0 接入官方 s3Connection 字段（awsConfig 必填、bucketNames、consoleEndpointURL）。实时 boto3 采样在 IntegrationVerified 前保持 Partial。',
   },

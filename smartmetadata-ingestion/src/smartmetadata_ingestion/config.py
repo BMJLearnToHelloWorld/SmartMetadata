@@ -106,6 +106,8 @@ class SourceConfig(CamelModel):
     exclude_charts: list[str] = Field(default_factory=list)
     include_containers: list[str] = Field(default_factory=list)
     exclude_containers: list[str] = Field(default_factory=list)
+    include_pipelines: list[str] = Field(default_factory=list)
+    exclude_pipelines: list[str] = Field(default_factory=list)
     include_view_lineage: bool = False
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)
