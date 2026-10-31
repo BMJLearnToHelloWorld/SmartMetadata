@@ -58,7 +58,16 @@ describe('ServicesListView', () => {
             paging: { total: 1 },
           });
         }
-        if (url.includes('/api/v1/services/messagingServices')) {
+        if (url.includes('/api/v1/services/dashboardServices')) {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: 'd1', name: 'bi', serviceType: 'Superset' }],
+          paging: { total: 1 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    if (url.includes('/api/v1/services/messagingServices')) {
           return jsonResponse({
             data: [{ id: 'm1', name: 'events', serviceType: 'Kafka' }],
             paging: { total: 1 },
@@ -74,10 +83,12 @@ describe('ServicesListView', () => {
     localStorage.clear();
   });
 
-  it('renders database and messaging services from the two list APIs', async () => {
+  it('renders database, messaging, and dashboard services from the three list APIs', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Warehouse');
     expect(wrapper.text()).toContain('events');
+    expect(wrapper.text()).toContain('bi');
+    expect(wrapper.text()).toContain('Superset');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="services-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-service"]').exists()).toBe(true);

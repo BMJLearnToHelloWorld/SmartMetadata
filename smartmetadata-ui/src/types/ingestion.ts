@@ -15,10 +15,13 @@ export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
 export const MESSAGING_SERVICE_TYPES = ['Kafka'] as const;
 export type MessagingServiceType = (typeof MESSAGING_SERVICE_TYPES)[number];
 
-export const SUPPORTED_SERVICE_TYPES = [...DATABASE_SERVICE_TYPES, ...MESSAGING_SERVICE_TYPES] as const;
+export const DASHBOARD_SERVICE_TYPES = ['Superset', 'Metabase'] as const;
+export type DashboardServiceType = (typeof DASHBOARD_SERVICE_TYPES)[number];
+
+export const SUPPORTED_SERVICE_TYPES = [...DATABASE_SERVICE_TYPES, ...MESSAGING_SERVICE_TYPES, ...DASHBOARD_SERVICE_TYPES] as const;
 export type SupportedServiceType = (typeof SUPPORTED_SERVICE_TYPES)[number];
 
-export type ServiceKind = 'database' | 'messaging';
+export type ServiceKind = 'database' | 'messaging' | 'dashboard';
 
 export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = {
   Postgres: 'postgres',
@@ -33,6 +36,8 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Greenplum: 'greenplum',
   Timescale: 'timescale',
   Kafka: 'kafka',
+  Superset: 'superset',
+  Metabase: 'metabase',
 };
 
 export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = {
@@ -48,6 +53,8 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   greenplum: 'Greenplum',
   timescale: 'Timescale',
   kafka: 'Kafka',
+  superset: 'Superset',
+  metabase: 'Metabase',
 };
 
 export const PIPELINE_TYPES = ['metadata'] as const;
@@ -85,6 +92,13 @@ export interface ServiceConnectionConfig {
     azureTenantId?: string;
   };
   password?: string;
+  apiKey?: string;
+  provider?: string;
+  connection?: {
+    provider?: string;
+    username?: string;
+    password?: string;
+  };
   [key: string]: unknown;
 }
 
@@ -136,6 +150,8 @@ export interface ServiceFormValues {
   azureClientSecret?: string;
   azureTenantId?: string;
   password?: string;
+  apiKey?: string;
+  provider?: string;
   storeConnectionSecrets?: boolean;
 }
 
@@ -155,6 +171,14 @@ export interface CreateMessagingServiceRequest {
   connection?: ServiceConnection;
 }
 
+export interface CreateDashboardServiceRequest {
+  name: string;
+  serviceType: string;
+  displayName?: string;
+  description?: string;
+  connection?: ServiceConnection;
+}
+
 export interface PipelineSourceConfig {
   config?: {
     type?: string;
@@ -162,6 +186,8 @@ export interface PipelineSourceConfig {
     includeTables?: boolean;
     schemaFilterPattern?: { includes?: string[]; excludes?: string[] };
     topicFilterPattern?: { includes?: string[]; excludes?: string[] };
+    dashboardFilterPattern?: { includes?: string[]; excludes?: string[] };
+    chartFilterPattern?: { includes?: string[]; excludes?: string[] };
     [key: string]: unknown;
   };
 }
@@ -223,5 +249,7 @@ export interface PipelineFormValues {
   includeViews: boolean;
   includeSchemas?: string;
   includeTopics?: string;
+  includeDashboards?: string;
+  includeCharts?: string;
   scheduleInterval?: string;
 }

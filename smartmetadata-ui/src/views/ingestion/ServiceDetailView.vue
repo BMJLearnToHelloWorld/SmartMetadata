@@ -8,6 +8,11 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Descriptions, Form, Input, Modal, Tooltip, message } from 'ant-design-vue';
 import { deleteDatabaseService, getDatabaseService, updateDatabaseService } from '@/api/databaseServices';
+import {
+  deleteDashboardService,
+  getDashboardService,
+  updateDashboardService,
+} from '@/api/dashboardServices';
 import { deleteMessagingService, getMessagingService, updateMessagingService } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -36,7 +41,15 @@ const editForm = reactive<ServiceFormValues>({
   storeConnectionSecrets: false,
 });
 
-const kind = computed<ServiceKind>(() => (props.kind === 'messaging' ? 'messaging' : 'database'));
+const kind = computed<ServiceKind>(() => {
+  if (props.kind === 'messaging') {
+    return 'messaging';
+  }
+  if (props.kind === 'dashboard') {
+    return 'dashboard';
+  }
+  return 'database';
+});
 const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
 const connectionJson = computed(() =>
   JSON.stringify(redactConnectionForDisplay(service.value?.connection) ?? {}, null, 2),
@@ -56,8 +69,13 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    service.value =
-      kind.value === 'messaging' ? await getMessagingService(props.id) : await getDatabaseService(props.id);
+    if (kind.value === 'messaging') {
+      service.value = await getMessagingService(props.id);
+    } else if (kind.value === 'dashboard') {
+      service.value = await getDashboardService(props.id);
+    } else {
+      service.value = await getDatabaseService(props.id);
+    }
   } catch (error) {
     service.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -89,6 +107,8 @@ async function onSave(): Promise<void> {
     };
     if (kind.value === 'messaging') {
       await updateMessagingService(body);
+    } else if (kind.value === 'dashboard') {
+      await updateDashboardService(body);
     } else {
       await updateDatabaseService(body);
     }
@@ -119,6 +139,8 @@ async function onDelete(): Promise<void> {
   try {
     if (kind.value === 'messaging') {
       await deleteMessagingService(service.value.id);
+    } else if (kind.value === 'dashboard') {
+      await deleteDashboardService(service.value.id);
     } else {
       await deleteDatabaseService(service.value.id);
     }

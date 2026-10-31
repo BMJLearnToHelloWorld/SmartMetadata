@@ -984,13 +984,14 @@ const zhCN = {
   ingestion: {
     services: {
       title: '服务',
-      lead: '连接数据库和消息服务。仪表盘和流水线服务未接线。',
+      lead: '连接数据库、消息与仪表盘服务。流水线服务尚未接入。',
       create: '创建服务',
       createTitle: '创建服务',
       editTitle: '编辑服务',
       kind: '种类',
       database: '数据库',
       messaging: '消息',
+      dashboard: '仪表盘',
       created: '已创建服务 {name}',
       updated: '服务已更新',
       deleted: '已删除 {name}',
@@ -1021,6 +1022,10 @@ const zhCN = {
       includeSchemasHelp: '要包含的 schema，逗号分隔。',
       includeTopics: '包含 topic',
       includeTopicsHelp: '要包含的 topic，逗号分隔。',
+      includeDashboards: '包含仪表盘',
+      includeDashboardsHelp: '逗号分隔的仪表盘名称/ID。',
+      includeCharts: '包含图表',
+      includeChartsHelp: '逗号分隔的图表名称/ID。',
       schedule: '调度间隔（仅目录）',
       scheduleHelp: '目录记录上的 Cron 表达式。留空表示不调度。',
       triggerNote:
@@ -1547,6 +1552,15 @@ const zhCN = {
     warehouse: '仓库',
     role: '角色',
     bootstrapServers: 'Bootstrap 服务器',
+    provider: '认证提供者',
+    providerDb: '数据库 (db)',
+    providerLdap: 'LDAP',
+    apiKey: 'API 密钥',
+    apiKeyHint: '${METABASE_API_KEY} 或明文（需勾选持久化）',
+    supersetApiNote:
+      'P0 仅接入 Superset API 连接（provider/username/password）。数据库模式的 Superset 连接延后。',
+    metabaseAuthNote:
+      '使用 username+password 或 apiKey（与官方 metabaseConnection 1:1）。优先 apiKey。',
     schemaRegistry: 'Schema Registry URL',
     password: "密码或 {'${ENV}'} 占位符",
     persistSecrets: '将字面密码持久化到服务实体',

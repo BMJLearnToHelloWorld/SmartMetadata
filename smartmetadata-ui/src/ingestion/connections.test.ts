@@ -292,3 +292,45 @@ describe('service connections', () => {
   });
 
 });
+
+it('builds Superset API connection 1:1 (hostPort + nested provider/username/password)', () => {
+  const connection = buildServiceConnection({
+    name: 'bi',
+    kind: 'dashboard',
+    serviceType: 'Superset',
+    hostPort: 'http://localhost:8088',
+    username: 'admin',
+    provider: 'db',
+    password: '${SUPERSET_PASSWORD}',
+    storeConnectionSecrets: false,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Superset',
+      hostPort: 'http://localhost:8088',
+      connection: {
+        provider: 'db',
+        username: 'admin',
+        password: '${SUPERSET_PASSWORD}',
+      },
+    },
+  });
+});
+
+it('builds Metabase connection with hostPort and apiKey', () => {
+  const connection = buildServiceConnection({
+    name: 'mb',
+    kind: 'dashboard',
+    serviceType: 'Metabase',
+    hostPort: 'http://localhost:3000',
+    apiKey: '${METABASE_API_KEY}',
+    storeConnectionSecrets: false,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Metabase',
+      hostPort: 'http://localhost:3000',
+      apiKey: '${METABASE_API_KEY}',
+    },
+  });
+});

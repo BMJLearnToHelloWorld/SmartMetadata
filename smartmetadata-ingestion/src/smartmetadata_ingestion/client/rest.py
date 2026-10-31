@@ -24,10 +24,13 @@ from smartmetadata_ingestion.errors import RestError, WorkflowError
 LOGIN_PATH = "/v1/users/login"
 DATABASE_SERVICES_PATH = "/v1/services/databaseServices"
 MESSAGING_SERVICES_PATH = "/v1/services/messagingServices"
+DASHBOARD_SERVICES_PATH = "/v1/services/dashboardServices"
 DATABASES_PATH = "/v1/databases"
 SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
 TOPICS_PATH = "/v1/topics"
+DASHBOARDS_PATH = "/v1/dashboards"
+CHARTS_PATH = "/v1/charts"
 LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
@@ -175,6 +178,15 @@ class RestClient:
     def upsert_topic(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", TOPICS_PATH, json=payload))
 
+    def upsert_dashboard_service(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", DASHBOARD_SERVICES_PATH, json=payload))
+
+    def upsert_dashboard(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", DASHBOARDS_PATH, json=payload))
+
+    def upsert_chart(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", CHARTS_PATH, json=payload))
+
     def put_lineage(
         self,
         from_type: str,
@@ -265,6 +277,12 @@ class RestClient:
 
     def bulk_upsert_topics(self, payloads: list[dict[str, Any]]) -> Any:
         return self.request("PUT", f"{TOPICS_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_dashboards(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{DASHBOARDS_PATH}/bulk", json=payloads)
+
+    def bulk_upsert_charts(self, payloads: list[dict[str, Any]]) -> Any:
+        return self.request("PUT", f"{CHARTS_PATH}/bulk", json=payloads)
 
     def delete_stale(
         self,

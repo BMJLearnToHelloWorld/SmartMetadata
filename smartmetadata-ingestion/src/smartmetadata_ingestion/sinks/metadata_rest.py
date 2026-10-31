@@ -15,6 +15,9 @@ from smartmetadata_ingestion.config import WorkflowConfig
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.topology import SeenSet
 from smartmetadata_ingestion.records import (
+    ChartRecord,
+    DashboardRecord,
+    DashboardServiceRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
@@ -48,6 +51,8 @@ class MetadataRestSink:
             result = self._client.upsert_database_service(_service_payload(record))
         elif isinstance(record, MessagingServiceRecord):
             result = self._client.upsert_messaging_service(_messaging_service_payload(record))
+        elif isinstance(record, DashboardServiceRecord):
+            result = self._client.upsert_dashboard_service(_dashboard_service_payload(record))
         elif isinstance(record, DatabaseRecord):
             result = self._client.upsert_database(_database_payload(record))
         elif isinstance(record, SchemaRecord):
@@ -56,6 +61,10 @@ class MetadataRestSink:
             result = self._client.upsert_table(_table_payload(record))
         elif isinstance(record, TopicRecord):
             result = self._client.upsert_topic(_topic_payload(record))
+        elif isinstance(record, ChartRecord):
+            result = self._client.upsert_chart(_chart_payload(record))
+        elif isinstance(record, DashboardRecord):
+            result = self._client.upsert_dashboard(_dashboard_payload(record))
         elif isinstance(record, LineageRecord):
             result = self._client.put_lineage(
                 record.from_entity.type,
@@ -119,6 +128,8 @@ class BulkMetadataRestSink:
             "schema": [],
             "table": [],
             "topic": [],
+            "chart": [],
+            "dashboard": [],
         }
 
     def write(self, record: WorkflowRecord) -> Any:
@@ -139,12 +150,20 @@ class BulkMetadataRestSink:
             self._buffers["topic"].append(_topic_payload(record))
             self.written.append(record.label())
             return self._flush_kind("topic", force=False)
+        if isinstance(record, ChartRecord):
+            self._buffers["chart"].append(_chart_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("chart", force=False)
+        if isinstance(record, DashboardRecord):
+            self._buffers["dashboard"].append(_dashboard_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("dashboard", force=False)
         # Flush buffered parents before services/lineage so wire order stays parent-first.
         self.flush()
         return self._inner.write(record)
 
     def flush(self) -> None:
-        for kind in ("database", "schema", "table", "topic"):
+        for kind in ("database", "schema", "table", "topic", "chart", "dashboard"):
             self._flush_kind(kind, force=True)
 
     def _flush_kind(self, kind: str, *, force: bool) -> Any:
@@ -163,6 +182,10 @@ class BulkMetadataRestSink:
             return self._client.bulk_upsert_tables(payloads)
         if kind == "topic":
             return self._client.bulk_upsert_topics(payloads)
+        if kind == "chart":
+            return self._client.bulk_upsert_charts(payloads)
+        if kind == "dashboard":
+            return self._client.bulk_upsert_dashboards(payloads)
         return None
 
 
@@ -297,6 +320,46 @@ def _lineage_details(record: LineageRecord) -> dict[str, Any]:
         details["pipeline"] = ref
     return details
 
+
+
+
+def _dashboard_service_payload(record: DashboardServiceRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "serviceType": record.service_type}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.connection:
+        payload["connection"] = record.connection
+    return payload
+
+
+def _chart_payload(record: ChartRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "service": record.service}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.chart_type:
+        payload["chartType"] = record.chart_type
+    if record.source_url:
+        payload["sourceUrl"] = record.source_url
+    return payload
+
+
+def _dashboard_payload(record: DashboardRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": record.name, "service": record.service}
+    if record.display_name:
+        payload["displayName"] = record.display_name
+    if record.description:
+        payload["description"] = record.description
+    if record.source_url:
+        payload["sourceUrl"] = record.source_url
+    if record.project:
+        payload["project"] = record.project
+    if record.charts:
+        payload["charts"] = list(record.charts)
+    return payload
 
 def _service_payload(record: DatabaseServiceRecord) -> dict[str, Any]:
     payload: dict[str, Any] = {"name": record.name, "serviceType": record.service_type}

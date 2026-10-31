@@ -41,6 +41,12 @@ const passwordPlaceholder = computed(() => {
   if (type.value === 'Timescale') {
     return '${TIMESCALE_PASSWORD}';
   }
+  if (type.value === 'Superset') {
+    return '${SUPERSET_PASSWORD}';
+  }
+  if (type.value === 'Metabase') {
+    return '${METABASE_PASSWORD}';
+  }
   return '';
 });
 </script>
@@ -199,6 +205,54 @@ const passwordPlaceholder = computed(() => {
     <Typography.Paragraph type="secondary">
       {{ t('connection.confluentNote') }}
     </Typography.Paragraph>
+  </template>
+  <template v-else-if="type === 'Superset'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input
+        v-model:value="form.hostPort"
+        data-testid="service-host-port"
+        placeholder="http://localhost:8088"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.provider')" :rules="requiredField(t, t('connection.provider'))">
+      <Select
+        v-model:value="form.provider"
+        data-testid="service-provider"
+        :options="[
+          { value: 'db', label: t('connection.providerDb') },
+          { value: 'ldap', label: t('connection.providerLdap') },
+        ]"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Typography.Paragraph type="secondary">
+      {{ t('connection.supersetApiNote') }}
+    </Typography.Paragraph>
+  </template>
+  <template v-else-if="type === 'Metabase'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input
+        v-model:value="form.hostPort"
+        data-testid="service-host-port"
+        placeholder="http://localhost:3000"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Form.Item :label="t('connection.apiKey')">
+      <Input.Password
+        v-model:value="form.apiKey"
+        data-testid="service-api-key"
+        :placeholder="t('connection.apiKeyHint')"
+        autocomplete="new-password"
+      />
+      <Typography.Paragraph type="secondary" class="svc-hint">
+        {{ t('connection.metabaseAuthNote') }}
+      </Typography.Paragraph>
+    </Form.Item>
   </template>
   <template v-else-if="type === 'Databricks' || type === 'UnityCatalog'">
     <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">

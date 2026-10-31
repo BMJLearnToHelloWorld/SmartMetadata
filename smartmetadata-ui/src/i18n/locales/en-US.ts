@@ -989,13 +989,14 @@ const enUS = {
   ingestion: {
     services: {
       title: 'Services',
-      lead: 'Connect database and messaging services. Dashboard and pipeline services are not wired.',
+      lead: 'Connect database, messaging, and dashboard services. Pipeline services are not wired.',
       create: 'Create service',
       createTitle: 'Create service',
       editTitle: 'Edit service',
       kind: 'Kind',
       database: 'Database',
       messaging: 'Messaging',
+      dashboard: 'Dashboard',
       created: 'Created service {name}',
       updated: 'Service updated',
       deleted: 'Deleted {name}',
@@ -1026,6 +1027,10 @@ const enUS = {
       includeSchemasHelp: 'Comma-separated schemas to include.',
       includeTopics: 'Include topics',
       includeTopicsHelp: 'Comma-separated topics to include.',
+      includeDashboards: 'Include dashboards',
+      includeDashboardsHelp: 'Comma-separated dashboard names/ids to include.',
+      includeCharts: 'Include charts',
+      includeChartsHelp: 'Comma-separated chart names/ids to include.',
       schedule: 'Schedule interval (catalog only)',
       scheduleHelp: 'Cron expression stored on the catalog record. Leave blank for no schedule.',
       triggerNote:
@@ -1555,6 +1560,15 @@ const enUS = {
     warehouse: 'Warehouse',
     role: 'Role',
     bootstrapServers: 'Bootstrap servers',
+    provider: 'Provider',
+    providerDb: 'Database (db)',
+    providerLdap: 'LDAP',
+    apiKey: 'API key',
+    apiKeyHint: '${METABASE_API_KEY} or literal (persist secrets)',
+    supersetApiNote:
+      'P0 wires Superset API connection only (provider/username/password). Database-backed Superset connection modes are deferred.',
+    metabaseAuthNote:
+      'Use username+password or apiKey (1:1 with official metabaseConnection). Prefer apiKey when available.',
     schemaRegistry: 'Schema Registry URL',
     password: "Password or {'${ENV}'} placeholder",
     persistSecrets: 'Persist a typed literal password on the service entity',

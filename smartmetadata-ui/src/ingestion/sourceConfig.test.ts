@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { buildSourceConfig } from './sourceConfig';
+import { buildSourceConfig, sourceConfigTypeForKind } from './sourceConfig';
 
 describe('pipeline sourceConfig', () => {
   it('maps database pipelines to DatabaseMetadata', () => {
@@ -47,5 +47,24 @@ describe('pipeline sourceConfig', () => {
         topicFilterPattern: { includes: ['orders'] },
       },
     });
+  });
+
+  it('maps dashboard pipelines to DashboardMetadata filters', () => {
+    expect(
+      buildSourceConfig({
+        name: 'dash-meta',
+        serviceId: 'd1',
+        serviceKind: 'dashboard',
+        includeDashboards: 'sales, ops',
+        includeCharts: 'kpi-1',
+      }),
+    ).toEqual({
+      config: {
+        type: 'DashboardMetadata',
+        dashboardFilterPattern: { includes: ['sales', 'ops'] },
+        chartFilterPattern: { includes: ['kpi-1'] },
+      },
+    });
+    expect(sourceConfigTypeForKind('dashboard')).toBe('DashboardMetadata');
   });
 });
