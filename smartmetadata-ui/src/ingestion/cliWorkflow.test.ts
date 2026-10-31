@@ -17,9 +17,13 @@ describe('CLI workflow export', () => {
     expect(cliSourceType('Mysql')).toBe('mysql');
   expect(cliSourceType('Doris')).toBe('doris');
   expect(cliSourceType('Mssql')).toBe('mssql');
+    expect(cliSourceType('Redshift')).toBe('redshift');
+    expect(cliSourceType('MariaDB')).toBe('mariadb');
+    expect(cliSourceType('Greenplum')).toBe('greenplum');
+    expect(cliSourceType('Timescale')).toBe('timescale');
     expect(cliSourceType('Snowflake')).toBe('snowflake');
     expect(cliSourceType('Kafka')).toBe('kafka');
-    expect(cliSourceType('Redshift')).toBeUndefined();
+    expect(cliSourceType('BigQuery')).toBeUndefined();
   });
 
   it('emits YAML that names the CLI and never dumps a stored password', () => {

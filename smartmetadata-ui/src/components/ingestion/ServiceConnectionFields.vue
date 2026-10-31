@@ -29,6 +29,18 @@ const passwordPlaceholder = computed(() => {
   if (type.value === 'Mssql') {
     return '${MSSQL_PASSWORD}';
   }
+  if (type.value === 'MariaDB') {
+    return '${MARIADB_PASSWORD}';
+  }
+  if (type.value === 'Redshift') {
+    return '${REDSHIFT_PASSWORD}';
+  }
+  if (type.value === 'Greenplum') {
+    return '${GREENPLUM_PASSWORD}';
+  }
+  if (type.value === 'Timescale') {
+    return '${TIMESCALE_PASSWORD}';
+  }
   return '';
 });
 </script>
@@ -132,6 +144,40 @@ const passwordPlaceholder = computed(() => {
     <Form.Item :label="t('connection.includeSynonyms')">
       <Checkbox v-model:checked="form.includeSynonyms" data-testid="service-include-synonyms">
         {{ t('connection.includeSynonyms') }}
+      </Checkbox>
+    </Form.Item>
+  </template>
+  <template v-else-if="type === 'MariaDB'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input v-model:value="form.hostPort" data-testid="service-host-port" placeholder="localhost:3306" />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Form.Item :label="t('connection.databaseName')">
+      <Input v-model:value="form.databaseName" data-testid="service-database-name" placeholder="default" />
+    </Form.Item>
+    <Form.Item :label="t('connection.databaseSchema')">
+      <Input v-model:value="form.databaseSchema" data-testid="service-database-schema" />
+    </Form.Item>
+  </template>
+  <template v-else-if="type === 'Redshift' || type === 'Greenplum' || type === 'Timescale'">
+    <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
+      <Input
+        v-model:value="form.hostPort"
+        data-testid="service-host-port"
+        :placeholder="type === 'Redshift' ? 'localhost:5439' : 'localhost:5432'"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.username')" :rules="requiredField(t, t('connection.username'))">
+      <Input v-model:value="form.username" data-testid="service-username" />
+    </Form.Item>
+    <Form.Item :label="t('connection.database')" :rules="requiredField(t, t('connection.database'))">
+      <Input v-model:value="form.database" data-testid="service-database" />
+    </Form.Item>
+    <Form.Item :label="t('connection.ingestAllDatabases')">
+      <Checkbox v-model:checked="form.ingestAllDatabases" data-testid="service-ingest-all-dbs">
+        {{ t('connection.ingestAllDatabases') }}
       </Checkbox>
     </Form.Item>
   </template>

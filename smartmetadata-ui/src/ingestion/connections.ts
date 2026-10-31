@@ -112,7 +112,7 @@ function applyPassword(
     return;
   }
   if (shouldPersistSecret(typed, Boolean(form.storeConnectionSecrets))) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql') {
+    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql' || form.serviceType === 'MariaDB') {
       config.password = typed;
     } else {
       config.authType = { password: typed };
@@ -124,7 +124,7 @@ function applyPassword(
   }
   const previous = pickPassword(existing);
   if (previous && isMaskedSecret(previous)) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql') {
+    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql' || form.serviceType === 'MariaDB') {
       config.password = previous;
     } else {
       config.authType = { password: previous };
@@ -282,7 +282,40 @@ export function buildServiceConnection(
     if (typeof form.includeSynonyms === 'boolean') {
       config.includeSynonyms = form.includeSynonyms;
     }
+  } else if (type === 'MariaDB') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    if (form.databaseName?.trim()) {
+      config.databaseName = form.databaseName.trim();
+    }
+    if (form.databaseSchema?.trim()) {
+      config.databaseSchema = form.databaseSchema.trim();
+    }
+    config.scheme = form.scheme?.trim() || 'mysql+pymysql';
+  } else if (type === 'Redshift' || type === 'Greenplum' || type === 'Timescale') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    if (form.database?.trim()) {
+      config.database = form.database.trim();
+    }
+    if (typeof form.ingestAllDatabases === 'boolean') {
+      config.ingestAllDatabases = form.ingestAllDatabases;
+    }
+    if (type === 'Redshift') {
+      config.scheme = form.scheme?.trim() || 'redshift+psycopg2';
+    } else {
+      config.scheme = form.scheme?.trim() || 'postgresql+psycopg2';
+    }
   } else if (type === 'Databricks' || type === 'UnityCatalog') {
+
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
     }
