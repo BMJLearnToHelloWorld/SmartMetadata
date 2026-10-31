@@ -13,6 +13,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 from smartmetadata_ingestion.records import (
+    ChartRecord,
+    DashboardRecord,
+    DashboardServiceRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
@@ -33,12 +36,15 @@ from smartmetadata_ingestion.records import (
 STAGE_ORDER: dict[str, int] = {
     "databaseService": 0,
     "messagingService": 0,
+    "dashboardService": 0,
     "classification": 0,
     "app": 0,
     "database": 1,
     "topic": 1,
+    "chart": 1,
     "tag": 1,
     "schema": 2,
+    "dashboard": 2,
     "table": 3,
     "usage": 4,
     "profile": 4,
@@ -71,6 +77,12 @@ def record_fqn(record: WorkflowRecord) -> str | None:
         return record.name
     if isinstance(record, MessagingServiceRecord):
         return record.name
+    if isinstance(record, DashboardServiceRecord):
+        return record.name
+    if isinstance(record, ChartRecord):
+        return f"{record.service}.{record.name}"
+    if isinstance(record, DashboardRecord):
+        return f"{record.service}.{record.name}"
     if isinstance(record, DatabaseRecord):
         return f"{record.service}.{record.name}"
     if isinstance(record, SchemaRecord):

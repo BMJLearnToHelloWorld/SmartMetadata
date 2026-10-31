@@ -208,6 +208,46 @@ class TopicRecord(Record):
 
 
 
+
+
+class DashboardServiceRecord(Record):
+    kind: Literal["dashboardService"] = "dashboardService"
+    name: str
+    service_type: str
+    description: str | None = None
+    display_name: str | None = None
+    connection: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"dashboardService:{self.name}"
+
+
+class ChartRecord(Record):
+    kind: Literal["chart"] = "chart"
+    name: str
+    service: str
+    display_name: str | None = None
+    description: str | None = None
+    chart_type: str | None = None
+    source_url: str | None = None
+
+    def label(self) -> str:
+        return f"chart:{self.service}.{self.name}"
+
+
+class DashboardRecord(Record):
+    kind: Literal["dashboard"] = "dashboard"
+    name: str
+    service: str
+    display_name: str | None = None
+    description: str | None = None
+    source_url: str | None = None
+    project: str | None = None
+    charts: list[str] | None = None
+
+    def label(self) -> str:
+        return f"dashboard:{self.service}.{self.name}"
+
 class ClassificationRecord(Record):
     """Apache CreateClassification → PUT /v1/classifications."""
 
@@ -267,6 +307,9 @@ WorkflowRecord = (
     | TestCaseResultRecord
     | MessagingServiceRecord
     | TopicRecord
+    | DashboardServiceRecord
+    | ChartRecord
+    | DashboardRecord
     | ClassificationRecord
     | TagRecord
     | AppRecord

@@ -15,7 +15,7 @@ import type {
   ServiceFormValues,
   ServiceKind,
 } from '@/types/ingestion';
-import { DATABASE_SERVICE_TYPES, MESSAGING_SERVICE_TYPES } from '@/types/ingestion';
+import { DATABASE_SERVICE_TYPES, DASHBOARD_SERVICE_TYPES, MESSAGING_SERVICE_TYPES } from '@/types/ingestion';
 
 export function kindForServiceType(serviceType: string): ServiceKind | undefined {
   if ((DATABASE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
@@ -24,11 +24,20 @@ export function kindForServiceType(serviceType: string): ServiceKind | undefined
   if ((MESSAGING_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
     return 'messaging';
   }
+  if ((DASHBOARD_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
+    return 'dashboard';
+  }
   return undefined;
 }
 
 export function entityTypeForKind(kind: ServiceKind): string {
-  return kind === 'database' ? 'databaseService' : 'messagingService';
+  if (kind === 'messaging') {
+    return 'messagingService';
+  }
+  if (kind === 'dashboard') {
+    return 'dashboardService';
+  }
+  return 'databaseService';
 }
 
 function pickPassword(config: ServiceConnectionConfig | undefined): string | undefined {
@@ -59,7 +68,12 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     kind: service.kind,
     serviceType: service.serviceType,
     hostPort: typeof config.hostPort === 'string' ? config.hostPort : '',
-    username: typeof config.username === 'string' ? config.username : '',
+    username:
+      typeof config.username === 'string'
+        ? config.username
+        : typeof config.connection?.username === 'string'
+          ? config.connection.username
+          : '',
     database: typeof config.database === 'string' ? config.database : '',
     databaseName: typeof config.databaseName === 'string' ? config.databaseName : '',
     databaseSchema: typeof config.databaseSchema === 'string' ? config.databaseSchema : '',
@@ -85,6 +99,12 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     azureClientSecret: '',
     azureTenantId: typeof config.authType?.azureTenantId === 'string' ? config.authType.azureTenantId : '',
     password: '',
+    apiKey: '',
+    provider: typeof config.connection?.provider === 'string'
+      ? config.connection.provider
+      : typeof config.provider === 'string'
+        ? config.provider
+        : 'db',
     storeConnectionSecrets: false,
   };
 }
@@ -112,8 +132,20 @@ function applyPassword(
     return;
   }
   if (shouldPersistSecret(typed, Boolean(form.storeConnectionSecrets))) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql' || form.serviceType === 'MariaDB') {
+    if (
+      form.serviceType === 'Snowflake' ||
+      form.serviceType === 'Kafka' ||
+      form.serviceType === 'Doris' ||
+      form.serviceType === 'Mssql' ||
+      form.serviceType === 'MariaDB' ||
+      form.serviceType === 'Metabase'
+    ) {
       config.password = typed;
+    } else if (form.serviceType === 'Superset') {
+      config.connection = {
+        ...(typeof config.connection === 'object' && config.connection ? config.connection : {}),
+        password: typed,
+      };
     } else {
       config.authType = { password: typed };
     }
@@ -124,8 +156,20 @@ function applyPassword(
   }
   const previous = pickPassword(existing);
   if (previous && isMaskedSecret(previous)) {
-    if (form.serviceType === 'Snowflake' || form.serviceType === 'Kafka' || form.serviceType === 'Doris' || form.serviceType === 'Mssql' || form.serviceType === 'MariaDB') {
+    if (
+      form.serviceType === 'Snowflake' ||
+      form.serviceType === 'Kafka' ||
+      form.serviceType === 'Doris' ||
+      form.serviceType === 'Mssql' ||
+      form.serviceType === 'MariaDB' ||
+      form.serviceType === 'Metabase'
+    ) {
       config.password = previous;
+    } else if (form.serviceType === 'Superset') {
+      config.connection = {
+        ...(typeof config.connection === 'object' && config.connection ? config.connection : {}),
+        password: previous,
+      };
     } else {
       config.authType = { password: previous };
     }
@@ -314,6 +358,33 @@ export function buildServiceConnection(
     } else {
       config.scheme = form.scheme?.trim() || 'postgresql+psycopg2';
     }
+  } else if (type === 'Superset') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const nested: NonNullable<ServiceConnectionConfig['connection']> = {
+      provider: form.provider?.trim() || 'db',
+    };
+    if (form.username?.trim()) {
+      nested.username = form.username.trim();
+    }
+    config.connection = nested;
+  } else if (type === 'Metabase') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    const apiKey = form.apiKey?.trim() ?? '';
+    if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+      config.apiKey = apiKey;
+    } else if (!apiKey) {
+      const prev = existing?.config?.apiKey;
+      if (prev && isMaskedSecret(prev)) {
+        config.apiKey = prev;
+      }
+    }
   } else if (type === 'Databricks' || type === 'UnityCatalog') {
 
     if (form.hostPort?.trim()) {
@@ -361,6 +432,16 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (typeof config.password === 'string') {
     config.password = '********';
+  }
+  if (typeof config.apiKey === 'string') {
+    config.apiKey = '********';
+  }
+  if (config.connection && typeof config.connection === 'object') {
+    const nested = { ...config.connection };
+    if (typeof nested.password === 'string') {
+      nested.password = '********';
+    }
+    config.connection = nested;
   }
   if (typeof config.saslPassword === 'string') {
     config.saslPassword = '********';

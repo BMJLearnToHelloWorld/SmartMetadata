@@ -100,6 +100,10 @@ class SourceConfig(CamelModel):
     exclude_databases: list[str] = Field(default_factory=list)
     include_topics: list[str] = Field(default_factory=list)
     exclude_topics: list[str] = Field(default_factory=list)
+    include_dashboards: list[str] = Field(default_factory=list)
+    exclude_dashboards: list[str] = Field(default_factory=list)
+    include_charts: list[str] = Field(default_factory=list)
+    exclude_charts: list[str] = Field(default_factory=list)
     include_view_lineage: bool = False
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)

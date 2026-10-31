@@ -14,6 +14,8 @@ import logging
 from typing import Any
 
 from smartmetadata_ingestion.client.rest import (
+    CHARTS_PATH,
+    DASHBOARDS_PATH,
     DATABASES_PATH,
     SCHEMAS_PATH,
     TABLES_PATH,
@@ -30,6 +32,8 @@ _RECONCILE_TARGETS: list[tuple[str, str, str]] = [
     (SCHEMAS_PATH, "schema", "databaseService"),
     (DATABASES_PATH, "database", "databaseService"),
     (TOPICS_PATH, "topic", "messagingService"),
+    (CHARTS_PATH, "chart", "dashboardService"),
+    (DASHBOARDS_PATH, "dashboard", "dashboardService"),
 ]
 
 

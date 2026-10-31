@@ -71,6 +71,9 @@ describe('PipelinesListView', () => {
         if (url.includes('/api/v1/services/messagingServices')) {
           return jsonResponse({ data: [] });
         }
+        if (url.includes('/api/v1/services/dashboardServices')) {
+          return jsonResponse({ data: [] });
+        }
         return new Response('not found', { status: 404 });
       }),
     );

@@ -8,6 +8,11 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
 import { createDatabaseService, deleteDatabaseService, listDatabaseServices } from '@/api/databaseServices';
+import {
+  createDashboardService,
+  deleteDashboardService,
+  listDashboardServices,
+} from '@/api/dashboardServices';
 import { createMessagingService, deleteMessagingService, listMessagingServices } from '@/api/messagingServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -18,6 +23,7 @@ import type { EntityListColumn } from '@/features/crud/types';
 import { buildServiceConnection } from '@/ingestion/connections';
 import {
   DATABASE_SERVICE_TYPES,
+  DASHBOARD_SERVICE_TYPES,
   MESSAGING_SERVICE_TYPES,
   type CatalogService,
   type ServiceFormValues,
@@ -59,12 +65,20 @@ const form = reactive<ServiceFormValues>({
   azureClientSecret: '',
   azureTenantId: '',
   password: '',
+  apiKey: '',
+  provider: 'db',
   storeConnectionSecrets: false,
 });
 
-const typeOptions = computed(() =>
-  form.kind === 'database' ? DATABASE_SERVICE_TYPES : MESSAGING_SERVICE_TYPES,
-);
+const typeOptions = computed(() => {
+  if (form.kind === 'messaging') {
+    return MESSAGING_SERVICE_TYPES;
+  }
+  if (form.kind === 'dashboard') {
+    return DASHBOARD_SERVICE_TYPES;
+  }
+  return DATABASE_SERVICE_TYPES;
+});
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -100,26 +114,35 @@ function resetForm(): void {
   form.azureClientSecret = '';
   form.azureTenantId = '';
   form.password = '';
+  form.apiKey = '';
+  form.provider = 'db';
   form.storeConnectionSecrets = false;
 }
 
 function onKindChange(kind: ServiceKind): void {
   form.kind = kind;
-  form.serviceType = kind === 'database' ? 'Postgres' : 'Kafka';
+  if (kind === 'messaging') {
+    form.serviceType = 'Kafka';
+  } else if (kind === 'dashboard') {
+    form.serviceType = 'Superset';
+  } else {
+    form.serviceType = 'Postgres';
+  }
 }
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [databases, messaging] = await Promise.all([
+    const [databases, messaging, dashboards] = await Promise.all([
       listDatabaseServices({ limit: 100 }),
       listMessagingServices({ limit: 100 }),
+      listDashboardServices({ limit: 100 }),
     ]);
-    services.value = [...databases.data, ...messaging.data];
+    services.value = [...databases.data, ...messaging.data, ...dashboards.data];
     total.value =
-      databases.total !== undefined && messaging.total !== undefined
-        ? databases.total + messaging.total
+      databases.total !== undefined && messaging.total !== undefined && dashboards.total !== undefined
+        ? databases.total + messaging.total + dashboards.total
         : undefined;
   } catch (error) {
     services.value = [];
@@ -141,7 +164,11 @@ async function onCreate(): Promise<void> {
       connection,
     };
     const created =
-      form.kind === 'database' ? await createDatabaseService(body) : await createMessagingService(body);
+      form.kind === 'dashboard'
+        ? await createDashboardService(body)
+        : form.kind === 'messaging'
+          ? await createMessagingService(body)
+          : await createDatabaseService(body);
     createOpen.value = false;
     resetForm();
     message.success(t('ingestion.services.created', { name: created.name }));
@@ -173,6 +200,8 @@ async function onDelete(service: CatalogService): Promise<void> {
   try {
     if (service.kind === 'messaging') {
       await deleteMessagingService(service.id);
+    } else if (service.kind === 'dashboard') {
+      await deleteDashboardService(service.id);
     } else {
       await deleteDatabaseService(service.id);
     }
@@ -236,6 +265,7 @@ onMounted(() => {
         <Select :value="form.kind" data-testid="create-service-kind" @update:value="onKindChange">
           <Select.Option value="database">{{ t('ingestion.services.database') }}</Select.Option>
           <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
+          <Select.Option value="dashboard">{{ t('ingestion.services.dashboard') }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item :label="t('crud.type')" required>

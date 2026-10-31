@@ -17,6 +17,8 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   mysql: '${MYSQL_PASSWORD}',
   snowflake: '${SNOWFLAKE_PASSWORD}',
   kafka: '${KAFKA_REST_PASSWORD}',
+  superset: '${SUPERSET_PASSWORD}',
+  metabase: '${METABASE_PASSWORD}',
   databricks: '${DATABRICKS_TOKEN}',
   unitycatalog: '${DATABRICKS_TOKEN}',
   doris: '${DORIS_PASSWORD}',
@@ -81,6 +83,32 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
   }
   if (sourceType === 'kafka') {
     out += yamlLine(4, 'restProxyUrl', '${KAFKA_REST_PROXY_URL:-http://localhost:8082}');
+  }
+  if (sourceType === 'superset') {
+    const nested = config.connection;
+    if (nested && typeof nested === 'object') {
+      out += '    connection:\n';
+      const provider = typeof nested.provider === 'string' ? nested.provider : 'db';
+      out += yamlLine(6, 'provider', provider);
+      if (typeof nested.username === 'string' && nested.username && !isMaskedSecret(nested.username)) {
+        out += yamlLine(6, 'username', nested.username);
+      }
+      const nestedPwd =
+        typeof nested.password === 'string' && isEnvPlaceholder(nested.password)
+          ? nested.password
+          : DEFAULT_PASSWORD_ENV.superset;
+      if (nestedPwd) {
+        out += yamlLine(6, 'password', nestedPwd);
+      }
+    }
+    return out;
+  }
+  if (sourceType === 'metabase') {
+    const apiKeyStored = typeof config.apiKey === 'string' ? config.apiKey : '';
+    if (apiKeyStored && !isMaskedSecret(apiKeyStored)) {
+      const apiKey = isEnvPlaceholder(apiKeyStored) ? apiKeyStored : '${METABASE_API_KEY}';
+      out += yamlLine(4, 'apiKey', apiKey);
+    }
   }
   if (sourceType === 'databricks' || sourceType === 'unitycatalog') {
     const auth = config.authType;
@@ -150,11 +178,14 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
   body += yamlLine(2, 'type', sourceType);
   body += yamlLine(2, 'serviceName', service.name);
   body += connectionBlock(service, sourceType);
-  if (sourceType !== 'kafka') {
+  if (sourceType === 'kafka') {
+    body += includeList(config.topicFilterPattern?.includes, 'includeTopics');
+  } else if (sourceType === 'superset' || sourceType === 'metabase') {
+    body += includeList(config.dashboardFilterPattern?.includes, 'includeDashboards');
+    body += includeList(config.chartFilterPattern?.includes, 'includeCharts');
+  } else {
     body += yamlLine(2, 'includeViewLineage', config.includeViews !== false);
     body += includeList(config.schemaFilterPattern?.includes, 'includeSchemas');
-  } else {
-    body += includeList(config.topicFilterPattern?.includes, 'includeTopics');
   }
   body += yamlLine(2, 'storeConnectionSecrets', false);
   body += '\nsink:\n';

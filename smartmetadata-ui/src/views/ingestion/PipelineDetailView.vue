@@ -15,6 +15,7 @@ import {
   listPipelineStatuses,
   updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
+import { getDashboardService } from '@/api/dashboardServices';
 import { getMessagingService } from '@/api/messagingServices';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -53,6 +54,8 @@ const editForm = reactive<PipelineFormValues>({
   includeViews: true,
   includeSchemas: '',
   includeTopics: '',
+  includeDashboards: '',
+  includeCharts: '',
   scheduleInterval: '',
 });
 
@@ -90,7 +93,13 @@ const orchestratorLabel = computed(() => {
 });
 
 function serviceKindFromRef(type: string | undefined): ServiceKind {
-  return type === 'messagingService' ? 'messaging' : 'database';
+  if (type === 'messagingService') {
+    return 'messaging';
+  }
+  if (type === 'dashboardService') {
+    return 'dashboard';
+  }
+  return 'database';
 }
 
 async function loadLinkedService(current: IngestionPipeline): Promise<CatalogService | null> {
@@ -99,7 +108,13 @@ async function loadLinkedService(current: IngestionPipeline): Promise<CatalogSer
     return null;
   }
   const kind = serviceKindFromRef(current.service?.type);
-  return kind === 'messaging' ? getMessagingService(id) : getDatabaseService(id);
+  if (kind === 'messaging') {
+    return getMessagingService(id);
+  }
+  if (kind === 'dashboard') {
+    return getDashboardService(id);
+  }
+  return getDatabaseService(id);
 }
 
 async function load(): Promise<void> {
@@ -143,6 +158,8 @@ function openEdit(): void {
   editForm.includeViews = hints.includeViews;
   editForm.includeSchemas = hints.includeSchemas || '';
   editForm.includeTopics = hints.includeTopics || '';
+  editForm.includeDashboards = hints.includeDashboards || '';
+  editForm.includeCharts = hints.includeCharts || '';
   editForm.scheduleInterval = pipeline.value.airflowConfig?.scheduleInterval || '';
   editOpen.value = true;
 }
@@ -320,6 +337,20 @@ onMounted(() => {
         :extra="t('ingestion.pipelines.includeTopicsHelp')"
       >
         <Input v-model:value="editForm.includeTopics" />
+      </Form.Item>
+      <Form.Item
+        v-if="editForm.serviceKind === 'dashboard'"
+        :label="t('ingestion.pipelines.includeDashboards')"
+        :extra="t('ingestion.pipelines.includeDashboardsHelp')"
+      >
+        <Input v-model:value="editForm.includeDashboards" />
+      </Form.Item>
+      <Form.Item
+        v-if="editForm.serviceKind === 'dashboard'"
+        :label="t('ingestion.pipelines.includeCharts')"
+        :extra="t('ingestion.pipelines.includeChartsHelp')"
+      >
+        <Input v-model:value="editForm.includeCharts" />
       </Form.Item>
       <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">
         <Input v-model:value="editForm.scheduleInterval" />
