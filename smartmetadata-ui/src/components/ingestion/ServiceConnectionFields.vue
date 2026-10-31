@@ -47,6 +47,9 @@ const passwordPlaceholder = computed(() => {
   if (type.value === 'Metabase') {
     return '${METABASE_PASSWORD}';
   }
+  if (type.value === 'S3') {
+    return '${AWS_SECRET_ACCESS_KEY}';
+  }
   return '';
 });
 </script>
@@ -231,6 +234,74 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.supersetApiNote') }}
     </Typography.Paragraph>
   </template>
+  <template v-else-if="type === 'S3'">
+    <Form.Item :label="t('connection.awsRegion')" :rules="requiredField(t, t('connection.awsRegion'))">
+      <Input v-model:value="form.awsRegion" data-testid="service-aws-region" placeholder="us-east-1" />
+    </Form.Item>
+    <Form.Item :label="t('connection.awsAccessKeyId')">
+      <Input v-model:value="form.awsAccessKeyId" data-testid="service-aws-access-key" />
+    </Form.Item>
+    <Form.Item :label="t('connection.awsSecretAccessKey')">
+      <Input.Password
+        v-model:value="form.awsSecretAccessKey"
+        data-testid="service-aws-secret-key"
+        :placeholder="passwordPlaceholder"
+        autocomplete="new-password"
+      />
+      <Typography.Paragraph type="secondary" class="svc-hint">
+        {{ t('connection.secretHint') }}
+      </Typography.Paragraph>
+    </Form.Item>
+    <Form.Item :label="t('connection.awsSessionToken')">
+      <Input.Password
+        v-model:value="form.awsSessionToken"
+        data-testid="service-aws-session-token"
+        autocomplete="new-password"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.awsEndPointURL')">
+      <Input
+        v-model:value="form.awsEndPointURL"
+        data-testid="service-aws-endpoint"
+        placeholder="https://s3.us-east-1.amazonaws.com"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.awsProfileName')">
+      <Input v-model:value="form.awsProfileName" data-testid="service-aws-profile" />
+    </Form.Item>
+    <Form.Item :label="t('connection.assumeRoleArn')">
+      <Input v-model:value="form.assumeRoleArn" data-testid="service-aws-role-arn" />
+    </Form.Item>
+    <Form.Item :label="t('connection.assumeRoleSessionName')">
+      <Input v-model:value="form.assumeRoleSessionName" data-testid="service-aws-role-session" />
+    </Form.Item>
+    <Form.Item :label="t('connection.assumeRoleSourceIdentity')">
+      <Input v-model:value="form.assumeRoleSourceIdentity" data-testid="service-aws-role-source" />
+    </Form.Item>
+    <Form.Item :label="t('connection.awsIamEnabled')">
+      <Checkbox v-model:checked="form.awsIamEnabled" data-testid="service-aws-iam-enabled">
+        {{ t('connection.awsIamEnabled') }}
+      </Checkbox>
+    </Form.Item>
+    <Form.Item :label="t('connection.bucketNames')" :extra="t('connection.bucketNamesHelp')">
+      <Input v-model:value="form.bucketNames" data-testid="service-bucket-names" placeholder="analytics, raw" />
+    </Form.Item>
+    <Form.Item :label="t('connection.consoleEndpointURL')">
+      <Input
+        v-model:value="form.consoleEndpointURL"
+        data-testid="service-console-endpoint"
+        placeholder="https://s3.console.aws.amazon.com"
+      />
+    </Form.Item>
+    <Form.Item>
+      <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
+        {{ t('connection.persistSecrets') }}
+      </Checkbox>
+    </Form.Item>
+    <Typography.Paragraph type="secondary">
+      {{ t('connection.s3Note') }}
+    </Typography.Paragraph>
+  </template>
   <template v-else-if="type === 'Metabase'">
     <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
       <Input
@@ -357,7 +428,7 @@ const passwordPlaceholder = computed(() => {
       </Checkbox>
     </Form.Item>
   </template>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog'" :label="t('connection.password')">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'" :label="t('connection.password')">
     <Input.Password
       v-model:value="form.password"
       data-testid="service-password"
@@ -368,7 +439,7 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.secretHint') }}
     </Typography.Paragraph>
   </Form.Item>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog'">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'">
     <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
       {{ t('connection.persistSecrets') }}
     </Checkbox>

@@ -334,3 +334,47 @@ it('builds Metabase connection with hostPort and apiKey', () => {
     },
   });
 });
+
+it('builds S3 connection with awsConfig + bucketNames 1:1', () => {
+  const connection = buildServiceConnection({
+    name: 'lake',
+    kind: 'storage',
+    serviceType: 'S3',
+    awsRegion: 'us-east-1',
+    awsAccessKeyId: 'AKIA',
+    awsSecretAccessKey: '${AWS_SECRET_ACCESS_KEY}',
+    bucketNames: 'analytics, raw',
+    consoleEndpointURL: 'https://s3.console.aws.amazon.com',
+    storeConnectionSecrets: false,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'S3',
+      awsConfig: {
+        awsRegion: 'us-east-1',
+        awsAccessKeyId: 'AKIA',
+        awsSecretAccessKey: '${AWS_SECRET_ACCESS_KEY}',
+      },
+      bucketNames: ['analytics', 'raw'],
+      consoleEndpointURL: 'https://s3.console.aws.amazon.com',
+    },
+  });
+});
+
+it('redacts awsConfig secrets for display', () => {
+  const redacted = redactConnectionForDisplay({
+    config: {
+      type: 'S3',
+      awsConfig: {
+        awsRegion: 'us-east-1',
+        awsSecretAccessKey: 'literal-secret',
+        awsSessionToken: 'sess',
+      },
+    },
+  });
+  expect(redacted?.config?.awsConfig).toMatchObject({
+    awsRegion: 'us-east-1',
+    awsSecretAccessKey: '********',
+    awsSessionToken: '********',
+  });
+});

@@ -18,6 +18,8 @@ from smartmetadata_ingestion.records import (
     ChartRecord,
     DashboardRecord,
     DashboardServiceRecord,
+    StorageServiceRecord,
+    ContainerRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
@@ -53,6 +55,8 @@ class MetadataRestSink:
             result = self._client.upsert_messaging_service(_messaging_service_payload(record))
         elif isinstance(record, DashboardServiceRecord):
             result = self._client.upsert_dashboard_service(_dashboard_service_payload(record))
+        elif isinstance(record, StorageServiceRecord):
+            result = self._client.upsert_storage_service(_storage_service_payload(record))
         elif isinstance(record, DatabaseRecord):
             result = self._client.upsert_database(_database_payload(record))
         elif isinstance(record, SchemaRecord):
@@ -65,6 +69,8 @@ class MetadataRestSink:
             result = self._client.upsert_chart(_chart_payload(record))
         elif isinstance(record, DashboardRecord):
             result = self._client.upsert_dashboard(_dashboard_payload(record))
+        elif isinstance(record, ContainerRecord):
+            result = self._client.upsert_container(_container_payload(record))
         elif isinstance(record, LineageRecord):
             result = self._client.put_lineage(
                 record.from_entity.type,
@@ -130,6 +136,7 @@ class BulkMetadataRestSink:
             "topic": [],
             "chart": [],
             "dashboard": [],
+            "container": [],
         }
 
     def write(self, record: WorkflowRecord) -> Any:
@@ -158,12 +165,16 @@ class BulkMetadataRestSink:
             self._buffers["dashboard"].append(_dashboard_payload(record))
             self.written.append(record.label())
             return self._flush_kind("dashboard", force=False)
+        if isinstance(record, ContainerRecord):
+            self._buffers["container"].append(_container_payload(record))
+            self.written.append(record.label())
+            return self._flush_kind("container", force=False)
         # Flush buffered parents before services/lineage so wire order stays parent-first.
         self.flush()
         return self._inner.write(record)
 
     def flush(self) -> None:
-        for kind in ("database", "schema", "table", "topic", "chart", "dashboard"):
+        for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container"):
             self._flush_kind(kind, force=True)
 
     def _flush_kind(self, kind: str, *, force: bool) -> Any:
@@ -186,6 +197,8 @@ class BulkMetadataRestSink:
             return self._client.bulk_upsert_charts(payloads)
         if kind == "dashboard":
             return self._client.bulk_upsert_dashboards(payloads)
+        if kind == "container":
+            return self._client.bulk_upsert_containers(payloads)
         return None
 
 

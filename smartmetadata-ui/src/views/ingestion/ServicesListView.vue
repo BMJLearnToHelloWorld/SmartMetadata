@@ -14,6 +14,11 @@ import {
   listDashboardServices,
 } from '@/api/dashboardServices';
 import { createMessagingService, deleteMessagingService, listMessagingServices } from '@/api/messagingServices';
+import {
+  createStorageService,
+  deleteStorageService,
+  listStorageServices,
+} from '@/api/storageServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -25,6 +30,7 @@ import {
   DATABASE_SERVICE_TYPES,
   DASHBOARD_SERVICE_TYPES,
   MESSAGING_SERVICE_TYPES,
+  STORAGE_SERVICE_TYPES,
   type CatalogService,
   type ServiceFormValues,
   type ServiceKind,
@@ -67,6 +73,18 @@ const form = reactive<ServiceFormValues>({
   password: '',
   apiKey: '',
   provider: 'db',
+  awsRegion: '',
+  awsAccessKeyId: '',
+  awsSecretAccessKey: '',
+  awsSessionToken: '',
+  awsEndPointURL: '',
+  awsProfileName: '',
+  assumeRoleArn: '',
+  assumeRoleSessionName: '',
+  assumeRoleSourceIdentity: '',
+  awsIamEnabled: false,
+  bucketNames: '',
+  consoleEndpointURL: '',
   storeConnectionSecrets: false,
 });
 
@@ -76,6 +94,9 @@ const typeOptions = computed(() => {
   }
   if (form.kind === 'dashboard') {
     return DASHBOARD_SERVICE_TYPES;
+  }
+  if (form.kind === 'storage') {
+    return STORAGE_SERVICE_TYPES;
   }
   return DATABASE_SERVICE_TYPES;
 });
@@ -116,6 +137,18 @@ function resetForm(): void {
   form.password = '';
   form.apiKey = '';
   form.provider = 'db';
+  form.awsRegion = '';
+  form.awsAccessKeyId = '';
+  form.awsSecretAccessKey = '';
+  form.awsSessionToken = '';
+  form.awsEndPointURL = '';
+  form.awsProfileName = '';
+  form.assumeRoleArn = '';
+  form.assumeRoleSessionName = '';
+  form.assumeRoleSourceIdentity = '';
+  form.awsIamEnabled = false;
+  form.bucketNames = '';
+  form.consoleEndpointURL = '';
   form.storeConnectionSecrets = false;
 }
 
@@ -125,6 +158,8 @@ function onKindChange(kind: ServiceKind): void {
     form.serviceType = 'Kafka';
   } else if (kind === 'dashboard') {
     form.serviceType = 'Superset';
+  } else if (kind === 'storage') {
+    form.serviceType = 'S3';
   } else {
     form.serviceType = 'Postgres';
   }
@@ -134,16 +169,35 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [databases, messaging, dashboards] = await Promise.all([
+    const [databasesResult, messagingResult, dashboardsResult, storageResult] = await Promise.allSettled([
       listDatabaseServices({ limit: 100 }),
       listMessagingServices({ limit: 100 }),
       listDashboardServices({ limit: 100 }),
+      listStorageServices({ limit: 100 }),
     ]);
-    services.value = [...databases.data, ...messaging.data, ...dashboards.data];
+    const databases = databasesResult.status === 'fulfilled' ? databasesResult.value : { data: [], total: undefined };
+    const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value : { data: [], total: undefined };
+    const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value : { data: [], total: undefined };
+    const storage = storageResult.status === 'fulfilled' ? storageResult.value : { data: [], total: undefined };
+    services.value = [...databases.data, ...messaging.data, ...dashboards.data, ...storage.data];
     total.value =
-      databases.total !== undefined && messaging.total !== undefined && dashboards.total !== undefined
-        ? databases.total + messaging.total + dashboards.total
+      databases.total !== undefined &&
+      messaging.total !== undefined &&
+      dashboards.total !== undefined &&
+      storage.total !== undefined
+        ? databases.total + messaging.total + dashboards.total + storage.total
         : undefined;
+    if (
+      databasesResult.status !== 'fulfilled' &&
+      messagingResult.status !== 'fulfilled' &&
+      dashboardsResult.status !== 'fulfilled' &&
+      storageResult.status !== 'fulfilled'
+    ) {
+      const first = [databasesResult, messagingResult, dashboardsResult, storageResult].find(
+        (item) => item.status === 'rejected',
+      ) as PromiseRejectedResult;
+      throw first.reason instanceof Error ? first.reason : new Error(String(first.reason));
+    }
   } catch (error) {
     services.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -168,7 +222,9 @@ async function onCreate(): Promise<void> {
         ? await createDashboardService(body)
         : form.kind === 'messaging'
           ? await createMessagingService(body)
-          : await createDatabaseService(body);
+          : form.kind === 'storage'
+            ? await createStorageService(body)
+            : await createDatabaseService(body);
     createOpen.value = false;
     resetForm();
     message.success(t('ingestion.services.created', { name: created.name }));
@@ -202,6 +258,8 @@ async function onDelete(service: CatalogService): Promise<void> {
       await deleteMessagingService(service.id);
     } else if (service.kind === 'dashboard') {
       await deleteDashboardService(service.id);
+    } else if (service.kind === 'storage') {
+      await deleteStorageService(service.id);
     } else {
       await deleteDatabaseService(service.id);
     }
@@ -266,6 +324,7 @@ onMounted(() => {
           <Select.Option value="database">{{ t('ingestion.services.database') }}</Select.Option>
           <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
           <Select.Option value="dashboard">{{ t('ingestion.services.dashboard') }}</Select.Option>
+          <Select.Option value="storage">{{ t('ingestion.services.storage') }}</Select.Option>
         </Select>
       </Form.Item>
       <Form.Item :label="t('crud.type')" required>

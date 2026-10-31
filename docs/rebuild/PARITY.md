@@ -43,13 +43,14 @@ Product `source.type` registry: `connectors/registry.py` `load_builtin_sources()
 | `postgres` | DatabaseService Postgres | Shipped (Phase 6) | `connectors/postgres.py` |
 | `mysql` | DatabaseService Mysql | Shipped (Phase 7) | `connectors/mysql.py` |
 | `kafka` | MessagingService Kafka | Shipped (Phase 7) | `connectors/kafka.py` |
+| `s3` | StorageService S3 | Shipped (P0 2026-11-01) | `connectors/s3.py` |
 | `snowflake` | DatabaseService Snowflake | Shipped (Phase 7) | `connectors/snowflake.py` |
 | `databricks` (+ lineage/usage) | DatabaseService Databricks | BehaviorMatched (unit) | `connectors/databricks*.py`; OSS `databricks-sql-connector` / `databricks-sdk` / `databricks-sqlalchemy` (Bernie t210u) |
 | `unitycatalog` (+ lineage/usage) | DatabaseService UnityCatalog | BehaviorMatched (unit) | `connectors/unitycatalog*.py`; same OSS; metric-view flag |
 
 **Gap (~100 remaining official `service_spec.py` families):** other official
 connectors remain absent. Phase 7 deferred filesystem/object storage,
-dashboards, BigQuery, Redshift, Airflow, profiler/DQ **execution**. Databricks + Unity Catalog landed 2026-10-30 per written scope.
+dashboards, BigQuery, Redshift, Airflow, profiler/DQ **execution**. Dashboard Superset/Metabase and Storage S3 later landed as P0 full chains. Databricks + Unity Catalog landed 2026-10-30 per written scope.
 
 Official database `service_spec` parents (52): athena, azuresql, bigquery,
 bigtable, burstiq, cassandra, clickhouse, clickzetta, cockroach, couchbase,
@@ -165,7 +166,8 @@ Do not treat this list as an implementation order:
 |---|---|---|
 | BigQuery | `google-cloud-bigquery` | Auth surface (ADC vs key file) and catalog mapping not decided |
 | Redshift | existing `psycopg` extra | Warehouse SQL dialect / `information_schema` differences vs Postgres |
-| S3 / GCS | `boto3` / `google-cloud-storage` | Needs Container entity + sink path (Phase 7 skipped) |
+| S3 | `boto3` + storage-archive (pandas/pyarrow/rarfile/py7zr/brotli) | Shipped P0 Storage S3 (Metadata+Sampler+Connection); live boto3 Partial |
+| GCS | `google-cloud-storage` | Deferred (not in this P0) |
 | Databricks / Unity Catalog | `databricks-sql-connector` + `databricks-sdk` + `databricks-sqlalchemy` | **Landed** BehaviorMatched (unit) 2026-10-30; two official tiles, not one |
 | Superset / Metabase | HTTP + their OSS clients | Dashboard entity + auth; extra HTTP surface |
 | Airflow operator | Apache Airflow itself (Apache-2.0) | `openmetadata-airflow-apis` headers are CCL-tainted; wrapping Airflow without copying that package needs an ADR |

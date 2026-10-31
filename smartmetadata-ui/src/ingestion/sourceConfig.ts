@@ -40,6 +40,15 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
       },
     };
   }
+  if (form.serviceKind === 'storage') {
+    const containers = splitCsv(form.includeContainers);
+    return {
+      config: {
+        type: 'StorageMetadata',
+        ...(containers.length ? { containerFilterPattern: { includes: containers } } : {}),
+      },
+    };
+  }
   const includes = splitCsv(form.includeSchemas);
   return {
     config: {
@@ -56,19 +65,26 @@ export function formHintsFromSourceConfig(
   kind: ServiceKind,
 ): Pick<
   PipelineFormValues,
-  'includeViews' | 'includeSchemas' | 'includeTopics' | 'includeDashboards' | 'includeCharts'
+  | 'includeViews'
+  | 'includeSchemas'
+  | 'includeTopics'
+  | 'includeDashboards'
+  | 'includeCharts'
+  | 'includeContainers'
 > {
   const config = sourceConfig?.config ?? {};
   const schemaIncludes = config.schemaFilterPattern?.includes ?? [];
   const topicIncludes = config.topicFilterPattern?.includes ?? [];
   const dashboardIncludes = config.dashboardFilterPattern?.includes ?? [];
   const chartIncludes = config.chartFilterPattern?.includes ?? [];
+  const containerIncludes = config.containerFilterPattern?.includes ?? [];
   return {
     includeViews: kind === 'database' ? config.includeViews !== false : true,
     includeSchemas: schemaIncludes.join(', '),
     includeTopics: topicIncludes.join(', '),
     includeDashboards: dashboardIncludes.join(', '),
     includeCharts: chartIncludes.join(', '),
+    includeContainers: containerIncludes.join(', '),
   };
 }
 
@@ -78,6 +94,9 @@ export function sourceConfigTypeForKind(kind: ServiceKind): string {
   }
   if (kind === 'dashboard') {
     return 'DashboardMetadata';
+  }
+  if (kind === 'storage') {
+    return 'StorageMetadata';
   }
   return 'DatabaseMetadata';
 }

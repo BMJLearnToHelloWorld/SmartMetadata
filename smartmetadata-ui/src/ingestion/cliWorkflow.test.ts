@@ -25,6 +25,7 @@ describe('CLI workflow export', () => {
     expect(cliSourceType('Kafka')).toBe('kafka');
   expect(cliSourceType('Superset')).toBe('superset');
   expect(cliSourceType('Metabase')).toBe('metabase');
+  expect(cliSourceType('S3')).toBe('s3');
     expect(cliSourceType('BigQuery')).toBeUndefined();
   });
 

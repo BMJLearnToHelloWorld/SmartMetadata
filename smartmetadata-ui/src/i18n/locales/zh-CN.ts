@@ -984,7 +984,7 @@ const zhCN = {
   ingestion: {
     services: {
       title: '服务',
-      lead: '连接数据库、消息与仪表盘服务。流水线服务尚未接入。',
+      lead: '连接数据库、消息、仪表盘与存储服务。流水线服务尚未接入。',
       create: '创建服务',
       createTitle: '创建服务',
       editTitle: '编辑服务',
@@ -992,6 +992,7 @@ const zhCN = {
       database: '数据库',
       messaging: '消息',
       dashboard: '仪表盘',
+      storage: '存储',
       created: '已创建服务 {name}',
       updated: '服务已更新',
       deleted: '已删除 {name}',
@@ -1026,6 +1027,8 @@ const zhCN = {
       includeDashboardsHelp: '逗号分隔的仪表盘名称/ID。',
       includeCharts: '包含图表',
       includeChartsHelp: '逗号分隔的图表名称/ID。',
+      includeContainers: '包含容器',
+      includeContainersHelp: '要包含的容器/桶名称，逗号分隔。',
       schedule: '调度间隔（仅目录）',
       scheduleHelp: '目录记录上的 Cron 表达式。留空表示不调度。',
       triggerNote:
@@ -1588,6 +1591,21 @@ const zhCN = {
     trustServerCertificate: '信任服务器证书',
     ingestAllDatabases: '摄取全部数据库',
     includeSynonyms: '包含同义词',
+    awsRegion: 'AWS 区域',
+    awsAccessKeyId: 'AWS Access Key ID',
+    awsSecretAccessKey: 'AWS Secret Access Key',
+    awsSessionToken: 'AWS Session Token',
+    awsEndPointURL: 'AWS Endpoint URL',
+    awsProfileName: 'AWS Profile 名称',
+    assumeRoleArn: 'Assume Role ARN',
+    assumeRoleSessionName: 'Assume Role Session Name',
+    assumeRoleSourceIdentity: 'Assume Role Source Identity',
+    awsIamEnabled: '启用 IAM 认证（默认凭证链）',
+    bucketNames: '桶名称',
+    bucketNamesHelp: '逗号分隔的 S3 桶名称。留空则发现所有可访问的桶。',
+    consoleEndpointURL: '控制台 Endpoint URL',
+    s3Note:
+      'P0 接入官方 s3Connection 字段（awsConfig 必填、bucketNames、consoleEndpointURL）。实时 boto3 采样在 IntegrationVerified 前保持 Partial。',
   },
 } as const;
 

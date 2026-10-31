@@ -248,6 +248,39 @@ class DashboardRecord(Record):
     def label(self) -> str:
         return f"dashboard:{self.service}.{self.name}"
 
+
+class StorageServiceRecord(Record):
+    kind: Literal["storageService"] = "storageService"
+    name: str
+    service_type: str
+    description: str | None = None
+    display_name: str | None = None
+    connection: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        return f"storageService:{self.name}"
+
+
+class ContainerRecord(Record):
+    kind: Literal["container"] = "container"
+    name: str
+    service: str
+    display_name: str | None = None
+    description: str | None = None
+    parent_fqn: str | None = None
+    prefix: str | None = None
+    number_of_objects: float | None = None
+    size: float | None = None
+    file_formats: list[str] | None = None
+    source_url: str | None = None
+    full_path: str | None = None
+    data_model: dict[str, Any] | None = None
+
+    def label(self) -> str:
+        if self.parent_fqn:
+            return f"container:{self.parent_fqn}.{self.name}"
+        return f"container:{self.service}.{self.name}"
+
 class ClassificationRecord(Record):
     """Apache CreateClassification → PUT /v1/classifications."""
 
@@ -310,6 +343,8 @@ WorkflowRecord = (
     | DashboardServiceRecord
     | ChartRecord
     | DashboardRecord
+    | StorageServiceRecord
+    | ContainerRecord
     | ClassificationRecord
     | TagRecord
     | AppRecord

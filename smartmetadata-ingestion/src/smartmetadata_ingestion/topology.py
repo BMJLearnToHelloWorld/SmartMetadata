@@ -16,6 +16,8 @@ from smartmetadata_ingestion.records import (
     ChartRecord,
     DashboardRecord,
     DashboardServiceRecord,
+    StorageServiceRecord,
+    ContainerRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
     LineageRecord,
@@ -37,11 +39,13 @@ STAGE_ORDER: dict[str, int] = {
     "databaseService": 0,
     "messagingService": 0,
     "dashboardService": 0,
+    "storageService": 0,
     "classification": 0,
     "app": 0,
     "database": 1,
     "topic": 1,
     "chart": 1,
+    "container": 1,
     "tag": 1,
     "schema": 2,
     "dashboard": 2,
@@ -79,6 +83,12 @@ def record_fqn(record: WorkflowRecord) -> str | None:
         return record.name
     if isinstance(record, DashboardServiceRecord):
         return record.name
+    if isinstance(record, StorageServiceRecord):
+        return record.name
+    if isinstance(record, ContainerRecord):
+        if record.parent_fqn:
+            return f"{record.parent_fqn}.{record.name}"
+        return f"{record.service}.{record.name}"
     if isinstance(record, ChartRecord):
         return f"{record.service}.{record.name}"
     if isinstance(record, DashboardRecord):
