@@ -131,6 +131,7 @@ Rebuild trees are product evidence, not a second authority.
 | Superset (full chain) | OM `dashboard/superset` BaseSpec (metadata+connection; API mode) | `superset` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | DB connection oneOf deferred; no lineage/usage invent |
 | Metabase (full chain) | OM `dashboard/metabase` BaseSpec (metadata+connection) | `metabase` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | live IntegrationVerified deferred |
 | S3 (full chain) | OM `storage/s3` BaseSpec (metadata+sampler+connection; schema awsConfig required) | `s3` + storageService/container + UI tile + sampler registration | BehaviorMatched (unit); live boto3 Partial | Storage S3 P0 | live IntegrationVerified deferred |
+| Redpanda (full chain) | OM `messaging/redpanda` BaseSpec (metadata+sampler+connection; schema bootstrapServers required) | `redpanda` + messagingService/topic + UI tile + sampler registration | BehaviorMatched (unit); live consumer Partial | Messaging Redpanda P0 | live IntegrationVerified deferred |
 | ~100 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
 | Sample-data one-click | official sample stack | seed via API / ingest | Gap | PARITY | — |
 
@@ -183,4 +184,5 @@ Rebuild trees are product evidence, not a second authority.
 
 - (done 2026-10-30) Doris + MSSQL full chain after Bernie t215u named types + OSS lock
 - (done 2026-10-30) Database P0 Redshift/MariaDB/Greenplum/Timescale full chain after Bernie t219u
-- (shipped 2026-11-01) Storage S3 P0 full chain after Bernie t225u; next leftovers Redpanda / Prefect|Dagster
+- (shipped 2026-11-01) Storage S3 P0 full chain after Bernie t225u
+- (shipped 2026-11-01) Messaging Redpanda P0 full chain after Bernie t225u; next leftovers Prefect|Dagster / other messaging

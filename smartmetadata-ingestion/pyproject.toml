@@ -29,6 +29,7 @@ postgres = ["psycopg[binary]>=3.1,<4"]
 mysql = ["pymysql>=1.1,<2"]
 snowflake = ["snowflake-connector-python>=3.12,<4"]
 kafka = ["kafka-python>=2.0,<3"]
+redpanda = ["kafka-python>=2.0,<3"]
 databricks = [
   "databricks-sql-connector>=3.0,<5",
   "databricks-sdk>=0.30,<1",

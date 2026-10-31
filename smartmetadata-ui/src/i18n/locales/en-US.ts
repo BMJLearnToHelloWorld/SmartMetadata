@@ -1573,10 +1573,13 @@ const enUS = {
     metabaseAuthNote:
       'Use username+password or apiKey (1:1 with official metabaseConnection). Prefer apiKey when available.',
     schemaRegistry: 'Schema Registry URL',
+    securityProtocol: 'Security protocol',
     password: "Password or {'${ENV}'} placeholder",
     persistSecrets: 'Persist a typed literal password on the service entity',
     confluentNote:
       'Confluent REST Proxy URL is a CLI workflow key (restProxyUrl), not a catalog MessagingService field. It appears on the generated smartmetadata-ingest YAML.',
+    redpandaNote:
+      'P0 wires official redpandaConnection fields (bootstrapServers required, schemaRegistryURL, securityProtocol). Live kafka-python consumer sampling stays Partial until IntegrationVerified.',
     secretHint:
       "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.",
     httpPath: 'HTTP path',

@@ -12,7 +12,7 @@ import type { EntityRef } from './api';
 export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql', 'Redshift', 'MariaDB', 'Greenplum', 'Timescale'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
 
-export const MESSAGING_SERVICE_TYPES = ['Kafka'] as const;
+export const MESSAGING_SERVICE_TYPES = ['Kafka', 'Redpanda'] as const;
 export type MessagingServiceType = (typeof MESSAGING_SERVICE_TYPES)[number];
 
 export const DASHBOARD_SERVICE_TYPES = ['Superset', 'Metabase'] as const;
@@ -44,6 +44,7 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Greenplum: 'greenplum',
   Timescale: 'timescale',
   Kafka: 'kafka',
+  Redpanda: 'redpanda',
   Superset: 'superset',
   Metabase: 'metabase',
   S3: 's3',
@@ -62,6 +63,7 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   greenplum: 'Greenplum',
   timescale: 'Timescale',
   kafka: 'Kafka',
+  redpanda: 'Redpanda',
   superset: 'Superset',
   metabase: 'Metabase',
   s3: 'S3',
@@ -82,6 +84,7 @@ export interface ServiceConnectionConfig {
   role?: string;
   bootstrapServers?: string;
   schemaRegistryURL?: string;
+  securityProtocol?: string;
   httpPath?: string;
   catalog?: string;
   queryHistoryTable?: string;
@@ -157,6 +160,7 @@ export interface ServiceFormValues {
   role?: string;
   bootstrapServers?: string;
   schemaRegistryURL?: string;
+  securityProtocol?: string;
   httpPath?: string;
   catalog?: string;
   queryHistoryTable?: string;

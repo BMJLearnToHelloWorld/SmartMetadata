@@ -59,6 +59,7 @@ const form = reactive<ServiceFormValues>({
   warehouse: '',
   role: '',
   bootstrapServers: '',
+  securityProtocol: '',
   schemaRegistryURL: '',
   httpPath: '',
   catalog: '',
@@ -123,6 +124,7 @@ function resetForm(): void {
   form.warehouse = '';
   form.role = '';
   form.bootstrapServers = '';
+  form.securityProtocol = '';
   form.schemaRegistryURL = '';
   form.httpPath = '';
   form.catalog = '';

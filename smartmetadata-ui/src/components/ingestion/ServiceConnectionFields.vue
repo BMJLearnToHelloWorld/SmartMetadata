@@ -209,6 +209,38 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.confluentNote') }}
     </Typography.Paragraph>
   </template>
+  <template v-else-if="type === 'Redpanda'">
+    <Form.Item :label="t('connection.bootstrapServers')" :rules="requiredField(t, t('connection.bootstrapServers'))">
+      <Input
+        v-model:value="form.bootstrapServers"
+        data-testid="service-bootstrap-servers"
+        placeholder="localhost:9092"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.schemaRegistry')">
+      <Input
+        v-model:value="form.schemaRegistryURL"
+        data-testid="service-schema-registry"
+        placeholder="http://localhost:8081"
+      />
+    </Form.Item>
+    <Form.Item :label="t('connection.securityProtocol')">
+      <Select
+        v-model:value="form.securityProtocol"
+        data-testid="service-security-protocol"
+        allow-clear
+        :options="[
+          { value: 'PLAINTEXT', label: 'PLAINTEXT' },
+          { value: 'SASL_PLAINTEXT', label: 'SASL_PLAINTEXT' },
+          { value: 'SASL_SSL', label: 'SASL_SSL' },
+          { value: 'SSL', label: 'SSL' },
+        ]"
+      />
+    </Form.Item>
+    <Typography.Paragraph type="secondary">
+      {{ t('connection.redpandaNote') }}
+    </Typography.Paragraph>
+  </template>
   <template v-else-if="type === 'Superset'">
     <Form.Item :label="t('connection.hostPort')" :rules="requiredField(t, t('connection.hostPort'))">
       <Input
@@ -428,7 +460,7 @@ const passwordPlaceholder = computed(() => {
       </Checkbox>
     </Form.Item>
   </template>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'" :label="t('connection.password')">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'" :label="t('connection.password')">
     <Input.Password
       v-model:value="form.password"
       data-testid="service-password"
@@ -439,7 +471,7 @@ const passwordPlaceholder = computed(() => {
       {{ t('connection.secretHint') }}
     </Typography.Paragraph>
   </Form.Item>
-  <Form.Item v-if="type !== 'Kafka' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'">
+  <Form.Item v-if="type !== 'Kafka' && type !== 'Redpanda' && type !== 'Databricks' && type !== 'UnityCatalog' && type !== 'S3'">
     <Checkbox v-model:checked="form.storeConnectionSecrets" data-testid="service-store-secrets">
       {{ t('connection.persistSecrets') }}
     </Checkbox>
