@@ -93,6 +93,7 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     role: typeof config.role === 'string' ? config.role : '',
     bootstrapServers: typeof config.bootstrapServers === 'string' ? config.bootstrapServers : '',
     schemaRegistryURL: typeof config.schemaRegistryURL === 'string' ? config.schemaRegistryURL : '',
+    securityProtocol: typeof config.securityProtocol === 'string' ? config.securityProtocol : '',
     httpPath: typeof config.httpPath === 'string' ? config.httpPath : '',
     catalog: typeof config.catalog === 'string' ? config.catalog : '',
     queryHistoryTable: typeof config.queryHistoryTable === 'string' ? config.queryHistoryTable : '',
@@ -165,6 +166,7 @@ function applyPassword(
     if (
       form.serviceType === 'Snowflake' ||
       form.serviceType === 'Kafka' ||
+      form.serviceType === 'Redpanda' ||
       form.serviceType === 'Doris' ||
       form.serviceType === 'Mssql' ||
       form.serviceType === 'MariaDB' ||
@@ -189,6 +191,7 @@ function applyPassword(
     if (
       form.serviceType === 'Snowflake' ||
       form.serviceType === 'Kafka' ||
+      form.serviceType === 'Redpanda' ||
       form.serviceType === 'Doris' ||
       form.serviceType === 'Mssql' ||
       form.serviceType === 'MariaDB' ||
@@ -309,12 +312,15 @@ export function buildServiceConnection(
     if (form.role?.trim()) {
       config.role = form.role.trim();
     }
-  } else if (type === 'Kafka') {
+  } else if (type === 'Kafka' || type === 'Redpanda') {
     if (form.bootstrapServers?.trim()) {
       config.bootstrapServers = form.bootstrapServers.trim();
     }
     if (form.schemaRegistryURL?.trim()) {
       config.schemaRegistryURL = form.schemaRegistryURL.trim();
+    }
+    if (form.securityProtocol?.trim()) {
+      config.securityProtocol = form.securityProtocol.trim();
     }
   } else if (type === 'Doris') {
     if (form.hostPort?.trim()) {

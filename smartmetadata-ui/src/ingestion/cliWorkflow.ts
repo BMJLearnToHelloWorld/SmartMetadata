@@ -17,6 +17,7 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   mysql: '${MYSQL_PASSWORD}',
   snowflake: '${SNOWFLAKE_PASSWORD}',
   kafka: '${KAFKA_REST_PASSWORD}',
+  redpanda: '${REDPANDA_SASL_PASSWORD}',
   superset: '${SUPERSET_PASSWORD}',
   metabase: '${METABASE_PASSWORD}',
   s3: '${AWS_SECRET_ACCESS_KEY}',
@@ -84,6 +85,9 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
   }
   if (sourceType === 'kafka') {
     out += yamlLine(4, 'restProxyUrl', '${KAFKA_REST_PROXY_URL:-http://localhost:8082}');
+  }
+  if (sourceType === 'redpanda') {
+    write('securityProtocol', config.securityProtocol);
   }
   if (sourceType === 'superset') {
     const nested = config.connection;
@@ -212,7 +216,7 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
   body += yamlLine(2, 'type', sourceType);
   body += yamlLine(2, 'serviceName', service.name);
   body += connectionBlock(service, sourceType);
-  if (sourceType === 'kafka') {
+  if (sourceType === 'kafka' || sourceType === 'redpanda') {
     body += includeList(config.topicFilterPattern?.includes, 'includeTopics');
   } else if (sourceType === 'superset' || sourceType === 'metabase') {
     body += includeList(config.dashboardFilterPattern?.includes, 'includeDashboards');

@@ -233,7 +233,7 @@ class MetadataWorkflow:
             return
         scope_fqn = self.config.source.service_name
         source_type = self.config.source.type
-        if source_type in {"kafka"}:
+        if source_type in {"kafka", "redpanda"}:
             scope_entity_type = "messagingService"
         elif source_type in {"superset", "metabase"}:
             scope_entity_type = "dashboardService"

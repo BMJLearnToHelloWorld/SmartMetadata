@@ -89,6 +89,23 @@ describe('service connections', () => {
         schemaRegistryURL: 'http://localhost:8081',
       },
     });
+    expect(
+      buildServiceConnection({
+        name: 'rp',
+        kind: 'messaging',
+        serviceType: 'Redpanda',
+        bootstrapServers: 'localhost:9092',
+        schemaRegistryURL: 'http://localhost:8081',
+        securityProtocol: 'SASL_SSL',
+      }),
+    ).toEqual({
+      config: {
+        type: 'Redpanda',
+        bootstrapServers: 'localhost:9092',
+        schemaRegistryURL: 'http://localhost:8081',
+        securityProtocol: 'SASL_SSL',
+      },
+    });
   });
 
   it('clears password when hydrating a form from a stored service', () => {

@@ -23,6 +23,7 @@ describe('CLI workflow export', () => {
     expect(cliSourceType('Timescale')).toBe('timescale');
     expect(cliSourceType('Snowflake')).toBe('snowflake');
     expect(cliSourceType('Kafka')).toBe('kafka');
+    expect(cliSourceType('Redpanda')).toBe('redpanda');
   expect(cliSourceType('Superset')).toBe('superset');
   expect(cliSourceType('Metabase')).toBe('metabase');
   expect(cliSourceType('S3')).toBe('s3');
