@@ -18,10 +18,18 @@ export type MessagingServiceType = (typeof MESSAGING_SERVICE_TYPES)[number];
 export const DASHBOARD_SERVICE_TYPES = ['Superset', 'Metabase'] as const;
 export type DashboardServiceType = (typeof DASHBOARD_SERVICE_TYPES)[number];
 
-export const SUPPORTED_SERVICE_TYPES = [...DATABASE_SERVICE_TYPES, ...MESSAGING_SERVICE_TYPES, ...DASHBOARD_SERVICE_TYPES] as const;
+export const STORAGE_SERVICE_TYPES = ['S3'] as const;
+export type StorageServiceType = (typeof STORAGE_SERVICE_TYPES)[number];
+
+export const SUPPORTED_SERVICE_TYPES = [
+  ...DATABASE_SERVICE_TYPES,
+  ...MESSAGING_SERVICE_TYPES,
+  ...DASHBOARD_SERVICE_TYPES,
+  ...STORAGE_SERVICE_TYPES,
+] as const;
 export type SupportedServiceType = (typeof SUPPORTED_SERVICE_TYPES)[number];
 
-export type ServiceKind = 'database' | 'messaging' | 'dashboard';
+export type ServiceKind = 'database' | 'messaging' | 'dashboard' | 'storage';
 
 export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = {
   Postgres: 'postgres',
@@ -38,6 +46,7 @@ export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = 
   Kafka: 'kafka',
   Superset: 'superset',
   Metabase: 'metabase',
+  S3: 's3',
 };
 
 export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = {
@@ -55,6 +64,7 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   kafka: 'Kafka',
   superset: 'Superset',
   metabase: 'Metabase',
+  s3: 'S3',
 };
 
 export const PIPELINE_TYPES = ['metadata'] as const;
@@ -99,6 +109,20 @@ export interface ServiceConnectionConfig {
     username?: string;
     password?: string;
   };
+  awsConfig?: {
+    enabled?: boolean;
+    awsAccessKeyId?: string;
+    awsSecretAccessKey?: string;
+    awsRegion?: string;
+    awsSessionToken?: string;
+    endPointURL?: string;
+    profileName?: string;
+    assumeRoleArn?: string;
+    assumeRoleSessionName?: string;
+    assumeRoleSourceIdentity?: string;
+  };
+  bucketNames?: string[];
+  consoleEndpointURL?: string;
   [key: string]: unknown;
 }
 
@@ -152,6 +176,18 @@ export interface ServiceFormValues {
   password?: string;
   apiKey?: string;
   provider?: string;
+  awsRegion?: string;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsSessionToken?: string;
+  awsEndPointURL?: string;
+  awsProfileName?: string;
+  assumeRoleArn?: string;
+  assumeRoleSessionName?: string;
+  assumeRoleSourceIdentity?: string;
+  awsIamEnabled?: boolean;
+  bucketNames?: string;
+  consoleEndpointURL?: string;
   storeConnectionSecrets?: boolean;
 }
 
@@ -179,6 +215,14 @@ export interface CreateDashboardServiceRequest {
   connection?: ServiceConnection;
 }
 
+export interface CreateStorageServiceRequest {
+  name: string;
+  serviceType: string;
+  displayName?: string;
+  description?: string;
+  connection?: ServiceConnection;
+}
+
 export interface PipelineSourceConfig {
   config?: {
     type?: string;
@@ -188,6 +232,7 @@ export interface PipelineSourceConfig {
     topicFilterPattern?: { includes?: string[]; excludes?: string[] };
     dashboardFilterPattern?: { includes?: string[]; excludes?: string[] };
     chartFilterPattern?: { includes?: string[]; excludes?: string[] };
+    containerFilterPattern?: { includes?: string[]; excludes?: string[] };
     [key: string]: unknown;
   };
 }
@@ -251,5 +296,6 @@ export interface PipelineFormValues {
   includeTopics?: string;
   includeDashboards?: string;
   includeCharts?: string;
+  includeContainers?: string;
   scheduleInterval?: string;
 }

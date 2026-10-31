@@ -235,6 +235,10 @@ class MetadataWorkflow:
         source_type = self.config.source.type
         if source_type in {"kafka"}:
             scope_entity_type = "messagingService"
+        elif source_type in {"superset", "metabase"}:
+            scope_entity_type = "dashboardService"
+        elif source_type in {"s3"}:
+            scope_entity_type = "storageService"
         else:
             scope_entity_type = "databaseService"
         seen = getattr(self._sink, "seen", None)

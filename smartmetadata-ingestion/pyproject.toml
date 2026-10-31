@@ -63,6 +63,14 @@ timescale = [
   "GeoAlchemy2",
   "packaging",
 ]
+s3 = [
+  "boto3>=1.43.101,<2",
+  "pandas>=2.0,<3",
+  "pyarrow>=14,<22",
+  "rarfile>=4,<5",
+  "py7zr>=0.20,<2",
+  "brotli>=1.0,<2",
+]
 dev = [
   "pytest>=8,<9",
   "pytest-cov>=5,<7",

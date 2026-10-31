@@ -11,6 +11,7 @@ import { listDatabaseServices } from '@/api/databaseServices';
 import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { listDashboardServices } from '@/api/dashboardServices';
 import { listMessagingServices } from '@/api/messagingServices';
+import { listStorageServices } from '@/api/storageServices';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -52,6 +53,7 @@ const form = reactive<PipelineFormValues>({
   includeTopics: '',
   includeDashboards: '',
   includeCharts: '',
+  includeContainers: '',
   scheduleInterval: '',
 });
 
@@ -73,12 +75,14 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [pageResult, databasesResult, messagingResult, dashboardsResult] = await Promise.allSettled([
-      listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
-      listDatabaseServices({ limit: 100 }),
-      listMessagingServices({ limit: 100 }),
-      listDashboardServices({ limit: 100 }),
-    ]);
+    const [pageResult, databasesResult, messagingResult, dashboardsResult, storageResult] =
+      await Promise.allSettled([
+        listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
+        listDatabaseServices({ limit: 100 }),
+        listMessagingServices({ limit: 100 }),
+        listDashboardServices({ limit: 100 }),
+        listStorageServices({ limit: 100 }),
+      ]);
     if (pageResult.status !== 'fulfilled') {
       throw pageResult.reason instanceof Error
         ? pageResult.reason
@@ -91,7 +95,8 @@ async function load(): Promise<void> {
     const databases = databasesResult.status === 'fulfilled' ? databasesResult.value.data : [];
     const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value.data : [];
     const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value.data : [];
-    catalogServices.value = [...databases, ...messaging, ...dashboards];
+    const storage = storageResult.status === 'fulfilled' ? storageResult.value.data : [];
+    catalogServices.value = [...databases, ...messaging, ...dashboards, ...storage];
   } catch (error) {
     pipelines.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -284,6 +289,13 @@ onMounted(() => {
         :extra="t('ingestion.pipelines.includeChartsHelp')"
       >
         <Input v-model:value="form.includeCharts" placeholder="kpi-1, funnel" />
+      </Form.Item>
+      <Form.Item
+        v-if="form.serviceKind === 'storage'"
+        :label="t('ingestion.pipelines.includeContainers')"
+        :extra="t('ingestion.pipelines.includeContainersHelp')"
+      >
+        <Input v-model:value="form.includeContainers" placeholder="analytics, raw" />
       </Form.Item>
       <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">
         <Input v-model:value="form.scheduleInterval" placeholder="0 0 * * *" />

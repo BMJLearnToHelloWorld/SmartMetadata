@@ -67,4 +67,22 @@ describe('pipeline sourceConfig', () => {
     });
     expect(sourceConfigTypeForKind('dashboard')).toBe('DashboardMetadata');
   });
+
+  it('maps storage pipelines to StorageMetadata filters', () => {
+    expect(
+      buildSourceConfig({
+        name: 's3-meta',
+        serviceId: 'st1',
+        serviceKind: 'storage',
+        includeContainers: 'analytics, raw',
+      }),
+    ).toEqual({
+      config: {
+        type: 'StorageMetadata',
+        containerFilterPattern: { includes: ['analytics', 'raw'] },
+      },
+    });
+    expect(sourceConfigTypeForKind('storage')).toBe('StorageMetadata');
+  });
+
 });

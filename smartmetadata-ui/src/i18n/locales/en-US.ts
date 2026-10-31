@@ -989,7 +989,7 @@ const enUS = {
   ingestion: {
     services: {
       title: 'Services',
-      lead: 'Connect database, messaging, and dashboard services. Pipeline services are not wired.',
+      lead: 'Connect database, messaging, dashboard, and storage services. Pipeline services are not wired.',
       create: 'Create service',
       createTitle: 'Create service',
       editTitle: 'Edit service',
@@ -997,6 +997,7 @@ const enUS = {
       database: 'Database',
       messaging: 'Messaging',
       dashboard: 'Dashboard',
+      storage: 'Storage',
       created: 'Created service {name}',
       updated: 'Service updated',
       deleted: 'Deleted {name}',
@@ -1031,6 +1032,8 @@ const enUS = {
       includeDashboardsHelp: 'Comma-separated dashboard names/ids to include.',
       includeCharts: 'Include charts',
       includeChartsHelp: 'Comma-separated chart names/ids to include.',
+      includeContainers: 'Include containers',
+      includeContainersHelp: 'Comma-separated container/bucket names to include.',
       schedule: 'Schedule interval (catalog only)',
       scheduleHelp: 'Cron expression stored on the catalog record. Leave blank for no schedule.',
       triggerNote:
@@ -1596,6 +1599,21 @@ const enUS = {
     trustServerCertificate: 'Trust server certificate',
     ingestAllDatabases: 'Ingest all databases',
     includeSynonyms: 'Include synonyms',
+    awsRegion: 'AWS region',
+    awsAccessKeyId: 'AWS access key ID',
+    awsSecretAccessKey: 'AWS secret access key',
+    awsSessionToken: 'AWS session token',
+    awsEndPointURL: 'AWS endpoint URL',
+    awsProfileName: 'AWS profile name',
+    assumeRoleArn: 'Assume role ARN',
+    assumeRoleSessionName: 'Assume role session name',
+    assumeRoleSourceIdentity: 'Assume role source identity',
+    awsIamEnabled: 'Enable IAM auth (default credential chain)',
+    bucketNames: 'Bucket names',
+    bucketNamesHelp: 'Comma-separated S3 bucket names. Leave blank to discover all accessible buckets.',
+    consoleEndpointURL: 'Console endpoint URL',
+    s3Note:
+      'P0 wires official s3Connection fields (awsConfig required, bucketNames, consoleEndpointURL). Live boto3 sampling stays Partial until IntegrationVerified.',
   },
 } as const;
 

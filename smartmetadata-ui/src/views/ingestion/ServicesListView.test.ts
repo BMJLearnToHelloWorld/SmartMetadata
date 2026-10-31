@@ -73,6 +73,12 @@ describe('ServicesListView', () => {
             paging: { total: 1 },
           });
         }
+        if (url.includes('/api/v1/services/storageServices')) {
+          return jsonResponse({
+            data: [{ id: 'st1', name: 'lake', serviceType: 'S3' }],
+            paging: { total: 1 },
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -83,12 +89,14 @@ describe('ServicesListView', () => {
     localStorage.clear();
   });
 
-  it('renders database, messaging, and dashboard services from the three list APIs', async () => {
+  it('renders database, messaging, dashboard, and storage services from the list APIs', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Warehouse');
     expect(wrapper.text()).toContain('events');
     expect(wrapper.text()).toContain('bi');
     expect(wrapper.text()).toContain('Superset');
+    expect(wrapper.text()).toContain('lake');
+    expect(wrapper.text()).toContain('S3');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="services-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-service"]').exists()).toBe(true);
@@ -122,4 +130,32 @@ describe('ServicesListView', () => {
     expect(deleted).toBe(true);
     confirmSpy.mockRestore();
   });
+
+  it('keeps sibling services when storage list 404s (Promise.allSettled)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/databaseServices')) {
+          return jsonResponse({
+            data: [{ id: 's1', name: 'warehouse', displayName: 'Warehouse', serviceType: 'Postgres' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/services/messagingServices')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/services/dashboardServices')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/services/storageServices')) {
+          return new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('Warehouse');
+  });
+
 });

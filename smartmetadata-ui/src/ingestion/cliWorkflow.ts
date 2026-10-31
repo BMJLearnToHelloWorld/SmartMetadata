@@ -19,6 +19,7 @@ const DEFAULT_PASSWORD_ENV: Record<string, string> = {
   kafka: '${KAFKA_REST_PASSWORD}',
   superset: '${SUPERSET_PASSWORD}',
   metabase: '${METABASE_PASSWORD}',
+  s3: '${AWS_SECRET_ACCESS_KEY}',
   databricks: '${DATABRICKS_TOKEN}',
   unitycatalog: '${DATABRICKS_TOKEN}',
   doris: '${DORIS_PASSWORD}',
@@ -110,7 +111,40 @@ function connectionBlock(service: CatalogService, sourceType: string): string {
       out += yamlLine(4, 'apiKey', apiKey);
     }
   }
-  if (sourceType === 'databricks' || sourceType === 'unitycatalog') {
+  if (sourceType === 's3') {
+    const aws = config.awsConfig;
+    if (aws && typeof aws === 'object') {
+      out += '    awsConfig:\n';
+      if (typeof aws.awsRegion === 'string' && aws.awsRegion) {
+        out += yamlLine(6, 'awsRegion', aws.awsRegion);
+      }
+      if (typeof aws.awsAccessKeyId === 'string' && aws.awsAccessKeyId && !isMaskedSecret(aws.awsAccessKeyId)) {
+        out += yamlLine(6, 'awsAccessKeyId', aws.awsAccessKeyId);
+      }
+      if (typeof aws.endPointURL === 'string' && aws.endPointURL) {
+        out += yamlLine(6, 'endPointURL', aws.endPointURL);
+      }
+      if (typeof aws.profileName === 'string' && aws.profileName) {
+        out += yamlLine(6, 'profileName', aws.profileName);
+      }
+      const secretStored = typeof aws.awsSecretAccessKey === 'string' ? aws.awsSecretAccessKey : '';
+      const secret = isEnvPlaceholder(secretStored) ? secretStored : DEFAULT_PASSWORD_ENV.s3;
+      if (secret) {
+        out += yamlLine(6, 'awsSecretAccessKey', secret);
+      }
+    }
+    if (Array.isArray(config.bucketNames) && config.bucketNames.length) {
+      out += '    bucketNames:\n';
+      for (const bucket of config.bucketNames) {
+        if (typeof bucket === 'string' && bucket) {
+          out += `      - ${yamlScalar(bucket)}\n`;
+        }
+      }
+    }
+    write('consoleEndpointURL', config.consoleEndpointURL);
+    return out;
+  }
+    if (sourceType === 'databricks' || sourceType === 'unitycatalog') {
     const auth = config.authType;
     const tokenStored =
       typeof auth === 'object' && auth && typeof auth.token === 'string' ? auth.token : '';
@@ -183,6 +217,8 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
   } else if (sourceType === 'superset' || sourceType === 'metabase') {
     body += includeList(config.dashboardFilterPattern?.includes, 'includeDashboards');
     body += includeList(config.chartFilterPattern?.includes, 'includeCharts');
+  } else if (sourceType === 's3') {
+    body += includeList(config.containerFilterPattern?.includes, 'includeContainers');
   } else {
     body += yamlLine(2, 'includeViewLineage', config.includeViews !== false);
     body += includeList(config.schemaFilterPattern?.includes, 'includeSchemas');

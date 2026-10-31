@@ -130,6 +130,7 @@ Rebuild trees are product evidence, not a second authority.
 | Timescale (full chain) | OM `database/timescale` service_spec (metadata+lineage+usage+sampler+connection) | `timescale` + lineage/usage/profiler/sampler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS postgres-family; no data_diff invent; live Cursor* deferred |
 | Superset (full chain) | OM `dashboard/superset` BaseSpec (metadata+connection; API mode) | `superset` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | DB connection oneOf deferred; no lineage/usage invent |
 | Metabase (full chain) | OM `dashboard/metabase` BaseSpec (metadata+connection) | `metabase` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | live IntegrationVerified deferred |
+| S3 (full chain) | OM `storage/s3` BaseSpec (metadata+sampler+connection; schema awsConfig required) | `s3` + storageService/container + UI tile + sampler registration | BehaviorMatched (unit); live boto3 Partial | Storage S3 P0 | live IntegrationVerified deferred |
 | ~100 other official connectors | `service_spec.py` families | absent | Gap / Missing | PARITY | **do not invent sprawl as next batch without written scope** |
 | Sample-data one-click | official sample stack | seed via API / ingest | Gap | PARITY | — |
 
@@ -182,4 +183,4 @@ Rebuild trees are product evidence, not a second authority.
 
 - (done 2026-10-30) Doris + MSSQL full chain after Bernie t215u named types + OSS lock
 - (done 2026-10-30) Database P0 Redshift/MariaDB/Greenplum/Timescale full chain after Bernie t219u
-- (in flight 2026-10-31) Dashboard P0 Superset/Metabase full chain after Bernie t222u/t223u
+- (shipped 2026-11-01) Storage S3 P0 full chain after Bernie t225u; next leftovers Redpanda / Prefect|Dagster

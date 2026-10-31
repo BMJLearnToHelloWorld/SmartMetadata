@@ -14,6 +14,11 @@ import {
   updateDashboardService,
 } from '@/api/dashboardServices';
 import { deleteMessagingService, getMessagingService, updateMessagingService } from '@/api/messagingServices';
+import {
+  deleteStorageService,
+  getStorageService,
+  updateStorageService,
+} from '@/api/storageServices';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -48,6 +53,9 @@ const kind = computed<ServiceKind>(() => {
   if (props.kind === 'dashboard') {
     return 'dashboard';
   }
+  if (props.kind === 'storage') {
+    return 'storage';
+  }
   return 'database';
 });
 const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
@@ -73,6 +81,8 @@ async function load(): Promise<void> {
       service.value = await getMessagingService(props.id);
     } else if (kind.value === 'dashboard') {
       service.value = await getDashboardService(props.id);
+    } else if (kind.value === 'storage') {
+      service.value = await getStorageService(props.id);
     } else {
       service.value = await getDatabaseService(props.id);
     }
@@ -109,6 +119,8 @@ async function onSave(): Promise<void> {
       await updateMessagingService(body);
     } else if (kind.value === 'dashboard') {
       await updateDashboardService(body);
+    } else if (kind.value === 'storage') {
+      await updateStorageService(body);
     } else {
       await updateDatabaseService(body);
     }
@@ -141,6 +153,8 @@ async function onDelete(): Promise<void> {
       await deleteMessagingService(service.value.id);
     } else if (kind.value === 'dashboard') {
       await deleteDashboardService(service.value.id);
+    } else if (kind.value === 'storage') {
+      await deleteStorageService(service.value.id);
     } else {
       await deleteDatabaseService(service.value.id);
     }

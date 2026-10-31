@@ -15,7 +15,12 @@ import type {
   ServiceFormValues,
   ServiceKind,
 } from '@/types/ingestion';
-import { DATABASE_SERVICE_TYPES, DASHBOARD_SERVICE_TYPES, MESSAGING_SERVICE_TYPES } from '@/types/ingestion';
+import {
+  DATABASE_SERVICE_TYPES,
+  DASHBOARD_SERVICE_TYPES,
+  MESSAGING_SERVICE_TYPES,
+  STORAGE_SERVICE_TYPES,
+} from '@/types/ingestion';
 
 export function kindForServiceType(serviceType: string): ServiceKind | undefined {
   if ((DATABASE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
@@ -27,6 +32,9 @@ export function kindForServiceType(serviceType: string): ServiceKind | undefined
   if ((DASHBOARD_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
     return 'dashboard';
   }
+  if ((STORAGE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
+    return 'storage';
+  }
   return undefined;
 }
 
@@ -36,6 +44,9 @@ export function entityTypeForKind(kind: ServiceKind): string {
   }
   if (kind === 'dashboard') {
     return 'dashboardService';
+  }
+  if (kind === 'storage') {
+    return 'storageService';
   }
   return 'databaseService';
 }
@@ -105,6 +116,25 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
       : typeof config.provider === 'string'
         ? config.provider
         : 'db',
+    awsRegion: typeof config.awsConfig?.awsRegion === 'string' ? config.awsConfig.awsRegion : '',
+    awsAccessKeyId:
+      typeof config.awsConfig?.awsAccessKeyId === 'string' ? config.awsConfig.awsAccessKeyId : '',
+    awsSecretAccessKey: '',
+    awsSessionToken: '',
+    awsEndPointURL: typeof config.awsConfig?.endPointURL === 'string' ? config.awsConfig.endPointURL : '',
+    awsProfileName: typeof config.awsConfig?.profileName === 'string' ? config.awsConfig.profileName : '',
+    assumeRoleArn: typeof config.awsConfig?.assumeRoleArn === 'string' ? config.awsConfig.assumeRoleArn : '',
+    assumeRoleSessionName:
+      typeof config.awsConfig?.assumeRoleSessionName === 'string'
+        ? config.awsConfig.assumeRoleSessionName
+        : '',
+    assumeRoleSourceIdentity:
+      typeof config.awsConfig?.assumeRoleSourceIdentity === 'string'
+        ? config.awsConfig.assumeRoleSourceIdentity
+        : '',
+    awsIamEnabled: typeof config.awsConfig?.enabled === 'boolean' ? config.awsConfig.enabled : false,
+    bucketNames: Array.isArray(config.bucketNames) ? config.bucketNames.join(', ') : '',
+    consoleEndpointURL: typeof config.consoleEndpointURL === 'string' ? config.consoleEndpointURL : '',
     storeConnectionSecrets: false,
   };
 }
@@ -385,6 +415,61 @@ export function buildServiceConnection(
         config.apiKey = prev;
       }
     }
+  } else if (type === 'S3') {
+    const awsConfig: NonNullable<ServiceConnectionConfig['awsConfig']> = {};
+    if (typeof form.awsIamEnabled === 'boolean') {
+      awsConfig.enabled = form.awsIamEnabled;
+    }
+    if (form.awsRegion?.trim()) {
+      awsConfig.awsRegion = form.awsRegion.trim();
+    }
+    if (form.awsAccessKeyId?.trim()) {
+      awsConfig.awsAccessKeyId = form.awsAccessKeyId.trim();
+    }
+    if (form.awsEndPointURL?.trim()) {
+      awsConfig.endPointURL = form.awsEndPointURL.trim();
+    }
+    if (form.awsProfileName?.trim()) {
+      awsConfig.profileName = form.awsProfileName.trim();
+    }
+    if (form.assumeRoleArn?.trim()) {
+      awsConfig.assumeRoleArn = form.assumeRoleArn.trim();
+    }
+    if (form.assumeRoleSessionName?.trim()) {
+      awsConfig.assumeRoleSessionName = form.assumeRoleSessionName.trim();
+    }
+    if (form.assumeRoleSourceIdentity?.trim()) {
+      awsConfig.assumeRoleSourceIdentity = form.assumeRoleSourceIdentity.trim();
+    }
+    const secret = form.awsSecretAccessKey?.trim() ?? '';
+    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+      awsConfig.awsSecretAccessKey = secret;
+    } else if (!secret) {
+      const prev = existing?.config?.awsConfig?.awsSecretAccessKey;
+      if (prev && isMaskedSecret(prev)) {
+        awsConfig.awsSecretAccessKey = prev;
+      }
+    }
+    const session = form.awsSessionToken?.trim() ?? '';
+    if (shouldPersistSecret(session, Boolean(form.storeConnectionSecrets))) {
+      awsConfig.awsSessionToken = session;
+    } else if (!session) {
+      const prev = existing?.config?.awsConfig?.awsSessionToken;
+      if (prev && isMaskedSecret(prev)) {
+        awsConfig.awsSessionToken = prev;
+      }
+    }
+    config.awsConfig = awsConfig;
+    const buckets = (form.bucketNames ?? '')
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (buckets.length) {
+      config.bucketNames = buckets;
+    }
+    if (form.consoleEndpointURL?.trim()) {
+      config.consoleEndpointURL = form.consoleEndpointURL.trim();
+    }
   } else if (type === 'Databricks' || type === 'UnityCatalog') {
 
     if (form.hostPort?.trim()) {
@@ -409,7 +494,9 @@ export function buildServiceConnection(
     return existing;
   }
 
-  applyPassword(config, form, existing?.config);
+  if (type !== 'S3') {
+    applyPassword(config, form, existing?.config);
+  }
   if (Object.keys(config).length <= 1) {
     return undefined;
   }
@@ -448,6 +535,15 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (typeof config.basicAuthUserInfo === 'string') {
     config.basicAuthUserInfo = '********';
+  }
+  if (config.awsConfig && typeof config.awsConfig === 'object') {
+    const aws = { ...config.awsConfig };
+    for (const key of ['awsSecretAccessKey', 'awsSessionToken'] as const) {
+      if (typeof aws[key] === 'string') {
+        aws[key] = '********';
+      }
+    }
+    config.awsConfig = aws;
   }
   return { config };
 }
