@@ -73,16 +73,25 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [page, databases, messaging, dashboards] = await Promise.all([
+    const [pageResult, databasesResult, messagingResult, dashboardsResult] = await Promise.allSettled([
       listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
       listDatabaseServices({ limit: 100 }),
       listMessagingServices({ limit: 100 }),
       listDashboardServices({ limit: 100 }),
     ]);
+    if (pageResult.status !== 'fulfilled') {
+      throw pageResult.reason instanceof Error
+        ? pageResult.reason
+        : new Error(String(pageResult.reason));
+    }
+    const page = pageResult.value;
     pipelines.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
-    catalogServices.value = [...databases.data, ...messaging.data, ...dashboards.data];
+    const databases = databasesResult.status === 'fulfilled' ? databasesResult.value.data : [];
+    const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value.data : [];
+    const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value.data : [];
+    catalogServices.value = [...databases, ...messaging, ...dashboards];
   } catch (error) {
     pipelines.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
