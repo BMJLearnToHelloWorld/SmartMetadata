@@ -51,7 +51,7 @@ describe('GlossariesListView', () => {
     localStorage.clear();
   });
 
-  it('redirects to the first glossary detail', async () => {
+  it('lists glossaries instead of redirecting to the first one', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -65,9 +65,10 @@ describe('GlossariesListView', () => {
         return new Response('not found', { status: 404 });
       }),
     );
-    const { router } = await mountView();
-    expect(router.currentRoute.value.name).toBe('governance-glossary');
-    expect(router.currentRoute.value.params.id).toBe('g1');
+    const { wrapper, router } = await mountView();
+    expect(router.currentRoute.value.name).toBe('governance-glossaries');
+    expect(wrapper.find('[data-testid="glossary-row-g1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="glossaries-table"]').exists()).toBe(true);
   });
 
   it('shows empty create CTA when no glossaries exist', async () => {
@@ -82,7 +83,7 @@ describe('GlossariesListView', () => {
       }),
     );
     const { wrapper } = await mountView();
-    expect(wrapper.find('[data-testid="glossaries-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-glossary"]').exists()).toBe(true);
   });
 });

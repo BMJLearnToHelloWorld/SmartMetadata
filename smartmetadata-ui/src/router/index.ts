@@ -58,6 +58,7 @@ import DomainDetailView from '@/views/governance/DomainDetailView.vue';
 import DomainsListView from '@/views/governance/DomainsListView.vue';
 import GlossariesListView from '@/views/governance/GlossariesListView.vue';
 import MetricsListView from '@/views/governance/MetricsListView.vue';
+import MetricDetailView from '@/views/governance/MetricDetailView.vue';
 import GlossaryDetailView from '@/views/governance/GlossaryDetailView.vue';
 import GlossaryTermDetailView from '@/views/governance/GlossaryTermDetailView.vue';
 import TagDetailView from '@/views/governance/TagDetailView.vue';
@@ -210,6 +211,12 @@ export const router = createRouter({
           props: true,
         },
         { path: 'governance/metrics', name: 'governance-metrics', component: MetricsListView },
+        {
+          path: 'governance/metrics/:fqn',
+          name: 'governance-metric',
+          component: MetricDetailView,
+          props: true,
+        },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,
           name: page.name,
