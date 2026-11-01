@@ -37,6 +37,7 @@ import {
 } from 'ant-design-vue';
 import { createGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
 import { createGlossaryTerm, listGlossaryTerms } from '@/api/glossaryTerms';
+import { governanceTabsFor } from '@/catalog/governanceTabs';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
@@ -106,6 +107,21 @@ const filteredTerms = computed(() => {
     return hay.includes(q);
   });
 });
+
+/** Glossary tabs are data from the Stage 4 governance registry; the terms
+ *  label keeps its live count, the activity label keeps its zero count,
+ *  and residual panes keep their honest Empty content below. */
+const glossaryTabs = computed(() =>
+  governanceTabsFor('glossary').map((tab) => ({
+    ...tab,
+    label:
+      tab.key === 'terms'
+        ? termCountLabel.value
+        : tab.key === 'activity'
+          ? t(tab.labelKey, { count: 0 })
+          : t(tab.labelKey),
+  })),
+);
 
 const statusOptions = computed(() => {
   const values = new Set<string>();
@@ -440,7 +456,13 @@ onMounted(() => {
           <Alert v-if="detailError" type="error" show-icon :message="detailError" class="glossary__alert" />
 
           <Tabs v-model:active-key="activeTab" data-testid="glossary-tabs">
-            <Tabs.TabPane key="terms" :tab="termCountLabel" data-testid="glossary-tab-terms">
+            <Tabs.TabPane
+              v-for="tab in glossaryTabs"
+              :key="tab.key"
+              :tab="tab.label"
+              :data-testid="`glossary-tab-${tab.key}`"
+            >
+              <template v-if="tab.key === 'terms'">
               <section class="glossary__description" data-testid="glossary-description">
                 <div class="glossary__section-head">
                   <Typography.Text strong>{{ t('crud.description') }}</Typography.Text>
@@ -537,28 +559,19 @@ onMounted(() => {
                   @change="onTermPageChange"
                 />
               </div>
-            </Tabs.TabPane>
-
-            <Tabs.TabPane
-              key="relations"
-              :tab="t('governance.glossaries.relationsTab')"
-              data-testid="glossary-tab-relations"
-            >
-              <Empty
-                data-testid="glossary-relations-residual"
-                :description="t('governance.glossaries.relationsResidual')"
-              />
-            </Tabs.TabPane>
-
-            <Tabs.TabPane
-              key="activity"
-              :tab="t('governance.glossaries.activityTab', { count: 0 })"
-              data-testid="glossary-tab-activity"
-            >
-              <Empty
-                data-testid="glossary-activity-residual"
-                :description="t('governance.glossaries.activityResidual')"
-              />
+              </template>
+              <template v-else-if="tab.key === 'relations'">
+                <Empty
+                  data-testid="glossary-relations-residual"
+                  :description="t('governance.glossaries.relationsResidual')"
+                />
+              </template>
+              <template v-else-if="tab.key === 'activity'">
+                <Empty
+                  data-testid="glossary-activity-residual"
+                  :description="t('governance.glossaries.activityResidual')"
+                />
+              </template>
             </Tabs.TabPane>
           </Tabs>
         </template>

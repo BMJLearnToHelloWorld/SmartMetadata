@@ -18,6 +18,7 @@ import {
   Space,
   Spin,
   Table,
+  Tag,
   Typography,
   message,
 } from 'ant-design-vue';
@@ -138,6 +139,11 @@ onMounted(() => {
         <div class="gov-head">
           <Typography.Title :level="4">
             {{ term?.displayName || term?.name || t('terms.fallback') }}
+            <!-- Status renders only when the server returned entityStatus;
+                 it is never defaulted to Approved (see GlossaryTerm type). -->
+            <Tag v-if="term?.status" data-testid="term-status" color="purple" style="margin-left: 8px">
+              {{ term.status }}
+            </Tag>
           </Typography.Title>
           <Space>
             <Button

@@ -25,6 +25,7 @@ async function mountView() {
     history: createMemoryHistory(),
     routes: [
       { path: '/governance/metrics', name: 'governance-metrics', component: MetricsListView },
+      { path: '/governance/metrics/:fqn', name: 'governance-metric', component: { template: '<div>metric</div>' } },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
@@ -46,7 +47,7 @@ describe('MetricsListView', () => {
     searchAssets.mockReset();
   });
 
-  it('lists metrics from catalog search and opens asset detail', async () => {
+  it('lists metrics from catalog search and opens the metric detail page', async () => {
     searchAssets.mockResolvedValue({
       total: 1,
       hits: [
@@ -70,8 +71,8 @@ describe('MetricsListView', () => {
     expect(wrapper.text()).toContain('Monthly Active Users');
     await wrapper.get('[data-testid="metric-row-kpi.mau"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('asset');
-    expect(router.currentRoute.value.params).toMatchObject({ entityType: 'metric', fqn: 'kpi.mau' });
+    expect(router.currentRoute.value.name).toBe('governance-metric');
+    expect(router.currentRoute.value.params).toMatchObject({ fqn: 'kpi.mau' });
   });
 
   it('shows an honest empty when search returns no metrics', async () => {

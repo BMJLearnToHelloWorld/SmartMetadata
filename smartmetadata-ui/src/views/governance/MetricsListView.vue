@@ -44,6 +44,12 @@ function openMetric(record: SearchHit): void {
   if (!record.entityType || !record.fullyQualifiedName) {
     return;
   }
+  // Stage 4: metrics now have a dedicated detail page; other types keep
+  // the generic asset route.
+  if (record.entityType === 'metric') {
+    void router.push({ name: 'governance-metric', params: { fqn: record.fullyQualifiedName } });
+    return;
+  }
   void router.push(assetLocation(record.entityType, record.fullyQualifiedName));
 }
 
