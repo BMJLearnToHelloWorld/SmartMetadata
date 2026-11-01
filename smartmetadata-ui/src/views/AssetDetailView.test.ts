@@ -214,10 +214,10 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.find('[data-testid="lineage-minimap"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('raw_orders');
-    expect(wrapper.text()).toContain('Overview');
+    expect(wrapper.text()).toContain('Activity feed');
     expect(wrapper.text()).toContain('Schema');
     expect(wrapper.text()).toContain('Lineage');
-    expect(wrapper.text()).toContain('Quality');
+    expect(wrapper.text()).toContain('Profiler');
   });
 
   it('plots profiler history, usage, and latest test status from real GET payloads', async () => {

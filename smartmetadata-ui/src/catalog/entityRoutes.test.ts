@@ -14,6 +14,7 @@ import {
   lineageLocation,
   resolveDetailEndpoint,
   resolvePatchPath,
+  resolveVersionsPath,
 } from './entityRoutes';
 
 describe('entityRoutes', () => {
@@ -102,5 +103,12 @@ describe('entityRoutes', () => {
   it('maps wired types onto PATCH /v1/{collection}/{id}', () => {
     expect(resolvePatchPath('table', 'tbl-1')).toBe('/v1/tables/tbl-1');
     expect(resolvePatchPath('topic', 'top-1')).toBe('/v1/topics/top-1');
+  });
+
+  it('maps wired types onto GET /v1/{collection}/{id}/versions', () => {
+    expect(resolveVersionsPath('table', 'tbl-1')).toBe('/v1/tables/tbl-1/versions');
+    expect(resolveVersionsPath('dashboard', 'd-1')).toBe('/v1/dashboards/d-1/versions');
+    expect(resolveVersionsPath('query', 'q-1')).toBeNull();
+    expect(resolveVersionsPath('table', '')).toBeNull();
   });
 });

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
-import { resolveDetailEndpoint, resolvePatchPath } from '@/catalog/entityRoutes';
+import { resolveDetailEndpoint, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import type { AssetDetail, EntityRef, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
@@ -257,6 +257,43 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     schemaLabel: schema.label,
     extension: asRecord(body.extension) || undefined,
   };
+}
+
+export interface EntityVersion {
+  version?: number | string;
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+/**
+ * Version history for an entity, following the official per-entity
+ * /v1/{collection}/{id}/versions endpoint shape (EntityHistory.versions).
+ * The caller owns the empty/error states: a backend that does not serve
+ * versions must surface as an honest empty, never as invented rows.
+ */
+export async function listEntityVersions(entityType: string, id: string): Promise<EntityVersion[]> {
+  const versionsPath = resolveVersionsPath(entityType, id);
+  if (!versionsPath) {
+    throw new Error(`No version endpoint for entity type "${entityType}"`);
+  }
+  const body = await apiRequest<Record<string, unknown>>(versionsPath);
+  const versions = body.versions;
+  if (!Array.isArray(versions)) {
+    return [];
+  }
+  return versions.flatMap((item) => {
+    if (item === null || typeof item !== 'object') {
+      return [];
+    }
+    const rec = item as Record<string, unknown>;
+    return [
+      {
+        version: typeof rec.version === 'number' || typeof rec.version === 'string' ? rec.version : undefined,
+        updatedAt: typeof rec.updatedAt === 'number' ? rec.updatedAt : undefined,
+        updatedBy: typeof rec.updatedBy === 'string' ? rec.updatedBy : undefined,
+      },
+    ];
+  });
 }
 
 export function patchAsset(entityType: string, id: string, patch: JsonPatchOp[]): Promise<unknown> {

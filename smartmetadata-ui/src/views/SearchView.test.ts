@@ -243,3 +243,43 @@ describe('SearchView empty results', () => {
     expect(router.currentRoute.value.query.q).toBe('zzz');
   });
 });
+
+describe('SearchView explore tabs (Stage 2)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(SEARCH_BODY)),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('queries the selected tab index and falls back to the tab default sort', async () => {
+    await mountView({ tab: 'table' });
+    const mock = vi.mocked(fetch);
+    const tabbed = mock.mock.calls
+      .map((call) => new URL(String(call[0]), 'http://localhost'))
+      .find((url) => url.searchParams.get('index') === 'table');
+    expect(tabbed).toBeDefined();
+    expect(tabbed?.searchParams.get('sort_field')).toBe('totalVotes');
+
+    const { wrapper: columnWrapper } = await mountView({ tab: 'tableColumn', sort: 'popularity' });
+    expect(columnWrapper.find('[data-testid="explore-tabs"]').text()).toContain('Column');
+    const columnCall = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => new URL(String(call[0]), 'http://localhost'))
+      .find((url) => url.searchParams.get('index') === 'tableColumn');
+    // popularity is not a column sort: official fallback is the column default (name).
+    expect(columnCall?.searchParams.get('sort_field')).toBe('displayName.keyword');
+  });
+
+  it('toggles sort order into the route query', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.get('[data-testid="explore-sort-order"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query.sort).toBe('relevance');
+    expect(router.currentRoute.value.query.order).toBe('asc');
+  });
+});
