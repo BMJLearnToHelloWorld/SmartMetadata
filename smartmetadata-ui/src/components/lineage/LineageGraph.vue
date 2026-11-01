@@ -32,12 +32,18 @@ const props = withDefaults(
     highlightedColumnFqns?: string[];
     highlightedNodeIds?: string[];
     highlightedEdgeIds?: string[];
+    /** ColumnLevelLineage layer: show every column edge, not only expanded nodes'. */
+    forceColumnEdges?: boolean;
+    /** Edge mode labels edges by pipeline name when one exists. */
+    pipelineViewMode?: 'Node' | 'Edge';
   }>(),
   {
     variant: 'page',
     highlightedColumnFqns: () => [],
     highlightedNodeIds: () => [],
     highlightedEdgeIds: () => [],
+    forceColumnEdges: false,
+    pipelineViewMode: 'Node',
   },
 );
 
@@ -88,7 +94,10 @@ const nodes = computed<Node<LineageNodeData>[]>(() =>
 
 const visibleColumnEdges = computed(() =>
   columnLineageEdges(props.model).filter(
-    (edge) => expandedSet.value.has(edge.source) || expandedSet.value.has(edge.target),
+    (edge) =>
+      props.forceColumnEdges ||
+      expandedSet.value.has(edge.source) ||
+      expandedSet.value.has(edge.target),
   ),
 );
 
@@ -97,7 +106,10 @@ const edges = computed<Edge[]>(() => {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    label: edge.label || undefined,
+    label:
+      props.pipelineViewMode === 'Edge' && edge.pipelineName
+        ? edge.pipelineName
+        : edge.label || undefined,
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     class: props.highlightedEdgeIds.includes(edge.id) ? 'lineage-edge--active' : undefined,

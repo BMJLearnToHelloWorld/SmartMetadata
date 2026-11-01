@@ -6,8 +6,11 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Card, Collapse, Empty, Form, Input, Select, Typography } from 'ant-design-vue';
+import { Button, Collapse, Form, Input, Select } from 'ant-design-vue';
 import LineageEntitySearch from '@/components/lineage/LineageEntitySearch.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmState from '@/components/shared/SmState.vue';
 import { lineageLocation } from '@/catalog/entityRoutes';
 import { lineageTargetFromTypedFqn } from '@/lineage/entry';
 
@@ -36,9 +39,12 @@ function openTyped(): void {
 </script>
 
 <template>
-  <Card>
-    <Typography.Title :level="4">{{ t('lineage.title') }}</Typography.Title>
-    <Typography.Paragraph type="secondary">{{ t('lineage.platformLead') }}</Typography.Paragraph>
+  <PageLayout :document-title="t('lineage.title')">
+    <PageHeader
+      :header="t('lineage.title')"
+      :sub-header="t('lineage.platformLead')"
+      learning-page-id="lineage"
+    />
     <LineageEntitySearch @select="openTarget" />
     <Collapse v-model:activeKey="fqnPanel" ghost class="lineage-home__fqn">
       <Collapse.Panel key="fqn" :header="t('lineage.openByFqn')" data-testid="lineage-home-fqn-panel">
@@ -61,9 +67,9 @@ function openTyped(): void {
       </Collapse.Panel>
     </Collapse>
     <div class="lineage-home__canvas" data-testid="lineage-home-canvas">
-      <Empty :description="t('lineage.emptyCanvas')" />
+      <SmState state="empty" test-id="lineage-home-empty" :empty-text="t('lineage.emptyCanvas')" />
     </div>
-  </Card>
+  </PageLayout>
 </template>
 
 <style scoped>
@@ -73,9 +79,6 @@ function openTyped(): void {
 .lineage-home__canvas {
   min-height: calc(100vh - 280px);
   margin-top: 12px;
-  border: 1px dashed var(--sm-border-color, #f0f0f0);
-  border-radius: var(--sm-border-radius, 6px);
-  background: var(--sm-bg-elevated, #f7f8fa);
   display: flex;
   align-items: center;
   justify-content: center;
