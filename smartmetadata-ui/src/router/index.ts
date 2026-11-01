@@ -11,6 +11,7 @@ import { loadSession } from '@/auth/token';
 import { RESIDUAL_PAGES } from '@/layouts/residualPages';
 import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
+import AssetVersionView from '@/views/shell/AssetVersionView.vue';
 import InsightsView from '@/views/insights/InsightsView.vue';
 import MyDataView from '@/views/home/MyDataView.vue';
 import LineageHomeView from '@/views/LineageHomeView.vue';
@@ -103,6 +104,12 @@ export const router = createRouter({
           path: 'assets/:entityType/:fqn',
           name: 'asset',
           component: AssetDetailView,
+          props: true,
+        },
+        {
+          path: 'assets/:entityType/:fqn/versions',
+          name: 'asset-version',
+          component: AssetVersionView,
           props: true,
         },
         { path: 'insights', name: 'insights', component: InsightsView },

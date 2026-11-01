@@ -100,6 +100,14 @@ export function isDetailWired(entityType: string): boolean {
   return entityType in DETAIL_ENDPOINTS;
 }
 
+export function resolveVersionsPath(entityType: string, id: string): string | null {
+  const spec = DETAIL_ENDPOINTS[entityType];
+  if (!spec || !id) {
+    return null;
+  }
+  return `/v1/${spec.collection}/${encodeURIComponent(id)}/versions`;
+}
+
 export function resolvePatchPath(entityType: string, id: string): string | null {
   const spec = DETAIL_ENDPOINTS[entityType];
   if (!spec || !id) {

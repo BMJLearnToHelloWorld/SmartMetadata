@@ -9,6 +9,15 @@ import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Empty, Pagination, Select, Space, Tag, Typography } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
 import {
+  EXPLORE_TABS,
+  defaultSortForTab,
+  exploreSortFromQuery,
+  exploreTabFromQuery,
+  sortOptionsForTab,
+  type ExploreSort,
+  type ExploreTab,
+} from '@/catalog/exploreTabs';
+import {
   browsePathLabels,
   buildEstateTree,
   estateCategory,
@@ -27,15 +36,15 @@ import {
   SORT_OPTIONS,
   composeSearchQuery,
   filtersFromQuery,
+  filtersToQuery,
   hasActiveFilters,
   pageFromQuery,
-  searchRouteQuery,
   sortField,
   sortFromQuery,
   type SearchFilters,
-  type SearchSort,
-  type SortId,
 } from '@/catalog/searchQuery';
+import DetailTabs from '@/components/shared/DetailTabs.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
@@ -58,16 +67,53 @@ const selectedFqn = ref('');
 const query = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const filters = computed(() => filtersFromQuery(route.query));
 const page = computed(() => pageFromQuery(route.query.page));
-const sort = computed(() => sortFromQuery(route.query));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
 const residual = computed(() => isResidualEstate(estateId.value));
+const activeTab = computed<ExploreTab | null>(() => exploreTabFromQuery(route.query));
+const sortOptions = computed(() =>
+  activeTab.value
+    ? sortOptionsForTab(activeTab.value)
+    : SORT_OPTIONS.map((option) => ({ id: option.id, field: option.field, defaultOrder: option.defaultOrder })),
+);
+const currentSort = computed<ExploreSort>(() => {
+  if (activeTab.value) {
+    return exploreSortFromQuery(route.query, activeTab.value);
+  }
+  const base = sortFromQuery(route.query);
+  return { id: base.id, order: base.order, field: sortField(base) };
+});
+const tabCounts = computed(() => {
+  const facet = facets.value.find((item) => item.id === 'entityType');
+  const counts = new Map<string, number>();
+  for (const bucket of facet?.buckets ?? []) {
+    counts.set(bucket.key, bucket.count);
+  }
+  return counts;
+});
+const exploreTabItems = computed(() => {
+  const items = [
+    {
+      key: 'all',
+      label: total.value ? `${t('explore.all')} (${total.value})` : t('explore.all'),
+    },
+  ];
+  for (const tab of EXPLORE_TABS) {
+    // Counts come only from the current search's entityType aggregation;
+    // no independent per-tab count request is faked (see residuals).
+    const count = tabCounts.value.get(tab.entityType);
+    const label = t(`explore.entity.${tab.labelKey}`);
+    items.push({ key: tab.index, label: count !== undefined ? `${label} (${count})` : label });
+  }
+  return items;
+});
 const searchKey = computed(() =>
   JSON.stringify({
     q: query.value,
     filters: filters.value,
     page: page.value,
-    sort: sort.value,
+    sort: currentSort.value,
     estate: estateFromQuery(route.query),
+    tab: activeTab.value?.index ?? 'all',
   }),
 );
 
@@ -108,13 +154,35 @@ function pushSearch(
   nextQuery: string,
   nextFilters: SearchFilters,
   nextPage = 0,
-  nextSort: SearchSort = sort.value,
+  nextSort: { id: string; order: 'asc' | 'desc' } = currentSort.value,
   nextEstate = estateFromQuery(route.query),
+  nextTab: ExploreTab | null = activeTab.value,
 ): void {
-  void router.push({
-    name: 'search',
-    query: searchRouteQuery(nextQuery, nextFilters, nextPage, { sort: nextSort, estate: nextEstate }),
-  });
+  const next: Record<string, string> = { ...filtersToQuery(nextFilters) };
+  const trimmed = nextQuery.trim();
+  if (trimmed) {
+    next.q = trimmed;
+  }
+  if (nextPage > 0) {
+    next.page = String(nextPage);
+  }
+  const options = nextTab ? sortOptionsForTab(nextTab) : SORT_OPTIONS;
+  const option = options.find((item) => item.id === nextSort.id) ?? options[0];
+  const fallback = nextTab ? defaultSortForTab(nextTab) : DEFAULT_SORT;
+  if (nextSort.id !== fallback.id) {
+    next.sort = nextSort.id;
+  }
+  if (nextSort.order !== option.defaultOrder) {
+    next.sort = nextSort.id;
+    next.order = nextSort.order;
+  }
+  if (nextEstate) {
+    next.estate = nextEstate;
+  }
+  if (nextTab) {
+    next.tab = nextTab.index;
+  }
+  void router.push({ name: 'search', query: next });
 }
 
 function onChipChange(id: FacetId, values: string[]): void {
@@ -123,7 +191,7 @@ function onChipChange(id: FacetId, values: string[]): void {
     delete next[id];
   }
   const estate = id === 'entityType' ? selectedEstateFromFilters(next) : estateFromQuery(route.query);
-  pushSearch(query.value, next, 0, sort.value, estate);
+  pushSearch(query.value, next, 0, currentSort.value, estate);
 }
 
 function onToggleFacet(id: FacetId, value: string): void {
@@ -133,7 +201,7 @@ function onToggleFacet(id: FacetId, value: string): void {
 }
 
 function onClearFilters(): void {
-  pushSearch(query.value, {}, 0, sort.value, '');
+  pushSearch(query.value, {}, 0, currentSort.value, '');
 }
 
 function onPageChange(next: number): void {
@@ -141,17 +209,45 @@ function onPageChange(next: number): void {
 }
 
 function onSortChange(value: unknown): void {
-  const id = SORT_OPTIONS.some((item) => item.id === value) ? (value as SortId) : DEFAULT_SORT.id;
-  const option = SORT_OPTIONS.find((item) => item.id === id) ?? SORT_OPTIONS[0];
-  pushSearch(query.value, filters.value, 0, { id: option.id, order: option.defaultOrder }, estateFromQuery(route.query));
+  const option = sortOptions.value.find((item) => item.id === value) ?? sortOptions.value[0];
+  pushSearch(
+    query.value,
+    filters.value,
+    0,
+    { id: option.id, order: option.defaultOrder },
+    estateFromQuery(route.query),
+    activeTab.value,
+  );
+}
+
+function onToggleSortOrder(): void {
+  const flipped = currentSort.value.order === 'asc' ? 'desc' : 'asc';
+  pushSearch(
+    query.value,
+    filters.value,
+    0,
+    { id: currentSort.value.id, order: flipped },
+    estateFromQuery(route.query),
+    activeTab.value,
+  );
+}
+
+function onTabChange(key: string): void {
+  const tab = key === 'all' ? null : (EXPLORE_TABS.find((item) => item.index === key) ?? null);
+  const options = tab ? sortOptionsForTab(tab) : SORT_OPTIONS;
+  const fallback = tab ? defaultSortForTab(tab) : { id: DEFAULT_SORT.id, defaultOrder: DEFAULT_SORT.order };
+  const sort = options.some((item) => item.id === currentSort.value.id)
+    ? { id: currentSort.value.id, order: currentSort.value.order }
+    : { id: fallback.id, order: fallback.defaultOrder };
+  pushSearch(query.value, filters.value, 0, sort, estateFromQuery(route.query), tab);
 }
 
 function onEstateSelect(node: EstateNode): void {
   if (isResidualEstate(node.categoryId)) {
-    pushSearch(query.value, { ...filters.value, entityType: undefined, service: undefined }, 0, sort.value, node.categoryId);
+    pushSearch(query.value, { ...filters.value, entityType: undefined, service: undefined }, 0, currentSort.value, node.categoryId);
     return;
   }
-  pushSearch(query.value, filtersForEstateNode(node, filters.value), 0, sort.value, node.categoryId);
+  pushSearch(query.value, filtersForEstateNode(node, filters.value), 0, currentSort.value, node.categoryId);
 }
 
 function onEstateExpand(keys: string[]): void {
@@ -223,8 +319,9 @@ async function runSearch(): Promise<void> {
       return;
     }
     const pageResult = await searchAssets(composeSearchQuery(query.value, filters.value), page.value * SEARCH_PAGE_SIZE, SEARCH_PAGE_SIZE, {
-      sortField: sortField(sort.value),
-      sortOrder: sort.value.order,
+      index: activeTab.value?.index ?? 'dataAsset',
+      sortField: currentSort.value.field,
+      sortOrder: currentSort.value.order,
     });
     hits.value = pageResult.hits;
     total.value = pageResult.total;
@@ -267,6 +364,13 @@ watch(expandedKeys, (keys) => {
 
 <template>
   <div class="explore">
+    <PageHeader :header="t('explore.title')" :sub-header="query ? t('explore.leadQuery', { query }) : t('explore.lead')" />
+    <DetailTabs
+      :tabs="exploreTabItems"
+      :active-key="activeTab?.index ?? 'all'"
+      test-id="explore-tabs"
+      @change="onTabChange"
+    />
     <div class="explore__toolbar">
       <ExploreFilterChips :facets="facets.length ? facets : estateFacets" :filters="filters" @change="onChipChange" />
       <div class="explore__toolbar-end">
@@ -274,14 +378,22 @@ watch(expandedKeys, (keys) => {
           data-testid="explore-sort"
           class="explore__sort"
           size="small"
-          :value="sort.id"
+          :value="currentSort.id"
           :aria-label="t('explore.sort')"
           @change="onSortChange"
         >
-          <Select.Option v-for="option in SORT_OPTIONS" :key="option.id" :value="option.id">
+          <Select.Option v-for="option in sortOptions" :key="option.id" :value="option.id">
             {{ t(`explore.sort${option.id.charAt(0).toUpperCase()}${option.id.slice(1)}`) }}
           </Select.Option>
         </Select>
+        <Button
+          data-testid="explore-sort-order"
+          size="small"
+          :aria-label="t('explore.sort')"
+          @click="onToggleSortOrder"
+        >
+          {{ currentSort.order === 'asc' ? t('explore.sortAsc') : t('explore.sortDesc') }}
+        </Button>
         <Button
           v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
           type="link"
@@ -452,7 +564,7 @@ watch(expandedKeys, (keys) => {
   min-height: 520px;
 }
 .explore__pane {
-  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius, 6px);
   background: var(--sm-bg-container, #fff);
   padding: 12px;
@@ -478,7 +590,7 @@ watch(expandedKeys, (keys) => {
   flex: 1;
 }
 .explore__card {
-  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius, 6px);
   padding: 8px 12px;
   background: var(--sm-bg-container, #fff);
@@ -519,8 +631,8 @@ watch(expandedKeys, (keys) => {
   line-height: 1.4;
 }
 .explore__desc {
-  font-size: 13px;
-  color: var(--sm-text-secondary, #414651);
+  font-size: 14px;
+  color: var(--sm-text-secondary);
 }
 .explore__meta {
   display: flex;

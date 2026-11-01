@@ -169,7 +169,7 @@ const overviewRows = computed(() => {
 }
 .preview__dl dd {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .preview__tags {
   display: flex;
