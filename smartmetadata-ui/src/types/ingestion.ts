@@ -77,8 +77,42 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   dagster: 'Dagster',
 };
 
-export const PIPELINE_TYPES = ['metadata'] as const;
+export const PIPELINE_TYPES = ['metadata', 'usage', 'lineage', 'profiler', 'TestSuite'] as const;
 export type PipelineType = (typeof PIPELINE_TYPES)[number];
+
+/**
+ * Agent / ingestion pipeline kinds offered per serviceType, derived 1:1 from OM
+ * service_spec class fields that map to PipelineType (metadata_source_class,
+ * lineage_source_class, usage_source_class, profiler_class, test_suite_class).
+ * DefaultDatabaseSpec always supplies profiler + TestSuite. Sampler / data_diff
+ * are capabilities, not pipelineType agents. No AutoClassification / dbt invent
+ * (those are schema-flag UX extras without service_spec classes here).
+ */
+export const AGENT_KINDS_BY_SERVICE: Record<SupportedServiceType, readonly PipelineType[]> = {
+  Postgres: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Mysql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Snowflake: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Databricks: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  UnityCatalog: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Doris: ['metadata', 'lineage', 'profiler', 'TestSuite'],
+  Mssql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Redshift: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  MariaDB: ['metadata', 'lineage', 'profiler', 'TestSuite'],
+  Greenplum: ['metadata', 'lineage', 'profiler', 'TestSuite'],
+  Timescale: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
+  Kafka: ['metadata'],
+  Redpanda: ['metadata'],
+  Superset: ['metadata'],
+  Metabase: ['metadata'],
+  S3: ['metadata'],
+  Prefect: ['metadata'],
+  Dagster: ['metadata'],
+};
+
+export function agentKindsForService(serviceType: string): readonly PipelineType[] {
+  const kinds = AGENT_KINDS_BY_SERVICE[serviceType as SupportedServiceType];
+  return kinds ?? (['metadata'] as const);
+}
 
 export interface ServiceConnectionConfig {
   type?: string;

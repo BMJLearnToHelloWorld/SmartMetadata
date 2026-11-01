@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import type { PipelineFormValues, PipelineSourceConfig, ServiceKind } from '@/types/ingestion';
+import type { PipelineFormValues, PipelineSourceConfig, PipelineType, ServiceKind } from '@/types/ingestion';
 
 function splitCsv(value: string | undefined): string[] {
   if (!value) {
@@ -19,12 +19,34 @@ function splitCsv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** OM metadataIngestion sourceConfig.config.type for a pipelineType + service kind. */
+export function sourceConfigTypeForPipeline(
+  pipelineType: string,
+  kind: ServiceKind,
+): string {
+  if (pipelineType === 'lineage') {
+    return 'DatabaseLineage';
+  }
+  if (pipelineType === 'usage') {
+    return 'DatabaseUsage';
+  }
+  if (pipelineType === 'profiler') {
+    return 'Profiler';
+  }
+  if (pipelineType === 'TestSuite') {
+    return 'TestSuite';
+  }
+  // metadata (default) — kind-specific OM metadata pipeline config types
+  return sourceConfigTypeForKind(kind);
+}
+
 export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfig {
+  const pipelineType = (form.pipelineType || 'metadata') as PipelineType;
   if (form.serviceKind === 'messaging') {
     const includes = splitCsv(form.includeTopics);
     return {
       config: {
-        type: 'MessagingMetadata',
+        type: sourceConfigTypeForPipeline(pipelineType, 'messaging'),
         ...(includes.length ? { topicFilterPattern: { includes } } : {}),
       },
     };
@@ -34,7 +56,7 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
     const charts = splitCsv(form.includeCharts);
     return {
       config: {
-        type: 'DashboardMetadata',
+        type: sourceConfigTypeForPipeline(pipelineType, 'dashboard'),
         ...(dashboards.length ? { dashboardFilterPattern: { includes: dashboards } } : {}),
         ...(charts.length ? { chartFilterPattern: { includes: charts } } : {}),
       },
@@ -44,15 +66,32 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
     const containers = splitCsv(form.includeContainers);
     return {
       config: {
-        type: 'StorageMetadata',
+        type: sourceConfigTypeForPipeline(pipelineType, 'storage'),
         ...(containers.length ? { containerFilterPattern: { includes: containers } } : {}),
       },
     };
   }
   const includes = splitCsv(form.includeSchemas);
+  const configType = sourceConfigTypeForPipeline(pipelineType, 'database');
+  if (pipelineType === 'lineage' || pipelineType === 'usage') {
+    return {
+      config: {
+        type: configType,
+        ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
+      },
+    };
+  }
+  if (pipelineType === 'profiler' || pipelineType === 'TestSuite') {
+    return {
+      config: {
+        type: configType,
+        ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
+      },
+    };
+  }
   return {
     config: {
-      type: 'DatabaseMetadata',
+      type: configType,
       includeViews: form.includeViews,
       includeTables: true,
       ...(includes.length ? { schemaFilterPattern: { includes } } : {}),

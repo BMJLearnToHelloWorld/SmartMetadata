@@ -85,4 +85,58 @@ describe('pipeline sourceConfig', () => {
     expect(sourceConfigTypeForKind('storage')).toBe('StorageMetadata');
   });
 
+
+  it('maps lineage/usage/profiler/TestSuite pipelineTypes to OM config types', () => {
+    expect(
+      buildSourceConfig({
+        name: 'pg-lineage',
+        pipelineType: 'lineage',
+        serviceId: 'svc1',
+        serviceKind: 'database',
+        includeViews: true,
+        includeSchemas: 'public',
+      }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseLineage',
+        schemaFilterPattern: { includes: ['public'] },
+      },
+    });
+    expect(
+      buildSourceConfig({
+        name: 'pg-usage',
+        pipelineType: 'usage',
+        serviceId: 'svc1',
+        serviceKind: 'database',
+        includeViews: true,
+        includeSchemas: '',
+      }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseUsage',
+      },
+    });
+    expect(
+      buildSourceConfig({
+        name: 'pg-profiler',
+        pipelineType: 'profiler',
+        serviceId: 'svc1',
+        serviceKind: 'database',
+        includeViews: true,
+        includeSchemas: 'public',
+      }).config.type,
+    ).toBe('Profiler');
+    expect(
+      buildSourceConfig({
+        name: 'pg-dq',
+        pipelineType: 'TestSuite',
+        serviceId: 'svc1',
+        serviceKind: 'database',
+        includeViews: true,
+        includeSchemas: '',
+      }).config.type,
+    ).toBe('TestSuite');
+  });
+
+
 });

@@ -230,8 +230,27 @@ export function cliSourceType(serviceType: string): string | undefined {
   return CLI_SOURCE_BY_SERVICE_TYPE[serviceType as SupportedServiceType];
 }
 
+/** Map catalog pipelineType + serviceType to smartmetadata-ingest source.type (OM-style). */
+export function cliSourceTypeForPipeline(
+  serviceType: string,
+  pipelineType: string | undefined,
+): string | undefined {
+  const base = cliSourceType(serviceType);
+  if (!base) {
+    return undefined;
+  }
+  if (pipelineType === 'lineage') {
+    return `${base}-lineage`;
+  }
+  if (pipelineType === 'usage') {
+    return `${base}-usage`;
+  }
+  // metadata / profiler / TestSuite use the base connector source type (OM profiler YAML).
+  return base;
+}
+
 export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: CatalogService): string {
-  const sourceType = cliSourceType(service.serviceType);
+  const sourceType = cliSourceTypeForPipeline(service.serviceType, pipeline.pipelineType);
   const config = pipeline.sourceConfig?.config ?? {};
   const header = [
     `# Generated from IngestionPipeline ${pipeline.fullyQualifiedName || pipeline.name}.`,
@@ -271,7 +290,10 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
   } else if (sourceType === 's3') {
     body += includeList(config.containerFilterPattern?.includes, 'includeContainers');
   } else {
-    body += yamlLine(2, 'includeViewLineage', config.includeViews !== false);
+    const pt = pipeline.pipelineType || 'metadata';
+    if (pt === 'metadata') {
+      body += yamlLine(2, 'includeViewLineage', config.includeViews !== false);
+    }
     body += includeList(config.schemaFilterPattern?.includes, 'includeSchemas');
   }
   body += yamlLine(2, 'storeConnectionSecrets', false);

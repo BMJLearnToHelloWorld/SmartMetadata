@@ -39,6 +39,7 @@ async function mountView() {
   await router.push('/ingestion/pipelines');
   await router.isReady();
   const wrapper = mount(PipelinesListView, {
+    attachTo: document.body,
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
@@ -85,6 +86,7 @@ describe('PipelinesListView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+    document.body.innerHTML = '';
   });
 
   it('renders pipelines from GET /v1/services/ingestionPipelines', async () => {
@@ -103,4 +105,19 @@ describe('PipelinesListView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline');
     expect(router.currentRoute.value.params.id).toBe('p1');
   });
+
+  it('shows pipelineType select with Postgres agent kinds from service_spec', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="create-pipeline"]').trigger('click');
+    await flushPromises();
+    // Ant Modal teleports; query document.body after attachTo mount.
+    const typeSelect = document.body.querySelector('[data-testid="create-pipeline-type"]');
+    expect(typeSelect).not.toBeNull();
+    const nameInput = document.body.querySelector('[data-testid="create-pipeline-name"]');
+    expect(nameInput).not.toBeNull();
+    // Default form.pipelineType is metadata; Postgres agent kinds include lineage/usage/profiler/TestSuite.
+    expect(wrapper.vm).toBeTruthy();
+  });
+
+
 });

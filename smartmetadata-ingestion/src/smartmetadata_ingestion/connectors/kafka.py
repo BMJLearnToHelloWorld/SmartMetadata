@@ -6,7 +6,10 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Kafka / Confluent-compatible connector.
+"""Kafka messaging connector (Metadata + Sampler + Connection).
+
+Official OM ``messaging/kafka`` BaseSpec is Metadata + Sampler + Connection
+(supportsProfiler on connection schema). Mirror of RedpandaSampler pattern.
 
 Discovery prefers the documented Confluent REST Proxy + Schema Registry HTTP
 APIs so unit tests can inject httpx transports. An optional kafka-python extra
@@ -238,6 +241,45 @@ class KafkaAdminTopicReader:
         return rows
 
 
+
+class TopicMessageSampler(Protocol):
+    def sample_messages(self, *, topic: str, limit: int = 10) -> Sequence[dict[str, Any]]: ...
+
+
+class SequenceTopicMessageSampler:
+    def __init__(self, *, samples: dict[str, Sequence[dict[str, Any]]] | None = None) -> None:
+        self._samples = {k: list(v) for k, v in (samples or {}).items()}
+
+    def sample_messages(self, *, topic: str, limit: int = 10) -> Sequence[dict[str, Any]]:
+        rows = self._samples.get(topic) or []
+        return list(rows)[:limit]
+
+
+class KafkaSampler:
+    """Sampler surface matching OM messaging/kafka service_spec sampler_class.
+
+    Unit BehaviorMatched via injectable TopicMessageSampler. Live kafka-python
+    consumer fetch remains Partial (same honesty bar as RedpandaSampler).
+    """
+
+    def __init__(
+        self,
+        config: SourceConfig,
+        *,
+        sampler: TopicMessageSampler | None = None,
+    ) -> None:
+        self._config = config
+        self._sampler = sampler
+
+    def sample(self, *, topic: str, limit: int = 10) -> list[dict[str, Any]]:
+        if self._sampler is None:
+            raise WorkflowError(
+                "kafka live message sampling needs an injectable sampler or "
+                "IntegrationVerified kafka consumer path (Partial until then)"
+            )
+        return [dict(row) for row in self._sampler.sample_messages(topic=topic, limit=limit)]
+
+
 @register_source("kafka")
 class KafkaSource:
     def __init__(
@@ -245,10 +287,12 @@ class KafkaSource:
         config: SourceConfig,
         *,
         reader: TopicReader | None = None,
+        sampler: TopicMessageSampler | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._config = config
         self._reader = reader
+        self._sampler = sampler
         self._transport = transport
 
     def prepare(self) -> None:
@@ -278,6 +322,9 @@ class KafkaSource:
             if callable(close) and reader is not self._reader:
                 close()
 
+    def sampler(self) -> KafkaSampler:
+        return KafkaSampler(self._config, sampler=self._sampler)
+
     def _service_record(self) -> MessagingServiceRecord:
         raw = self._config.connection
         config: dict[str, Any] = {"type": "Kafka"}
@@ -291,11 +338,35 @@ class KafkaSource:
         )
         if registry:
             config["schemaRegistryURL"] = registry
+        if raw.get("saslUsername"):
+            config["saslUsername"] = raw["saslUsername"]
         if self._config.store_connection_secrets:
-            if raw.get("saslUsername"):
-                config["saslUsername"] = raw["saslUsername"]
             if raw.get("saslPassword"):
                 config["saslPassword"] = raw["saslPassword"]
+            if raw.get("basicAuthUserInfo"):
+                config["basicAuthUserInfo"] = raw["basicAuthUserInfo"]
+        suffix = raw.get("schemaRegistryTopicSuffixName")
+        if suffix is not None and str(suffix) != "":
+            config["schemaRegistryTopicSuffixName"] = str(suffix)
+        security = raw.get("securityProtocol")
+        if security:
+            config["securityProtocol"] = str(security)
+        mechanism = raw.get("saslMechanism")
+        if mechanism:
+            config["saslMechanism"] = str(mechanism)
+        consumer = raw.get("consumerConfig")
+        if isinstance(consumer, dict) and consumer:
+            config["consumerConfig"] = dict(consumer)
+        registry_cfg = raw.get("schemaRegistryConfig")
+        if isinstance(registry_cfg, dict) and registry_cfg:
+            config["schemaRegistryConfig"] = dict(registry_cfg)
+        tfp = raw.get("topicFilterPattern")
+        if isinstance(tfp, dict):
+            config["topicFilterPattern"] = tfp
+        if raw.get("supportsMetadataExtraction") is not None:
+            config["supportsMetadataExtraction"] = bool(raw["supportsMetadataExtraction"])
+        if raw.get("supportsProfiler") is not None:
+            config["supportsProfiler"] = bool(raw["supportsProfiler"])
         connection = {"config": config} if len(config) > 1 else None
         return MessagingServiceRecord(
             name=self._config.service_name,

@@ -28,7 +28,13 @@ import {
 import type { EntityListColumn } from '@/features/crud/types';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { buildSourceConfig } from '@/ingestion/sourceConfig';
-import type { CatalogService, IngestionPipeline, PipelineFormValues } from '@/types/ingestion';
+import {
+  agentKindsForService,
+  type CatalogService,
+  type IngestionPipeline,
+  type PipelineFormValues,
+  type PipelineType,
+} from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -60,6 +66,14 @@ const form = reactive<PipelineFormValues>({
 const selectedService = computed(
   () => catalogServices.value.find((item) => item.id === form.serviceId) ?? null,
 );
+
+const availablePipelineTypes = computed<readonly PipelineType[]>(() => {
+  const service = selectedService.value;
+  if (!service) {
+    return ['metadata'] as const;
+  }
+  return agentKindsForService(service.serviceType);
+});
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -122,6 +136,10 @@ function onServiceChange(id: string): void {
   const service = catalogServices.value.find((item) => item.id === id);
   if (service) {
     form.serviceKind = service.kind;
+    const kinds = agentKindsForService(service.serviceType);
+    if (!kinds.includes(form.pipelineType as PipelineType)) {
+      form.pipelineType = kinds[0] ?? 'metadata';
+    }
   }
 }
 
@@ -135,7 +153,7 @@ async function onCreate(): Promise<void> {
   try {
     const created = await createIngestionPipeline({
       name: form.name.trim(),
-      pipelineType: 'metadata',
+      pipelineType: form.pipelineType || 'metadata',
       service: { id: service.id, type: entityTypeForKind(service.kind) },
       sourceConfig: buildSourceConfig({ ...form, serviceKind: service.kind }),
       airflowConfig: {
@@ -257,7 +275,22 @@ onMounted(() => {
           </Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item v-if="form.serviceKind === 'database'">
+      <Form.Item
+        :label="t('ingestion.pipelines.pipelineType')"
+        :rules="requiredField(t, t('ingestion.pipelines.pipelineType'))"
+        :extra="t('ingestion.pipelines.pipelineTypeHelp')"
+      >
+        <Select
+          v-model:value="form.pipelineType"
+          data-testid="create-pipeline-type"
+          :placeholder="t('ingestion.pipelines.selectPipelineTypePlaceholder')"
+        >
+          <Select.Option v-for="pt in availablePipelineTypes" :key="pt" :value="pt">
+            {{ t(`ingestion.pipelines.types.${pt}`) }}
+          </Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item v-if="form.serviceKind === 'database' && form.pipelineType === 'metadata'">
         <Checkbox v-model:checked="form.includeViews" data-testid="create-pipeline-include-views">
           {{ t('ingestion.pipelines.includeViews') }}
         </Checkbox>

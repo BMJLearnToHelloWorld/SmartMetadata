@@ -193,3 +193,74 @@ def test_mysql_live_reader_requires_extra(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(WorkflowError, match="smartmetadata-ingestion\\[mysql\\]"):
         _pymysql_connect({"hostPort": "localhost:3306"})
+
+
+from smartmetadata_ingestion.connectors.mysql_common import (
+    LineageEdgeRow as MyLineageEdgeRow,
+    ProfileStatRow as MyProfileStatRow,
+    SampleRow as MySampleRow,
+    SequenceLineageReader as MySequenceLineageReader,
+    SequenceProfileReader as MySequenceProfileReader,
+    SequenceUsageReader as MySequenceUsageReader,
+    UsageEventRow as MyUsageEventRow,
+    run_connection_test as my_run_connection_test,
+)
+from smartmetadata_ingestion.connectors.mysql_lineage import MysqlLineageSource
+from smartmetadata_ingestion.connectors.mysql_profiler import MysqlProfilerInterface, MysqlSampler
+from smartmetadata_ingestion.connectors.mysql_quality import MysqlTestSuiteInterface
+from smartmetadata_ingestion.connectors.mysql_usage import MysqlUsageSource
+from smartmetadata_ingestion.connectors.mysql_data_diff import MysqlDataDiff, MysqlTableParameter
+from smartmetadata_ingestion.records import ProfileRecord
+
+
+def _my_conn(**extra):
+    base = {"hostPort": "localhost:3306", "username": "root", "password": "secret", "databaseName": "shop"}
+    base.update(extra)
+    return base
+
+
+def test_mysql_common_connection_test_requires_fields() -> None:
+    with pytest.raises(WorkflowError, match="hostPort"):
+        my_run_connection_test({"username": "root"})
+    # databaseName may or may not be required in mariadb-derived common — accept hostPort+username minimum
+    steps = my_run_connection_test(_my_conn())
+    assert "CheckHostPort" in steps
+
+
+def test_mysql_lineage_source_injected_edges() -> None:
+    source = MysqlLineageSource(
+        SourceConfig(type="mysql-lineage", service_name="my", connection=_my_conn()),
+        reader=MySequenceLineageReader(
+            [MyLineageEdgeRow("shop", "orders", "shop", "orders_v", "select 1")]
+        ),
+    )
+    # mysql lineage from mariadb may use schema-only edges — adapt if dataclass differs
+    source.prepare()
+    edges = list(source.produce())
+    assert len(edges) == 1
+
+
+def test_mysql_profiler_sampler_quality_usage_data_diff() -> None:
+    # ProfileReader signature from mariadb: profile_table(schema, table) without database
+    reader = MySequenceProfileReader(
+        stats=[MyProfileStatRow(None, row_count=5), MyProfileStatRow("id", null_count=0, distinct_count=5)],
+        samples=[MySampleRow({"id": 1})],
+    )
+    profile = MysqlProfilerInterface(reader).profile(
+        service="my", database="shop", schema="shop", table="orders", timestamp=1
+    )
+    assert isinstance(profile, ProfileRecord)
+    assert MysqlSampler(reader).sample("shop", "orders", limit=1) == [{"id": 1}]
+    assert MysqlTestSuiteInterface(execute=lambda e: True).run_test_case(
+        test_case_fqn="tc", timestamp=1, expression="select 1"
+    ).test_case_status == "Success"
+    usage = MysqlUsageSource(
+        SourceConfig(type="mysql-usage", service_name="my", connection=_my_conn()),
+        reader=MySequenceUsageReader([MyUsageEventRow("shop", "shop", "orders", "2026-10-30", 2)]),
+    )
+    usage.prepare()
+    assert list(usage.produce())[0].count == 2
+    param = MysqlTableParameter.build(_my_conn(), database="shop", schema="shop", table="orders", key_columns=["id"])
+    assert param["dialect"] == "mysql"
+    diff = MysqlDataDiff(fetch_keys=lambda side: [1] if side["table"] == "orders" else [1, 2])
+    assert diff.compare(param, {**param, "table": "other"})["extraRight"] == 1
