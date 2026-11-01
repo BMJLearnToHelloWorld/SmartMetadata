@@ -7,16 +7,15 @@ import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
 import { Card, Col, Row, Typography } from 'ant-design-vue';
 import { SETTINGS_CATEGORIES } from '@/settings/hub';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
 
 const { t } = useI18n();
 </script>
 
 <template>
-  <div class="settings-hub" data-testid="settings-hub">
-    <Typography.Title :level="4" data-testid="settings-hub-title">{{ t('settings.title') }}</Typography.Title>
-    <Typography.Paragraph type="secondary" data-testid="settings-hub-lead">
-      {{ t('settings.lead') }}
-    </Typography.Paragraph>
+  <PageLayout test-id="settings-hub">
+    <PageHeader :header="t('settings.title')" :sub-header="t('settings.lead')" test-id="settings-hub-title" />
     <Row :gutter="[16, 16]">
       <Col v-for="category in SETTINGS_CATEGORIES" :key="category.key" :xs="24" :md="12" :xl="8">
         <Card class="settings-hub__card" :data-testid="`settings-category-${category.key}`" size="small">
@@ -44,7 +43,7 @@ const { t } = useI18n();
         </Card>
       </Col>
     </Row>
-  </div>
+  </PageLayout>
 </template>
 
 <style scoped>
@@ -60,14 +59,14 @@ const { t } = useI18n();
   gap: 8px;
 }
 .settings-hub__residual {
-  color: #64748b;
+  color: var(--sm-text-secondary);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .settings-hub__residual-why {
-  color: #94a3b8;
+  color: var(--sm-text-tertiary);
   font-size: 12px;
 }
 </style>

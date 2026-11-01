@@ -106,11 +106,15 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="nav-logout"]').text()).toContain('Logout');
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
-    expect(wrapper.find('.shell__search input').attributes('placeholder')).toBe(
+    expect(wrapper.find('[data-testid="global-search"]').attributes('placeholder')).toBe(
       'Search for Data Assets',
     );
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="notifications-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="app-mode-residual"]').exists()).toBe(true);
     expect(wrapper.find('.shell__sider').classes().join(' ')).not.toContain('ant-layout-sider-dark');
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
@@ -134,7 +138,7 @@ describe('AppShell', () => {
     const { wrapper, router } = await mountShell();
     await router.push({ name: 'search', query: { q: 'orders', entityType: 'table' } });
     await flushPromises();
-    const search = wrapper.find('.shell__search input');
+    const search = wrapper.find('[data-testid="global-search"]');
     expect(search.exists()).toBe(true);
     await search.setValue('customers');
     await search.trigger('keydown.enter');
@@ -149,7 +153,7 @@ describe('AppShell', () => {
       query: { q: 'orders', entityType: 'table', sort: 'popularity', estate: 'databases' },
     });
     await flushPromises();
-    const search = wrapper.find('.shell__search input');
+    const search = wrapper.find('[data-testid="global-search"]');
     await search.setValue('customers');
     await search.trigger('keydown.enter');
     await flushPromises();

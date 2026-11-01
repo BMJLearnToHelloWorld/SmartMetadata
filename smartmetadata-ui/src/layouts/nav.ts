@@ -144,12 +144,56 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'observability-alert': 'observability-alerts',
   'ingestion-service': 'ingestion-services',
   'ingestion-pipeline': 'ingestion-pipelines',
+  'ingestion-services': 'admin-settings',
+  'ingestion-pipelines': 'admin-settings',
+  'announcements': 'admin-settings',
+  'settings-preferences-appearance': 'admin-settings',
+  'settings-preferences-email': 'admin-settings',
+  'settings-preferences-login': 'admin-settings',
+  'settings-preferences-health': 'admin-settings',
+  'settings-preferences-profiler': 'admin-settings',
+  'settings-preferences-dq-dimensions': 'admin-settings',
+  'settings-preferences-search': 'admin-settings',
+  'settings-preferences-search-entity': 'admin-settings',
+  'settings-preferences-lineage': 'admin-settings',
+  'settings-preferences-om-url': 'admin-settings',
+  'settings-preferences-entity-rules': 'admin-settings',
+  'settings-preferences-learning': 'admin-settings',
+  'settings-preferences-app-mode': 'admin-settings',
+  'settings-preferences-glossary': 'admin-settings',
+  'settings-preferences-time-format': 'admin-settings',
+  'admin-apps': 'admin-settings',
   task: 'tasks',
 };
 
+/**
+ * Hub attribution, stated once so it is not misread: admin-*, ingestion-*
+ * and announcements routes have no top-level nav group by design —
+ * they are reached from the Settings hub — so they highlight
+ * `admin-settings` as the hub entry, not as a claim that they live on
+ * the Settings page itself. Tasks and activity keep no highlight (no
+ * nav group, no hub entry); that is the honest state and a Stage 8
+ * collaboration-navigation decision, not a silent omission.
+ */
 export function selectedNavKey(routeName: string | symbol | undefined | null): string {
-  const name = String(routeName ?? 'home');
-  return DETAIL_TO_LIST[name] ?? name;
+  const visited = new Set<string>();
+  let current = String(routeName ?? 'home');
+  while (DETAIL_TO_LIST[current] && !visited.has(current)) {
+    visited.add(current);
+    current = DETAIL_TO_LIST[current];
+  }
+  return current;
+}
+
+/**
+ * Permission-based nav filtering placeholder. The official shell
+ * greys or hides entries by role, but no product role/permission
+ * endpoint is wired to the shell, so no restriction is faked here:
+ * the full entry list is returned unchanged, and Stage 8 plugs a real
+ * permission source into this exact function.
+ */
+export function filterNavByPermission<T>(entries: readonly T[]): readonly T[] {
+  return entries;
 }
 
 export function sectionKeyForRoute(routeName: string | symbol | undefined | null): string | null {

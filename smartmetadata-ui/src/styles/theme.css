@@ -2,9 +2,10 @@
  * Copyright 2026 SmartMetadata authors.
  * Licensed under the Apache License, Version 2.0.
  *
- * Shared ant-design-vue look: OM brand-600 #1570ef + iPlatform soul accents
- * (radius 6, quiet shadows, denser chrome, icore-inspired neutrals).
- * Do not import @icore or openmetadata-ui CSS.
+ * Shared ant-design-vue look, mirrored from theme/tokens.ts, which maps
+ * official OpenMetadata styles/tokens.css. Do not import @icore or
+ * openmetadata-ui CSS. Dark values are a CSS hook only — no Settings
+ * appearance UI wires data-theme yet (residual).
  * Dark values are a CSS hook only — no Settings appearance UI.
  */
 
@@ -12,37 +13,51 @@
   color-scheme: light;
   --sm-bg-base: #ffffff;
   --sm-bg-container: #ffffff;
-  --sm-bg-elevated: #f7f8fa;
-  --sm-content-bg: #f0f2f5;
+  --sm-bg-elevated: #fafafa;
+  --sm-content-bg: #fafafa;
   --sm-text-primary: #181d27;
   --sm-text-secondary: #414651;
   --sm-text-tertiary: #535862;
   --sm-text-quaternary: #717680;
-  --sm-border-color: #f0f0f0;
-  --sm-border-secondary: #f0f0f0;
+  --sm-border-color: #d5d7da;
+  --sm-border-secondary: #e9eaeb;
   --sm-layout-bg: #ffffff;
   --sm-sider-bg: #ffffff;
-  --sm-trigger-bg: #f4f4f5;
-  --sm-trigger-hover-bg: #e3e6e8;
+  --sm-trigger-bg: #f5f5f5;
+  --sm-trigger-hover-bg: #e9eaeb;
   --sm-menu-hover-bg: #eff8ff;
-  --sm-row-hover-bg: #f7f8fa;
+  --sm-row-hover-bg: #fafafa;
   --sm-row-selected-bg: #eff8ff;
-  --sm-table-header-bg: #f7f8fa;
+  --sm-table-header-bg: #fafafa;
   --sm-color-primary: #1570ef;
   --sm-color-primary-hover: #175cd3;
   --sm-color-primary-active: #1849a9;
   --sm-color-primary-bg: #eff8ff;
   --sm-color-primary-bg-hover: #d1e9ff;
-  --sm-color-success: #039855;
+  --sm-color-success: #079455;
+  --sm-color-visualization-green: #039855;
   --sm-color-warning: #dc6803;
   --sm-color-error: #d92d20;
   --sm-overlay: rgba(10, 13, 18, 0.55);
   --sm-focus-ring: rgba(21, 112, 239, 0.22);
   --sm-border-radius: 6px;
-  --sm-radius-card: 6px;
-  --sm-radius-modal: 6px;
-  --sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06);
-  --sm-shadow-raised: 0 6px 16px rgba(15, 17, 21, 0.08), 0 3px 6px -2px rgba(15, 17, 21, 0.06);
+  --sm-border-tertiary: #f5f5f5;
+  --sm-border-hover: #a4a7ae;
+  --sm-radius-none: 0px;
+  --sm-radius-xs: 2px;
+  --sm-radius-sm: 4px;
+  --sm-radius-md: 6px;
+  --sm-radius-lg: 8px;
+  --sm-radius-xl: 12px;
+  --sm-radius-2xl: 16px;
+  --sm-radius-3xl: 24px;
+  --sm-radius-full: 9999px;
+  --sm-radius-card: 12px;
+  --sm-radius-modal: 16px;
+  --sm-shadow-card: 0px 1px 2px rgba(10, 13, 18, 0.05);
+  --sm-shadow-raised: 0px 12px 16px -4px rgba(10, 13, 18, 0.08), 0px 4px 6px -2px rgba(10, 13, 18, 0.03);
+  --sm-shadow-overlay: 0px 20px 24px -4px rgba(10, 13, 18, 0.08), 0px 8px 8px -4px rgba(10, 13, 18, 0.03);
+  
 }
 
 :root[data-theme='dark'] {
@@ -81,7 +96,7 @@ body,
 body {
   background: var(--sm-content-bg);
   color: var(--sm-text-primary);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 :focus-visible {
@@ -126,7 +141,7 @@ body {
 
 .ant-modal .ant-modal-content {
   border-radius: var(--sm-radius-modal);
-  box-shadow: var(--sm-shadow-raised);
+  box-shadow: var(--sm-shadow-overlay);
   overflow: hidden;
 }
 
@@ -259,7 +274,7 @@ body {
 .ant-select-dropdown,
 .ant-picker-dropdown {
   border-radius: var(--sm-border-radius);
-  box-shadow: var(--sm-shadow-raised);
+  box-shadow: var(--sm-shadow-overlay);
 }
 
 .ant-dropdown-menu-item:hover,
@@ -340,7 +355,7 @@ body {
 
 .ant-empty-description {
   color: var(--sm-text-tertiary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
 }
 

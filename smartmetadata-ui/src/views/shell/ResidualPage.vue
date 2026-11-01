@@ -6,7 +6,9 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
-import { Card, Empty, Typography } from 'ant-design-vue';
+import { Card, Empty } from 'ant-design-vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -18,9 +20,10 @@ const testId = computed(() => String(route.meta.testId || 'residual-page'));
 </script>
 
 <template>
-  <Card :data-testid="testId">
-    <Typography.Title :level="4">{{ title }}</Typography.Title>
-    <Typography.Paragraph type="secondary">{{ lead }}</Typography.Paragraph>
-    <Empty data-testid="residual-empty" :description="empty" />
-  </Card>
+  <PageLayout :document-title="title" :test-id="testId">
+    <PageHeader :header="title" :sub-header="lead" :test-id="testId" />
+    <Card :data-testid="`${testId}-card`">
+      <Empty data-testid="residual-empty" :description="empty" />
+    </Card>
+  </PageLayout>
 </template>

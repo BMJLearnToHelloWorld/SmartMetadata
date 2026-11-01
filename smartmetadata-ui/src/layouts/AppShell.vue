@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Dropdown, Input, Layout, Menu, Select, Space, message } from 'ant-design-vue';
+import { Layout, Select, Space, Tag, Tooltip, message } from 'ant-design-vue';
 import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
@@ -14,22 +14,51 @@ import {
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
-  NAV_ENTRIES,
-  NAV_FOOTER_ENTRIES,
   sectionKeyForRoute,
   selectedNavKey,
 } from '@/layouts/nav';
-import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
+import { useShellConfigStore } from '@/stores/shellConfig';
+import { useShellPreferencesStore } from '@/stores/shellPreferences';
+import DomainSelect from '@/components/shared/DomainSelect.vue';
+import GlobalSearchBar from '@/components/shared/GlobalSearchBar.vue';
+import HelpMenu from '@/components/shared/HelpMenu.vue';
+import NotificationBox from '@/components/shared/NotificationBox.vue';
+import SidebarNav from '@/components/shared/SidebarNav.vue';
+import UserMenu from '@/components/shared/UserMenu.vue';
+import VersionTag from '@/components/shared/VersionTag.vue';
 
+/**
+ * Application shell, mirroring the official currently-running shell
+ * (LeftSidebar + NavBar) as a Vue bridge — not the un-enabled new
+ * Sidebar, which stays out of this tree.
+ *
+ * Sider width follows the official LeftSidebar classes: 228px expanded,
+ * 72px collapsed (the product's previous 64px collapsed width was a
+ * deviation, fixed here). The header carries, in order: the global
+ * search bar (hidden on home), Help, notifications, domain scope,
+ * server version, an AppMode residual marker, locale, and the user
+ * menu. Header height 56px is kept as an Ant bridge value: the
+ * official layout-header-height / navbar-height relationship was not
+ * verified in this snapshot, so it is flagged residual, not changed
+ * blindly. Startup fetches server version + lineage settings through
+ * the shell config store; the limit configuration has no product
+ * endpoint, so no LimitBanner is rendered (absence recorded, not
+ * papered over).
+ */
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const shellConfig = useShellConfigStore();
+const shellPreferences = useShellPreferencesStore();
 const { t, locale } = useI18n();
 
-const collapsed = ref(false);
 const openKeys = ref<string[]>(defaultOpenNavKeys());
 
+const collapsed = computed({
+  get: () => shellPreferences.sidebarCollapsed,
+  set: (value: boolean) => shellPreferences.setSidebarCollapsed(value),
+});
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
 const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
@@ -38,9 +67,13 @@ const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
 const profileUserId = computed(() => auth.user?.id || '');
 
 onMounted(() => {
+  shellPreferences.hydrate();
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
+  // Shell config errors are recorded on the store; a failed version or
+  // lineage fetch must not break shell startup.
+  void shellConfig.loadShellConfig().catch(() => undefined);
 });
 
 watch(
@@ -67,18 +100,17 @@ watch(collapsed, (isCollapsed) => {
   openKeys.value = section && !next.includes(section) ? [...next, section] : next;
 });
 
-function onMenuClick({ key }: { key: string | number }): void {
-  const name = String(key);
-  if (isNavSectionKey(name)) {
+function onSidebarClick(key: string): void {
+  if (isNavSectionKey(key)) {
     return;
   }
-  if (isNavActionKey(name)) {
-    if (name === 'logout') {
+  if (isNavActionKey(key)) {
+    if (key === 'logout') {
       void onLogout();
     }
     return;
   }
-  void router.push({ name });
+  void router.push({ name: key });
 }
 
 function onSearch(value: string): void {
@@ -99,23 +131,14 @@ function onLocaleChange(value: unknown): void {
   }
 }
 
-function popupParent(node: HTMLElement): HTMLElement {
-  return node.parentElement ?? document.body;
+function onUserProfile(): void {
+  if (profileUserId.value) {
+    void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
+  }
 }
 
-function onUserMenu({ key }: { key: string | number }): void {
-  const action = String(key);
-  if (action === 'profile' && profileUserId.value) {
-    void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
-    return;
-  }
-  if (action === 'settings') {
-    void router.push({ name: 'admin-settings' });
-    return;
-  }
-  if (action === 'logout') {
-    void onLogout();
-  }
+function onUserSettings(): void {
+  void router.push({ name: 'admin-settings' });
 }
 
 async function onLogout(): Promise<void> {
@@ -136,77 +159,38 @@ async function onLogout(): Promise<void> {
       class="shell__sider"
       breakpoint="lg"
       collapsible
-      :collapsed-width="64"
+      :collapsed-width="72"
       :width="228"
       theme="light"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
-        <span class="shell__brand-name">{{ collapsed ? 'SM' : t('product.name') }}</span>
+        <span class="shell__brand-name">{{ collapsed ? t('product.monogram') : t('product.name') }}</span>
         <span v-if="!collapsed" class="shell__brand-sub">{{ t('product.subtitle') }}</span>
       </div>
-      <div class="shell__nav">
-        <Menu
-          class="shell__nav-main"
-          theme="light"
-          mode="inline"
-          :inline-collapsed="collapsed"
-          :selected-keys="selectedKeys"
-          v-model:openKeys="openKeys"
-          @click="onMenuClick"
-        >
-          <template v-for="entry in NAV_ENTRIES" :key="entry.key">
-            <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
-              <template #icon>
-                <component :is="navIcon(entry.key)" />
-              </template>
-              {{ t(entry.titleKey) }}
-            </Menu.Item>
-            <Menu.SubMenu v-else-if="entry.kind === 'section'" :key="entry.key" :data-testid="entry.testId">
-              <template #icon>
-                <component :is="navIcon(entry.key)" />
-              </template>
-              <template #title>{{ t(entry.titleKey) }}</template>
-              <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
-                <template #icon>
-                  <component :is="navIcon(item.key)" />
-                </template>
-                {{ t(item.titleKey) }}
-              </Menu.Item>
-            </Menu.SubMenu>
-          </template>
-        </Menu>
-        <Menu
-          class="shell__nav-footer"
-          data-testid="nav-footer"
-          theme="light"
-          mode="inline"
-          :inline-collapsed="collapsed"
-          :selected-keys="selectedKeys"
-          :selectable="true"
-          @click="onMenuClick"
-        >
-          <Menu.Item v-for="entry in NAV_FOOTER_ENTRIES" :key="entry.key" :data-testid="entry.testId">
-            <template #icon>
-              <component :is="navIcon(entry.key)" />
-            </template>
-            {{ t(entry.titleKey) }}
-          </Menu.Item>
-        </Menu>
-      </div>
+      <SidebarNav
+        :selected-key="selectedKeys[0]"
+        :open-keys="openKeys"
+        :collapsed="collapsed"
+        @click="onSidebarClick"
+        @update:open-keys="(keys) => (openKeys = keys)"
+      />
     </Layout.Sider>
     <Layout>
       <Layout.Header class="shell__header">
-        <Input.Search
+        <GlobalSearchBar
           v-if="!hideHeaderSearch"
-          data-testid="global-search"
-          class="shell__search"
-          :placeholder="t('chrome.searchPlaceholder')"
-          allow-clear
-          :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
+          :initial-query="typeof route.query.q === 'string' ? route.query.q : ''"
           @search="onSearch"
         />
         <div v-else class="shell__search-spacer" />
         <Space size="middle" class="shell__toolbar">
+          <HelpMenu :version="shellConfig.displayVersion" />
+          <NotificationBox />
+          <DomainSelect />
+          <VersionTag :version="shellConfig.displayVersion" />
+          <Tooltip :title="t('chrome.appModeResidual')">
+            <Tag data-testid="app-mode-residual">{{ t('chrome.appMode') }}</Tag>
+          </Tooltip>
           <Select
             data-testid="locale-switcher"
             class="shell__locale"
@@ -217,27 +201,13 @@ async function onLogout(): Promise<void> {
             <Select.Option value="en-US">{{ t('chrome.localeEn') }}</Select.Option>
             <Select.Option value="zh-CN">{{ t('chrome.localeZh') }}</Select.Option>
           </Select>
-          <Dropdown
-            :trigger="['click']"
-            :get-popup-container="popupParent"
-          >
-            <Button data-testid="user-menu-trigger" :aria-label="t('chrome.userMenu')">
-              {{ displayName }}
-            </Button>
-            <template #overlay>
-              <Menu data-testid="user-menu" @click="onUserMenu">
-                <Menu.Item v-if="profileUserId" key="profile" data-testid="user-profile-item">
-                  {{ t('chrome.viewProfile') }}
-                </Menu.Item>
-                <Menu.Item key="settings" data-testid="user-settings-item">
-                  {{ t('chrome.settings') }}
-                </Menu.Item>
-                <Menu.Item key="logout" data-testid="logout-button">
-                  {{ t('chrome.logout') }}
-                </Menu.Item>
-              </Menu>
-            </template>
-          </Dropdown>
+          <UserMenu
+            :display-name="displayName"
+            :profile-user-id="profileUserId"
+            @profile="onUserProfile"
+            @settings="onUserSettings"
+            @logout="onLogout"
+          />
         </Space>
       </Layout.Header>
       <Layout.Content class="shell__content" :class="{ 'shell__content--flush': flushContent }">
@@ -262,21 +232,6 @@ async function onLogout(): Promise<void> {
   height: 100%;
   overflow: hidden;
   background: var(--sm-sider-bg);
-}
-.shell__nav {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.shell__nav-main {
-  flex: 1;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.shell__nav-footer {
-  flex-shrink: 0;
-  border-top: 1px solid var(--sm-border-secondary);
 }
 .shell__sider :deep(.ant-layout-sider-trigger) {
   height: 40px;
@@ -317,7 +272,7 @@ async function onLogout(): Promise<void> {
   font-weight: 650;
   letter-spacing: 0.01em;
   line-height: 1.2;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--sm-color-primary);
 }
 .shell__brand-sub {
@@ -336,10 +291,6 @@ async function onLogout(): Promise<void> {
   background: var(--sm-layout-bg);
   padding-inline: 20px;
   border-bottom: 1px solid var(--sm-border-secondary);
-}
-.shell__search {
-  max-width: 520px;
-  flex: 1;
 }
 .shell__toolbar {
   flex-shrink: 0;

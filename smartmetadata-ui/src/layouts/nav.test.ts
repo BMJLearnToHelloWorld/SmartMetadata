@@ -97,6 +97,13 @@ describe('nav IA', () => {
     expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');
     expect(selectedNavKey('governance-domain')).toBe('governance-domains');
     expect(selectedNavKey('governance-data-product')).toBe('governance-data-products');
+    expect(selectedNavKey('ingestion-services')).toBe('admin-settings');
+    expect(selectedNavKey('ingestion-service')).toBe('admin-settings');
+    expect(selectedNavKey('ingestion-pipelines')).toBe('admin-settings');
+    expect(selectedNavKey('ingestion-pipeline')).toBe('admin-settings');
+    expect(selectedNavKey('announcements')).toBe('admin-settings');
+    expect(selectedNavKey('activity')).toBe('activity');
+    expect(selectedNavKey('tasks')).toBe('tasks');
   });
 
   it('opens the section that owns the current route', () => {
