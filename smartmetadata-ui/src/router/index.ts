@@ -78,6 +78,9 @@ import AnnouncementsListView from '@/views/collaboration/AnnouncementsListView.v
 import TaskDetailView from '@/views/collaboration/TaskDetailView.vue';
 import TasksListView from '@/views/collaboration/TasksListView.vue';
 import ResidualPage from '@/views/shell/ResidualPage.vue';
+import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import NotFoundView from '@/views/shell/NotFoundView.vue';
+import { resolveGuard } from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -274,17 +277,24 @@ export const router = createRouter({
         { path: 'tasks', name: 'tasks', component: TasksListView },
         { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
         { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
+        { path: 'forbidden', name: 'forbidden', component: ForbiddenView },
+        { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },
       ],
     },
   ],
 });
 
 router.beforeEach((to) => {
-  if (to.meta.public) {
-    return true;
+  const decision = resolveGuard({
+    isPublic: to.meta.public === true,
+    hasSession: loadSession(window.localStorage) !== null,
+    fullPath: to.fullPath,
+  });
+  if (decision.kind === 'login') {
+    return { name: 'login', query: { redirect: decision.redirect } };
   }
-  if (!loadSession(window.localStorage)) {
-    return { name: 'login', query: { redirect: to.fullPath } };
+  if (decision.kind === 'forbidden') {
+    return { name: 'forbidden' };
   }
   return true;
 });

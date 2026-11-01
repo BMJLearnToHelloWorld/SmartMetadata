@@ -9,8 +9,25 @@
  */
 
 const zhCN = {
+  shared: {
+    beta: 'Beta',
+    loading: '加载中',
+    empty: '暂无数据',
+    loadFailed: '加载失败',
+    retry: '重试',
+    filters: '筛选',
+    clearFilters: '清除筛选',
+  },
+  errors: {
+    forbidden: '无权访问',
+    forbiddenLead: '你无权访问此页面。',
+    notFound: '页面不存在',
+    notFoundLead: '你要找的页面不存在。',
+    backHome: '返回主页',
+  },
   product: {
     name: 'SmartMetadata',
+    monogram: 'SM',
     subtitle: '目录',
   },
   nav: {
@@ -159,6 +176,26 @@ const zhCN = {
     },
   },
   chrome: {
+    help: '帮助',
+    helpTour: '产品导览',
+    helpTourResidual: '产品导览未接入本控制台。',
+    helpDocs: '文档',
+    helpApi: 'API 参考',
+    helpApiResidual: 'API 参考页面未接入本控制台。',
+    helpSlack: 'Slack 支持',
+    helpVersion: '版本 {version}',
+    helpVersionUnknown: '版本未知',
+    notifications: '通知',
+    notificationsTasks: '任务',
+    notificationsConversations: '对话',
+    notificationsEmpty: '暂无通知收件箱或 WebSocket 推送，请使用活动与任务页面。',
+    notificationsResidual: '通知为残留：未接入 WebSocket 推送。',
+    domainAll: '全部域',
+    domainSelect: '域',
+    domainLoadFailed: '域加载失败；范围保持全部域。',
+    appMode: '应用模式',
+    appModeResidual: '应用模式切换未接入本控制台。',
+    versionLabel: '版本',
     searchPlaceholder: '搜索数据资产',
     logout: '退出',
     logoutFailed: '服务端退出失败；已清除本地会话',

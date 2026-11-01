@@ -253,9 +253,9 @@ watch(
   display: flex;
   flex-direction: column;
   min-height: 420px;
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color);
   border-radius: var(--sm-radius-card, 6px);
-  background: var(--sm-content-bg, #f0f2f5);
+  background: var(--sm-content-bg);
 }
 .lineage-graph--page {
   flex: 1 1 auto;
@@ -272,18 +272,18 @@ watch(
   height: 100vh;
   min-height: 100vh;
   border-radius: 0;
-  background: var(--sm-content-bg, #f0f2f5);
+  background: var(--sm-content-bg);
 }
 .lineage-graph__toolbar {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--sm-border-secondary, #f0f0f0);
-  background: var(--sm-bg-container, #fff);
+  border-bottom: 1px solid var(--sm-border-secondary);
+  background: var(--sm-bg-container);
 }
 .lineage-graph__find {
   min-width: 220px;
 }
 .lineage-graph__hint {
-  color: var(--sm-text-tertiary, #535862);
+  color: var(--sm-text-tertiary);
   font-size: 12px;
 }
 .lineage-graph :deep(.vue-flow) {
@@ -294,29 +294,29 @@ watch(
   stroke-linecap: round;
 }
 .lineage-graph :deep(.lineage-edge--active .vue-flow__edge-path) {
-  stroke: var(--sm-color-warning, #dc6803);
+  stroke: var(--sm-color-warning);
 }
 .lineage-graph :deep(.lineage-edge--column .vue-flow__edge-path) {
-  stroke: var(--sm-color-primary, #1570ef);
+  stroke: var(--sm-color-primary);
 }
 .lineage-graph :deep(.vue-flow__controls) {
   overflow: hidden;
-  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius, 6px);
   box-shadow: var(--sm-shadow-card);
 }
 .lineage-graph :deep(.vue-flow__controls-button) {
   width: 28px;
   height: 28px;
-  border-color: var(--sm-border-secondary, #f0f0f0);
-  background: var(--sm-bg-container, #fff);
+  border-color: var(--sm-border-secondary);
+  background: var(--sm-bg-container);
 }
 .lineage-graph :deep(.vue-flow__controls-button:hover) {
-  background: var(--sm-color-primary-bg, #eff8ff);
+  background: var(--sm-color-primary-bg);
 }
 .lineage-graph :deep(.vue-flow__minimap) {
   overflow: hidden;
-  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-border-radius, 6px);
 }
 </style>

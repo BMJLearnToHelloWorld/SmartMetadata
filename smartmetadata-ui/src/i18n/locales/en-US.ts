@@ -9,8 +9,25 @@
  */
 
 const enUS = {
+  shared: {
+    beta: 'Beta',
+    loading: 'Loading',
+    empty: 'No data',
+    loadFailed: 'Failed to load',
+    retry: 'Retry',
+    filters: 'Filters',
+    clearFilters: 'Clear filters',
+  },
+  errors: {
+    forbidden: 'Access not allowed',
+    forbiddenLead: 'You do not have access to this page.',
+    notFound: 'Page not found',
+    notFoundLead: 'The page you are looking for does not exist.',
+    backHome: 'Back to Home',
+  },
   product: {
     name: 'SmartMetadata',
+    monogram: 'SM',
     subtitle: 'Catalog',
   },
   nav: {
@@ -159,6 +176,26 @@ const enUS = {
     },
   },
   chrome: {
+    help: 'Help',
+    helpTour: 'Product tour',
+    helpTourResidual: 'Product tour is not wired in this console.',
+    helpDocs: 'Documentation',
+    helpApi: 'API reference',
+    helpApiResidual: 'API reference page is not wired in this console.',
+    helpSlack: 'Slack support',
+    helpVersion: 'Version {version}',
+    helpVersionUnknown: 'Version unknown',
+    notifications: 'Notifications',
+    notificationsTasks: 'Tasks',
+    notificationsConversations: 'Conversations',
+    notificationsEmpty: 'No notification inbox or websocket feed. Use Activity and Tasks pages.',
+    notificationsResidual: 'Notifications are residual: no websocket feed is wired.',
+    domainAll: 'All Domains',
+    domainSelect: 'Domain',
+    domainLoadFailed: 'Domains could not be loaded; scope stays All Domains.',
+    appMode: 'App mode',
+    appModeResidual: 'App mode switching is not wired in this console.',
+    versionLabel: 'Version',
     searchPlaceholder: 'Search for Data Assets',
     logout: 'Logout',
     logoutFailed: 'Server logout failed; local session cleared',
