@@ -29,6 +29,8 @@ import { listTestDefinitions } from '@/api/testDefinitions';
 import { isTestSuiteSearchListAvailable, listTestSuites } from '@/api/testSuites';
 import type { SearchFacet } from '@/catalog/searchFacets';
 import SmChart from '@/features/charts/SmChart.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
 import { namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
@@ -230,13 +232,11 @@ onMounted(() => {
 </script>
 
 <template>
+  <PageLayout test-id="dq-landing-layout">
   <div class="dq-landing" data-testid="dq-landing">
     <div class="dq-landing__head">
-      <div>
-        <Typography.Title :level="4" data-testid="dq-landing-title">{{ t('quality.landing.title') }}</Typography.Title>
-        <Typography.Paragraph type="secondary" data-testid="dq-landing-lead">
-          {{ t('quality.landing.lead') }}
-        </Typography.Paragraph>
+      <div data-testid="dq-landing-title">
+        <PageHeader :header="t('quality.landing.title')" :sub-header="t('quality.landing.lead')" />
       </div>
       <Dropdown :trigger="['click']">
         <Button type="primary" data-testid="dq-landing-add">
@@ -253,7 +253,7 @@ onMounted(() => {
     </div>
 
     <Tabs :active-key="activeTab" data-testid="dq-landing-tabs" @change="onTabChange">
-      <Tabs.TabPane key="summary" :tab="t('quality.landing.tabs.summary')" />
+      <Tabs.TabPane key="dashboard" :tab="t('quality.landing.tabs.dashboard')" />
       <Tabs.TabPane key="test-cases" :tab="t('quality.landing.tabs.testCases')" />
       <Tabs.TabPane key="test-suites" :tab="t('quality.landing.tabs.testSuites')" />
     </Tabs>
@@ -339,7 +339,7 @@ onMounted(() => {
       :message="t('quality.landing.residualFilterApply')"
     />
 
-    <div v-if="activeTab === 'summary'">
+    <div v-if="activeTab === 'dashboard'">
       <Spin :spinning="loading">
         <Space direction="vertical" size="middle" style="width: 100%">
           <Alert
@@ -491,6 +491,7 @@ onMounted(() => {
       :initial-sub-tab="typeof route.query.subTab === 'string' ? route.query.subTab : 'table-suites'"
     />
   </div>
+  </PageLayout>
 </template>
 
 <style scoped>

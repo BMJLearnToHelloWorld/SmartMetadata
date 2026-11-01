@@ -16,6 +16,7 @@ import TestCaseDetailView from './TestCaseDetailView.vue';
 
 const getTestCase = vi.fn();
 const listTestCaseResults = vi.fn();
+const listTestIncidents = vi.fn();
 
 vi.mock('@/api/testCases', () => ({
   getTestCase: (...args: unknown[]) => getTestCase(...args),
@@ -23,6 +24,9 @@ vi.mock('@/api/testCases', () => ({
 }));
 vi.mock('@/api/testCaseResults', () => ({
   listTestCaseResults: (...args: unknown[]) => listTestCaseResults(...args),
+}));
+vi.mock('@/api/testIncidents', () => ({
+  listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
 }));
 
 async function mountView() {
@@ -47,6 +51,8 @@ describe('TestCaseDetailView results chart', () => {
   beforeEach(() => {
     getTestCase.mockReset();
     listTestCaseResults.mockReset();
+    listTestIncidents.mockReset();
+    listTestIncidents.mockResolvedValue({ data: [] });
     getTestCase.mockResolvedValue({
       id: 'tc1',
       name: 'row_count',
@@ -75,5 +81,22 @@ describe('TestCaseDetailView results chart', () => {
     const empty = await mountView();
     expect(empty.find('[data-testid="test-case-results-chart"]').attributes('data-points')).toBe('0');
     expect(empty.text()).toContain('No data');
+  });
+
+  it('lists incidents for the test case on the issues tab, by FQN not by id', async () => {
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    listTestIncidents.mockResolvedValue({
+      data: [
+        { id: 'inc1', testCaseResolutionStatusType: 'New', severity: 'Critical', timestamp: 1700000000000 },
+      ],
+    });
+    const wrapper = await mountView();
+    expect(listTestIncidents).toHaveBeenCalledWith({
+      testCaseFQN: 'svc.db.schema.orders.row_count',
+    });
+    expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-issue-inc1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-dimensionality-residual"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(true);
   });
 });

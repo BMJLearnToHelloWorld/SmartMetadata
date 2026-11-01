@@ -37,10 +37,11 @@ function testCase(partial: Partial<TestCase> & Pick<TestCase, 'id' | 'name'>): T
 
 describe('DQ landing helpers', () => {
   it('parses tabs and suite sub-tabs from the URL', () => {
-    expect(parseDqTab(undefined)).toBe('summary');
+    expect(parseDqTab(undefined)).toBe('dashboard');
     expect(parseDqTab('test-cases')).toBe('test-cases');
     expect(parseDqTab('test-suites')).toBe('test-suites');
-    expect(parseDqTab('nope')).toBe('summary');
+    expect(parseDqTab('nope')).toBe('dashboard');
+    expect(parseDqTab('summary')).toBe('dashboard');
     expect(parseSuiteSubTab('bundle-suites')).toBe('bundle-suites');
     expect(parseSuiteSubTab('')).toBe('table-suites');
     expect(suiteTypeForSubTab('table-suites')).toBe('basic');

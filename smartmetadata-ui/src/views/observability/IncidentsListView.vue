@@ -6,12 +6,14 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { Input, Select } from 'ant-design-vue';
 import { listTestIncidents } from '@/api/testIncidents';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { incidentStatusLabel } from '@/features/crud/incidentStatus';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { TestIncident } from '@/types/quality';
+import { INCIDENT_STATUSES } from '@/types/quality';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -19,6 +21,8 @@ const loading = ref(false);
 const errorMessage = ref('');
 const incidents = ref<TestIncident[]>([]);
 const total = ref<number | undefined>();
+const statusFilter = ref<string | undefined>();
+const testCaseFilter = ref('');
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('observability.incidents.testCase'), key: 'testCase', ellipsis: true },
@@ -39,7 +43,12 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listTestIncidents({ limit: 50, latest: true });
+    const page = await listTestIncidents({
+      limit: 50,
+      latest: true,
+      testCaseResolutionStatusType: statusFilter.value,
+      testCaseFQN: testCaseFilter.value.trim() || undefined,
+    });
     incidents.value = page.data;
     total.value = page.total;
   } catch (error) {
@@ -69,6 +78,27 @@ onMounted(() => {
     @refresh="load"
     @view="(record) => router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
   >
+    <template #filters>
+      <Select
+        v-model:value="statusFilter"
+        allow-clear
+        :placeholder="t('observability.incidents.statusFilter')"
+        data-testid="incidents-status-filter"
+        style="min-width: 160px"
+        @change="load"
+      >
+        <Select.Option v-for="status in INCIDENT_STATUSES" :key="status" :value="status">
+          {{ incidentStatusLabel(t, status) }}
+        </Select.Option>
+      </Select>
+      <Input
+        v-model:value="testCaseFilter"
+        :placeholder="t('observability.incidents.testCaseFilter')"
+        data-testid="incidents-test-case-filter"
+        style="min-width: 220px"
+        @change="load"
+      />
+    </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'testCase'">
         <a

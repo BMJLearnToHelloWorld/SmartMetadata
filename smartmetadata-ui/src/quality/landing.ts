@@ -12,8 +12,18 @@ import type { SearchFacet } from '@/catalog/searchFacets';
 import type { EntityRef } from '@/types/api';
 import type { TestCase, TestDefinition, TestSuite } from '@/types/quality';
 
-export const DQ_LANDING_TABS = ['summary', 'test-cases', 'test-suites'] as const;
+/**
+ * Official DataQualityPage tab keys (DataQualityPage.interface.ts):
+ * dashboard / test-cases / test-suites, default dashboard. The pre-Stage 5
+ * product key 'summary' is kept only as a legacy alias below so old
+ * ?tab=summary URLs still land on the dashboard tab.
+ */
+export const DQ_LANDING_TABS = ['dashboard', 'test-cases', 'test-suites'] as const;
 export type DqLandingTab = (typeof DQ_LANDING_TABS)[number];
+
+const LEGACY_DQ_TAB_ALIASES: Record<string, DqLandingTab> = {
+  summary: 'dashboard',
+};
 
 export const DQ_SUITE_SUBTABS = ['table-suites', 'bundle-suites'] as const;
 export type DqSuiteSubTab = (typeof DQ_SUITE_SUBTABS)[number];
@@ -75,10 +85,13 @@ export interface DimensionCard extends StatusCounts {
 }
 
 export function parseDqTab(value: unknown): DqLandingTab {
-  if (value === 'test-cases' || value === 'test-suites') {
+  if (value === 'test-cases' || value === 'test-suites' || value === 'dashboard') {
     return value;
   }
-  return 'summary';
+  if (typeof value === 'string' && value in LEGACY_DQ_TAB_ALIASES) {
+    return LEGACY_DQ_TAB_ALIASES[value];
+  }
+  return 'dashboard';
 }
 
 export function parseSuiteSubTab(value: unknown): DqSuiteSubTab {
