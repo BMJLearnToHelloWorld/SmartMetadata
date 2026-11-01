@@ -13,6 +13,11 @@ import AppShell from '@/layouts/AppShell.vue';
 import AssetDetailView from '@/views/AssetDetailView.vue';
 import AssetVersionView from '@/views/shell/AssetVersionView.vue';
 import InsightsView from '@/views/insights/InsightsView.vue';
+import DataAssetsView from '@/views/insights/DataAssetsView.vue';
+import AppAnalyticsView from '@/views/insights/AppAnalyticsView.vue';
+import KpiListView from '@/views/insights/KpiListView.vue';
+import KpiFormView from '@/views/insights/KpiFormView.vue';
+import OnlineUsersView from '@/views/insights/OnlineUsersView.vue';
 import MyDataView from '@/views/home/MyDataView.vue';
 import LineageHomeView from '@/views/LineageHomeView.vue';
 import LineageView from '@/views/LineageView.vue';
@@ -114,6 +119,17 @@ export const router = createRouter({
           props: true,
         },
         { path: 'insights', name: 'insights', component: InsightsView },
+        { path: 'insights/data-assets', name: 'insights-data-assets', component: DataAssetsView },
+        { path: 'insights/app-analytics', name: 'insights-app-analytics', component: AppAnalyticsView },
+        { path: 'insights/kpis', name: 'insights-kpis', component: KpiListView },
+        { path: 'insights/kpis/add', name: 'insights-kpis-add', component: KpiFormView },
+        {
+          path: 'insights/kpis/:fqn/edit',
+          name: 'insights-kpis-edit',
+          component: KpiFormView,
+          props: true,
+        },
+        { path: 'insights/online-users', name: 'insights-online-users', component: OnlineUsersView },
         { path: 'lineage', name: 'lineage-home', component: LineageHomeView },
         {
           path: 'lineage/:entityType/:fqn',

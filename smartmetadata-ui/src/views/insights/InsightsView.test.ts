@@ -9,201 +9,41 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import InsightsView from './InsightsView.vue';
 
-const searchAssets = vi.fn();
-const listTestCases = vi.fn();
-const listTestIncidents = vi.fn();
-const listSystemChartData = vi.fn();
-const listKpis = vi.fn();
+const stub = { template: '<div />' };
 
-vi.mock('@/api/search', () => ({
-  searchAssets: (...args: unknown[]) => searchAssets(...args),
-}));
-vi.mock('@/api/testCases', () => ({
-  listTestCases: (...args: unknown[]) => listTestCases(...args),
-}));
-vi.mock('@/api/testIncidents', () => ({
-  listTestIncidents: (...args: unknown[]) => listTestIncidents(...args),
-}));
-vi.mock('@/api/dataInsights', async () => {
-  const actual = await vi.importActual<typeof import('@/api/dataInsights')>('@/api/dataInsights');
-  return {
-    ...actual,
-    listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
-  };
-});
-vi.mock('@/api/kpi', () => ({
-  listKpis: (...args: unknown[]) => listKpis(...args),
-}));
-
-async function mountView() {
+async function mountWithTab(tab: string | undefined) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/insights', name: 'insights', component: InsightsView }],
+    routes: [
+      { path: '/insights', name: 'insights', component: InsightsView },
+      { path: '/insights/data-assets', name: 'insights-data-assets', component: stub },
+      { path: '/insights/app-analytics', name: 'insights-app-analytics', component: stub },
+      { path: '/insights/kpis', name: 'insights-kpis', component: stub },
+      { path: '/insights/online-users', name: 'insights-online-users', component: stub },
+    ],
   });
-  await router.push({ name: 'insights' });
+  await router.push({ name: 'insights', query: tab === undefined ? {} : { tab } });
   await router.isReady();
-  const wrapper = mount(InsightsView, {
-    global: { plugins: [router, Antd, createTestI18n()] },
-  });
+  mount(InsightsView, { global: { plugins: [router, Antd, createTestI18n()] } });
   await flushPromises();
-  return wrapper;
+  return router;
 }
 
-describe('InsightsView', () => {
-  beforeEach(() => {
-    searchAssets.mockReset();
-    listTestCases.mockReset();
-    listTestIncidents.mockReset();
-    listSystemChartData.mockReset();
-    listKpis.mockReset();
-    listKpis.mockResolvedValue({ data: [] });
-    searchAssets.mockResolvedValue({
-      total: 7,
-      hits: [],
-      facets: [
-        { id: 'entityType', field: 'entityType', buckets: [{ key: 'table', count: 5 }] },
-        { id: 'serviceType', field: 'serviceType', buckets: [{ key: 'Postgres', count: 5 }] },
-        { id: 'tier', field: 'tier.tagFQN', buckets: [{ key: 'Tier.Gold', count: 2 }] },
-      ],
-    });
-    listTestCases.mockResolvedValue({
-      data: [{ testCaseStatus: 'Success' }, { testCaseResult: { testCaseStatus: 'Failed' }, testCaseStatus: 'Failed' }],
-    });
-    listTestIncidents.mockResolvedValue({ data: [{ testCaseResolutionStatusType: 'Ack' }] });
-    listSystemChartData.mockResolvedValue({});
+describe('InsightsView compatibility shell', () => {
+  it('redirects a known legacy tab query to the split route', async () => {
+    const router = await mountWithTab('kpis');
+    expect(router.currentRoute.value.name).toBe('insights-kpis');
   });
 
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
-  it('plots live catalog and quality snapshots from existing GET payloads', async () => {
-    const wrapper = await mountView();
-    expect(wrapper.text()).toContain('7');
-    expect(wrapper.find('[data-testid="insights-entity-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-service-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-tier-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-test-chart"]').attributes('data-points')).toBe('1');
-    expect(wrapper.find('[data-testid="insights-incident-chart"]').attributes('data-points')).toBe('1');
-    expect(searchAssets).toHaveBeenCalledWith('*', 0, 1);
-  });
-
-  it('leaves pipeline and app analytics residual; KPI tab is empty until GET /v1/kpi returns rows', async () => {
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Data Insights pipeline');
-    const tabs = wrapper.findAll('.ant-tabs-tab');
-    expect(tabs.map((tab) => tab.text())).toEqual(['Data Assets', 'App analytics', 'KPIs']);
-    await tabs[1]?.trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="insights-app-analytics-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('web-analytics');
-    await tabs[2]?.trigger('click');
-    await flushPromises();
-    expect(listKpis).toHaveBeenCalledWith({ limit: 50 });
-    expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(false);
-  });
-
-  it('lists KPI rows from GET /v1/kpi and shows selected detail from that payload', async () => {
-    listKpis.mockResolvedValue({
-      data: [
-        {
-          name: 'description-coverage',
-          displayName: 'Description coverage',
-          description: 'Share of assets with a description',
-          metricType: 'PERCENTAGE',
-          targetValue: 80,
-          startDate: 1704067200000,
-          endDate: 1735689600000,
-          dataInsightChart: { name: 'percentage_of_data_asset_with_description' },
-          owners: [{ name: 'admin' }],
-          kpiResult: {
-            timestamp: 1704153600000,
-            targetResult: [{ name: 'completedDescriptionFraction', value: '42', targetMet: false }],
-          },
-        },
-      ],
-    });
-    const wrapper = await mountView();
-    const tabs = wrapper.findAll('.ant-tabs-tab');
-    await tabs[2]?.trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-kpis-detail"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Description coverage');
-    expect(wrapper.text()).toContain('80');
-    expect(wrapper.text()).toContain('42');
-    expect(wrapper.text()).toContain('percentage_of_data_asset_with_description');
-    expect(wrapper.find('[data-testid="insights-kpis-detail"]').text()).toContain('no');
-  });
-
-  it('selects another KPI row from the same GET payload', async () => {
-    listKpis.mockResolvedValue({
-      data: [
-        {
-          name: 'description-coverage',
-          displayName: 'Description coverage',
-          metricType: 'PERCENTAGE',
-          targetValue: 80,
-          owners: [],
-          kpiResult: { targetResult: [{ name: 'a', value: '42', targetMet: false }] },
-        },
-        {
-          name: 'owner-coverage',
-          displayName: 'Owner coverage',
-          metricType: 'PERCENTAGE',
-          targetValue: 60,
-          owners: [],
-          kpiResult: { targetResult: [{ name: 'b', value: '55', targetMet: true }] },
-        },
-      ],
-    });
-    const wrapper = await mountView();
-    const tabs = wrapper.findAll('.ant-tabs-tab');
-    await tabs[2]?.trigger('click');
-    await flushPromises();
-    const selects = wrapper.findAll('[data-testid="insights-kpi-select"]');
-    expect(selects).toHaveLength(2);
-    await selects[1]?.trigger('click');
-    await flushPromises();
-    const detail = wrapper.find('[data-testid="insights-kpis-detail"]');
-    expect(detail.text()).toContain('owner-coverage');
-    expect(detail.text()).toContain('55');
-    expect(detail.text()).toContain('yes');
-  });
-
-  it('shows honest KPI empty when GET /v1/kpi fails and does not invent rows', async () => {
-    listKpis.mockRejectedValue(new Error('kpi down'));
-    const wrapper = await mountView();
-    const tabs = wrapper.findAll('.ant-tabs-tab');
-    await tabs[2]?.trigger('click');
-    await flushPromises();
-    expect(wrapper.find('[data-testid="insights-kpis-empty"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="insights-kpis-table"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('kpi down');
-  });
-
-  it('plots test-status donut when latest status lives only under testCaseResult', async () => {
-    listTestCases.mockResolvedValue({
-      data: [{ testCaseResult: { testCaseStatus: 'Failed' } }, { testCaseResult: { testCaseStatus: 'Success' } }],
-    });
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-test-chart"]').attributes('data-points')).toBe('1');
-  });
-
-  it('plots pipeline series only when listChartData returns points', async () => {
-    listSystemChartData.mockResolvedValue({
-      total_data_assets: [{ count: 4, day: Date.UTC(2026, 0, 1), group: 'table' }],
-    });
-    const wrapper = await mountView();
-    expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="insights-pipeline-total_data_assets"]').attributes('data-points')).toBe('1');
+  it('redirects an unknown or missing tab to data-assets, like the official page', async () => {
+    const router = await mountWithTab('bogus');
+    expect(router.currentRoute.value.name).toBe('insights-data-assets');
+    const router2 = await mountWithTab(undefined);
+    expect(router2.currentRoute.value.name).toBe('insights-data-assets');
   });
 });

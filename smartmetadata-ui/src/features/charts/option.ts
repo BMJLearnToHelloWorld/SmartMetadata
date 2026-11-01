@@ -12,11 +12,21 @@ import type { ChartKind, ChartSeries } from './types';
 
 const COLORS = [...SM_CHART_COLORS];
 
-export function buildChartOption(kind: ChartKind, series: ChartSeries[]): Record<string, unknown> {
+/**
+ * Optional palette override. DataInsight categorical charts pass
+ * SM_DATA_INSIGHT_COLORS; every other chart keeps the global palette,
+ * so a DataInsight-only change never recolours profiler/quality charts.
+ */
+export function buildChartOption(
+  kind: ChartKind,
+  series: ChartSeries[],
+  colors: readonly string[] = COLORS,
+): Record<string, unknown> {
+  const palette = [...colors];
   if (kind === 'donut') {
     const points = series[0]?.points ?? [];
     return {
-      color: COLORS,
+      color: palette,
       tooltip: { trigger: 'item' },
       legend: { bottom: 0, type: 'scroll' },
       series: [
@@ -32,7 +42,7 @@ export function buildChartOption(kind: ChartKind, series: ChartSeries[]): Record
 
   const labels = [...new Set(series.flatMap((item) => item.points.map((point) => point.label)))];
   return {
-    color: COLORS,
+    color: palette,
     tooltip: { trigger: 'axis' },
     legend: series.length > 1 ? { bottom: 0 } : undefined,
     grid: { left: 48, right: 16, top: 24, bottom: series.length > 1 ? 52 : 28, containLabel: true },

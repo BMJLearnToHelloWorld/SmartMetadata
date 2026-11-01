@@ -39,9 +39,35 @@ function mapUser(raw: Record<string, unknown>): AdminUser | null {
     isAdmin: asBoolean(raw.isAdmin),
     isBot: asBoolean(raw.isBot),
     deleted: asBoolean(raw.deleted),
+    lastLoginTime: typeof raw.lastLoginTime === 'number' ? raw.lastLoginTime : undefined,
+    lastActivityTime: typeof raw.lastActivityTime === 'number' ? raw.lastActivityTime : undefined,
     teams: mapEntityRefs(raw.teams),
     roles: mapEntityRefs(raw.roles),
   };
+}
+
+/** Official OnlineUsers query: timeWindow in minutes, 0 means all time. */
+export const ONLINE_USER_FIELDS = 'profile,teams,roles,lastLoginTime,lastActivityTime';
+
+export interface ListOnlineUsersQuery {
+  timeWindow?: number;
+  limit?: number;
+  after?: string;
+  fields?: string;
+}
+
+/** Official `GET /v1/users/online` (OnlineUsersPage). A 404 here means the
+ * backend has not implemented the endpoint yet; callers surface it as an
+ * honest error, never as an empty "no online users" list. */
+export function listOnlineUsers(query: ListOnlineUsersQuery = {}): Promise<Paged<AdminUser>> {
+  return apiRequest<unknown>('/v1/users/online', {
+    query: {
+      timeWindow: query.timeWindow ?? 1440,
+      fields: query.fields ?? ONLINE_USER_FIELDS,
+      limit: query.limit ?? 25,
+      after: query.after,
+    },
+  }).then((payload) => parsePaged(payload, mapUser));
 }
 
 export function listUsers(query: ListUsersQuery = {}): Promise<Paged<AdminUser>> {
