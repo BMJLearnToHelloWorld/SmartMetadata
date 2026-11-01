@@ -17,6 +17,7 @@ import {
   SM_BORDER_RADIUS,
   SM_CHART_COLORS,
   SM_COLOR_ERROR,
+  SM_DATA_INSIGHT_COLORS,
   SM_COLOR_PRIMARY,
   SM_COLOR_PRIMARY_HOVER,
   SM_COLOR_SUCCESS,
@@ -139,6 +140,25 @@ describe('official token mapping (Stage 1)', () => {
     expect(SM_CHART_COLORS[1]).toBe('#079455');
     expect(SM_CHART_COLORS).toContain('#4689ff');
     expect(SM_CHART_COLORS).not.toContain('#1677ff');
+  });
+
+  it('locks every chart slot to an official token and transcribes the DataInsight palette', () => {
+    // Stage 6 closed the three scale slots: purple-600 / cyan-600 / fuchsia-600
+    // in tokens.css, previously missed because they are not `visualization-*`.
+    expect(SM_CHART_COLORS).toEqual([
+      SM_COLOR_PRIMARY,
+      '#079455',
+      '#dc6803',
+      '#d92d20',
+      '#6938ef',
+      '#088ab2',
+      '#ba24d5',
+      '#4689ff',
+    ]);
+    expect(SM_DATA_INSIGHT_COLORS).toHaveLength(24);
+    expect(SM_DATA_INSIGHT_COLORS[0]).toBe('#E57373');
+    expect(SM_DATA_INSIGHT_COLORS[23]).toBe('#F48FB1');
+    expect(SM_DATA_INSIGHT_COLORS.filter((color) => color === '#7986CB')).toHaveLength(2);
   });
 
   it('keeps OM chrome CSS and a data-theme hook, without transplanting @icore', () => {

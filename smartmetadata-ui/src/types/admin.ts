@@ -27,6 +27,9 @@ export interface AdminUser {
   isAdmin?: boolean;
   isBot?: boolean;
   deleted?: boolean;
+  /** Official OnlineUsers fields; absent for users from other endpoints. */
+  lastLoginTime?: number;
+  lastActivityTime?: number;
   teams: EntityRef[];
   roles: EntityRef[];
 }

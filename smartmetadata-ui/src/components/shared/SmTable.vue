@@ -19,9 +19,10 @@ withDefaults(
     rowKey?: TableProps['rowKey'];
     loading?: boolean;
     pagination?: TableProps['pagination'];
+    customRow?: TableProps['customRow'];
     testId?: string;
   }>(),
-  { rowKey: 'id', loading: false, pagination: undefined, testId: 'sm-table' },
+  { rowKey: 'id', loading: false, pagination: undefined, customRow: undefined, testId: 'sm-table' },
 );
 </script>
 
@@ -33,5 +34,12 @@ withDefaults(
     :row-key="rowKey"
     :loading="loading"
     :pagination="pagination"
-  />
+    :custom-row="customRow"
+  >
+    <!-- Only forward bodyCell when a caller provides it; an empty slot would
+         blank the default rendering that plain dataIndex columns rely on. -->
+    <template v-if="$slots.bodyCell" #bodyCell="slotProps">
+      <slot name="bodyCell" v-bind="slotProps" />
+    </template>
+  </Table>
 </template>

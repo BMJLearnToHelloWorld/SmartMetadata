@@ -184,13 +184,20 @@ export const SM_TEXT = {
   brand: '#194185',
 } as const;
 
+/** Official purple-600 (tokens.css `--om-color-purple-600`). Stage 6 verified. */
+export const SM_COLOR_PURPLE_600 = '#6938ef';
+/** Official cyan-600 (tokens.css `--om-color-cyan-600`). Stage 6 verified. */
+export const SM_COLOR_CYAN_600 = '#088ab2';
+/** Official fuchsia-600 (tokens.css `--om-color-fuchsia-600`). Stage 6 verified. */
+export const SM_COLOR_FUCHSIA_600 = '#ba24d5';
+/** Official visualization chart-blue-1 (tokens.css). */
+export const SM_COLOR_CHART_BLUE_1 = '#4689ff';
 /**
- * Chart palette. Only these slots are confirmed against tokens.css:
- * brand-600, semantic success, warning, error, and visualization
- * chart-blue-1 (#4689ff). The #6938ef / #088ab2 / #ba24d5 slots were not
- * found among the official visualization tokens and stay residual:
- * they are kept only so existing charts do not change hue silently, and
- * must not be cited as official. The visualization green role lives in
+ * Chart palette. Every slot is now confirmed against tokens.css: brand-600,
+ * semantic success, warning, error, purple-600, cyan-600, fuchsia-600 and
+ * visualization chart-blue-1. The three scale slots were closed in Stage 6:
+ * earlier stages looked only in the `visualization-*` namespace and missed
+ * them in the brand scale namespace. The visualization green role lives in
  * SM_COLOR_VISUALIZATION_GREEN, not in this semantic-ordered palette.
  */
 export const SM_CHART_COLORS = [
@@ -198,10 +205,44 @@ export const SM_CHART_COLORS = [
   SM_COLOR_SUCCESS,
   SM_COLOR_WARNING,
   SM_COLOR_ERROR,
-  '#6938ef',
-  '#088ab2',
-  '#ba24d5',
-  '#4689ff',
+  SM_COLOR_PURPLE_600,
+  SM_COLOR_CYAN_600,
+  SM_COLOR_FUCHSIA_600,
+  SM_COLOR_CHART_BLUE_1,
+] as const;
+/**
+ * Official DataInsight categorical palette (`BASE_COLORS` in
+ * DataInsight.constants.ts), transcribed verbatim in order, including the
+ * duplicated `#7986CB` entry at positions 10 and 19. Series take colours by
+ * index and cycle (see ColorUtils). Use this palette only for DataInsight
+ * categorical charts; the global SmChart default stays SM_CHART_COLORS so
+ * profiler/quality charts do not change hue silently.
+ */
+export const SM_DATA_INSIGHT_COLORS = [
+  '#E57373',
+  '#BA68C8',
+  '#64B5F6',
+  '#4DB6AC',
+  '#81C784',
+  '#FFD54F',
+  '#FF8A65',
+  '#A1887F',
+  '#90A4AE',
+  '#7986CB',
+  '#F06292',
+  '#4FC3F7',
+  '#FFD740',
+  '#AED581',
+  '#CE93D8',
+  '#B39DDB',
+  '#EF5350',
+  '#FF7043',
+  '#7986CB',
+  '#FFCA28',
+  '#FFB74D',
+  '#A5D6A7',
+  '#80CBC4',
+  '#F48FB1',
 ] as const;
 
 export const SM_SURFACES = {

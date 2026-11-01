@@ -13,6 +13,7 @@ import {
   assignUserRolesPatch,
   createUser,
   deactivateUser,
+  listOnlineUsers,
   listUsers,
   restoreUser,
   searchUsers,
@@ -118,6 +119,37 @@ describe('users API', () => {
   it('builds a JSON Patch that assigns roles without inventing an authz engine', () => {
     const patch = assignUserRolesPatch([], ['role-1']);
     expect(patch).toEqual([{ op: 'replace', path: '/roles', value: [{ id: 'role-1', type: 'role' }] }]);
+  });
+
+  it('lists online users from GET /v1/users/online with activity timestamps', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'u1',
+                name: 'alice',
+                lastLoginTime: 1735689600000,
+                lastActivityTime: 1735689700000,
+                teams: [],
+                roles: [],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listOnlineUsers({ timeWindow: 60 });
+    expect(page.data[0].lastActivityTime).toBe(1735689700000);
+    expect(page.data[0].lastLoginTime).toBe(1735689600000);
+    const { url } = lastFetch();
+    expect(url).toContain('/api/v1/users/online');
+    expect(url).toContain('timeWindow=60');
+    expect(url).toContain('lastActivityTime');
   });
 
   it('searches users on the server user index', async () => {

@@ -21,6 +21,7 @@ const props = withDefaults(
     error?: string;
     height?: number;
     testId?: string;
+    colors?: readonly string[];
   }>(),
   {
     height: 240,
@@ -29,7 +30,9 @@ const props = withDefaults(
 );
 
 const ready = computed(() => !props.error && hasChartPoints(props.series));
-const option = computed(() => buildChartOption(props.kind, props.series));
+const option = computed(() =>
+  props.colors ? buildChartOption(props.kind, props.series, props.colors) : buildChartOption(props.kind, props.series),
+);
 </script>
 
 <template>
