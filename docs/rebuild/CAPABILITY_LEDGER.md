@@ -1,7 +1,7 @@
-# Capability ledger (stage 0) — after backend #49–#58
+# Capability ledger (stage 0) — after backend #49–#58 + connector P0s through #71
 
 Factual inventory of Apache-facing capabilities vs product status on
-`main` tip **`941b5cab22`** (PR [#58](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/58)).
+`main` tip **`c34f00a0340aa73d68de42f988e3db4d6528fb76`** (PR [#71](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/71)).
 
 This file is an **inventory**, not a license to invent a batch. Status
 words only: **Missing | Partial | BehaviorMatched | IntegrationVerified |
@@ -119,14 +119,17 @@ Rebuild trees are product evidence, not a second authority.
 
 | Capability | Apache contract | Product | Status | Evidence | Notes |
 |---|---|---|---|---|---|
-| postgres / mysql / kafka / snowflake | Official service types | `smartmetadata-ingestion` connectors | BehaviorMatched / Shipped | PARITY Phase 6-7 | - |
+| postgres | Official `database/postgres` service_spec (metadata+lineage+usage+profiler+...) | `postgres` metadata (+ view lineage where wired) | **Partial** vs OM full chain | PARITY Phase 6-7; parity review 2026-11-01 | Meta / Meta+view-lineage shipped; **not** BehaviorMatched full-chain (Usage/Profiler/DQ/etc. not claimed) |
+| mysql | Official `database/mysql` service_spec full chain | `mysql` metadata | **Partial** vs OM full chain | PARITY Phase 6-7; parity review 2026-11-01 | Meta shipped; **not** OM full-chain BehaviorMatched |
+| snowflake | Official `database/snowflake` service_spec full chain | `snowflake` metadata | **Partial** vs OM full chain | PARITY Phase 6-7; parity review 2026-11-01 | Meta shipped; **not** OM full-chain BehaviorMatched |
+| kafka | Official `messaging/kafka` BaseSpec (metadata+sampler+connection) | `kafka` metadata (+ SR) | **Partial** vs OM full chain | PARITY Phase 6-7; parity review 2026-11-01 | Meta shipped; **no Sampler** registration / path — do not claim full-chain |
 | Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified |
 | Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
 | Doris (full chain) | OM `database/doris` service_spec (metadata+lineage+connection; schema supportsProfiler) | `doris` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | No invent Usage/DataDiff/sampler_class; OSS pydoris==1.2.0 + PyMySQL live; job execution Partial |
 | MSSQL (full chain) | OM `database/mssql` service_spec (metadata+lineage+usage+sampler+data_diff+connection) | `mssql` + lineage/usage/profiler/sampler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | OSS sqlalchemy-pytds~=1.0 (+ optional pyodbc/pymssql); no collate-data-diff; live Cursor* IntegrationVerified deferred |
 | Redshift (full chain) | OM `database/redshift` service_spec (metadata+lineage+usage+profiler+connection) | `redshift` + lineage/usage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS sqlalchemy-redshift~=1.0.0 + psycopg2-binary + GeoAlchemy2; no collate-data-diff; live Cursor* deferred |
 | MariaDB (full chain) | OM `database/mariadb` service_spec (metadata+lineage+profiler+connection) | `mariadb` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS PyMySQL; no Usage invent; job execution Partial |
-| Greenplum (full chain) | OM `database/greenplum` service_spec (metadata+lineage+connection; schema supportsProfiler) | `greenplum` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS COMMONS postgres; no Usage invent |
+| Greenplum (full chain) | OM `database/greenplum` service_spec (metadata+lineage+connection; schema supportsProfiler) | `greenplum` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests; parity cleanup | OSS COMMONS postgres; **no Usage invent** — UsageEventRow/UsageReader scaffolding removed (OM has no Greenplum Usage; no `greenplum-usage` registration) |
 | Timescale (full chain) | OM `database/timescale` service_spec (metadata+lineage+usage+sampler+connection) | `timescale` + lineage/usage/profiler/sampler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS postgres-family; no data_diff invent; live Cursor* deferred |
 | Superset (full chain) | OM `dashboard/superset` BaseSpec (metadata+connection; API mode) | `superset` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | DB connection oneOf deferred; no lineage/usage invent |
 | Metabase (full chain) | OM `dashboard/metabase` BaseSpec (metadata+connection) | `metabase` + dashboardService/chart/dashboard + UI | BehaviorMatched (unit) | Dashboard P0 | live IntegrationVerified deferred |
@@ -189,3 +192,4 @@ Rebuild trees are product evidence, not a second authority.
 - (shipped 2026-11-01) Storage S3 P0 full chain after Bernie t225u
 - (shipped 2026-11-01) Messaging Redpanda P0 full chain after Bernie t225u
 - (shipped 2026-11-01) Pipeline P0 Prefect+Dagster full chain after Bernie t225u; next leftovers other messaging/pipeline tiles
+- (cleanup 2026-11-01) Parity review: Greenplum anti-invent Usage scaffold; Dagster UI host||hostPort reload; ledger Partial honesty for postgres/mysql/snowflake/kafka
