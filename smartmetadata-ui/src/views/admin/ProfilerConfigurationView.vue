@@ -10,6 +10,7 @@ import { useI18n } from 'vue-i18n';
 import { Button, Form, Input, Select, Space, Table, message } from 'ant-design-vue';
 import { getTypedSetting, settingAsProfiler, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import { PROFILER_DATA_TYPES, PROFILER_METRICS } from '@/quality/profilerConfig';
 import type { MetricConfigurationDefinition, ProfilerConfiguration } from '@/types/admin';
 
 const { t } = useI18n();
@@ -18,18 +19,8 @@ const saving = ref(false);
 const errorMessage = ref('');
 const form = reactive<{ metrics: MetricConfigurationDefinition[] }>({ metrics: [] });
 
-const DATA_TYPES = [
-  'NUMBER', 'INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'TINYINT', 'SMALLINT', 'BIGINT', 'BYTEINT',
-  'STRING', 'VARCHAR', 'CHAR', 'TEXT', 'BINARY', 'VARBINARY',
-  'TIMESTAMP', 'TIMESTAMPZ', 'DATE', 'DATETIME', 'TIME',
-  'BOOLEAN', 'ARRAY', 'MAP', 'STRUCT', 'JSON', 'UUID',
-];
-const METRICS = [
-  'columnCount', 'rowCount', 'columnNames', 'valuesCount', 'nullCount', 'nullProportion',
-  'uniqueCount', 'uniqueProportion', 'distinctCount', 'distinctProportion', 'min', 'max',
-  'minLength', 'maxLength', 'mean', 'median', 'sum', 'stddev', 'variance',
-  'histogram', 'quantile', 'interQuartileRange',
-];
+const DATA_TYPES = [...PROFILER_DATA_TYPES];
+const METRICS = [...PROFILER_METRICS];
 
 const columns = [
   { title: t('settings.profiler.dataType'), key: 'dataType', width: 220 },

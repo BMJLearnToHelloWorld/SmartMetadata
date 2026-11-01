@@ -9,6 +9,8 @@ import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
 import { getTestSuite, updateTestSuite } from '@/api/testSuites';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import SmState from '@/components/shared/SmState.vue';
+import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { EntityRef } from '@/types/api';
@@ -33,10 +35,13 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(suite.value) || t('quality.testSuites.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'test-suite-tab-overview' },
-  { key: 'tests', label: t('quality.testSuites.testsTab'), testId: 'test-suite-tab-tests' },
-]);
+const tabs = computed<EntityDetailTab[]>(() =>
+  QUALITY_PAGE_TABS.testSuite.map((tab) => ({
+    key: tab.key,
+    label: t(tab.labelKey),
+    testId: `test-suite-tab-${tab.key}`,
+  })),
+);
 
 const testColumns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -133,6 +138,9 @@ onMounted(() => {
         </Descriptions.Item>
         <Descriptions.Item :label="t('crud.description')">{{ suite.description || '—' }}</Descriptions.Item>
       </Descriptions>
+    </template>
+    <template #pipeline>
+      <SmState state="empty" test-id="test-suite-pipeline-residual" :empty-text="t('quality.testSuites.residualPipeline')" />
     </template>
     <template #tests>
       <Table

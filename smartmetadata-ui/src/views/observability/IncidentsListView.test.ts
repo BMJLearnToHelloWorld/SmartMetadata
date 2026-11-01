@@ -70,6 +70,22 @@ describe('IncidentsListView', () => {
     localStorage.clear();
   });
 
+  it('renders status and test-case filters and passes them to the incident API', async () => {
+    const fetchSpy = fetch as unknown as ReturnType<typeof vi.fn>;
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="incidents-status-filter"]').exists()).toBe(true);
+    const filterHost = wrapper.find('[data-testid="incidents-test-case-filter"]');
+    expect(filterHost.exists()).toBe(true);
+    // The testid lands either on the input itself or on its wrapper.
+    const filter = filterHost.element.tagName === 'INPUT' ? filterHost : filterHost.find('input');
+    expect(filter.exists()).toBe(true);
+    await filter.setValue('svc.db.schema.orders.row_count');
+    await filter.trigger('change');
+    await flushPromises();
+    const urls = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes('testCaseFQN='))).toBe(true);
+  });
+
   it('renders latest incidents from the incident status API', async () => {
     const { wrapper, router } = await mountView();
     expect(wrapper.text()).toContain('svc.db.schema.orders.row_count');

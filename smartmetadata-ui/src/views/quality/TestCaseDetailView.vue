@@ -9,13 +9,16 @@ import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
 import { getTestCase, updateTestCase } from '@/api/testCases';
 import { listTestCaseResults } from '@/api/testCaseResults';
+import { listTestIncidents } from '@/api/testIncidents';
 import SmChart from '@/features/charts/SmChart.vue';
 import { testResultsToTimeline } from '@/features/charts/series';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import SmState from '@/components/shared/SmState.vue';
+import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { parseEntityLink } from '@/quality/entityLink';
-import type { TestCase, TestCaseResult } from '@/types/quality';
+import type { TestCase, TestCaseResult, TestIncident } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -24,6 +27,8 @@ const loading = ref(false);
 const errorMessage = ref('');
 const testCase = ref<TestCase | null>(null);
 const results = ref<TestCaseResult[]>([]);
+const issues = ref<TestIncident[]>([]);
+const issuesError = ref('');
 const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
@@ -40,9 +45,18 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(testCase.value) || t('quality.testCases.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'test-case-tab-overview' },
-  { key: 'results', label: t('quality.testCases.resultsTab'), testId: 'test-case-tab-results' },
+const tabs = computed<EntityDetailTab[]>(() =>
+  QUALITY_PAGE_TABS.testCase.map((tab) => ({
+    key: tab.key,
+    label: t(tab.labelKey),
+    testId: `test-case-tab-${tab.key}`,
+  })),
+);
+
+const issueColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.status'), dataIndex: 'testCaseResolutionStatusType', key: 'status', width: 120 },
+  { title: t('observability.incidents.severity'), dataIndex: 'severity', key: 'severity', width: 120 },
+  { title: t('observability.incidents.updated'), key: 'timestamp', width: 200 },
 ]);
 
 const resultColumns = computed<EntityListColumn[]>(() => [
@@ -68,12 +82,22 @@ async function load(): Promise<void> {
     if (loaded.fullyQualifiedName) {
       const page = await listTestCaseResults(loaded.fullyQualifiedName);
       results.value = page.data;
+      try {
+        const incidentPage = await listTestIncidents({ testCaseFQN: loaded.fullyQualifiedName });
+        issues.value = incidentPage.data;
+        issuesError.value = '';
+      } catch {
+        issues.value = [];
+        issuesError.value = t('crud.loadFailed');
+      }
     } else {
       results.value = [];
+      issues.value = [];
     }
   } catch (error) {
     testCase.value = null;
     results.value = [];
+    issues.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
@@ -213,6 +237,44 @@ onMounted(() => {
           </template>
         </template>
       </Table>
+    </template>
+    <template #issues>
+      <SmState
+        v-if="issuesError"
+        state="error"
+        test-id="test-case-issues-error"
+        :error-text="issuesError"
+      />
+      <Table
+        v-else
+        data-testid="test-case-issues-table"
+        row-key="id"
+        size="small"
+        :columns="issueColumns"
+        :data-source="issues"
+        :pagination="false"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'timestamp'">
+            {{ formatTs((record as TestIncident).timestamp) }}
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <a
+              href="#"
+              :data-testid="`test-case-issue-${(record as TestIncident).id}`"
+              @click.prevent="router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
+            >
+              {{ (record as TestIncident).testCaseResolutionStatusType || '—' }}
+            </a>
+          </template>
+        </template>
+      </Table>
+    </template>
+    <template #dimensionality>
+      <SmState state="empty" test-id="test-case-dimensionality-residual" :empty-text="t('quality.testCases.residualDimensionality')" />
+    </template>
+    <template #sql-query>
+      <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('quality.testCases.residualSqlQuery')" />
     </template>
   </EntityDetailShell>
   <Modal
