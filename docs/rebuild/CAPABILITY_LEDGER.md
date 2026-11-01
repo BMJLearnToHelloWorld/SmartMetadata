@@ -1,7 +1,7 @@
-# Capability ledger (stage 0) — after backend #49–#58 + connector P0s through #71
+# Capability ledger (stage 0) — after backend #49–#58 + connector P0s through #72
 
 Factual inventory of Apache-facing capabilities vs product status on
-`main` tip **`c34f00a0340aa73d68de42f988e3db4d6528fb76`** (PR [#71](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/71)).
+`main` tip **`ca7174ff8c95494d2e92935078e65405b9040966`** (PR [#72](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/72)).
 
 This file is an **inventory**, not a license to invent a batch. Status
 words only: **Missing | Partial | BehaviorMatched | IntegrationVerified |
@@ -127,7 +127,7 @@ Rebuild trees are product evidence, not a second authority.
 | Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
 | Doris (full chain) | OM `database/doris` service_spec (metadata+lineage+connection; schema supportsProfiler) | `doris` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | No invent Usage/DataDiff/sampler_class; OSS pydoris==1.2.0 + PyMySQL live; job execution Partial |
 | MSSQL (full chain) | OM `database/mssql` service_spec (metadata+lineage+usage+sampler+data_diff+connection) | `mssql` + lineage/usage/profiler/sampler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | OSS sqlalchemy-pytds~=1.0 (+ optional pyodbc/pymssql); no collate-data-diff; live Cursor* IntegrationVerified deferred |
-| Redshift (full chain) | OM `database/redshift` service_spec (metadata+lineage+usage+profiler+connection) | `redshift` + lineage/usage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS sqlalchemy-redshift~=1.0.0 + psycopg2-binary + GeoAlchemy2; no collate-data-diff; live Cursor* deferred |
+| Redshift (full chain) | OM `database/redshift` service_spec (metadata+lineage+usage+profiler+connection) | `redshift` + lineage/usage/profiler/DQ + UI tile | BehaviorMatched (unit); SystemProfile **Partial** | CONNECTOR_DATABASE_P0_PLAN.md; tests; parity review 2026-11-01 | OSS sqlalchemy-redshift~=1.0.0 + psycopg2-binary + GeoAlchemy2; no collate-data-diff; live Cursor* deferred; **no** OM-parity `RedshiftSystemMetricsComputer` / SystemProfile path (schema `supportsSystemProfile` — needs written scope) |
 | MariaDB (full chain) | OM `database/mariadb` service_spec (metadata+lineage+profiler+connection) | `mariadb` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS PyMySQL; no Usage invent; job execution Partial |
 | Greenplum (full chain) | OM `database/greenplum` service_spec (metadata+lineage+connection; schema supportsProfiler) | `greenplum` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests; parity cleanup | OSS COMMONS postgres; **no Usage invent** — UsageEventRow/UsageReader scaffolding removed (OM has no Greenplum Usage; no `greenplum-usage` registration) |
 | Timescale (full chain) | OM `database/timescale` service_spec (metadata+lineage+usage+sampler+connection) | `timescale` + lineage/usage/profiler/sampler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS postgres-family; no data_diff invent; live Cursor* deferred |
@@ -147,6 +147,8 @@ Rebuild trees are product evidence, not a second authority.
 | Insights KPI CRUD | BehaviorMatched (unit) | `api/kpi.ts` POST/PUT/PATCH/DELETE + result GETs; `PARTIAL_KPI_CRUD_REVIEW.md` |
 | Insights KPI history **charts** / app analytics | Partial / OutOfScope invent | result GET helpers exist; chart UI + web-analytics residual |
 | Profiler run UI | Gap | runner residual |
+| Ingestion `PIPELINE_TYPES` | Partial | UI exports `['metadata']` only — no lineage/usage/profiler/sampler job-type picker (connectors may register extras; UI stays metadata-only until written scope) |
+| Agents UI | Gap / OutOfScope invent | no `smartmetadata-ui` Agents surface; needs Bernie written type+scope — do not expand |
 | SSO / Persona / Appearance | Gap / OutOfScope invent | residual tiles |
 | Knowledge / Ontology / AI / Context Center | DROP / OutOfScope | Collate-only |
 
@@ -171,6 +173,9 @@ Rebuild trees are product evidence, not a second authority.
 - Profiler/DQ **execution** (`jobs.py` raises)
 - ~~Insights KPI CRUD beyond list~~ → BehaviorMatched (unit); see `PARTIAL_KPI_CRUD_REVIEW.md` (history charts / app analytics / write UI still residual or OutOfScope)
 - Live IntegrationVerified / ProductVerified for #49–#58 claims
+- postgres / mysql / snowflake / kafka still **Partial** vs OM full chain (Meta±view-lineage / Meta+SR; **no** Kafka Sampler) — #72 honesty; coding needs written scope
+- Redshift (and Databricks) SystemProfile metrics computers vs OM profiler — detail hole inside claimed P0 profiler; not invented
+- UI `PIPELINE_TYPES=['metadata']` only; Agents UI absent
 
 ## Next (optional; require written scope)
 
@@ -193,3 +198,4 @@ Rebuild trees are product evidence, not a second authority.
 - (shipped 2026-11-01) Messaging Redpanda P0 full chain after Bernie t225u
 - (shipped 2026-11-01) Pipeline P0 Prefect+Dagster full chain after Bernie t225u; next leftovers other messaging/pipeline tiles
 - (cleanup 2026-11-01) Parity review: Greenplum anti-invent Usage scaffold; Dagster UI host||hostPort reload; ledger Partial honesty for postgres/mysql/snowflake/kafka
+- (docs tip sync 2026-11-01) Ledger header → #72 / `ca7174ff8c95…`; residual honesty: Redshift SystemProfile Partial, PIPELINE_TYPES metadata-only, Agents UI Gap
