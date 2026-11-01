@@ -85,7 +85,11 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     description: service.description,
     kind: service.kind,
     serviceType: service.serviceType,
-    hostPort: typeof config.hostPort === 'string' ? config.hostPort : '',
+    // Dagster (and any schema using `host`) must reload into the shared hostPort field.
+    hostPort:
+      (typeof config.host === 'string' && config.host) ||
+      (typeof config.hostPort === 'string' ? config.hostPort : '') ||
+      '',
     username:
       typeof config.username === 'string'
         ? config.username

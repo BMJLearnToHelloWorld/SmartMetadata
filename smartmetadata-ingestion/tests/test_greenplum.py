@@ -168,4 +168,17 @@ def test_greenplum_quality() -> None:
     )
     assert result.test_case_status == "Success"
 
+def test_greenplum_has_no_usage_scaffolding() -> None:
+    """OM Greenplum service_spec has no Usage; keep dead Usage path out of common."""
+    import smartmetadata_ingestion.connectors.greenplum_common as common
 
+    for name in ("UsageEventRow", "UsageReader", "SequenceUsageReader"):
+        assert not hasattr(common, name), f"unexpected invent: {name}"
+    for name in (
+        "SequenceCatalogReader",
+        "SequenceLineageReader",
+        "SequenceProfileReader",
+        "run_connection_test",
+        "CursorCatalogReader",
+    ):
+        assert hasattr(common, name), name

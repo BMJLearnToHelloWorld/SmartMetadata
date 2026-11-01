@@ -445,3 +445,39 @@ it('builds Dagster connection with host + token', () => {
   });
 });
 
+it('reloads Dagster host into form hostPort (edit-reload)', () => {
+  const service: CatalogService = {
+    id: 'svc-dg',
+    name: 'dg',
+    kind: 'pipeline',
+    serviceType: 'Dagster',
+    connection: {
+      config: {
+        type: 'Dagster',
+        host: 'http://localhost:3000',
+        token: '********',
+        timeout: 1000,
+      },
+    },
+  };
+  const form = formValuesFromService(service);
+  expect(form.hostPort).toBe('http://localhost:3000');
+  expect(form.dagsterTimeout).toBe(1000);
+});
+
+it('prefers config.host over config.hostPort when both present', () => {
+  const service: CatalogService = {
+    id: 'svc-dg2',
+    name: 'dg2',
+    kind: 'pipeline',
+    serviceType: 'Dagster',
+    connection: {
+      config: {
+        type: 'Dagster',
+        host: 'http://dagster:3000',
+        hostPort: 'should-not-win',
+      },
+    },
+  };
+  expect(formValuesFromService(service).hostPort).toBe('http://dagster:3000');
+});

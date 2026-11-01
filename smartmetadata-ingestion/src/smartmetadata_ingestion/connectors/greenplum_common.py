@@ -6,10 +6,11 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Shared Greenplum connection, catalog/usage/lineage readers, and helpers.
+"""Shared Greenplum connection, catalog/lineage/profiler readers, and helpers.
 
 Clean-room alignment to Apache OpenMetadata GreenplumConnection / service_spec.
-service_spec: metadata + lineage + connection; schema supportsProfiler/ViewLineage. No usage/sampler/data_diff invent.
+service_spec: metadata + lineage + connection; schema supportsProfiler/ViewLineage.
+OM has no Usage for Greenplum — no UsageEventRow/UsageReader and no greenplum-usage registration.
 OSS: COMMONS["postgres"] → pymysql, psycopg2-binary, GeoAlchemy2, packaging. No collate-data-diff.
 """
 
@@ -79,15 +80,6 @@ class LineageEdgeRow:
 
 
 @dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    database: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
 class ProfileStatRow:
     column_name: str | None
     row_count: int | None = None
@@ -113,10 +105,6 @@ class CatalogReader(Protocol):
 
 class LineageReader(Protocol):
     def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
 
 
 class ProfileReader(Protocol):
@@ -177,14 +165,6 @@ class SequenceLineageReader:
 
     def list_edges(self) -> Sequence[LineageEdgeRow]:
         return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
 
 
 class SequenceProfileReader:
