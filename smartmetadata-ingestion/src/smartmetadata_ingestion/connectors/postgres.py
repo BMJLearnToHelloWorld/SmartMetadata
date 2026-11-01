@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.registry import register_source
+from smartmetadata_ingestion.connectors import postgres_common
 from smartmetadata_ingestion.connectors.select import is_selected
 from smartmetadata_ingestion.connectors.sql_views import map_table_type as _map_table_type
 from smartmetadata_ingestion.connectors.sql_views import parse_view_parents
@@ -214,22 +215,15 @@ class PostgresSource:
             yield from self._view_lineage(reader, database_name)
 
     def _service_record(self) -> DatabaseServiceRecord:
-        connection = None
-        raw = self._config.connection
-        if raw:
-            config: dict[str, Any] = {
-                "type": "Postgres",
-                "hostPort": raw.get("hostPort") or raw.get("host_port"),
-                "username": raw.get("username"),
-                "database": raw.get("database"),
-            }
-            if self._config.store_connection_secrets and raw.get("password"):
-                config["authType"] = {"password": raw["password"]}
-            connection = {"config": config}
+        connection = postgres_common.build_service_connection_config(
+            raw=self._config.connection or {},
+            store_secrets=self._config.store_connection_secrets,
+        )
         return DatabaseServiceRecord(
             name=self._config.service_name,
             service_type="Postgres",
             display_name=self._config.service_display_name,
+            description=None,
             connection=connection,
         )
 

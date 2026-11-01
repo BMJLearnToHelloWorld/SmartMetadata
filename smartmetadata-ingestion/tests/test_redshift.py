@@ -185,3 +185,47 @@ def test_redshift_usage() -> None:
     assert events[0].count == 3
     assert events[0].fqn.endswith(".public.orders")
 
+
+
+def test_redshift_system_profile_behavior_matched() -> None:
+    from smartmetadata_ingestion.connectors.redshift_profiler import (
+        RedshiftProfilerInterface,
+        RedshiftSystemMetricsComputer,
+        SequenceSystemMetricsReader,
+        SystemProfileRow,
+    )
+    reader = SequenceProfileReader(
+        stats=[ProfileStatRow(None, row_count=3)],
+        samples=[],
+    )
+    system = RedshiftSystemMetricsComputer(
+        SequenceSystemMetricsReader(
+            [
+                SystemProfileRow(timestamp=100, operation="INSERT", rows_affected=2),
+                SystemProfileRow(timestamp=200, operation="DELETE", rows_affected=1),
+            ]
+        )
+    )
+    profile = RedshiftProfilerInterface(reader, system_metrics=system).profile(
+        service="rs", database="dev", schema="public", table="orders", timestamp=1
+    )
+    assert profile.system_profile[0]["operation"] == "INSERT"
+    assert profile.system_profile[1]["rowsAffected"] == 1
+
+
+def test_redshift_connection_config_includes_system_profile_flag() -> None:
+    from smartmetadata_ingestion.connectors import redshift_common as redshift
+
+    conn = redshift.build_service_connection_config(
+        raw={
+            "hostPort": "rs:5439",
+            "username": "u",
+            "database": "dev",
+            "supportsSystemProfile": True,
+            "supportsProfiler": True,
+        },
+        store_secrets=False,
+    )
+    assert conn is not None
+    assert conn["config"]["supportsSystemProfile"] is True
+    assert conn["config"]["supportsProfiler"] is True

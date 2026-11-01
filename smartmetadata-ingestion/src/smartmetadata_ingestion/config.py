@@ -80,7 +80,7 @@ class ServerConfig(CamelModel):
 
 class WorkflowSettings(CamelModel):
     name: str
-    type: Literal["metadata"] = "metadata"
+    type: Literal["metadata", "usage", "lineage", "profiler", "TestSuite"] = "metadata"
     fail_fast: bool = False
     ingestion_pipeline_fqn: str | None = None
     reconcile_stale: bool = False

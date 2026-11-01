@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.registry import register_source
+from smartmetadata_ingestion.connectors import mysql_common
 from smartmetadata_ingestion.connectors.select import is_selected
 from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
 from smartmetadata_ingestion.datatypes import map_mysql_type
@@ -222,27 +223,15 @@ class MysqlSource:
             yield from self._view_lineage(reader, database_name)
 
     def _service_record(self) -> DatabaseServiceRecord:
-        connection = None
-        raw = self._config.connection
-        if raw:
-            config: dict[str, Any] = {
-                "type": "Mysql",
-                "hostPort": raw.get("hostPort") or raw.get("host_port"),
-                "username": raw.get("username"),
-            }
-            schema = raw.get("databaseSchema") or raw.get("database_schema")
-            if schema:
-                config["databaseSchema"] = schema
-            database = raw.get("databaseName") or raw.get("database")
-            if database:
-                config["databaseName"] = database
-            if self._config.store_connection_secrets and raw.get("password"):
-                config["authType"] = {"password": raw["password"]}
-            connection = {"config": config}
+        connection = mysql_common.build_service_connection_config(
+            raw=self._config.connection or {},
+            store_secrets=self._config.store_connection_secrets,
+        )
         return DatabaseServiceRecord(
             name=self._config.service_name,
             service_type="Mysql",
             display_name=self._config.service_display_name,
+            description=None,
             connection=connection,
         )
 

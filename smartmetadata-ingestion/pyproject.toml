@@ -25,9 +25,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-postgres = ["psycopg[binary]>=3.1,<4"]
+# postgres: metadata uses psycopg3; companions/OM wire use psycopg2 + GeoAlchemy2 + packaging (OM plugins["postgres"]).
+postgres = [
+  "psycopg[binary]>=3.1,<4",
+  "psycopg2-binary",
+  "GeoAlchemy2",
+  "packaging",
+]
+# mysql: OM also lists cloud-sql-python-connector[pymysql] + collate-data-diff — SM omits both (unused / OutOfScope).
 mysql = ["pymysql>=1.1,<2"]
+# snowflake: SM imports snowflake.connector (not snowflake-sqlalchemy). OM plugins pin snowflake-sqlalchemy which pulls the connector; keep connector pin matching code.
 snowflake = ["snowflake-connector-python>=3.12,<4"]
+# kafka/redpanda: OM uses confluent-kafka[schemaregistry]; SM KafkaSampler/RedpandaSampler use kafka-python — keep code-matching extra (documented residual).
 kafka = ["kafka-python>=2.0,<3"]
 redpanda = ["kafka-python>=2.0,<3"]
 databricks = [

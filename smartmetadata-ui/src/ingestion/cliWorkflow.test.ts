@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { buildCliWorkflowYaml, cliSourceType } from './cliWorkflow';
+import { buildCliWorkflowYaml, cliSourceType, cliSourceTypeForPipeline } from './cliWorkflow';
 import type { CatalogService, IngestionPipeline } from '@/types/ingestion';
 
 describe('CLI workflow export', () => {
@@ -60,4 +60,46 @@ describe('CLI workflow export', () => {
     expect(yaml).not.toContain('********');
     expect(yaml).toContain('storeConnectionSecrets: false');
   });
+
+  it('maps lineage/usage pipelineTypes to OM-style source.type suffixes', () => {
+    expect(cliSourceTypeForPipeline('Postgres', 'metadata')).toBe('postgres');
+    expect(cliSourceTypeForPipeline('Postgres', 'lineage')).toBe('postgres-lineage');
+    expect(cliSourceTypeForPipeline('Mysql', 'usage')).toBe('mysql-usage');
+    expect(cliSourceTypeForPipeline('Snowflake', 'lineage')).toBe('snowflake-lineage');
+    expect(cliSourceTypeForPipeline('Kafka', 'metadata')).toBe('kafka');
+    expect(cliSourceTypeForPipeline('Kafka', 'lineage')).toBe('kafka-lineage');
+    expect(cliSourceTypeForPipeline('BigQuery', 'metadata')).toBeUndefined();
+  });
+
+  it('emits lineage workflow YAML with postgres-lineage source.type', () => {
+    const pipeline: IngestionPipeline = {
+      id: 'p2',
+      name: 'warehouse-lineage',
+      fullyQualifiedName: 'warehouse.warehouse-lineage',
+      pipelineType: 'lineage',
+      sourceConfig: { config: { type: 'DatabaseLineage', schemaFilterPattern: { includes: ['public'] } } },
+    };
+    const service: CatalogService = {
+      id: 's1',
+      name: 'warehouse',
+      kind: 'database',
+      serviceType: 'Postgres',
+      connection: {
+        config: {
+          type: 'Postgres',
+          hostPort: 'localhost:5432',
+          username: 'analyst',
+          database: 'analytics',
+          authType: { password: '********' },
+        },
+      },
+    };
+    const yaml = buildCliWorkflowYaml(pipeline, service);
+    expect(yaml).toContain('type: lineage');
+    expect(yaml).toContain('source:\n  type: postgres-lineage\n  serviceName: warehouse');
+    expect(yaml).toContain('includeSchemas:\n    - public');
+    expect(yaml).not.toContain('includeViewLineage');
+  });
+
+
 });

@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.registry import register_source
+from smartmetadata_ingestion.connectors import snowflake_common
 from smartmetadata_ingestion.connectors.select import is_selected
 from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
 from smartmetadata_ingestion.datatypes import map_snowflake_type
@@ -268,24 +269,15 @@ class SnowflakeSource:
                 yield from self._view_lineage(reader, database.name)
 
     def _service_record(self) -> DatabaseServiceRecord:
-        connection = None
-        raw = self._config.connection
-        if raw:
-            config: dict[str, Any] = {
-                "type": "Snowflake",
-                "account": raw.get("account"),
-                "username": raw.get("username"),
-                "warehouse": raw.get("warehouse"),
-                "database": raw.get("database"),
-                "role": raw.get("role"),
-            }
-            if self._config.store_connection_secrets and raw.get("password"):
-                config["password"] = raw["password"]
-            connection = {"config": {key: value for key, value in config.items() if value}}
+        connection = snowflake_common.build_service_connection_config(
+            raw=self._config.connection or {},
+            store_secrets=self._config.store_connection_secrets,
+        )
         return DatabaseServiceRecord(
             name=self._config.service_name,
             service_type="Snowflake",
             display_name=self._config.service_display_name,
+            description=None,
             connection=connection,
         )
 

@@ -10,16 +10,82 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors import redshift_common as redshift
 from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.records import ProfileRecord
 
 
-class RedshiftProfilerInterface:
-    def __init__(self, reader: redshift.ProfileReader) -> None:
+
+
+class SystemProfileRow:
+    """One OM SystemProfile-shaped DML metric point (insert/update/delete)."""
+
+    def __init__(
+        self,
+        *,
+        timestamp: int,
+        operation: str,
+        rows_affected: int | None = None,
+    ) -> None:
+        self.timestamp = timestamp
+        self.operation = operation
+        self.rows_affected = rows_affected
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "operation": self.operation,
+            "rowsAffected": self.rows_affected,
+        }
+
+
+class SystemMetricsReader(Protocol):
+    def get_system_metrics(
+        self, database: str, schema: str, table: str
+    ) -> Sequence[SystemProfileRow]: ...
+
+
+class SequenceSystemMetricsReader:
+    def __init__(self, rows: Sequence[SystemProfileRow] = ()) -> None:
+        self._rows = list(rows)
+
+    def get_system_metrics(
+        self, database: str, schema: str, table: str
+    ) -> Sequence[SystemProfileRow]:
+        return self._rows
+
+
+class RedshiftSystemMetricsComputer:
+    """OM RedshiftSystemMetricsComputer surface (supportsSystemProfile).
+
+    Unit BehaviorMatched via injectable SystemMetricsReader. Live STL/SVL query
+    path remains Partial without reachable Redshift credentials.
+    """
+
+    def __init__(self, reader: SystemMetricsReader) -> None:
         self._reader = reader
+
+    def get_system_metrics(
+        self, *, database: str, schema: str, table: str
+    ) -> list[dict[str, Any]]:
+        return [
+            row.as_dict()
+            for row in self._reader.get_system_metrics(database, schema, table)
+        ]
+
+
+class RedshiftProfilerInterface:
+    def __init__(
+        self,
+        reader: redshift.ProfileReader,
+        *,
+        system_metrics: RedshiftSystemMetricsComputer | None = None,
+    ) -> None:
+        self._reader = reader
+        self._system_metrics = system_metrics
 
     def profile(
         self,
@@ -59,6 +125,13 @@ class RedshiftProfilerInterface:
                 "rowCount": table_stat.row_count if table_stat else None,
             },
             column_profile=column_profile,
+            system_profile=(
+                self._system_metrics.get_system_metrics(
+                    database=database, schema=schema, table=table
+                )
+                if self._system_metrics is not None
+                else []
+            ),
         )
 
 

@@ -13,6 +13,8 @@ import pytest
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.kafka import (
+    KafkaSampler,
+    SequenceTopicMessageSampler,
     ConfluentHttpTopicReader,
     KafkaSource,
     SequenceTopicReader,
@@ -258,3 +260,39 @@ def test_http_reader_rejects_empty_proxy_and_http_errors() -> None:
     with pytest.raises(WorkflowError, match="HTTP 500"):
         reader.list_topics()
     reader.close()
+
+
+def test_kafka_sampler_sequence_behavior_matched() -> None:
+    source = KafkaSource(
+        SourceConfig(type="kafka", service_name="k", connection={"bootstrapServers": "localhost:9092"}),
+        reader=SequenceTopicReader(),
+        sampler=SequenceTopicMessageSampler(samples={"orders": [{"id": 1}, {"id": 2}]}),
+    )
+    rows = source.sampler().sample(topic="orders", limit=1)
+    assert rows == [{"id": 1}]
+
+
+def test_kafka_sampler_without_injectable_is_honest_partial() -> None:
+    sampler = KafkaSampler(
+        SourceConfig(type="kafka", service_name="k", connection={"bootstrapServers": "localhost:9092"})
+    )
+    with pytest.raises(WorkflowError, match="Partial"):
+        sampler.sample(topic="orders")
+
+
+def test_kafka_connection_supports_profiler_flag() -> None:
+    source = KafkaSource(
+        SourceConfig(
+            type="kafka",
+            service_name="k",
+            connection={
+                "bootstrapServers": "localhost:9092",
+                "supportsProfiler": True,
+                "securityProtocol": "PLAINTEXT",
+            },
+        ),
+        reader=SequenceTopicReader(),
+    )
+    service = next(iter(source.produce()))
+    assert service.connection["config"]["supportsProfiler"] is True
+    assert service.connection["config"]["securityProtocol"] == "PLAINTEXT"

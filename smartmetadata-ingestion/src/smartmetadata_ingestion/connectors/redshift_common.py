@@ -254,10 +254,32 @@ def build_service_connection_config(
         "database",
         "ingestAllDatabases",
         "sslMode",
-        "clusterIdentifier", "workgroupName",
+        "clusterIdentifier",
+        "workgroupName",
+        "supportsMetadataExtraction",
+        "supportsIncrementalMetadataExtraction",
+        "supportsUsageExtraction",
+        "supportsLineageExtraction",
+        "supportsDBTExtraction",
+        "supportsProfiler",
+        "supportsDatabase",
+        "supportsQueryComment",
+        "supportsSystemProfile",
+        "supportsDataDiff",
     ):
         if raw.get(key) is not None and raw.get(key) != "":
             config[key] = raw[key]
+    for key in (
+        "schemaFilterPattern",
+        "tableFilterPattern",
+        "databaseFilterPattern",
+        "storedProcedureFilterPattern",
+        "sslConfig",
+        "connectionOptions",
+        "connectionArguments",
+    ):
+        if isinstance(raw.get(key), dict) and raw.get(key):
+            config[key] = dict(raw[key])
     if store_secrets:
         pwd = password_of(raw)
         if pwd:

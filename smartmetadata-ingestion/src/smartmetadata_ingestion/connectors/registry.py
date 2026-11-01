@@ -54,8 +54,14 @@ def load_builtin_sources() -> None:
     from smartmetadata_ingestion.connectors import base as _base  # noqa: F401
     from smartmetadata_ingestion.connectors import kafka as _kafka  # noqa: F401
     from smartmetadata_ingestion.connectors import mysql as _mysql  # noqa: F401
+    from smartmetadata_ingestion.connectors import mysql_lineage as _mysql_lineage  # noqa: F401
+    from smartmetadata_ingestion.connectors import mysql_usage as _mysql_usage  # noqa: F401
     from smartmetadata_ingestion.connectors import postgres as _postgres  # noqa: F401
+    from smartmetadata_ingestion.connectors import postgres_lineage as _postgres_lineage  # noqa: F401
+    from smartmetadata_ingestion.connectors import postgres_usage as _postgres_usage  # noqa: F401
     from smartmetadata_ingestion.connectors import snowflake as _snowflake  # noqa: F401
+    from smartmetadata_ingestion.connectors import snowflake_lineage as _snowflake_lineage  # noqa: F401
+    from smartmetadata_ingestion.connectors import snowflake_usage as _snowflake_usage  # noqa: F401
     from smartmetadata_ingestion.connectors import databricks as _databricks  # noqa: F401
     from smartmetadata_ingestion.connectors import databricks_lineage as _databricks_lineage  # noqa: F401
     from smartmetadata_ingestion.connectors import databricks_usage as _databricks_usage  # noqa: F401
