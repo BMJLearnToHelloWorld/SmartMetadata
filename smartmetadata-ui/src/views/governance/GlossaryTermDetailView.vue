@@ -6,22 +6,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import {Alert, Button, Card, Descriptions, Form, Input, Select, Space, Spin, Tag, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -200,9 +187,9 @@ onMounted(() => {
         <Typography.Paragraph type="secondary">
           {{ t('terms.relatedLead') }}
         </Typography.Paragraph>
-        <Table
+        <SmTable
           row-key="id"
-          data-testid="term-assets-table"
+          test-id="term-assets-table"
           :columns="assetColumns"
           :data-source="assets"
           :pagination="false"
@@ -220,18 +207,17 @@ onMounted(() => {
               <span v-else>{{ (record as EntityRef).displayName || (record as EntityRef).name }}</span>
             </template>
           </template>
-        </Table>
+        </SmTable>
         <Typography.Text v-if="!assets.length" type="secondary">{{ t('terms.noAssets') }}</Typography.Text>
       </Space>
     </Card>
-    <Modal
-      v-model:open="editOpen"
+    <FormModal
+      :open="editOpen"
       :title="t('terms.editTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="saving"
-      @ok="onSave"
-    >
+      @ok="onSave" @cancel="editOpen = false">
       <Form layout="vertical">
         <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
           <Input v-model:value="editForm.displayName" />
@@ -251,7 +237,7 @@ onMounted(() => {
           </Select>
         </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   </Spin>
 </template>
 

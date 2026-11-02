@@ -6,7 +6,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Table, Tooltip, message } from 'ant-design-vue';
+import {Alert, Button, Descriptions, Tooltip, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { listIngestionPipelines } from '@/api/ingestionPipelines';
 import { SERVICE_DETAIL_TABS } from '@/catalog/ingestionTabs';
 import SmState from '@/components/shared/SmState.vue';
@@ -217,9 +218,9 @@ onMounted(() => {
         test-id="service-pipelines-error"
         :error-text="pipelinesError"
       />
-      <Table
+      <SmTable
         v-else
-        data-testid="service-pipelines-table"
+        test-id="service-pipelines-table"
         row-key="id"
         size="small"
         :columns="pipelineColumns"
@@ -241,7 +242,7 @@ onMounted(() => {
             {{ (record as IngestionPipeline).enabled === false ? t('crud.no') : t('crud.yes') }}
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #assets>
       <SmState state="empty" test-id="service-assets-residual" :empty-text="residualByKey.get('assets')" />

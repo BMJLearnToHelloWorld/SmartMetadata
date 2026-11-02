@@ -28,6 +28,10 @@ withDefaults(
     okDisabled?: boolean;
     size?: ModalSizeKey;
     destroyOnClose?: boolean;
+    // Optional getContainer passthrough (default: Ant portal to body).
+    // Only used where a view deliberately renders its modal in place
+    // (:get-container="false"); the value is preserved, never dropped.
+    getContainer?: string | false;
     testId?: string;
   }>(),
   {
@@ -37,6 +41,7 @@ withDefaults(
     okDisabled: false,
     size: 'form',
     destroyOnClose: true,
+    getContainer: undefined,
     testId: 'form-modal',
   },
 );
@@ -51,6 +56,7 @@ const { t } = useI18n();
     :title="title"
     :width="MODAL_SIZES[size]"
     :destroy-on-close="destroyOnClose"
+    :get-container="getContainer"
     :ok-text="okText ?? t('crud.save')"
     :cancel-text="cancelText ?? t('crud.cancel')"
     :confirm-loading="confirmLoading"

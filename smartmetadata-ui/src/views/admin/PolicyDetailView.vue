@@ -6,16 +6,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Button,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Table,
-  message,
-} from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { deletePolicy, getPolicy, updatePolicy } from '@/api/policies';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -196,9 +189,9 @@ watch(
       >
         {{ t('admin.policies.addRule') }}
       </Button>
-      <Table
+      <SmTable
         row-key="name"
-        data-testid="policy-rules-table"
+        test-id="policy-rules-table"
         :columns="ruleColumns"
         :data-source="policy?.rules ?? []"
         :pagination="false"
@@ -229,12 +222,12 @@ watch(
             {{ (record as PolicyRule).condition || '—' }}
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #roles>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="policy-roles-table"
+        test-id="policy-roles-table"
         :columns="refColumns"
         :data-source="policy?.roles ?? []"
         :pagination="false"
@@ -252,12 +245,12 @@ watch(
             <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #teams>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="policy-teams-table"
+        test-id="policy-teams-table"
         :columns="refColumns"
         :data-source="policy?.teams ?? []"
         :pagination="false"
@@ -275,20 +268,18 @@ watch(
             <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('admin.policies.editTitle')"
     :ok-text="t('crud.save')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    width="720px"
-    destroy-on-close
+    size="wide"
     :get-container="false"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')">
         <Input v-model:value="form.displayName" data-testid="edit-policy-display-name" />
@@ -300,5 +291,5 @@ watch(
         <Checkbox v-model:checked="form.enabled">{{ t('admin.policies.enabledHint') }}</Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

@@ -6,7 +6,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Table, Tag } from 'ant-design-vue';
+import {Button, Tag} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { fetchSystemStatus } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { StepValidation, SystemValidationResponse } from '@/types/admin';
@@ -69,7 +70,7 @@ onMounted(() => {
     <Button style="margin-bottom: 12px" data-testid="om-health-refresh" @click="load">
       {{ t('settings.health.refresh') }}
     </Button>
-    <Table row-key="key" :columns="columns" :data-source="rows" :pagination="false" data-testid="om-health-table">
+    <SmTable row-key="key" :columns="columns" :data-source="rows" :pagination="false" test-id="om-health-table">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'passed'">
           <Tag :color="(record as Row).step?.passed ? 'success' : 'error'">
@@ -80,6 +81,6 @@ onMounted(() => {
           {{ (record as Row).step?.message || (record as Row).step?.description || '—' }}
         </template>
       </template>
-    </Table>
+    </SmTable>
   </PreferencePageShell>
 </template>

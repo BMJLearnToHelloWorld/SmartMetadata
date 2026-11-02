@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, message } from 'ant-design-vue';
+import {Button, Form, Input, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createBotWithUser, listBots } from '@/api/bots';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -142,14 +143,13 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('admin.bots.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
-    @ok="onCreate"
-  >
+    @ok="onCreate" @cancel="createOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('admin.bots.botName')" :rules="requiredField(t, t('admin.bots.botName'))">
         <Input v-model:value="form.name" data-testid="create-bot-name" />
@@ -167,5 +167,5 @@ onMounted(() => {
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

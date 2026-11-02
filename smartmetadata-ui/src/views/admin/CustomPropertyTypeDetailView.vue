@@ -5,7 +5,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import {
   addOrUpdateCustomProperty,
   getMetadataTypeByName,
@@ -177,9 +179,9 @@ watch(
           {{ definitions.length }}
         </Descriptions.Item>
       </Descriptions>
-      <Table
+      <SmTable
         row-key="name"
-        data-testid="admin-custom-property-defs-table"
+        test-id="admin-custom-property-defs-table"
         :columns="columns"
         :data-source="definitions"
         :pagination="false"
@@ -206,19 +208,17 @@ watch(
             </Button>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="modalOpen"
+  <FormModal
+    :open="modalOpen"
     :title="editingName ? t('settings.customProperties.editTitle') : t('settings.customProperties.addTitle')"
     :ok-text="t('crud.save')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    destroy-on-close
     :get-container="false"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="modalOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input
@@ -242,5 +242,5 @@ watch(
         />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

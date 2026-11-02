@@ -6,7 +6,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, updateTestCase } from '@/api/testCases';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestCaseResults } from '@/api/testCaseResults';
@@ -246,8 +248,8 @@ onMounted(() => {
     <template #results>
       <p class="entity-detail__tab-lead">{{ t('asset.resultsChartLead') }}</p>
       <SmChart kind="bar" test-id="test-case-results-chart" :series="resultSeries" :empty="t('charts.empty')" />
-      <Table
-        data-testid="test-case-results-table"
+      <SmTable
+        test-id="test-case-results-table"
         row-key="timestamp"
         size="small"
         style="margin-top: 16px"
@@ -260,7 +262,7 @@ onMounted(() => {
             {{ formatTs((record as TestCaseResult).timestamp) }}
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #issues>
       <SmState
@@ -269,9 +271,9 @@ onMounted(() => {
         test-id="test-case-issues-error"
         :error-text="issuesError"
       />
-      <Table
+      <SmTable
         v-else
-        data-testid="test-case-issues-table"
+        test-id="test-case-issues-table"
         row-key="id"
         size="small"
         :columns="issueColumns"
@@ -292,7 +294,7 @@ onMounted(() => {
             </a>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #dimensionality>
       <SmState state="empty" test-id="test-case-dimensionality-residual" :empty-text="t('quality.testCases.residualDimensionality')" />
@@ -301,14 +303,13 @@ onMounted(() => {
       <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('quality.testCases.residualSqlQuery')" />
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('quality.testCases.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -320,7 +321,7 @@ onMounted(() => {
         <Input.TextArea v-model:value="editForm.parameterText" :rows="3" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>
 
 <style scoped>

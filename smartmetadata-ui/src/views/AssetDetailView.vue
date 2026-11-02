@@ -6,20 +6,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import {Alert, Button, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
@@ -653,10 +642,10 @@ onMounted(() => {
             data-testid="asset-schema-empty"
             :description="t('asset.schemaEmpty')"
           />
-          <Table
+          <SmTable
             v-else
             row-key="name"
-            data-testid="asset-schema-table"
+            test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
             :pagination="false"
@@ -671,10 +660,10 @@ onMounted(() => {
             data-testid="asset-schema-empty"
             :description="t('asset.schemaEmpty')"
           />
-          <Table
+          <SmTable
             v-else
             row-key="name"
-            data-testid="asset-schema-table"
+            test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
             :pagination="false"
@@ -689,10 +678,10 @@ onMounted(() => {
             data-testid="asset-schema-empty"
             :description="t('asset.schemaEmpty')"
           />
-          <Table
+          <SmTable
             v-else
             row-key="name"
-            data-testid="asset-schema-table"
+            test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
             :pagination="false"
@@ -708,18 +697,18 @@ onMounted(() => {
           />
           <template v-else>
             <Typography.Title :level="5">{{ t('asset.featuresTitle') }}</Typography.Title>
-            <Table
+            <SmTable
               row-key="name"
-              data-testid="asset-features-table"
+              test-id="asset-features-table"
               :columns="featureColumns"
               :data-source="asset.mlFeatures ?? []"
               :pagination="false"
               size="small"
             />
             <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.hyperTitle') }}</Typography.Title>
-            <Table
+            <SmTable
               row-key="name"
-              data-testid="asset-hyper-table"
+              test-id="asset-hyper-table"
               :columns="hyperColumns"
               :data-source="asset.mlHyperParameters ?? []"
               :pagination="false"
@@ -750,10 +739,10 @@ onMounted(() => {
             data-testid="pipeline-executions-empty"
             :description="t('asset.executionsEmpty')"
           />
-          <Table
+          <SmTable
             v-else-if="executionRows.length"
             row-key="timestamp"
-            data-testid="pipeline-executions-table"
+            test-id="pipeline-executions-table"
             :columns="executionColumns"
             :data-source="executionRows"
             :pagination="false"
@@ -764,7 +753,7 @@ onMounted(() => {
                 {{ formatTs((record as CatalogPipelineStatus).timestamp) }}
               </template>
             </template>
-          </Table>
+          </SmTable>
       </template>
       <template v-if="asset" #code>
           <Typography.Paragraph type="secondary">{{ t('asset.codeLead') }}</Typography.Paragraph>
@@ -817,18 +806,18 @@ onMounted(() => {
           />
           <template v-else>
             <Typography.Title :level="5">{{ t('asset.chartsTitle') }}</Typography.Title>
-            <Table
+            <SmTable
               row-key="name"
-              data-testid="asset-charts-table"
+              test-id="asset-charts-table"
               :columns="refColumns"
               :data-source="asset.charts ?? []"
               :pagination="false"
               size="small"
             />
             <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.dataModelsTitle') }}</Typography.Title>
-            <Table
+            <SmTable
               row-key="name"
-              data-testid="asset-data-models-table"
+              test-id="asset-data-models-table"
               :columns="refColumns"
               :data-source="asset.dataModels ?? []"
               :pagination="false"
@@ -912,15 +901,14 @@ onMounted(() => {
           />
       </template>
     </EntityDetailShell>
-    <Modal
-      v-model:open="editOpen"
+    <FormModal
+      :open="editOpen"
       :title="t('asset.editTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
-      @ok="onSaveGovernance"
-    >
+      @ok="onSaveGovernance" @cancel="editOpen = false">
       <Form layout="vertical">
         <Form.Item :label="t('asset.fields.description')">
           <Input.TextArea v-model:value="editForm.description" data-testid="asset-description" :rows="3" />
@@ -947,31 +935,29 @@ onMounted(() => {
           </Select>
         </Form.Item>
       </Form>
-    </Modal>
-    <Modal
-      v-model:open="commentOpen"
+    </FormModal>
+    <FormModal
+      :open="commentOpen"
       :title="t('asset.commentTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
-      @ok="onCreateConversation"
-    >
+      @ok="onCreateConversation" @cancel="commentOpen = false">
       <Form layout="vertical">
         <Form.Item :label="t('asset.messageLabel')" :rules="requiredField(t, t('asset.messageLabel'))">
           <Input.TextArea v-model:value="commentMessage" data-testid="asset-conversation-message" :rows="3" />
         </Form.Item>
       </Form>
-    </Modal>
-    <Modal
-      v-model:open="propsOpen"
+    </FormModal>
+    <FormModal
+      :open="propsOpen"
       :title="t('asset.propsTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :get-container="false"
       :confirm-loading="saving"
-      @ok="onSaveCustomProperties"
-    >
+      @ok="onSaveCustomProperties" @cancel="propsOpen = false">
       <Form layout="vertical">
         <Form.Item
           v-for="def in customProperties"
@@ -981,7 +967,7 @@ onMounted(() => {
           <Input v-model:value="extensionForm[def.name]" :data-testid="`custom-prop-${def.name}`" />
         </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   </div>
 </template>
 

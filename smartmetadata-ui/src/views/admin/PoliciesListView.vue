@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Checkbox, Form, Input, Modal, Select, message } from 'ant-design-vue';
+import {Button, Checkbox, Form, Input, Select, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createPolicy, deletePolicy, listPolicies } from '@/api/policies';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -221,16 +222,14 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('admin.policies.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
-    destroy-on-close
     :get-container="false"
-    @ok="onCreate"
-  >
+    @ok="onCreate" @cancel="createOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-policy-name" />
@@ -276,5 +275,5 @@ onMounted(() => {
         />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

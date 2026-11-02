@@ -6,21 +6,8 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import {Alert, Button, Card, Descriptions, Form, Input, InputNumber, Select, Space, Switch, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
 import {
   EDITABLE_SETTING_TYPES,
@@ -247,7 +234,7 @@ onMounted(() => {
       <Typography.Paragraph type="secondary">
         {{ t('settings.system.allLead') }}
       </Typography.Paragraph>
-      <Table row-key="configType" :columns="settingColumns" :data-source="settings" :pagination="false">
+      <SmTable row-key="configType" :columns="settingColumns" :data-source="settings" :pagination="false">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'editable'">
             {{
@@ -260,7 +247,7 @@ onMounted(() => {
             <Typography.Text type="secondary">{{ preview((record as SystemSetting).configValue) }}</Typography.Text>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </Card>
   </Space>
 </template>

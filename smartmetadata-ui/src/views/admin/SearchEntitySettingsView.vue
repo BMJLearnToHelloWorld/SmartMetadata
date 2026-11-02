@@ -7,7 +7,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Form, Input, InputNumber, Select, Space, Table, message } from 'ant-design-vue';
+import {Button, Form, Input, InputNumber, Select, Space, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsSearch, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { AssetTypeConfiguration, SearchSettings } from '@/types/admin';
@@ -134,12 +135,12 @@ onMounted(() => {
       </Form.Item>
     </Form>
 
-    <Table
+    <SmTable
       row-key="__idx"
       :columns="fieldColumns"
       :data-source="(form.searchFields ?? []).map((row, index) => ({ ...row, __idx: index }))"
       :pagination="false"
-      data-testid="search-fields-table"
+      test-id="search-fields-table"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'field'">
@@ -158,6 +159,6 @@ onMounted(() => {
           </Button>
         </template>
       </template>
-    </Table>
+    </SmTable>
   </PreferencePageShell>
 </template>

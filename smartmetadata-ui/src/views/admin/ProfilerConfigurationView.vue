@@ -7,7 +7,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Input, Select, Space, Table, message } from 'ant-design-vue';
+import {Button, Form, Input, Select, Space, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsProfiler, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import { PROFILER_DATA_TYPES, PROFILER_METRICS } from '@/quality/profilerConfig';
@@ -93,12 +94,12 @@ onMounted(() => {
         {{ t('settings.profiler.save') }}
       </Button>
     </Space>
-    <Table
+    <SmTable
       row-key="__idx"
       :columns="columns"
       :data-source="form.metrics.map((row, index) => ({ ...row, __idx: index }))"
       :pagination="false"
-      data-testid="profiler-metrics-table"
+      test-id="profiler-metrics-table"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'dataType'">
@@ -134,6 +135,6 @@ onMounted(() => {
           </Button>
         </template>
       </template>
-    </Table>
+    </SmTable>
   </PreferencePageShell>
 </template>

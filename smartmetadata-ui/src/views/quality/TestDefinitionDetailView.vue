@@ -5,7 +5,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { getTestDefinition, updateTestDefinition } from '@/api/testDefinitions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -143,7 +145,7 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #parameters>
-      <Table
+      <SmTable
         v-if="definition"
         row-key="name"
         size="small"
@@ -156,17 +158,16 @@ onMounted(() => {
             {{ record.required ? t('crud.yes') : t('crud.no') }}
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('quality.testDefinitions.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -189,5 +190,5 @@ onMounted(() => {
         </Select>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

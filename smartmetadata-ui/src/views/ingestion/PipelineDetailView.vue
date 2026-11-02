@@ -6,7 +6,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Table, Tooltip, message } from 'ant-design-vue';
+import {Alert, Button, Descriptions, Tooltip, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import {
   deleteIngestionPipeline,
   getIngestionPipeline,
@@ -210,10 +211,10 @@ onMounted(() => {
       <pre v-if="cliYaml" class="ing-yaml" data-testid="pipeline-cli-yaml">{{ cliYaml }}</pre>
     </template>
     <template #status>
-      <Table
+      <SmTable
         row-key="runId"
         size="small"
-        data-testid="pipeline-status-table"
+        test-id="pipeline-status-table"
         :columns="statusColumns"
         :data-source="statuses"
         :pagination="false"

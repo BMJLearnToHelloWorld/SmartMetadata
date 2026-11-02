@@ -6,7 +6,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { deleteDataProduct, getDataProduct, listDataProductAssets, updateDataProduct } from '@/api/dataProducts';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -184,7 +186,7 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #assets>
-      <Table row-key="id" :columns="assetColumns" :data-source="assets" :pagination="false" size="small">
+      <SmTable row-key="id" :columns="assetColumns" :data-source="assets" :pagination="false" size="small">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
             <a
@@ -197,18 +199,17 @@ onMounted(() => {
             <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
-      </Table>
+      </SmTable>
       <p v-if="!assets.length" class="entity-detail__tab-lead">{{ t('governance.dataProducts.noAssets') }}</p>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('governance.dataProducts.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -228,7 +229,7 @@ onMounted(() => {
         </Select>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>
 
 <style scoped>
