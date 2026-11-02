@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Descriptions, Form, Input, Switch, message} from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, InputNumber, Select, Switch, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -23,7 +23,22 @@ const alert = ref<EventSubscription | null>(null);
 const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
-const editForm = reactive({ displayName: '', description: '', enabled: true, endpoint: '' });
+const editForm = reactive({
+  displayName: '',
+  description: '',
+  enabled: true,
+  endpoint: '',
+  destinationType: 'Webhook',
+  readTimeout: 12,
+  resources: [] as string[],
+});
+
+/** Official AlertDetails filters rendering: Include renders ===, anything else !==. */
+function filterRuleText(rule: { name?: string; effect?: string; condition?: string | string[] }): string {
+  const conditions = Array.isArray(rule.condition) ? rule.condition.join(', ') : (rule.condition ?? '');
+  const effect = rule.effect === 'Include' ? '===' : '!==';
+  return [rule.name, effect, conditions].filter(Boolean).join(' ');
+}
 
 async function onDeleteAlert(): Promise<void> {
   if (!alert.value) {
@@ -55,6 +70,9 @@ function openEdit(): void {
   editForm.description = alert.value.description || '';
   editForm.enabled = alert.value.enabled !== false;
   editForm.endpoint = alert.value.destinations[0]?.endpoint || '';
+  editForm.destinationType = alert.value.destinations[0]?.type || 'Webhook';
+  editForm.readTimeout = alert.value.destinations[0]?.readTimeout ?? 12;
+  editForm.resources = [...(alert.value.filteringRules?.resources ?? [])];
   editOpen.value = true;
 }
 
@@ -70,8 +88,15 @@ async function onSaveEdit(): Promise<void> {
       displayName: editForm.displayName.trim() || undefined,
       description: editForm.description.trim() || undefined,
       enabled: editForm.enabled,
+      filteringRules: editForm.resources.length > 0 ? { resources: editForm.resources } : undefined,
       destinations: editForm.endpoint.trim()
-        ? [{ category: 'External', type: 'Webhook', config: { endpoint: editForm.endpoint.trim() } }]
+        ? [
+            {
+              category: 'External',
+              type: editForm.destinationType,
+              config: { endpoint: editForm.endpoint.trim(), readTimeout: editForm.readTimeout },
+            },
+          ]
         : [],
     });
     editOpen.value = false;
@@ -98,6 +123,7 @@ const destinationColumns = computed<EntityListColumn[]>(() => [
   { title: t('observability.alerts.category'), dataIndex: 'category', key: 'category' },
   { title: t('crud.type'), dataIndex: 'type', key: 'type' },
   { title: t('observability.alerts.endpoint'), dataIndex: 'endpoint', key: 'endpoint' },
+  { title: t('observability.alerts.readTimeout'), dataIndex: 'readTimeout', key: 'readTimeout' },
 ]);
 
 async function load(): Promise<void> {
@@ -150,6 +176,17 @@ onMounted(() => {
           {{ alert.enabled === false ? t('crud.no') : t('crud.yes') }}
         </Descriptions.Item>
         <Descriptions.Item :label="t('crud.description')">{{ alert.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item v-if="alert.filteringRules?.resources?.length" :label="t('observability.alerts.trigger')">
+          {{ alert.filteringRules.resources.join(', ') }}
+        </Descriptions.Item>
+        <Descriptions.Item v-if="alert.filteringRules?.rules?.length" :label="t('observability.alerts.filters')">
+          <div v-for="rule in alert.filteringRules.rules" :key="rule.name">
+            <code>{{ filterRuleText(rule) }}</code>
+          </div>
+        </Descriptions.Item>
+        <Descriptions.Item v-if="alert.owners?.length" :label="t('crud.owners')">
+          {{ alert.owners.map((owner) => owner.displayName || owner.name).filter(Boolean).join(', ') }}
+        </Descriptions.Item>
       </Descriptions>
     </template>
     <template #destinations>
@@ -181,8 +218,22 @@ onMounted(() => {
       <Form.Item :label="t('crud.enabled')">
         <Switch v-model:checked="editForm.enabled" data-testid="edit-alert-enabled" />
       </Form.Item>
+      <Form.Item :label="t('observability.alerts.destinationType')">
+        <Select v-model:value="editForm.destinationType">
+          <Select.Option value="Webhook">Webhook</Select.Option>
+          <Select.Option value="Slack">Slack</Select.Option>
+          <Select.Option value="MSTeams">MSTeams</Select.Option>
+          <Select.Option value="GChat">GChat</Select.Option>
+        </Select>
+      </Form.Item>
       <Form.Item :label="t('observability.alerts.endpoint')">
         <Input v-model:value="editForm.endpoint" data-testid="edit-alert-endpoint" />
+      </Form.Item>
+      <Form.Item :label="t('observability.alerts.readTimeout')">
+        <InputNumber v-model:value="editForm.readTimeout" :min="0" data-testid="edit-alert-read-timeout" />
+      </Form.Item>
+      <Form.Item :label="t('observability.alerts.resources')">
+        <Select v-model:value="editForm.resources" mode="tags" data-testid="edit-alert-resources" />
       </Form.Item>
     </Form>
   </FormModal>

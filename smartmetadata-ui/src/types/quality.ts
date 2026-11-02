@@ -151,6 +151,19 @@ export interface EventSubscriptionDestination {
   type?: string;
   enabled?: boolean;
   endpoint?: string;
+  /** Seconds the destination waits for a response; official DEFAULT_READ_TIMEOUT = 12. */
+  readTimeout?: number;
+}
+
+export interface EventSubscriptionFilterRule {
+  name?: string;
+  effect?: string;
+  condition?: string | string[];
+}
+
+export interface EventSubscriptionFilteringRules {
+  resources?: string[];
+  rules?: EventSubscriptionFilterRule[];
 }
 
 export interface EventSubscription {
@@ -162,6 +175,8 @@ export interface EventSubscription {
   alertType?: string;
   enabled?: boolean;
   destinations: EventSubscriptionDestination[];
+  filteringRules?: EventSubscriptionFilteringRules;
+  owners?: EntityRef[];
 }
 
 export interface CreateEventSubscriptionRequest {
@@ -170,10 +185,11 @@ export interface CreateEventSubscriptionRequest {
   description?: string;
   displayName?: string;
   enabled?: boolean;
+  filteringRules?: { resources?: string[] };
   destinations: Array<{
     category: string;
     type: string;
-    config?: { endpoint?: string };
+    config?: { endpoint?: string; readTimeout?: number };
   }>;
 }
 
