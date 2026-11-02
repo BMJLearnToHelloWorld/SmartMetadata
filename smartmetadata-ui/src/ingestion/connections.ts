@@ -23,39 +23,122 @@ import {
   PIPELINE_SERVICE_TYPES,
 } from '@/types/ingestion';
 
+/** Service-kind tables: views look kinds up here instead of if-else chains. */
+export const SERVICE_TYPES_BY_KIND: Record<ServiceKind, readonly string[]> = {
+  database: DATABASE_SERVICE_TYPES,
+  messaging: MESSAGING_SERVICE_TYPES,
+  dashboard: DASHBOARD_SERVICE_TYPES,
+  storage: STORAGE_SERVICE_TYPES,
+  pipeline: PIPELINE_SERVICE_TYPES,
+};
+
+export const SERVICE_KIND_DEFAULT_TYPE: Record<ServiceKind, string> = {
+  database: 'Postgres',
+  messaging: 'Kafka',
+  dashboard: 'Superset',
+  storage: 'S3',
+  pipeline: 'Prefect',
+};
+
+export const SERVICE_ENTITY_TYPE_BY_KIND: Record<ServiceKind, string> = {
+  database: 'databaseService',
+  messaging: 'messagingService',
+  dashboard: 'dashboardService',
+  storage: 'storageService',
+  pipeline: 'pipelineService',
+};
+
+/** Entity-type string (as stored on a pipeline's service reference) back to kind. */
+export const SERVICE_KIND_BY_ENTITY_TYPE: Record<string, ServiceKind> = {
+  databaseService: 'database',
+  messagingService: 'messaging',
+  dashboardService: 'dashboard',
+  storageService: 'storage',
+  pipelineService: 'pipeline',
+};
+
+/** Password placeholder shown in connection forms, per service type. */
+export const PASSWORD_PLACEHOLDERS: Record<string, string> = {
+  Postgres: '${PG_PASSWORD}',
+  Mysql: '${MYSQL_PASSWORD}',
+  Snowflake: '${SNOWFLAKE_PASSWORD}',
+  Doris: '${DORIS_PASSWORD}',
+  Mssql: '${MSSQL_PASSWORD}',
+  MariaDB: '${MARIADB_PASSWORD}',
+  Redshift: '${REDSHIFT_PASSWORD}',
+  Greenplum: '${GREENPLUM_PASSWORD}',
+  Timescale: '${TIMESCALE_PASSWORD}',
+  Superset: '${SUPERSET_PASSWORD}',
+  Metabase: '${METABASE_PASSWORD}',
+  S3: '${AWS_SECRET_ACCESS_KEY}',
+  Prefect: '${PREFECT_API_KEY}',
+  Dagster: '${DAGSTER_TOKEN}',
+};
+
 export function kindForServiceType(serviceType: string): ServiceKind | undefined {
-  if ((DATABASE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
-    return 'database';
-  }
-  if ((MESSAGING_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
-    return 'messaging';
-  }
-  if ((DASHBOARD_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
-    return 'dashboard';
-  }
-  if ((STORAGE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
-    return 'storage';
-  }
-  if ((PIPELINE_SERVICE_TYPES as readonly string[]).includes(serviceType)) {
-    return 'pipeline';
-  }
-  return undefined;
+  const found = (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).find((kind) =>
+    (SERVICE_TYPES_BY_KIND[kind] as readonly string[]).includes(serviceType),
+  );
+  return found;
 }
 
 export function entityTypeForKind(kind: ServiceKind): string {
-  if (kind === 'messaging') {
-    return 'messagingService';
-  }
-  if (kind === 'dashboard') {
-    return 'dashboardService';
-  }
-  if (kind === 'storage') {
-    return 'storageService';
-  }
-  if (kind === 'pipeline') {
-    return 'pipelineService';
-  }
-  return 'databaseService';
+  return SERVICE_ENTITY_TYPE_BY_KIND[kind];
+}
+
+/** Blank service form with the same defaults the create modal historically used. */
+export function createEmptyServiceForm(): ServiceFormValues {
+  return {
+    name: '',
+    displayName: '',
+    description: '',
+    kind: 'database',
+    serviceType: 'Postgres',
+    hostPort: '',
+    username: '',
+    database: '',
+    databaseName: '',
+    databaseSchema: '',
+    account: '',
+    warehouse: '',
+    role: '',
+    bootstrapServers: '',
+    securityProtocol: '',
+    schemaRegistryURL: '',
+    httpPath: '',
+    catalog: '',
+    queryHistoryTable: '',
+    includeMetricViews: true,
+    authMode: 'pat',
+    clientId: '',
+    clientSecret: '',
+    azureClientId: '',
+    azureClientSecret: '',
+    azureTenantId: '',
+    password: '',
+    apiKey: '',
+    provider: 'db',
+    awsRegion: '',
+    awsAccessKeyId: '',
+    awsSecretAccessKey: '',
+    awsSessionToken: '',
+    awsEndPointURL: '',
+    awsProfileName: '',
+    assumeRoleArn: '',
+    assumeRoleSessionName: '',
+    assumeRoleSourceIdentity: '',
+    awsIamEnabled: false,
+    bucketNames: '',
+    consoleEndpointURL: '',
+    prefectAuthMode: 'server',
+    prefectAccountId: '',
+    prefectWorkspaceId: '',
+    prefectAuthString: '',
+    numberOfStatus: 10,
+    dagsterTimeout: 1000,
+    stripAssetKeyPrefixLength: 0,
+    storeConnectionSecrets: false,
+  };
 }
 
 function pickPassword(config: ServiceConnectionConfig | undefined): string | undefined {

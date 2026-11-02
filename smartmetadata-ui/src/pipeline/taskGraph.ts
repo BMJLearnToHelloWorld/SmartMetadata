@@ -13,6 +13,20 @@ import type { CatalogPipelineStatus, PipelineTask } from '@/types/api';
 export const TASK_NODE_WIDTH = 220;
 export const TASK_NODE_HEIGHT = 72;
 
+/**
+ * Task execution-status colours, as data. A task node looks its status up
+ * here; an unknown status maps to nothing (no invented colour). This is the
+ * Stage 7 closure of the Stage 3 DAG decision: the pipeline task graph keeps
+ * its own node model (it is not merged into the lineage graph), and its
+ * status rendering is table-driven rather than a switch pile.
+ */
+export const TASK_STATUS_COLORS: Record<string, string> = {
+  Successful: 'green',
+  Failed: 'red',
+  Pending: 'gold',
+  Skipped: 'default',
+};
+
 export interface PipelineTaskGraphNode {
   id: string;
   name: string;

@@ -6,40 +6,32 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Form, Input, Modal, Tooltip, message } from 'ant-design-vue';
-import { deleteDatabaseService, getDatabaseService, updateDatabaseService } from '@/api/databaseServices';
-import {
-  deleteDashboardService,
-  getDashboardService,
-  updateDashboardService,
-} from '@/api/dashboardServices';
-import { deleteMessagingService, getMessagingService, updateMessagingService } from '@/api/messagingServices';
-import {
-  deleteStorageService,
-  getStorageService,
-  updateStorageService,
-} from '@/api/storageServices';
-import {
-  deletePipelineService,
-  getPipelineService,
-  updatePipelineService,
-} from '@/api/pipelineServices';
+import { Alert, Button, Descriptions, Form, Input, Modal, Table, Tooltip, message } from 'ant-design-vue';
+import { listIngestionPipelines } from '@/api/ingestionPipelines';
+import { SERVICE_DETAIL_TABS } from '@/catalog/ingestionTabs';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import SmState from '@/components/shared/SmState.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
-import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { buildServiceConnection, formValuesFromService, redactConnectionForDisplay } from '@/ingestion/connections';
 import { cliSourceType } from '@/ingestion/cliWorkflow';
-import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
+import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_UPDATE_API } from '@/ingestion/serviceApis';
+import type {
+  CatalogService,
+  IngestionPipeline,
+  ServiceFormValues,
+  ServiceKind,
+} from '@/types/ingestion';
 
-const props = defineProps<{ kind: string; id: string }>();
+const props = defineProps<{ kind: string; id: string; initialTab?: string }>();
 const { t } = useI18n();
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const service = ref<CatalogService | null>(null);
-const activeTab = ref('overview');
+const activeTab = ref(props.initialTab ?? 'overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const deleting = ref(false);
@@ -51,21 +43,11 @@ const editForm = reactive<ServiceFormValues>({
   storeConnectionSecrets: false,
 });
 
-const kind = computed<ServiceKind>(() => {
-  if (props.kind === 'messaging') {
-    return 'messaging';
-  }
-  if (props.kind === 'dashboard') {
-    return 'dashboard';
-  }
-  if (props.kind === 'storage') {
-    return 'storage';
-  }
-  if (props.kind === 'pipeline') {
-    return 'pipeline';
-  }
-  return 'database';
-});
+const kind = computed<ServiceKind>(() =>
+  (['messaging', 'dashboard', 'storage', 'pipeline'] as readonly string[]).includes(props.kind)
+    ? (props.kind as ServiceKind)
+    : 'database',
+);
 const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
 const connectionJson = computed(() =>
   JSON.stringify(redactConnectionForDisplay(service.value?.connection) ?? {}, null, 2),
@@ -76,25 +58,59 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(service.value) || t('ingestion.services.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'service-tab-overview' },
-  { key: 'connection', label: t('ingestion.services.connectionTab'), testId: 'service-tab-connection' },
+const tabs = computed<EntityDetailTab[]>(() =>
+  SERVICE_DETAIL_TABS.map((tab) => ({
+    key: tab.key,
+    label: t(tab.labelKey),
+    testId: `service-tab-${tab.key}`,
+  })),
+);
+const servicePipelines = ref<IngestionPipeline[]>([]);
+const pipelinesLoading = ref(false);
+const pipelinesError = ref('');
+const pipelinesLoaded = ref(false);
+const pipelineColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
+  { title: t('crud.enabled'), key: 'enabled', width: 100 },
 ]);
+const residualByKey = computed(() => {
+  const map = new Map<string, string>();
+  for (const tab of SERVICE_DETAIL_TABS) {
+    if (!tab.supported && tab.residualReason) {
+      map.set(tab.key, tab.residualReason);
+    }
+  }
+  return map;
+});
+
+async function loadPipelines(): Promise<void> {
+  if (!service.value?.fullyQualifiedName || pipelinesLoaded.value) {
+    return;
+  }
+  pipelinesLoading.value = true;
+  pipelinesError.value = '';
+  try {
+    const page = await listIngestionPipelines({ service: service.value.fullyQualifiedName, limit: 100 });
+    servicePipelines.value = page.data;
+    pipelinesLoaded.value = true;
+  } catch {
+    servicePipelines.value = [];
+    pipelinesError.value = t('crud.loadFailed');
+  } finally {
+    pipelinesLoading.value = false;
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    if (kind.value === 'messaging') {
-      service.value = await getMessagingService(props.id);
-    } else if (kind.value === 'dashboard') {
-      service.value = await getDashboardService(props.id);
-    } else if (kind.value === 'storage') {
-      service.value = await getStorageService(props.id);
-    } else if (kind.value === 'pipeline') {
-      service.value = await getPipelineService(props.id);
-    } else {
-      service.value = await getDatabaseService(props.id);
+    service.value = await SERVICE_GET_API[kind.value](props.id);
+    pipelinesLoaded.value = false;
+    servicePipelines.value = [];
+    if (activeTab.value === 'pipelines') {
+      await loadPipelines();
     }
   } catch (error) {
     service.value = null;
@@ -125,17 +141,7 @@ async function onSave(): Promise<void> {
       description: editForm.description?.trim() || undefined,
       connection: buildServiceConnection(editForm, service.value.connection),
     };
-    if (kind.value === 'messaging') {
-      await updateMessagingService(body);
-    } else if (kind.value === 'dashboard') {
-      await updateDashboardService(body);
-    } else if (kind.value === 'storage') {
-      await updateStorageService(body);
-    } else if (kind.value === 'pipeline') {
-      await updatePipelineService(body);
-    } else {
-      await updateDatabaseService(body);
-    }
+    await SERVICE_UPDATE_API[kind.value](body);
     editOpen.value = false;
     message.success(t('ingestion.services.updated'));
     await load();
@@ -161,17 +167,7 @@ async function onDelete(): Promise<void> {
   }
   deleting.value = true;
   try {
-    if (kind.value === 'messaging') {
-      await deleteMessagingService(service.value.id);
-    } else if (kind.value === 'dashboard') {
-      await deleteDashboardService(service.value.id);
-    } else if (kind.value === 'storage') {
-      await deleteStorageService(service.value.id);
-    } else if (kind.value === 'pipeline') {
-      await deletePipelineService(service.value.id);
-    } else {
-      await deleteDatabaseService(service.value.id);
-    }
+    await SERVICE_DELETE_API[kind.value](service.value.id);
     message.success(t('ingestion.services.deleted', { name: service.value.name }));
     await router.push({ name: 'ingestion-services' });
   } catch (error) {
@@ -187,6 +183,12 @@ watch(
     void load();
   },
 );
+
+watch(activeTab, (tab) => {
+  if (tab === 'pipelines') {
+    void loadPipelines();
+  }
+});
 
 onMounted(() => {
   void load();
@@ -243,10 +245,62 @@ onMounted(() => {
     </template>
     <template #connection>
       <p class="entity-detail__tab-lead">{{ t('ingestion.services.connectionTitle') }}</p>
+      <Button
+        v-if="service"
+        data-testid="edit-service-connection"
+        @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
+      >
+        {{ t('ingestion.services.editConnection') }}
+      </Button>
       <p v-if="service" class="entity-detail__tab-lead" data-testid="service-connection-json-help">
         {{ t('ingestion.services.connectionJsonHelp') }}
       </p>
       <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
+    </template>
+    <template #pipelines>
+      <SmState
+        v-if="pipelinesError"
+        state="error"
+        test-id="service-pipelines-error"
+        :error-text="pipelinesError"
+      />
+      <Table
+        v-else
+        data-testid="service-pipelines-table"
+        row-key="id"
+        size="small"
+        :columns="pipelineColumns"
+        :data-source="servicePipelines"
+        :loading="pipelinesLoading"
+        :pagination="false"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              href="#"
+              :data-testid="`service-pipeline-${(record as IngestionPipeline).id}`"
+              @click.prevent="router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })"
+            >
+              {{ entityLabel(record as IngestionPipeline) }}
+            </a>
+          </template>
+          <template v-else-if="column.key === 'enabled'">
+            {{ (record as IngestionPipeline).enabled === false ? t('crud.no') : t('crud.yes') }}
+          </template>
+        </template>
+      </Table>
+    </template>
+    <template #assets>
+      <SmState state="empty" test-id="service-assets-residual" :empty-text="residualByKey.get('assets')" />
+    </template>
+    <template #insights>
+      <SmState state="empty" test-id="service-insights-residual" :empty-text="residualByKey.get('insights')" />
+    </template>
+    <template #agents>
+      <SmState state="empty" test-id="service-agents-residual" :empty-text="residualByKey.get('agents')" />
+    </template>
+    <template #versions>
+      <SmState state="empty" test-id="service-versions-residual" :empty-text="residualByKey.get('versions')" />
     </template>
   </EntityDetailShell>
   <Modal

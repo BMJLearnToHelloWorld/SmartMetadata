@@ -7,57 +7,14 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Checkbox, Form, Input, InputNumber, Select, Typography } from 'ant-design-vue';
 import { requiredField } from '@/features/crud/formRules';
+import { PASSWORD_PLACEHOLDERS } from '@/ingestion/connections';
 import type { ServiceFormValues } from '@/types/ingestion';
 
 const props = defineProps<{ form: ServiceFormValues }>();
 const { t } = useI18n();
 
 const type = computed(() => props.form.serviceType);
-const passwordPlaceholder = computed(() => {
-  if (type.value === 'Postgres') {
-    return '${PG_PASSWORD}';
-  }
-  if (type.value === 'Mysql') {
-    return '${MYSQL_PASSWORD}';
-  }
-  if (type.value === 'Snowflake') {
-    return '${SNOWFLAKE_PASSWORD}';
-  }
-  if (type.value === 'Doris') {
-    return '${DORIS_PASSWORD}';
-  }
-  if (type.value === 'Mssql') {
-    return '${MSSQL_PASSWORD}';
-  }
-  if (type.value === 'MariaDB') {
-    return '${MARIADB_PASSWORD}';
-  }
-  if (type.value === 'Redshift') {
-    return '${REDSHIFT_PASSWORD}';
-  }
-  if (type.value === 'Greenplum') {
-    return '${GREENPLUM_PASSWORD}';
-  }
-  if (type.value === 'Timescale') {
-    return '${TIMESCALE_PASSWORD}';
-  }
-  if (type.value === 'Superset') {
-    return '${SUPERSET_PASSWORD}';
-  }
-  if (type.value === 'Metabase') {
-    return '${METABASE_PASSWORD}';
-  }
-  if (type.value === 'S3') {
-    return '${AWS_SECRET_ACCESS_KEY}';
-  }
-  if (type.value === 'Prefect') {
-    return '${PREFECT_API_KEY}';
-  }
-  if (type.value === 'Dagster') {
-    return '${DAGSTER_TOKEN}';
-  }
-  return '';
-});
+const passwordPlaceholder = computed(() => PASSWORD_PLACEHOLDERS[type.value] ?? '');
 </script>
 
 <template>

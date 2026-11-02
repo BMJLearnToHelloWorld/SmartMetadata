@@ -12,6 +12,7 @@ import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipeline
 import { listDashboardServices } from '@/api/dashboardServices';
 import { listMessagingServices } from '@/api/messagingServices';
 import { listStorageServices } from '@/api/storageServices';
+import { listPipelineServices } from '@/api/pipelineServices';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -89,13 +90,14 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [pageResult, databasesResult, messagingResult, dashboardsResult, storageResult] =
+    const [pageResult, databasesResult, messagingResult, dashboardsResult, storageResult, pipelineServicesResult] =
       await Promise.allSettled([
         listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
         listDatabaseServices({ limit: 100 }),
         listMessagingServices({ limit: 100 }),
         listDashboardServices({ limit: 100 }),
         listStorageServices({ limit: 100 }),
+        listPipelineServices({ limit: 100 }),
       ]);
     if (pageResult.status !== 'fulfilled') {
       throw pageResult.reason instanceof Error
@@ -110,7 +112,8 @@ async function load(): Promise<void> {
     const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value.data : [];
     const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value.data : [];
     const storage = storageResult.status === 'fulfilled' ? storageResult.value.data : [];
-    catalogServices.value = [...databases, ...messaging, ...dashboards, ...storage];
+    const pipelineServices = pipelineServicesResult.status === 'fulfilled' ? pipelineServicesResult.value.data : [];
+    catalogServices.value = [...databases, ...messaging, ...dashboards, ...storage, ...pipelineServices];
   } catch (error) {
     pipelines.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');

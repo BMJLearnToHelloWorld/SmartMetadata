@@ -7,7 +7,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Checkbox, Descriptions, Form, Input, Modal, Table, Tooltip, message } from 'ant-design-vue';
-import { getDatabaseService } from '@/api/databaseServices';
 import {
   deleteIngestionPipeline,
   getIngestionPipeline,
@@ -15,14 +14,13 @@ import {
   listPipelineStatuses,
   updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
-import { getDashboardService } from '@/api/dashboardServices';
-import { getMessagingService } from '@/api/messagingServices';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { buildCliWorkflowYaml } from '@/ingestion/cliWorkflow';
-import { entityTypeForKind } from '@/ingestion/connections';
+import { SERVICE_KIND_BY_ENTITY_TYPE, entityTypeForKind } from '@/ingestion/connections';
+import { SERVICE_GET_API } from '@/ingestion/serviceApis';
 import { buildSourceConfig, formHintsFromSourceConfig } from '@/ingestion/sourceConfig';
 import type {
   CatalogService,
@@ -93,13 +91,7 @@ const orchestratorLabel = computed(() => {
 });
 
 function serviceKindFromRef(type: string | undefined): ServiceKind {
-  if (type === 'messagingService') {
-    return 'messaging';
-  }
-  if (type === 'dashboardService') {
-    return 'dashboard';
-  }
-  return 'database';
+  return (type && SERVICE_KIND_BY_ENTITY_TYPE[type]) || 'database';
 }
 
 async function loadLinkedService(current: IngestionPipeline): Promise<CatalogService | null> {
@@ -107,14 +99,7 @@ async function loadLinkedService(current: IngestionPipeline): Promise<CatalogSer
   if (!id) {
     return null;
   }
-  const kind = serviceKindFromRef(current.service?.type);
-  if (kind === 'messaging') {
-    return getMessagingService(id);
-  }
-  if (kind === 'dashboard') {
-    return getDashboardService(id);
-  }
-  return getDatabaseService(id);
+  return SERVICE_GET_API[serviceKindFromRef(current.service?.type)](id);
 }
 
 async function load(): Promise<void> {
