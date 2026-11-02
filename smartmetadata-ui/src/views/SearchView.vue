@@ -6,8 +6,14 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Empty, Pagination, Select, Space, Tag, Typography } from 'ant-design-vue';
+import { Alert, Button, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
+import {
+  ADVANCED_SEARCH_FIELDS,
+  composeAdvancedQuery,
+  parseAdvancedQuery,
+  type AdvancedSearchRow,
+} from '@/catalog/advancedSearch';
 import {
   EXPLORE_TABS,
   defaultSortForTab,
@@ -31,20 +37,25 @@ import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
 import { CHIP_FACET_IDS, type FacetBucket, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import {
+  DEFAULT_EXPLORE_PAGE_SIZE,
   DEFAULT_SORT,
-  SEARCH_PAGE_SIZE,
+  EXPLORE_PAGE_SIZE_OPTIONS,
   SORT_OPTIONS,
   composeSearchQuery,
   filtersFromQuery,
   filtersToQuery,
   hasActiveFilters,
+  isIndexNotFoundError,
   pageFromQuery,
+  pageSizeFromQuery,
   sortField,
   sortFromQuery,
   type SearchFilters,
 } from '@/catalog/searchQuery';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
@@ -53,9 +64,14 @@ import type { SearchHit } from '@/types/api';
 const route = useRoute();
 const router = useRouter();
 const { t, te } = useI18n();
+const shellPreferences = useShellPreferencesStore();
 
 const loading = ref(false);
 const errorMessage = ref('');
+const indexNotFound = ref(false);
+const advancedOpen = ref(false);
+const advancedRows = ref<AdvancedSearchRow[]>([]);
+const advancedFreeText = ref('');
 const hits = ref<SearchHit[]>([]);
 const total = ref(0);
 const facets = ref<SearchFacet[]>([]);
@@ -67,6 +83,8 @@ const selectedFqn = ref('');
 const query = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const filters = computed(() => filtersFromQuery(route.query));
 const page = computed(() => pageFromQuery(route.query.page));
+const showDeleted = computed(() => route.query.showDeleted === 'true');
+const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, shellPreferences.explorePageSize));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
 const residual = computed(() => isResidualEstate(estateId.value));
 const activeTab = computed<ExploreTab | null>(() => exploreTabFromQuery(route.query));
@@ -87,6 +105,15 @@ const tabCounts = computed(() => {
   const counts = new Map<string, number>();
   for (const bucket of facet?.buckets ?? []) {
     counts.set(bucket.key, bucket.count);
+  }
+  // Official publishCounts behaviour: the active tab's count is the current
+  // page's result total, not the aggregation bucket. Other tabs keep their
+  // aggregation counts; tabs with no bucket stay count-less (unknown, not 0),
+  // because no independent count endpoint is wired (see residuals). On a
+  // failed search the total is a reset 0, not a result count, so it must
+  // not overwrite the bucket into a misleading (0).
+  if (activeTab.value && !errorMessage.value) {
+    counts.set(activeTab.value.entityType, total.value);
   }
   return counts;
 });
@@ -111,6 +138,8 @@ const searchKey = computed(() =>
     q: query.value,
     filters: filters.value,
     page: page.value,
+    pageSize: pageSize.value,
+    showDeleted: showDeleted.value,
     sort: currentSort.value,
     estate: estateFromQuery(route.query),
     tab: activeTab.value?.index ?? 'all',
@@ -133,7 +162,7 @@ const recordRange = computed(() => {
   if (!total.value) {
     return { from: 0, to: 0 };
   }
-  const from = page.value * SEARCH_PAGE_SIZE + 1;
+  const from = page.value * pageSize.value + 1;
   return { from, to: Math.min(total.value, from + hits.value.length - 1) };
 });
 
@@ -157,6 +186,7 @@ function pushSearch(
   nextSort: { id: string; order: 'asc' | 'desc' } = currentSort.value,
   nextEstate = estateFromQuery(route.query),
   nextTab: ExploreTab | null = activeTab.value,
+  nextOptions: { showDeleted?: boolean; pageSize?: number } = {},
 ): void {
   const next: Record<string, string> = { ...filtersToQuery(nextFilters) };
   const trimmed = nextQuery.trim();
@@ -165,6 +195,14 @@ function pushSearch(
   }
   if (nextPage > 0) {
     next.page = String(nextPage);
+  }
+  const nextShowDeleted = nextOptions.showDeleted ?? showDeleted.value;
+  if (nextShowDeleted) {
+    next.showDeleted = 'true';
+  }
+  const nextPageSize = nextOptions.pageSize ?? pageSize.value;
+  if (nextPageSize !== DEFAULT_EXPLORE_PAGE_SIZE) {
+    next.pageSize = String(nextPageSize);
   }
   const options = nextTab ? sortOptionsForTab(nextTab) : SORT_OPTIONS;
   const option = options.find((item) => item.id === nextSort.id) ?? options[0];
@@ -242,6 +280,45 @@ function onTabChange(key: string): void {
   pushSearch(query.value, filters.value, 0, sort, estateFromQuery(route.query), tab);
 }
 
+function onShowDeletedChange(value: boolean): void {
+  pushSearch(query.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
+    showDeleted: value,
+  });
+}
+
+function onPageSizeChange(_current: number, size: number): void {
+  const nextSize = pageSizeFromQuery(size, shellPreferences.explorePageSize);
+  shellPreferences.setExplorePageSize(nextSize);
+  pushSearch(query.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
+    pageSize: nextSize,
+  });
+}
+
+function openAdvancedSearch(): void {
+  const parsed = parseAdvancedQuery(query.value);
+  advancedFreeText.value = parsed.freeText;
+  advancedRows.value = parsed.rows.length ? parsed.rows : [{ field: ADVANCED_SEARCH_FIELDS[0], value: '' }];
+  advancedOpen.value = true;
+}
+
+function addAdvancedRow(): void {
+  advancedRows.value = [...advancedRows.value, { field: ADVANCED_SEARCH_FIELDS[0], value: '' }];
+}
+
+function removeAdvancedRow(index: number): void {
+  advancedRows.value = advancedRows.value.filter((_, item) => item !== index);
+}
+
+function resetAdvancedSearch(): void {
+  advancedRows.value = [];
+}
+
+function applyAdvancedSearch(): void {
+  const composed = composeAdvancedQuery(advancedFreeText.value, advancedRows.value);
+  advancedOpen.value = false;
+  pushSearch(composed, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value);
+}
+
 function onEstateSelect(node: EstateNode): void {
   if (isResidualEstate(node.categoryId)) {
     pushSearch(query.value, { ...filters.value, entityType: undefined, service: undefined }, 0, currentSort.value, node.categoryId);
@@ -284,7 +361,7 @@ function openResidual(): void {
 
 async function loadEstatePresence(): Promise<void> {
   try {
-    const pageResult = await searchAssets(query.value.trim() || '*', 0, 0);
+    const pageResult = await searchAssets(query.value.trim() || '*', 0, 0, { deleted: showDeleted.value });
     estateFacets.value = pageResult.facets;
   } catch {
     estateFacets.value = [];
@@ -298,7 +375,9 @@ async function loadEstateServices(categoryId: string): Promise<void> {
     return;
   }
   try {
-    const pageResult = await searchAssets(composeSearchQuery(query.value, { entityType: category.entityTypes }), 0, 0);
+    const pageResult = await searchAssets(composeSearchQuery(query.value, { entityType: category.entityTypes }), 0, 0, {
+      deleted: showDeleted.value,
+    });
     serviceBuckets.value = pageResult.facets.find((facet) => facet.id === 'service')?.buckets ?? [];
   } catch {
     serviceBuckets.value = [];
@@ -308,6 +387,7 @@ async function loadEstateServices(categoryId: string): Promise<void> {
 async function runSearch(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  indexNotFound.value = false;
   try {
     const estatePromise = loadEstatePresence();
     if (residual.value) {
@@ -318,10 +398,11 @@ async function runSearch(): Promise<void> {
       await estatePromise;
       return;
     }
-    const pageResult = await searchAssets(composeSearchQuery(query.value, filters.value), page.value * SEARCH_PAGE_SIZE, SEARCH_PAGE_SIZE, {
+    const pageResult = await searchAssets(composeSearchQuery(query.value, filters.value), page.value * pageSize.value, pageSize.value, {
       index: activeTab.value?.index ?? 'dataAsset',
       sortField: currentSort.value.field,
       sortOrder: currentSort.value.order,
+      deleted: showDeleted.value,
     });
     hits.value = pageResult.hits;
     total.value = pageResult.total;
@@ -340,7 +421,9 @@ async function runSearch(): Promise<void> {
     hits.value = [];
     total.value = 0;
     facets.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('explore.failed');
+    const message = error instanceof Error ? error.message : t('explore.failed');
+    errorMessage.value = message;
+    indexNotFound.value = isIndexNotFoundError(message);
   } finally {
     loading.value = false;
   }
@@ -394,6 +477,24 @@ watch(expandedKeys, (keys) => {
         >
           {{ currentSort.order === 'asc' ? t('explore.sortAsc') : t('explore.sortDesc') }}
         </Button>
+        <span class="explore__show-deleted">
+          <Switch
+            data-testid="explore-show-deleted"
+            size="small"
+            :checked="showDeleted"
+            :aria-label="t('explore.showDeleted')"
+            @change="onShowDeletedChange"
+          />
+          {{ t('explore.showDeleted') }}
+        </span>
+        <Button
+          size="small"
+          data-testid="explore-advanced-search"
+          :aria-label="t('explore.advancedSearch')"
+          @click="openAdvancedSearch"
+        >
+          {{ t('explore.advancedSearch') }}
+        </Button>
         <Button
           v-if="hasActiveFilters(filters) || estateFromQuery(route.query)"
           type="link"
@@ -436,6 +537,21 @@ watch(expandedKeys, (keys) => {
             {{ crumbLabel(crumb.label) }}
           </span>
         </nav>
+        <Alert
+          v-if="indexNotFound"
+          type="error"
+          show-icon
+          closable
+          data-testid="explore-index-not-found"
+          :message="t('explore.indexNotFoundTitle')"
+          class="explore__error"
+          @close="indexNotFound = false"
+        >
+          <template #description>
+            {{ t('explore.indexNotFoundMessage') }}
+            <router-link :to="{ name: 'settings-preferences-search' }">{{ t('explore.indexNotFoundSettings') }}</router-link>
+          </template>
+        </Alert>
         <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="explore__error" />
         <div data-testid="search-results" class="explore__results">
           <Empty
@@ -513,14 +629,16 @@ watch(expandedKeys, (keys) => {
             }}
           </Typography.Text>
           <Pagination
-            v-if="total > SEARCH_PAGE_SIZE"
+            v-if="total > pageSize"
             data-testid="search-pagination"
             size="small"
             :current="page + 1"
-            :page-size="SEARCH_PAGE_SIZE"
+            :page-size="pageSize"
+            :page-size-options="EXPLORE_PAGE_SIZE_OPTIONS.map(String)"
             :total="total"
-            :show-size-changer="false"
+            :show-size-changer="true"
             @change="onPageChange"
+            @show-size-change="onPageSizeChange"
           />
         </div>
       </section>
@@ -528,6 +646,60 @@ watch(expandedKeys, (keys) => {
         <ExplorePreview :hit="residual ? null : selectedHit" @open="openHit" />
       </aside>
     </div>
+    <FormModal
+      :open="advancedOpen"
+      :title="t('explore.advancedSearch')"
+      size="xl"
+      :ok-text="t('explore.advancedApply')"
+      test-id="advanced-search-modal"
+      @ok="applyAdvancedSearch"
+      @cancel="advancedOpen = false"
+      @update:open="advancedOpen = $event"
+    >
+      <Space direction="vertical" style="width: 100%">
+        <Input
+          data-testid="advanced-search-free-text"
+          :value="advancedFreeText"
+          :aria-label="t('explore.advancedFreeText')"
+          :placeholder="t('explore.advancedFreeText')"
+          @update:value="advancedFreeText = $event"
+        />
+        <div
+          v-for="(row, index) in advancedRows"
+          :key="index"
+          class="explore__advanced-row"
+        >
+          <Select
+            :data-testid="`advanced-search-field-${index}`"
+            :value="row.field"
+            :aria-label="t('explore.advancedField')"
+            @change="advancedRows[index].field = $event"
+          >
+            <Select.Option v-for="field in ADVANCED_SEARCH_FIELDS" :key="field" :value="field">
+              {{ t(`explore.facets.${field}`) }}
+            </Select.Option>
+          </Select>
+          <Input
+            :data-testid="`advanced-search-value-${index}`"
+            :value="row.value"
+            :aria-label="t('explore.advancedValue')"
+            :placeholder="t('explore.advancedValue')"
+            @update:value="advancedRows[index].value = $event"
+          />
+          <Button size="small" :data-testid="`advanced-search-remove-${index}`" @click="removeAdvancedRow(index)">
+            {{ t('explore.advancedRemove') }}
+          </Button>
+        </div>
+        <Space>
+          <Button size="small" data-testid="advanced-search-add-row" @click="addAdvancedRow">
+            {{ t('explore.advancedAddRow') }}
+          </Button>
+          <Button size="small" data-testid="advanced-search-reset" @click="resetAdvancedSearch">
+            {{ t('explore.advancedReset') }}
+          </Button>
+        </Space>
+      </Space>
+    </FormModal>
   </div>
 </template>
 
@@ -552,6 +724,19 @@ watch(expandedKeys, (keys) => {
 }
 .explore__sort {
   min-width: 140px;
+}
+.explore__show-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.explore__advanced-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 .explore__active {
   margin-bottom: 0;
