@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { authorizationHeader, clearSession, loadSession } from '@/auth/token';
+import { authorizationHeader, clearSession, loadSession, persistSession } from '@/auth/token';
 import { dispatchSessionExpired } from '@/auth/sessionEvents';
 
 export class ApiError extends Error {
@@ -48,6 +48,33 @@ export interface ApiRequestOptions {
   contentType?: string;
   /** Defaults to JSON parsing; 'text' returns the raw body (e.g. export results). */
   response?: 'json' | 'text';
+  /** Internal single-retry guard for the silent-refresh path; callers never set it. */
+  retried?: boolean;
+}
+
+interface RefreshResponse {
+  accessToken?: string;
+  refreshToken?: string;
+  tokenType?: string;
+  expiryDuration?: number;
+}
+
+/** Raw refresh attempt: returns the new tokens, or null on any failure. Never touches session state. */
+async function tryRefreshSession(accessToken: string): Promise<RefreshResponse | null> {
+  try {
+    const url = new URL(`${apiBaseUrl()}/v1/auth/refresh`, window.location.origin);
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: authorizationHeader(accessToken) },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = (await response.json()) as RefreshResponse;
+    return typeof data?.accessToken === 'string' && data.accessToken.length > 0 ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -83,6 +110,28 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const text = await response.text();
   if (!response.ok) {
     if (response.status === 401 && options.auth !== false) {
+      // Silent refresh, mirroring official LoginAPI renewToken (GET
+      // /auth/refresh on the /api/v1 base, i.e. /api/v1/auth/refresh here):
+      // one attempt, only when the stored session carries a refresh token.
+      // The refresh call goes through raw fetch so it can neither recurse
+      // nor clear the session itself; on failure the pre-existing
+      // expiry path below runs unchanged, and no empty token is stored.
+      if (!options.retried) {
+        const stored = loadSession(window.localStorage);
+        if (stored?.refreshToken) {
+          const refreshed = await tryRefreshSession(stored.accessToken);
+          if (refreshed) {
+            persistSession(window.localStorage, {
+              ...stored,
+              accessToken: refreshed.accessToken,
+              refreshToken: refreshed.refreshToken ?? stored.refreshToken,
+              tokenType: refreshed.tokenType ?? stored.tokenType,
+              expiryDuration: refreshed.expiryDuration ?? stored.expiryDuration,
+            });
+            return apiRequest<T>(path, { ...options, retried: true });
+          }
+        }
+      }
       clearSession(window.localStorage);
       dispatchSessionExpired();
     }

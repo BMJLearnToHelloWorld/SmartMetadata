@@ -13,6 +13,7 @@ import LogoutView from './LogoutView.vue';
 import ResetPasswordView from './ResetPasswordView.vue';
 import SamlCallbackView from './SamlCallbackView.vue';
 import SignUpView from './SignUpView.vue';
+import SsoSignUpView from './SsoSignUpView.vue';
 
 const LoginStub = { template: '<div>login</div>' };
 const HomeStub = { template: '<div>home</div>' };
@@ -29,6 +30,7 @@ async function mountView(component: unknown, path: string, query: Record<string,
       { path: '/forgot-password', name: 'forgot-password', component: ForgotPasswordView },
       { path: '/reset-password', name: 'reset-password', component: ResetPasswordView },
       { path: '/saml-callback', name: 'saml-callback', component: SamlCallbackView },
+      { path: '/signup/sso', name: 'sso-signup', component: SsoSignUpView },
       { path: '/logout', name: 'logout', component: LogoutView },
     ],
   });
@@ -103,6 +105,21 @@ describe('auth views (Stage 9)', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('home');
     expect(localStorage.getItem('sm.auth.v1')).toContain('oidc-token-1');
+  });
+
+  it('routes a 404 SAML profile with self-signup enabled to the SSO complete-profile page (R7)', async () => {
+    stubFetch((url) => {
+      if (url.includes('/api/v1/system/config/auth')) {
+        return new Response(JSON.stringify({ provider: 'okta', enableSelfSignup: true }), { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    const { router } = await mountView(SamlCallbackView, '/saml-callback', {
+      id_token: 'oidc-token-1',
+      email: 'ada@example.org',
+    });
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('sso-signup');
   });
 
   it('logs out through the /logout route and lands on login', async () => {

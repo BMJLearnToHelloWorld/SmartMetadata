@@ -147,6 +147,19 @@ export async function closeTask(id: string, comment?: string): Promise<Collabora
   return requireTask(raw, 'Close task');
 }
 
+/**
+ * Official deleteTask (openmetadata-ui/.../rest/tasksAPI.ts): DELETE
+ * /{id} with ?hardDelete (default false). The snapshot defines the
+ * endpoint but no page-level button calls it; the detail-page button
+ * placement follows the R6 domain-delete presentation pattern.
+ */
+export async function deleteTask(id: string, hardDelete = false): Promise<void> {
+  await apiRequest(`/v1/tasks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete },
+  });
+}
+
 export async function addTaskComment(id: string, message: string): Promise<CollaborationTask> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/tasks/${encodeURIComponent(id)}/comments`, {
     method: 'POST',

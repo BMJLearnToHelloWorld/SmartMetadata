@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Select, Typography } from 'ant-design-vue';
-import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
+import { buildSsoLoginUrl, isSsoOnlyProvider, ssoBrandName, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
+import { apiBaseUrl } from '@/api/client';
 import { requiredField } from '@/features/crud/formRules';
 import { fetchAuthConfig } from '@/api/system';
 import { setAppLocale } from '@/i18n';
@@ -31,10 +32,30 @@ const authConfigError = ref('');
 
 const passwordLogin = computed(() => supportsPasswordLogin(authConfig.value?.provider));
 const ssoOnly = computed(() => isSsoOnlyProvider(authConfig.value?.provider));
+const ssoBrand = computed(() =>
+  ssoBrandName(authConfig.value?.provider, authConfig.value?.providerName),
+);
+// Official SignInPage auto-redirect guard: fire at most once per page load.
+const autoRedirectFired = ref(false);
+
+function startSsoLogin(): void {
+  window.location.assign(
+    buildSsoLoginUrl(apiBaseUrl(), authConfig.value?.callbackUrl, window.location.origin),
+  );
+}
 
 async function loadAuthConfig(): Promise<void> {
   try {
     authConfig.value = await fetchAuthConfig();
+    if (
+      authConfig.value.enableAutoRedirect &&
+      ssoOnly.value &&
+      !auth.isAuthenticated &&
+      !autoRedirectFired.value
+    ) {
+      autoRedirectFired.value = true;
+      startSsoLogin();
+    }
   } catch (error) {
     authConfigError.value = error instanceof Error ? error.message : t('login.authConfigMissing');
   }
@@ -108,6 +129,24 @@ onMounted(() => {
           <p v-if="authConfig?.callbackUrl">{{ t('login.callback', { value: authConfig.callbackUrl }) }}</p>
         </template>
       </Alert>
+      <Button
+        v-if="ssoOnly && ssoBrand"
+        type="primary"
+        block
+        data-testid="sso-signin"
+        class="login__error"
+        @click="startSsoLogin"
+      >
+        {{ t('login.ssoSignIn', { brand: ssoBrand }) }}
+      </Button>
+      <Alert
+        v-if="ssoOnly && !ssoBrand"
+        data-testid="sso-unsupported"
+        type="warning"
+        show-icon
+        class="login__error"
+        :message="t('login.ssoUnsupported', { provider: ssoProviderLabel(authConfig?.provider, authConfig?.providerName) })"
+      />
       <Alert
         v-if="errorMessage"
         data-testid="login-error"

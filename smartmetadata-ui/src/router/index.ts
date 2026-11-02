@@ -29,6 +29,8 @@ import SignUpView from '@/views/auth/SignUpView.vue';
 import ForgotPasswordView from '@/views/auth/ForgotPasswordView.vue';
 import ResetPasswordView from '@/views/auth/ResetPasswordView.vue';
 import SamlCallbackView from '@/views/auth/SamlCallbackView.vue';
+import SsoSignUpView from '@/views/auth/SsoSignUpView.vue';
+import RegistrationConfirmationView from '@/views/auth/RegistrationConfirmationView.vue';
 import LogoutView from '@/views/auth/LogoutView.vue';
 import RoleDetailView from '@/views/admin/RoleDetailView.vue';
 import RolesListView from '@/views/admin/RolesListView.vue';
@@ -132,6 +134,18 @@ export const router = createRouter({
       path: '/saml-callback',
       name: 'saml-callback',
       component: SamlCallbackView,
+      meta: { public: true },
+    },
+    {
+      path: '/signup/sso',
+      name: 'sso-signup',
+      component: SsoSignUpView,
+      meta: { public: true },
+    },
+    {
+      path: '/users/registrationConfirmation',
+      name: 'registration-confirmation',
+      component: RegistrationConfirmationView,
       meta: { public: true },
     },
     {

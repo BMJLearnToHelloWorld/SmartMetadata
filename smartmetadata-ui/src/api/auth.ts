@@ -56,6 +56,21 @@ export function resetUserPassword(payload: PasswordResetRequest): Promise<unknow
   return apiRequest('/v1/users/password/reset', { json: payload, auth: false });
 }
 
+/**
+ * Official confirmRegistration (rest/auth-API.ts): PUT
+ * /users/registrationConfirmation?token=... . A non-empty response means
+ * the account is verified; an empty one leaves it unverified (the
+ * confirmation page renders the token-expired state for both empty and
+ * failed responses).
+ */
+export function confirmRegistration(token: string): Promise<unknown> {
+  return apiRequest('/v1/users/registrationConfirmation', {
+    method: 'PUT',
+    query: { token },
+    auth: false,
+  });
+}
+
 export function logoutOnServer(token: string, refreshToken?: string): Promise<unknown> {
   return apiRequest('/v1/users/logout', {
     json: {
