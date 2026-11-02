@@ -18,9 +18,18 @@ import {
   SM_CHART_COLORS,
   SM_COLOR_ERROR,
   SM_DATA_INSIGHT_COLORS,
+  SM_COLOR_ERROR_700,
+  SM_COLOR_ERROR_BG,
   SM_COLOR_PRIMARY,
+  SM_COLOR_PRIMARY_ACTIVE,
+  SM_COLOR_PRIMARY_BG,
+  SM_COLOR_PRIMARY_BG_HOVER,
   SM_COLOR_PRIMARY_HOVER,
   SM_COLOR_SUCCESS,
+  SM_COLOR_SUCCESS_700,
+  SM_COLOR_SUCCESS_BG,
+  SM_COLOR_WARNING_700,
+  SM_COLOR_WARNING_BG,
   SM_COLOR_VISUALIZATION_GREEN,
   SM_COLOR_WARNING,
   SM_CONTROL_HEIGHT,
@@ -159,6 +168,81 @@ describe('official token mapping (Stage 1)', () => {
     expect(SM_DATA_INSIGHT_COLORS[0]).toBe('#E57373');
     expect(SM_DATA_INSIGHT_COLORS[23]).toBe('#F48FB1');
     expect(SM_DATA_INSIGHT_COLORS.filter((color) => color === '#7986CB')).toHaveLength(2);
+  });
+
+  it('locks theme.css :root to tokens.ts: the CSS file is a mirror, not a second source', () => {
+    // R8 single-source lock: tokens.ts is canonical; theme.css must mirror
+    // it exactly. Any future drift fails here instead of shipping silently.
+    // Parse only the light :root block (the dark block intentionally differs).
+    // Note: the file header comment itself mentions :root[data-theme],
+    // so anchor on the newline-prefixed block starts, not bare substrings.
+    const lightRoot = themeCss.slice(
+      themeCss.indexOf('\n:root {'),
+      themeCss.indexOf("\n:root[data-theme"),
+    );
+    const vars = new Map<string, string>();
+    for (const match of lightRoot.matchAll(/--sm-([\w-]+):\s*([^;]+);/g)) {
+      vars.set(match[1], match[2].trim());
+    }
+    const expected: Record<string, string> = {
+      'bg-base': SM_BACKGROUND.primary,
+      'bg-container': SM_BACKGROUND.primary,
+      'bg-elevated': SM_BACKGROUND.secondary,
+      'content-bg': SM_BACKGROUND.canvas,
+      'text-primary': SM_TEXT.primary,
+      'text-secondary': SM_TEXT.secondary,
+      'text-tertiary': SM_TEXT.tertiary,
+      'text-quaternary': SM_TEXT.quaternary,
+      'border-color': SM_BORDER.primary,
+      'border-secondary': SM_BORDER.secondary,
+      'border-tertiary': SM_BORDER.tertiary,
+      'border-hover': SM_BORDER.hover,
+      'color-primary': SM_COLOR_PRIMARY,
+      'color-primary-hover': SM_COLOR_PRIMARY_HOVER,
+      'color-primary-active': SM_COLOR_PRIMARY_ACTIVE,
+      'color-primary-bg': SM_COLOR_PRIMARY_BG,
+      'color-primary-bg-hover': SM_COLOR_PRIMARY_BG_HOVER,
+      'color-success': SM_COLOR_SUCCESS,
+      'color-visualization-green': SM_COLOR_VISUALIZATION_GREEN,
+      'color-warning': SM_COLOR_WARNING,
+      'color-error': SM_COLOR_ERROR,
+      'color-success-bg': SM_COLOR_SUCCESS_BG,
+      'color-success-700': SM_COLOR_SUCCESS_700,
+      'color-error-bg': SM_COLOR_ERROR_BG,
+      'color-error-700': SM_COLOR_ERROR_700,
+      'color-warning-bg': SM_COLOR_WARNING_BG,
+      'color-warning-700': SM_COLOR_WARNING_700,
+      overlay: SM_SURFACES.overlay,
+      'focus-ring': SM_SURFACES.focusRing,
+      'border-radius': `${SM_BORDER_RADIUS}px`,
+      'radius-none': `${SM_RADIUS.none}px`,
+      'radius-xs': `${SM_RADIUS.xs}px`,
+      'radius-sm': `${SM_RADIUS.sm}px`,
+      'radius-md': `${SM_RADIUS.md}px`,
+      'radius-lg': `${SM_RADIUS.lg}px`,
+      'radius-xl': `${SM_RADIUS.xl}px`,
+      'radius-2xl': `${SM_RADIUS['2xl']}px`,
+      'radius-3xl': `${SM_RADIUS['3xl']}px`,
+      'radius-full': `${SM_RADIUS.full}px`,
+      'radius-card': `${SM_RADIUS_CARD}px`,
+      'radius-modal': `${SM_RADIUS_MODAL}px`,
+      'shadow-card': SM_SHADOW_CARD,
+      'shadow-raised': SM_SHADOW_RAISED,
+      'shadow-overlay': SM_SHADOW_OVERLAY,
+      'z-base': `${SM_Z.base}`,
+      'z-raised': `${SM_Z.raised}`,
+      'z-docked': `${SM_Z.docked}`,
+      'z-sticky': `${SM_Z.sticky}`,
+      'z-dropdown': `${SM_Z.dropdown}`,
+      'z-overlay': `${SM_Z.overlay}`,
+      'z-modal': `${SM_Z.modal}`,
+      'z-popover': `${SM_Z.popover}`,
+      'z-toast': `${SM_Z.toast}`,
+      'z-max': `${SM_Z.max}`,
+    };
+    for (const [name, value] of Object.entries(expected)) {
+      expect(vars.get(name)).toBe(value);
+    }
   });
 
   it('keeps OM chrome CSS and a data-theme hook, without transplanting @icore', () => {

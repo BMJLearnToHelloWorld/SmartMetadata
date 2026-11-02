@@ -2018,7 +2018,6 @@ const zhCN = {
     authPat: '个人访问令牌 (PAT)',
     authOauth: 'Databricks OAuth（服务主体）',
     authAzure: 'Azure Active Directory',
-    token: '访问令牌',
     clientId: 'Client ID',
     clientSecret: 'Client Secret',
     azureClientId: 'Azure Client ID',

@@ -38,7 +38,7 @@ const statusColor = computed(() =>
   width: 220px;
   min-height: 72px;
   padding: 8px 10px;
-  border: 1px solid var(--ant-color-border, #d9d9d9);
+  border: 1px solid var(--ant-color-border, #d5d7da);
   border-radius: 6px;
   background: var(--ant-color-bg-container, #fff);
   font-size: 12px;

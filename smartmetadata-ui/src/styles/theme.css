@@ -64,7 +64,17 @@
   --sm-shadow-card: 0px 1px 2px rgba(10, 13, 18, 0.05);
   --sm-shadow-raised: 0px 12px 16px -4px rgba(10, 13, 18, 0.08), 0px 4px 6px -2px rgba(10, 13, 18, 0.03);
   --sm-shadow-overlay: 0px 20px 24px -4px rgba(10, 13, 18, 0.08), 0px 8px 8px -4px rgba(10, 13, 18, 0.03);
-  
+  --sm-z-base: 0;
+  --sm-z-raised: 1;
+  --sm-z-docked: 10;
+  --sm-z-sticky: 100;
+  --sm-z-dropdown: 1000;
+  --sm-z-overlay: 1050;
+  --sm-z-modal: 1500;
+  --sm-z-popover: 2000;
+  --sm-z-toast: 9000;
+  --sm-z-max: 9999;
+
 }
 
 :root[data-theme='dark'] {

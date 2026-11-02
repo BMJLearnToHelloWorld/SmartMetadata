@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
+import { Button, Form, Input, Select, message } from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createTestCase, deleteTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestDefinitions } from '@/api/testDefinitions';
@@ -367,13 +368,14 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('quality.testCases.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
+    @cancel="createOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
@@ -415,5 +417,5 @@ defineExpose({ openCreate });
         <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

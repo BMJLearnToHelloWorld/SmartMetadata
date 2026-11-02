@@ -135,3 +135,20 @@ export function onlineUserActivityBand(minutesAgo: number | undefined): 'now' | 
   }
   return 'days';
 }
+
+/**
+ * Online-user activity-band colours, as data (official OnlineUsers values
+ * for the three timed bands; 'never' maps to the official text-quaternary
+ * tone, replacing the previous ungrounded #98a2b3 literal in the view).
+ * An unknown band has no entry by design — callers must not invent one.
+ */
+export const ONLINE_USER_ACTIVITY_COLORS: Record<
+  ReturnType<typeof onlineUserActivityBand>,
+  string
+> = {
+  now: '#52c41a',
+  recent: '#52c41a',
+  hours: '#faad14',
+  days: '#ff4d4f',
+  never: '#717680',
+} as const;

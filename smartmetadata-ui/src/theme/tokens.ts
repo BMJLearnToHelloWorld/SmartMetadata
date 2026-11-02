@@ -108,8 +108,11 @@ export const SM_LINE_HEIGHTS = {
 } as const;
 /**
  * Official sans stack (Inter, Poppins, system fallbacks). Inter variable
- * font files are not bundled in this console, so this is the family
- * stack only; variable-font file loading is residual, not claimed here.
+ * font files are bundled since R8 via styles/fonts.css (which re-registers
+ * @fontsource-variable/inter under 'Inter'); Geist Mono variable files are
+ * bundled the same way. Source Code Pro is not wired: the official mono
+ * token stack below is generic, and no product-wide Source Code Pro
+ * loading file was located in the reference snapshot.
  */
 export const SM_FONT_FAMILY =
   "'Inter', 'Poppins', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";

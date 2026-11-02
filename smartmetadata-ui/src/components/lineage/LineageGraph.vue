@@ -277,10 +277,14 @@ watch(
   height: 420px;
   min-height: 420px;
 }
+/* Fullscreen page surface: modal tier of the official z ladder (1500) —
+ * the ladder has no fullscreen tier; modal is the tier above Ant's 1000
+ * modal/drawer and the 1050 overlay, below popover 2000. The previous
+ * 1100 was off-ladder. */
 .lineage-graph--fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 1100;
+  z-index: var(--sm-z-modal);
   height: 100vh;
   min-height: 100vh;
   border-radius: 0;

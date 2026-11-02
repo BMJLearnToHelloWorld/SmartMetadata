@@ -195,6 +195,9 @@ describe('AssetDetailView governance', () => {
     localStorage.clear();
   });
 
+  // R8: 20s timeout — this heavy view mount exceeds the 5s default under
+  // full-suite parallel load (jsdom creation dominates); it passes
+  // isolated and the timeout covers scheduling, not product behaviour.
   it('shows description, owners, tags, and domains from the table GET', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Orders fact');
@@ -207,7 +210,7 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('BigQuery Prod');
     expect(wrapper.text()).toContain('analytics');
     expect(wrapper.text()).toContain('marts');
-  });
+  }, 20000);
 
   it('embeds the shared lineage graph on the lineage tab', async () => {
     const { wrapper } = await mountView();
@@ -442,6 +445,7 @@ describe('AssetDetailView non-table shells', () => {
     expect(wrapper.find('[data-testid="pipeline-executions-empty"]').exists()).toBe(true);
   });
 
+  // R8: same parallel-load timeout allowance as the table GET test above.
   it('loads chart / metric / dashboardDataModel / database / schema GETs and keeps query unwired', async () => {
     vi.stubGlobal(
       'fetch',
@@ -539,7 +543,7 @@ describe('AssetDetailView non-table shells', () => {
     expect(query.wrapper.text()).toContain('No detail page is wired');
     expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(false);
     query.wrapper.unmount();
-  });
+  }, 20000);
 });
 
 describe('AssetDetailView R2 header and split tabs', () => {
