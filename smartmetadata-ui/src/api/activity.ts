@@ -80,6 +80,7 @@ export interface ListActivityQuery {
   limit?: number;
   entityType?: string;
   entityId?: string;
+  after?: string;
 }
 
 export function listActivityEvents(query: ListActivityQuery = {}): Promise<Paged<ActivityEvent>> {
@@ -89,6 +90,7 @@ export function listActivityEvents(query: ListActivityQuery = {}): Promise<Paged
       limit: query.limit ?? 50,
       entityType: query.entityType,
       entityId: query.entityId,
+      after: query.after,
     },
   }).then((payload) => parsePaged(payload, mapActivityEvent));
 }
