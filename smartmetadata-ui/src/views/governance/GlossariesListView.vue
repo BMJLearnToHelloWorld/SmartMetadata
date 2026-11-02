@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Checkbox, Form, Input, Modal, message } from 'ant-design-vue';
+import { Button, Checkbox, Form, Input, } from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, listGlossaries } from '@/api/glossaries';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -171,13 +172,14 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('governance.glossaries.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
+    @cancel="createOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
@@ -195,5 +197,5 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

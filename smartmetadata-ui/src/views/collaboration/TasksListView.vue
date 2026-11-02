@@ -6,7 +6,9 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Tabs, Typography, message } from 'ant-design-vue';
+import {Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createTask, listTasks } from '@/api/tasks';
 import { TASK_STATUS_TABS, taskStatusQuery } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
@@ -105,9 +107,9 @@ onMounted(() => {
       <Tabs :active-key="activeStatusTab" data-testid="tasks-status-tabs" @change="(key) => { activeStatusTab = String(key); void load(); }">
         <Tabs.TabPane v-for="tab in TASK_STATUS_TABS" :key="tab.key" :tab="t(tab.labelKey)" />
       </Tabs>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="tasks-table"
+        test-id="tasks-table"
         :columns="columns"
         :data-source="tasks"
         :loading="loading"
@@ -135,7 +137,7 @@ onMounted(() => {
             }}
           </template>
         </template>
-      </Table>
+      </SmTable>
       <Typography.Text type="secondary">
         {{
           total !== undefined
@@ -144,13 +146,14 @@ onMounted(() => {
         }}
       </Typography.Text>
     </Space>
-    <Modal
-      v-model:open="createOpen"
+    <FormModal
+      :open="createOpen"
       :title="t('collaboration.tasks.createTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="creating"
       @ok="onCreate"
+    @cancel="createOpen = false"
     >
       <Form layout="vertical">
         <Form.Item :label="t('collaboration.tasks.category')" :rules="requiredField(t, t('collaboration.tasks.category'))">
@@ -183,7 +186,7 @@ onMounted(() => {
           <Input v-model:value="form.assignees" :placeholder="t('collaboration.tasks.assigneesPlaceholder')" />
         </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   </Card>
 </template>
 

@@ -20,9 +20,19 @@ withDefaults(
     loading?: boolean;
     pagination?: TableProps['pagination'];
     customRow?: TableProps['customRow'];
+    size?: TableProps['size'];
+    emptyText?: string;
     testId?: string;
   }>(),
-  { rowKey: 'id', loading: false, pagination: undefined, customRow: undefined, testId: 'sm-table' },
+  {
+    rowKey: 'id',
+    loading: false,
+    pagination: undefined,
+    customRow: undefined,
+    size: undefined,
+    emptyText: undefined,
+    testId: 'sm-table',
+  },
 );
 </script>
 
@@ -35,6 +45,8 @@ withDefaults(
     :loading="loading"
     :pagination="pagination"
     :custom-row="customRow"
+    :size="size"
+    :locale="emptyText ? { emptyText } : undefined"
   >
     <!-- Only forward bodyCell when a caller provides it; an empty slot would
          blank the default rendering that plain dataIndex columns rely on. -->

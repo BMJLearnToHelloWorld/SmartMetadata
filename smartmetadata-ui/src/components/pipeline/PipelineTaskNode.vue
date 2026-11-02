@@ -48,7 +48,7 @@ const statusColor = computed(() =>
   line-height: 1.3;
 }
 .pipeline-task-node__type {
-  color: var(--ant-color-text-secondary, #8c8c8c);
+  color: var(--ant-color-text-secondary, #414651);
   margin-top: 2px;
 }
 .pipeline-task-node__status {

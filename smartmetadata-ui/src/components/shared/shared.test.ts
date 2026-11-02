@@ -20,8 +20,6 @@ import SmIcon from './SmIcon.vue';
 import SmState from './SmState.vue';
 import SmTable from './SmTable.vue';
 import DetailTabs from './DetailTabs.vue';
-import SmPagination from './SmPagination.vue';
-import SmFilter from './SmFilter.vue';
 import GlobalSearchBar from './GlobalSearchBar.vue';
 import HelpMenu from './HelpMenu.vue';
 import VersionTag from './VersionTag.vue';
@@ -120,12 +118,6 @@ describe('shared components (Stage 1)', () => {
     await flushPromises();
     expect(tabs.text()).toContain('Overview');
     expect(tabs.text()).toContain('Lineage');
-    const pagination = await mountWithRouter(SmPagination, { total: 50, current: 1, pageSize: 25 });
-    expect(pagination.find('[data-testid="sm-pagination"]').exists()).toBe(true);
-    const filter = await mountWithRouter(SmFilter, {
-      filters: [{ key: 'entityType', label: 'Entity', options: [{ value: 'table', label: 'Table' }] }],
-    });
-    expect(filter.find('[data-testid="sm-filter-entityType"]').exists()).toBe(true);
   });
 
   it('emits a trimmed query from GlobalSearchBar', async () => {

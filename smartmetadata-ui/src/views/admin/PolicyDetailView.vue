@@ -298,7 +298,7 @@ watch(
       <Form.Item>
         <Checkbox v-model:checked="form.enabled">{{ t('admin.policies.enabledHint') }}</Checkbox>
       </Form.Item>
-      <div v-for="(rule, index) in form.rules" :key="index" style="margin-bottom: 12px; padding: 8px; border: 1px solid #f0f0f0">
+      <div v-for="(rule, index) in form.rules" :key="index" style="margin-bottom: 12px; padding: 8px; border: 1px solid var(--sm-border-color)">
         <Form.Item :label="t('admin.policies.ruleName')">
           <Input v-model:value="rule.name" :data-testid="`edit-policy-rule-name-${index}`" />
         </Form.Item>

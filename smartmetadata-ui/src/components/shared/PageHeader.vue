@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { Tag, Typography } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
-import { BulbOutlined } from '@ant-design/icons-vue';
+import SmIcon from './SmIcon.vue';
 
 /**
  * Official PageHeader bridge (PageHeader.component.tsx): an h5 heading at
@@ -32,7 +32,7 @@ withDefaults(
     <h5 class="sm-page-header__title" :data-testid="`${testId}-heading`">
       {{ header }}
       <Tag v-if="isBeta" class="sm-page-header__beta" color="blue">{{ t('shared.beta') }}</Tag>
-      <BulbOutlined v-if="learningPageId" class="sm-page-header__learning" :aria-label="learningPageId" />
+      <SmIcon v-if="learningPageId" icon-key="learning" class="sm-page-header__learning" :aria-label="learningPageId" />
     </h5>
     <Typography.Paragraph v-if="subHeader" class="sm-page-header__sub" type="secondary">
       {{ subHeader }}

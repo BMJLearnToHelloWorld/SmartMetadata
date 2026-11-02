@@ -544,7 +544,7 @@ onMounted(() => {
   display: block;
   width: 100%;
   padding: 12px;
-  border: 1px solid var(--ant-color-border, #d0d5dd);
+  border: 1px solid var(--sm-border-color);
   border-radius: 8px;
   background: var(--ant-color-bg-container, #fff);
   text-align: left;
@@ -573,16 +573,16 @@ onMounted(() => {
   text-align: center;
 }
 .dq-dim__pill--success {
-  background: #ecfdf3;
-  color: #067647;
+  background: var(--sm-color-success-bg);
+  color: var(--sm-color-success-700);
 }
 .dq-dim__pill--failed {
-  background: #fef3f2;
-  color: #b42318;
+  background: var(--sm-color-error-bg);
+  color: var(--sm-color-error-700);
 }
 .dq-dim__pill--aborted {
-  background: #fffaeb;
-  color: #b54708;
+  background: var(--sm-color-warning-bg);
+  color: var(--sm-color-warning-700);
 }
 .dq-status__label {
   color: var(--ant-color-text-secondary, #667085);

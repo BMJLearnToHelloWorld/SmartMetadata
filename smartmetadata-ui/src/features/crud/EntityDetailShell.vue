@@ -77,9 +77,9 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
         <div class="entity-detail__head">
           <div>
             <Space align="center" wrap>
-              <Typography.Title :level="4" class="entity-detail__title" data-testid="entity-detail-title">
+              <h5 class="entity-detail__title" data-testid="entity-detail-title">
                 {{ title }}
-              </Typography.Title>
+              </h5>
               <Tag v-if="deleted" color="red" data-testid="entity-detail-deleted">{{ t('crud.deleted') }}</Tag>
             </Space>
             <Typography.Paragraph v-if="showName || fqn" type="secondary" data-testid="entity-detail-subtitle">
@@ -133,7 +133,11 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
 }
 
 .entity-detail__title {
-  margin-bottom: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--sm-text-primary);
 }
 
 .entity-detail__actions {

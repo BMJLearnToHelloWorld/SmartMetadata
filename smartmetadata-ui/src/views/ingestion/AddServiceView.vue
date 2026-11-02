@@ -161,8 +161,8 @@ async function onCreate(): Promise<void> {
 
 <style scoped>
 .ing-json {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: var(--sm-content-bg);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 6px;
   padding: 12px;
   overflow: auto;
