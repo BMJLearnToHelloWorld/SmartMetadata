@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
+import { createTestCase, deleteTestCase, listTestCases, listTestCasesBySearch } from '@/api/testCases';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestDefinitions } from '@/api/testDefinitions';
 import { ApiError } from '@/api/client';
 import { formatChartTs } from '@/features/charts/series';
@@ -253,6 +254,25 @@ watch(
   },
 );
 
+async function onDelete(record: TestCase): Promise<void> {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteTestCase(record.id, { hardDelete: true });
+    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
   void listTestDefinitions({ limit: 100 })
@@ -291,6 +311,7 @@ defineExpose({ openCreate });
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
     @edit="(record) => router.push({ name: 'quality-test-case', params: { id: (record as TestCase).id } })"
+    @delete="(record) => onDelete(record as TestCase)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-test-case" @click="openCreate">

@@ -128,3 +128,22 @@ export async function updatePolicy(body: CreatePolicyRequest): Promise<AdminPoli
 export function deletePolicy(id: string): Promise<unknown> {
   return apiRequest(`/v1/policies/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
+
+/**
+ * Official patchPolicy (rest/rolesAPIV1.ts): JSON Patch on the policy.
+ * Official AddRulePage builds ops with fast-json-patch compare; the product
+ * builds the same effect with an explicit /rules replace op (see
+ * PolicyRuleFormView), which keeps the patch surface dependency-free.
+ */
+export async function patchPolicy(id: string, patch: import('@/admin/jsonPatch').JsonPatchOp[]): Promise<AdminPolicy> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/policies/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapPolicy(raw);
+  if (!mapped) {
+    throw new Error('Patch policy succeeded but the response had no policy');
+  }
+  return mapped;
+}

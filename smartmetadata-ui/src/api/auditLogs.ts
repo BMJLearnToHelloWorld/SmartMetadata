@@ -84,3 +84,42 @@ export function listAuditLogs(query: ListAuditLogsQuery = {}): Promise<Paged<Aud
     },
   }).then((payload) => parsePaged(payload, mapAuditLog));
 }
+
+export interface AuditLogExportJob {
+  jobId?: string;
+  status?: string;
+}
+
+/**
+ * Official audit export (rest/auditLogAPI.ts): GET /export starts a job,
+ * GET /export/{jobId} polls it (the official comment notes polling is the
+ * fallback because the completion websocket only reaches one server),
+ * GET /export/{jobId}/result fetches the completed payload as text.
+ */
+export async function exportAuditLogs(query: ListAuditLogsQuery = {}): Promise<AuditLogExportJob> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/audit/logs/export', {
+    query: {
+      q: query.q,
+      userName: query.userName,
+      actorType: query.actorType,
+      serviceName: query.serviceName,
+      entityType: query.entityType,
+      entityFQN: query.entityFQN,
+      eventType: query.eventType,
+      startTs: query.startTs,
+      endTs: query.endTs,
+    },
+  });
+  return { jobId: asString(raw.jobId) || undefined, status: asString(raw.status) || undefined };
+}
+
+export async function getAuditLogExportJob(jobId: string): Promise<AuditLogExportJob> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/audit/logs/export/${encodeURIComponent(jobId)}`);
+  return { jobId: asString(raw.jobId) || jobId, status: asString(raw.status) || undefined };
+}
+
+export async function getAuditLogExportResult(jobId: string): Promise<string> {
+  return apiRequest<string>(`/v1/audit/logs/export/${encodeURIComponent(jobId)}/result`, {
+    response: 'text',
+  });
+}

@@ -5,8 +5,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Input, Select } from 'ant-design-vue';
-import { listAuditLogs, type AuditLogEntry } from '@/api/auditLogs';
+import { Button, Descriptions, Input, Select, message } from 'ant-design-vue';
+import {
+  exportAuditLogs,
+  getAuditLogExportJob,
+  getAuditLogExportResult,
+  listAuditLogs,
+  type AuditLogEntry,
+} from '@/api/auditLogs';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
 import {
   AUDIT_LOG_ACTORS,
   AUDIT_LOG_TIME_PRESETS,
@@ -35,6 +42,48 @@ const total = ref<number | undefined>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const filters = reactive<AuditLogFilters>({ ...EMPTY_AUDIT_LOG_FILTERS });
+const selected = ref<AuditLogEntry | null>(null);
+const drawerOpen = ref(false);
+const exporting = ref(false);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function onExport(): Promise<void> {
+  exporting.value = true;
+  try {
+    const job = await exportAuditLogs(auditLogQuery(filters));
+    if (!job.jobId) {
+      throw new Error(t('admin.auditLogs.exportFailed'));
+    }
+    let status = job.status;
+    for (let attempt = 0; attempt < 30 && status !== 'completed' && status !== 'failed'; attempt += 1) {
+      await sleep(2000);
+      status = (await getAuditLogExportJob(job.jobId)).status;
+    }
+    if (status !== 'completed') {
+      throw new Error(t('admin.auditLogs.exportFailed'));
+    }
+    const result = await getAuditLogExportResult(job.jobId);
+    const url = URL.createObjectURL(new Blob([result], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `audit-logs-${job.jobId}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    message.success(t('admin.auditLogs.exportReady'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('admin.auditLogs.exportFailed'));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+function openDetail(entry: AuditLogEntry): void {
+  selected.value = entry;
+  drawerOpen.value = true;
+}
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('admin.auditLogs.when'), key: 'when', width: 180 },
@@ -119,13 +168,20 @@ onMounted(() => {
     :columns="columns"
     :data-source="logs"
     table-test-id="audit-logs-table"
+    show-row-actions
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
     @refresh="onRefresh"
     @next="onNext"
     @prev="onPrev"
+    @view="(record) => openDetail(record as AuditLogEntry)"
   >
+    <template #actions>
+      <Button :loading="exporting" data-testid="audit-export" @click="onExport">
+        {{ exporting ? t('admin.auditLogs.exporting') : t('admin.auditLogs.export') }}
+      </Button>
+    </template>
     <template #filters>
       <Select
         v-model:value="filters.timePreset"
@@ -192,11 +248,24 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Alert
-    type="info"
-    show-icon
-    style="margin-top: 16px"
-    :message="t('admin.auditLogs.exportResidual')"
-    data-testid="audit-export-residual"
-  />
+  <SmDrawer
+    :open="drawerOpen"
+    :title="t('admin.auditLogs.detailTitle')"
+    :show-ok="false"
+    width-key="feed"
+    @cancel="drawerOpen = false"
+    @update:open="drawerOpen = $event"
+  >
+    <Descriptions v-if="selected" bordered :column="1" size="small">
+      <Descriptions.Item :label="t('admin.auditLogs.when')">{{ formatTime(selected.eventTs ?? selected.createdAt) }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.eventType')">{{ selected.eventType || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.user')">{{ selected.userName || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.actor')">{{ selected.actorType || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.entityType')">{{ selected.entityType || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.entity')">{{ selected.entityFQN || selected.entityId || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.changeEventId')">{{ selected.changeEventId || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('admin.auditLogs.summary')">{{ selected.summary || '—' }}</Descriptions.Item>
+    </Descriptions>
+    <p style="margin-top: 12px">{{ t('admin.auditLogs.detailResidual') }}</p>
+  </SmDrawer>
 </template>

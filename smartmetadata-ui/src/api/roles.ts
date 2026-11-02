@@ -53,3 +53,28 @@ export function searchRoles(query: string, limit = 25): Promise<Paged<AdminRole>
     query: { q: query, fields: ROLE_FIELDS, limit },
   }).then((payload) => parsePaged(payload, mapRole));
 }
+
+export interface CreateRoleRequest {
+  name: string;
+  displayName?: string;
+  description?: string;
+  policies?: string[];
+}
+
+/** Official CreateRole (rest/rolesAPIV1.ts): POST /v1/roles. */
+export async function createRole(body: CreateRoleRequest): Promise<AdminRole> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/roles', {
+    method: 'POST',
+    json: {
+      name: body.name,
+      displayName: body.displayName,
+      description: body.description,
+      policies: (body.policies ?? []).map((id) => ({ id, type: 'policy' })),
+    },
+  });
+  const mapped = mapRole(raw);
+  if (!mapped) {
+    throw new Error('Create role succeeded but the response had no role');
+  }
+  return mapped;
+}

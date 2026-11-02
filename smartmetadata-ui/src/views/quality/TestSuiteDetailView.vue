@@ -6,8 +6,15 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
-import { getTestSuite, updateTestSuite } from '@/api/testSuites';
+import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
+import {
+  addTestCasesToLogicalTestSuite,
+  listTestCases,
+  removeTestCaseFromTestSuite,
+} from '@/api/testCases';
+import FormModal from '@/components/shared/FormModal.vue';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
@@ -46,6 +53,7 @@ const tabs = computed<EntityDetailTab[]>(() =>
 const testColumns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
   { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
+  { title: t('crud.actions'), key: 'actions', width: 120 },
 ]);
 
 async function load(): Promise<void> {
@@ -58,6 +66,28 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteTestSuite(): Promise<void> {
+  if (!suite.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: entityLabel(suite.value) }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteTestSuite(suite.value.id, { hardDelete: true });
+    message.success(t('crud.deletedName', { name: entityLabel(suite.value) }));
+    await router.push({ name: 'quality-test-suites' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
@@ -91,6 +121,65 @@ async function onSave(): Promise<void> {
   }
 }
 
+const addOpen = ref(false);
+const adding = ref(false);
+const availableCases = ref<{ id: string; name: string }[]>([]);
+const selectedCaseIds = ref<string[]>([]);
+const isLogical = computed(() => suite.value !== null && suite.value.basic !== true);
+
+async function openAddTests(): Promise<void> {
+  addOpen.value = true;
+  selectedCaseIds.value = [];
+  try {
+    const page = await listTestCases({ limit: 100 });
+    const existing = new Set((suite.value?.tests ?? []).map((item) => item.id));
+    availableCases.value = page.data
+      .filter((item) => item.id && !existing.has(item.id))
+      .map((item) => ({ id: item.id as string, name: item.name }));
+  } catch {
+    availableCases.value = [];
+  }
+}
+
+async function onAddTests(): Promise<void> {
+  if (!suite.value || !selectedCaseIds.value.length) {
+    return;
+  }
+  adding.value = true;
+  try {
+    await addTestCasesToLogicalTestSuite(suite.value.id, selectedCaseIds.value);
+    addOpen.value = false;
+    message.success(t('quality.testSuites.testsAdded'));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+  } finally {
+    adding.value = false;
+  }
+}
+
+async function onRemoveTest(testCaseId: string, testCaseName: string): Promise<void> {
+  if (!suite.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('quality.testSuites.removeTest'),
+    content: t('crud.deleteConfirm', { name: testCaseName }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await removeTestCaseFromTestSuite(suite.value.id, testCaseId);
+    message.success(t('quality.testSuites.testRemoved'));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+  }
+}
+
 watch(
   () => props.id,
   () => {
@@ -118,6 +207,10 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="edit-test-suite" :disabled="!suite" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button danger data-testid="delete-test-suite" :disabled="!suite" @click="onDeleteTestSuite">{{ t('crud.delete') }}</Button>
+      <Button v-if="isLogical" data-testid="add-tests-to-suite" :disabled="!suite" @click="openAddTests">
+        {{ t('quality.testSuites.addTests') }}
+      </Button>
     </template>
     <template #overview>
       <Descriptions v-if="suite" bordered :column="1" size="small">
@@ -151,7 +244,18 @@ onMounted(() => {
         :pagination="false"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">
+          <template v-if="column.key === 'actions'">
+            <Button
+              v-if="isLogical && (record as EntityRef).id"
+              type="link"
+              danger
+              :data-testid="`remove-test-${(record as EntityRef).id}`"
+              @click="onRemoveTest((record as EntityRef).id as string, entityLabel(record as EntityRef))"
+            >
+              {{ t('quality.testSuites.removeTest') }}
+            </Button>
+          </template>
+          <template v-else-if="column.key === 'name'">
             <a
               v-if="(record as EntityRef).id"
               href="#"
@@ -182,4 +286,26 @@ onMounted(() => {
       </Form.Item>
     </Form>
   </Modal>
+  <FormModal
+    :open="addOpen"
+    :title="t('quality.testSuites.addTestsTitle')"
+    :ok-text="t('quality.testSuites.addTests')"
+    :cancel-text="t('crud.cancel')"
+    :confirm-loading="adding"
+    @ok="onAddTests"
+    @cancel="addOpen = false"
+  >
+    <p>{{ t('quality.testSuites.addTestsLead') }}</p>
+    <Form layout="vertical">
+      <Form.Item :label="t('quality.testSuites.tests')">
+        <Select
+          v-model:value="selectedCaseIds"
+          mode="multiple"
+          data-testid="add-tests-select"
+          style="width: 100%"
+          :options="availableCases.map((item) => ({ value: item.id, label: item.name }))"
+        />
+      </Form.Item>
+    </Form>
+  </FormModal>
 </template>

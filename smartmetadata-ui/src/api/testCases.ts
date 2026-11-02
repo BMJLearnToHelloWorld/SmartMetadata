@@ -190,3 +190,35 @@ export async function isTestCaseSearchListAvailable(): Promise<boolean> {
     throw error;
   }
 }
+
+export interface DeleteEntityOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
+}
+
+/** Official test-case delete via the generic deleteEntity surface (rest/miscAPI.ts). */
+export function deleteTestCase(id: string, options: DeleteEntityOptions = {}): Promise<unknown> {
+  return apiRequest(`/v1/dataQuality/testCases/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: options.hardDelete, recursive: options.recursive },
+  });
+}
+
+/**
+ * Official addTestCaseToLogicalTestSuite (rest/testAPI.ts): PUT logicalTestCases.
+ * Only logical suites accept this surface; basic suites bind tests via entities.
+ */
+export function addTestCasesToLogicalTestSuite(testSuiteId: string, testCaseIds: string[]): Promise<unknown> {
+  return apiRequest('/v1/dataQuality/testCases/logicalTestCases', {
+    method: 'PUT',
+    json: { testSuiteId, testCaseIds },
+  });
+}
+
+/** Official removeTestCaseFromTestSuite (rest/testAPI.ts): DELETE logicalTestCases/{suiteId}/{caseId}. */
+export function removeTestCaseFromTestSuite(testSuiteId: string, testCaseId: string): Promise<unknown> {
+  return apiRequest(
+    `/v1/dataQuality/testCases/logicalTestCases/${encodeURIComponent(testSuiteId)}/${encodeURIComponent(testCaseId)}`,
+    { method: 'DELETE' },
+  );
+}

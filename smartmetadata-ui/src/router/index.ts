@@ -16,6 +16,7 @@ import InsightsView from '@/views/insights/InsightsView.vue';
 import DataAssetsView from '@/views/insights/DataAssetsView.vue';
 import AppAnalyticsView from '@/views/insights/AppAnalyticsView.vue';
 import KpiListView from '@/views/insights/KpiListView.vue';
+import KpiDetailView from '@/views/insights/KpiDetailView.vue';
 import KpiFormView from '@/views/insights/KpiFormView.vue';
 import OnlineUsersView from '@/views/insights/OnlineUsersView.vue';
 import MyDataView from '@/views/home/MyDataView.vue';
@@ -38,6 +39,7 @@ import CustomPropertyTypeDetailView from '@/views/admin/CustomPropertyTypeDetail
 import CustomPropertyTypesListView from '@/views/admin/CustomPropertyTypesListView.vue';
 import PoliciesListView from '@/views/admin/PoliciesListView.vue';
 import PolicyDetailView from '@/views/admin/PolicyDetailView.vue';
+import PolicyRuleFormView from '@/views/admin/PolicyRuleFormView.vue';
 import AuditLogsView from '@/views/admin/AuditLogsView.vue';
 import SettingsHubView from '@/views/admin/SettingsHubView.vue';
 import SystemSettingsView from '@/views/admin/SystemSettingsView.vue';
@@ -162,6 +164,7 @@ export const router = createRouter({
         { path: 'insights/app-analytics', name: 'insights-app-analytics', component: AppAnalyticsView },
         { path: 'insights/kpis', name: 'insights-kpis', component: KpiListView },
         { path: 'insights/kpis/add', name: 'insights-kpis-add', component: KpiFormView },
+        { path: 'insights/kpis/:fqn', name: 'insights-kpi-detail', component: KpiDetailView, props: true },
         {
           path: 'insights/kpis/:fqn/edit',
           name: 'insights-kpis-edit',
@@ -210,6 +213,13 @@ export const router = createRouter({
 
         { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
         { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
+        { path: 'admin/policies/:id/rules/add', name: 'admin-policy-rule-add', component: PolicyRuleFormView, props: true },
+        {
+          path: 'admin/policies/:id/rules/:ruleName/edit',
+          name: 'admin-policy-rule-edit',
+          component: PolicyRuleFormView,
+          props: true,
+        },
         { path: 'admin/apps', name: 'admin-apps', component: AppsListView },
         { path: 'admin/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
         {

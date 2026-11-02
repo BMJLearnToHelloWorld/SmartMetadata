@@ -120,3 +120,20 @@ export function listGlossaryTermAssets(id: string, limit = 25): Promise<Paged<En
     query: { limit },
   }).then((payload) => parsePaged(payload, (raw) => mapEntityRefs([raw])[0] ?? null));
 }
+
+export interface DeleteEntityOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
+}
+
+/**
+ * Official term delete via the generic deleteEntity surface (rest/miscAPI.ts);
+ * the ontology-impact POST delete (rest/ontologyAPI.ts) needs an ontology
+ * surface the product does not have, so it is not used here.
+ */
+export function deleteGlossaryTerm(id: string, options: DeleteEntityOptions = {}): Promise<unknown> {
+  return apiRequest(`/v1/glossaryTerms/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: options.hardDelete, recursive: options.recursive },
+  });
+}

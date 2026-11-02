@@ -93,3 +93,16 @@ export function listDomainAssets(id: string, limit = 25): Promise<Paged<EntityRe
     query: { limit },
   }).then((payload) => parsePaged(payload, (raw) => mapEntityRefs([raw])[0] ?? null));
 }
+
+export interface DeleteEntityOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
+}
+
+/** Official generic deleteEntity (rest/miscAPI.ts) applied to domains. */
+export function deleteDomain(id: string, options: DeleteEntityOptions = {}): Promise<unknown> {
+  return apiRequest(`/v1/domains/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: options.hardDelete, recursive: options.recursive },
+  });
+}

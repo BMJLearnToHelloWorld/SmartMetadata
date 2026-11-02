@@ -88,6 +88,8 @@ export interface ClassificationTag {
   classification?: EntityRef;
   parent?: EntityRef;
   mutuallyExclusive?: boolean;
+  /** OM Tag entity field; previously unmapped by the product. */
+  disabled?: boolean;
   usageCount?: number;
   owners: EntityRef[];
 }

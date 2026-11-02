@@ -150,6 +150,7 @@ onMounted(() => {
           <template v-else-if="column.key === 'start'">{{ formatKpiTs(record.startDate) }}</template>
           <template v-else-if="column.key === 'end'">{{ formatKpiTs(record.endDate) }}</template>
           <template v-else-if="column.key === 'actions'">
+            <Button type="link" data-testid="kpi-view" @click.stop="router.push({ name: 'insights-kpi-detail', params: { fqn: (record as Kpi).fullyQualifiedName || (record as Kpi).name } })">{{ t('crud.view') }}</Button>
             <Button type="link" data-testid="kpi-edit" @click.stop="onEditKpi(record as Kpi)">{{ t('crud.edit') }}</Button>
             <Button type="link" danger data-testid="kpi-delete" @click.stop="onDeleteKpi(record as Kpi)">{{ t('crud.delete') }}</Button>
           </template>

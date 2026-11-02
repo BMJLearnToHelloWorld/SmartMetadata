@@ -35,7 +35,8 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import { createGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
+import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { createGlossaryTerm, listGlossaryTerms } from '@/api/glossaryTerms';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
@@ -231,6 +232,28 @@ async function copyFqn(): Promise<void> {
     message.success(t('governance.glossaries.copied'));
   } catch {
     message.info(t('governance.glossaries.copyUnavailable'));
+  }
+}
+
+async function onDeleteGlossary(): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: entityLabel(glossary.value) }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteGlossary(glossary.value.id, { hardDelete: true, recursive: true });
+    message.success(t('crud.deletedName', { name: entityLabel(glossary.value) }));
+    await router.push({ name: 'governance-glossaries' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
@@ -442,6 +465,7 @@ onMounted(() => {
                 {{ t('governance.glossaries.addTerm') }}
               </Button>
               <Button data-testid="edit-glossary" @click="openEdit">{{ t('crud.edit') }}</Button>
+              <Button danger data-testid="delete-glossary" :disabled="!glossary" @click="onDeleteGlossary">{{ t('crud.delete') }}</Button>
             </Space>
           </div>
 

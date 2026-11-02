@@ -10,6 +10,7 @@
 import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { Classification, CreateClassificationRequest } from '@/types/governance';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { apiRequest } from './client';
 
 export const CLASSIFICATION_FIELDS = 'owners,reviewers,usageCount,termCount';
@@ -82,6 +83,28 @@ export async function updateClassification(body: CreateClassificationRequest): P
   const mapped = mapClassification(raw);
   if (!mapped) {
     throw new Error('Update classification succeeded but the response had no classification');
+  }
+  return mapped;
+}
+
+/** Official deleteClassification (rest/tagAPI.ts): recursive=true&hardDelete=true. */
+export function deleteClassification(id: string): Promise<unknown> {
+  return apiRequest(`/v1/classifications/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { recursive: true, hardDelete: true },
+  });
+}
+
+/** Official patchClassification (rest/tagAPI.ts): JSON Patch. */
+export async function patchClassification(id: string, patch: JsonPatchOp[]): Promise<Classification> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/classifications/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapClassification(raw);
+  if (!mapped) {
+    throw new Error('Patch classification succeeded but the response had no classification');
   }
   return mapped;
 }

@@ -16,10 +16,13 @@ import {
   Modal,
   Space,
   Spin,
+  Switch,
   Typography,
   message,
 } from 'ant-design-vue';
-import { getTag, updateTag } from '@/api/tags';
+import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
+import { confirmDelete } from '@/features/crud/confirmDelete';
+import { setFieldPatch } from '@/admin/jsonPatch';
 import type { ClassificationTag } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
@@ -45,6 +48,47 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('tags.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteTag(): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: tag.value.displayName || tag.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteTag(tag.value.id);
+    message.success(t('crud.deletedName', { name: tag.value.displayName || tag.value.name }));
+    if (tag.value.classification?.id) {
+      await router.push({ name: 'governance-classification', params: { id: tag.value.classification.id } });
+    } else {
+      await router.push({ name: 'governance-classifications' });
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
+async function onToggleTagDisabled(disabled: boolean): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  const previous = tag.value.disabled === true;
+  tag.value = { ...tag.value, disabled };
+  try {
+    await patchTag(tag.value.id, setFieldPatch('/disabled', previous, disabled));
+    message.success(t('crud.updated'));
+  } catch (error) {
+    tag.value = { ...tag.value, disabled: previous };
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
 }
 
@@ -105,6 +149,7 @@ onMounted(() => {
             >
               {{ t('tags.back') }}
             </Button>
+            <Button danger data-testid="delete-tag" :disabled="!tag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
             <Button type="primary" data-testid="edit-tag" :disabled="!tag" @click="openEdit">
               {{ t('tags.edit') }}
             </Button>
@@ -117,6 +162,13 @@ onMounted(() => {
           <Descriptions.Item :label="t('tags.classification')">{{ tag.classification?.name || '—' }}</Descriptions.Item>
           <Descriptions.Item :label="t('crud.parent')">{{ tag.parent?.name || '—' }}</Descriptions.Item>
           <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('crud.disabled')">
+            <Switch
+              :checked="tag.disabled === true"
+              data-testid="tag-disabled"
+              @change="(value: boolean | string | number) => onToggleTagDisabled(value === true)"
+            />
+          </Descriptions.Item>
           <Descriptions.Item :label="t('tags.usage')">{{ tag.usageCount ?? '—' }}</Descriptions.Item>
         </Descriptions>
       </Space>

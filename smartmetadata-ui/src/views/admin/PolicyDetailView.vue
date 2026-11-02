@@ -13,7 +13,6 @@ import {
   Form,
   Input,
   Modal,
-  Select,
   Table,
   message,
 } from 'ant-design-vue';
@@ -22,7 +21,7 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import type { AdminPolicy, CreatePolicyRuleRequest, PolicyRule } from '@/types/admin';
+import type { AdminPolicy, PolicyRule } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
@@ -38,7 +37,6 @@ const form = reactive({
   displayName: '',
   description: '',
   enabled: true,
-  rules: [] as CreatePolicyRuleRequest[],
 });
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
@@ -87,32 +85,12 @@ function openEdit(): void {
   form.displayName = current.displayName || '';
   form.description = current.description || '';
   form.enabled = current.enabled !== false;
-  form.rules = current.rules.map((rule) => ({
-    name: rule.name,
-    effect: (rule.effect === 'deny' ? 'deny' : 'allow') as 'allow' | 'deny',
-    operations: [...rule.operations],
-    resources: [...rule.resources],
-    description: rule.description,
-    condition: rule.condition,
-  }));
-  if (!form.rules.length) {
-    form.rules.push({
-      name: `${current.name}Rule`,
-      effect: 'allow',
-      operations: ['ViewAll'],
-      resources: ['All'],
-    });
-  }
   editOpen.value = true;
 }
 
 async function onSave(): Promise<void> {
   const current = policy.value;
   if (!current) {
-    return;
-  }
-  if (!form.rules.length || form.rules.some((r) => !r.name.trim() || !r.operations.length || !r.resources.length)) {
-    message.error(t('admin.policies.createInvalid'));
     return;
   }
   saving.value = true;
@@ -122,9 +100,9 @@ async function onSave(): Promise<void> {
       displayName: form.displayName.trim() || undefined,
       description: form.description.trim() || undefined,
       enabled: form.enabled,
-      rules: form.rules.map((rule) => ({
-        name: rule.name.trim(),
-        effect: rule.effect,
+      rules: current.rules.map((rule) => ({
+        name: rule.name,
+        effect: (rule.effect === 'deny' ? 'deny' : 'allow') as 'allow' | 'deny',
         operations: [...rule.operations],
         resources: [...rule.resources],
         description: rule.description,
@@ -209,6 +187,15 @@ watch(
       </Descriptions>
     </template>
     <template #rules>
+      <Button
+        v-if="policy"
+        type="primary"
+        data-testid="add-policy-rule"
+        style="margin-bottom: 12px"
+        @click="router.push({ name: 'admin-policy-rule-add', params: { id: policy.id } })"
+      >
+        {{ t('admin.policies.addRule') }}
+      </Button>
       <Table
         row-key="name"
         data-testid="policy-rules-table"
@@ -218,7 +205,21 @@ watch(
         size="small"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'operations'">
+          <template v-if="column.key === 'name'">
+            <a
+              href="#"
+              :data-testid="`policy-rule-${(record as PolicyRule).name}`"
+              @click.prevent="
+                router.push({
+                  name: 'admin-policy-rule-edit',
+                  params: { id: policy?.id, ruleName: (record as PolicyRule).name },
+                })
+              "
+            >
+              {{ (record as PolicyRule).name }}
+            </a>
+          </template>
+          <template v-else-if="column.key === 'operations'">
             {{ (record as PolicyRule).operations.join(', ') || '—' }}
           </template>
           <template v-else-if="column.key === 'resources'">
@@ -298,26 +299,6 @@ watch(
       <Form.Item>
         <Checkbox v-model:checked="form.enabled">{{ t('admin.policies.enabledHint') }}</Checkbox>
       </Form.Item>
-      <div v-for="(rule, index) in form.rules" :key="index" style="margin-bottom: 12px; padding: 8px; border: 1px solid var(--sm-border-color)">
-        <Form.Item :label="t('admin.policies.ruleName')">
-          <Input v-model:value="rule.name" :data-testid="`edit-policy-rule-name-${index}`" />
-        </Form.Item>
-        <Form.Item :label="t('admin.policies.effect')">
-          <Select
-            v-model:value="rule.effect"
-            :options="[
-              { value: 'allow', label: t('admin.policies.effectAllow') },
-              { value: 'deny', label: t('admin.policies.effectDeny') },
-            ]"
-          />
-        </Form.Item>
-        <Form.Item :label="t('admin.policies.operations')">
-          <Select v-model:value="rule.operations" mode="tags" :token-separators="[',']" style="width: 100%" />
-        </Form.Item>
-        <Form.Item :label="t('admin.policies.resources')">
-          <Select v-model:value="rule.resources" mode="tags" :token-separators="[',']" style="width: 100%" />
-        </Form.Item>
-      </div>
     </Form>
   </Modal>
 </template>
