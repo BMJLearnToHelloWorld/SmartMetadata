@@ -16,6 +16,12 @@ export interface SearchAssetsOptions {
   includeAggregations?: boolean;
   sortField?: string;
   sortOrder?: 'asc' | 'desc';
+  /**
+   * Official GET search surface (searchAPI rawSearchQuery): the showDeleted
+   * flag travels as `deleted`. Only true is sent, so existing requests that
+   * do not opt in are byte-identical to before.
+   */
+  deleted?: boolean;
 }
 
 export async function searchAssets(
@@ -34,6 +40,7 @@ export async function searchAssets(
       include_aggregations: options.includeAggregations ?? true,
       sort_field: options.sortField,
       sort_order: options.sortOrder,
+      deleted: options.deleted === true ? true : undefined,
     },
   });
   return mapSearchResponse(payload);

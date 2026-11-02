@@ -52,6 +52,15 @@ describe('searchAssets', () => {
     expect(url).toContain('sort_order=desc');
   });
 
+  it('sends deleted only when showDeleted opts in', async () => {
+    await searchAssets('orders', 0, 15, { deleted: true });
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('deleted=true');
+    await searchAssets('orders', 0, 15, { deleted: false });
+    expect(String(vi.mocked(fetch).mock.calls[1][0])).not.toContain('deleted=');
+    await searchAssets('orders', 0, 15);
+    expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('deleted=');
+  });
+
   it('can skip aggregations for My Data owned/followed term queries', async () => {
     await searchAssets('owners.id:"u-1"', 0, 5, { includeAggregations: false });
     const url = String(vi.mocked(fetch).mock.calls[0][0]);

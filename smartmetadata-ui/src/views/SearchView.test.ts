@@ -9,6 +9,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
@@ -77,6 +78,8 @@ const SEARCH_BODY = {
 };
 
 async function mountView(query: Record<string, string> = {}) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -84,12 +87,17 @@ async function mountView(query: Record<string, string> = {}) {
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
       { path: '/context-center', name: 'context-center-overview', component: { template: '<div>context</div>' } },
       { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>domains</div>' } },
+      {
+        path: '/admin/settings/preferences/search',
+        name: 'settings-preferences-search',
+        component: { template: '<div>search settings</div>' },
+      },
     ],
   });
   await router.push({ name: 'search', query });
   await router.isReady();
   const wrapper = mount(SearchView, {
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [router, pinia, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -213,6 +221,106 @@ describe('SearchView', () => {
     await wrapper.get('[data-testid="explore-residual-cta"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('context-center-overview');
+  });
+});
+
+describe('SearchView Explore result area (R3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.searchParams.get('size') === '0') {
+          return jsonResponse({
+            hits: { total: { value: 3 }, hits: [] },
+            aggregations: { 'sterms#entityType': { buckets: [{ key: 'table', doc_count: 1 }] } },
+          });
+        }
+        return jsonResponse({
+          ...SEARCH_BODY,
+          hits: { ...SEARCH_BODY.hits, total: { value: 100 } },
+        });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('defaults to page size 15 and honours a pageSize URL value', async () => {
+    await mountView();
+    const sizes = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => new URL(String(call[0]), 'http://localhost').searchParams.get('size'));
+    expect(sizes).toContain('15');
+
+    await mountView({ pageSize: '25' });
+    const sized = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => new URL(String(call[0]), 'http://localhost'))
+      .find((url) => url.searchParams.get('size') === '25');
+    expect(sized).toBeDefined();
+  });
+
+  it('toggles showDeleted into the URL and the deleted search param', async () => {
+    const { wrapper, router } = await mountView();
+    const toggle = wrapper.findComponent('[data-testid="explore-show-deleted"]');
+    toggle.vm.$emit('change', true);
+    await flushPromises();
+    expect(router.currentRoute.value.query.showDeleted).toBe('true');
+    const deleted = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => new URL(String(call[0]), 'http://localhost'))
+      .find((url) => url.searchParams.get('deleted') === 'true');
+    expect(deleted).toBeDefined();
+  });
+
+  it('writes a pagination page-size change to the URL and the local preference', async () => {
+    const { wrapper, router } = await mountView();
+    const pagination = wrapper.findComponent('[data-testid="search-pagination"]');
+    expect(pagination.exists()).toBe(true);
+    pagination.vm.$emit('show-size-change', 1, 25);
+    await flushPromises();
+    expect(router.currentRoute.value.query.pageSize).toBe('25');
+    expect(window.localStorage.getItem('sm.explore.pageSize.v1')).toBe('25');
+  });
+
+  it('applies advanced-search rows as Lucene clauses in q', async () => {
+    const { wrapper, router } = await mountView({ q: 'orders' });
+    await wrapper.get('[data-testid="explore-advanced-search"]').trigger('click');
+    await flushPromises();
+    const valueInput = wrapper.findComponent('[data-testid="advanced-search-value-0"]');
+    expect(valueInput.exists()).toBe(true);
+    valueInput.vm.$emit('update:value', 'Data Eng');
+    // Ant Modal teleports its footer to document.body; submit through the
+    // Apply button there, as in the AlertDetail FormModal test.
+    const okButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Apply'),
+    );
+    expect(okButton).toBeDefined();
+    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(router.currentRoute.value.query.q).toBe('orders AND entityType:"Data Eng"');
+  });
+
+  it('shows the index-not-found banner on the official marker message', async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ message: 'Failed to to find index [table_search_index]' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('Search indexing error');
+    expect(wrapper.text()).toContain('Open search settings');
   });
 });
 

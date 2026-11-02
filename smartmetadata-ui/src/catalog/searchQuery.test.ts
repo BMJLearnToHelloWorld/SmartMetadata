@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 import {
   composeSearchQuery,
   filtersFromQuery,
+  isIndexNotFoundError,
   luceneTerm,
+  pageSizeFromQuery,
   searchRouteFromLocation,
   searchRouteQuery,
   sortFromQuery,
@@ -35,6 +37,21 @@ describe('searchQuery', () => {
       '(entityType:table OR entityType:topic)',
     );
     expect(composeSearchQuery('', {})).toBe('*');
+  });
+
+  it('accepts only official page-size options and falls back otherwise', () => {
+    expect(pageSizeFromQuery('25', 15)).toBe(25);
+    expect(pageSizeFromQuery('50', 15)).toBe(50);
+    expect(pageSizeFromQuery('24', 25)).toBe(25);
+    expect(pageSizeFromQuery('10', 15)).toBe(15);
+    expect(pageSizeFromQuery(undefined, 25)).toBe(25);
+  });
+
+  it('detects index-not-found errors from the official marker strings', () => {
+    expect(isIndexNotFoundError('Failed to to find index [table_search_index]')).toBe(true);
+    expect(isIndexNotFoundError('Elasticsearch exception: reason=all shards failed')).toBe(true);
+    expect(isIndexNotFoundError('Request failed (500)')).toBe(false);
+    expect(isIndexNotFoundError(undefined)).toBe(false);
   });
 
   it('round-trips filter query params and toggles a bucket', () => {

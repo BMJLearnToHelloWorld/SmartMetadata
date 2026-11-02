@@ -43,7 +43,39 @@ export interface SearchSort {
 
 export const DEFAULT_SORT: SearchSort = { id: 'relevance', order: 'desc' };
 
-export const SEARCH_PAGE_SIZE = 20;
+/**
+ * Official page-size options (ExploreV1 EXPLORE_PAGE_SIZE_OPTIONS over
+ * constants PAGE_SIZE_BASE / PAGE_SIZE_MEDIUM / PAGE_SIZE_LARGE): 15 / 25 / 50.
+ * The default is PAGE_SIZE_BASE (15); a URL value outside this table is
+ * ignored, matching the official usePaging behaviour for invalid pageSize.
+ */
+export const EXPLORE_PAGE_SIZE_OPTIONS = [15, 25, 50] as const;
+
+export type ExplorePageSize = (typeof EXPLORE_PAGE_SIZE_OPTIONS)[number];
+
+export const DEFAULT_EXPLORE_PAGE_SIZE: ExplorePageSize = 15;
+
+export function pageSizeFromQuery(value: unknown, fallback: number = DEFAULT_EXPLORE_PAGE_SIZE): ExplorePageSize {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : typeof raw === 'number' ? raw : Number.NaN;
+  const matched = (EXPLORE_PAGE_SIZE_OPTIONS as readonly number[]).find((option) => option === parsed);
+  if (matched !== undefined) {
+    return matched as ExplorePageSize;
+  }
+  const fallbackMatched = (EXPLORE_PAGE_SIZE_OPTIONS as readonly number[]).find((option) => option === fallback);
+  return (fallbackMatched ?? DEFAULT_EXPLORE_PAGE_SIZE) as ExplorePageSize;
+}
+
+/**
+ * Official index-not-found markers (ExplorePureUtils isElasticsearchError
+ * over explore.constants FAILED_TO_FIND_INDEX_ERROR / ES_EXCEPTION_SHARDS_FAILED).
+ * The double "to" in the first marker is the official string, kept verbatim.
+ */
+export const INDEX_NOT_FOUND_MARKERS = ['Failed to to find index', 'reason=all shards failed'] as const;
+
+export function isIndexNotFoundError(message: unknown): boolean {
+  return typeof message === 'string' && INDEX_NOT_FOUND_MARKERS.some((marker) => message.includes(marker));
+}
 
 const SPECIAL = /[\s+\-!(){}[\]^"~*?:\\/]/;
 

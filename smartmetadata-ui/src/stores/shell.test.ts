@@ -12,7 +12,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { persistSession } from '@/auth/token';
 import { useDomainStore, DOMAIN_STORAGE_KEY } from './domain';
 import { useShellConfigStore, stripSnapshot } from './shellConfig';
-import { useShellPreferencesStore, SIDEBAR_COLLAPSED_KEY } from './shellPreferences';
+import { useShellPreferencesStore, EXPLORE_PAGE_SIZE_KEY, SIDEBAR_COLLAPSED_KEY } from './shellPreferences';
 
 function jsonResponse(payload: unknown) {
   return new Response(JSON.stringify(payload), {
@@ -71,6 +71,21 @@ describe('shell stores (Stage 1)', () => {
     expect(store.domains).toEqual([]);
     expect(store.activeDomainId).toBeNull();
     expect(store.errorMessage).toBe('down');
+  });
+
+  it('persists only official explore page sizes and hydrates them', () => {
+    const prefs = useShellPreferencesStore();
+    prefs.setExplorePageSize(25);
+    expect(localStorage.getItem(EXPLORE_PAGE_SIZE_KEY)).toBe('25');
+    prefs.setExplorePageSize(20);
+    expect(localStorage.getItem(EXPLORE_PAGE_SIZE_KEY)).toBe('25');
+    expect(prefs.explorePageSize).toBe(25);
+    localStorage.setItem(EXPLORE_PAGE_SIZE_KEY, '20');
+    prefs.hydrate();
+    expect(prefs.explorePageSize).toBe(25);
+    localStorage.setItem(EXPLORE_PAGE_SIZE_KEY, '50');
+    prefs.hydrate();
+    expect(prefs.explorePageSize).toBe(50);
   });
 
   it('persists sidebar collapse locally and reports no limit endpoint', () => {
