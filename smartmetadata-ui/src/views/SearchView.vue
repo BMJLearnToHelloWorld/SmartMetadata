@@ -109,8 +109,10 @@ const tabCounts = computed(() => {
   // Official publishCounts behaviour: the active tab's count is the current
   // page's result total, not the aggregation bucket. Other tabs keep their
   // aggregation counts; tabs with no bucket stay count-less (unknown, not 0),
-  // because no independent count endpoint is wired (see residuals).
-  if (activeTab.value) {
+  // because no independent count endpoint is wired (see residuals). On a
+  // failed search the total is a reset 0, not a result count, so it must
+  // not overwrite the bucket into a misleading (0).
+  if (activeTab.value && !errorMessage.value) {
     counts.set(activeTab.value.entityType, total.value);
   }
   return counts;
