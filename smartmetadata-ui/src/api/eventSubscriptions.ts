@@ -40,7 +40,10 @@ function mapDestinations(value: unknown): EventSubscriptionDestination[] {
         type: asString(rec.type) || undefined,
         enabled: asBoolean(rec.enabled),
         endpoint: asString(config?.endpoint) || undefined,
-        readTimeout: asNumber(config?.readTimeout),
+        // Fix4 follow-up: readTimeout lives on the destination itself, not
+        // inside config — official formatDestinations writes it beside
+        // config, and the server rejects it inside Webhook config.
+        readTimeout: asNumber(rec.readTimeout),
       },
     ];
   });
