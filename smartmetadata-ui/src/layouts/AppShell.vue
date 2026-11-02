@@ -280,7 +280,17 @@ async function onLogout(): Promise<void> {
   min-height: 100%;
 }
 .shell__sider {
-  min-height: 100vh;
+  /*
+   * Fix7: the sider height is pinned to the viewport and sticks to the top
+   * while the page scrolls. min-height alone only floored the height, so an
+   * expanded menu grew the whole shell instead of scrolling inside itself;
+   * with a definite height, the nav's existing flex: 1 + overflow-y: auto
+   * finally engages. Sticky (not fixed) keeps the sider in flow, so the
+   * collapse-width animation and the lg breakpoint behaviour are untouched.
+   */
+  height: 100vh;
+  position: sticky;
+  top: 0;
   background: var(--sm-sider-bg);
   border-right: 1px solid var(--sm-border-secondary);
 }
