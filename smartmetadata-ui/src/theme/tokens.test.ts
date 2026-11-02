@@ -171,6 +171,8 @@ describe('official token mapping (Stage 1)', () => {
     expect(appVue).not.toMatch(/IP3Layout|NaviTab|@icore/);
     expect(appShell).not.toMatch(/IP3Layout|NaviTab|@icore/);
     expect(appShell).toContain(':width="228"');
-    expect(appShell).toContain('theme="light"');
+    // Stage 9: the sider theme follows the shell dark preference instead
+    // of a hardcoded light theme; light remains the default mode.
+    expect(appShell).toContain(`:theme="shellPreferences.isDark ? 'dark' : 'light'"`);
   });
 });

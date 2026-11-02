@@ -10,6 +10,13 @@
 
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import {
+  applyThemeMode,
+  prefersDarkColorScheme,
+  readThemeMode,
+  THEME_STORAGE_KEY,
+  type ThemeMode,
+} from '@/theme/themePreference';
 
 /**
  * Shell preferences slice.
@@ -25,9 +32,28 @@ export const SIDEBAR_COLLAPSED_KEY = 'sm.sidebar.collapsed.v1';
 
 export const useShellPreferencesStore = defineStore('shellPreferences', () => {
   const sidebarCollapsed = ref(false);
+  const themeMode = ref<ThemeMode>('light');
+  const isDark = ref(false);
+  let mediaListenerAttached = false;
+
+  function applyTheme(): void {
+    isDark.value = applyThemeMode(themeMode.value, prefersDarkColorScheme());
+  }
 
   function hydrate(): void {
     sidebarCollapsed.value = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+    themeMode.value = readThemeMode(window.localStorage);
+    applyTheme();
+    if (!mediaListenerAttached && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      mediaListenerAttached = true;
+      window
+        .matchMedia('(prefers-color-scheme: dark)')
+        .addEventListener('change', () => {
+          if (themeMode.value === 'system') {
+            applyTheme();
+          }
+        });
+    }
   }
 
   function setSidebarCollapsed(value: boolean): void {
@@ -35,5 +61,11 @@ export const useShellPreferencesStore = defineStore('shellPreferences', () => {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0');
   }
 
-  return { sidebarCollapsed, hydrate, setSidebarCollapsed };
+  function setThemeMode(value: ThemeMode): void {
+    themeMode.value = value;
+    window.localStorage.setItem(THEME_STORAGE_KEY, value);
+    applyTheme();
+  }
+
+  return { sidebarCollapsed, themeMode, isDark, hydrate, setSidebarCollapsed, setThemeMode };
 });

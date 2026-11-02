@@ -4,9 +4,10 @@
  *
  * Shared ant-design-vue look, mirrored from theme/tokens.ts, which maps
  * official OpenMetadata styles/tokens.css. Do not import @icore or
- * openmetadata-ui CSS. Dark values are a CSS hook only — no Settings
- * appearance UI wires data-theme yet (residual).
- * Dark values are a CSS hook only — no Settings appearance UI.
+ * openmetadata-ui CSS. Dark values are driven by
+ * :root[data-theme='dark'], wired since Stage 9 through the shell
+ * theme preference (UserMenu theme submenu → shellPreferences store →
+ * document root + Ant darkAlgorithm); server sync remains residual.
  */
 
 :root {

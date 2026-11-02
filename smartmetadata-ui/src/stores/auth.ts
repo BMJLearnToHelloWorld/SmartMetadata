@@ -73,6 +73,32 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * SAML/OIDC callback login (Stage 9): the IdP has already redirected
+   * back to this console carrying an id_token (official SamlCallback
+   * reads it from the URL hash first, then the query). That token is
+   * stored as the session access token exactly as the official
+   * setOidcToken does, then the profile is loaded; on profile failure
+   * the session is dropped rather than left half-logged-in.
+   */
+  async function loginWithOidc(idToken: string, email: string): Promise<void> {
+    const next: StoredSession = {
+      accessToken: idToken,
+      tokenType: 'Bearer',
+      email: email || undefined,
+    };
+    persistSession(window.localStorage, next);
+    session.value = next;
+    try {
+      await refreshUser();
+    } catch {
+      clearSession(window.localStorage);
+      session.value = null;
+      user.value = null;
+      throw new Error('SAML login succeeded at the IdP but the user profile could not be loaded');
+    }
+  }
+
   function forgetLocalSession(): void {
     clearSession(window.localStorage);
     session.value = null;
@@ -87,6 +113,7 @@ export const useAuthStore = defineStore('auth', () => {
     hydrate,
     refreshUser,
     login,
+    loginWithOidc,
     logout,
     forgetLocalSession,
   };

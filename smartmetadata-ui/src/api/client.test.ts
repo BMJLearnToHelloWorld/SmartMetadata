@@ -25,6 +25,16 @@ describe('apiRequest', () => {
     localStorage.clear();
   });
 
+  it('dispatches sm:session-expired when an authenticated call returns 401', async () => {
+    const seen: string[] = [];
+    const listener = () => seen.push('expired');
+    window.addEventListener('sm:session-expired', listener);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"expired"}', { status: 401 })));
+    await expect(apiRequest('/v1/search/query')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toEqual(['expired']);
+    window.removeEventListener('sm:session-expired', listener);
+  });
+
   it('drops the stored session when an authenticated call returns 401', async () => {
     vi.stubGlobal(
       'fetch',

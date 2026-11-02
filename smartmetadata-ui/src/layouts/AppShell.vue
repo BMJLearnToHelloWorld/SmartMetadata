@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Layout, Select, Space, Tag, Tooltip, message } from 'ant-design-vue';
@@ -17,6 +17,7 @@ import {
   sectionKeyForRoute,
   selectedNavKey,
 } from '@/layouts/nav';
+import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
 import { useAuthStore } from '@/stores/auth';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
@@ -66,14 +67,46 @@ const hideHeaderSearch = computed(() => route.name === 'home');
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
 const profileUserId = computed(() => auth.user?.id || '');
 
+/**
+ * Stage 9 global shortcut: mod+K focuses the header search input, or
+ * navigates to /search when the header search is hidden (home page).
+ * Installed here — the only place the search bar lives — and removed
+ * on unmount. Typing inside an input/textarea is never hijacked.
+ */
+function onGlobalKeyDown(event: KeyboardEvent): void {
+  const handled = handleGlobalShortcut(
+    event,
+    isMacPlatform(window.navigator?.platform),
+    () => {
+      const input = document.querySelector('[data-testid="global-search"] input') as HTMLInputElement | null;
+      if (input) {
+        input.focus();
+        return true;
+      }
+      return false;
+    },
+    () => {
+      void router.push({ name: 'search' });
+    },
+  );
+  if (handled) {
+    event.preventDefault();
+  }
+}
+
 onMounted(() => {
   shellPreferences.hydrate();
+  window.addEventListener('keydown', onGlobalKeyDown);
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
   // Shell config errors are recorded on the store; a failed version or
   // lineage fetch must not break shell startup.
   void shellConfig.loadShellConfig().catch(() => undefined);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeyDown);
 });
 
 watch(
@@ -161,7 +194,7 @@ async function onLogout(): Promise<void> {
       collapsible
       :collapsed-width="72"
       :width="228"
-      theme="light"
+      :theme="shellPreferences.isDark ? 'dark' : 'light'"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
         <span class="shell__brand-name">{{ collapsed ? t('product.monogram') : t('product.name') }}</span>
@@ -204,8 +237,10 @@ async function onLogout(): Promise<void> {
           <UserMenu
             :display-name="displayName"
             :profile-user-id="profileUserId"
+            :theme-mode="shellPreferences.themeMode"
             @profile="onUserProfile"
             @settings="onUserSettings"
+            @theme="(mode) => shellPreferences.setThemeMode(mode)"
             @logout="onLogout"
           />
         </Space>

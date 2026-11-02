@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { authorizationHeader, clearSession, loadSession } from '@/auth/token';
+import { dispatchSessionExpired } from '@/auth/sessionEvents';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -81,6 +82,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (!response.ok) {
     if (response.status === 401 && options.auth !== false) {
       clearSession(window.localStorage);
+      dispatchSessionExpired();
     }
     throw new ApiError(response.status, text, readErrorMessage(text, response.status));
   }

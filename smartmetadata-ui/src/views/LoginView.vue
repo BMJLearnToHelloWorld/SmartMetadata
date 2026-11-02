@@ -149,6 +149,19 @@ onMounted(() => {
         >
           {{ t('login.submit') }}
         </Button>
+        <div class="login__links">
+          <Button type="link" data-testid="login-forgot-password" @click="router.push({ name: 'forgot-password' })">
+            {{ t('login.forgotPassword') }}
+          </Button>
+          <Button
+            v-if="authConfig?.enableSelfSignup && passwordLogin"
+            type="link"
+            data-testid="login-signup"
+            @click="router.push({ name: 'signup' })"
+          >
+            {{ t('login.signUp') }}
+          </Button>
+        </div>
       </Form>
     </Card>
   </div>
@@ -181,5 +194,10 @@ onMounted(() => {
 }
 .login__error {
   margin-bottom: 16px;
+}
+.login__links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
 }
 </style>
