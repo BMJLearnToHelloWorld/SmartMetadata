@@ -1597,6 +1597,8 @@ const enUS = {
       add: 'Add row',
       remove: 'Remove',
       save: 'Save',
+      storeSampleData: 'Enable storing of sample data',
+      readSampleData: 'Enable reading of sample data',
     },
     searchPrefs: {
       title: 'Search settings',
