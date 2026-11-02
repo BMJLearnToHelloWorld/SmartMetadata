@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Form, Input, Select, Space, message} from 'ant-design-vue';
+import {Button, Form, Input, Select, Space, Switch, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsProfiler, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
@@ -18,7 +18,19 @@ const { t } = useI18n();
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
-const form = reactive<{ metrics: MetricConfigurationDefinition[] }>({ metrics: [] });
+const form = reactive<{
+  metrics: MetricConfigurationDefinition[];
+  storeSampleData: boolean;
+  readSampleData: boolean;
+}>({ metrics: [], storeSampleData: false, readSampleData: false });
+
+/** Official ProfilerConfigurationPage coupling: storing sample data implies reading it. */
+function onStoreSampleData(checked: boolean): void {
+  form.storeSampleData = checked;
+  if (checked) {
+    form.readSampleData = true;
+  }
+}
 
 const DATA_TYPES = [...PROFILER_DATA_TYPES];
 const METRICS = [...PROFILER_METRICS];
@@ -40,6 +52,8 @@ async function load(): Promise<void> {
   try {
     const cfg = await getTypedSetting('profilerConfiguration', settingAsProfiler);
     form.metrics = [...(cfg.metricConfiguration ?? [])];
+    form.storeSampleData = cfg.sampleDataConfig?.storeSampleData === true;
+    form.readSampleData = cfg.sampleDataConfig?.readSampleData === true;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('settings.profiler.loadFailed');
   } finally {
@@ -64,6 +78,11 @@ async function save(): Promise<void> {
         metrics: row.metrics ?? [],
         disabled: Boolean(row.disabled),
       })),
+      // Previously omitted: saving dropped the server's sampleDataConfig.
+      sampleDataConfig: {
+        storeSampleData: form.storeSampleData,
+        readSampleData: form.readSampleData,
+      },
     };
     await updateSetting('profilerConfiguration', payload);
     message.success(t('settings.profiler.saved'));
@@ -136,5 +155,13 @@ onMounted(() => {
         </template>
       </template>
     </SmTable>
+    <Form layout="vertical" style="margin-top: 16px">
+      <Form.Item :label="t('settings.profiler.storeSampleData')">
+        <Switch v-model:checked="form.storeSampleData" data-testid="profiler-store-sample-data" @change="onStoreSampleData" />
+      </Form.Item>
+      <Form.Item :label="t('settings.profiler.readSampleData')">
+        <Switch v-model:checked="form.readSampleData" data-testid="profiler-read-sample-data" />
+      </Form.Item>
+    </Form>
   </PreferencePageShell>
 </template>

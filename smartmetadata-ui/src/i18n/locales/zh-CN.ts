@@ -1590,6 +1590,8 @@ const zhCN = {
       add: '添加行',
       remove: '删除',
       save: '保存',
+      storeSampleData: '启用样本数据存储',
+      readSampleData: '启用样本数据读取',
     },
     searchPrefs: {
       title: '搜索设置',

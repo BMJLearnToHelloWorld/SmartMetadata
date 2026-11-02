@@ -71,7 +71,31 @@ const form = reactive({
   entityFqn: '',
   column: '',
   parameterText: '',
+  /** Values for the selected definition's parameterDefinition, keyed by parameter name. */
+  parameterValues: {} as Record<string, string>,
 });
+
+/** The selected definition's declared parameters; empty when none selected or none declared. */
+const selectedParameters = computed(() => {
+  const definition = definitions.value.find(
+    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
+  );
+  return definition?.parameterDefinition ?? [];
+});
+
+/** Switching definitions must not carry the previous definition's values forward. */
+function onDefinitionChange(): void {
+  form.parameterValues = {};
+}
+
+function collectParameterValues(): Array<{ name: string; value: string }> {
+  if (selectedParameters.value.length > 0) {
+    return selectedParameters.value
+      .map((param) => ({ name: param.name, value: (form.parameterValues[param.name] ?? '').trim() }))
+      .filter((entry) => entry.value.length > 0);
+  }
+  return parseParameterValues(form.parameterText);
+}
 
 const columns = computed<EntityListColumn[]>(() => [
   {
@@ -221,7 +245,7 @@ async function onCreate(): Promise<void> {
       entityLink: toEntityLink(form.entityType, form.entityFqn, form.column),
       description: form.description.trim() || undefined,
       displayName: form.displayName.trim() || undefined,
-      parameterValues: parseParameterValues(form.parameterText),
+      parameterValues: collectParameterValues(),
     });
     createOpen.value = false;
     message.success(t('quality.testCases.created', { name: created.name }));
@@ -387,6 +411,7 @@ defineExpose({ openCreate });
           show-search
           option-filter-prop="label"
           data-testid="create-test-case-definition"
+          @change="onDefinitionChange"
         >
           <Select.Option
             v-for="definition in definitions"
@@ -413,7 +438,21 @@ defineExpose({ openCreate });
       <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
-      <Form.Item :label="t('quality.testCases.parameters')">
+      <template v-if="selectedParameters.length > 0">
+        <Form.Item
+          v-for="param in selectedParameters"
+          :key="param.name"
+          :label="param.displayName || param.name"
+          :required="param.required === true"
+          :extra="param.description"
+        >
+          <Input
+            v-model:value="form.parameterValues[param.name]"
+            :data-testid="`create-test-case-param-${param.name}`"
+          />
+        </Form.Item>
+      </template>
+      <Form.Item v-else :label="t('quality.testCases.parameters')">
         <Input.TextArea v-model:value="form.parameterText" :rows="3" placeholder="minValue=1&#10;maxValue=100" />
       </Form.Item>
     </Form>
