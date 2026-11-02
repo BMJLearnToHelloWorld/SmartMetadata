@@ -6,7 +6,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Select, Space, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Select, Space, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { getRole } from '@/api/roles';
 import { assignTeamDefaultRolesPatch, getTeam, listTeams, patchTeam } from '@/api/teams';
 import { assignUserRolesPatch, getUser, listUsers, patchUser } from '@/api/users';
@@ -148,14 +149,13 @@ watch(
           {{ t('admin.roles.assign') }}
         </Button>
       </Space>
-      <Table
+      <SmTable
         row-key="id"
         :columns="memberColumns"
         :data-source="role?.users ?? []"
         :pagination="false"
         size="small"
         style="margin-top: 16px"
-        :row-class-name="() => 'role-user-row'"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
@@ -169,7 +169,7 @@ watch(
             <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
     <template #teams>
       <p class="entity-detail__tab-lead">{{ t('admin.roles.assignTeam') }}</p>
@@ -185,7 +185,7 @@ watch(
           {{ t('admin.roles.addDefaultRole') }}
         </Button>
       </Space>
-      <Table
+      <SmTable
         row-key="id"
         :columns="memberColumns"
         :data-source="role?.teams ?? []"
@@ -204,7 +204,7 @@ watch(
             </a>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
 </template>

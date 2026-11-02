@@ -6,20 +6,8 @@
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  Alert,
-  Button,
-  Card,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Spin,
-  Switch,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import {Alert, Button, Card, Descriptions, Form, Input, Space, Spin, Switch, Typography, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { setFieldPatch } from '@/admin/jsonPatch';
@@ -173,14 +161,13 @@ onMounted(() => {
         </Descriptions>
       </Space>
     </Card>
-    <Modal
-      v-model:open="editOpen"
+    <FormModal
+      :open="editOpen"
       :title="t('tags.editTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="saving"
-      @ok="onSave"
-    >
+      @ok="onSave" @cancel="editOpen = false">
       <Form layout="vertical">
         <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
           <Input v-model:value="editForm.displayName" />
@@ -189,7 +176,7 @@ onMounted(() => {
           <Input.TextArea v-model:value="editForm.description" :rows="3" />
         </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   </Spin>
 </template>
 

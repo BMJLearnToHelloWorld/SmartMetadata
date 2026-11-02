@@ -6,7 +6,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Table, Tag } from 'ant-design-vue';
+import {Button, Tag} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { listDataQualityDimensions } from '@/api/dataQualityDimensions';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { DataQualityDimension } from '@/types/admin';
@@ -52,18 +53,18 @@ onMounted(() => {
     <Button style="margin-bottom: 12px" data-testid="dq-dimensions-refresh" @click="load">
       {{ t('settings.dqDimensions.refresh') }}
     </Button>
-    <Table
+    <SmTable
       row-key="id"
       :columns="columns"
       :data-source="rows"
       :pagination="false"
-      data-testid="dq-dimensions-table"
+      test-id="dq-dimensions-table"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'provider'">
           <Tag>{{ (record as DataQualityDimension).provider || '—' }}</Tag>
         </template>
       </template>
-    </Table>
+    </SmTable>
   </PreferencePageShell>
 </template>

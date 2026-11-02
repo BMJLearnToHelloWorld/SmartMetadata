@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, Table, message} from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import { deleteClassification, getClassification, patchClassification, updateClassification } from '@/api/classifications';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -221,9 +222,9 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #tags>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="classification-tags-table"
+        test-id="classification-tags-table"
         :columns="tagColumns"
         :data-source="tags"
         :pagination="false"
@@ -242,7 +243,7 @@ onMounted(() => {
             {{ (record as ClassificationTag).usageCount ?? '—' }}
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
   <SmDrawer

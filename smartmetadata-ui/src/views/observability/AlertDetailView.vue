@@ -5,7 +5,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Descriptions, Form, Input, Switch, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, Switch, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -152,7 +153,7 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #destinations>
-      <Table
+      <SmTable
         v-if="alert"
         row-key="type"
         size="small"

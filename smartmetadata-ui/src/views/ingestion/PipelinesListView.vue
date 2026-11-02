@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Checkbox, Form, Input, Modal, Select, message } from 'ant-design-vue';
+import {Alert, Button, Checkbox, Form, Input, Select, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { listDatabaseServices } from '@/api/databaseServices';
 import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
 import { listDashboardServices } from '@/api/dashboardServices';
@@ -254,14 +255,13 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('ingestion.pipelines.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
-    @ok="onCreate"
-  >
+    @ok="onCreate" @cancel="createOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-pipeline-name" />
@@ -340,5 +340,5 @@ onMounted(() => {
         <Input.TextArea v-model:value="form.description" :rows="3" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

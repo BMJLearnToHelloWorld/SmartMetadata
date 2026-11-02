@@ -5,7 +5,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Checkbox, Descriptions, Form, Input, Modal, Select, Tag, message } from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Tag, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
 import { assignUserRolesPatch, deactivateUser, getUser, patchUser, restoreUser, updateUser } from '@/api/users';
@@ -230,14 +231,13 @@ watch(
       </Button>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('admin.users.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -266,7 +266,7 @@ watch(
         </Select>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>
 
 <style scoped>

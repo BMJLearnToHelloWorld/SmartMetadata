@@ -6,7 +6,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Switch, Table, message } from 'ant-design-vue';
+import {Button, Switch, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsEntityRules, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { EntityRulesSettings, SemanticsRule } from '@/types/admin';
@@ -65,12 +66,12 @@ onMounted(() => {
     :loading="loading"
     :error-message="errorMessage"
   >
-    <Table
+    <SmTable
       row-key="name"
       :columns="columns"
       :data-source="form.entitySemantics"
       :pagination="false"
-      data-testid="entity-semantics-table"
+      test-id="entity-semantics-table"
       style="margin-bottom: 16px"
     >
       <template #bodyCell="{ column, index }">
@@ -78,7 +79,7 @@ onMounted(() => {
           <Switch v-model:checked="form.entitySemantics[index].enabled" />
         </template>
       </template>
-    </Table>
+    </SmTable>
     <Button type="primary" :loading="saving" data-testid="entity-rules-save" @click="save">
       {{ t('settings.entityRules.save') }}
     </Button>

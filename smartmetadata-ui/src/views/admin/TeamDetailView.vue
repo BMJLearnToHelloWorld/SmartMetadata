@@ -5,19 +5,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Descriptions,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  message,
-} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Descriptions, Form, Input, Select, Space, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { listRoles } from '@/api/roles';
 import {
   TEAM_TYPES,
@@ -254,7 +244,7 @@ watch(
           {{ t('admin.teams.addMember') }}
         </Button>
       </Space>
-      <Table
+      <SmTable
         v-if="team"
         row-key="id"
         :columns="memberColumns"
@@ -277,17 +267,16 @@ watch(
             </Button>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('admin.teams.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="form.displayName" />
@@ -304,5 +293,5 @@ watch(
         <Checkbox v-model:checked="form.isJoinable">{{ t('admin.teams.isJoinable') }}</Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

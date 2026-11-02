@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
 import {
   addTestCasesToLogicalTestSuite,
@@ -236,7 +237,7 @@ onMounted(() => {
       <SmState state="empty" test-id="test-suite-pipeline-residual" :empty-text="t('quality.testSuites.residualPipeline')" />
     </template>
     <template #tests>
-      <Table
+      <SmTable
         row-key="id"
         size="small"
         :columns="testColumns"
@@ -266,17 +267,16 @@ onMounted(() => {
             <span v-else>{{ entityLabel(record as EntityRef) }}</span>
           </template>
         </template>
-      </Table>
+      </SmTable>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('quality.testSuites.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -285,7 +285,7 @@ onMounted(() => {
         <Input.TextArea v-model:value="editForm.description" :rows="3" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
   <FormModal
     :open="addOpen"
     :title="t('quality.testSuites.addTestsTitle')"

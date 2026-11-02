@@ -15,26 +15,9 @@ import {
   SearchOutlined,
   TableOutlined,
 } from '@ant-design/icons-vue';
-import {
-  Alert,
-  Breadcrumb,
-  Button,
-  Checkbox,
-  Collapse,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Pagination,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Tabs,
-  Typography,
-  message,
-} from 'ant-design-vue';
+import {Alert, Breadcrumb, Button, Checkbox, Collapse, Empty, Form, Input, Pagination, Select, Space, Spin, Tag, Tabs, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { createGlossaryTerm, listGlossaryTerms } from '@/api/glossaryTerms';
@@ -529,9 +512,9 @@ onMounted(() => {
                 </Space>
               </div>
 
-              <Table
+              <SmTable
                 row-key="id"
-                data-testid="glossary-terms-table"
+                test-id="glossary-terms-table"
                 size="small"
                 :columns="termColumns"
                 :data-source="pagedTerms"
@@ -570,7 +553,7 @@ onMounted(() => {
                     }}
                   </template>
                 </template>
-              </Table>
+              </SmTable>
 
               <div class="glossary__pager">
                 <Pagination
@@ -720,14 +703,13 @@ onMounted(() => {
     </aside>
   </div>
 
-  <Modal
-    v-model:open="editOpen"
+  <FormModal
+    :open="editOpen"
     :title="t('governance.glossaries.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
-    @ok="onSave"
-  >
+    @ok="onSave" @cancel="editOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
         <Input v-model:value="editForm.displayName" />
@@ -741,16 +723,15 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 
-  <Modal
-    v-model:open="createGlossaryOpen"
+  <FormModal
+    :open="createGlossaryOpen"
     :title="t('governance.glossaries.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creatingGlossary"
-    @ok="onCreateGlossary"
-  >
+    @ok="onCreateGlossary" @cancel="createGlossaryOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" required>
         <Input v-model:value="glossaryForm.name" data-testid="create-glossary-name" />
@@ -771,16 +752,15 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 
-  <Modal
-    v-model:open="createTermOpen"
+  <FormModal
+    :open="createTermOpen"
     :title="t('governance.glossaries.createTermTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creatingTerm"
-    @ok="onCreateTerm"
-  >
+    @ok="onCreateTerm" @cancel="createTermOpen = false">
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" required>
         <Input v-model:value="termForm.name" data-testid="create-term-name" />
@@ -804,7 +784,7 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>
 
 <style scoped>
