@@ -164,6 +164,7 @@ export function mapSearchResponse(payload: unknown): SearchPage {
         dataProducts: mapOwners(source.dataProducts),
         dataType: asString(source.dataType) || undefined,
         tableName: nestedName(source.table, 'displayName', 'name') || asString(source.tableName) || undefined,
+        tableFqn: asString(asRecord(source.table)?.fullyQualifiedName) || undefined,
         constraint: asString(source.constraint) || undefined,
         updatedAt:
           typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)

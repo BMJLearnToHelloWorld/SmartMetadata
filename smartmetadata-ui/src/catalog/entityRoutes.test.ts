@@ -12,6 +12,7 @@ import {
   assetLocation,
   encodeFqnForApi,
   lineageLocation,
+  parentTableLocation,
   resolveDetailEndpoint,
   resolvePatchPath,
   resolveVersionsPath,
@@ -110,5 +111,15 @@ describe('entityRoutes', () => {
     expect(resolveVersionsPath('dashboard', 'd-1')).toBe('/v1/dashboards/d-1/versions');
     expect(resolveVersionsPath('query', 'q-1')).toBeNull();
     expect(resolveVersionsPath('table', '')).toBeNull();
+  });
+
+  it('routes tableColumn hits to the parent table only when a table FQN exists (Fix3)', () => {
+    expect(parentTableLocation('tableColumn', 'svc.db.schema.orders')).toEqual({
+      name: 'asset',
+      params: { entityType: 'table', fqn: 'svc.db.schema.orders' },
+    });
+    expect(parentTableLocation('tableColumn', undefined)).toBeNull();
+    expect(parentTableLocation('tableColumn', '')).toBeNull();
+    expect(parentTableLocation('table', 'svc.db.schema.orders')).toBeNull();
   });
 });

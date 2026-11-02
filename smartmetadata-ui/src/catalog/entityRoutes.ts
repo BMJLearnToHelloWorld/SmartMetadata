@@ -100,6 +100,25 @@ export function isDetailWired(entityType: string): boolean {
   return entityType in DETAIL_ENDPOINTS;
 }
 
+/**
+ * Parent-table location for a tableColumn search hit. Official column cards
+ * link to the parent table (ExploreSearchCard buildColumnDetails and the
+ * column breadcrumb both use the embedded `table` reference); there is no
+ * column detail page, so tableColumn deliberately stays out of
+ * DETAIL_ENDPOINTS and this helper is the only column navigation path.
+ * Returns null when the hit carries no parent table FQN — callers keep the
+ * honest unwired marker instead of inventing a target.
+ */
+export function parentTableLocation(
+  entityType: string,
+  tableFqn?: string,
+): { name: string; params: { entityType: string; fqn: string } } | null {
+  if (entityType !== 'tableColumn' || !tableFqn) {
+    return null;
+  }
+  return assetLocation('table', tableFqn);
+}
+
 export function resolveVersionsPath(entityType: string, id: string): string | null {
   const spec = DETAIL_ENDPOINTS[entityType];
   if (!spec || !id) {

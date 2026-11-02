@@ -350,6 +350,81 @@ describe('SearchView empty results', () => {
     expect(router.currentRoute.value.query.entityType).toBeUndefined();
     expect(router.currentRoute.value.query.q).toBe('zzz');
   });
+
+  it('links a column card to its parent table and drops the unwired marker (Fix3)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({
+        hits: {
+          total: { value: 1 },
+          hits: [
+            {
+              _id: 'c1',
+              _index: 'tableColumn_search_index',
+              _source: {
+                name: 'customer_id',
+                displayName: 'Customer Id',
+                fullyQualifiedName: 'svc.db.schema.orders.customer_id',
+                entityType: 'tableColumn',
+                service: { displayName: 'BigQuery Prod' },
+                database: { name: 'analytics' },
+                databaseSchema: { name: 'marts' },
+                table: { name: 'orders', displayName: 'Orders', fullyQualifiedName: 'svc.db.schema.orders' },
+                owners: [],
+                tags: [],
+              },
+            },
+          ],
+        },
+        aggregations: SEARCH_BODY.aggregations,
+      })),
+    );
+    const { wrapper, router } = await mountView();
+    const card = wrapper.get('[data-testid="search-card-svc.db.schema.orders.customer_id"]');
+    expect(card.find('a.explore__card-name').exists()).toBe(false);
+    expect(card.text()).not.toContain('Detail page not wired');
+    const parentLink = card.get('[data-testid="explore-card-parent-table"]');
+    expect(parentLink.text()).toBe('Orders');
+    await parentLink.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('asset');
+    expect(router.currentRoute.value.params).toMatchObject({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+    });
+  });
+
+  it('keeps the unwired marker for a column hit without a parent table (Fix3)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({
+        hits: {
+          total: { value: 1 },
+          hits: [
+            {
+              _id: 'c2',
+              _index: 'tableColumn_search_index',
+              _source: {
+                name: 'orphan_col',
+                fullyQualifiedName: 'svc.db.schema.orders.orphan_col',
+                entityType: 'tableColumn',
+                owners: [],
+                tags: [],
+              },
+            },
+          ],
+        },
+        aggregations: SEARCH_BODY.aggregations,
+      })),
+    );
+    const { wrapper, router } = await mountView();
+    const card = wrapper.get('[data-testid="search-card-svc.db.schema.orders.orphan_col"]');
+    expect(card.find('[data-testid="explore-card-parent-table"]').exists()).toBe(false);
+    expect(card.text()).toContain('Detail page not wired');
+    await card.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('search');
+  });
 });
 
 describe('SearchView explore tabs (Stage 2)', () => {

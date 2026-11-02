@@ -6,7 +6,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Empty, Tag, Typography } from 'ant-design-vue';
-import { isDetailWired } from '@/catalog/entityRoutes';
+import { isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
 import { entityTypeColor } from '@/catalog/searchHits';
 import type { SearchHit } from '@/types/api';
 
@@ -24,6 +24,13 @@ function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
   return te(key) ? t(key) : entityType;
 }
+
+// Column hits open their parent table (official column cards link to the
+// parent table; there is no column detail page). Null otherwise, including
+// column hits without a parent table FQN.
+const columnParent = computed(() =>
+  props.hit ? parentTableLocation(props.hit.entityType, props.hit.tableFqn) : null,
+);
 
 const glossaryTags = computed(() => (props.hit?.tags ?? []).filter((tag) => tag.source === 'Glossary'));
 const classificationTags = computed(() =>
@@ -117,7 +124,7 @@ const overviewRows = computed(() => {
           <Tag v-for="product in hit.dataProducts" :key="product.name">{{ product.displayName || product.name }}</Tag>
         </div>
       </section>
-      <Typography.Text v-if="!isDetailWired(hit.entityType)" type="secondary">
+      <Typography.Text v-if="!isDetailWired(hit.entityType) && !columnParent" type="secondary">
         {{ t('explore.unwired') }}
       </Typography.Text>
       <Button
@@ -126,7 +133,7 @@ const overviewRows = computed(() => {
         data-testid="explore-preview-open"
         @click="emit('open', hit)"
       >
-        {{ t('explore.openAsset') }}
+        {{ columnParent ? t('explore.openParentTable') : t('explore.openAsset') }}
       </Button>
     </template>
   </aside>

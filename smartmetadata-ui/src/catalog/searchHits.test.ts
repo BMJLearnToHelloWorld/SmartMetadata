@@ -124,4 +124,50 @@ describe('mapSearchResponse', () => {
     expect(mapSearchResponse(null)).toEqual({ total: 0, hits: [], facets: [] });
     expect(mapSearchResponse({})).toEqual({ total: 0, hits: [], facets: [] });
   });
+
+  it('keeps the embedded table FQN for tableColumn hits (Fix3)', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 'c1',
+            _index: 'tableColumn_search_index',
+            _source: {
+              name: 'customer_id',
+              fullyQualifiedName: 'svc.db.schema.orders.customer_id',
+              entityType: 'tableColumn',
+              table: { name: 'orders', displayName: 'Orders', fullyQualifiedName: 'svc.db.schema.orders' },
+              owners: [],
+              tags: [],
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]?.tableFqn).toBe('svc.db.schema.orders');
+    expect(mapped.hits[0]?.tableName).toBe('Orders');
+  });
+
+  it('leaves tableFqn absent when the column source carries no table (Fix3)', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 'c2',
+            _index: 'tableColumn_search_index',
+            _source: {
+              name: 'orphan_col',
+              fullyQualifiedName: 'svc.db.schema.orders.orphan_col',
+              entityType: 'tableColumn',
+              owners: [],
+              tags: [],
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]?.tableFqn).toBeUndefined();
+  });
 });
