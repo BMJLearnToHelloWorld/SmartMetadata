@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
-import { resolveDetailEndpoint, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
+import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import type { AssetDetail, EntityRef, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
@@ -251,6 +251,7 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     tasks,
     pipelineStatus,
     owners: mapOwners(body.owners),
+    followers: mapOwners(body.followers),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),
     schemaRows: schema.rows,
@@ -259,10 +260,77 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
   };
 }
 
+export interface ChangeField {
+  field?: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+}
+
+export interface ChangeDescription {
+  fieldsAdded?: ChangeField[];
+  fieldsDeleted?: ChangeField[];
+  fieldsUpdated?: ChangeField[];
+}
+
 export interface EntityVersion {
   version?: number | string;
   updatedAt?: number;
   updatedBy?: string;
+  changeDescription?: ChangeDescription;
+}
+
+function mapChangeFields(value: unknown): ChangeField[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    return [
+      {
+        field: asString(rec.name) || asString(rec.field) || undefined,
+        oldValue: rec.oldValue,
+        newValue: rec.newValue,
+      },
+    ];
+  });
+}
+
+function mapChangeDescription(value: unknown): ChangeDescription | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const fieldsAdded = mapChangeFields(rec.fieldsAdded);
+  const fieldsDeleted = mapChangeFields(rec.fieldsDeleted);
+  const fieldsUpdated = mapChangeFields(rec.fieldsUpdated);
+  if (!fieldsAdded.length && !fieldsDeleted.length && !fieldsUpdated.length) {
+    return undefined;
+  }
+  return { fieldsAdded, fieldsDeleted, fieldsUpdated };
+}
+
+/**
+ * Official add/remove-follower pattern, per collection:
+ * PUT /v1/{collection}/{id}/followers (body: userId),
+ * DELETE /v1/{collection}/{id}/followers/{userId}.
+ */
+export async function followAsset(entityType: string, id: string, userId: string): Promise<unknown> {
+  const path = resolveFollowersPath(entityType, id);
+  if (!path) {
+    throw new Error(`No followers endpoint for entity type "${entityType}"`);
+  }
+  return apiRequest(path, { method: 'PUT', json: userId });
+}
+
+export async function unfollowAsset(entityType: string, id: string, userId: string): Promise<unknown> {
+  const path = resolveFollowersPath(entityType, id);
+  if (!path) {
+    throw new Error(`No followers endpoint for entity type "${entityType}"`);
+  }
+  return apiRequest(`${path}/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 }
 
 /**
@@ -291,6 +359,7 @@ export async function listEntityVersions(entityType: string, id: string): Promis
         version: typeof rec.version === 'number' || typeof rec.version === 'string' ? rec.version : undefined,
         updatedAt: typeof rec.updatedAt === 'number' ? rec.updatedAt : undefined,
         updatedBy: typeof rec.updatedBy === 'string' ? rec.updatedBy : undefined,
+        changeDescription: mapChangeDescription(rec.changeDescription),
       },
     ];
   });

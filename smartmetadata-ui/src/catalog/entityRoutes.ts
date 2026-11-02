@@ -15,52 +15,52 @@
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
     collection: 'tables',
-    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType',
+    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers',
   },
-  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers' },
   dashboard: {
     collection: 'dashboards',
-    fields: 'owners,tags,domains,extension,service,charts,dataModels,project',
+    fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers',
   },
   pipeline: {
     collection: 'pipelines',
-    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state',
+    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers',
   },
   mlmodel: {
     collection: 'mlmodels',
-    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard',
+    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers',
   },
   container: {
     collection: 'containers',
-    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats',
+    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers',
   },
   searchIndex: {
     collection: 'searchIndexes',
-    fields: 'owners,tags,domains,extension,service,fields,indexType',
+    fields: 'owners,tags,domains,extension,service,fields,indexType,followers',
   },
   storedProcedure: {
     collection: 'storedProcedures',
-    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
+    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers',
   },
   chart: {
     collection: 'charts',
-    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl',
+    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers',
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',
-    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl',
+    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers',
   },
   database: {
     collection: 'databases',
-    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl',
+    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers',
   },
   databaseSchema: {
     collection: 'databaseSchemas',
-    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl',
+    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers',
   },
 };
 
@@ -106,6 +106,20 @@ export function resolveVersionsPath(entityType: string, id: string): string | nu
     return null;
   }
   return `/v1/${spec.collection}/${encodeURIComponent(id)}/versions`;
+}
+
+/**
+ * Followers path for the official add/remove-follower pattern
+ * (PUT /v1/{collection}/{id}/followers, DELETE .../followers/{userId}).
+ * `followers` is part of the official detail payload field surface, so the
+ * detail GET fields below also request it for every wired entity.
+ */
+export function resolveFollowersPath(entityType: string, id: string): string | null {
+  const spec = DETAIL_ENDPOINTS[entityType];
+  if (!spec || !id) {
+    return null;
+  }
+  return `/v1/${spec.collection}/${encodeURIComponent(id)}/followers`;
 }
 
 export function resolvePatchPath(entityType: string, id: string): string | null {

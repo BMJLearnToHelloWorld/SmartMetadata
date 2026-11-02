@@ -90,6 +90,7 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
             <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-detail-lead">
               {{ lead }}
             </Typography.Paragraph>
+            <slot name="meta" />
           </div>
           <Space class="entity-detail__actions" wrap>
             <slot name="actions" />

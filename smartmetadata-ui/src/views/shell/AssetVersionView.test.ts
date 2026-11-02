@@ -54,6 +54,40 @@ describe('AssetVersionView', () => {
     vi.unstubAllGlobals();
   });
 
+  it('shows the changeDescription diff for the selected version', async () => {
+    const wrapper = await mountView({
+      versions: [
+        {
+          version: '0.2',
+          updatedAt: 1700000000000,
+          changeDescription: {
+            fieldsUpdated: [{ name: 'description', oldValue: 'Old', newValue: 'New' }],
+            fieldsAdded: [{ name: 'tags', newValue: 'PII.Sensitive' }],
+          },
+        },
+        { version: '0.1' },
+      ],
+    });
+    const rows = wrapper.findAll('[data-testid="asset-versions-table"] tbody tr');
+    expect(rows.length).toBe(2);
+    await rows[0].trigger('click');
+    expect(wrapper.find('[data-testid="asset-version-diff-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('description');
+    expect(wrapper.text()).toContain('Old');
+    expect(wrapper.text()).toContain('New');
+    expect(wrapper.text()).toContain('PII.Sensitive');
+    vi.unstubAllGlobals();
+  });
+
+  it('shows an honest empty diff when the backend returns no changeDescription', async () => {
+    const wrapper = await mountView({ versions: [{ version: '0.1' }] });
+    const rows = wrapper.findAll('[data-testid="asset-versions-table"] tbody tr');
+    await rows[0].trigger('click');
+    expect(wrapper.find('[data-testid="asset-version-diff-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-version-diff-table"]').exists()).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it('shows an honest empty when the backend returns no versions', async () => {
     const wrapper = await mountView({ versions: [] });
     expect(wrapper.find('[data-testid="asset-versions-state-empty"]').exists()).toBe(true);
