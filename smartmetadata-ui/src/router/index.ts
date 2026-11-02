@@ -24,6 +24,11 @@ import LineageView from '@/views/LineageView.vue';
 import BotDetailView from '@/views/admin/BotDetailView.vue';
 import BotsListView from '@/views/admin/BotsListView.vue';
 import LoginView from '@/views/LoginView.vue';
+import SignUpView from '@/views/auth/SignUpView.vue';
+import ForgotPasswordView from '@/views/auth/ForgotPasswordView.vue';
+import ResetPasswordView from '@/views/auth/ResetPasswordView.vue';
+import SamlCallbackView from '@/views/auth/SamlCallbackView.vue';
+import LogoutView from '@/views/auth/LogoutView.vue';
 import RoleDetailView from '@/views/admin/RoleDetailView.vue';
 import RolesListView from '@/views/admin/RolesListView.vue';
 import SearchView from '@/views/SearchView.vue';
@@ -100,6 +105,36 @@ export const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
+      meta: { public: true },
+    },
+    {
+      path: '/signup',
+      name: 'signup',
+      component: SignUpView,
+      meta: { public: true },
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: ForgotPasswordView,
+      meta: { public: true },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: ResetPasswordView,
+      meta: { public: true },
+    },
+    {
+      path: '/saml-callback',
+      name: 'saml-callback',
+      component: SamlCallbackView,
+      meta: { public: true },
+    },
+    {
+      path: '/logout',
+      name: 'logout',
+      component: LogoutView,
       meta: { public: true },
     },
     {

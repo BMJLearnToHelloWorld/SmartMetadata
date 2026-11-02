@@ -33,6 +33,17 @@ describe('shell stores (Stage 1)', () => {
     localStorage.clear();
   });
 
+  it('persists the theme mode and applies dark to the document root', () => {
+    const store = useShellPreferencesStore();
+    store.setThemeMode('dark');
+    expect(localStorage.getItem('sm.theme.v1')).toBe('dark');
+    expect(store.isDark).toBe(true);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    store.setThemeMode('light');
+    expect(store.isDark).toBe(false);
+    expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+  });
+
   it('strips -SNAPSHOT from the server version', () => {
     expect(stripSnapshot('1.5.0-SNAPSHOT')).toBe('1.5.0');
     expect(stripSnapshot('1.5.0')).toBe('1.5.0');
