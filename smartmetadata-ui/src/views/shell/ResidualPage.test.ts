@@ -29,6 +29,12 @@ async function mountPage(name: string) {
         component: ResidualPage,
         meta: { ...def },
       },
+      // Stub routes so RouterLink targets in the onward-links block resolve.
+      ...(def.links ?? []).map((link) => ({
+        path: `/stub/${link.routeName}`,
+        name: link.routeName,
+        component: { template: '<div />' },
+      })),
     ],
   });
   await router.push({ name: def.name });
@@ -66,5 +72,19 @@ describe('ResidualPage', () => {
     expect(wrapper.text()).toContain('Articles');
     expect(wrapper.find('[data-testid="residual-empty"]').exists()).toBe(true);
     expect(wrapper.text().toLowerCase()).not.toContain('lorem');
+  });
+});
+
+describe('ResidualPage onward links (Fix6)', () => {
+  it('renders working links instead of leaving the residual page a dead end', async () => {
+    const { wrapper, def } = await mountPage('marketplace-overview');
+    expect(def.links?.length).toBeGreaterThan(0);
+    const domainsLink = wrapper.get('[data-testid="residual-link-governance-domains"]');
+    expect(domainsLink.text()).toBe('Domains');
+    expect(wrapper.get('[data-testid="residual-link-governance-data-products"]').text()).toBe('Data Products');
+    expect(wrapper.find('[data-testid="residual-links"]').exists()).toBe(true);
+    await domainsLink.trigger('click');
+    await flushPromises();
+    expect(wrapper.vm.$router.currentRoute.value.name).toBe('governance-domains');
   });
 });

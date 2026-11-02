@@ -15,6 +15,7 @@ import {
   isNavActionKey,
   isNavSectionKey,
   sectionKeyForRoute,
+  sectionLanding,
   selectedNavKey,
 } from '@/layouts/nav';
 import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
@@ -135,6 +136,19 @@ watch(collapsed, (isCollapsed) => {
 
 function onSidebarClick(key: string): void {
   if (isNavSectionKey(key)) {
+    // Fix6: a section title click is a navigation, not a no-op — it lands on
+    // the section's first working page (SECTION_LANDING). Menu expand/collapse
+    // still flows through the separate openChange channel.
+    const landing = sectionLanding(key);
+    if (landing) {
+      try {
+        router.push({ name: landing }).catch(() => {
+          message.error(t('chrome.navFailed'));
+        });
+      } catch {
+        message.error(t('chrome.navFailed'));
+      }
+    }
     return;
   }
   if (isNavActionKey(key)) {

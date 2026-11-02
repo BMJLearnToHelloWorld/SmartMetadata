@@ -1957,6 +1957,7 @@ const enUS = {
       lead: 'This page is residual in this console.',
       empty: 'Not wired in this console.',
     },
+    availableLinks: 'Available pages:',
     marketplaceOverview: {
       title: 'Data Marketplace',
       lead: 'Domains and data products in this group call existing APIs. A marketplace landing is residual.',

@@ -107,6 +107,24 @@ export const NAV_FOOTER_ENTRIES: NavEntry[] = [
   { kind: 'action', key: 'logout', titleKey: 'nav.logout', testId: 'nav-logout', action: 'logout' },
 ];
 
+/**
+ * Fix6: a section title click navigates to the section's first WORKING page,
+ * not its first child — the marketplace section's first child (overview) is
+ * itself a residual shell, so landing there would leave the click feeling dead.
+ * Context Center has no working child, so its landing is its own overview
+ * shell, which (also Fix6) carries onward links instead of a dead end.
+ */
+export const SECTION_LANDING: Record<string, string> = {
+  observability: 'quality-test-cases',
+  marketplace: 'governance-domains',
+  governance: 'governance-glossaries',
+  'context-center': 'context-center-overview',
+};
+
+export function sectionLanding(key: string): string | null {
+  return SECTION_LANDING[key] ?? null;
+}
+
 const SECTION_KEYS = new Set(
   [...NAV_ENTRIES, ...NAV_FOOTER_ENTRIES].flatMap((entry) => (entry.kind === 'section' ? [entry.key] : [])),
 );
