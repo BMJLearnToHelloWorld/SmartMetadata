@@ -13,9 +13,9 @@ import {
   InputNumber,
   Space,
   Spin,
-  Table,
   Tooltip,
   Typography,
+  message,
 } from 'ant-design-vue';
 import { fetchEntityLineage, putEntityLineage } from '@/api/lineage';
 import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
@@ -71,6 +71,23 @@ const lineageStore = useLineageStore();
 const shellConfig = useShellConfigStore();
 const configModalOpen = ref(false);
 const activeView = ref('diagram');
+
+// Ref to the mounted LineageGraph (diagram view only); the export panel
+// calls through here so no document.querySelector is needed to find the flow.
+const graphRef = ref<{ exportPng: (entityType: string, fqn: string) => Promise<void> } | null>(null);
+
+async function onExportPng(): Promise<void> {
+  const graphApi = graphRef.value;
+  if (!graphApi) {
+    message.error(t('lineage.exportPngNoGraph'));
+    return;
+  }
+  try {
+    await graphApi.exportPng(props.entityType, props.fqn);
+  } catch {
+    message.error(t('lineage.exportPngFailed'));
+  }
+}
 
 const viewTabs = computed(() => [
   { key: 'diagram', label: t('lineage.viewDiagram') },
@@ -302,6 +319,8 @@ watch(
         :model="graph"
         :entity-type="entityType"
         :fqn="fqn"
+        :png-available="Boolean(graph && !empty && !errorMessage && activeView === 'diagram')"
+        :on-export-png="onExportPng"
       />
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
       <Alert
@@ -317,6 +336,7 @@ watch(
       />
       <template v-if="activeView === 'diagram'">
         <LineageGraph
+          ref="graphRef"
           v-if="graph && !empty && !errorMessage"
           :model="graph"
           :variant="variant"
@@ -331,7 +351,7 @@ watch(
         <template v-if="graph?.hasColumnLineage">
           <Typography.Title :level="5">{{ t('lineage.columnsTitle') }}</Typography.Title>
           <Typography.Paragraph type="secondary">{{ t('lineage.columnsLead') }}</Typography.Paragraph>
-          <Table
+          <SmTable
             row-key="key"
             size="small"
             :pagination="false"
@@ -343,7 +363,7 @@ watch(
                 fromColumns: row.fromColumns.join(', '),
               }))
             "
-            data-testid="column-lineage-table"
+            test-id="column-lineage-table"
             :custom-row="
               (row: { fromColumns: string; toColumn: string }) => ({
                 onClick: () => highlightRow(row),

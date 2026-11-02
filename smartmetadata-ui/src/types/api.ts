@@ -55,6 +55,11 @@ export interface SearchHit {
   dataProducts?: EntityRef[];
   dataType?: string;
   tableName?: string;
+  // Parent table FQN for tableColumn hits, from the ES source's embedded
+  // `table` reference (official column cards link to the parent table, not
+  // to a column detail page, which does not exist). Absent when the source
+  // carries no table reference; never derived by trimming the column FQN.
+  tableFqn?: string;
   constraint?: string;
   updatedAt?: number;
 }

@@ -3,9 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Space, Tooltip } from 'ant-design-vue';
+import { Alert, Button, Space } from 'ant-design-vue';
 import type { LineageGraphModel } from '@/lineage/graphModel';
 import { impactEntityRows, impactRowsToCsv, type ImpactEntityRow } from '@/lineage/impact';
 
@@ -13,9 +13,12 @@ const props = defineProps<{
   model: LineageGraphModel | null;
   entityType: string;
   fqn: string;
+  pngAvailable: boolean;
+  onExportPng: () => Promise<void>;
 }>();
 
 const { t } = useI18n();
+const exportingPng = ref(false);
 
 const rows = computed((): ImpactEntityRow[] => {
   if (!props.model) {
@@ -54,6 +57,18 @@ function downloadCsv(): void {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+async function exportPng(): Promise<void> {
+  if (exportingPng.value) {
+    return;
+  }
+  exportingPng.value = true;
+  try {
+    await props.onExportPng();
+  } finally {
+    exportingPng.value = false;
+  }
+}
 </script>
 
 <template>
@@ -66,11 +81,14 @@ function downloadCsv(): void {
       >
         {{ t('lineage.exportCsv') }}
       </Button>
-      <Tooltip :title="t('lineage.exportPngResidual')">
-        <Button data-testid="lineage-export-png" disabled>
-          {{ t('lineage.exportPng') }}
-        </Button>
-      </Tooltip>
+      <Button
+        data-testid="lineage-export-png"
+        :disabled="!pngAvailable"
+        :loading="exportingPng"
+        @click="exportPng"
+      >
+        {{ t('lineage.exportPng') }}
+      </Button>
     </Space>
     <Alert
       v-if="rows.length === 0"
@@ -78,12 +96,6 @@ function downloadCsv(): void {
       show-icon
       data-testid="lineage-export-empty"
       :message="t('lineage.exportCsvEmpty')"
-    />
-    <Alert
-      type="info"
-      show-icon
-      data-testid="lineage-export-png-residual"
-      :message="t('lineage.exportPngResidual')"
     />
   </div>
 </template>

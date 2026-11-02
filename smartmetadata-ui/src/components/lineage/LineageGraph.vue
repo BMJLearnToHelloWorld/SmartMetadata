@@ -3,9 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Select, Space, Tooltip } from 'ant-design-vue';
+import { Button, Select, Space, Tooltip, message } from 'ant-design-vue';
 import { SM_COLOR_PRIMARY, SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
 import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
@@ -20,6 +20,7 @@ import {
   type LineageGraphNode,
 } from '@/lineage/graphModel';
 import LineageNode, { type LineageNodeData } from './LineageNode.vue';
+import { captureLineagePng, lineagePngFileName } from '@/lineage/exportPng';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
@@ -191,6 +192,48 @@ function toggleFullscreen(): void {
   fullscreen.value = !fullscreen.value;
 }
 
+// Structural subset of the VueFlow instance API (fitView/getViewport/
+// setViewport are exposed by @vue-flow/core's VueFlow component); typed
+// structurally so this file does not depend on the component's full type.
+type FlowApi = {
+  getViewport: () => { x: number; y: number; zoom: number };
+  setViewport: (viewport: { x: number; y: number; zoom: number }) => void;
+  fitView: (options?: { padding?: number }) => Promise<boolean>;
+  $el: HTMLElement;
+};
+
+const flowRef = ref<FlowApi | null>(null);
+
+/**
+ * Full-graph PNG export, exposed to LineageCanvas. Mirrors the official
+ * beforeCapture/afterCapture shape: save the viewport, fit the whole graph
+ * into the container, capture the `.vue-flow` element, then restore the
+ * viewport the user had. Throws when the flow is not mounted (e.g. the
+ * diagram tab is not active); the caller surfaces the failure.
+ */
+async function exportPng(entityType: string, fqn: string): Promise<void> {
+  const flow = flowRef.value;
+  if (!flow) {
+    throw new Error('Lineage flow is not mounted');
+  }
+  const saved = flow.getViewport();
+  try {
+    await flow.fitView({ padding: 0.1 });
+    await nextTick();
+    const element = flow.$el?.querySelector?.('.vue-flow') as HTMLElement | null;
+    const target = element ?? (flow.$el as HTMLElement | null);
+    if (!target) {
+      throw new Error('Lineage flow element not found');
+    }
+    await captureLineagePng(target, lineagePngFileName(entityType, fqn));
+    message.success(t('lineage.exportPngDone'));
+  } finally {
+    flow.setViewport(saved);
+  }
+}
+
+defineExpose({ exportPng });
+
 watch(
   () => props.model.centerId,
   () => {
@@ -242,6 +285,7 @@ watch(
       </Space>
     </div>
     <VueFlow
+      ref="flowRef"
       :nodes="nodes"
       :edges="edges"
       :node-types="nodeTypes"

@@ -33,7 +33,7 @@ import {
   selectedEstateFromFilters,
   type EstateNode,
 } from '@/catalog/browseEstate';
-import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
+import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
 import { CHIP_FACET_IDS, type FacetBucket, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import {
@@ -335,7 +335,26 @@ function selectHit(hit: SearchHit): void {
   selectedFqn.value = hit.fullyQualifiedName || hit.name;
 }
 
+// Non-null parent-table location for the card's Table link. Only called
+// under the parentTableLocation(...) v-if guard, so the throw is unreachable
+// in practice; it exists because templates have no non-null assertion.
+function parentTableTo(hit: SearchHit): { name: string; params: { entityType: string; fqn: string } } {
+  const location = parentTableLocation(hit.entityType, hit.tableFqn);
+  if (!location) {
+    throw new Error('parentTableTo called without a parent table FQN');
+  }
+  return location;
+}
+
 function openHit(hit: SearchHit): void {
+  // Column hits navigate to the parent table when the hit carries its FQN
+  // (official column cards link to the parent table; there is no column
+  // detail page). Without a parent FQN the hit only selects, as before.
+  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
+  if (parent) {
+    void router.push(parent);
+    return;
+  }
   if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
     selectHit(hit);
     return;
@@ -591,10 +610,19 @@ watch(expandedKeys, (keys) => {
           >
             <div class="explore__card-head">
               <Tag :color="entityTypeColor(hit.entityType)">{{ entityLabel(hit.entityType) }}</Tag>
-              <a href="#" class="explore__card-name" @click.prevent.stop="openHit(hit)">
+              <!-- Column titles are plain text in the official card (its
+                   column link resolves to ''), so they are not anchors here
+                   either; the parent-table link below is the navigation. -->
+              <span v-if="hit.entityType === 'tableColumn'" class="explore__card-name">
+                {{ hit.displayName || hit.name }}
+              </span>
+              <a v-else href="#" class="explore__card-name" @click.prevent.stop="openHit(hit)">
                 {{ hit.displayName || hit.name }}
               </a>
-              <Typography.Text v-if="!isDetailWired(hit.entityType)" type="secondary">
+              <Typography.Text
+                v-if="!isDetailWired(hit.entityType) && !parentTableLocation(hit.entityType, hit.tableFqn)"
+                type="secondary"
+              >
                 {{ t('explore.unwired') }}
               </Typography.Text>
             </div>
@@ -612,6 +640,14 @@ watch(expandedKeys, (keys) => {
               </Typography.Text>
               <Typography.Text v-if="hit.serviceType" type="secondary">{{ hit.serviceType }}</Typography.Text>
               <Typography.Text v-if="hit.tier" type="secondary">{{ hit.tier }}</Typography.Text>
+              <router-link
+                v-if="parentTableLocation(hit.entityType, hit.tableFqn)"
+                :to="parentTableTo(hit)"
+                data-testid="explore-card-parent-table"
+                @click.stop
+              >
+                {{ hit.tableName || hit.tableFqn }}
+              </router-link>
             </div>
             <Space wrap>
               <Typography.Text v-if="!hit.owners.length" type="secondary">{{ t('explore.noOwners') }}</Typography.Text>
