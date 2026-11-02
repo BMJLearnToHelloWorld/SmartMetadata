@@ -199,6 +199,7 @@ const enUS = {
     searchPlaceholder: 'Search for Data Assets',
     logout: 'Logout',
     logoutFailed: 'Server logout failed; local session cleared',
+    navFailed: 'Navigation failed; please try again',
     locale: 'Language',
     localeEn: 'English',
     localeZh: '中文',

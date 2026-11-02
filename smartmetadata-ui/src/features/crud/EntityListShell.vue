@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tag, Tooltip, Typography } from 'ant-design-vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import type { EntityListColumn } from './types';
@@ -33,8 +33,12 @@ const props = withDefaults(
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     hideHeading?: boolean;
+    isBeta?: boolean;
+    learningPageId?: string;
   }>(),
   {
+    isBeta: false,
+    learningPageId: undefined,
     lead: '',
     loading: false,
     error: '',
@@ -88,7 +92,11 @@ const tableColumns = computed<EntityListColumn[]>(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div v-if="!hideHeading || $slots.actions" class="entity-list__head">
         <div v-if="!hideHeading">
-          <h5 class="entity-list-title" data-testid="entity-list-title">{{ title }}</h5>
+          <Space align="center" wrap>
+            <h5 class="entity-list-title" data-testid="entity-list-title">{{ title }}</h5>
+            <Tag v-if="isBeta" color="blue" data-testid="entity-list-beta">{{ t('shared.beta') }}</Tag>
+            <SmIcon v-if="learningPageId" icon-key="learning" data-testid="entity-list-learning" :aria-label="learningPageId" />
+          </Space>
           <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-list-lead">
             {{ lead }}
           </Typography.Paragraph>
