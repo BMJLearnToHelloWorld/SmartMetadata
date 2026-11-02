@@ -350,6 +350,15 @@ async function onLogout(): Promise<void> {
   margin-top: 2px;
 }
 .shell__header {
+  /*
+   * Fix8: the header sticks to the viewport top while the page scrolls.
+   * Sticky (not fixed) keeps it in flow: no content jump, no 56px padding
+   * compensation. z-index uses the existing sticky token: above page
+   * content, below dropdowns, overlays, modals and popovers.
+   */
+  position: sticky;
+  top: 0;
+  z-index: var(--sm-z-sticky);
   display: flex;
   align-items: center;
   justify-content: space-between;
