@@ -9,7 +9,8 @@ import { useRouter } from 'vue-router';
 import {Button, Form, Input, Radio, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { ApiError } from '@/api/client';
-import { createTestSuite, listTestSuites, listTestSuitesBySearch } from '@/api/testSuites';
+import { createTestSuite, deleteTestSuite, listTestSuites, listTestSuitesBySearch } from '@/api/testSuites';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -209,6 +210,25 @@ watch(
   },
 );
 
+async function onDelete(record: TestSuite): Promise<void> {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteTestSuite(record.id, { hardDelete: true });
+    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
 });
@@ -242,6 +262,7 @@ defineExpose({ openCreate });
     @prev="onPrev"
     @view="(record) => router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
     @edit="(record) => router.push({ name: 'quality-test-suite', params: { id: (record as TestSuite).id } })"
+    @delete="(record) => onDelete(record as TestSuite)"
   >
     <template #actions>
       <Button

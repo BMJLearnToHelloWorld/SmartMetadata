@@ -10,6 +10,7 @@
 import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { ClassificationTag, CreateTagRequest } from '@/types/governance';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { apiRequest } from './client';
 
 export const TAG_FIELDS = 'owners,reviewers,domains,children,usageCount';
@@ -37,6 +38,7 @@ function mapTag(raw: Record<string, unknown>): ClassificationTag | null {
     classification: classificationRefs[0],
     parent: parentRefs[0],
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),
+    disabled: asBoolean(raw.disabled),
     usageCount: asNumber(raw.usageCount),
     owners: mapEntityRefs(raw.owners),
   };
@@ -84,6 +86,28 @@ export async function updateTag(body: CreateTagRequest): Promise<ClassificationT
   const mapped = mapTag(raw);
   if (!mapped) {
     throw new Error('Update tag succeeded but the response had no tag');
+  }
+  return mapped;
+}
+
+/** Official deleteTag (rest/tagAPI.ts): recursive=true&hardDelete=true. */
+export function deleteTag(id: string): Promise<unknown> {
+  return apiRequest(`/v1/tags/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { recursive: true, hardDelete: true },
+  });
+}
+
+/** Official patchTag (rest/tagAPI.ts): JSON Patch. */
+export async function patchTag(id: string, patch: JsonPatchOp[]): Promise<ClassificationTag> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tags/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+  const mapped = mapTag(raw);
+  if (!mapped) {
+    throw new Error('Patch tag succeeded but the response had no tag');
   }
   return mapped;
 }

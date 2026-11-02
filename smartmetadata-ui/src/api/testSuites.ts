@@ -140,3 +140,16 @@ export async function isTestSuiteSearchListAvailable(): Promise<boolean> {
     throw error;
   }
 }
+
+export interface DeleteEntityOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
+}
+
+/** Official test-suite delete via the generic deleteEntity surface (rest/miscAPI.ts). */
+export function deleteTestSuite(id: string, options: DeleteEntityOptions = {}): Promise<unknown> {
+  return apiRequest(`/v1/dataQuality/testSuites/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: options.hardDelete, recursive: options.recursive },
+  });
+}

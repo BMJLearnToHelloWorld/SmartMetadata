@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createDomain, listDomains } from '@/api/domains';
+import { createDomain, deleteDomain, listDomains } from '@/api/domains';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -99,6 +100,25 @@ async function onCreate(): Promise<void> {
   }
 }
 
+async function onDelete(record: Domain): Promise<void> {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteDomain(record.id, { hardDelete: true, recursive: true });
+    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
 });
@@ -123,6 +143,7 @@ onMounted(() => {
     @prev="onPrev"
     @view="(record) => router.push({ name: 'governance-domain', params: { id: (record as Domain).id } })"
     @edit="(record) => router.push({ name: 'governance-domain', params: { id: (record as Domain).id } })"
+    @delete="(record) => onDelete(record as Domain)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-domain" @click="createOpen = true">

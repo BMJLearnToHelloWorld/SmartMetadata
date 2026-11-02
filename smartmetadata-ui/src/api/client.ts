@@ -46,6 +46,8 @@ export interface ApiRequestOptions {
   auth?: boolean;
   /** Defaults to application/json when `json` is set. Use for RFC 6902 patches. */
   contentType?: string;
+  /** Defaults to JSON parsing; 'text' returns the raw body (e.g. export results). */
+  response?: 'json' | 'text';
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -88,6 +90,9 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
   if (!text) {
     return undefined as T;
+  }
+  if (options.response === 'text') {
+    return text as T;
   }
   return JSON.parse(text) as T;
 }

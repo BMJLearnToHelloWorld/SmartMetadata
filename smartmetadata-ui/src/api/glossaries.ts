@@ -85,3 +85,16 @@ export async function updateGlossary(body: CreateGlossaryRequest): Promise<Gloss
   }
   return mapped;
 }
+
+export interface DeleteEntityOptions {
+  hardDelete?: boolean;
+  recursive?: boolean;
+}
+
+/** Official generic deleteEntity (rest/miscAPI.ts): DELETE /glossaries/{id}?hardDelete&recursive. */
+export function deleteGlossary(id: string, options: DeleteEntityOptions = {}): Promise<unknown> {
+  return apiRequest(`/v1/glossaries/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: options.hardDelete, recursive: options.recursive },
+  });
+}

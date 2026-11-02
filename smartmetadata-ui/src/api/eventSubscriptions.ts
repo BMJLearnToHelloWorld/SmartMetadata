@@ -112,3 +112,8 @@ export async function updateEventSubscription(
   }
   return mapped;
 }
+
+/** Official deleteAlert (rest/alertsAPI.ts): DELETE {BASE}/{id}. */
+export function deleteEventSubscription(id: string): Promise<unknown> {
+  return apiRequest(`/v1/events/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

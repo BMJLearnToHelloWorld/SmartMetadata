@@ -8,7 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
-import { getDomain, listDomainAssets, updateDomain } from '@/api/domains';
+import { deleteDomain, getDomain, listDomainAssets, updateDomain } from '@/api/domains';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -63,6 +64,28 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteDomain(): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: domain.value.displayName || domain.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteDomain(domain.value.id, { hardDelete: true, recursive: true });
+    message.success(t('crud.deletedName', { name: domain.value.displayName || domain.value.name }));
+    await router.push({ name: 'governance-domains' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
@@ -134,6 +157,7 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
+      <Button danger data-testid="delete-domain" :disabled="!domain" @click="onDeleteDomain">{{ t('crud.delete') }}</Button>
       <Button type="primary" data-testid="edit-domain" :disabled="!domain" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>

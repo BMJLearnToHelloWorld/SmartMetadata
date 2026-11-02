@@ -91,3 +91,8 @@ export function listDataProductAssets(id: string, limit = 25): Promise<Paged<Ent
     query: { limit },
   }).then((payload) => parsePaged(payload, (raw) => mapEntityRefs([raw])[0] ?? null));
 }
+
+/** Official deleteDataProduct (rest/dataProductAPI.ts): plain DELETE, no params. */
+export function deleteDataProduct(id: string): Promise<unknown> {
+  return apiRequest(`/v1/dataProducts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

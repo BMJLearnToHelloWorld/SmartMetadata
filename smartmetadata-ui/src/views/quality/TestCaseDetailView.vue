@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Modal, Table, message } from 'ant-design-vue';
-import { getTestCase, updateTestCase } from '@/api/testCases';
+import { deleteTestCase, getTestCase, updateTestCase } from '@/api/testCases';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestCaseResults } from '@/api/testCaseResults';
 import { listTestIncidents } from '@/api/testIncidents';
 import SmChart from '@/features/charts/SmChart.vue';
@@ -104,6 +105,28 @@ async function load(): Promise<void> {
   }
 }
 
+async function onDeleteTestCase(): Promise<void> {
+  if (!testCase.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: entityLabel(testCase.value) }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteTestCase(testCase.value.id, { hardDelete: true });
+    message.success(t('crud.deletedName', { name: entityLabel(testCase.value) }));
+    await router.push({ name: 'quality-test-cases' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 function openEdit(): void {
   if (!testCase.value) {
     return;
@@ -192,6 +215,7 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('crud.delete') }}</Button>
       <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">
         {{ t('quality.testCases.openAsset') }}
       </Button>

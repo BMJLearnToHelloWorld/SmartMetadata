@@ -6,9 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Checkbox, Descriptions, Form, Input, Select, Table, message} from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, Table, message} from 'ant-design-vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
-import { getClassification, updateClassification } from '@/api/classifications';
+import { deleteClassification, getClassification, patchClassification, updateClassification } from '@/api/classifications';
+import { confirmDelete } from '@/features/crud/confirmDelete';
+import { setFieldPatch } from '@/admin/jsonPatch';
 import { createTag, listTags } from '@/api/tags';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -69,6 +71,46 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteClassification(): Promise<void> {
+  if (!classification.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: classification.value.displayName || classification.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteClassification(classification.value.id);
+    message.success(t('crud.deletedName', { name: classification.value.displayName || classification.value.name }));
+    await router.push({ name: 'governance-classifications' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
+async function onToggleDisabled(disabled: boolean): Promise<void> {
+  if (!classification.value) {
+    return;
+  }
+  const previous = classification.value.disabled === true;
+  classification.value = { ...classification.value, disabled };
+  try {
+    await patchClassification(
+      classification.value.id,
+      setFieldPatch('/disabled', previous, disabled),
+    );
+    message.success(t('crud.updated'));
+  } catch (error) {
+    classification.value = { ...classification.value, disabled: previous };
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
 }
 
@@ -157,6 +199,7 @@ onMounted(() => {
       <Button type="primary" :disabled="!classification" data-testid="edit-classification" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
+      <Button danger :disabled="!classification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
       <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
         {{ t('governance.classifications.createTag') }}
       </Button>
@@ -165,6 +208,13 @@ onMounted(() => {
       <Descriptions v-if="classification" bordered :column="1" size="small">
         <Descriptions.Item :label="t('crud.name')">{{ classification.name }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.description')">{{ classification.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.disabled')">
+          <Switch
+            :checked="classification.disabled === true"
+            data-testid="classification-disabled"
+            @change="(value: boolean | string | number) => onToggleDisabled(value === true)"
+          />
+        </Descriptions.Item>
         <Descriptions.Item :label="t('governance.classifications.exclusive')">
           {{ classification.mutuallyExclusive ? t('crud.yes') : t('crud.no') }}
         </Descriptions.Item>

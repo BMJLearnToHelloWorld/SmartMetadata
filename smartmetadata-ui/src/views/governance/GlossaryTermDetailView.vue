@@ -23,7 +23,8 @@ import {
   message,
 } from 'ant-design-vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
-import { getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { EntityRef } from '@/types/api';
 import type { GlossaryTerm } from '@/types/governance';
 
@@ -111,6 +112,32 @@ async function onSave(): Promise<void> {
   }
 }
 
+async function onDeleteTerm(): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: term.value.displayName || term.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteGlossaryTerm(term.value.id, { hardDelete: true, recursive: true });
+    message.success(t('crud.deletedName', { name: term.value.displayName || term.value.name }));
+    if (term.value.glossary?.id) {
+      await router.push({ name: 'governance-glossary', params: { id: term.value.glossary.id } });
+    } else {
+      await router.push({ name: 'governance-glossaries' });
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 function openAsset(asset: EntityRef): void {
   const entityType = asset.type || '';
   const fqn = asset.fullyQualifiedName || asset.name;
@@ -152,6 +179,7 @@ onMounted(() => {
             >
               {{ t('terms.back') }}
             </Button>
+            <Button danger data-testid="delete-term" :disabled="!term" @click="onDeleteTerm">{{ t('crud.delete') }}</Button>
             <Button type="primary" data-testid="edit-term" :disabled="!term" @click="openEdit">
               {{ t('terms.edit') }}
             </Button>

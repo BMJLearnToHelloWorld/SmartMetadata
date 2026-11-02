@@ -8,7 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
-import { getDataProduct, listDataProductAssets, updateDataProduct } from '@/api/dataProducts';
+import { deleteDataProduct, getDataProduct, listDataProductAssets, updateDataProduct } from '@/api/dataProducts';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listDomains } from '@/api/domains';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
@@ -65,6 +66,28 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteDataProduct(): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: product.value.displayName || product.value.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteDataProduct(product.value.id);
+    message.success(t('crud.deletedName', { name: product.value.displayName || product.value.name }));
+    await router.push({ name: 'governance-data-products' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
@@ -142,6 +165,7 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
+      <Button danger data-testid="delete-data-product" :disabled="!product" @click="onDeleteDataProduct">{{ t('crud.delete') }}</Button>
       <Button type="primary" data-testid="edit-data-product" :disabled="!product" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>

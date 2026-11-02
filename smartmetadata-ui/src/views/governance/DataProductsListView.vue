@@ -7,7 +7,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createDataProduct, listDataProducts } from '@/api/dataProducts';
+import { createDataProduct, deleteDataProduct, listDataProducts } from '@/api/dataProducts';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listDomains } from '@/api/domains';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -99,6 +100,25 @@ async function onCreate(): Promise<void> {
   }
 }
 
+async function onDelete(record: DataProduct): Promise<void> {
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteDataProduct(record.id);
+    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
 onMounted(() => {
   void load();
   void listDomains({ limit: 100 })
@@ -128,6 +148,7 @@ onMounted(() => {
     @prev="onPrev"
     @view="(record) => router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })"
     @edit="(record) => router.push({ name: 'governance-data-product', params: { id: (record as DataProduct).id } })"
+    @delete="(record) => onDelete(record as DataProduct)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-data-product" @click="createOpen = true">

@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Descriptions, Form, Input, Switch, Table, message } from 'ant-design-vue';
-import { getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
+import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -22,6 +23,28 @@ const activeTab = ref('overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({ displayName: '', description: '', enabled: true, endpoint: '' });
+
+async function onDeleteAlert(): Promise<void> {
+  if (!alert.value) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: entityLabel(alert.value) }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteEventSubscription(alert.value.id);
+    message.success(t('crud.deletedName', { name: entityLabel(alert.value) }));
+    await router.push({ name: 'observability-alerts' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
 
 function openEdit(): void {
   if (!alert.value) {
@@ -116,6 +139,7 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="edit-alert" :disabled="!alert" @click="openEdit">{{ t('observability.alerts.edit') }}</Button>
+      <Button danger data-testid="delete-alert" :disabled="!alert" @click="onDeleteAlert">{{ t('crud.delete') }}</Button>
     </template>
     <template #overview>
       <Descriptions v-if="alert" bordered :column="1" size="small">

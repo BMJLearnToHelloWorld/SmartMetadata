@@ -6,8 +6,10 @@
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions } from 'ant-design-vue';
+import { Button, Descriptions, message } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
+import { deleteMetricAsync } from '@/api/metrics';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { AssetDetail } from '@/types/api';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import PageHeader from '@/components/shared/PageHeader.vue';
@@ -40,6 +42,28 @@ async function load(): Promise<void> {
     metric.value = null;
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeleteMetric(): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  const confirmed = await confirmDelete({
+    title: t('crud.deleteTitle'),
+    content: t('crud.deleteConfirm', { name: entityLabel(metric.value) }),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  try {
+    await deleteMetricAsync(metric.value.id);
+    message.success(t('metrics.asyncDeleteSubmitted'));
+    await router.push({ name: 'governance-metrics' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
@@ -114,6 +138,15 @@ onMounted(() => {
         @click="openVersions"
       >
         {{ t('metrics.versions') }}
+      </Button>
+      <Button
+        danger
+        data-testid="metric-delete"
+        :disabled="!metric.id"
+        style="margin-top: 16px; margin-left: 8px"
+        @click="onDeleteMetric"
+      >
+        {{ t('crud.delete') }}
       </Button>
   </template>
 </template>

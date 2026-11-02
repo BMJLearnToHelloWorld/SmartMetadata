@@ -72,12 +72,71 @@ describe('AuditLogsView', () => {
     localStorage.clear();
   });
 
-  it('renders audit logs from GET /v1/audit/logs and states the export residual', async () => {
+  it('renders audit logs from GET /v1/audit/logs and offers an export button', async () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="audit-logs-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('svc.db.orders');
-    expect(wrapper.find('[data-testid="audit-export-residual"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="audit-logs-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="audit-export"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="audit-export-residual"]').exists()).toBe(false);
+  });
+
+  it('exports through the job surface: start, poll, download result', async () => {
+    const logs = {
+      data: [
+        {
+          id: 7,
+          eventTs: 1700000000000,
+          eventType: 'CREATE',
+          userName: 'admin',
+          actorType: 'USER',
+          entityType: 'table',
+          entityFQN: 'svc.db.orders',
+          summary: 'Table created',
+        },
+      ],
+      paging: { total: 1 },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/export/job1/result')) {
+          return new Response('a,b\n1,2\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+        }
+        if (url.includes('/export/job1')) {
+          return jsonResponse({ jobId: 'job1', status: 'completed' });
+        }
+        if (url.includes('/export')) {
+          return jsonResponse({ jobId: 'job1', status: 'running' });
+        }
+        if (url.includes('/api/v1/audit/logs')) {
+          return jsonResponse(logs);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const createdUrls: string[] = [];
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => {
+      createdUrls.push('blob:mock');
+      return 'blob:mock';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="audit-export"]').trigger('click');
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await flushPromises();
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => url.includes('/api/v1/audit/logs/export'))).toBe(true);
+    expect(urls.some((url) => url.includes('/export/job1/result'))).toBe(true);
+    expect(createdUrls).toHaveLength(1);
+    if (originalCreateObjectURL) {
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+    if (originalRevokeObjectURL) {
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
   });
 
   it('applies the user filter to the request', async () => {
