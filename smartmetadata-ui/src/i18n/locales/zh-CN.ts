@@ -199,6 +199,7 @@ const zhCN = {
     searchPlaceholder: '搜索数据资产',
     logout: '退出',
     logoutFailed: '服务端退出失败；已清除本地会话',
+    navFailed: '导航失败，请重试',
     locale: '语言',
     localeEn: 'English',
     localeZh: '中文',

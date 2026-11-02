@@ -50,6 +50,16 @@ describe('EntityListShell', () => {
     );
   });
 
+  it('renders Beta badge and learning icon like PageHeader (Fix1 header contract)', async () => {
+    const wrapper = await mountShell({
+      isBeta: true,
+      learningPageId: 'learning-page',
+    });
+    expect(wrapper.get('[data-testid="entity-list-beta"]').text()).toBe('Beta');
+    expect(wrapper.find('[aria-label="learning-page"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="entity-list-title"]').text()).toBe('Users');
+  });
+
   it('shows rows, error, and search when provided', async () => {
     const wrapper = await mountShell({
       showSearch: true,

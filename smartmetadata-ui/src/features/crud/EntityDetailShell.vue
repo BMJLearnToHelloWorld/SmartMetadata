@@ -6,7 +6,8 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Breadcrumb, Card, Empty, Space, Spin, Tag, Tabs, Typography } from 'ant-design-vue';
+import { Alert, Breadcrumb, Card, Empty, Space, Spin, Tag, Tabs, Typography, message } from 'ant-design-vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from './types';
 
 const { t } = useI18n();
@@ -26,6 +27,8 @@ const props = withDefaults(
     tabs?: EntityDetailTab[];
     activeTab?: string;
     tabsTestId?: string;
+    isBeta?: boolean;
+    learningPageId?: string;
   }>(),
   {
     name: '',
@@ -39,6 +42,8 @@ const props = withDefaults(
     tabs: () => [],
     activeTab: '',
     tabsTestId: 'entity-detail-tabs',
+    isBeta: false,
+    learningPageId: undefined,
   },
 );
 
@@ -52,7 +57,16 @@ const emptyDescription = computed(() => t('crud.empty'));
 
 function onBreadcrumb(item: EntityBreadcrumb): void {
   if (item.to) {
-    void router.push(item.to);
+    // Fix1 nav contract: a failed navigation must surface, never vanish silently.
+    // vue-router throws synchronously for an unresolvable name, so .catch
+    // alone is not enough — the try/catch covers the synchronous throw.
+    try {
+      router.push(item.to).catch(() => {
+        message.error(t('chrome.navFailed'));
+      });
+    } catch {
+      message.error(t('chrome.navFailed'));
+    }
   }
 }
 </script>
@@ -80,6 +94,8 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
               <h5 class="entity-detail__title" data-testid="entity-detail-title">
                 {{ title }}
               </h5>
+              <Tag v-if="isBeta" color="blue" data-testid="entity-detail-beta">{{ t('shared.beta') }}</Tag>
+              <SmIcon v-if="learningPageId" icon-key="learning" data-testid="entity-detail-learning" :aria-label="learningPageId" />
               <Tag v-if="deleted" color="red" data-testid="entity-detail-deleted">{{ t('crud.deleted') }}</Tag>
             </Space>
             <Typography.Paragraph v-if="showName || fqn" type="secondary" data-testid="entity-detail-subtitle">

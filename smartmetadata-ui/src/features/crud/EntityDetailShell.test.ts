@@ -55,6 +55,27 @@ describe('EntityDetailShell', () => {
     expect(router.currentRoute.value.name).toBe('admin-users');
   });
 
+  it('renders Beta badge and learning icon like PageHeader (Fix1 header contract)', async () => {
+    const { wrapper } = await mountShell({
+      isBeta: true,
+      learningPageId: 'learning-page',
+    });
+    expect(wrapper.get('[data-testid="entity-detail-beta"]').text()).toBe('Beta');
+    expect(wrapper.find('[aria-label="learning-page"]').exists()).toBe(true);
+    // Title text itself must stay exact: badges are siblings, not inside the h5.
+    expect(wrapper.get('[data-testid="entity-detail-title"]').text()).toBe('Alice Admin');
+  });
+
+  it('surfaces a failed breadcrumb navigation instead of failing silently', async () => {
+    const { wrapper, router } = await mountShell({
+      breadcrumbs: [{ label: 'Missing', to: { name: 'no-such-route' } }],
+    });
+    await wrapper.get('[data-testid="entity-detail-crumb-0"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-user');
+    expect(document.body.textContent).toContain('Navigation failed; please try again');
+  });
+
   it('shows a deleted badge and an error alert', async () => {
     const { wrapper } = await mountShell({
       deleted: true,

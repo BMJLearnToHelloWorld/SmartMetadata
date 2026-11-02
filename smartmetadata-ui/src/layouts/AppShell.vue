@@ -143,7 +143,16 @@ function onSidebarClick(key: string): void {
     }
     return;
   }
-  void router.push({ name: key });
+  // Fix1 nav contract: a failed navigation must surface, never vanish silently.
+  // vue-router throws synchronously for an unresolvable name, so .catch
+  // alone is not enough — the try/catch covers the synchronous throw.
+  try {
+    router.push({ name: key }).catch(() => {
+      message.error(t('chrome.navFailed'));
+    });
+  } catch {
+    message.error(t('chrome.navFailed'));
+  }
 }
 
 function onSearch(value: string): void {
