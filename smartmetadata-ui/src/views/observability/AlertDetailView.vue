@@ -94,7 +94,8 @@ async function onSaveEdit(): Promise<void> {
             {
               category: 'External',
               type: editForm.destinationType,
-              config: { endpoint: editForm.endpoint.trim(), readTimeout: editForm.readTimeout },
+              config: { endpoint: editForm.endpoint.trim() },
+              readTimeout: editForm.readTimeout,
             },
           ]
         : [],

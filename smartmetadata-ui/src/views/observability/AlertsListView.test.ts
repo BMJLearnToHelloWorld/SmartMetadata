@@ -97,7 +97,7 @@ describe('AlertsListView create form (Fix4)', () => {
         name: 'dq-webhook',
         enabled: true,
         destinations: [
-          { category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com/hook', readTimeout: 12 } },
+          { category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com/hook' }, readTimeout: 12 },
         ],
       }),
     );

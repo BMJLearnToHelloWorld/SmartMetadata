@@ -77,7 +77,7 @@ describe('AlertDetailView edit', () => {
         name: 'dq-alert',
         enabled: true,
         destinations: [
-          { category: 'External', type: 'Webhook', config: { endpoint: 'https://hook.example', readTimeout: 12 } },
+          { category: 'External', type: 'Webhook', config: { endpoint: 'https://hook.example' }, readTimeout: 12 },
         ],
       }),
     );

@@ -96,7 +96,7 @@ describe('eventSubscriptions API', () => {
                 },
                 owners: [{ id: 'u1', name: 'amy', displayName: 'Amy' }],
                 destinations: [
-                  { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+                  { category: 'External', type: 'Slack', readTimeout: 12, config: { endpoint: 'https://hooks.slack.com/x' } },
                 ],
               },
             ],
@@ -121,7 +121,7 @@ describe('eventSubscriptions API', () => {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
         expect(body.filteringRules).toEqual({ resources: ['table'] });
         expect(body.destinations).toEqual([
-          { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+          { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x' }, readTimeout: 12 },
         ]);
         return new Response(JSON.stringify({ id: 'al3', name: 'dq-slack', alertType: 'Observability' }), {
           status: 200,
@@ -135,7 +135,7 @@ describe('eventSubscriptions API', () => {
       enabled: true,
       filteringRules: { resources: ['table'] },
       destinations: [
-        { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+        { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x' }, readTimeout: 12 },
       ],
     });
     expect(created.id).toBe('al3');

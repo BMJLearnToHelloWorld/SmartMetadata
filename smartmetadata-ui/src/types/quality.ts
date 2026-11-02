@@ -189,7 +189,9 @@ export interface CreateEventSubscriptionRequest {
   destinations: Array<{
     category: string;
     type: string;
-    config?: { endpoint?: string; readTimeout?: number };
+    config?: { endpoint?: string };
+    /** Destination-level, beside config — not inside it (see mapper note). */
+    readTimeout?: number;
   }>;
 }
 

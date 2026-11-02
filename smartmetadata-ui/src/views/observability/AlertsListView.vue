@@ -113,7 +113,8 @@ async function onCreate(): Promise<void> {
         {
           category: 'External',
           type: form.destinationType,
-          config: { endpoint: form.webhookUrl.trim(), readTimeout: form.readTimeout },
+          config: { endpoint: form.webhookUrl.trim() },
+          readTimeout: form.readTimeout,
         },
       ],
     });
