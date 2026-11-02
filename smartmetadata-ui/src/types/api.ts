@@ -148,6 +148,7 @@ export interface AssetDetail {
   tasks?: PipelineTask[];
   pipelineStatus?: CatalogPipelineStatus;
   owners: EntityRef[];
+  followers?: EntityRef[];
   tags: TagRef[];
   domains: EntityRef[];
   schemaRows: SchemaRow[];

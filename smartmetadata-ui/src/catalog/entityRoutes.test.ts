@@ -34,55 +34,55 @@ describe('entityRoutes', () => {
   it('maps wired catalog types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
-      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType',
+      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers',
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
-      fields: 'owners,tags,domains,extension,service,messageSchema,partitions',
+      fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers',
     });
     expect(resolveDetailEndpoint('dashboard', 'bi.sales')).toEqual({
       path: `/v1/dashboards/name/${encodeURIComponent('bi.sales')}`,
-      fields: 'owners,tags,domains,extension,service,charts,dataModels,project',
+      fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers',
     });
     expect(resolveDetailEndpoint('pipeline', 'airflow.etl')).toEqual({
       path: `/v1/pipelines/name/${encodeURIComponent('airflow.etl')}`,
-      fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state',
+      fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers',
     });
     expect(resolveDetailEndpoint('mlmodel', 'ml.churn')).toEqual({
       path: `/v1/mlmodels/name/${encodeURIComponent('ml.churn')}`,
-      fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard',
+      fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers',
     });
     expect(resolveDetailEndpoint('container', 's3.lake')).toEqual({
       path: `/v1/containers/name/${encodeURIComponent('s3.lake')}`,
-      fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats',
+      fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers',
     });
     expect(resolveDetailEndpoint('searchIndex', 'os.logs')).toEqual({
       path: `/v1/searchIndexes/name/${encodeURIComponent('os.logs')}`,
-      fields: 'owners,tags,domains,extension,service,fields,indexType',
+      fields: 'owners,tags,domains,extension,service,fields,indexType,followers',
     });
     expect(resolveDetailEndpoint('storedProcedure', 'svc.db.schema.sp')).toEqual({
       path: `/v1/storedProcedures/name/${encodeURIComponent('svc.db.schema.sp')}`,
-      fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType',
+      fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers',
     });
     expect(resolveDetailEndpoint('chart', 'bi.sales.revenue')).toEqual({
       path: `/v1/charts/name/${encodeURIComponent('bi.sales.revenue')}`,
-      fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl',
+      fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers',
     });
     expect(resolveDetailEndpoint('metric', 'kpi.mau')).toEqual({
       path: `/v1/metrics/name/${encodeURIComponent('kpi.mau')}`,
-      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity',
+      fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers',
     });
     expect(resolveDetailEndpoint('dashboardDataModel', 'bi.sales.model')).toEqual({
       path: `/v1/dashboard/datamodels/name/${encodeURIComponent('bi.sales.model')}`,
-      fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl',
+      fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers',
     });
     expect(resolveDetailEndpoint('database', 'svc.analytics')).toEqual({
       path: `/v1/databases/name/${encodeURIComponent('svc.analytics')}`,
-      fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl',
+      fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers',
     });
     expect(resolveDetailEndpoint('databaseSchema', 'svc.analytics.marts')).toEqual({
       path: `/v1/databaseSchemas/name/${encodeURIComponent('svc.analytics.marts')}`,
-      fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl',
+      fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers',
     });
   });
 

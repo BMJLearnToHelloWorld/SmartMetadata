@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import AssetDetailView from './AssetDetailView.vue';
 
 vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
@@ -510,7 +511,9 @@ describe('AssetDetailView non-table shells', () => {
 
     const metric = await mountTypedView('metric', 'kpi.mau');
     expect(metric.wrapper.text()).toContain('COUNT');
-    expect(metric.wrapper.find('[data-testid="asset-code-block"]').exists()).toBe(true);
+    // R2: official metric tabs have no code tab, so the expression moved
+    // into the overview tab instead of a code tab slot.
+    expect(metric.wrapper.find('[data-testid="asset-metric-expression"]').exists()).toBe(true);
     expect(metric.wrapper.text()).toContain('SELECT 1');
     metric.wrapper.unmount();
 
@@ -536,5 +539,76 @@ describe('AssetDetailView non-table shells', () => {
     expect(query.wrapper.text()).toContain('No detail page is wired');
     expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(false);
     query.wrapper.unmount();
+  });
+});
+
+describe('AssetDetailView R2 header and split tabs', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  function stubDatabase(followers: Array<Record<string, unknown>>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/databases/name/')) {
+          return jsonResponse({
+            id: 'db-1',
+            name: 'analytics',
+            fullyQualifiedName: 'svc.analytics',
+            owners: [{ id: 'u2', name: 'bob', type: 'user' }],
+            followers,
+            tags: [{ tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' }],
+            service: { name: 'svc' },
+            databaseSchemas: [{ name: 'marts', type: 'databaseSchema' }],
+          });
+        }
+        if (url.includes('/api/v1/databases/db-1/followers')) {
+          return jsonResponse({ id: 'db-1' });
+        }
+        if (url.includes('/api/v1/lineage/') || url.includes('/api/v1/activity/') || url.includes('/api/v1/conversations') || url.includes('/customProperties') || url.includes('/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  it('shows the tier tag, owners and official database tabs, and no lineage tab', async () => {
+    stubDatabase([]);
+    const { wrapper } = await mountTypedView('database', 'svc.analytics');
+    expect(wrapper.find('[data-testid="asset-tier"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-tier"]').text()).toContain('Tier.Tier1');
+    expect(wrapper.find('[data-testid="asset-header-owners"]').text()).toContain('bob');
+    expect(wrapper.text()).toContain('Schemas');
+    expect(wrapper.text()).not.toContain('Lineage');
+    expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('marts');
+  });
+
+  it('sends the official unfollow DELETE when the current user already follows', async () => {
+    stubDatabase([{ id: 'u1', name: 'alice', type: 'user' }]);
+    const { wrapper } = await mountTypedView('database', 'svc.analytics');
+    useAuthStore().user = { id: 'u1', name: 'alice' };
+    await wrapper.vm.$nextTick();
+    await flushPromises();
+    const follow = wrapper.find('[data-testid="asset-follow"]');
+    expect(follow.text()).toContain('Unfollow');
+    await follow.trigger('click');
+    await flushPromises();
+    const call = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/databases/db-1/followers/u1') && init?.method === 'DELETE',
+    );
+    expect(call.url).toContain('/api/v1/databases/db-1/followers/u1');
+  });
+
+  it('disables follow when no user id is available instead of faking a state', async () => {
+    stubDatabase([]);
+    const { wrapper } = await mountTypedView('database', 'svc.analytics');
+    const follow = wrapper.find('[data-testid="asset-follow"]');
+    expect((follow.element as HTMLButtonElement).disabled).toBe(true);
   });
 });

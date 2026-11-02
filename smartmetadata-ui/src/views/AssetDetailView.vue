@@ -14,7 +14,9 @@ import {
   Input,
   Modal,
   Select,
+  Space,
   Table,
+  Tag,
   Typography,
   message,
 } from 'ant-design-vue';
@@ -22,7 +24,7 @@ import { listEntityActivity } from '@/api/activity';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
-import { fetchAssetDetail, patchAsset } from '@/api/entities';
+import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset } from '@/api/entities';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
 import { getEntityUsage } from '@/api/usage';
@@ -42,6 +44,7 @@ import { seriesWindow, type ChartSeries } from '@/features/charts/types';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetOverviewFields from '@/features/crud/AssetOverviewFields.vue';
+import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -56,6 +59,7 @@ import {
 import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
+import { useAuthStore } from '@/stores/auth';
 import type { AssetDetail, CatalogPipelineStatus } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption } from '@/types/governance';
@@ -69,6 +73,7 @@ const props = defineProps<{
 const router = useRouter();
 const route = useRoute();
 const { t, te } = useI18n();
+const auth = useAuthStore();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -134,6 +139,41 @@ const TAB_TEST_IDS: Record<AssetTabKey, string> = {
 };
 
 const isSplit = computed(() => isOfficiallySplit(props.entityType));
+
+// Official tier rule (utils/TablePureUtils.ts getTierTags): the first tag
+// whose FQN starts with the `Tier.` category (constants.ts TIER_CATEGORY
+// plus the FQN separator). Rendered only when present: the product never
+// invents a default tier.
+const TIER_TAG_PREFIX = 'Tier.';
+const tierTag = computed(() => asset.value?.tags.find((tag) => tag.tagFQN.startsWith(TIER_TAG_PREFIX)));
+
+const followers = computed(() => asset.value?.followers ?? []);
+const currentUserId = computed(() => auth.user?.id || '');
+const isFollowing = computed(
+  () => Boolean(currentUserId.value) && followers.value.some((follower) => follower.id === currentUserId.value),
+);
+const followLoading = ref(false);
+
+async function onToggleFollow(): Promise<void> {
+  if (!asset.value?.id || !currentUserId.value) {
+    return;
+  }
+  followLoading.value = true;
+  try {
+    if (isFollowing.value) {
+      await unfollowAsset(props.entityType, asset.value.id, currentUserId.value);
+    } else {
+      await followAsset(props.entityType, asset.value.id, currentUserId.value);
+    }
+    // Reload for the authoritative followers list; never keep an optimistic
+    // follow state after a failed or partial write.
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.followFailed'));
+  } finally {
+    followLoading.value = false;
+  }
+}
 
 function firstTabKey(): string {
   const defs = entityDetailTabDefs(props.entityType);
@@ -546,7 +586,24 @@ onMounted(() => {
       tabs-test-id="asset-tabs"
       @update:activeTab="onTabChange"
     >
+      <template #meta>
+        <Space wrap>
+          <Tag v-if="tierTag" color="blue" data-testid="asset-tier">{{ tierTag.tagFQN }}</Tag>
+          <Typography.Text v-if="asset?.owners.length" type="secondary" data-testid="asset-header-owners">
+            {{ asset?.owners.map((owner) => owner.displayName || owner.name).join(' · ') }}
+          </Typography.Text>
+        </Space>
+      </template>
       <template #actions>
+        <Button
+          data-testid="asset-follow"
+          :loading="followLoading"
+          :disabled="!asset?.id || !currentUserId"
+          @click="onToggleFollow"
+        >
+          {{ isFollowing ? t('asset.unfollow') : t('asset.follow') }}
+          <template v-if="followers.length">({{ followers.length }})</template>
+        </Button>
         <Button
           data-testid="view-lineage"
           @click="router.push(lineageLocation(entityType, decodedFqn))"
@@ -572,6 +629,57 @@ onMounted(() => {
       </template>
       <template v-if="asset" #overview>
           <AssetOverviewFields :asset="asset" :entity-type="entityType" />
+          <template v-if="entityType === 'metric' && (asset.storedProcedureCode?.code || asset.storedProcedureCode?.language)">
+            <Typography.Title :level="5">{{ t('asset.metricExpressionTitle') }}</Typography.Title>
+            <pre data-testid="asset-metric-expression" class="detail__code">{{
+              [asset.storedProcedureCode?.language, asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
+            }}</pre>
+          </template>
+      </template>
+      <template v-if="asset" #schemas>
+          <AssetRelatedPanel :asset="asset" />
+      </template>
+      <template v-if="asset" #table>
+          <AssetRelatedPanel :asset="asset" />
+      </template>
+      <template v-if="asset" #children>
+          <AssetRelatedPanel :asset="asset" />
+      </template>
+      <template v-if="asset" #model>
+          <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+          <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
+          <Empty
+            v-if="!asset.schemaRows.length"
+            data-testid="asset-schema-empty"
+            :description="t('asset.schemaEmpty')"
+          />
+          <Table
+            v-else
+            row-key="name"
+            data-testid="asset-schema-table"
+            :columns="schemaColumns"
+            :data-source="asset.schemaRows"
+            :pagination="false"
+            size="small"
+          />
+      </template>
+      <template v-if="asset" #fields>
+          <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+          <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
+          <Empty
+            v-if="!asset.schemaRows.length"
+            data-testid="asset-schema-empty"
+            :description="t('asset.schemaEmpty')"
+          />
+          <Table
+            v-else
+            row-key="name"
+            data-testid="asset-schema-table"
+            :columns="schemaColumns"
+            :data-source="asset.schemaRows"
+            :pagination="false"
+            size="small"
+          />
       </template>
       <template v-if="asset" #schema>
           <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
@@ -738,12 +846,27 @@ onMounted(() => {
           />
       </template>
       <template v-if="asset" #sample_data>
+          <Empty
+            v-if="residualReasonFor('sample_data')"
+            data-testid="asset-tab-residual"
+            :description="residualReasonFor('sample_data')"
+          />
           <AssetSamplePanel
+            v-else
             :table-sample="tableSample"
             :topic-sample="topicSample"
             :observability-error="observabilityError"
             :entity-type="entityType"
           />
+      </template>
+      <template v-if="asset" #stored_procedure>
+          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('stored_procedure')" />
+      </template>
+      <template v-if="asset" #search_index_settings>
+          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('search_index_settings')" />
+      </template>
+      <template v-if="asset" #assets>
+          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('assets')" />
       </template>
       <template v-if="asset" #profiler>
           <AssetProfilerPanel
