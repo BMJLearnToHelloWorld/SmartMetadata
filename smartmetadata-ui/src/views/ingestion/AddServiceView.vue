@@ -6,9 +6,11 @@
 import { computed, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Form, Input, Select, Steps, message } from 'ant-design-vue';
+import { Alert, Button, Form, Input, Select, Steps, message } from 'ant-design-vue';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import ServiceFilterFields from '@/components/ingestion/ServiceFilterFields.vue';
+import { serviceFilterFieldsForKind, type ServiceFilterValues } from '@/ingestion/serviceFilterFields';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import {
@@ -16,7 +18,6 @@ import {
   SERVICE_TYPES_BY_KIND,
   buildServiceConnection,
   createEmptyServiceForm,
-  redactConnectionForDisplay,
 } from '@/ingestion/connections';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
 import type { ServiceFormValues, ServiceKind } from '@/types/ingestion';
@@ -26,16 +27,15 @@ const router = useRouter();
 const step = ref(0);
 const creating = ref(false);
 const form = reactive<ServiceFormValues>(createEmptyServiceForm());
+const filterForm = reactive<ServiceFilterValues>({ includeViews: true });
+const filterFields = computed(() => serviceFilterFieldsForKind(form.kind));
 
 const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
 const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
-const connectionJson = computed(() =>
-  JSON.stringify(redactConnectionForDisplay(buildServiceConnection(form)) ?? {}, null, 2),
-);
 const steps = computed(() => [
   { title: t('ingestion.services.wizard.stepType') },
   { title: t('ingestion.services.wizard.stepConnection') },
-  { title: t('ingestion.services.wizard.stepReview') },
+  { title: t('ingestion.services.wizard.stepFilter') },
 ]);
 
 function onKindChange(kind: ServiceKind): void {
@@ -121,16 +121,20 @@ async function onCreate(): Promise<void> {
       />
     </div>
 
-    <div v-if="step === 2" data-testid="wizard-step-review">
-      <Descriptions bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ form.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('ingestion.services.kind')">{{ form.kind }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.type')">{{ form.serviceType }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.displayName')">{{ form.displayName || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ form.description || '—' }}</Descriptions.Item>
-      </Descriptions>
-      <p style="margin-top: 16px">{{ t('ingestion.services.wizard.reviewConnection') }}</p>
-      <pre data-testid="wizard-connection-json" class="ing-json">{{ connectionJson }}</pre>
+    <div v-if="step === 2" data-testid="wizard-step-filter">
+      <Form layout="vertical">
+        <ServiceFilterFields :kind="form.kind" :values="filterForm" />
+        <p v-if="!filterFields.length" data-testid="wizard-no-filter-patterns">
+          {{ t('ingestion.pipelines.noFilterPatterns') }}
+        </p>
+      </Form>
+      <Alert
+        type="info"
+        show-icon
+        data-testid="wizard-filter-residual"
+        :message="t('ingestion.services.wizard.filterResidual')"
+        style="margin-top: 16px"
+      />
     </div>
 
     <div style="margin-top: 24px; display: flex; gap: 8px">
@@ -144,7 +148,7 @@ async function onCreate(): Promise<void> {
         :disabled="step === 1 && !form.name.trim()"
         @click="onNext"
       >
-        {{ t('crud.next') }}
+        {{ step === 1 ? t('ingestion.services.wizard.nextFilter') : t('crud.next') }}
       </Button>
       <Button
         v-if="step === 2"
@@ -153,18 +157,8 @@ async function onCreate(): Promise<void> {
         :loading="creating"
         @click="onCreate"
       >
-        {{ t('crud.create') }}
+        {{ t('ingestion.services.wizard.createAndDeploy') }}
       </Button>
     </div>
   </PageLayout>
 </template>
-
-<style scoped>
-.ing-json {
-  background: var(--sm-content-bg);
-  border: 1px solid var(--sm-border-secondary);
-  border-radius: 6px;
-  padding: 12px;
-  overflow: auto;
-}
-</style>

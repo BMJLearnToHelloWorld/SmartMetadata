@@ -3,27 +3,21 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Form, Input, Modal, Table, Tooltip, message } from 'ant-design-vue';
+import { Alert, Button, Descriptions, Table, Tooltip, message } from 'ant-design-vue';
 import { listIngestionPipelines } from '@/api/ingestionPipelines';
 import { SERVICE_DETAIL_TABS } from '@/catalog/ingestionTabs';
-import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import { buildServiceConnection, formValuesFromService, redactConnectionForDisplay } from '@/ingestion/connections';
+import { redactConnectionForDisplay } from '@/ingestion/connections';
 import { cliSourceType } from '@/ingestion/cliWorkflow';
-import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_UPDATE_API } from '@/ingestion/serviceApis';
-import type {
-  CatalogService,
-  IngestionPipeline,
-  ServiceFormValues,
-  ServiceKind,
-} from '@/types/ingestion';
+import { SERVICE_DELETE_API, SERVICE_GET_API } from '@/ingestion/serviceApis';
+import type { CatalogService, IngestionPipeline, ServiceKind } from '@/types/ingestion';
 
 const props = defineProps<{ kind: string; id: string; initialTab?: string }>();
 const { t } = useI18n();
@@ -32,16 +26,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 const service = ref<CatalogService | null>(null);
 const activeTab = ref(props.initialTab ?? 'overview');
-const editOpen = ref(false);
-const saving = ref(false);
 const deleting = ref(false);
-const editForm = reactive<ServiceFormValues>({
-  name: '',
-  kind: 'database',
-  serviceType: 'Postgres',
-  password: '',
-  storeConnectionSecrets: false,
-});
 
 const kind = computed<ServiceKind>(() =>
   (['messaging', 'dashboard', 'storage', 'pipeline'] as readonly string[]).includes(props.kind)
@@ -120,38 +105,6 @@ async function load(): Promise<void> {
   }
 }
 
-function openEdit(): void {
-  if (!service.value) {
-    return;
-  }
-  Object.assign(editForm, formValuesFromService(service.value));
-  editOpen.value = true;
-}
-
-async function onSave(): Promise<void> {
-  if (!service.value) {
-    return;
-  }
-  saving.value = true;
-  try {
-    const body = {
-      name: service.value.name,
-      serviceType: service.value.serviceType,
-      displayName: editForm.displayName?.trim() || undefined,
-      description: editForm.description?.trim() || undefined,
-      connection: buildServiceConnection(editForm, service.value.connection),
-    };
-    await SERVICE_UPDATE_API[kind.value](body);
-    editOpen.value = false;
-    message.success(t('ingestion.services.updated'));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
-  } finally {
-    saving.value = false;
-  }
-}
-
 async function onDelete(): Promise<void> {
   if (!service.value) {
     return;
@@ -209,7 +162,7 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-service" :disabled="!service || !supported" @click="openEdit">
+      <Button data-testid="edit-service" :disabled="!service || !supported" @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })">
         {{ t('crud.edit') }}
       </Button>
       <Tooltip :title="t('crud.deleteHelp')">
@@ -303,24 +256,6 @@ onMounted(() => {
       <SmState state="empty" test-id="service-versions-residual" :empty-text="residualByKey.get('versions')" />
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
-    :title="t('ingestion.services.editTitle')"
-    :ok-text="t('crud.edit')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="saving"
-    @ok="onSave"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="editForm.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
-      </Form.Item>
-      <ServiceConnectionFields :form="editForm" />
-    </Form>
-  </Modal>
 </template>
 
 <style scoped>

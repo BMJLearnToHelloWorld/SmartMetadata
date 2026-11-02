@@ -109,6 +109,14 @@ describe('ServiceDetailView', () => {
     expect(calls.some((url) => url.includes('service=pg.warehouse'))).toBe(true);
   });
 
+  it('routes Edit to the standalone connection page instead of a modal', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="edit-service"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-connection');
+    expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's1' });
+  });
+
   it('renders registry tabs including honest residual tabs', async () => {
     const { wrapper } = await mountView();
     // Ant Tabs does not forward TabPane testids (Stage 5 lesson), so assert

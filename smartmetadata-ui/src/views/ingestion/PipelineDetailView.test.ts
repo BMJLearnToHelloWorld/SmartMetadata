@@ -38,12 +38,18 @@ async function mountView() {
   });
   await router.push('/ingestion/pipelines/p1');
   await router.isReady();
+  router.addRoute({
+    path: '/ingestion/pipelines/:id/edit',
+    name: 'ingestion-pipeline-edit',
+    component: { template: '<div>edit</div>' },
+    props: true,
+  });
   const wrapper = mount(PipelineDetailView, {
     props: { id: 'p1' },
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
-  return { wrapper };
+  return { wrapper, router };
 }
 
 describe('PipelineDetailView', () => {
@@ -88,6 +94,13 @@ describe('PipelineDetailView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+  });
+
+  it('routes Edit to the standalone two-step edit page instead of a modal', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="edit-pipeline"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
   });
 
   it('shows catalog status, CLI YAML, and no trigger call', async () => {

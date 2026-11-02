@@ -43,7 +43,7 @@ describe('AddServiceView', () => {
     vi.unstubAllGlobals();
   });
 
-  it('walks type, connection, and review steps and creates the service', async () => {
+  it('walks type, connection, and filter steps and creates the service', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const router = createRouter({
@@ -74,9 +74,9 @@ describe('AddServiceView', () => {
     await nameInput.setValue('warehouse');
     await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
     await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-review"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="wizard-connection-json"]').text()).toContain('Postgres');
-    expect(wrapper.find('[data-testid="wizard-connection-json"]').text()).toContain('localhost:5432');
+    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="filter-include-schemas"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="wizard-filter-residual"]').exists()).toBe(true);
 
     await wrapper.find('[data-testid="wizard-create"]').trigger('click');
     await flushPromises();
