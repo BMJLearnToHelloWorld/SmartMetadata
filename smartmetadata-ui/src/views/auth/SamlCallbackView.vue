@@ -7,6 +7,7 @@ import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Card, Spin, Typography } from 'ant-design-vue';
+import { fetchAuthConfig } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 
 /**
@@ -21,10 +22,12 @@ import { useAuthStore } from '@/stores/auth';
  * loader forever. This page renders an honest error state with a
  * back-to-sign-in button instead.
  *
- * Out of scope, stated plainly: initiating the IdP redirect (the
- * login page only advertises authority/callbackUrl) and the full SSO
- * handshake are server/IdP configuration, unverified without a live
- * deployment.
+ * R7: the IdP redirect is now initiated by the login page's SSO button
+ * (server-driven /api/v1/auth/login), and a 404 profile with self-signup
+ * not disabled routes to the SSO complete-profile page (official
+ * AuthProvider 404 -> newUser -> SIGNUP). SDK-based initiation (Okta /
+ * MSAL / Auth0) and the IdP configuration itself remain server-side
+ * residuals, unverified without a live deployment.
  */
 const route = useRoute();
 const router = useRouter();
@@ -58,7 +61,17 @@ onMounted(async () => {
     return;
   }
   try {
-    await auth.loginWithOidc(idToken, params.get('email') ?? '');
+    let enableSelfSignup: boolean | undefined;
+    try {
+      enableSelfSignup = (await fetchAuthConfig()).enableSelfSignup;
+    } catch {
+      enableSelfSignup = undefined;
+    }
+    const outcome = await auth.loginWithOidc(idToken, params.get('email') ?? '', { enableSelfSignup });
+    if (outcome === 'needs-signup') {
+      await router.replace({ name: 'sso-signup' });
+      return;
+    }
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/my-data';
     await router.replace(redirect);
   } catch (error) {

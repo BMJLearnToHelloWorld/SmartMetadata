@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { addTaskComment, createTask, getTask, listTasks, resolveTask } from './tasks';
+import { addTaskComment, createTask, deleteTask, getTask, listTasks, resolveTask } from './tasks';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -116,5 +116,13 @@ describe('tasks API', () => {
     const commented = await addTaskComment('t1', 'noted');
     expect(commented.comments[0]?.message).toBe('noted');
     expect(lastFetch().url).toContain('/api/v1/tasks/t1/comments');
+  });
+
+  it('deletes via DELETE /v1/tasks/{id} with hardDelete defaulting to false', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await deleteTask('t1');
+    expect(lastFetch().url).toContain('/api/v1/tasks/t1');
+    expect(lastFetch().url).toContain('hardDelete=false');
+    expect(lastFetch().init?.method).toBe('DELETE');
   });
 });

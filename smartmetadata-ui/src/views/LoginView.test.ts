@@ -97,6 +97,49 @@ describe('LoginView', () => {
     expect(router.currentRoute.value.name).toBe('home');
   });
 
+  it('renders the SSO sign-in button with the official brand name (R7)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/api/v1/system/config/auth')) {
+          return new Response(
+            JSON.stringify({
+              provider: 'okta',
+              providerName: 'Company Okta',
+              authority: 'https://example.okta.com',
+              callbackUrl: 'https://example.com/callback',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountLogin();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="sso-signin"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Sign in with Okta');
+  });
+
+  it('renders the unsupported-provider warning instead of a button for unknown providers (R7)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/api/v1/system/config/auth')) {
+          return new Response(JSON.stringify({ provider: 'mystery-sso' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountLogin();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="sso-signin"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="sso-unsupported"]').exists()).toBe(true);
+  });
+
   it('hides the password form and explains SSO when the server is OIDC-only', async () => {
     vi.stubGlobal(
       'fetch',

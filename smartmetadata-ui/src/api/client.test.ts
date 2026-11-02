@@ -55,6 +55,72 @@ describe('apiRequest', () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeTruthy();
   });
 
+  it('retries once after a successful silent refresh instead of expiring', async () => {
+    persistSession(localStorage, {
+      accessToken: 'stale-token',
+      refreshToken: 'refresh-1',
+      tokenType: 'Bearer',
+      email: 'ada@example.org',
+    });
+    const seen: string[] = [];
+    const listener = () => seen.push('expired');
+    window.addEventListener('sm:session-expired', listener);
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        calls += 1;
+        if (url.includes('/v1/auth/refresh')) {
+          return new Response(
+            JSON.stringify({ accessToken: 'fresh-token', refreshToken: 'refresh-2', tokenType: 'Bearer' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (calls === 1) {
+          return new Response('{"message":"expired"}', { status: 401 });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    await expect(apiRequest('/v1/search/query')).resolves.toEqual({ ok: true });
+    expect(seen).toEqual([]);
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toContain('fresh-token');
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toContain('refresh-2');
+    window.removeEventListener('sm:session-expired', listener);
+  });
+
+  it('falls back to the expiry path when the silent refresh fails', async () => {
+    persistSession(localStorage, {
+      accessToken: 'stale-token',
+      refreshToken: 'refresh-1',
+      tokenType: 'Bearer',
+    });
+    const seen: string[] = [];
+    const listener = () => seen.push('expired');
+    window.addEventListener('sm:session-expired', listener);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"expired"}', { status: 401 })));
+    await expect(apiRequest('/v1/search/query')).rejects.toMatchObject({ status: 401 });
+    expect(seen).toEqual(['expired']);
+    expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+    window.removeEventListener('sm:session-expired', listener);
+  });
+
+  it('does not attempt a refresh when the session has no refresh token', async () => {
+    const seen: string[] = [];
+    const listener = () => seen.push('expired');
+    window.addEventListener('sm:session-expired', listener);
+    const mock = vi.fn(async () => new Response('{"message":"expired"}', { status: 401 }));
+    vi.stubGlobal('fetch', mock);
+    await expect(apiRequest('/v1/search/query')).rejects.toMatchObject({ status: 401 });
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['expired']);
+    window.removeEventListener('sm:session-expired', listener);
+  });
+
   it('sends JSON Patch with the RFC 6902 content type', async () => {
     vi.stubGlobal(
       'fetch',

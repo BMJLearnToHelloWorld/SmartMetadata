@@ -110,6 +110,11 @@ describe('TaskDetailView', () => {
     expect(wrapper.text()).toContain('noted');
   });
 
+  it('renders the task delete button (R7)', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="delete-task"]').exists()).toBe(true);
+  });
+
   it('closes the task from the action menu and then marks it terminal', async () => {
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="task-actions-menu"]').trigger('click');

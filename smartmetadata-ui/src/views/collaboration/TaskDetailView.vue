@@ -5,15 +5,18 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
-import { addTaskComment, closeTask, getTask, resolveTask } from '@/api/tasks';
+import { addTaskComment, closeTask, deleteTask, getTask, resolveTask } from '@/api/tasks';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 
 const props = defineProps<{ id: string }>();
+const router = useRouter();
 const { t } = useI18n();
 
 const loading = ref(false);
@@ -44,6 +47,28 @@ async function onClose(): Promise<void> {
     message.success(t('collaboration.task.closed'));
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.closeFailed'));
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function onDelete(): Promise<void> {
+  const confirmed = await confirmDelete({
+    title: t('collaboration.task.deleteTitle'),
+    content: t('collaboration.task.deleteContent'),
+    okText: t('crud.delete'),
+    cancelText: t('crud.cancel'),
+  });
+  if (!confirmed) {
+    return;
+  }
+  saving.value = true;
+  try {
+    await deleteTask(props.id);
+    message.success(t('collaboration.task.deleted'));
+    await router.replace({ name: 'tasks' });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.deleteFailed'));
   } finally {
     saving.value = false;
   }
@@ -124,6 +149,9 @@ watch(
       <Space class="collab-actions" wrap>
         <Button data-testid="resolve-task" type="primary" :loading="saving" :disabled="!actionable" @click="onResolve">
           {{ t('collaboration.task.resolve') }}
+        </Button>
+        <Button data-testid="delete-task" danger :loading="saving" @click="onDelete">
+          {{ t('collaboration.task.delete') }}
         </Button>
         <Dropdown :trigger="['click']">
           <Button data-testid="task-actions-menu" :disabled="!actionable">
