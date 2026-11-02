@@ -5,7 +5,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import {Alert, Button, Card, Form, Input, Select, Space, Typography, message} from 'ant-design-vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createAnnouncement, listAnnouncements } from '@/api/announcements';
 import { requiredField } from '@/features/crud/formRules';
 import { toEntityLink } from '@/quality/entityLink';
@@ -99,9 +101,9 @@ onMounted(() => {
         </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="announcements-table"
+        test-id="announcements-table"
         :columns="columns"
         :data-source="announcements"
         :loading="loading"
@@ -117,7 +119,7 @@ onMounted(() => {
             }}
           </template>
         </template>
-      </Table>
+      </SmTable>
       <Typography.Text type="secondary">
         {{
           total !== undefined
@@ -126,13 +128,14 @@ onMounted(() => {
         }}
       </Typography.Text>
     </Space>
-    <Modal
-      v-model:open="createOpen"
+    <FormModal
+      :open="createOpen"
       :title="t('collaboration.announcements.createTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="creating"
       @ok="onCreate"
+    @cancel="createOpen = false"
     >
       <Form layout="vertical">
         <Form.Item :label="t('collaboration.announcements.displayName')" :extra="t('collaboration.announcements.displayNameHelp')">
@@ -164,7 +167,7 @@ onMounted(() => {
           <Input v-model:value="form.entityFqn" :placeholder="t('collaboration.announcements.fqnPlaceholder')" />
         </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   </Card>
 </template>
 

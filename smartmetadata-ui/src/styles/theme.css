@@ -39,6 +39,12 @@
   --sm-color-visualization-green: #039855;
   --sm-color-warning: #dc6803;
   --sm-color-error: #d92d20;
+  --sm-color-success-bg: #ecfdf3;
+  --sm-color-success-700: #067647;
+  --sm-color-error-bg: #fef3f2;
+  --sm-color-error-700: #b42318;
+  --sm-color-warning-bg: #fffaeb;
+  --sm-color-warning-700: #b54708;
   --sm-overlay: rgba(10, 13, 18, 0.55);
   --sm-focus-ring: rgba(21, 112, 239, 0.22);
   --sm-border-radius: 6px;

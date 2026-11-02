@@ -5,8 +5,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { EllipsisOutlined } from '@ant-design/icons-vue';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Table, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tooltip, Typography } from 'ant-design-vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import type { EntityListColumn } from './types';
 
 const { t } = useI18n();
@@ -87,7 +88,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div v-if="!hideHeading || $slots.actions" class="entity-list__head">
         <div v-if="!hideHeading">
-          <Typography.Title :level="4" data-testid="entity-list-title">{{ title }}</Typography.Title>
+          <h5 class="entity-list-title" data-testid="entity-list-title">{{ title }}</h5>
           <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-list-lead">
             {{ lead }}
           </Typography.Paragraph>
@@ -129,10 +130,10 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         </template>
         <slot name="emptyExtra" />
       </Empty>
-      <Table
+      <SmTable
         v-else
         :row-key="rowKey"
-        :data-testid="tableTestId"
+        :test-id="tableTestId"
         :columns="tableColumns"
         :data-source="dataSource"
         :loading="loading"
@@ -148,7 +149,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
                   :aria-label="t('crud.moreActions')"
                   :data-testid="`row-overflow-${(slotProps.record as { id?: string }).id ?? ''}`"
                 >
-                  <EllipsisOutlined />
+                  <SmIcon icon-key="action-more" />
                 </Button>
               </Tooltip>
               <template #overlay>
@@ -180,7 +181,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
           </template>
           <slot v-else name="bodyCell" v-bind="slotProps" />
         </template>
-      </Table>
+      </SmTable>
       <div class="entity-list__footer">
         <Typography.Text type="secondary" data-testid="entity-list-count">{{ shownLabel }}</Typography.Text>
         <Space v-if="showPaging">
@@ -202,6 +203,14 @@ const tableColumns = computed<EntityListColumn[]>(() => {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+
+.entity-list-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--sm-text-primary);
 }
 
 .entity-list__actions {

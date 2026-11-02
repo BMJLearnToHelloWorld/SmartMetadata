@@ -120,14 +120,14 @@ function pick(hit: SearchHit): void {
   gap: 8px;
   width: 100%;
   text-align: left;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 6px;
   background: #fff;
   padding: 6px 8px;
   cursor: pointer;
 }
 .lineage-search__hit:hover {
-  border-color: #1677ff;
+  border-color: #2e90fa;
 }
 .lineage-search__name {
   font-weight: 600;

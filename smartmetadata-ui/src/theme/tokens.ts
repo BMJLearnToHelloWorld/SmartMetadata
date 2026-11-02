@@ -36,6 +36,18 @@ export const SM_COLOR_PRIMARY_BG = '#eff8ff';
 export const SM_COLOR_PRIMARY_BG_HOVER = '#d1e9ff';
 /** Official semantic success (success-600). NOT the visualization green. */
 export const SM_COLOR_SUCCESS = '#079455';
+/**
+ * Official semantic backgrounds and 700 text tones (tokens.css
+ * --om-color-bg-success/error/warning-primary and --om-color-utility-
+ * success/error/warning-700). Previously scattered as literals in the
+ * DQ dimension cards; centralised here in R1, values unchanged.
+ */
+export const SM_COLOR_SUCCESS_BG = '#ecfdf3';
+export const SM_COLOR_SUCCESS_700 = '#067647';
+export const SM_COLOR_ERROR_BG = '#fef3f2';
+export const SM_COLOR_ERROR_700 = '#b42318';
+export const SM_COLOR_WARNING_BG = '#fffaeb';
+export const SM_COLOR_WARNING_700 = '#b54708';
 /** Official visualization green-4; a chart role, never a semantic success. */
 export const SM_COLOR_VISUALIZATION_GREEN = '#039855';
 export const SM_COLOR_WARNING = '#dc6803';

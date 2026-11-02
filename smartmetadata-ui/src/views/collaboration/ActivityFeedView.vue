@@ -6,7 +6,9 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import {Alert, Button, Card, Form, Input, Select, Space, Typography, message} from 'ant-design-vue';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { listActivityEvents } from '@/api/activity';
 import { ACTIVITY_RANGE_PRESETS } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
@@ -112,9 +114,9 @@ onMounted(() => {
           {{ t(preset.labelKey) }}
         </Select.Option>
       </Select>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="activity-table"
+        test-id="activity-table"
         :columns="columns"
         :data-source="events"
         :loading="loading"
@@ -148,7 +150,7 @@ onMounted(() => {
             }}
           </template>
         </template>
-      </Table>
+      </SmTable>
       <Typography.Text type="secondary">
         {{
           total !== undefined
@@ -157,13 +159,14 @@ onMounted(() => {
         }}
       </Typography.Text>
     </Space>
-    <Modal
-      v-model:open="createOpen"
+    <SmDrawer
+      :open="createOpen"
       :title="t('collaboration.activity.createTitle')"
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="creating"
       @ok="onCreate"
+    @cancel="createOpen = false"
     >
       <Form layout="vertical">
         <Form.Item :label="t('collaboration.activity.entityType')" :rules="requiredField(t, t('collaboration.activity.entityType'))">
@@ -179,7 +182,7 @@ onMounted(() => {
           <Input.TextArea v-model:value="form.message" data-testid="conversation-message" :rows="3" />
         </Form.Item>
       </Form>
-    </Modal>
+    </SmDrawer>
   </Card>
 </template>
 

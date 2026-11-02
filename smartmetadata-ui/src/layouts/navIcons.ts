@@ -15,6 +15,10 @@ import {
   BulbOutlined,
   ClusterOutlined,
   CompassOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EllipsisOutlined,
+  EyeOutlined,
   FileOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
@@ -25,6 +29,7 @@ import {
   InsertRowRightOutlined,
   LineChartOutlined,
   LogoutOutlined,
+  MessageOutlined,
   PartitionOutlined,
   ReadOutlined,
   SettingOutlined,
@@ -68,6 +73,17 @@ const ICONS: Record<string, Component> = {
   'context-center-archive': InboxOutlined,
   'admin-settings': SettingOutlined,
   logout: LogoutOutlined,
+  // Page / row actions (R1 extension). Same Ant bridge status as the
+  // nav keys above: transition only, NOT a 1:1 official visual match.
+  // Unknown keys still render a missing marker via SmIcon.
+  'action-edit': EditOutlined,
+  'action-delete': DeleteOutlined,
+  'action-view': EyeOutlined,
+  'action-lineage': ShareAltOutlined,
+  'action-versions': HistoryOutlined,
+  'action-conversation': MessageOutlined,
+  'action-more': EllipsisOutlined,
+  learning: BulbOutlined,
 };
 
 export function navIcon(key: string): Component | undefined {

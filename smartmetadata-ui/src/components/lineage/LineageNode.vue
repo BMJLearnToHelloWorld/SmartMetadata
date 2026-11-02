@@ -94,7 +94,7 @@ function columnClass(fqn: string): string {
   width: 252px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--sm-border-color, #f0f0f0);
+  border: 1px solid var(--sm-border-color, #d5d7da);
   border-radius: var(--sm-border-radius, 6px);
   background: var(--sm-bg-container, #fff);
   box-shadow: var(--sm-shadow-card);
@@ -114,7 +114,7 @@ function columnClass(fqn: string): string {
   gap: 8px;
   padding: 5px 10px;
   background: var(--sm-table-header-bg, #f7f8fa);
-  border-bottom: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
 }
 .lineage-node--center .lineage-node__head {
   background: var(--sm-color-primary-bg, #eff8ff);
@@ -152,7 +152,7 @@ function columnClass(fqn: string): string {
 }
 .lineage-node__columns {
   margin-top: 8px;
-  border-top: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border-top: 1px solid var(--sm-border-secondary, #e9eaeb);
   padding-top: 6px;
 }
 .lineage-node__column {

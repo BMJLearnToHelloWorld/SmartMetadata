@@ -792,7 +792,7 @@ onMounted(() => {
   min-height: calc(100vh - 120px);
 }
 .glossary__pane {
-  border: 1px solid var(--sm-border-secondary, #f0f0f0);
+  border: 1px solid var(--sm-border-secondary, #e9eaeb);
   border-radius: var(--sm-border-radius, 6px);
   background: var(--sm-bg-container, #fff);
   padding: 12px;

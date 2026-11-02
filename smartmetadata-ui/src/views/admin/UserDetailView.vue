@@ -271,7 +271,7 @@ watch(
 
 <style scoped>
 .entity-detail__tab-lead {
-  color: var(--ant-color-text-secondary, #8c8c8c);
+  color: var(--ant-color-text-secondary, #414651);
   margin-bottom: 12px;
 }
 </style>

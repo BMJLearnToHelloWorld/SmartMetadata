@@ -325,12 +325,12 @@ onMounted(() => {
 
 <style scoped>
 .entity-detail__tab-lead {
-  color: var(--ant-color-text-secondary, #8c8c8c);
+  color: var(--ant-color-text-secondary, #414651);
   margin-bottom: 12px;
 }
 .ing-json {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: var(--sm-content-bg);
+  border: 1px solid var(--sm-border-secondary);
   border-radius: 6px;
   padding: 12px;
   overflow: auto;

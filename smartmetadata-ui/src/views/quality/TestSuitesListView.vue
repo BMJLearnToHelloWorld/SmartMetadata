@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, Radio, message } from 'ant-design-vue';
+import {Button, Form, Input, Radio, message} from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { ApiError } from '@/api/client';
 import { createTestSuite, listTestSuites, listTestSuitesBySearch } from '@/api/testSuites';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -309,13 +310,14 @@ defineExpose({ openCreate });
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('quality.testSuites.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
+    @cancel="createOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
@@ -328,5 +330,5 @@ defineExpose({ openCreate });
         <Input v-model:value="form.displayName" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

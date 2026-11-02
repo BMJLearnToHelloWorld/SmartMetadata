@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Checkbox, Descriptions, Form, Input, Modal, Select, Table, message } from 'ant-design-vue';
+import {Button, Checkbox, Descriptions, Form, Input, Select, Table, message} from 'ant-design-vue';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
 import { getClassification, updateClassification } from '@/api/classifications';
 import { createTag, listTags } from '@/api/tags';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -194,13 +195,14 @@ onMounted(() => {
       </Table>
     </template>
   </EntityDetailShell>
-  <Modal
-    v-model:open="editOpen"
+  <SmDrawer
+    :open="editOpen"
     :title="t('governance.classifications.editTitle')"
     :ok-text="t('crud.edit')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="saving"
     @ok="onSave"
+    @cancel="editOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
@@ -215,14 +217,15 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
-  <Modal
-    v-model:open="createTagOpen"
+  </SmDrawer>
+  <SmDrawer
+    :open="createTagOpen"
     :title="t('governance.classifications.createTagTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreateTag"
+    @cancel="createTagOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" required>
@@ -247,5 +250,5 @@ onMounted(() => {
         </Checkbox>
       </Form.Item>
     </Form>
-  </Modal>
+  </SmDrawer>
 </template>
