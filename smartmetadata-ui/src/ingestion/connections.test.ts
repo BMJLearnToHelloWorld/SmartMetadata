@@ -8,8 +8,18 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { buildServiceConnection, formValuesFromService, redactConnectionForDisplay } from './connections';
-import type { CatalogService, ServiceFormValues } from '@/types/ingestion';
+import {
+  PASSWORD_PLACEHOLDERS,
+  SERVICE_ENTITY_TYPE_BY_KIND,
+  SERVICE_KIND_BY_ENTITY_TYPE,
+  SERVICE_KIND_DEFAULT_TYPE,
+  buildServiceConnection,
+  createEmptyServiceForm,
+  formValuesFromService,
+  kindForServiceType,
+  redactConnectionForDisplay,
+} from './connections';
+import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
 function postgresForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
   return {
@@ -480,4 +490,34 @@ it('prefers config.host over config.hostPort when both present', () => {
     },
   };
   expect(formValuesFromService(service).hostPort).toBe('http://dagster:3000');
+});
+
+describe('service kind tables', () => {
+  it('maps every kind to its default type and back from its entity type', () => {
+    expect(SERVICE_KIND_DEFAULT_TYPE).toEqual({
+      database: 'Postgres',
+      messaging: 'Kafka',
+      dashboard: 'Superset',
+      storage: 'S3',
+      pipeline: 'Prefect',
+    });
+    for (const kind of Object.keys(SERVICE_KIND_DEFAULT_TYPE) as ServiceKind[]) {
+      expect(kindForServiceType(SERVICE_KIND_DEFAULT_TYPE[kind])).toBe(kind);
+      expect(SERVICE_KIND_BY_ENTITY_TYPE[SERVICE_ENTITY_TYPE_BY_KIND[kind]]).toBe(kind);
+    }
+  });
+
+  it('keeps password placeholders table-driven per type', () => {
+    expect(PASSWORD_PLACEHOLDERS.Postgres).toBe('${PG_PASSWORD}');
+    expect(PASSWORD_PLACEHOLDERS.S3).toBe('${AWS_SECRET_ACCESS_KEY}');
+    expect(PASSWORD_PLACEHOLDERS.UnknownType).toBeUndefined();
+  });
+
+  it('creates a blank form with the create-modal defaults', () => {
+    const form = createEmptyServiceForm();
+    expect(form.kind).toBe('database');
+    expect(form.serviceType).toBe('Postgres');
+    expect(form.includeMetricViews).toBe(true);
+    expect(form.storeConnectionSecrets).toBe(false);
+  });
 });

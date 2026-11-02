@@ -7,6 +7,7 @@ import { computed, markRaw } from 'vue';
 import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
+import { MiniMap } from '@vue-flow/minimap';
 import type { Edge, Node } from '@vue-flow/core';
 import { layoutPipelineTaskGraph, type PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import PipelineTaskNode, { type PipelineTaskNodeData } from './PipelineTaskNode.vue';
@@ -52,6 +53,9 @@ const edges = computed<Edge[]>(() =>
     <VueFlow :nodes="nodes" :edges="edges" :node-types="nodeTypes" fit-view>
       <Background />
       <Controls />
+      <div data-testid="pipeline-task-minimap">
+        <MiniMap pannable zoomable />
+      </div>
     </VueFlow>
   </div>
 </template>

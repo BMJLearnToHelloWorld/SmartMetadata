@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  TASK_STATUS_COLORS,
   isPipelineTaskGraphEmpty,
   layoutPipelineTaskGraph,
   mapPipelineTaskGraph,
@@ -64,5 +65,17 @@ describe('layoutPipelineTaskGraph', () => {
     expect(laid.nodes.every((node) => Number.isFinite(node.position.x) && Number.isFinite(node.position.y))).toBe(
       true,
     );
+  });
+});
+
+describe('TASK_STATUS_COLORS', () => {
+  it('maps known execution statuses and nothing else', () => {
+    expect(TASK_STATUS_COLORS).toEqual({
+      Successful: 'green',
+      Failed: 'red',
+      Pending: 'gold',
+      Skipped: 'default',
+    });
+    expect(TASK_STATUS_COLORS.Running).toBeUndefined();
   });
 });

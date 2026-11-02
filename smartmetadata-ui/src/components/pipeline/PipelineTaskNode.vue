@@ -6,7 +6,7 @@
 import { computed } from 'vue';
 import { Tag } from 'ant-design-vue';
 import { Handle, Position } from '@vue-flow/core';
-import type { PipelineTaskGraphNode } from '@/pipeline/taskGraph';
+import { TASK_STATUS_COLORS, type PipelineTaskGraphNode } from '@/pipeline/taskGraph';
 
 export interface PipelineTaskNodeData extends PipelineTaskGraphNode {
   testId?: string;
@@ -16,20 +16,9 @@ const props = defineProps<{
   data: PipelineTaskNodeData;
 }>();
 
-const statusColor = computed(() => {
-  switch (props.data.executionStatus) {
-    case 'Successful':
-      return 'green';
-    case 'Failed':
-      return 'red';
-    case 'Pending':
-      return 'gold';
-    case 'Skipped':
-      return 'default';
-    default:
-      return undefined;
-  }
-});
+const statusColor = computed(() =>
+  props.data.executionStatus ? TASK_STATUS_COLORS[props.data.executionStatus] : undefined,
+);
 </script>
 
 <template>

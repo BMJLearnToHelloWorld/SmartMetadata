@@ -78,6 +78,8 @@ import TestDefinitionsListView from '@/views/quality/TestDefinitionsListView.vue
 import TestSuiteDetailView from '@/views/quality/TestSuiteDetailView.vue';
 import PipelineDetailView from '@/views/ingestion/PipelineDetailView.vue';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
+import AddServiceView from '@/views/ingestion/AddServiceView.vue';
+import EditServiceConnectionView from '@/views/ingestion/EditServiceConnectionView.vue';
 import ServiceDetailView from '@/views/ingestion/ServiceDetailView.vue';
 import ServicesListView from '@/views/ingestion/ServicesListView.vue';
 import ActivityFeedView from '@/views/collaboration/ActivityFeedView.vue';
@@ -290,6 +292,13 @@ export const router = createRouter({
           props: true,
         },
         { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
+        { path: 'ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+        {
+          path: 'ingestion/services/:kind/:id/connection',
+          name: 'ingestion-service-connection',
+          component: EditServiceConnectionView,
+          props: true,
+        },
         {
           path: 'ingestion/services/:kind/:id',
           name: 'ingestion-service',

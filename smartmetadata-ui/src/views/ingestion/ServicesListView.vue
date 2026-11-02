@@ -6,41 +6,27 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
-import { createDatabaseService, deleteDatabaseService, listDatabaseServices } from '@/api/databaseServices';
-import {
-  createDashboardService,
-  deleteDashboardService,
-  listDashboardServices,
-} from '@/api/dashboardServices';
-import { createMessagingService, deleteMessagingService, listMessagingServices } from '@/api/messagingServices';
-import {
-  createStorageService,
-  deleteStorageService,
-  listStorageServices,
-} from '@/api/storageServices';
-import {
-  createPipelineService,
-  deletePipelineService,
-  listPipelineServices,
-} from '@/api/pipelineServices';
+import { Button, Form, Input, Modal, Select, Tabs, message } from 'ant-design-vue';
+import { listDatabaseServices } from '@/api/databaseServices';
+import { listDashboardServices } from '@/api/dashboardServices';
+import { listMessagingServices } from '@/api/messagingServices';
+import { listStorageServices } from '@/api/storageServices';
+import { listPipelineServices } from '@/api/pipelineServices';
+import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
-import { buildServiceConnection } from '@/ingestion/connections';
 import {
-  DATABASE_SERVICE_TYPES,
-  DASHBOARD_SERVICE_TYPES,
-  MESSAGING_SERVICE_TYPES,
-  STORAGE_SERVICE_TYPES,
-  PIPELINE_SERVICE_TYPES,
-  type CatalogService,
-  type ServiceFormValues,
-  type ServiceKind,
-} from '@/types/ingestion';
+  SERVICE_KIND_DEFAULT_TYPE,
+  SERVICE_TYPES_BY_KIND,
+  buildServiceConnection,
+  createEmptyServiceForm,
+} from '@/ingestion/connections';
+import { SERVICE_CREATE_API, SERVICE_DELETE_API } from '@/ingestion/serviceApis';
+import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -48,75 +34,19 @@ const loading = ref(false);
 const errorMessage = ref('');
 const services = ref<CatalogService[]>([]);
 const total = ref<number | undefined>();
+const activeKind = ref<string>('all');
+const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
+const filteredServices = computed(() =>
+  activeKind.value === 'all' ? services.value : services.value.filter((item) => item.kind === activeKind.value),
+);
+const displayedTotal = computed(() =>
+  activeKind.value === 'all' ? total.value : filteredServices.value.length,
+);
 const createOpen = ref(false);
 const creating = ref(false);
-const form = reactive<ServiceFormValues>({
-  name: '',
-  displayName: '',
-  description: '',
-  kind: 'database',
-  serviceType: 'Postgres',
-  hostPort: '',
-  username: '',
-  database: '',
-  databaseName: '',
-  databaseSchema: '',
-  account: '',
-  warehouse: '',
-  role: '',
-  bootstrapServers: '',
-  securityProtocol: '',
-  schemaRegistryURL: '',
-  httpPath: '',
-  catalog: '',
-  queryHistoryTable: '',
-  includeMetricViews: true,
-  authMode: 'pat',
-  clientId: '',
-  clientSecret: '',
-  azureClientId: '',
-  azureClientSecret: '',
-  azureTenantId: '',
-  password: '',
-  apiKey: '',
-  provider: 'db',
-  awsRegion: '',
-  awsAccessKeyId: '',
-  awsSecretAccessKey: '',
-  awsSessionToken: '',
-  awsEndPointURL: '',
-  awsProfileName: '',
-  assumeRoleArn: '',
-  assumeRoleSessionName: '',
-  assumeRoleSourceIdentity: '',
-  awsIamEnabled: false,
-  bucketNames: '',
-  consoleEndpointURL: '',
-  prefectAuthMode: 'server',
-  prefectAccountId: '',
-  prefectWorkspaceId: '',
-  prefectAuthString: '',
-  numberOfStatus: 10,
-  dagsterTimeout: 1000,
-  stripAssetKeyPrefixLength: 0,
-  storeConnectionSecrets: false,
-});
+const form = reactive<ServiceFormValues>(createEmptyServiceForm());
 
-const typeOptions = computed(() => {
-  if (form.kind === 'messaging') {
-    return MESSAGING_SERVICE_TYPES;
-  }
-  if (form.kind === 'dashboard') {
-    return DASHBOARD_SERVICE_TYPES;
-  }
-  if (form.kind === 'storage') {
-    return STORAGE_SERVICE_TYPES;
-  }
-  if (form.kind === 'pipeline') {
-    return PIPELINE_SERVICE_TYPES;
-  }
-  return DATABASE_SERVICE_TYPES;
-});
+const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -126,63 +56,12 @@ const columns = computed<EntityListColumn[]>(() => [
 ]);
 
 function resetForm(): void {
-  form.name = '';
-  form.displayName = '';
-  form.description = '';
-  form.kind = 'database';
-  form.serviceType = 'Postgres';
-  form.hostPort = '';
-  form.username = '';
-  form.database = '';
-  form.databaseName = '';
-  form.databaseSchema = '';
-  form.account = '';
-  form.warehouse = '';
-  form.role = '';
-  form.bootstrapServers = '';
-  form.securityProtocol = '';
-  form.schemaRegistryURL = '';
-  form.httpPath = '';
-  form.catalog = '';
-  form.queryHistoryTable = '';
-  form.includeMetricViews = true;
-  form.authMode = 'pat';
-  form.clientId = '';
-  form.clientSecret = '';
-  form.azureClientId = '';
-  form.azureClientSecret = '';
-  form.azureTenantId = '';
-  form.password = '';
-  form.apiKey = '';
-  form.provider = 'db';
-  form.awsRegion = '';
-  form.awsAccessKeyId = '';
-  form.awsSecretAccessKey = '';
-  form.awsSessionToken = '';
-  form.awsEndPointURL = '';
-  form.awsProfileName = '';
-  form.assumeRoleArn = '';
-  form.assumeRoleSessionName = '';
-  form.assumeRoleSourceIdentity = '';
-  form.awsIamEnabled = false;
-  form.bucketNames = '';
-  form.consoleEndpointURL = '';
-  form.storeConnectionSecrets = false;
+  Object.assign(form, createEmptyServiceForm());
 }
 
 function onKindChange(kind: ServiceKind): void {
   form.kind = kind;
-  if (kind === 'messaging') {
-    form.serviceType = 'Kafka';
-  } else if (kind === 'dashboard') {
-    form.serviceType = 'Superset';
-  } else if (kind === 'storage') {
-    form.serviceType = 'S3';
-  } else if (kind === 'pipeline') {
-    form.serviceType = 'Prefect';
-  } else {
-    form.serviceType = 'Postgres';
-  }
+  form.serviceType = SERVICE_KIND_DEFAULT_TYPE[kind];
 }
 
 async function load(): Promise<void> {
@@ -252,16 +131,7 @@ async function onCreate(): Promise<void> {
       description: form.description?.trim() || undefined,
       connection,
     };
-    const created =
-      form.kind === 'dashboard'
-        ? await createDashboardService(body)
-        : form.kind === 'messaging'
-          ? await createMessagingService(body)
-          : form.kind === 'storage'
-            ? await createStorageService(body)
-            : form.kind === 'pipeline'
-              ? await createPipelineService(body)
-              : await createDatabaseService(body);
+    const created = await SERVICE_CREATE_API[form.kind](body);
     createOpen.value = false;
     resetForm();
     message.success(t('ingestion.services.created', { name: created.name }));
@@ -291,17 +161,7 @@ async function onDelete(service: CatalogService): Promise<void> {
     return;
   }
   try {
-    if (service.kind === 'messaging') {
-      await deleteMessagingService(service.id);
-    } else if (service.kind === 'dashboard') {
-      await deleteDashboardService(service.id);
-    } else if (service.kind === 'storage') {
-      await deleteStorageService(service.id);
-    } else if (service.kind === 'pipeline') {
-      await deletePipelineService(service.id);
-    } else {
-      await deleteDatabaseService(service.id);
-    }
+    await SERVICE_DELETE_API[service.kind](service.id);
     message.success(t('ingestion.services.deleted', { name: service.name }));
     await load();
   } catch (error) {
@@ -321,21 +181,34 @@ onMounted(() => {
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
-    :data-source="services"
+    :data-source="filteredServices"
     table-test-id="services-table"
     show-row-actions
     show-edit-action
     show-delete-action
-    :total="total"
+    :total="displayedTotal"
     @refresh="load"
     @view="openDetail($event as CatalogService)"
     @edit="openDetail($event as CatalogService)"
     @delete="onDelete($event as CatalogService)"
   >
     <template #actions>
+      <Button data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add' })">
+        {{ t('ingestion.services.createWizard') }}
+      </Button>
       <Button type="primary" data-testid="create-service" @click="createOpen = true">
         {{ t('ingestion.services.create') }}
       </Button>
+    </template>
+    <template #filters>
+      <Tabs :active-key="activeKind" data-testid="services-kind-tabs" @change="(key) => (activeKind = String(key))">
+        <Tabs.TabPane key="all" :tab="t('ingestion.services.allKinds')" />
+        <Tabs.TabPane
+          v-for="row in supportedCategories"
+          :key="row.key"
+          :tab="t(row.labelKey)"
+        />
+      </Tabs>
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
@@ -359,7 +232,7 @@ onMounted(() => {
   >
     <Form layout="vertical">
       <Form.Item :label="t('ingestion.services.kind')" required>
-        <Select :value="form.kind" data-testid="create-service-kind" @update:value="onKindChange">
+        <Select :value="form.kind" data-testid="create-service-kind" @update:value="(value) => onKindChange(value as ServiceKind)">
           <Select.Option value="database">{{ t('ingestion.services.database') }}</Select.Option>
           <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
           <Select.Option value="dashboard">{{ t('ingestion.services.dashboard') }}</Select.Option>
