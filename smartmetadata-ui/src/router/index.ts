@@ -82,6 +82,7 @@ import TestCaseDetailView from '@/views/quality/TestCaseDetailView.vue';
 import TestDefinitionDetailView from '@/views/quality/TestDefinitionDetailView.vue';
 import TestDefinitionsListView from '@/views/quality/TestDefinitionsListView.vue';
 import TestSuiteDetailView from '@/views/quality/TestSuiteDetailView.vue';
+import EditPipelineView from '@/views/ingestion/EditPipelineView.vue';
 import PipelineDetailView from '@/views/ingestion/PipelineDetailView.vue';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 import AddServiceView from '@/views/ingestion/AddServiceView.vue';
@@ -343,6 +344,12 @@ export const router = createRouter({
           props: true,
         },
         { path: 'ingestion/pipelines', name: 'ingestion-pipelines', component: PipelinesListView },
+        {
+          path: 'ingestion/pipelines/:id/edit',
+          name: 'ingestion-pipeline-edit',
+          component: EditPipelineView,
+          props: true,
+        },
         {
           path: 'ingestion/pipelines/:id',
           name: 'ingestion-pipeline',

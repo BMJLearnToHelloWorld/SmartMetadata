@@ -784,6 +784,7 @@ const enUS = {
     create: 'Create',
     cancel: 'Cancel',
     save: 'Save',
+    submit: 'Submit',
     ok: 'OK',
     view: 'View',
     actions: 'Actions',
@@ -1316,13 +1317,16 @@ const enUS = {
         'Service-level filter configuration has no API surface here. Source filters live on ingestion pipelines, not on the service record.',
       wizard: {
         title: 'Add service',
-        lead: 'Three steps: choose a service type, fill in the connection, review and create.',
+        lead: 'Three steps: choose a service type, fill in the connection, choose what to ingest, and create.',
         stepType: 'Service type',
         stepConnection: 'Connection',
-        stepReview: 'Review',
+        stepFilter: 'What to ingest',
+        nextFilter: 'What to ingest',
+        createAndDeploy: 'Create and deploy',
         testConnectionResidual:
           'Connection testing is not offered here: no test-connection endpoint is wired. Save the service and verify it with smartmetadata-ingest.',
-        reviewConnection: 'Connection (secrets redacted):',
+        filterResidual:
+          'Ingestion scope is applied when an ingestion pipeline is created, not when the service record is created. This wizard creates only the service record; create the pipeline from the service detail page to apply this scope.',
       },
     },
     pipelines: {
@@ -1331,6 +1335,9 @@ const enUS = {
       create: 'Create pipeline',
       createTitle: 'Create ingestion pipeline',
       editTitle: 'Edit ingestion pipeline',
+      noFilterPatterns: 'No filter patterns available for this service kind.',
+      editStepConfigure: 'Configure ingestion',
+      editStepSchedule: 'Schedule interval',
       service: 'Service',
       created: 'Created pipeline {name}',
       updated: 'Pipeline updated',

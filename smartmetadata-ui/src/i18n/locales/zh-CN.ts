@@ -779,6 +779,7 @@ const zhCN = {
     create: '新建',
     cancel: '取消',
     save: '保存',
+    submit: '提交',
     ok: '确定',
     view: '查看',
     actions: '操作',
@@ -1309,13 +1310,16 @@ const zhCN = {
         '服务级过滤配置在此没有 API 面。来源过滤在摄取流水线的新建/编辑中，不在服务记录上。',
       wizard: {
         title: '新增服务',
-        lead: '三步：选择服务类型、填写连接、复核并创建。',
+        lead: '三步：选择服务类型、填写连接、选择摄取范围并创建。',
         stepType: '服务类型',
         stepConnection: '连接',
-        stepReview: '复核',
+        stepFilter: '要摄取什么',
+        nextFilter: '要摄取什么',
+        createAndDeploy: '创建并部署',
         testConnectionResidual:
           '此处不提供连接测试：没有接线的 test-connection 端点。保存服务后请用 smartmetadata-ingest 验证。',
-        reviewConnection: '连接（密钥已打码）：',
+        filterResidual:
+          '摄取范围在创建摄取流水线时生效，而不是在创建服务记录时生效。本向导只创建服务记录；请在服务详情页创建流水线以应用该范围。',
       },
     },
     pipelines: {
@@ -1324,6 +1328,9 @@ const zhCN = {
       create: '创建流水线',
       createTitle: '创建摄取流水线',
       editTitle: '编辑摄取流水线',
+      noFilterPatterns: '该服务类型没有可用的过滤模式。',
+      editStepConfigure: '配置摄取',
+      editStepSchedule: '排期',
       service: '服务',
       created: '已创建流水线 {name}',
       updated: '流水线已更新',
