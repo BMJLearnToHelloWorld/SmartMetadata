@@ -13,6 +13,7 @@ import SmTable from '@/components/shared/SmTable.vue';
 import { listOnlineUsers, searchUsers } from '@/api/users';
 import {
   ONLINE_USERS_TIME_WINDOWS,
+  ONLINE_USER_ACTIVITY_COLORS,
   onlineUserActivityBand,
   onlineUsersWindowFromKey,
 } from '@/catalog/insightsTabs';
@@ -62,17 +63,7 @@ function activityMinutes(user: AdminUser): number | undefined {
 }
 
 function activityColor(user: AdminUser): string {
-  const band = onlineUserActivityBand(activityMinutes(user));
-  if (band === 'now' || band === 'recent') {
-    return '#52c41a';
-  }
-  if (band === 'hours') {
-    return '#faad14';
-  }
-  if (band === 'days') {
-    return '#ff4d4f';
-  }
-  return '#98a2b3';
+  return ONLINE_USER_ACTIVITY_COLORS[onlineUserActivityBand(activityMinutes(user))];
 }
 
 function activityText(user: AdminUser): string {

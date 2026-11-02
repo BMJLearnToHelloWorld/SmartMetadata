@@ -131,11 +131,11 @@ function pick(hit: SearchHit): void {
 }
 .lineage-search__name {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--sm-text-primary);
 }
 .lineage-search__fqn {
   margin-left: auto;
-  color: #64748b;
+  color: var(--sm-text-quaternary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;

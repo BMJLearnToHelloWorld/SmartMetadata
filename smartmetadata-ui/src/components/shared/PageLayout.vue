@@ -71,7 +71,10 @@ watch(() => props.documentTitle, applyTitle);
 .sm-page-layout--fullscreen {
   position: fixed;
   inset: 0;
-  z-index: var(--sm-z-overlay);
+  /* Same fullscreen decision as LineageGraph: modal tier (1500), now that
+   * --sm-z-modal is actually defined in theme.css (previously
+   * --sm-z-overlay was undefined here and fell back to auto). */
+  z-index: var(--sm-z-modal);
   background: var(--sm-bg-container);
   overflow: auto;
 }

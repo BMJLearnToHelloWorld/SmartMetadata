@@ -531,7 +531,7 @@ onMounted(() => {
 }
 .dq-donut__center,
 .dq-donut__legend {
-  color: var(--ant-color-text-secondary, #667085);
+  color: var(--ant-color-text-secondary, #414651);
   font-size: 12px;
 }
 .dq-dims {
@@ -553,7 +553,7 @@ onMounted(() => {
 }
 .dq-dim__name {
   font-size: 12px;
-  color: var(--ant-color-text-secondary, #667085);
+  color: var(--ant-color-text-secondary, #414651);
 }
 .dq-dim__total,
 .dq-status__value {
@@ -585,6 +585,6 @@ onMounted(() => {
   color: var(--sm-color-warning-700);
 }
 .dq-status__label {
-  color: var(--ant-color-text-secondary, #667085);
+  color: var(--ant-color-text-secondary, #414651);
 }
 </style>

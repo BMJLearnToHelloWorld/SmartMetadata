@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, Select, message } from 'ant-design-vue';
+import { Button, Form, Input, Select, message } from 'ant-design-vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import { createEventSubscription, deleteEventSubscription, listEventSubscriptions } from '@/api/eventSubscriptions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -179,13 +180,14 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
+  <FormModal
+    :open="createOpen"
     :title="t('observability.alerts.createTitle')"
     :ok-text="t('crud.create')"
     :cancel-text="t('crud.cancel')"
     :confirm-loading="creating"
     @ok="onCreate"
+    @cancel="createOpen = false"
   >
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
@@ -206,5 +208,5 @@ onMounted(() => {
         <Input v-model:value="form.displayName" />
       </Form.Item>
     </Form>
-  </Modal>
+  </FormModal>
 </template>

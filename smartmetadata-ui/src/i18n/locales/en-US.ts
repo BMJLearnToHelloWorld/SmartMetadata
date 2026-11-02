@@ -2028,7 +2028,6 @@ const enUS = {
     authPat: 'Personal Access Token',
     authOauth: 'Databricks OAuth (service principal)',
     authAzure: 'Azure Active Directory',
-    token: 'Access token',
     clientId: 'Client ID',
     clientSecret: 'Client secret',
     azureClientId: 'Azure client ID',

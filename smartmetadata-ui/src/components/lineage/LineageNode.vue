@@ -113,7 +113,7 @@ function columnClass(fqn: string): string {
   justify-content: space-between;
   gap: 8px;
   padding: 5px 10px;
-  background: var(--sm-table-header-bg, #f7f8fa);
+  background: var(--sm-table-header-bg, #fafafa);
   border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
 }
 .lineage-node--center .lineage-node__head {
@@ -165,7 +165,7 @@ function columnClass(fqn: string): string {
   color: var(--sm-text-secondary, #414651);
 }
 .lineage-node__column--active {
-  background: #fff7e6;
+  background: var(--sm-color-warning-bg);
   border-radius: 4px;
 }
 .lineage-node__column-name {

@@ -124,7 +124,7 @@ function onExpand(keys: (string | number)[]): void {
   min-width: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--sm-bg-elevated, #f7f8fa);
+  background: var(--sm-bg-elevated, #fafafa);
   color: var(--sm-text-tertiary, #535862);
   font-size: 11px;
   line-height: 18px;
