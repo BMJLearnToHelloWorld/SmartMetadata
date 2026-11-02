@@ -133,6 +133,20 @@ export async function resolveTask(id: string, body: ResolveTaskRequest): Promise
   return requireTask(raw, 'Resolve task');
 }
 
+/**
+ * Close a task without resolution. Official shape
+ * (openmetadata-ui/.../rest/tasksAPI.ts closeTask): POST /{id}/close with
+ * the comment as a query parameter. Live acceptance by the product
+ * backend is unverified (R8); the shape itself is official, not invented.
+ */
+export async function closeTask(id: string, comment?: string): Promise<CollaborationTask> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tasks/${encodeURIComponent(id)}/close`, {
+    method: 'POST',
+    query: { comment },
+  });
+  return requireTask(raw, 'Close task');
+}
+
 export async function addTaskComment(id: string, message: string): Promise<CollaborationTask> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/tasks/${encodeURIComponent(id)}/comments`, {
     method: 'POST',

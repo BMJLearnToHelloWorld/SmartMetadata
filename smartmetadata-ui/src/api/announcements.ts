@@ -12,6 +12,47 @@ import type { Paged } from '@/types/admin';
 import type { Announcement, CreateAnnouncementRequest } from '@/types/collaboration';
 import { apiRequest } from './client';
 
+export interface AnnouncementPatchOp {
+  op: 'replace' | 'remove';
+  path: string;
+  value?: unknown;
+}
+
+/**
+ * Delete an announcement. Official shape
+ * (openmetadata-ui/.../rest/announcementsAPI.ts deleteAnnouncement):
+ * DELETE /{id} with hardDelete defaulting to false. Live acceptance by
+ * the product backend is unverified (R8); the shape itself is official.
+ */
+export async function deleteAnnouncement(id: string, hardDelete = false): Promise<void> {
+  await apiRequest<unknown>(`/v1/announcements/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete },
+  });
+}
+
+/**
+ * Edit an announcement with JSON Patch ops. Official shape
+ * (openmetadata-ui/.../rest/announcementsAPI.ts patchAnnouncement):
+ * PATCH with Content-Type application/json-patch+json. Callers send only
+ * ops for fields that actually changed; an empty op list sends nothing.
+ */
+export async function patchAnnouncement(id: string, ops: AnnouncementPatchOp[]): Promise<Announcement> {
+  if (!ops.length) {
+    throw new Error('No announcement changes to save');
+  }
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/announcements/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    contentType: 'application/json-patch+json',
+    json: ops,
+  });
+  const mapped = mapAnnouncement(raw);
+  if (!mapped) {
+    throw new Error('Update announcement succeeded but the response had no announcement');
+  }
+  return mapped;
+}
+
 export interface ListAnnouncementsQuery {
   limit?: number;
   after?: string;

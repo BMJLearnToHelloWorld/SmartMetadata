@@ -6,9 +6,9 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Card, Form, Input, Select, Space, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Card, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
-import SmTable from '@/components/shared/SmTable.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { listActivityEvents } from '@/api/activity';
 import { ACTIVITY_RANGE_PRESETS } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
@@ -20,10 +20,14 @@ import type { ActivityEvent } from '@/types/collaboration';
 const router = useRouter();
 const { t } = useI18n();
 const loading = ref(false);
+const loadingMore = ref(false);
 const errorMessage = ref('');
 const events = ref<ActivityEvent[]>([]);
 const total = ref<number | undefined>();
+const after = ref<string | undefined>();
 const rangeDays = ref(7);
+const typeFilter = ref('all');
+const detailEvent = ref<ActivityEvent | null>(null);
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -32,13 +36,34 @@ const form = reactive({
   message: '',
 });
 
-const columns = computed(() => [
-  { title: t('collaboration.activity.when'), key: 'timestamp', width: 180 },
-  { title: t('collaboration.activity.type'), dataIndex: 'eventType', key: 'eventType', width: 180 },
-  { title: t('collaboration.activity.summary'), key: 'summary' },
-  { title: t('collaboration.activity.asset'), key: 'entity' },
-  { title: t('collaboration.activity.actor'), key: 'actor', width: 160 },
-]);
+/**
+ * Official merged-feed sort (ActivityFeedListV1New): timestamp descending,
+ * id as tiebreak, missing timestamp sorts last (treated as 0).
+ */
+const sortedEvents = computed(() =>
+  [...events.value].sort(
+    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || a.id.localeCompare(b.id),
+  ),
+);
+
+/**
+ * Type filter options come only from event types actually present on the
+ * loaded page: /v1/activity has no eventType parameter, so this is a
+ * client-side filter over the loaded page, never a claimed server filter.
+ */
+const typeOptions = computed(() => {
+  const seen = new Set<string>();
+  for (const event of events.value) {
+    seen.add(event.eventType);
+  }
+  return [...seen].sort();
+});
+
+const visibleEvents = computed(() =>
+  typeFilter.value === 'all'
+    ? sortedEvents.value
+    : sortedEvents.value.filter((event) => event.eventType === typeFilter.value),
+);
 
 function formatTime(value?: number): string {
   if (!value) {
@@ -47,19 +72,37 @@ function formatTime(value?: number): string {
   return new Date(value).toLocaleString();
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
+async function load(append = false): Promise<void> {
+  if (append) {
+    loadingMore.value = true;
+  } else {
+    loading.value = true;
+  }
   errorMessage.value = '';
   try {
-    const page = await listActivityEvents({ days: rangeDays.value, limit: 50 });
-    events.value = page.data;
+    const page = await listActivityEvents({
+      days: rangeDays.value,
+      limit: 50,
+      ...(append && after.value ? { after: after.value } : {}),
+    });
+    events.value = append ? [...events.value, ...page.data] : page.data;
     total.value = page.total;
+    after.value = page.after;
   } catch (error) {
-    events.value = [];
+    if (!append) {
+      events.value = [];
+    }
     errorMessage.value = error instanceof Error ? error.message : t('collaboration.activity.loadFailed');
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
+}
+
+function onRangeChange(): void {
+  typeFilter.value = 'all';
+  after.value = undefined;
+  void load();
 }
 
 async function onCreate(): Promise<void> {
@@ -89,6 +132,14 @@ function openAsset(event: ActivityEvent): void {
   void router.push(assetLocation(type, fqn));
 }
 
+function entityLabel(event: ActivityEvent): string {
+  return event.entity?.fullyQualifiedName || event.entity?.name || '—';
+}
+
+function hasEntityLink(event: ActivityEvent): boolean {
+  return Boolean(event.entity?.type && (event.entity?.fullyQualifiedName || event.entity?.name));
+}
+
 onMounted(() => {
   void load();
 });
@@ -98,59 +149,56 @@ onMounted(() => {
   <Card>
     <Space direction="vertical" size="middle" style="width: 100%">
       <div class="collab-head">
-        <div>
-          <Typography.Title :level="4">{{ t('collaboration.activity.title') }}</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            {{ t('collaboration.activity.lead') }}
-          </Typography.Paragraph>
-        </div>
+        <PageHeader :header="t('collaboration.activity.title')" :sub-header="t('collaboration.activity.lead')" />
         <Button type="primary" data-testid="create-conversation" @click="createOpen = true">
           {{ t('collaboration.activity.post') }}
         </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Select v-model:value="rangeDays" data-testid="activity-range" style="width: 160px" @change="load">
-        <Select.Option v-for="preset in ACTIVITY_RANGE_PRESETS" :key="preset.key" :value="preset.days">
-          {{ t(preset.labelKey) }}
-        </Select.Option>
-      </Select>
-      <SmTable
-        row-key="id"
-        test-id="activity-table"
-        :columns="columns"
-        :data-source="events"
-        :loading="loading"
-        :pagination="false"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'timestamp'">
-            {{ formatTime((record as ActivityEvent).timestamp) }}
-          </template>
-          <template v-else-if="column.key === 'summary'">
-            {{ (record as ActivityEvent).summary || (record as ActivityEvent).fieldName || '—' }}
-          </template>
-          <template v-else-if="column.key === 'entity'">
-            <a
-              v-if="(record as ActivityEvent).entity?.type && ((record as ActivityEvent).entity?.fullyQualifiedName || (record as ActivityEvent).entity?.name)"
-              href="#"
-              @click.prevent="openAsset(record as ActivityEvent)"
-            >
-              {{
-                (record as ActivityEvent).entity?.fullyQualifiedName ||
-                (record as ActivityEvent).entity?.name
-              }}
-            </a>
-            <span v-else>—</span>
-          </template>
-          <template v-else-if="column.key === 'actor'">
-            {{
-              (record as ActivityEvent).actor?.displayName ||
-              (record as ActivityEvent).actor?.name ||
-              '—'
-            }}
-          </template>
-        </template>
-      </SmTable>
+      <Space wrap>
+        <Select v-model:value="rangeDays" data-testid="activity-range" style="width: 160px" @change="onRangeChange">
+          <Select.Option v-for="preset in ACTIVITY_RANGE_PRESETS" :key="preset.key" :value="preset.days">
+            {{ t(preset.labelKey) }}
+          </Select.Option>
+        </Select>
+        <Select
+          v-model:value="typeFilter"
+          data-testid="activity-type-filter"
+          style="width: 200px"
+          :aria-label="t('collaboration.activity.typeFilter')"
+        >
+          <Select.Option value="all">{{ t('collaboration.activity.typeAll') }}</Select.Option>
+          <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
+        </Select>
+      </Space>
+      <div v-if="!loading && !visibleEvents.length && !errorMessage" data-testid="activity-empty">
+        <Typography.Title :level="5">{{ t('collaboration.activity.emptyTitle') }}</Typography.Title>
+        <Typography.Paragraph type="secondary">{{ t('collaboration.activity.emptyHint') }}</Typography.Paragraph>
+      </div>
+      <div v-else data-testid="activity-timeline" class="activity-timeline">
+        <article
+          v-for="event in visibleEvents"
+          :key="event.id"
+          class="activity-card"
+          :data-testid="`activity-card-${event.id}`"
+          @click="detailEvent = event"
+        >
+          <div class="activity-card__head">
+            <span class="activity-card__dot" />
+            <Typography.Text strong>
+              {{ event.actor?.displayName || event.actor?.name || '—' }}
+            </Typography.Text>
+            <Tag>{{ event.eventType }}</Tag>
+            <Typography.Text type="secondary">{{ formatTime(event.timestamp) }}</Typography.Text>
+          </div>
+          <Typography.Paragraph class="activity-card__summary">
+            {{ event.summary || event.fieldName || '—' }}
+          </Typography.Paragraph>
+          <Typography.Text v-if="hasEntityLink(event)" type="secondary">
+            <a href="#" @click.prevent.stop="openAsset(event)">{{ entityLabel(event) }}</a>
+          </Typography.Text>
+        </article>
+      </div>
       <Typography.Text type="secondary">
         {{
           total !== undefined
@@ -158,6 +206,14 @@ onMounted(() => {
             : t('crud.shown', { shown: events.length })
         }}
       </Typography.Text>
+      <Button
+        v-if="after && !loading"
+        data-testid="activity-load-more"
+        :loading="loadingMore"
+        @click="load(true)"
+      >
+        {{ t('collaboration.activity.loadMore') }}
+      </Button>
     </Space>
     <SmDrawer
       :open="createOpen"
@@ -183,6 +239,33 @@ onMounted(() => {
         </Form.Item>
       </Form>
     </SmDrawer>
+    <SmDrawer
+      :open="detailEvent !== null"
+      :title="t('collaboration.activity.detailTitle')"
+      width-key="feed"
+      test-id="activity-detail-drawer"
+      :show-ok="false"
+      :cancel-text="t('collaboration.activity.closeDetail')"
+      @cancel="detailEvent = null"
+    >
+      <Space v-if="detailEvent" direction="vertical" size="middle" style="width: 100%">
+        <Typography.Text strong>
+          {{ detailEvent.actor?.displayName || detailEvent.actor?.name || '—' }}
+        </Typography.Text>
+        <Tag>{{ detailEvent.eventType }}</Tag>
+        <Typography.Paragraph>{{ detailEvent.summary || detailEvent.fieldName || '—' }}</Typography.Paragraph>
+        <Typography.Text v-if="hasEntityLink(detailEvent)" type="secondary">
+          <a href="#" @click.prevent="openAsset(detailEvent)">{{ entityLabel(detailEvent) }}</a>
+        </Typography.Text>
+        <Typography.Text type="secondary">{{ formatTime(detailEvent.timestamp) }}</Typography.Text>
+        <Typography.Paragraph v-if="detailEvent.oldValue !== undefined">
+          {{ t('collaboration.activity.oldValue') }}: {{ detailEvent.oldValue }}
+        </Typography.Paragraph>
+        <Typography.Paragraph v-if="detailEvent.newValue !== undefined">
+          {{ t('collaboration.activity.newValue') }}: {{ detailEvent.newValue }}
+        </Typography.Paragraph>
+      </Space>
+    </SmDrawer>
   </Card>
 </template>
 
@@ -192,5 +275,34 @@ onMounted(() => {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+}
+.activity-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.activity-card {
+  border: 1px solid var(--sm-border-secondary);
+  border-left: 3px solid var(--sm-color-primary, #1570ef);
+  border-radius: var(--sm-border-radius, 6px);
+  padding: 8px 12px;
+  background: var(--sm-bg-container, #fff);
+  cursor: pointer;
+}
+.activity-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.activity-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sm-color-primary, #1570ef);
+  flex-shrink: 0;
+}
+.activity-card__summary {
+  margin: 4px 0 2px;
 }
 </style>

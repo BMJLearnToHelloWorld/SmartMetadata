@@ -59,6 +59,9 @@ describe('TaskDetailView', () => {
         if (init?.method === 'POST' && url.includes('/resolve')) {
           return jsonResponse({ id: 't1', name: 'review-orders', status: 'Completed', comments: [] });
         }
+        if (init?.method === 'POST' && url.includes('/close')) {
+          return jsonResponse({ id: 't1', name: 'review-orders', status: 'Closed', comments: [] });
+        }
         if (init?.method === 'POST' && url.includes('/comments')) {
           return jsonResponse({
             id: 't1',
@@ -105,5 +108,20 @@ describe('TaskDetailView', () => {
     const comment = lastMatchingFetch((url, init) => url.includes('/comments') && init?.method === 'POST');
     expect(JSON.parse(String(comment.init?.body))).toEqual({ message: 'noted' });
     expect(wrapper.text()).toContain('noted');
+  });
+
+  it('closes the task from the action menu and then marks it terminal', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="task-actions-menu"]').trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const closeItem = document.querySelector('[data-testid="task-action-menu-item-close"]');
+    expect(closeItem).not.toBeNull();
+    (closeItem as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const close = lastMatchingFetch((url, init) => url.includes('/close') && init?.method === 'POST');
+    expect(close).toBeDefined();
+    expect(wrapper.text()).toContain('Closed');
+    expect(wrapper.find('[data-testid="task-terminal-note"]').exists()).toBe(true);
   });
 });

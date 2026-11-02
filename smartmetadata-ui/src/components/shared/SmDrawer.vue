@@ -27,6 +27,7 @@ const props = withDefaults(
     cancelText?: string;
     confirmLoading?: boolean;
     okDisabled?: boolean;
+    showOk?: boolean;
     widthKey?: DrawerWidthKey;
     testId?: string;
   }>(),
@@ -35,6 +36,7 @@ const props = withDefaults(
     cancelText: undefined,
     confirmLoading: false,
     okDisabled: false,
+    showOk: true,
     widthKey: 'form',
     testId: 'sm-drawer',
   },
@@ -75,6 +77,7 @@ watch(
       <Space style="display: flex; justify-content: flex-end; width: 100%">
         <Button :data-testid="`${testId}-cancel`" @click="close">{{ cancelText ?? t('crud.cancel') }}</Button>
         <Button
+          v-if="showOk"
           type="primary"
           :data-testid="`${testId}-save`"
           :loading="confirmLoading"

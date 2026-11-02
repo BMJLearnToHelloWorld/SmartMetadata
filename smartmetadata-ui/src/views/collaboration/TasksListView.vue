@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import {Alert, Button, Card, Form, Input, Select, Space, Tabs, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { createTask, listTasks } from '@/api/tasks';
 import { TASK_STATUS_TABS, taskStatusQuery } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
@@ -93,12 +94,7 @@ onMounted(() => {
   <Card>
     <Space direction="vertical" size="middle" style="width: 100%">
       <div class="collab-head">
-        <div>
-          <Typography.Title :level="4">{{ t('collaboration.tasks.title') }}</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            {{ t('collaboration.tasks.lead') }}
-          </Typography.Paragraph>
-        </div>
+        <PageHeader :header="t('collaboration.tasks.title')" :sub-header="t('collaboration.tasks.lead')" />
         <Button type="primary" data-testid="create-task" @click="createOpen = true">
           {{ t('collaboration.tasks.create') }}
         </Button>

@@ -5,10 +5,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Descriptions, Form, Input, Select, Space, Spin, Table, Typography, message } from 'ant-design-vue';
-import { addTaskComment, getTask, resolveTask } from '@/api/tasks';
+import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
+import { addTaskComment, closeTask, getTask, resolveTask } from '@/api/tasks';
+import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
 import { requiredField } from '@/features/crud/formRules';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmTable from '@/components/shared/SmTable.vue';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
@@ -31,6 +34,32 @@ const commentColumns = computed(() => [
 const title = computed(
   () => task.value?.displayName || task.value?.name || props.id,
 );
+
+const actionable = computed(() => isTaskActionable(task.value?.status));
+
+async function onClose(): Promise<void> {
+  saving.value = true;
+  try {
+    task.value = await closeTask(props.id, form.comment.trim() || undefined);
+    message.success(t('collaboration.task.closed'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.closeFailed'));
+  } finally {
+    saving.value = false;
+  }
+}
+
+function onActionMenuClick(info: { key: string }): void {
+  const action = TASK_ACTIONS.find((item) => item.key === (info.key as TaskActionMode));
+  if (!action || !action.wired || !actionable.value) {
+    return;
+  }
+  if (action.key === 'resolve') {
+    void onResolve();
+  } else if (action.key === 'close') {
+    void onClose();
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -89,9 +118,37 @@ watch(
 <template>
   <Spin :spinning="loading">
   <Card>
-    <Typography.Title :level="4">{{ title }}</Typography.Title>
+    <PageHeader :header="title" />
     <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="collab-alert" />
     <template v-if="task">
+      <Space class="collab-actions" wrap>
+        <Button data-testid="resolve-task" type="primary" :loading="saving" :disabled="!actionable" @click="onResolve">
+          {{ t('collaboration.task.resolve') }}
+        </Button>
+        <Dropdown :trigger="['click']">
+          <Button data-testid="task-actions-menu" :disabled="!actionable">
+            {{ t('collaboration.task.actions') }}
+          </Button>
+          <template #overlay>
+            <Menu @click="onActionMenuClick">
+              <Menu.Item
+                v-for="action in TASK_ACTIONS"
+                :key="action.key"
+                :data-testid="`task-action-menu-item-${action.key}`"
+                :disabled="!actionable || !action.wired"
+              >
+                {{ t(action.labelKey) }}
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
+      </Space>
+      <Typography.Paragraph v-if="!actionable" type="secondary" data-testid="task-terminal-note">
+        {{ t('collaboration.task.terminalNote') }}
+      </Typography.Paragraph>
+      <Typography.Paragraph v-else type="secondary" data-testid="task-actions-residual">
+        {{ t('collaboration.task.unwiredNote') }}
+      </Typography.Paragraph>
       <Descriptions bordered :column="1" size="small">
         <Descriptions.Item :label="t('collaboration.task.status')">{{ task.status || '—' }}</Descriptions.Item>
         <Descriptions.Item :label="t('collaboration.task.category')">{{ task.category || '—' }}</Descriptions.Item>
@@ -116,14 +173,11 @@ watch(
           </Select.Option>
         </Select>
         <Input v-model:value="form.comment" :placeholder="t('collaboration.task.commentPlaceholder')" style="width: 280px" />
-        <Button data-testid="resolve-task" type="primary" :loading="saving" @click="onResolve">
-          {{ t('collaboration.task.resolve') }}
-        </Button>
       </Space>
       <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.comments') }}</Typography.Title>
-      <Table
+      <SmTable
         row-key="id"
-        data-testid="task-comments-table"
+        test-id="task-comments-table"
         :columns="commentColumns"
         :data-source="task.comments"
         :pagination="false"
@@ -134,7 +188,7 @@ watch(
             {{ record.author?.displayName || record.author?.name || '—' }}
           </template>
         </template>
-      </Table>
+      </SmTable>
       <Form layout="vertical" class="collab-section">
         <Form.Item :label="t('collaboration.task.addComment')" :rules="requiredField(t, t('collaboration.task.message'))">
           <Input.TextArea v-model:value="form.message" data-testid="task-comment" :rows="2" />
@@ -154,5 +208,8 @@ watch(
 }
 .collab-section {
   margin-top: 24px;
+}
+.collab-actions {
+  margin-bottom: 16px;
 }
 </style>
