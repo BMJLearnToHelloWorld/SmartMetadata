@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
 import { listActivityEvents } from '@/api/activity';
+import { ACTIVITY_RANGE_PRESETS } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
 import { createConversation } from '@/api/conversations';
 import { assetLocation } from '@/catalog/entityRoutes';
@@ -20,6 +21,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 const events = ref<ActivityEvent[]>([]);
 const total = ref<number | undefined>();
+const rangeDays = ref(7);
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -47,7 +49,7 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listActivityEvents({ days: 7, limit: 50 });
+    const page = await listActivityEvents({ days: rangeDays.value, limit: 50 });
     events.value = page.data;
     total.value = page.total;
   } catch (error) {
@@ -105,6 +107,11 @@ onMounted(() => {
         </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
+      <Select v-model:value="rangeDays" data-testid="activity-range" style="width: 160px" @change="load">
+        <Select.Option v-for="preset in ACTIVITY_RANGE_PRESETS" :key="preset.key" :value="preset.days">
+          {{ t(preset.labelKey) }}
+        </Select.Option>
+      </Select>
       <Table
         row-key="id"
         data-testid="activity-table"

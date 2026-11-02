@@ -72,6 +72,13 @@ describe('TasksListView', () => {
     expect(wrapper.find('[data-testid="create-task"]').exists()).toBe(true);
   });
 
+  it('defaults to the open status tab with statusGroup=open', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="tasks-status-tabs"]').exists()).toBe(true);
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => url.includes('statusGroup=open'))).toBe(true);
+  });
+
   it('opens task detail on name click', async () => {
     const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="task-row-t1"]').trigger('click');

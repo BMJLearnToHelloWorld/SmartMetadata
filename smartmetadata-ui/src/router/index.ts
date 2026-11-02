@@ -33,6 +33,7 @@ import CustomPropertyTypeDetailView from '@/views/admin/CustomPropertyTypeDetail
 import CustomPropertyTypesListView from '@/views/admin/CustomPropertyTypesListView.vue';
 import PoliciesListView from '@/views/admin/PoliciesListView.vue';
 import PolicyDetailView from '@/views/admin/PolicyDetailView.vue';
+import AuditLogsView from '@/views/admin/AuditLogsView.vue';
 import SettingsHubView from '@/views/admin/SettingsHubView.vue';
 import SystemSettingsView from '@/views/admin/SystemSettingsView.vue';
 import AppearanceSettingsView from '@/views/admin/AppearanceSettingsView.vue';
@@ -149,6 +150,7 @@ export const router = createRouter({
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
         { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
+        { path: 'admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
         { path: 'admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView },
         { path: 'admin/settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView },
         { path: 'admin/settings/preferences/login', name: 'settings-preferences-login', component: LoginConfigurationView },

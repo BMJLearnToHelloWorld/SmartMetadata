@@ -6,8 +6,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, InputNumber, Select, message } from 'ant-design-vue';
+import { Alert, Button, Form, InputNumber, Select, message } from 'ant-design-vue';
 import { getTypedSetting, settingAsLineage, updateSetting } from '@/api/system';
+import { LINEAGE_SETTINGS_DEPTH, isLineageSettingsDepthValid } from '@/lineage/depth';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { LineageSettings } from '@/types/admin';
 
@@ -26,7 +27,16 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    Object.assign(form, await getTypedSetting('lineageSettings', settingAsLineage));
+    const loaded = await getTypedSetting('lineageSettings', settingAsLineage);
+    Object.assign(form, loaded);
+    // A missing server value must not blank the form into an unsavable state:
+    // fall back to the form defaults instead of submitting undefined depths.
+    if (form.upstreamDepth === undefined) {
+      form.upstreamDepth = 2;
+    }
+    if (form.downstreamDepth === undefined) {
+      form.downstreamDepth = 2;
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('settings.lineage.loadFailed');
   } finally {
@@ -35,6 +45,10 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (!isLineageSettingsDepthValid(form.upstreamDepth) || !isLineageSettingsDepthValid(form.downstreamDepth)) {
+    message.error(t('settings.lineage.rangeInvalid'));
+    return;
+  }
   saving.value = true;
   try {
     await updateSetting('lineageSettings', {
@@ -66,11 +80,22 @@ onMounted(() => {
     :error-message="errorMessage"
   >
     <Form layout="vertical">
+      <Alert type="info" show-icon :message="t('settings.lineage.rangeNote')" style="margin-bottom: 16px" />
       <Form.Item :label="t('settings.lineage.upstream')">
-        <InputNumber v-model:value="form.upstreamDepth" :min="1" :max="5" data-testid="lineage-upstream" />
+        <InputNumber
+          v-model:value="form.upstreamDepth"
+          :min="LINEAGE_SETTINGS_DEPTH.min"
+          :max="LINEAGE_SETTINGS_DEPTH.max"
+          data-testid="lineage-upstream"
+        />
       </Form.Item>
       <Form.Item :label="t('settings.lineage.downstream')">
-        <InputNumber v-model:value="form.downstreamDepth" :min="1" :max="5" data-testid="lineage-downstream" />
+        <InputNumber
+          v-model:value="form.downstreamDepth"
+          :min="LINEAGE_SETTINGS_DEPTH.min"
+          :max="LINEAGE_SETTINGS_DEPTH.max"
+          data-testid="lineage-downstream"
+        />
       </Form.Item>
       <Form.Item :label="t('settings.lineage.layer')">
         <Select v-model:value="form.lineageLayer" data-testid="lineage-layer">

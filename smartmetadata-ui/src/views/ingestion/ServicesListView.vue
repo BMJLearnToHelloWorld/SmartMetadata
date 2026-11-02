@@ -3,30 +3,22 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Modal, Select, Tabs, message } from 'ant-design-vue';
+import { Button, Tabs, message } from 'ant-design-vue';
 import { listDatabaseServices } from '@/api/databaseServices';
 import { listDashboardServices } from '@/api/dashboardServices';
 import { listMessagingServices } from '@/api/messagingServices';
 import { listStorageServices } from '@/api/storageServices';
 import { listPipelineServices } from '@/api/pipelineServices';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
-import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { requiredField } from '@/features/crud/formRules';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
-import {
-  SERVICE_KIND_DEFAULT_TYPE,
-  SERVICE_TYPES_BY_KIND,
-  buildServiceConnection,
-  createEmptyServiceForm,
-} from '@/ingestion/connections';
-import { SERVICE_CREATE_API, SERVICE_DELETE_API } from '@/ingestion/serviceApis';
-import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
+import { SERVICE_DELETE_API } from '@/ingestion/serviceApis';
+import type { CatalogService } from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -42,11 +34,6 @@ const filteredServices = computed(() =>
 const displayedTotal = computed(() =>
   activeKind.value === 'all' ? total.value : filteredServices.value.length,
 );
-const createOpen = ref(false);
-const creating = ref(false);
-const form = reactive<ServiceFormValues>(createEmptyServiceForm());
-
-const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -54,15 +41,6 @@ const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.type'), dataIndex: 'serviceType', key: 'serviceType', width: 140 },
   { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
 ]);
-
-function resetForm(): void {
-  Object.assign(form, createEmptyServiceForm());
-}
-
-function onKindChange(kind: ServiceKind): void {
-  form.kind = kind;
-  form.serviceType = SERVICE_KIND_DEFAULT_TYPE[kind];
-}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -120,29 +98,6 @@ async function load(): Promise<void> {
   }
 }
 
-async function onCreate(): Promise<void> {
-  creating.value = true;
-  try {
-    const connection = buildServiceConnection(form);
-    const body = {
-      name: form.name.trim(),
-      serviceType: form.serviceType,
-      displayName: form.displayName?.trim() || undefined,
-      description: form.description?.trim() || undefined,
-      connection,
-    };
-    const created = await SERVICE_CREATE_API[form.kind](body);
-    createOpen.value = false;
-    resetForm();
-    message.success(t('ingestion.services.created', { name: created.name }));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
-
 function openDetail(service: CatalogService): void {
   void router.push({
     name: 'ingestion-service',
@@ -193,11 +148,8 @@ onMounted(() => {
     @delete="onDelete($event as CatalogService)"
   >
     <template #actions>
-      <Button data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add' })">
+      <Button type="primary" data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add' })">
         {{ t('ingestion.services.createWizard') }}
-      </Button>
-      <Button type="primary" data-testid="create-service" @click="createOpen = true">
-        {{ t('ingestion.services.create') }}
       </Button>
     </template>
     <template #filters>
@@ -222,39 +174,4 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
-  <Modal
-    v-model:open="createOpen"
-    :title="t('ingestion.services.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('ingestion.services.kind')" required>
-        <Select :value="form.kind" data-testid="create-service-kind" @update:value="(value) => onKindChange(value as ServiceKind)">
-          <Select.Option value="database">{{ t('ingestion.services.database') }}</Select.Option>
-          <Select.Option value="messaging">{{ t('ingestion.services.messaging') }}</Select.Option>
-          <Select.Option value="dashboard">{{ t('ingestion.services.dashboard') }}</Select.Option>
-          <Select.Option value="storage">{{ t('ingestion.services.storage') }}</Select.Option>
-          <Select.Option value="pipeline">{{ t('ingestion.services.pipeline') }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('crud.type')" required>
-        <Select v-model:value="form.serviceType" data-testid="create-service-type">
-          <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-service-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="3" />
-      </Form.Item>
-      <ServiceConnectionFields :form="form" />
-    </Form>
-  </Modal>
 </template>
