@@ -52,7 +52,18 @@ function onOpenChange(keys: (string | number)[]): void {
         </Menu.Item>
         <Menu.SubMenu v-else-if="entry.kind === 'section'" :key="entry.key" :data-testid="entry.testId">
           <template #icon><SmIcon :icon-key="entry.key" /></template>
-          <template #title>{{ $t(entry.titleKey) }}</template>
+          <!--
+            Fix6: Ant Menu emits click only for leaf items, never for submenu
+            titles — so a section title click previously never reached the
+            caller at all. The title text itself reports the section key; the
+            click still bubbles to the submenu row, so expand/collapse keeps
+            working alongside navigation.
+          -->
+          <template #title>
+            <span :data-testid="`section-title-${entry.key}`" @click="emit('click', entry.key)">
+              {{ $t(entry.titleKey) }}
+            </span>
+          </template>
           <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
             <template #icon><SmIcon :icon-key="item.key" /></template>
             {{ $t(item.titleKey) }}

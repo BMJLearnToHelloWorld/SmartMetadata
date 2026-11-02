@@ -1947,6 +1947,7 @@ const zhCN = {
       lead: '此页在本控制台中仍是 residual。',
       empty: '本控制台尚未接线。',
     },
+    availableLinks: '可用页面：',
     marketplaceOverview: {
       title: '数据市场',
       lead: '此分组中的域和数据产品调用现有接口。市场首页仍是 residual。',

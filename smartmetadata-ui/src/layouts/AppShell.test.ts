@@ -206,6 +206,13 @@ describe('AppShell', () => {
     expect(selected.text()).toContain('Data Quality');
   });
 
+  it('navigates a section title click to the section landing page (Fix6)', async () => {
+    const { wrapper, router } = await mountShell();
+    await wrapper.get('[data-testid="section-title-marketplace"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('governance-domains');
+  });
+
   it('navigates Settings from the sider footer and logs out from nav-logout', async () => {
     const { wrapper, router } = await mountShell();
     await wrapper.find('[data-testid="nav-settings"]').trigger('click');
