@@ -43,6 +43,7 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'admin-roles',
   'admin-bots',
   'admin-settings-system',
+  'admin-settings-audit-logs',
   'admin-policies',
   'admin-settings-custom-properties',
   'admin-apps',
@@ -99,8 +100,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: 'audit-logs',
         titleKey: 'settings.items.auditLogs',
-        kind: 'residual',
-        residualKey: 'settings.residual.auditLogs',
+        kind: 'route',
+        routeName: 'admin-settings-audit-logs',
       },
     ],
   },

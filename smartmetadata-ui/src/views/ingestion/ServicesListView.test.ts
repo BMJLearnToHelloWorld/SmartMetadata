@@ -34,6 +34,11 @@ async function mountView() {
         name: 'ingestion-service',
         component: { template: '<div>svc</div>' },
       },
+      {
+        path: '/ingestion/services/add',
+        name: 'ingestion-service-add',
+        component: { template: '<div>wizard</div>' },
+      },
     ],
   });
   await router.push('/ingestion/services');
@@ -99,7 +104,16 @@ describe('ServicesListView', () => {
     expect(wrapper.text()).toContain('S3');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="services-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-service"]').exists()).toBe(true);
+    // Stage 8 convergence: the wizard is the single create entry; the Modal is gone.
+    expect(wrapper.find('[data-testid="create-service-wizard"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="create-service"]').exists()).toBe(false);
+  });
+
+  it('navigates to the wizard as the single create entry', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="create-service-wizard"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add');
   });
 
   it('opens service detail on name click', async () => {

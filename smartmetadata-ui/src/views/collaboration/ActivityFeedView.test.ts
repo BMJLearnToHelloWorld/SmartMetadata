@@ -74,6 +74,13 @@ describe('ActivityFeedView', () => {
     localStorage.clear();
   });
 
+  it('defaults to the 7-day range', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="activity-range"]').exists()).toBe(true);
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => url.includes('days=7'))).toBe(true);
+  });
+
   it('renders activity events from GET /v1/activity', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Updated description');

@@ -50,6 +50,7 @@ async function mountHub() {
       { path: '/ingestion/pipelines', name: 'ingestion-pipelines', component: stub('pipe') },
       { path: '/observability/alerts', name: 'observability-alerts', component: stub('al') },
       { path: '/announcements', name: 'announcements', component: stub('ann') },
+      { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: stub('audit') },
       // Preferences residual→route (BACKEND_09 / hub pattern)
       { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
       { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },
@@ -96,6 +97,9 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-link-services"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-policies"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(true);
+    // Stage 8: audit logs flipped residual → route.
+    expect(wrapper.find('[data-testid="settings-link-audit-logs"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-audit-logs"]').exists()).toBe(false);
   });
 
   it('navigates a live card to the existing Users list', async () => {

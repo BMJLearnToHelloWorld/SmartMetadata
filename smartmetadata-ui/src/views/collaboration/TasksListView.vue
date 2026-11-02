@@ -6,8 +6,9 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Tabs, Typography, message } from 'ant-design-vue';
 import { createTask, listTasks } from '@/api/tasks';
+import { TASK_STATUS_TABS, taskStatusQuery } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
 import { toEntityLink } from '@/quality/entityLink';
 import {
@@ -22,6 +23,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 const tasks = ref<CollaborationTask[]>([]);
 const total = ref<number | undefined>();
+const activeStatusTab = ref('open');
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -44,7 +46,8 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listTasks({ limit: 50, statusGroup: 'open' });
+    const tab = TASK_STATUS_TABS.find((item) => item.key === activeStatusTab.value) ?? TASK_STATUS_TABS[0];
+    const page = await listTasks({ limit: 50, ...taskStatusQuery(tab) });
     tasks.value = page.data;
     total.value = page.total;
   } catch (error) {
@@ -99,6 +102,9 @@ onMounted(() => {
         </Button>
       </div>
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
+      <Tabs :active-key="activeStatusTab" data-testid="tasks-status-tabs" @change="(key) => { activeStatusTab = String(key); void load(); }">
+        <Tabs.TabPane v-for="tab in TASK_STATUS_TABS" :key="tab.key" :tab="t(tab.labelKey)" />
+      </Tabs>
       <Table
         row-key="id"
         data-testid="tasks-table"

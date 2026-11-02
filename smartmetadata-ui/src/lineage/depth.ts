@@ -13,6 +13,26 @@ export const LINEAGE_DEPTH_MIN = 0;
 export const LINEAGE_DEPTH_MAX = 3;
 export const LINEAGE_DEPTH_DEFAULT = 1;
 
+/**
+ * Server settings form range (Stage 8, closing the Stage 3 residual).
+ * Official LineageConfigPage validates only min 0 and trusts the server;
+ * the product lineage fetch clamps to 0–3, so a settings value above 3
+ * could never take effect. The settings form therefore accepts exactly
+ * the effective range 0–3 and rejects out-of-range saves instead of
+ * silently clamping them — the canvas modal keeps min 0 and fetch clamping.
+ */
+export const LINEAGE_SETTINGS_DEPTH = { min: LINEAGE_DEPTH_MIN, max: LINEAGE_DEPTH_MAX } as const;
+
+export function isLineageSettingsDepthValid(value: unknown): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= LINEAGE_SETTINGS_DEPTH.min &&
+    value <= LINEAGE_SETTINGS_DEPTH.max
+  );
+}
+
 export function clampLineageDepth(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(numeric)) {
