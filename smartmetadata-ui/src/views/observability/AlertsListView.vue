@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Form, Input, Select, message } from 'ant-design-vue';
+import { Button, Form, Input, InputNumber, Select, Switch, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createEventSubscription, deleteEventSubscription, listEventSubscriptions } from '@/api/eventSubscriptions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -35,12 +35,28 @@ const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
+/** URL-based destination types only; Email (address list) and internal flows are separate (Fix4 doc §3). */
+const DESTINATION_TYPES = ['Webhook', 'Slack', 'MSTeams', 'GChat'] as const;
+/** Official DESTINATION_TYPE_BASED_PLACEHOLDERS for the URL-based destination types. */
+const DESTINATION_PLACEHOLDERS: Record<(typeof DESTINATION_TYPES)[number], string> = {
+  Webhook: 'https://example.com',
+  Slack: 'https://hooks.slack.com/services/XXXXX/XXXXX/XXXXX',
+  MSTeams: 'https://outlook.office.com/webhook/XXXXX/XXXXX/XXXXX',
+  GChat: 'https://chat.googleapis.com/v1/spaces/XXXXX/messages?key=XXXXX',
+};
+/** Official DEFAULT_READ_TIMEOUT (Alerts.constants). */
+const DEFAULT_READ_TIMEOUT = 12;
+
 const form = reactive({
   name: '',
   displayName: '',
   description: '',
   alertType: 'Observability',
   webhookUrl: '',
+  destinationType: 'Webhook' as (typeof DESTINATION_TYPES)[number],
+  readTimeout: DEFAULT_READ_TIMEOUT,
+  enabled: true,
+  resources: [] as string[],
 });
 
 const columns = computed<EntityListColumn[]>(() => [
@@ -89,11 +105,15 @@ async function onCreate(): Promise<void> {
       alertType: form.alertType,
       description: form.description.trim() || undefined,
       displayName: form.displayName.trim() || undefined,
+      enabled: form.enabled,
+      // filteringRules only when the user picked resources, so the default
+      // create payload is unchanged (Fix4 doc F3).
+      filteringRules: form.resources.length > 0 ? { resources: form.resources } : undefined,
       destinations: [
         {
           category: 'External',
-          type: 'Webhook',
-          config: { endpoint: form.webhookUrl.trim() },
+          type: form.destinationType,
+          config: { endpoint: form.webhookUrl.trim(), readTimeout: form.readTimeout },
         },
       ],
     });
@@ -198,8 +218,26 @@ onMounted(() => {
           <Select.Option v-for="type in ALERT_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item :label="t('observability.alerts.webhookUrl')" required>
-        <Input v-model:value="form.webhookUrl" data-testid="create-alert-webhook" />
+      <Form.Item :label="t('observability.alerts.destinationType')" required>
+        <Select v-model:value="form.destinationType">
+          <Select.Option v-for="type in DESTINATION_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
+        </Select>
+      </Form.Item>
+      <Form.Item :label="t('observability.alerts.endpoint')" required>
+        <Input
+          v-model:value="form.webhookUrl"
+          :placeholder="DESTINATION_PLACEHOLDERS[form.destinationType]"
+          data-testid="create-alert-webhook"
+        />
+      </Form.Item>
+      <Form.Item :label="t('observability.alerts.readTimeout')" :extra="t('observability.alerts.readTimeoutHelp')">
+        <InputNumber v-model:value="form.readTimeout" :min="0" data-testid="create-alert-read-timeout" />
+      </Form.Item>
+      <Form.Item :label="t('observability.alerts.resources')" :extra="t('observability.alerts.resourcesHelp')">
+        <Select v-model:value="form.resources" mode="tags" data-testid="create-alert-resources" />
+      </Form.Item>
+      <Form.Item :label="t('crud.enabled')">
+        <Switch v-model:checked="form.enabled" data-testid="create-alert-enabled" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="3" />

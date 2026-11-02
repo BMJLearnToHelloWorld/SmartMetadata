@@ -7,12 +7,13 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asRecord, asString, parsePaged } from '@/api/json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type {
   CreateEventSubscriptionRequest,
   EventSubscription,
   EventSubscriptionDestination,
+  EventSubscriptionFilteringRules,
 } from '@/types/quality';
 import { apiRequest } from './client';
 
@@ -39,9 +40,36 @@ function mapDestinations(value: unknown): EventSubscriptionDestination[] {
         type: asString(rec.type) || undefined,
         enabled: asBoolean(rec.enabled),
         endpoint: asString(config?.endpoint) || undefined,
+        readTimeout: asNumber(config?.readTimeout),
       },
     ];
   });
+}
+
+function mapFilteringRules(value: unknown): EventSubscriptionFilteringRules | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const resources = Array.isArray(rec.resources)
+    ? rec.resources.map((item) => asString(item)).filter((item) => item.length > 0)
+    : undefined;
+  const rules = Array.isArray(rec.rules)
+    ? rec.rules.flatMap((item) => {
+        const rule = asRecord(item);
+        if (!rule) {
+          return [];
+        }
+        const condition = Array.isArray(rule.condition)
+          ? rule.condition.map((entry) => asString(entry)).filter((entry) => entry.length > 0)
+          : asString(rule.condition) || undefined;
+        return [{ name: asString(rule.name) || undefined, effect: asString(rule.effect) || undefined, condition }];
+      })
+    : undefined;
+  if (!resources && !rules) {
+    return undefined;
+  }
+  return { resources, rules };
 }
 
 function mapSubscription(raw: Record<string, unknown>): EventSubscription | null {
@@ -59,6 +87,8 @@ function mapSubscription(raw: Record<string, unknown>): EventSubscription | null
     alertType: asString(raw.alertType) || undefined,
     enabled: asBoolean(raw.enabled),
     destinations: mapDestinations(raw.destinations),
+    filteringRules: mapFilteringRules(raw.filteringRules),
+    owners: mapEntityRefs(raw.owners),
   };
 }
 

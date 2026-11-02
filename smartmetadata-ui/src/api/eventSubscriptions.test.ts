@@ -77,4 +77,67 @@ describe('eventSubscriptions API', () => {
     expect(created.id).toBe('al2');
     expect(lastFetch().init?.method).toBe('POST');
   });
+
+  it('maps filteringRules, owners, and destination readTimeout from list responses (Fix4)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'al1',
+                name: 'dq-fail',
+                alertType: 'Observability',
+                enabled: true,
+                filteringRules: {
+                  resources: ['table', 'testCase'],
+                  rules: [{ name: 'matchAnyTag', effect: 'Include', condition: ['PII'] }],
+                },
+                owners: [{ id: 'u1', name: 'amy', displayName: 'Amy' }],
+                destinations: [
+                  { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+                ],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listEventSubscriptions();
+    const alert = page.data[0];
+    expect(alert?.filteringRules?.resources).toEqual(['table', 'testCase']);
+    expect(alert?.filteringRules?.rules).toEqual([{ name: 'matchAnyTag', effect: 'Include', condition: ['PII'] }]);
+    expect(alert?.owners?.[0]?.displayName).toBe('Amy');
+    expect(alert?.destinations[0]?.readTimeout).toBe(12);
+  });
+
+  it('sends filteringRules and readTimeout in the create payload when provided (Fix4)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        expect(body.filteringRules).toEqual({ resources: ['table'] });
+        expect(body.destinations).toEqual([
+          { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+        ]);
+        return new Response(JSON.stringify({ id: 'al3', name: 'dq-slack', alertType: 'Observability' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    const created = await createEventSubscription({
+      name: 'dq-slack',
+      alertType: 'Observability',
+      enabled: true,
+      filteringRules: { resources: ['table'] },
+      destinations: [
+        { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x', readTimeout: 12 } },
+      ],
+    });
+    expect(created.id).toBe('al3');
+  });
 });

@@ -76,8 +76,41 @@ describe('AlertDetailView edit', () => {
       expect.objectContaining({
         name: 'dq-alert',
         enabled: true,
-        destinations: [{ category: 'External', type: 'Webhook', config: { endpoint: 'https://hook.example' } }],
+        destinations: [
+          { category: 'External', type: 'Webhook', config: { endpoint: 'https://hook.example', readTimeout: 12 } },
+        ],
       }),
     );
+  });
+});
+
+describe('AlertDetailView trigger display (Fix4)', () => {
+  beforeEach(() => {
+    getEventSubscription.mockReset();
+    updateEventSubscription.mockReset();
+    getEventSubscription.mockResolvedValue({
+      id: 'al1',
+      name: 'dq-alert',
+      fullyQualifiedName: 'dq-alert',
+      alertType: 'Observability',
+      enabled: true,
+      destinations: [{ category: 'External', type: 'Webhook', endpoint: 'https://hook.example' }],
+      filteringRules: {
+        resources: ['table', 'testCase'],
+        rules: [{ name: 'matchAnyTag', effect: 'Include', condition: ['PII'] }],
+      },
+      owners: [{ id: 'u1', name: 'amy', displayName: 'Amy' }],
+    });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders trigger resources, filter rules, and owners from the alert (Fix4)', async () => {
+    const wrapper = await mountView();
+    expect(wrapper.text()).toContain('table, testCase');
+    expect(wrapper.text()).toContain('matchAnyTag === PII');
+    expect(wrapper.text()).toContain('Amy');
   });
 });
