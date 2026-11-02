@@ -3,7 +3,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { confirmRegistration, requestPasswordResetLink, resetUserPassword, signupUser } from './auth';
+import { confirmRegistration, logoutOnServer, requestPasswordResetLink, resetUserPassword, signupUser } from './auth';
 
 function lastCall() {
   const call = vi.mocked(fetch).mock.calls.at(-1);
@@ -62,5 +62,16 @@ describe('auth API (Stage 9)', () => {
     const call = lastCall();
     expect(call.url).toContain('/api/v1/users/password/reset');
     expect(call.body).toMatchObject({ token: 'tok-1', username: 'ada', confirmPassword: 'Admin123!' });
+  });
+
+  it('logs out reading the plain-text "Logout Successful" body, not JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Logout Successful', { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await expect(logoutOnServer('tok-1', 'refresh-1')).resolves.toBe('Logout Successful');
+    const call = lastCall();
+    expect(call.url).toContain('/api/v1/users/logout');
+    expect(call.body).toMatchObject({ token: 'tok-1', refreshToken: 'refresh-1' });
   });
 });

@@ -71,11 +71,19 @@ export function confirmRegistration(token: string): Promise<unknown> {
   });
 }
 
-export function logoutOnServer(token: string, refreshToken?: string): Promise<unknown> {
-  return apiRequest('/v1/users/logout', {
+/**
+ * The server answers logout with HTTP 200 and the unquoted plain-text
+ * body "Logout Successful" (verified live against the deployed server),
+ * not a JSON value — so this call reads the response as text. Parsing
+ * it as JSON throws "Unexpected token 'L' ..." and surfaces a spurious
+ * logout-failed warning even though the server-side logout succeeded.
+ */
+export function logoutOnServer(token: string, refreshToken?: string): Promise<string> {
+  return apiRequest<string>('/v1/users/logout', {
     json: {
       token,
       ...(refreshToken ? { refreshToken } : {}),
     },
+    response: 'text',
   });
 }
