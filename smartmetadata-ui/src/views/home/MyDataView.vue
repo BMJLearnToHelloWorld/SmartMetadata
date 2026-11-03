@@ -586,7 +586,7 @@ watch(totalRange, (days) => {
   background: transparent;
   text-align: left;
   padding: 8px 4px;
-  border-radius: 8px;
+  border-radius: var(--sm-radius-card);
   cursor: pointer;
   color: var(--sm-text-primary);
 }
@@ -679,7 +679,7 @@ watch(totalRange, (days) => {
   margin-left: 36px;
   padding: 10px 12px;
   border: 1px solid var(--sm-home-card-border);
-  border-radius: 8px;
+  border-radius: var(--sm-radius-card);
 }
 .home-total {
   display: flex;

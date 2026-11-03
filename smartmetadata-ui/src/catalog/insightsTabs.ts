@@ -8,6 +8,13 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
+import {
+  SM_COLOR_ERROR,
+  SM_COLOR_SUCCESS,
+  SM_COLOR_WARNING,
+  SM_SURFACES,
+} from '@/theme/tokens';
+
 /**
  * Insights page registry, data-driven like Stage 4 governanceTabs and
  * Stage 5 qualityTabs. Keys follow the official DataInsightTabs
@@ -137,18 +144,20 @@ export function onlineUserActivityBand(minutesAgo: number | undefined): 'now' | 
 }
 
 /**
- * Online-user activity-band colours, as data (official OnlineUsers values
- * for the three timed bands; 'never' maps to the official text-quaternary
- * tone, replacing the previous ungrounded #98a2b3 literal in the view).
- * An unknown band has no entry by design — callers must not invent one.
+ * Online-user activity-band colours, as data. The bands are a traffic-light
+ * semantic (green / green / yellow / red / grey), so they reference the
+ * product semantic tokens rather than Ant default hexes: the hues stay in
+ * the same families, but now match the success / warning / error colours
+ * used everywhere else. An unknown band has no entry by design — callers
+ * must not invent one.
  */
 export const ONLINE_USER_ACTIVITY_COLORS: Record<
   ReturnType<typeof onlineUserActivityBand>,
   string
 > = {
-  now: '#52c41a',
-  recent: '#52c41a',
-  hours: '#faad14',
-  days: '#ff4d4f',
-  never: '#717680',
+  now: SM_COLOR_SUCCESS,
+  recent: SM_COLOR_SUCCESS,
+  hours: SM_COLOR_WARNING,
+  days: SM_COLOR_ERROR,
+  never: SM_SURFACES.textQuaternary,
 } as const;

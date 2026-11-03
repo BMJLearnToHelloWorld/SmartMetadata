@@ -14,6 +14,7 @@ import App from './App.vue';
 import { applyDocumentLang, createAppI18n } from './i18n';
 import type { SupportedLocale } from './i18n/localePreference';
 import { router } from './router';
+import { installDocumentTitle } from './router/title';
 import { useAuthStore } from './stores/auth';
 import 'ant-design-vue/dist/reset.css';
 import './styles/fonts.css';
@@ -27,6 +28,7 @@ app.use(pinia);
 app.use(router);
 app.use(i18n);
 app.use(Antd);
+installDocumentTitle(router, i18n);
 
 useAuthStore().hydrate();
 
