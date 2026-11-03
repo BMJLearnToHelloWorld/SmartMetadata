@@ -545,7 +545,7 @@ onMounted(() => {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--sm-border-color);
-  border-radius: 8px;
+  border-radius: var(--sm-radius-card);
   background: var(--sm-bg-container);
   text-align: left;
   cursor: pointer;

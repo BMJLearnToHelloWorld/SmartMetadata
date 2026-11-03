@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Empty favicon on purpose: no brand icon yet, and without this link
+         browsers request /favicon.ico, which the SPA fallback answers with
+         index.html. The router title system owns the tab text. -->
+    <link rel="icon" href="data:," />
     <title>SmartMetadata</title>
   </head>
   <body>
