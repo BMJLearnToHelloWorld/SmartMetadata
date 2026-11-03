@@ -23,6 +23,9 @@ async function mountLogin() {
     history: createMemoryHistory(),
     routes: [
       { path: '/login', name: 'login', component: LoginView },
+      // P2 B5: the app entry is the persona landing redirect at '/'
+      // (the real router renders PersonaLandingRedirect there).
+      { path: '/', component: { template: '<div>landing-redirect</div>' } },
       { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
     ],
@@ -95,7 +98,9 @@ describe('LoginView', () => {
     expect(fetch).toHaveBeenCalled();
     const stored = JSON.parse(localStorage.getItem('sm.auth.v1') ?? 'null') as { accessToken?: string };
     expect(stored.accessToken).toBe('jwt-1');
-    expect(router.currentRoute.value.name).toBe('home');
+    // P2 B5: no stored redirect means the app entry, which resolves
+    // through the persona landing redirect at '/' (not a hard jump home).
+    expect(router.currentRoute.value.path).toBe('/');
   });
 
   it('renders the SSO sign-in button with the official brand name (R7)', async () => {

@@ -30,6 +30,12 @@ export interface LoginUser {
   isAdmin?: boolean;
   roles?: EntityRef[];
   teams?: EntityRef[];
+  /**
+   * Official User.defaultPersona: the persona a user falls back to when
+   * no persona is selected. The profile endpoint returns it; the persona
+   * store uses it as the selection fallback.
+   */
+  defaultPersona?: EntityRef;
 }
 
 export interface EntityRef {

@@ -17,7 +17,8 @@
  * Preferences children follow Apache GlobalSettingsClassBase Preference
  * cards (Appearance, Email, Login, Health, Profiler, DQ, Search, Lineage,
  * Brand URL, Data Asset Rules, Learning, App Mode, Glossary, Time Format).
- * Collate CustomizeAppModeSidebar and SSO/Persona stay residual / out of scope.
+ * Collate CustomizeAppModeSidebar and SSO stay residual / out of scope;
+ * Persona flipped residual → route with P2 B5.
  */
 export type SettingsItemKind = 'route' | 'residual';
 
@@ -53,6 +54,7 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'governance-data-products',
   'admin-settings-governance-intake-forms',
   'admin-settings-governance-task-forms',
+  'admin-settings-persona',
   'ingestion-services',
   'ingestion-pipelines',
   'observability-alerts',
@@ -280,8 +282,8 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       {
         key: 'persona',
         titleKey: 'settings.items.persona',
-        kind: 'residual',
-        residualKey: 'settings.residual.persona',
+        kind: 'route',
+        routeName: 'admin-settings-persona',
       },
     ],
   },

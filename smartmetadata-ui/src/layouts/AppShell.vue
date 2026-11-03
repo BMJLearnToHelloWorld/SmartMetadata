@@ -7,6 +7,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { BellOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue';
+import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
 import { Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
 import monogramUrl from '@/assets/iqvia-monogram.svg';
 import logoUrl from '@/assets/iqvia-logo.svg';
@@ -267,6 +268,7 @@ async function onLogout(): Promise<void> {
         />
         <div v-else class="shell__search-spacer" />
         <div class="shell__toolbar">
+          <PersonaSwitcher />
           <button
             type="button"
             data-testid="locale-switcher"
