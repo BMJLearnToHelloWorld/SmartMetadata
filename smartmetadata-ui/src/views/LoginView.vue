@@ -71,7 +71,11 @@ async function onSubmit(): Promise<void> {
   submitting.value = true;
   try {
     await auth.login(form.email.trim(), form.password);
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/my-data';
+    // No stored redirect means the app entry: resolve through the root
+    // route, where PersonaLandingRedirect applies the selected
+    // persona's default landing page (official post-sign-in behavior).
+    // A stored deep link still wins over the persona landing page.
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
     await router.replace(redirect);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('login.failed');

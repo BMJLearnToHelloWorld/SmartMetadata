@@ -99,9 +99,12 @@ describe('settings hub catalog', () => {
     expect(isDroppedSettingsKey('users')).toBe(false);
     expect(SETTINGS_CATEGORIES.some((category) => category.key === 'applications')).toBe(true);
     expect(residualSettingsItems().some((item) => item.key === 'apps')).toBe(false);
+    // P2 B5: Persona flipped residual → route, so it no longer belongs
+    // in the residual set; SSO and Inbox stay residual.
     expect(residualSettingsItems().map((item) => item.key)).toEqual(
-      expect.arrayContaining(['sso', 'persona', 'inbox']),
+      expect.arrayContaining(['sso', 'inbox']),
     );
+    expect(residualSettingsItems().some((item) => item.key === 'persona')).toBe(false);
     expect(residualSettingsItems().map((item) => item.key)).not.toEqual(
       expect.arrayContaining(['appearance', 'search-settings', 'profiler']),
     );

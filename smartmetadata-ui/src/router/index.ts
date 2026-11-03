@@ -121,8 +121,12 @@ const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
 const IntakeFormsView = () => import('@/views/admin/IntakeFormsView.vue');
 const TaskFormSettingsView = () => import('@/views/admin/TaskFormSettingsView.vue');
+const PersonaListView = () => import('@/views/admin/PersonaListView.vue');
+const PersonaDetailView = () => import('@/views/admin/PersonaDetailView.vue');
+const PersonaCustomizeView = () => import('@/views/admin/persona/PersonaCustomizeView.vue');
 const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
+const PersonaLandingRedirect = () => import('@/views/shell/PersonaLandingRedirect.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
 import { useAuthStore } from '@/stores/auth';
@@ -184,7 +188,9 @@ export const router = createRouter({
       path: '/',
       component: AppShell,
       children: [
-        { path: '', redirect: { name: 'home' } },
+        // P2 B5: the root route resolves through the persona landing
+        // redirect (entry-only; later visits resolve to Home).
+        { path: '', component: PersonaLandingRedirect },
         { path: 'my-data', name: 'home', component: MyDataView, meta: { flush: true } },
         { path: 'search', name: 'search', component: SearchView },
         {
@@ -262,6 +268,22 @@ export const router = createRouter({
         },
         { path: 'admin/apps', name: 'admin-apps', component: AppsListView },
         { path: 'admin/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
+        // P2 B5: Persona list + detail + customize (official settings
+        // PERSONA routes; the customize route carries the category and
+        // an optional govern entity type).
+        { path: 'admin/settings/persona', name: 'admin-settings-persona', component: PersonaListView },
+        {
+          path: 'admin/settings/persona/:fqn',
+          name: 'admin-settings-persona-detail',
+          component: PersonaDetailView,
+          props: true,
+        },
+        {
+          path: 'admin/settings/persona/:fqn/customize/:category/:entity?',
+          name: 'admin-settings-persona-customize',
+          component: PersonaCustomizeView,
+          props: true,
+        },
         {
           path: 'admin/settings/custom-properties',
           name: 'admin-settings-custom-properties',

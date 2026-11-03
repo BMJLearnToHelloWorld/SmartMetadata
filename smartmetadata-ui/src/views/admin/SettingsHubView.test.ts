@@ -53,6 +53,7 @@ async function mountHub() {
       { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: stub('audit') },
       { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
       { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
+      { path: '/admin/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
       // Preferences residual→route (BACKEND_09 / hub pattern)
       { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
       { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },
@@ -102,6 +103,9 @@ describe('SettingsHubView', () => {
     // Stage 8: audit logs flipped residual → route.
     expect(wrapper.find('[data-testid="settings-link-audit-logs"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-residual-audit-logs"]').exists()).toBe(false);
+    // P2 B5: persona flipped residual → route.
+    expect(wrapper.find('[data-testid="settings-link-persona"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-persona"]').exists()).toBe(false);
   });
 
   it('navigates a live card to the existing Users list', async () => {
