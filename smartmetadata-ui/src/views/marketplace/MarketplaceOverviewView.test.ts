@@ -49,13 +49,25 @@ const DOMAIN_HIT = {
   entityType: 'domain',
 };
 
-function stubFetch(onPost?: (url: string, init?: RequestInit) => Response): void {
+function stubFetch(
+  onPost?: (url: string, init?: RequestInit) => Response,
+  persona?: { personas?: Record<string, unknown>[]; doc?: Record<string, unknown> },
+): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (init?.method === 'POST') {
         return onPost ? onPost(url, init) : jsonResponse({});
+      }
+      if (url.includes('/v1/personas')) {
+        const list = persona?.personas ?? [];
+        return jsonResponse({ data: list, paging: { total: list.length } });
+      }
+      if (url.includes('/v1/docStore/name/')) {
+        return persona?.doc
+          ? jsonResponse(persona.doc)
+          : new Response('not found', { status: 404 });
       }
       if (url.includes('/v1/search/query')) {
         const index = new URL(url).searchParams.get('index');
@@ -324,6 +336,126 @@ describe('MarketplaceOverviewView', () => {
     expect(wrapper.find('[data-testid="marketplace-domain-experts"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-domain-icon-url"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="marketplace-domain-color"]').exists()).toBe(true);
+  });
+
+  it('orders widgets by the selected persona layout and keeps hero and announcements fixed', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const doc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataMarketplace',
+            layout: [
+              { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
+              { i: 'KnowledgePanel.MarketplaceDataProducts', y: 1 },
+            ],
+          },
+        ],
+      },
+    };
+    stubFetch(undefined, { personas: [persona], doc });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const html = wrapper.find('[data-testid="marketplace-overview"]').html();
+    const hero = html.indexOf('data-testid="marketplace-hero"');
+    const announcements = html.indexOf('data-testid="marketplace-announcements"');
+    const products = html.indexOf('data-testid="marketplace-data-products"');
+    const domains = html.indexOf('data-testid="marketplace-domains"');
+    expect(hero).toBeGreaterThan(-1);
+    expect(announcements).toBeGreaterThan(-1);
+    expect(products).toBeGreaterThan(-1);
+    expect(domains).toBeGreaterThan(-1);
+    expect(hero).toBeLessThan(announcements);
+    expect(announcements).toBeLessThan(domains);
+    expect(domains).toBeLessThan(products);
+  });
+
+  it('falls back to the default widget order without a selected persona', { timeout: 15000 }, async () => {
+    stubFetch();
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    const html = wrapper.find('[data-testid="marketplace-overview"]').html();
+    const products = html.indexOf('data-testid="marketplace-data-products"');
+    const domains = html.indexOf('data-testid="marketplace-domains"');
+    expect(products).toBeGreaterThan(-1);
+    expect(domains).toBeGreaterThan(-1);
+    expect(products).toBeLessThan(domains);
+  });
+
+  it('skips unknown layout entries instead of rendering them', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const doc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataMarketplace',
+            layout: [
+              { i: 'KnowledgePanel.SomethingElse', y: 0 },
+              { i: 'KnowledgePanel.MarketplaceDomains', y: 1 },
+              { i: 'KnowledgePanel.MarketplaceDataProducts', y: 2 },
+            ],
+          },
+        ],
+      },
+    };
+    stubFetch(undefined, { personas: [persona], doc });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const html = wrapper.find('[data-testid="marketplace-overview"]').html();
+    const products = html.indexOf('data-testid="marketplace-data-products"');
+    const domains = html.indexOf('data-testid="marketplace-domains"');
+    expect(products).toBeGreaterThan(-1);
+    expect(domains).toBeGreaterThan(-1);
+    expect(domains).toBeLessThan(products);
+  });
+
+  it('falls back to the default widget order when the persona document fetch fails', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    stubFetch(undefined, { personas: [persona] });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const html = wrapper.find('[data-testid="marketplace-overview"]').html();
+    const products = html.indexOf('data-testid="marketplace-data-products"');
+    const domains = html.indexOf('data-testid="marketplace-domains"');
+    expect(products).toBeGreaterThan(-1);
+    expect(domains).toBeGreaterThan(-1);
+    expect(products).toBeLessThan(domains);
   });
 
   it('creates a data product with name + description', { timeout: 15000 }, async () => {
