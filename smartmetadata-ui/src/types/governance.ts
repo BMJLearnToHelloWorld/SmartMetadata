@@ -161,3 +161,23 @@ export interface AssetTagOption {
   name: string;
   source: TagSource;
 }
+
+/**
+ * Workflow definition (official WorkflowsPage list item): the card shows
+ * displayName ?? name plus description; the key is the fully qualified name.
+ * The create contract (api/governance/createWorkflowDefinition.json) requires
+ * name and description.
+ */
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  displayName?: string;
+  fullyQualifiedName?: string;
+  description?: string;
+}
+
+export interface CreateWorkflowDefinitionRequest {
+  name: string;
+  description: string;
+  displayName?: string;
+}
