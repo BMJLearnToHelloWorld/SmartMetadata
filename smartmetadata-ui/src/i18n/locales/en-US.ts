@@ -1124,6 +1124,8 @@ const enUS = {
       assetsTab: 'Assets',
       detailsTab: 'Details',
       noAssets: 'No assets returned for this domain.',
+      subDomainsTab: 'Sub-domains',
+      noSubDomains: 'This domain has no sub-domains.',
     },
     dataProducts: {
       title: 'Data Products',

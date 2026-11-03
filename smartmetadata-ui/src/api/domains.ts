@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDomainRequest, Domain } from '@/types/governance';
@@ -28,6 +28,7 @@ function mapDomain(raw: Record<string, unknown>): Domain | null {
     return null;
   }
   const parentRefs = mapEntityRefs(raw.parent ? [raw.parent] : []);
+  const children = mapEntityRefs(raw.children);
   return {
     id,
     name,
@@ -39,7 +40,11 @@ function mapDomain(raw: Record<string, unknown>): Domain | null {
     owners: mapEntityRefs(raw.owners),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
-    children: mapEntityRefs(raw.children),
+    // The domain list renders flat: a truthy empty children array would draw
+    // a dead expand icon on every row, so childless domains carry no key.
+    // Sub-domains are shown on the detail page, not as nested list rows.
+    children: children.length ? children : undefined,
+    childrenCount: asNumber(raw.childrenCount) || undefined,
   };
 }
 

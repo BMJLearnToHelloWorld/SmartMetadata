@@ -17,6 +17,7 @@ withDefaults(
     columns: TableProps['columns'];
     dataSource: TableProps['dataSource'];
     rowKey?: TableProps['rowKey'];
+    expandable?: TableProps['expandable'];
     loading?: boolean;
     pagination?: TableProps['pagination'];
     customRow?: TableProps['customRow'];
@@ -26,6 +27,7 @@ withDefaults(
   }>(),
   {
     rowKey: 'id',
+    expandable: undefined,
     loading: false,
     pagination: undefined,
     customRow: undefined,
@@ -42,6 +44,7 @@ withDefaults(
     :columns="columns"
     :data-source="dataSource"
     :row-key="rowKey"
+    :expandable="expandable"
     :loading="loading"
     :pagination="pagination"
     :custom-row="customRow"

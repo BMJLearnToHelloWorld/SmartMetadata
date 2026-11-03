@@ -42,6 +42,9 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
 const tabs = computed<EntityDetailTab[]>(() => [
   { key: 'overview', label: t('crud.overview'), testId: 'domain-tab-overview' },
   { key: 'assets', label: t('governance.domains.assetsTab'), testId: 'domain-tab-assets' },
+  // Official SubDomainsTable: sub-domains live as a flat list on the detail
+  // page, not as nested rows in the domain list.
+  { key: 'subDomains', label: t('governance.domains.subDomainsTab'), testId: 'domain-tab-subdomains' },
 ]);
 
 const assetColumns = computed<EntityListColumn[]>(() => [
@@ -124,6 +127,13 @@ async function onSave(): Promise<void> {
   }
 }
 
+function openSubDomain(subDomain: EntityRef): void {
+  if (!subDomain.id) {
+    return;
+  }
+  void router.push({ name: 'governance-domain', params: { id: subDomain.id } });
+}
+
 function openAsset(asset: EntityRef): void {
   const entityType = asset.type || '';
   const fqn = asset.fullyQualifiedName || asset.name;
@@ -199,6 +209,32 @@ onMounted(() => {
         </template>
       </SmTable>
       <p v-if="!assets.length" class="entity-detail__tab-lead">{{ t('governance.domains.noAssets') }}</p>
+    </template>
+    <template #subDomains>
+      <SmTable
+        row-key="id"
+        test-id="domain-subdomains-table"
+        :columns="assetColumns"
+        :data-source="domain?.children ?? []"
+        :pagination="false"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              v-if="(record as EntityRef).id"
+              href="#"
+              @click.prevent="openSubDomain(record as EntityRef)"
+            >
+              {{ entityLabel(record as EntityRef) }}
+            </a>
+            <span v-else>{{ entityLabel(record as EntityRef) }}</span>
+          </template>
+        </template>
+      </SmTable>
+      <p v-if="!(domain?.children?.length ?? 0)" class="entity-detail__tab-lead">
+        {{ t('governance.domains.noSubDomains') }}
+      </p>
     </template>
   </EntityDetailShell>
   <FormModal

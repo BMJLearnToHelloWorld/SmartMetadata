@@ -57,6 +57,52 @@ describe('glossaryTerms API', () => {
     expect(lastFetch().url).toContain('glossary=g1');
   });
 
+  it('drops empty children so childless terms draw no expand icon, and keeps loaded children with descriptions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 't1',
+                name: 'Customer',
+                fullyQualifiedName: 'Business.Customer',
+                children: [],
+                childrenCount: 0,
+              },
+              {
+                id: 't2',
+                name: 'Order',
+                fullyQualifiedName: 'Business.Order',
+                children: [
+                  {
+                    id: 't3',
+                    name: 'LineItem',
+                    fullyQualifiedName: 'Business.Order.LineItem',
+                    description: 'One line on an order',
+                    type: 'glossaryTerm',
+                  },
+                ],
+                childrenCount: 1,
+              },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listGlossaryTerms({ glossary: 'g1', limit: 50 });
+    expect(page.data[0]?.children).toBeUndefined();
+    expect(page.data[1]?.children).toHaveLength(1);
+    expect(page.data[1]?.children?.[0]).toMatchObject({
+      name: 'LineItem',
+      description: 'One line on an order',
+    });
+    expect(page.data[1]?.childrenCount).toBe(1);
+  });
+
   it('creates a term with glossary FQN, name, and description', async () => {
     vi.stubGlobal(
       'fetch',
