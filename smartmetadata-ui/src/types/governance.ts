@@ -44,7 +44,13 @@ export interface GlossaryTerm {
   relatedTerms: EntityRef[];
   owners: EntityRef[];
   tags: TagRef[];
-  children: EntityRef[];
+  /** Absent when the term has no children: Ant Table renders an expand icon
+      for any truthy children value, so an empty array would be a dead icon. */
+  children?: EntityRef[];
+  /** Whole-subtree child count from the API; the expand icon is gated on
+      loaded children data, not on this count, so a row never expands to
+      nothing while its children page is still unloaded. */
+  childrenCount?: number;
   usageCount?: number;
   /** Present when the catalog returns entityStatus; never invent one. */
   status?: string;
@@ -117,7 +123,10 @@ export interface Domain {
   owners: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
-  children: EntityRef[];
+  /** Absent when the domain has no sub-domains: the list renders flat, and a
+      truthy empty array would draw a dead expand icon on every row. */
+  children?: EntityRef[];
+  childrenCount?: number;
 }
 
 export interface CreateDomainRequest {

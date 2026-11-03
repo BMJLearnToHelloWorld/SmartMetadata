@@ -71,9 +71,16 @@ export interface SearchPage {
 }
 
 export interface SchemaRow {
+  /** Dotted path (parent.child), unique across nested rows: Ant Table needs
+      a row key that cannot collide between same-named children of different
+      STRUCT parents, which a bare column name cannot guarantee. */
+  key: string;
   name: string;
   dataType: string;
   description?: string;
+  /** Nested columns of a STRUCT column; absent when there are none, so no
+      expand icon is drawn for leaf columns. */
+  children?: SchemaRow[];
 }
 
 export interface PipelineTask {

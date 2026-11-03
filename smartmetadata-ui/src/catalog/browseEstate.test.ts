@@ -12,10 +12,14 @@ import {
   browsePathLabels,
   buildEstateTree,
   countForTypes,
+  estateChildNodes,
+  estateDrill,
   estateFromQuery,
   filtersForEstateNode,
+  findEstateNode,
   isResidualEstate,
   selectedEstateFromFilters,
+  type EstateNode,
 } from './browseEstate';
 import type { SearchFacet } from './searchFacets';
 
@@ -48,7 +52,12 @@ describe('browseEstate', () => {
   });
 
   it('always renders residual Context Center and attaches service children on the selected root', () => {
-    const tree = buildEstateTree(FACETS, 'databases', FACETS[1].buckets);
+    const tree = buildEstateTree(FACETS, {
+      databases: estateChildNodes(
+        { key: 'databases', categoryId: 'databases', titleKey: '', count: 0 },
+        FACETS[1].buckets,
+      ),
+    });
     expect(tree.map((node) => node.key)).toEqual([
       'databases',
       'dashboards',
@@ -70,6 +79,7 @@ describe('browseEstate', () => {
         titleKey: '',
         title: 'mysql',
         count: 8,
+        isLeaf: false,
       },
       {
         key: 'databases:service:postgres',
@@ -78,8 +88,14 @@ describe('browseEstate', () => {
         titleKey: '',
         title: 'postgres',
         count: 6,
+        isLeaf: false,
       },
     ]);
+    // Unloaded expandable categories keep their switcher; non-expandable
+    // categories are leaves.
+    expect(tree[1].isLeaf).toBe(false);
+    expect(tree[1].children).toBeUndefined();
+    expect(tree.find((node) => node.key === 'governance')?.isLeaf).toBe(true);
     expect(tree.find((node) => node.key === 'contextCenter')).toMatchObject({
       count: 0,
       residualRoute: 'context-center-overview',
@@ -94,12 +110,89 @@ describe('browseEstate', () => {
       tagFqn: ['PII.Sensitive'],
       entityType: ['database', 'databaseSchema', 'storedProcedure', 'table'],
     });
-    const serviceNode = buildEstateTree(FACETS, 'databases', FACETS[1].buckets).at(0)?.children?.[0];
+    const serviceNode = buildEstateTree(FACETS, {
+      databases: estateChildNodes(
+        { key: 'databases', categoryId: 'databases', titleKey: '', count: 0 },
+        FACETS[1].buckets,
+      ),
+    })
+      .at(0)
+      ?.children?.[0];
     expect(serviceNode).toBeTruthy();
     expect(filtersForEstateNode(serviceNode!, {})).toEqual({
       entityType: ['database', 'databaseSchema', 'storedProcedure', 'table'],
       service: ['mysql'],
     });
+  });
+
+  it('turns a loaded-but-empty node into a leaf and drills databases service to database to schema to entity type', () => {
+    const empty = buildEstateTree(FACETS, { databases: [] });
+    expect(empty[0].isLeaf).toBe(true);
+    expect(empty[0].children).toEqual([]);
+
+    const serviceNode: EstateNode = {
+      key: 'databases:service:mysql',
+      categoryId: 'databases',
+      service: 'mysql',
+      titleKey: '',
+      count: 8,
+      isLeaf: false,
+    };
+    expect(estateDrill(serviceNode)).toEqual({
+      facet: 'database',
+      filters: {
+        entityType: ['database', 'databaseSchema', 'storedProcedure', 'table'],
+        service: ['mysql'],
+      },
+    });
+    const databaseNode: EstateNode = {
+      ...serviceNode,
+      key: 'databases:service:mysql:database:analytics',
+      database: 'analytics',
+    };
+    expect(estateDrill(databaseNode)?.facet).toBe('schema');
+    const schemaNode: EstateNode = {
+      ...databaseNode,
+      key: 'databases:service:mysql:database:analytics:schema:marts',
+      schema: 'marts',
+    };
+    expect(estateDrill(schemaNode)?.facet).toBe('entityType');
+    expect(filtersForEstateNode(schemaNode, {})).toEqual({
+      entityType: ['database', 'databaseSchema', 'storedProcedure', 'table'],
+      service: ['mysql'],
+      database: ['analytics'],
+      schema: ['marts'],
+    });
+    const leafNode = estateChildNodes(schemaNode, [{ key: 'table', count: 12 }])[0];
+    expect(leafNode.isLeaf).toBe(true);
+    expect(estateDrill(leafNode)).toBeNull();
+    expect(filtersForEstateNode(leafNode, {})).toEqual({
+      entityType: ['table'],
+      service: ['mysql'],
+      database: ['analytics'],
+      schema: ['marts'],
+    });
+
+    const dashboardService: EstateNode = {
+      key: 'dashboards:service:superset',
+      categoryId: 'dashboards',
+      service: 'superset',
+      titleKey: '',
+      count: 4,
+      isLeaf: false,
+    };
+    expect(estateDrill(dashboardService)?.facet).toBe('entityType');
+  });
+
+  it('finds nested nodes by key for expand-time lazy loading', () => {
+    const tree = buildEstateTree(FACETS, {
+      databases: estateChildNodes(
+        { key: 'databases', categoryId: 'databases', titleKey: '', count: 0 },
+        FACETS[1].buckets,
+      ),
+    });
+    expect(findEstateNode(tree, 'databases:service:postgres')?.service).toBe('postgres');
+    expect(findEstateNode(tree, 'nope')).toBeUndefined();
   });
 
   it('derives the highlighted category from entityType filters and estate= query', () => {

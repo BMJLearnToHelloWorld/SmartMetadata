@@ -49,7 +49,7 @@ import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch 
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
-import type { AssetDetail, CatalogPipelineStatus } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, SchemaRow } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption } from '@/types/governance';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -221,6 +221,12 @@ const schemaColumns = computed(() => [
   { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: 180 },
   { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
 ]);
+
+// Official SchemaTable's second guard: only STRUCT columns with loaded
+// nested columns get an expand icon.
+const schemaExpandable = {
+  rowExpandable: (record: SchemaRow) => (record.children?.length ?? 0) > 0,
+};
 
 const refColumns = computed(() => [
   { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
@@ -644,10 +650,11 @@ onMounted(() => {
           />
           <SmTable
             v-else
-            row-key="name"
+            row-key="key"
             test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
+            :expandable="schemaExpandable"
             :pagination="false"
             size="small"
           />
@@ -662,10 +669,11 @@ onMounted(() => {
           />
           <SmTable
             v-else
-            row-key="name"
+            row-key="key"
             test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
+            :expandable="schemaExpandable"
             :pagination="false"
             size="small"
           />
@@ -680,10 +688,11 @@ onMounted(() => {
           />
           <SmTable
             v-else
-            row-key="name"
+            row-key="key"
             test-id="asset-schema-table"
             :columns="schemaColumns"
             :data-source="asset.schemaRows"
+            :expandable="schemaExpandable"
             :pagination="false"
             size="small"
           />

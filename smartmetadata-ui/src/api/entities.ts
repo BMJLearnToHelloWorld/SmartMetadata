@@ -72,7 +72,13 @@ export function mapTags(value: unknown): TagRef[] {
   });
 }
 
-function mapColumns(value: unknown): SchemaRow[] {
+/**
+ * Maps columns recursively: a STRUCT column's nested columns become its
+ * children, following the official SchemaTable's two guards — empty children
+ * are dropped rather than attached, so leaf columns never draw an expand
+ * icon for an empty list.
+ */
+function mapColumns(value: unknown, prefix = ''): SchemaRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -85,11 +91,15 @@ function mapColumns(value: unknown): SchemaRow[] {
     if (!name) {
       return [];
     }
+    const key = prefix ? `${prefix}.${name}` : name;
+    const children = mapColumns(rec.children, key);
     return [
       {
+        key,
         name,
         dataType: asString(rec.dataTypeDisplay) || asString(rec.dataType),
         description: asString(rec.description) || undefined,
+        children: children.length ? children : undefined,
       },
     ];
   });

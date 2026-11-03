@@ -71,6 +71,45 @@ describe('asset entity writes', () => {
     expect(lastFetch().url).toContain('tableType');
   });
 
+  it('nests STRUCT columns with path keys and drops empty nested children', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tables/name/')) {
+          return new Response(
+            JSON.stringify({
+              id: 'tbl-1',
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              columns: [
+                { name: 'id', dataType: 'BIGINT' },
+                {
+                  name: 'address',
+                  dataType: 'STRUCT',
+                  children: [
+                    { name: 'city', dataType: 'STRING' },
+                    { name: 'zip', dataType: 'STRING', children: [] },
+                  ],
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders');
+    expect(asset.schemaRows).toHaveLength(2);
+    expect(asset.schemaRows[0]).toMatchObject({ key: 'id', name: 'id' });
+    expect(asset.schemaRows[0]?.children).toBeUndefined();
+    expect(asset.schemaRows[1]).toMatchObject({ key: 'address', name: 'address' });
+    expect(asset.schemaRows[1]?.children).toHaveLength(2);
+    expect(asset.schemaRows[1]?.children?.[0]).toMatchObject({ key: 'address.city', name: 'city' });
+    expect(asset.schemaRows[1]?.children?.[1]?.children).toBeUndefined();
+  });
+
   it('maps dashboard charts and pipeline tasks from the wired GETs', async () => {
     vi.stubGlobal(
       'fetch',
@@ -174,12 +213,12 @@ describe('asset entity writes', () => {
       }),
     );
     const container = await fetchAssetDetail('container', 's3.lake');
-    expect(container.schemaRows).toEqual([{ name: 'event_id', dataType: 'STRING' }]);
+    expect(container.schemaRows).toEqual([{ key: 'event_id', name: 'event_id', dataType: 'STRING' }]);
     expect(container.prefix).toBe('raw/');
     expect(container.fileFormats).toEqual(['parquet']);
 
     const index = await fetchAssetDetail('searchIndex', 'os.logs');
-    expect(index.schemaRows).toEqual([{ name: 'message', dataType: 'TEXT' }]);
+    expect(index.schemaRows).toEqual([{ key: 'message', name: 'message', dataType: 'TEXT' }]);
     expect(index.indexType).toBe('Index');
 
     const proc = await fetchAssetDetail('storedProcedure', 'svc.db.schema.refresh_mart');
@@ -274,7 +313,7 @@ describe('asset entity writes', () => {
     expect(lastFetch().url).toContain('/api/v1/metrics/name/');
 
     const model = await fetchAssetDetail('dashboardDataModel', 'bi.sales.model');
-    expect(model.schemaRows).toEqual([{ name: 'amount', dataType: 'DECIMAL' }]);
+    expect(model.schemaRows).toEqual([{ key: 'amount', name: 'amount', dataType: 'DECIMAL' }]);
     expect(model.dataModelType).toBe('SupersetDataModel');
     expect(model.project).toBe('Finance');
     expect(lastFetch().url).toContain('/api/v1/dashboard/datamodels/name/');

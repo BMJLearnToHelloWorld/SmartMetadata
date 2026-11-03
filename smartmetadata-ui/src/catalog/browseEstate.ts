@@ -93,10 +93,20 @@ export interface EstateNode {
   key: string;
   categoryId: string;
   service?: string;
+  database?: string;
+  schema?: string;
+  entityType?: string;
   titleKey: string;
   title?: string;
   count: number;
   residualRoute?: string;
+  /**
+   * Official ExploreTree rule, mirrored: the expand chevron shows while a
+   * node's children are unknown or present, never once it is known to be a
+   * leaf. Nodes whose children have not been loaded yet carry no children
+   * key and isLeaf false, so every expandable category shows a switcher.
+   */
+  isLeaf?: boolean;
   children?: EstateNode[];
 }
 
@@ -118,31 +128,143 @@ export function countForTypes(facets: SearchFacet[], entityTypes: string[]): num
   return facet.buckets.reduce((sum, bucket) => (wanted.has(bucket.key) ? sum + bucket.count : sum), 0);
 }
 
+/**
+ * Next drill level for a node, following the official ExploreTree bucket
+ * chain. Databases drill service → database → schema → entity type; every
+ * other expandable category drills service → entity type, and entity-type
+ * buckets are leaves (selecting one filters to that type).
+ */
+export function estateChildLevel(node: EstateNode): 'service' | 'database' | 'schema' | 'entityType' | null {
+  if (node.entityType) {
+    return null;
+  }
+  if (node.schema) {
+    return 'entityType';
+  }
+  if (node.database) {
+    return 'schema';
+  }
+  if (node.service) {
+    return node.categoryId === 'databases' ? 'database' : 'entityType';
+  }
+  return 'service';
+}
+
+export function estateChildNodes(parent: EstateNode, buckets: FacetBucket[]): EstateNode[] {
+  const level = estateChildLevel(parent);
+  if (!level) {
+    return [];
+  }
+  return buckets.map((bucket) => {
+    const base = {
+      categoryId: parent.categoryId,
+      titleKey: '',
+      title: bucket.key,
+      count: bucket.count,
+    };
+    switch (level) {
+      case 'service':
+        return { ...base, key: `${parent.key}:service:${bucket.key}`, service: bucket.key, isLeaf: false };
+      case 'database':
+        return {
+          ...base,
+          key: `${parent.key}:database:${bucket.key}`,
+          service: parent.service,
+          database: bucket.key,
+          isLeaf: false,
+        };
+      case 'schema':
+        return {
+          ...base,
+          key: `${parent.key}:schema:${bucket.key}`,
+          service: parent.service,
+          database: parent.database,
+          schema: bucket.key,
+          isLeaf: false,
+        };
+      case 'entityType':
+        return {
+          ...base,
+          key: `${parent.key}:entityType:${bucket.key}`,
+          service: parent.service,
+          database: parent.database,
+          schema: parent.schema,
+          entityType: bucket.key,
+          isLeaf: true,
+        };
+      default:
+        // Unreachable: estateChildLevel only returns the four levels above.
+        return { ...base, key: parent.key, isLeaf: true };
+    }
+  });
+}
+
+/** Facet to fetch and filters to scope it with for a node's next level. */
+export function estateDrill(node: EstateNode): {
+  facet: 'service' | 'database' | 'schema' | 'entityType';
+  filters: SearchFilters;
+} | null {
+  const level = estateChildLevel(node);
+  const category = estateCategory(node.categoryId);
+  if (!level || !category) {
+    return null;
+  }
+  const filters: SearchFilters = { entityType: [...category.entityTypes] };
+  if (node.service) {
+    filters.service = [node.service];
+  }
+  if (node.database) {
+    filters.database = [node.database];
+  }
+  if (node.schema) {
+    filters.schema = [node.schema];
+  }
+  return { facet: level, filters };
+}
+
+export function findEstateNode(nodes: EstateNode[], key: string): EstateNode | undefined {
+  for (const node of nodes) {
+    if (node.key === key) {
+      return node;
+    }
+    const nested = node.children ? findEstateNode(node.children, key) : undefined;
+    if (nested) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Roots plus lazily loaded children. `loadedChildren` maps a node key to the
+ * children fetched for it; a key present with an empty array means loaded
+ * and childless, which turns the node into a leaf, while an absent key means
+ * not yet loaded, which keeps the chevron. A rebuild therefore drops loaded
+ * children exactly like the official tree does.
+ */
 export function buildEstateTree(
   facets: SearchFacet[],
-  selectedCategory = '',
-  serviceBuckets: FacetBucket[] = [],
+  loadedChildren: Record<string, EstateNode[]> = {},
 ): EstateNode[] {
-  return ESTATE_CATEGORIES.map((category) => {
-    const node: EstateNode = {
+  const resolve = (node: EstateNode): EstateNode => {
+    const loaded = node.key in loadedChildren;
+    const children = loaded ? loadedChildren[node.key] : node.children;
+    return {
+      ...node,
+      isLeaf: loaded && (children?.length ?? 0) === 0 ? true : node.isLeaf,
+      children: children?.map(resolve),
+    };
+  };
+  return ESTATE_CATEGORIES.map((category) =>
+    resolve({
       key: category.id,
       categoryId: category.id,
       titleKey: category.titleKey,
       count: countForTypes(facets, category.entityTypes),
       residualRoute: category.residualRoute,
-    };
-    if (selectedCategory === category.id && category.expandable && serviceBuckets.length) {
-      node.children = serviceBuckets.map((bucket) => ({
-        key: `${category.id}:service:${bucket.key}`,
-        categoryId: category.id,
-        service: bucket.key,
-        titleKey: '',
-        title: bucket.key,
-        count: bucket.count,
-      }));
-    }
-    return node;
-  });
+      isLeaf: !category.expandable,
+    }),
+  );
 }
 
 export function selectedEstateFromFilters(filters: SearchFilters): string {
@@ -176,6 +298,20 @@ export function filtersForEstateNode(node: EstateNode, current: SearchFilters): 
     next.service = [node.service];
   } else {
     delete next.service;
+  }
+  if (node.database) {
+    next.database = [node.database];
+  } else {
+    delete next.database;
+  }
+  if (node.schema) {
+    next.schema = [node.schema];
+  } else {
+    delete next.schema;
+  }
+  // An entity-type leaf narrows the category's types down to that one type.
+  if (node.entityType) {
+    next.entityType = [node.entityType];
   }
   return next;
 }

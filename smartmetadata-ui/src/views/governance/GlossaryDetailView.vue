@@ -129,6 +129,12 @@ const termColumns = computed(() => [
   { title: t('crud.owners'), key: 'owners', width: 140 },
 ]);
 
+// Official SchemaTable's second guard: only rows with loaded children get an
+// expand icon, so a row never expands to an empty body.
+const termExpandable = {
+  rowExpandable: (record: GlossaryTerm) => (record.children?.length ?? 0) > 0,
+};
+
 const termCountLabel = computed(() => {
   const n = glossary.value?.termCount ?? terms.value.length;
   return t('governance.glossaries.termsTabCount', { count: n });
@@ -518,6 +524,7 @@ onMounted(() => {
                 size="small"
                 :columns="termColumns"
                 :data-source="pagedTerms"
+                :expandable="termExpandable"
                 :pagination="false"
               >
                 <template #bodyCell="{ column, record }">

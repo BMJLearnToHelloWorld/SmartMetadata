@@ -26,23 +26,24 @@ interface TreeItem {
   title: string;
   count: number;
   node: EstateNode;
+  isLeaf?: boolean;
   children?: TreeItem[];
 }
 
-const treeData = computed<TreeItem[]>(() =>
-  props.nodes.map((node) => ({
+// Recursive so lazily loaded levels below services render too; isLeaf is
+// passed through so unloaded expandable nodes keep their switcher.
+function toTreeItem(node: EstateNode): TreeItem {
+  return {
     key: node.key,
-    title: node.title || t(node.titleKey),
+    title: node.title || (node.titleKey ? t(node.titleKey) : node.key),
     count: node.count,
     node,
-    children: node.children?.map((child) => ({
-      key: child.key,
-      title: child.title || (child.titleKey ? t(child.titleKey) : child.key),
-      count: child.count,
-      node: child,
-    })),
-  })),
-);
+    isLeaf: node.isLeaf,
+    children: node.children?.map(toTreeItem),
+  };
+}
+
+const treeData = computed<TreeItem[]>(() => props.nodes.map(toTreeItem));
 
 function findNode(items: TreeItem[], key: string): EstateNode | undefined {
   for (const item of items) {

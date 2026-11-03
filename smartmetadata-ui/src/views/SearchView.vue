@@ -26,15 +26,17 @@ import {
 import {
   browsePathLabels,
   buildEstateTree,
-  estateCategory,
+  estateChildNodes,
+  estateDrill,
   estateFromQuery,
   filtersForEstateNode,
+  findEstateNode,
   isResidualEstate,
   selectedEstateFromFilters,
   type EstateNode,
 } from '@/catalog/browseEstate';
 import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
-import { CHIP_FACET_IDS, type FacetBucket, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
+import { CHIP_FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
 import {
   DEFAULT_EXPLORE_PAGE_SIZE,
@@ -76,7 +78,8 @@ const hits = ref<SearchHit[]>([]);
 const total = ref(0);
 const facets = ref<SearchFacet[]>([]);
 const estateFacets = ref<SearchFacet[]>([]);
-const serviceBuckets = ref<FacetBucket[]>([]);
+const estateChildMap = ref<Record<string, EstateNode[]>>({});
+const estateLoadingKeys = ref<Set<string>>(new Set());
 const expandedKeys = ref<string[]>([]);
 const selectedFqn = ref('');
 
@@ -146,7 +149,7 @@ const searchKey = computed(() =>
   }),
 );
 
-const estateNodes = computed(() => buildEstateTree(estateFacets.value, estateId.value, serviceBuckets.value));
+const estateNodes = computed(() => buildEstateTree(estateFacets.value, estateChildMap.value));
 const selectedEstateKeys = computed(() => {
   const service = filters.value.service?.[0];
   if (estateId.value && service) {
@@ -387,19 +390,28 @@ async function loadEstatePresence(): Promise<void> {
   }
 }
 
-async function loadEstateServices(categoryId: string): Promise<void> {
-  const category = estateCategory(categoryId);
-  if (!category?.expandable || !category.entityTypes.length) {
-    serviceBuckets.value = [];
+/**
+ * Lazy-loads one tree node's next level, for any expandable node, not just
+ * the selected estate. A failed load leaves the node unloaded (still
+ * expandable, so collapsing and re-expanding retries) rather than turning
+ * the failure into a misleading leaf.
+ */
+async function loadEstateChildren(node: EstateNode): Promise<void> {
+  const drill = estateDrill(node);
+  if (!drill || estateLoadingKeys.value.has(node.key)) {
     return;
   }
+  estateLoadingKeys.value.add(node.key);
   try {
-    const pageResult = await searchAssets(composeSearchQuery(query.value, { entityType: category.entityTypes }), 0, 0, {
+    const pageResult = await searchAssets(composeSearchQuery(query.value, drill.filters), 0, 0, {
       deleted: showDeleted.value,
     });
-    serviceBuckets.value = pageResult.facets.find((facet) => facet.id === 'service')?.buckets ?? [];
+    const buckets = pageResult.facets.find((facet) => facet.id === drill.facet)?.buckets ?? [];
+    estateChildMap.value = { ...estateChildMap.value, [node.key]: estateChildNodes(node, buckets) };
   } catch {
-    serviceBuckets.value = [];
+    // Leave the node unloaded; see the comment above.
+  } finally {
+    estateLoadingKeys.value.delete(node.key);
   }
 }
 
@@ -409,11 +421,13 @@ async function runSearch(): Promise<void> {
   indexNotFound.value = false;
   try {
     const estatePromise = loadEstatePresence();
+    // A new search rebuilds the tree and drops previously loaded children,
+    // matching the official tree's rebuild behaviour.
+    estateChildMap.value = {};
     if (residual.value) {
       hits.value = [];
       total.value = 0;
       facets.value = [];
-      serviceBuckets.value = [];
       await estatePromise;
       return;
     }
@@ -428,9 +442,11 @@ async function runSearch(): Promise<void> {
     facets.value = pageResult.facets;
     if (estateId.value) {
       expandedKeys.value = [estateId.value];
-      await Promise.all([estatePromise, loadEstateServices(estateId.value)]);
+      await Promise.all([
+        estatePromise,
+        loadEstateChildren({ key: estateId.value, categoryId: estateId.value, titleKey: '', count: 0 }),
+      ]);
     } else {
-      serviceBuckets.value = [];
       await estatePromise;
     }
     if (hits.value.length && !hits.value.some((hit) => (hit.fullyQualifiedName || hit.name) === selectedFqn.value)) {
@@ -457,9 +473,13 @@ watch(
 );
 
 watch(expandedKeys, (keys) => {
-  const categoryId = keys.find((key) => !key.includes(':service:'));
-  if (categoryId && categoryId === estateId.value && !serviceBuckets.value.length) {
-    void loadEstateServices(categoryId);
+  // Official lazy-load rule: every expanded node whose children are still
+  // unknown gets loaded, not just the selected estate's category.
+  for (const key of keys) {
+    const node = findEstateNode(estateNodes.value, key);
+    if (node && !node.isLeaf && node.children === undefined) {
+      void loadEstateChildren(node);
+    }
   }
 });
 </script>

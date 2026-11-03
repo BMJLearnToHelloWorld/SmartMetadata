@@ -49,6 +49,34 @@ describe('domains API', () => {
     expect(lastFetch().url).toContain('/api/v1/domains');
   });
 
+  it('drops empty children so the flat domain list draws no expand icon', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { id: 'd1', name: 'Marketing', domainType: 'Consumer-aligned', children: [] },
+              {
+                id: 'd2',
+                name: 'Growth',
+                domainType: 'Consumer-aligned',
+                children: [{ id: 'd3', name: 'SEO', type: 'domain' }],
+                childrenCount: 1,
+              },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listDomains({ limit: 50 });
+    expect(page.data[0]?.children).toBeUndefined();
+    expect(page.data[1]?.children).toHaveLength(1);
+    expect(page.data[1]?.childrenCount).toBe(1);
+  });
+
   it('creates a domain with schema-required name, description, and domainType', async () => {
     vi.stubGlobal(
       'fetch',

@@ -41,6 +41,39 @@ function mapRelatedTerms(value: unknown): EntityRef[] {
   });
 }
 
+/**
+ * Child rows arrive as EntityReferences, which carry a description but no
+ * status or owners; keeping the description is what lets an expanded child
+ * row show more than its name. The shared ref mapper drops it, so children
+ * are mapped here instead of through mapEntityRefs.
+ */
+function mapTermChildren(value: unknown): Array<EntityRef & { description?: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    const name = asString(rec.name) || asString(rec.displayName) || asString(rec.fullyQualifiedName);
+    const id = asString(rec.id);
+    if (!name && !id) {
+      return [];
+    }
+    return [
+      {
+        id: id || undefined,
+        name: name || id,
+        displayName: asString(rec.displayName) || undefined,
+        type: asString(rec.type) || undefined,
+        fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+        description: asString(rec.description) || undefined,
+      },
+    ];
+  });
+}
+
 function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
   const id = asString(raw.id);
   const name = asString(raw.name);
@@ -49,6 +82,7 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
   }
   const glossaryRefs = mapEntityRefs(raw.glossary ? [raw.glossary] : []);
   const parentRefs = mapEntityRefs(raw.parent ? [raw.parent] : []);
+  const children = mapTermChildren(raw.children);
   return {
     id,
     name,
@@ -61,7 +95,11 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     relatedTerms: mapRelatedTerms(raw.relatedTerms),
     owners: mapEntityRefs(raw.owners),
     tags: mapTags(raw.tags),
-    children: mapEntityRefs(raw.children),
+    // Ant Table draws an expand icon for any truthy children value and an
+    // empty array is truthy, so childless terms must carry no children key
+    // at all rather than an empty list.
+    children: children.length ? children : undefined,
+    childrenCount: asNumber(raw.childrenCount) || undefined,
     usageCount: asNumber(raw.usageCount),
     status: asString(raw.entityStatus) || asString(raw.status) || undefined,
   };

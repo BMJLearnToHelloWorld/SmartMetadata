@@ -1118,6 +1118,8 @@ const zhCN = {
       assetsTab: '资产',
       detailsTab: '详情',
       noAssets: '此域没有返回资产。',
+      subDomainsTab: '子域',
+      noSubDomains: '此域没有子域。',
     },
     dataProducts: {
       title: '数据产品',
