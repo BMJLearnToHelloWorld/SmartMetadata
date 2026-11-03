@@ -61,6 +61,7 @@ describe('nav IA', () => {
       'governance-metrics',
       'column-bulk-ops',
       'workflows',
+      'sparql-playground',
     ]);
     expect(sectionItems('context-center')).toEqual([
       'context-center-overview',

@@ -51,6 +51,8 @@ async function mountHub() {
       { path: '/observability/alerts', name: 'observability-alerts', component: stub('al') },
       { path: '/announcements', name: 'announcements', component: stub('ann') },
       { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: stub('audit') },
+      { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
+      { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
       // Preferences residual→route (BACKEND_09 / hub pattern)
       { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
       { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },

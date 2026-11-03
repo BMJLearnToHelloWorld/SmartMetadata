@@ -48,6 +48,8 @@ export interface ApiRequestOptions {
   contentType?: string;
   /** Defaults to JSON parsing; 'text' returns the raw body (e.g. export results). */
   response?: 'json' | 'text';
+  /** Extra headers merged over the defaults (e.g. a SPARQL Accept override). */
+  headers?: Record<string, string>;
   /** Internal single-retry guard for the silent-refresh path; callers never set it. */
   retried?: boolean;
 }
@@ -89,6 +91,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
+    ...(options.headers ?? {}),
   };
   if (options.json !== undefined) {
     headers['Content-Type'] = options.contentType || 'application/json';

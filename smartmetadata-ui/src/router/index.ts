@@ -118,6 +118,10 @@ const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCent
 const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
+const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
+const IntakeFormsView = () => import('@/views/admin/IntakeFormsView.vue');
+const TaskFormSettingsView = () => import('@/views/admin/TaskFormSettingsView.vue');
+const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
@@ -399,6 +403,39 @@ export const router = createRouter({
           name: 'workflows',
           component: WorkflowsView,
           alias: 'workflows',
+        },
+        // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
+        // IntakeForms + TaskFormSettings (official settings governance
+        // pages, kept under the product admin/settings tree with the
+        // official settings path as alias), and SparqlPlayground
+        // (official /governance/sparql, product govern/ prefix + alias).
+        {
+          path: 'marketplace/apps/:fqn/install',
+          name: 'marketplace-app-install',
+          component: AppInstallView,
+          props: true,
+          meta: { titleKey: 'apps.install.title' },
+        },
+        {
+          path: 'admin/settings/governance/intake-forms',
+          name: 'admin-settings-governance-intake-forms',
+          component: IntakeFormsView,
+          alias: 'settings/governance/intake-forms',
+          meta: { titleKey: 'intakeForms.title' },
+        },
+        {
+          path: 'admin/settings/governance/task-forms',
+          name: 'admin-settings-governance-task-forms',
+          component: TaskFormSettingsView,
+          alias: 'settings/governance/task-forms',
+          meta: { titleKey: 'taskForms.title' },
+        },
+        {
+          path: 'govern/sparql',
+          name: 'sparql-playground',
+          component: SparqlPlaygroundView,
+          alias: 'governance/sparql',
+          meta: { titleKey: 'sparql.title' },
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,
