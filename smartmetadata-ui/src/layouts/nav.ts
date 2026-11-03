@@ -233,7 +233,7 @@ export function isNavActionKey(key: string): boolean {
 }
 
 export function defaultOpenNavKeys(): string[] {
-  return NAV_ENTRIES.flatMap((entry) => (entry.kind === 'section' ? [entry.key] : []));
+  return [];
 }
 
 export function navRouteKeys(): string[] {

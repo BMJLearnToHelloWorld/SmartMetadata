@@ -531,7 +531,7 @@ onMounted(() => {
 }
 .dq-donut__center,
 .dq-donut__legend {
-  color: var(--ant-color-text-secondary, #414651);
+  color: var(--sm-text-secondary);
   font-size: 12px;
 }
 .dq-dims {
@@ -546,14 +546,14 @@ onMounted(() => {
   padding: 12px;
   border: 1px solid var(--sm-border-color);
   border-radius: 8px;
-  background: var(--ant-color-bg-container, #fff);
+  background: var(--sm-bg-container);
   text-align: left;
   cursor: pointer;
   color: inherit;
 }
 .dq-dim__name {
   font-size: 12px;
-  color: var(--ant-color-text-secondary, #414651);
+  color: var(--sm-text-secondary);
 }
 .dq-dim__total,
 .dq-status__value {
@@ -574,17 +574,17 @@ onMounted(() => {
 }
 .dq-dim__pill--success {
   background: var(--sm-color-success-bg);
-  color: var(--sm-color-success-700);
+  color: var(--sm-color-success-text);
 }
 .dq-dim__pill--failed {
   background: var(--sm-color-error-bg);
-  color: var(--sm-color-error-700);
+  color: var(--sm-color-error-text);
 }
 .dq-dim__pill--aborted {
   background: var(--sm-color-warning-bg);
-  color: var(--sm-color-warning-700);
+  color: var(--sm-color-warning-text);
 }
 .dq-status__label {
-  color: var(--ant-color-text-secondary, #414651);
+  color: var(--sm-text-secondary);
 }
 </style>

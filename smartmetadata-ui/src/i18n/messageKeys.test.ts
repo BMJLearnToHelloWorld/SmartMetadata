@@ -146,7 +146,9 @@ describe('i18n catalogs', () => {
 
   it('aligns key shell and CRUD English to in-repo OM locale wording', () => {
     expect(enUS.home.welcome).toBe('Welcome, {name}!');
-    expect(enUS.home.searchPlaceholder).toBe('Search for Tables, Database, Schema...');
+    expect(enUS.home.searchPlaceholder).toBe('Search tables, databases, fields…');
+    expect(enUS.home.slogan).toBe('让数据可发现、可理解、可信赖');
+    expect(zhCN.home.slogan).toBe('让数据可发现、可理解、可信赖');
     expect(enUS.home.activityEmptyTitle).toBe('No Recent Activity');
     expect(zhCN.home.welcome).toBe('欢迎，{name}!');
     expect(enUS.chrome.searchPlaceholder).toBe('Search for Data Assets');
@@ -160,7 +162,7 @@ describe('i18n catalogs', () => {
     expect(enUS.nav.columnBulkOps).toBe('Column Bulk Ops (Beta)');
     expect(enUS.nav.marketplace).toBe('Data Marketplace');
     expect(zhCN.nav.govern).toBe('治理');
-    expect(zhCN.nav.contextCenter).toBe('上下文中心');
+    expect(zhCN.nav.contextCenter).toBe('知识中心');
     expect(enUS.crud.displayName).toBe('Display Name');
     expect(enUS.asset.tabs.customProperties).toBe('Custom Properties');
     expect(zhCN.chrome.logout).toBe('退出');

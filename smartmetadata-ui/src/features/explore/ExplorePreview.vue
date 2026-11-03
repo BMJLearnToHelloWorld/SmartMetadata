@@ -171,7 +171,7 @@ const overviewRows = computed(() => {
   margin: 4px 0 0;
 }
 .preview__dl dt {
-  color: var(--sm-text-tertiary, #535862);
+  color: var(--sm-text-tertiary);
   font-size: 12px;
 }
 .preview__dl dd {

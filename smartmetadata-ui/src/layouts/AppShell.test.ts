@@ -102,19 +102,22 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="ingestion-nav"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="collaboration-nav"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="admin-nav"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="nav-settings"]').text()).toContain('Settings');
-    expect(wrapper.find('[data-testid="nav-logout"]').text()).toContain('Logout');
+    expect(wrapper.find('[data-testid="nav-settings"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="nav-logout"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').attributes('placeholder')).toBe(
       'Search for Data Assets',
     );
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="app-mode-residual"]').exists()).toBe(true);
+    // dev_ui shell composition: the old header widgets (real notifications,
+    // help menu, domain scope, version tag, AppMode marker) are not rendered
+    // by the redesigned shell; the bell is a static icon.
+    expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="app-mode-residual"]').exists()).toBe(false);
     expect(wrapper.find('.shell__sider').classes().join(' ')).not.toContain('ant-layout-sider-dark');
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
@@ -206,20 +209,19 @@ describe('AppShell', () => {
     expect(selected.text()).toContain('Data Quality');
   });
 
-  it('navigates a section title click to the section landing page (Fix6)', async () => {
+  it('logs out from the header user menu', async () => {
+    const { wrapper, router } = await mountShell();
+    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="logout-button"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('login');
+  });
+
+  it('navigates a section title click to the section landing page (Fix6, re-applied on dev_ui shell)', async () => {
     const { wrapper, router } = await mountShell();
     await wrapper.get('[data-testid="section-title-marketplace"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-domains');
-  });
-
-  it('navigates Settings from the sider footer and logs out from nav-logout', async () => {
-    const { wrapper, router } = await mountShell();
-    await wrapper.find('[data-testid="nav-settings"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-settings');
-    await wrapper.find('[data-testid="nav-logout"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('login');
   });
 });

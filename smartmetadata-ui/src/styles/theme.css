@@ -2,13 +2,57 @@
  * Copyright 2026 SmartMetadata authors.
  * Licensed under the Apache License, Version 2.0.
  *
- * Shared ant-design-vue look, mirrored from theme/tokens.ts, which maps
- * official OpenMetadata styles/tokens.css. Do not import @icore or
- * openmetadata-ui CSS. Dark values are driven by
- * :root[data-theme='dark'], wired since Stage 9 through the shell
- * theme preference (UserMenu theme submenu → shellPreferences store →
- * document root + Ant darkAlgorithm); server sync remains residual.
+ * iPlatform product palette — primary #005587 + soul accents
+ * (radius 6, quiet shadows, denser chrome).
+ * Source of truth for values: src/theme/tokens.ts (keep :root in sync).
+ * Do not import @icore or openmetadata-ui CSS.
+ * Dark values are a CSS hook only — no Settings appearance UI.
  */
+
+/* Same stack as the other console. Files are loaded here so the names resolve
+   instead of falling through to Segoe UI. Chinese stays on the system sans. */
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.2.8/files/inter-latin-wght-normal.woff2')
+    format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: Poppins;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-400-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: Poppins;
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-500-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: Poppins;
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-600-normal.woff2')
+    format('woff2');
+}
+@font-face {
+  font-family: Poppins;
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-700-normal.woff2')
+    format('woff2');
+}
 
 :root {
   color-scheme: light;
@@ -24,46 +68,50 @@
   --sm-border-secondary: #e9eaeb;
   --sm-layout-bg: #ffffff;
   --sm-sider-bg: #ffffff;
-  --sm-trigger-bg: #f5f5f5;
-  --sm-trigger-hover-bg: #e9eaeb;
-  --sm-menu-hover-bg: #eff8ff;
-  --sm-row-hover-bg: #fafafa;
-  --sm-row-selected-bg: #eff8ff;
-  --sm-table-header-bg: #fafafa;
-  --sm-color-primary: #1570ef;
-  --sm-color-primary-hover: #175cd3;
-  --sm-color-primary-active: #1849a9;
-  --sm-color-primary-bg: #eff8ff;
-  --sm-color-primary-bg-hover: #d1e9ff;
-  --sm-color-success: #079455;
-  --sm-color-visualization-green: #039855;
-  --sm-color-warning: #dc6803;
-  --sm-color-error: #d92d20;
-  --sm-color-success-bg: #ecfdf3;
-  --sm-color-success-700: #067647;
-  --sm-color-error-bg: #fef3f2;
-  --sm-color-error-700: #b42318;
-  --sm-color-warning-bg: #fffaeb;
-  --sm-color-warning-700: #b54708;
+  --sm-trigger-bg: #f4f4f5;
+  --sm-trigger-hover-bg: #e3e6e8;
+  --sm-menu-hover-bg: #bfd7e6;
+  --sm-row-hover-bg: #f7f8fa;
+  --sm-row-selected-bg: #bfd7e6;
+  --sm-table-header-bg: #f7f8fa;
+  --sm-font-family: Inter, Poppins, sans-serif;
+  --sm-color-primary: #005587;
+  --sm-color-primary-hover: #00466d;
+  --sm-color-primary-active: #003d5c;
+  --sm-color-primary-75: #4087a9;
+  --sm-color-primary-50: #80afc7;
+  --sm-color-primary-25: #bfd7e6;
+  --sm-color-primary-bg: #e7f3fb;
+  --sm-color-primary-bg-hover: #b6e3f5;
+  --sm-color-success: #008a00;
+  --sm-color-warning: #ff8200;
+  --sm-color-error: #e20000;
+  --sm-color-success-bg: #e4f0c7;
+  --sm-color-success-text: #006b00;
+  --sm-color-error-bg: #fce8e8;
+  --sm-color-error-text: #b80000;
+  --sm-color-warning-bg: #fff2bf;
+  --sm-color-warning-text: #c86400;
+  --sm-color-warning-highlight-bg: #ffe0bf;
+  --sm-palette-bright-blue: #00a1de;
+  --sm-palette-bright-teal: #00a19c;
+  --sm-palette-bright-green: #94c120;
+  --sm-text-on-primary: #ffffff;
+  --sm-text-on-primary-muted: rgba(255, 255, 255, 0.85);
+  --sm-hero-pattern-stripe: rgba(255, 255, 255, 0.06);
+  --sm-shadow-hero-input: 0 8px 24px rgba(10, 13, 18, 0.12);
+  --sm-shadow-chip: 0 2px 8px rgba(10, 13, 18, 0.08);
+  --sm-shadow-widget: 0 1px 2px rgba(10, 13, 18, 0.04);
   --sm-overlay: rgba(10, 13, 18, 0.55);
-  --sm-focus-ring: rgba(21, 112, 239, 0.22);
+  --sm-focus-ring: rgba(0, 85, 135, 0.22);
   --sm-border-radius: 6px;
-  --sm-border-tertiary: #f5f5f5;
-  --sm-border-hover: #a4a7ae;
-  --sm-radius-none: 0px;
-  --sm-radius-xs: 2px;
-  --sm-radius-sm: 4px;
-  --sm-radius-md: 6px;
-  --sm-radius-lg: 8px;
-  --sm-radius-xl: 12px;
-  --sm-radius-2xl: 16px;
-  --sm-radius-3xl: 24px;
-  --sm-radius-full: 9999px;
-  --sm-radius-card: 12px;
-  --sm-radius-modal: 16px;
-  --sm-shadow-card: 0px 1px 2px rgba(10, 13, 18, 0.05);
-  --sm-shadow-raised: 0px 12px 16px -4px rgba(10, 13, 18, 0.08), 0px 4px 6px -2px rgba(10, 13, 18, 0.03);
+  --sm-radius-card: 6px;
+  --sm-radius-modal: 6px;
+  --sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06);
+  --sm-shadow-raised: 0 6px 16px rgba(15, 17, 21, 0.08), 0 3px 6px -2px rgba(15, 17, 21, 0.06);
   --sm-shadow-overlay: 0px 20px 24px -4px rgba(10, 13, 18, 0.08), 0px 8px 8px -4px rgba(10, 13, 18, 0.03);
+  /* Re-added: the dev_ui theme dropped the whole z-token block, but the
+   * shell header pin (Fix8, re-applied) and Ant overlays rely on it. */
   --sm-z-base: 0;
   --sm-z-raised: 1;
   --sm-z-docked: 10;
@@ -74,7 +122,20 @@
   --sm-z-popover: 2000;
   --sm-z-toast: 9000;
   --sm-z-max: 9999;
-
+  /* Sign-in accents. The page itself uses the product canvas, not a photo stage. */
+  --sm-login-stage: #06152b;
+  --sm-login-accent: var(--sm-color-primary);
+  --sm-login-accent-hover: var(--sm-color-primary-hover);
+  --sm-login-input: #f7f7f7;
+  --sm-login-legal: #98a2b3;
+  --sm-login-card-shadow: 0 18px 48px rgba(0, 84, 135, 0.14);
+  --sm-login-btn-shadow: 0 6px 16px rgba(0, 85, 135, 0.28);
+  --sm-home-canvas: #f8f9fc;
+  --sm-home-card-border: #eaecf5;
+  --sm-nav-selected: #0c7bc0;
+  --sm-nav-panel: #fafafa;
+  --sm-count-pill-bg: #e7f4fb;
+  --sm-count-pill-text: #0c7bc0;
 }
 
 :root[data-theme='dark'] {
@@ -82,6 +143,7 @@
   --sm-bg-base: #0f1115;
   --sm-bg-container: #14171f;
   --sm-bg-elevated: #1b1f2a;
+  --sm-nav-panel: #1b1f2a;
   --sm-content-bg: #0f1115;
   --sm-text-primary: #f0f0f0;
   --sm-text-secondary: #bfbfbf;
@@ -93,10 +155,20 @@
   --sm-sider-bg: #14171f;
   --sm-trigger-bg: #1f2430;
   --sm-trigger-hover-bg: #2a3140;
-  --sm-menu-hover-bg: rgba(21, 112, 239, 0.16);
+  --sm-menu-hover-bg: rgba(0, 85, 135, 0.16);
   --sm-row-hover-bg: #1b1f2a;
-  --sm-row-selected-bg: rgba(21, 112, 239, 0.16);
+  --sm-row-selected-bg: rgba(0, 85, 135, 0.16);
   --sm-table-header-bg: #1b1f2a;
+  --sm-color-success-bg: rgba(3, 152, 85, 0.16);
+  --sm-color-success-text: #6ce9a6;
+  --sm-color-error-bg: rgba(217, 45, 32, 0.16);
+  --sm-color-error-text: #fda29b;
+  --sm-color-warning-bg: rgba(220, 104, 3, 0.16);
+  --sm-color-warning-text: #fec84b;
+  --sm-color-warning-highlight-bg: rgba(220, 104, 3, 0.12);
+  --sm-text-on-primary: #ffffff;
+  --sm-text-on-primary-muted: rgba(255, 255, 255, 0.85);
+  --sm-hero-pattern-stripe: rgba(255, 255, 255, 0.08);
   --sm-overlay: rgba(10, 13, 18, 0.72);
   --sm-focus-ring: rgba(132, 202, 255, 0.28);
   --sm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.36);
@@ -113,7 +185,10 @@ body,
 body {
   background: var(--sm-content-bg);
   color: var(--sm-text-primary);
-  font-size: 14px;
+  font-family: var(--sm-font-family);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 :focus-visible {

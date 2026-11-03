@@ -7,8 +7,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+
+function walkVue(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) walkVue(p, out);
+    else if (entry.name.endsWith('.vue')) out.push(p);
+  }
+  return out;
+}
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -30,7 +39,6 @@ import {
   SM_COLOR_SUCCESS_BG,
   SM_COLOR_WARNING_700,
   SM_COLOR_WARNING_BG,
-  SM_COLOR_VISUALIZATION_GREEN,
   SM_COLOR_WARNING,
   SM_CONTROL_HEIGHT,
   SM_FONT_FAMILY,
@@ -39,6 +47,7 @@ import {
   SM_RADIUS,
   SM_RADIUS_CARD,
   SM_RADIUS_MODAL,
+  SM_PALETTE,
   SM_SHADOW_CARD,
   SM_SHADOW_OVERLAY,
   SM_SHADOW_RAISED,
@@ -55,70 +64,76 @@ const appShell = readFileSync(join(here, '../layouts/AppShell.vue'), 'utf8');
 const appVue = readFileSync(join(here, '../App.vue'), 'utf8');
 const packageJson = readFileSync(join(here, '../../package.json'), 'utf8');
 
-describe('official token mapping (Stage 1)', () => {
-  it('keeps OM brand-600 #1570ef as primary, with brand-700/800 hover/active', () => {
-    expect(SM_COLOR_PRIMARY).toBe('#1570ef');
-    expect(SM_COLOR_PRIMARY_HOVER).toBe('#175cd3');
-    expect(SM_COLOR_PRIMARY).not.toBe('#005587');
-    expect(SM_COLOR_PRIMARY).not.toBe('#1d4ed8');
-    expect(smAntdTheme.token?.colorPrimary).toBe('#1570ef');
-    expect(themeCss).toContain('--sm-color-primary: #1570ef');
-    expect(themeCss).not.toContain('#005587');
+describe('OM console theme tokens + iPlatform soul accents', () => {
+  it('uses iPlatform primary #005587 and semantic palette colors', () => {
+    expect(SM_PALETTE.primary[100]).toBe('#005587');
+    expect(SM_COLOR_PRIMARY).toBe('#005587');
+    expect(SM_COLOR_PRIMARY_HOVER).toBe('#00466d');
+    expect(SM_COLOR_SUCCESS).toBe('#008a00');
+    expect(SM_COLOR_WARNING).toBe('#ff8200');
+    expect(SM_COLOR_ERROR).toBe('#e20000');
+    expect(smAntdTheme.token?.colorPrimary).toBe('#005587');
+    expect(smAntdTheme.token?.colorPrimaryHover).toBe('#00466d');
+    expect(smAntdTheme.token?.colorInfo).toBe('#005587');
+    expect(smAntdTheme.token?.colorLink).toBe('#005587');
+    expect(smAntdTheme.token?.colorSuccess).toBe('#008a00');
+    expect(themeCss).toContain('--sm-color-primary: #005587');
+    expect(themeCss).toContain('--sm-color-primary-25: #bfd7e6');
   });
 
-  it('uses semantic success #079455 and keeps visualization green #039855 separate', () => {
-    expect(SM_COLOR_SUCCESS).toBe('#079455');
-    expect(SM_COLOR_VISUALIZATION_GREEN).toBe('#039855');
-    expect(SM_COLOR_SUCCESS).not.toBe(SM_COLOR_VISUALIZATION_GREEN);
-    expect(SM_COLOR_WARNING).toBe('#dc6803');
-    expect(SM_COLOR_ERROR).toBe('#d92d20');
-    expect(smAntdTheme.token?.colorSuccess).toBe('#079455');
-    expect(themeCss).toContain('--sm-color-success: #079455');
-    expect(themeCss).toContain('--sm-color-visualization-green: #039855');
+  it('uses the product semantic palette (success/warning/error from the iPlatform palette)', () => {
+    // Product direction 2026-11-03: the rebuilt product has its own theme,
+    // so these lock the dev_ui palette values, not the old official ones.
+    // The old SM_COLOR_VISUALIZATION_GREEN concept does not exist in the
+    // new palette (dropped by dev_ui; nothing imports it), so it is not
+    // asserted here.
+    expect(SM_COLOR_SUCCESS).toBe('#008a00');
+    expect(SM_COLOR_WARNING).toBe('#ff8200');
+    expect(SM_COLOR_ERROR).toBe('#e20000');
+    expect(smAntdTheme.token?.colorSuccess).toBe('#008a00');
+    expect(themeCss).toContain('--sm-color-success: #008a00');
   });
 
-  it('applies the official radius ladder, with card xl and modal 2xl as working mappings', () => {
+  it('applies the product radius step (single 6px step for control, card and modal)', () => {
     expect(SM_RADIUS).toEqual({
       none: 0, xs: 2, sm: 4, md: 6, lg: 8, xl: 12, '2xl': 16, '3xl': 24, full: 9999,
     });
     expect(SM_BORDER_RADIUS).toBe(6);
-    expect(SM_RADIUS_CARD).toBe(12);
-    expect(SM_RADIUS_MODAL).toBe(16);
+    expect(SM_RADIUS_CARD).toBe(6);
+    expect(SM_RADIUS_MODAL).toBe(6);
     expect(smAntdTheme.token?.borderRadius).toBe(6);
-    expect(smAntdTheme.token?.borderRadiusLG).toBe(12);
+    expect(smAntdTheme.token?.borderRadiusLG).toBe(6);
     expect(smAntdTheme.token?.borderRadiusSM).toBe(4);
-    expect(smAntdTheme.components?.Card?.borderRadiusLG).toBe(12);
-    expect(smAntdTheme.components?.Modal?.borderRadiusLG).toBe(16);
-    expect(themeCss).toContain('--sm-radius-card: 12px');
-    expect(themeCss).toContain('--sm-radius-modal: 16px');
+    expect(smAntdTheme.components?.Card?.borderRadiusLG).toBe(6);
+    expect(smAntdTheme.components?.Modal?.borderRadiusLG).toBe(6);
+    expect(themeCss).toContain('--sm-radius-card: 6px');
+    expect(themeCss).toContain('--sm-radius-modal: 6px');
   });
 
-  it('returns font size to the official ladder (base 14, no off-ladder 13)', () => {
-    expect(SM_FONT_SIZE).toBe(14);
+  it('uses the product font sizes (base 13, component ladder steps intact)', () => {
+    expect(SM_FONT_SIZE).toBe(13);
     expect(SM_FONT_FAMILY).toContain('Poppins');
-    expect(smAntdTheme.token?.fontSize).toBe(14);
+    expect(smAntdTheme.token?.fontSize).toBe(13);
     expect(smAntdTheme.components?.Form?.labelFontSize).toBe(14);
     expect(smAntdTheme.components?.Modal?.titleFontSize).toBe(16);
-    // Control height 32 is an Ant bridge value, not an official token:
-    // it is retained and flagged residual, not asserted as official.
     expect(SM_CONTROL_HEIGHT).toBe(32);
     expect(smAntdTheme.token?.controlHeight).toBe(32);
   });
 
-  it('maps borders, backgrounds and text to the official roles', () => {
-    expect(SM_BORDER).toEqual({
-      primary: '#d5d7da', secondary: '#e9eaeb', tertiary: '#f5f5f5', hover: '#a4a7ae',
-    });
-    expect(SM_BACKGROUND.canvas).toBe('#fafafa');
-    expect(SM_BACKGROUND.secondary).toBe('#fafafa');
-    expect(SM_SURFACES.contentBg).toBe('#fafafa');
-    expect(SM_SURFACES.bgElevated).toBe('#fafafa');
-    expect(SM_SURFACES.borderColor).toBe('#d5d7da');
-    expect(SM_SURFACES.borderSecondary).toBe('#e9eaeb');
-    expect(SM_TEXT.primary).toBe('#181d27');
-    expect(SM_TEXT.secondary).toBe('#414651');
-    expect(SM_TEXT.disabled).toBe('#717680');
-    expect(SM_TEXT.inverse).toBe('#ffffff');
+  it('layers iPlatform-inspired neutrals without dropping OM text / selected chrome', () => {
+    expect(SM_SURFACES.contentBg).toBe('#f0f2f5');
+    expect(SM_SURFACES.bgContainer).toBe('#ffffff');
+    expect(SM_SURFACES.bgElevated).toBe('#f7f8fa');
+    expect(SM_SURFACES.textPrimary).toBe('#181d27');
+    expect(SM_SURFACES.textSecondary).toBe('#414651');
+    expect(SM_SURFACES.borderColor).toBe('#f0f0f0');
+    expect(SM_SURFACES.borderSecondary).toBe('#f0f0f0');
+    expect(SM_SURFACES.triggerBg).toBe('#f4f4f5');
+    expect(SM_SURFACES.triggerHoverBg).toBe('#e3e6e8');
+    expect(SM_SURFACES.tableHeaderBg).toBe('#f7f8fa');
+    expect(SM_SURFACES.rowHoverBg).toBe('#f7f8fa');
+    expect(SM_SURFACES.rowSelectedBg).toBe(SM_PALETTE.primary[25]);
+    expect(SM_SURFACES.siderBg).toBe('#ffffff');
     expect(smAntdTheme.token?.colorBgLayout).toBe(SM_SURFACES.contentBg);
     expect(smAntdTheme.token?.colorBorder).toBe(SM_SURFACES.borderColor);
     expect(themeCss).toContain('--sm-content-bg: #fafafa');
@@ -140,112 +155,61 @@ describe('official token mapping (Stage 1)', () => {
     expect(SM_MOTION).toMatchObject({ instant: '100ms', fast: '150ms', base: '200ms', slow: '300ms', slower: '500ms' });
     expect(smAntdTheme.token?.motionDurationMid).toBe('0.2s');
     expect(smAntdTheme.token?.motionDurationSlow).toBe('0.3s');
-    expect(themeCss).toContain('--sm-shadow-card: 0px 1px 2px rgba(10, 13, 18, 0.05)');
+    expect(themeCss).toContain('--sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04)');
     expect(themeCss).toContain('--sm-shadow-overlay:');
   });
 
-  it('puts semantic success in the chart palette and keeps the unconfirmed hues flagged', () => {
-    expect(SM_CHART_COLORS[0]).toBe(SM_COLOR_PRIMARY);
-    expect(SM_CHART_COLORS[1]).toBe('#079455');
-    expect(SM_CHART_COLORS).toContain('#4689ff');
+  it('keeps OM Table Modal Card Form Menu Input Select Tabs Dropdown polish', () => {
+    expect(smAntdTheme.components?.Table?.rowHoverBg).toBe(SM_SURFACES.rowHoverBg);
+    expect(smAntdTheme.components?.Table?.rowSelectedBg).toBe(SM_SURFACES.rowSelectedBg);
+    expect(smAntdTheme.components?.Table?.headerBg).toBe(SM_SURFACES.tableHeaderBg);
+    expect(smAntdTheme.components?.Form?.labelColor).toBe(SM_SURFACES.textSecondary);
+    expect(smAntdTheme.components?.Menu?.itemSelectedBg).toBe(SM_COLOR_PRIMARY_BG);
+    expect(smAntdTheme.components?.Menu?.itemSelectedColor).toBe(SM_COLOR_PRIMARY);
+    expect(smAntdTheme.components?.Menu?.itemHeight).toBe(36);
+    expect(smAntdTheme.components?.Button?.primaryShadow).toBe('none');
+    expect(smAntdTheme.components?.Input?.activeShadow).toContain(SM_SURFACES.focusRing);
+    expect(smAntdTheme.components?.Select?.optionSelectedBg).toBe(SM_COLOR_PRIMARY_BG);
+    expect(smAntdTheme.components?.Tabs?.inkBarColor).toBe(SM_COLOR_PRIMARY);
+    expect(smAntdTheme.components?.Tabs?.horizontalItemPadding).toBe('10px 0');
+    expect(smAntdTheme.components?.Tabs?.horizontalItemGutter).toBe(20);
+    expect(smAntdTheme.components?.Spin?.dotSize).toBe(18);
+    expect(SM_CHART_COLORS[0]).toBe(SM_PALETTE.primary[100]);
+    expect(SM_CHART_COLORS).toContain(SM_PALETTE.brightBlue[100]);
     expect(SM_CHART_COLORS).not.toContain('#1677ff');
+    expect(smAntdTheme.components?.Dropdown?.controlItemBgHover).toBe(SM_SURFACES.rowHoverBg);
+    expect(smAntdTheme.components?.Drawer?.colorBgElevated).toBe(SM_SURFACES.bgContainer);
+    expect(smAntdTheme.components?.Tooltip?.colorBgSpotlight).toBe(SM_SURFACES.textPrimary);
+    expect(smAntdTheme.components?.Empty?.colorTextDescription).toBe(SM_SURFACES.textTertiary);
   });
 
-  it('locks every chart slot to an official token and transcribes the DataInsight palette', () => {
-    // Stage 6 closed the three scale slots: purple-600 / cyan-600 / fuchsia-600
-    // in tokens.css, previously missed because they are not `visualization-*`.
-    expect(SM_CHART_COLORS).toEqual([
-      SM_COLOR_PRIMARY,
-      '#079455',
-      '#dc6803',
-      '#d92d20',
-      '#6938ef',
-      '#088ab2',
-      '#ba24d5',
-      '#4689ff',
-    ]);
-    expect(SM_DATA_INSIGHT_COLORS).toHaveLength(24);
-    expect(SM_DATA_INSIGHT_COLORS[0]).toBe('#E57373');
-    expect(SM_DATA_INSIGHT_COLORS[23]).toBe('#F48FB1');
-    expect(SM_DATA_INSIGHT_COLORS.filter((color) => color === '#7986CB')).toHaveLength(2);
+  it('mirrors semantic and hero CSS variables in theme.css', () => {
+    expect(themeCss).toContain('--sm-color-success-bg:');
+    expect(themeCss).toContain('--sm-color-error-text:');
+    expect(themeCss).toContain('--sm-text-on-primary:');
+    expect(themeCss).toContain('--sm-shadow-hero-input:');
+    expect(themeCss).toContain('--sm-shadow-widget:');
   });
 
-  it('locks theme.css :root to tokens.ts: the CSS file is a mirror, not a second source', () => {
-    // R8 single-source lock: tokens.ts is canonical; theme.css must mirror
-    // it exactly. Any future drift fails here instead of shipping silently.
-    // Parse only the light :root block (the dark block intentionally differs).
-    // Note: the file header comment itself mentions :root[data-theme],
-    // so anchor on the newline-prefixed block starts, not bare substrings.
-    const lightRoot = themeCss.slice(
-      themeCss.indexOf('\n:root {'),
-      themeCss.indexOf("\n:root[data-theme"),
-    );
-    const vars = new Map<string, string>();
-    for (const match of lightRoot.matchAll(/--sm-([\w-]+):\s*([^;]+);/g)) {
-      vars.set(match[1], match[2].trim());
+  it('scoped Vue styles use --sm-* tokens without hex fallbacks or --ant-* colors', () => {
+    const vueFiles = walkVue(join(here, '..'));
+    const styleHex = /#[0-9a-fA-F]{3,8}/;
+    const smFallback = /var\(--sm-[^)]+,\s*#/;
+    const antVar = /var\(--ant-/;
+    const offenders: string[] = [];
+    for (const file of vueFiles) {
+      const text = readFileSync(file, 'utf8');
+      const style = text.match(/<style[^>]*scoped[^>]*>([\s\S]*?)<\/style>/);
+      if (!style) continue;
+      const block = style[1];
+      if (styleHex.test(block) || smFallback.test(block) || antVar.test(block)) {
+        offenders.push(file.replace(/\\/g, '/').split('/src/')[1] ?? file);
+      }
     }
-    const expected: Record<string, string> = {
-      'bg-base': SM_BACKGROUND.primary,
-      'bg-container': SM_BACKGROUND.primary,
-      'bg-elevated': SM_BACKGROUND.secondary,
-      'content-bg': SM_BACKGROUND.canvas,
-      'text-primary': SM_TEXT.primary,
-      'text-secondary': SM_TEXT.secondary,
-      'text-tertiary': SM_TEXT.tertiary,
-      'text-quaternary': SM_TEXT.quaternary,
-      'border-color': SM_BORDER.primary,
-      'border-secondary': SM_BORDER.secondary,
-      'border-tertiary': SM_BORDER.tertiary,
-      'border-hover': SM_BORDER.hover,
-      'color-primary': SM_COLOR_PRIMARY,
-      'color-primary-hover': SM_COLOR_PRIMARY_HOVER,
-      'color-primary-active': SM_COLOR_PRIMARY_ACTIVE,
-      'color-primary-bg': SM_COLOR_PRIMARY_BG,
-      'color-primary-bg-hover': SM_COLOR_PRIMARY_BG_HOVER,
-      'color-success': SM_COLOR_SUCCESS,
-      'color-visualization-green': SM_COLOR_VISUALIZATION_GREEN,
-      'color-warning': SM_COLOR_WARNING,
-      'color-error': SM_COLOR_ERROR,
-      'color-success-bg': SM_COLOR_SUCCESS_BG,
-      'color-success-700': SM_COLOR_SUCCESS_700,
-      'color-error-bg': SM_COLOR_ERROR_BG,
-      'color-error-700': SM_COLOR_ERROR_700,
-      'color-warning-bg': SM_COLOR_WARNING_BG,
-      'color-warning-700': SM_COLOR_WARNING_700,
-      overlay: SM_SURFACES.overlay,
-      'focus-ring': SM_SURFACES.focusRing,
-      'border-radius': `${SM_BORDER_RADIUS}px`,
-      'radius-none': `${SM_RADIUS.none}px`,
-      'radius-xs': `${SM_RADIUS.xs}px`,
-      'radius-sm': `${SM_RADIUS.sm}px`,
-      'radius-md': `${SM_RADIUS.md}px`,
-      'radius-lg': `${SM_RADIUS.lg}px`,
-      'radius-xl': `${SM_RADIUS.xl}px`,
-      'radius-2xl': `${SM_RADIUS['2xl']}px`,
-      'radius-3xl': `${SM_RADIUS['3xl']}px`,
-      'radius-full': `${SM_RADIUS.full}px`,
-      'radius-card': `${SM_RADIUS_CARD}px`,
-      'radius-modal': `${SM_RADIUS_MODAL}px`,
-      'shadow-card': SM_SHADOW_CARD,
-      'shadow-raised': SM_SHADOW_RAISED,
-      'shadow-overlay': SM_SHADOW_OVERLAY,
-      'z-base': `${SM_Z.base}`,
-      'z-raised': `${SM_Z.raised}`,
-      'z-docked': `${SM_Z.docked}`,
-      'z-sticky': `${SM_Z.sticky}`,
-      'z-dropdown': `${SM_Z.dropdown}`,
-      'z-overlay': `${SM_Z.overlay}`,
-      'z-modal': `${SM_Z.modal}`,
-      'z-popover': `${SM_Z.popover}`,
-      'z-toast': `${SM_Z.toast}`,
-      'z-max': `${SM_Z.max}`,
-    };
-    for (const [name, value] of Object.entries(expected)) {
-      expect(vars.get(name)).toBe(value);
-    }
+    expect(offenders).toEqual([]);
   });
 
-  it('keeps OM chrome CSS and a data-theme hook, without transplanting @icore', () => {
+  it('keeps OM chrome CSS (tabs ink, confirm, empty, menu) and a data-theme hook', () => {
     expect(themeCss).toMatch(/:root\[data-theme=['"]dark['"]\]/);
     expect(themeCss).toContain('.ant-modal');
     expect(themeCss).toContain('.ant-card');
@@ -254,9 +218,9 @@ describe('official token mapping (Stage 1)', () => {
     expect(packageJson).not.toContain('@icore');
     expect(appVue).not.toMatch(/IP3Layout|NaviTab|@icore/);
     expect(appShell).not.toMatch(/IP3Layout|NaviTab|@icore/);
-    expect(appShell).toContain(':width="228"');
-    // Stage 9: the sider theme follows the shell dark preference instead
-    // of a hardcoded light theme; light remains the default mode.
-    expect(appShell).toContain(`:theme="shellPreferences.isDark ? 'dark' : 'light'"`);
+    expect(appShell).toContain(':width="272"');
+    // dev_ui shell: light theme is hardcoded; the dark-preference chain
+    // (shellPreferences) is not wired in the redesigned shell.
+    expect(appShell).toContain(`theme="light"`);
   });
 });

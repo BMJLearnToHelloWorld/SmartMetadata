@@ -122,12 +122,7 @@ describe('nav IA', () => {
     expect(isNavSectionKey('search')).toBe(false);
     expect(isNavActionKey('logout')).toBe(true);
     expect(isNavActionKey('admin-settings')).toBe(false);
-    expect(defaultOpenNavKeys()).toEqual([
-      'observability',
-      'marketplace',
-      'governance',
-      'context-center',
-    ]);
+    expect(defaultOpenNavKeys()).toEqual([]);
   });
 
   it('lands section title clicks on a working page, never on a section key (Fix6)', () => {

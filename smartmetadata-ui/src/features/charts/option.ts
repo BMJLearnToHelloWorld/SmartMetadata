@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { SM_CHART_COLORS } from '@/theme/tokens';
+import { SM_CHART_COLORS, SM_FONT_FAMILY } from '@/theme/tokens';
 import type { ChartKind, ChartSeries } from './types';
 
 const COLORS = [...SM_CHART_COLORS];
@@ -27,6 +27,7 @@ export function buildChartOption(
     const points = series[0]?.points ?? [];
     return {
       color: palette,
+      textStyle: { fontFamily: SM_FONT_FAMILY },
       tooltip: { trigger: 'item' },
       legend: { bottom: 0, type: 'scroll' },
       series: [
@@ -43,6 +44,7 @@ export function buildChartOption(
   const labels = [...new Set(series.flatMap((item) => item.points.map((point) => point.label)))];
   return {
     color: palette,
+    textStyle: { fontFamily: SM_FONT_FAMILY },
     tooltip: { trigger: 'axis' },
     legend: series.length > 1 ? { bottom: 0 } : undefined,
     grid: { left: 48, right: 16, top: 24, bottom: series.length > 1 ? 52 : 28, containLabel: true },

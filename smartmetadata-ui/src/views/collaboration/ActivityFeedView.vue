@@ -283,10 +283,10 @@ onMounted(() => {
 }
 .activity-card {
   border: 1px solid var(--sm-border-secondary);
-  border-left: 3px solid var(--sm-color-primary, #1570ef);
+  border-left: 3px solid var(--sm-color-primary);
   border-radius: var(--sm-border-radius, 6px);
   padding: 8px 12px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
   cursor: pointer;
 }
 .activity-card__head {
@@ -299,7 +299,7 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--sm-color-primary, #1570ef);
+  background: var(--sm-color-primary);
   flex-shrink: 0;
 }
 .activity-card__summary {

@@ -326,7 +326,7 @@ onMounted(() => {
 
 <style scoped>
 .entity-detail__tab-lead {
-  color: var(--ant-color-text-secondary, #414651);
+  color: var(--sm-text-secondary);
   margin-bottom: 12px;
 }
 </style>

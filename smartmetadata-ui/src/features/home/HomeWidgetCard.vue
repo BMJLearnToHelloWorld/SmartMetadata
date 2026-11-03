@@ -34,25 +34,41 @@ withDefaults(
 
 <style scoped>
 .home-widget-card {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  min-height: 320px;
-  border-radius: var(--sm-radius-card);
-  border-color: var(--sm-border-secondary);
-  box-shadow: 0 1px 2px rgba(10, 13, 18, 0.04);
+  min-height: 0;
+  border-radius: 16px;
+  border-color: var(--sm-home-card-border);
+  box-shadow: var(--sm-shadow-card);
+  overflow: hidden;
 }
 .home-widget-card :deep(.ant-card-head) {
+  flex: none;
   min-height: 48px;
   padding-inline: 16px;
   border-bottom-color: var(--sm-border-secondary);
 }
+.home-widget-card :deep(.ant-card-head-wrapper) {
+  align-items: center;
+  gap: 8px;
+}
 .home-widget-card :deep(.ant-card-head-title) {
+  overflow: hidden;
   font-size: 16px;
   font-weight: 600;
   color: var(--sm-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-widget-card :deep(.ant-card-extra) {
+  flex: none;
 }
 .home-widget-card :deep(.ant-card-body) {
+  flex: 1;
+  min-height: 0;
   padding: 16px;
-  height: calc(100% - 48px);
+  overflow: auto;
 }
 .home-widget-card__title {
   display: inline-flex;
@@ -65,7 +81,6 @@ withDefaults(
   gap: 8px;
 }
 .home-widget-card__body {
-  min-height: 240px;
-  height: 100%;
+  min-height: 0;
 }
 </style>

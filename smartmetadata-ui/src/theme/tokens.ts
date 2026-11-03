@@ -7,51 +7,61 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { theme, type ThemeConfig } from 'ant-design-vue';
 
 /**
- * Single source of truth for design tokens in this console.
- *
- * Values are mapped from the official OpenMetadata `styles/tokens.css`
- * (Layer 2 `--om-*` aliases over the ui-core globals) in the reference
- * snapshot at main #74. This file is the one place raw values may live;
- * views and shared components must read tokens or the CSS variables in
- * `styles/theme.css`, which mirrors this table, never their own literals.
- *
- * Two deliberate Ant bridges are marked as such and are NOT official
- * tokens: the focus-ring alpha and the modal-mask alpha. The official
- * focus ring is `#2e90fa` and the overlay surface is `#0a0d12`; Ant
- * needs alpha forms for shadows and masks.
- *
- * Unconfirmed mappings are NOT silently locked (see the residual notes
- * on card/modal radius and on control height below).
+ * iPlatform product palette (owner theme sheet). Primary #005587 at 100%;
+ * 75% / 50% / 25% columns are lighter tints for backgrounds and borders.
+ * Keep in sync with `src/styles/theme.css` `--sm-*` variables.
  */
-import { theme } from 'ant-design-vue';
-import type { ThemeConfig } from 'ant-design-vue/es/config-provider/context';
+export const SM_PALETTE = {
+  primary: {
+    100: '#005587',
+    75: '#4087a9',
+    50: '#80afc7',
+    25: '#bfd7e6',
+  },
+  skyBlue: { 100: '#56c4e8', 75: '#86d4ef', 50: '#b6e3f5', 25: '#e7f3fb' },
+  brightBlue: { 100: '#00a1de', 75: '#40b9e7', 50: '#80d0ef', 25: '#bfe8f7' },
+  brightTeal: { 100: '#00a19c', 75: '#40b9b5', 50: '#80d0ce', 25: '#bfe8e7' },
+  teal: { 100: '#007a6b', 75: '#409b90', 50: '#80bcb5', 25: '#bfddda' },
+  brightGreen: { 100: '#94c120', 75: '#afd158', 50: '#c9e090', 25: '#e4f0c7' },
+  green: { 100: '#008a00', 75: '#40a840', 50: '#80c680', 25: '#bfe3bf' },
+  gray: { 100: '#4d4d4f', 75: '#818285', 50: '#b6b7ba', 25: '#eaebeb' },
+  yellow: { 100: '#ffc800', 75: '#ffd640', 50: '#ffe480', 25: '#fff2bf' },
+  orange: { 100: '#ff8200', 75: '#ffa140', 50: '#ffc180', 25: '#ffe0bf' },
+  magenta: { 100: '#e6007e', 75: '#ec409e', 50: '#f280bf', 25: '#f9bfdf' },
+  purple: { 100: '#6b2d5c', 75: '#916d87', 50: '#b6a3b0', 25: '#dad2d8' },
+  red: { 100: '#e20000' },
+  indigo: { 100: '#1a237e' },
+} as const;
 
-/** Official brand-600 / bg-brand / brand-700 / brand-800. */
-export const SM_COLOR_PRIMARY = '#1570ef';
-export const SM_COLOR_PRIMARY_HOVER = '#175cd3';
-export const SM_COLOR_PRIMARY_ACTIVE = '#1849a9';
-export const SM_COLOR_PRIMARY_BG = '#eff8ff';
-export const SM_COLOR_PRIMARY_BG_HOVER = '#d1e9ff';
-/** Official semantic success (success-600). NOT the visualization green. */
-export const SM_COLOR_SUCCESS = '#079455';
-/**
- * Official semantic backgrounds and 700 text tones (tokens.css
- * --om-color-bg-success/error/warning-primary and --om-color-utility-
- * success/error/warning-700). Previously scattered as literals in the
- * DQ dimension cards; centralised here in R1, values unchanged.
- */
-export const SM_COLOR_SUCCESS_BG = '#ecfdf3';
-export const SM_COLOR_SUCCESS_700 = '#067647';
-export const SM_COLOR_ERROR_BG = '#fef3f2';
-export const SM_COLOR_ERROR_700 = '#b42318';
-export const SM_COLOR_WARNING_BG = '#fffaeb';
-export const SM_COLOR_WARNING_700 = '#b54708';
-/** Official visualization green-4; a chart role, never a semantic success. */
-export const SM_COLOR_VISUALIZATION_GREEN = '#039855';
-export const SM_COLOR_WARNING = '#dc6803';
-export const SM_COLOR_ERROR = '#d92d20';
+export const SM_COLOR_PRIMARY = SM_PALETTE.primary[100];
+export const SM_COLOR_PRIMARY_HOVER = '#00466d';
+export const SM_COLOR_PRIMARY_ACTIVE = '#003d5c';
+export const SM_COLOR_PRIMARY_BG = SM_PALETTE.skyBlue[25];
+export const SM_COLOR_PRIMARY_BG_HOVER = SM_PALETTE.skyBlue[50];
+export const SM_COLOR_SUCCESS = SM_PALETTE.green[100];
+export const SM_COLOR_WARNING = SM_PALETTE.orange[100];
+export const SM_COLOR_ERROR = SM_PALETTE.red[100];
+
+/** Status / pill surfaces (DQ landing, badges). Keep in sync with theme.css `--sm-color-*-bg/text`. */
+export const SM_COLOR_SUCCESS_BG = SM_PALETTE.brightGreen[25];
+export const SM_COLOR_SUCCESS_TEXT = '#006b00';
+export const SM_COLOR_ERROR_BG = '#fce8e8';
+export const SM_COLOR_ERROR_TEXT = '#b80000';
+export const SM_COLOR_WARNING_BG = SM_PALETTE.yellow[25];
+export const SM_COLOR_WARNING_TEXT = '#c86400';
+export const SM_COLOR_WARNING_HIGHLIGHT_BG = SM_PALETTE.orange[25];
+
+/** Text and accents on primary / hero bands. */
+export const SM_TEXT_ON_PRIMARY = '#ffffff';
+export const SM_TEXT_ON_PRIMARY_MUTED = 'rgba(255, 255, 255, 0.85)';
+export const SM_HERO_PATTERN_STRIPE = 'rgba(255, 255, 255, 0.06)';
+
+export const SM_SHADOW_HERO_INPUT = '0 8px 24px rgba(10, 13, 18, 0.12)';
+export const SM_SHADOW_CHIP = '0 2px 8px rgba(10, 13, 18, 0.08)';
+export const SM_SHADOW_WIDGET = '0 1px 2px rgba(10, 13, 18, 0.04)';
 
 /** Official radius ladder: none/xs/sm/md/lg/xl/2xl/3xl/full. */
 export const SM_RADIUS = {
@@ -66,24 +76,18 @@ export const SM_RADIUS = {
   full: 9999,
 } as const;
 
-/** Base control radius = md step of the official ladder. */
-export const SM_BORDER_RADIUS = SM_RADIUS.md;
-/**
- * Card radius, tentatively xl (12). The product's own earlier comment
- * referenced "OM rounded-xl" for cards; the official Card component lives
- * in the external ui-core package, which is not in this snapshot, so the
- * direct Card source was not located here. Treat xl as the working
- * mapping and the direct-source confirmation as residual.
- */
-export const SM_RADIUS_CARD = SM_RADIUS.xl;
-/**
- * Dialog radius, tentatively 2xl (16), on the same basis as the card
- * note above ("OM rounded-2xl" in the earlier product comment). Direct
- * Modal source confirmation is residual.
- */
-export const SM_RADIUS_MODAL = SM_RADIUS['2xl'];
+/** dev_ui radius: single 6px step for control, card and modal. */
+export const SM_BORDER_RADIUS = 6;
+export const SM_RADIUS_CARD = SM_BORDER_RADIUS;
+export const SM_RADIUS_MODAL = SM_BORDER_RADIUS;
 
-/** Official font-size ladder (px). Base text = sm (14); 13 is off-ladder. */
+export const SM_FONT_SIZE = 13;
+
+/**
+ * Re-added on merge: the theme object below sizes component headers/titles/
+ * labels off this ladder (dev_ui's tokens only kept the single base size).
+ * Base body text follows dev_ui's 13; component sizes keep these steps.
+ */
 export const SM_FONT_SIZES = {
   xs: 12,
   sm: 14,
@@ -97,33 +101,9 @@ export const SM_FONT_SIZES = {
   displayXl: 60,
   display2xl: 72,
 } as const;
-export const SM_FONT_SIZE = SM_FONT_SIZES.sm;
-/** Official line-height ladder. */
-export const SM_LINE_HEIGHTS = {
-  none: 1,
-  tight: 1.25,
-  snug: 1.375,
-  normal: 1.5,
-  relaxed: 1.625,
-} as const;
-/**
- * Official sans stack (Inter, Poppins, system fallbacks). Inter variable
- * font files are bundled since R8 via styles/fonts.css (which re-registers
- * @fontsource-variable/inter under 'Inter'); Geist Mono variable files are
- * bundled the same way. Source Code Pro is not wired: the official mono
- * token stack below is generic, and no product-wide Source Code Pro
- * loading file was located in the reference snapshot.
- */
-export const SM_FONT_FAMILY =
-  "'Inter', 'Poppins', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
-export const SM_FONT_FAMILY_MONO =
-  "ui-monospace, 'Roboto Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
-/**
- * Control height. No official control-height standard was located in the
- * reference snapshot (the antd-master Less is transitional), so 32 is
- * retained only as the Ant bridge value and is listed as residual; it is
- * not presented as an official token.
- */
+
+/** Same stack as the OpenMetadata console: Inter, then Poppins. */
+export const SM_FONT_FAMILY = 'Inter, Poppins, sans-serif';
 export const SM_CONTROL_HEIGHT = 32;
 
 /** Official spacing ladder (px). */
@@ -216,22 +196,21 @@ export const SM_COLOR_CHART_BLUE_1 = '#4689ff';
  * SM_COLOR_VISUALIZATION_GREEN, not in this semantic-ordered palette.
  */
 export const SM_CHART_COLORS = [
-  SM_COLOR_PRIMARY,
-  SM_COLOR_SUCCESS,
-  SM_COLOR_WARNING,
-  SM_COLOR_ERROR,
-  SM_COLOR_PURPLE_600,
-  SM_COLOR_CYAN_600,
-  SM_COLOR_FUCHSIA_600,
-  SM_COLOR_CHART_BLUE_1,
+  SM_PALETTE.primary[100],
+  SM_PALETTE.brightBlue[100],
+  SM_PALETTE.brightTeal[100],
+  SM_PALETTE.brightGreen[100],
+  SM_PALETTE.orange[100],
+  SM_PALETTE.magenta[100],
+  SM_PALETTE.purple[100],
+  SM_PALETTE.indigo[100],
 ] as const;
+
 /**
- * Official DataInsight categorical palette (`BASE_COLORS` in
- * DataInsight.constants.ts), transcribed verbatim in order, including the
- * duplicated `#7986CB` entry at positions 10 and 19. Series take colours by
- * index and cycle (see ColorUtils). Use this palette only for DataInsight
- * categorical charts; the global SmChart default stays SM_CHART_COLORS so
- * profiler/quality charts do not change hue silently.
+ * Re-added on merge: dev_ui's tokens dropped this export, but DataInsight
+ * views import it. Categorical palette, kept verbatim (including the
+ * duplicated '#7986CB' at positions 10 and 19); series take colours by
+ * index and cycle. Use only for DataInsight categorical charts.
  */
 export const SM_DATA_INSIGHT_COLORS = [
   '#E57373',
@@ -261,35 +240,26 @@ export const SM_DATA_INSIGHT_COLORS = [
 ] as const;
 
 export const SM_SURFACES = {
-  bgBase: SM_BACKGROUND.primary,
-  bgContainer: SM_BACKGROUND.primary,
-  /** Former #f7f8fa had no official role; mapped to bg-secondary. */
-  bgElevated: SM_BACKGROUND.secondary,
-  /** Former #f0f2f5 had no official role; mapped to bg-canvas. */
-  contentBg: SM_BACKGROUND.canvas,
-  textPrimary: SM_TEXT.primary,
-  textSecondary: SM_TEXT.secondary,
-  textTertiary: SM_TEXT.tertiary,
-  textQuaternary: SM_TEXT.quaternary,
-  textDisabled: SM_TEXT.disabled,
-  textPlaceholder: SM_TEXT.placeholder,
-  textInverse: SM_TEXT.inverse,
-  borderColor: SM_BORDER.primary,
-  borderSecondary: SM_BORDER.secondary,
-  borderTertiary: SM_BORDER.tertiary,
-  borderHover: SM_BORDER.hover,
-  layoutBg: SM_BACKGROUND.page,
-  siderBg: SM_BACKGROUND.surface,
-  triggerBg: SM_BACKGROUND.tertiary,
-  triggerHoverBg: SM_BACKGROUND.quaternary,
-  menuHoverBg: SM_COLOR_PRIMARY_BG,
-  rowHoverBg: SM_BACKGROUND.secondary,
-  rowSelectedBg: SM_COLOR_PRIMARY_BG,
-  tableHeaderBg: SM_BACKGROUND.secondary,
-  /** Ant bridge alpha of the official overlay surface #0a0d12. */
+  bgBase: '#ffffff',
+  bgContainer: '#ffffff',
+  bgElevated: '#f7f8fa',
+  contentBg: '#f0f2f5',
+  textPrimary: '#181d27',
+  textSecondary: '#414651',
+  textTertiary: '#535862',
+  textQuaternary: '#717680',
+  borderColor: '#f0f0f0',
+  borderSecondary: '#f0f0f0',
+  layoutBg: '#ffffff',
+  siderBg: '#ffffff',
+  triggerBg: '#f4f4f5',
+  triggerHoverBg: '#e3e6e8',
+  menuHoverBg: SM_PALETTE.primary[25],
+  rowHoverBg: '#f7f8fa',
+  rowSelectedBg: SM_PALETTE.primary[25],
+  tableHeaderBg: '#f7f8fa',
   overlay: 'rgba(10, 13, 18, 0.55)',
-  /** Ant bridge alpha of the official focus ring #2e90fa. */
-  focusRing: 'rgba(21, 112, 239, 0.22)',
+  focusRing: 'rgba(0, 85, 135, 0.22)',
 } as const;
 
 const focusShadow = `0 0 0 2px ${SM_SURFACES.focusRing}`;
@@ -324,12 +294,11 @@ const smThemeObject = {
     borderRadiusSM: SM_RADIUS.sm,
     fontSize: SM_FONT_SIZE,
     fontFamily: SM_FONT_FAMILY,
-    fontFamilyCode: SM_FONT_FAMILY_MONO,
     controlHeight: SM_CONTROL_HEIGHT,
     colorBgLayout: SM_SURFACES.contentBg,
     colorBgContainer: SM_SURFACES.bgContainer,
-    colorBgElevated: SM_SURFACES.bgElevated,
-    colorBgSpotlight: '#181d27',
+    colorBgElevated: SM_SURFACES.bgContainer,
+    colorBgSpotlight: SM_SURFACES.textPrimary,
     colorText: SM_SURFACES.textPrimary,
     colorTextSecondary: SM_SURFACES.textSecondary,
     colorTextTertiary: SM_SURFACES.textTertiary,
@@ -434,7 +403,7 @@ const smThemeObject = {
     },
     Tooltip: {
       borderRadius: SM_BORDER_RADIUS,
-      colorBgSpotlight: '#181d27',
+      colorBgSpotlight: SM_SURFACES.textPrimary,
     },
     Tabs: {
       itemColor: SM_SURFACES.textSecondary,

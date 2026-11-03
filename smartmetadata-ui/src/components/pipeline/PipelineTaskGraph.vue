@@ -63,7 +63,7 @@ const edges = computed<Edge[]>(() =>
 <style scoped>
 .pipeline-task-graph {
   height: 360px;
-  border: 1px solid var(--sm-border-color, #d5d7da);
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
 }
 </style>
