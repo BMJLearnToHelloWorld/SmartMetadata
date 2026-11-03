@@ -51,6 +51,8 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'governance-classifications',
   'governance-domains',
   'governance-data-products',
+  'admin-settings-governance-intake-forms',
+  'admin-settings-governance-task-forms',
   'ingestion-services',
   'ingestion-pipelines',
   'observability-alerts',
@@ -125,6 +127,18 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       },
       { key: 'domains', titleKey: 'nav.domains', kind: 'route', routeName: 'governance-domains' },
       { key: 'data-products', titleKey: 'nav.dataProducts', kind: 'route', routeName: 'governance-data-products' },
+      {
+        key: 'intake-forms',
+        titleKey: 'settings.items.intakeForms',
+        kind: 'route',
+        routeName: 'admin-settings-governance-intake-forms',
+      },
+      {
+        key: 'task-forms',
+        titleKey: 'settings.items.taskForms',
+        kind: 'route',
+        routeName: 'admin-settings-governance-task-forms',
+      },
     ],
   },
   {

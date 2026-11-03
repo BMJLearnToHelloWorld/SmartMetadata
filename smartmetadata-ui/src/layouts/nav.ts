@@ -85,6 +85,7 @@ export const NAV_ENTRIES: NavEntry[] = [
       { key: 'governance-metrics', titleKey: 'nav.metrics' },
       { key: 'column-bulk-ops', titleKey: 'nav.columnBulkOps' },
       { key: 'workflows', titleKey: 'nav.workflows' },
+      { key: 'sparql-playground', titleKey: 'nav.sparqlPlayground' },
     ],
   },
   {
@@ -181,6 +182,9 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'settings-preferences-glossary': 'admin-settings',
   'settings-preferences-time-format': 'admin-settings',
   'admin-apps': 'admin-settings',
+  'marketplace-app-install': 'marketplace-overview',
+  'admin-settings-governance-intake-forms': 'admin-settings',
+  'admin-settings-governance-task-forms': 'admin-settings',
   task: 'tasks',
 };
 

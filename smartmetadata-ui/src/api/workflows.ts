@@ -63,3 +63,60 @@ export async function createWorkflow(
   }
   return mapped;
 }
+
+/**
+ * Full workflow definition shape for the task-form settings page, which
+ * edits the definition JSON (owners, config, trigger, nodes, edges) and
+ * reads back the saved name and version.
+ */
+export interface WorkflowDefinitionDetail extends WorkflowDefinition {
+  owners?: unknown;
+  config?: unknown;
+  trigger?: unknown;
+  nodes?: unknown;
+  edges?: unknown;
+  version?: number;
+}
+
+function mapWorkflowDefinitionDetail(raw: Record<string, unknown>): WorkflowDefinitionDetail | null {
+  const base = mapWorkflowDefinition(raw);
+  if (!base) {
+    return null;
+  }
+  return {
+    ...base,
+    owners: raw.owners,
+    config: raw.config,
+    trigger: raw.trigger,
+    nodes: raw.nodes,
+    edges: raw.edges,
+    version: typeof raw.version === 'number' ? raw.version : undefined,
+  };
+}
+
+/** Official workflowDefinitionsAPI: GET /v1/governance/workflowDefinitions/name/{fqn}. */
+export async function getWorkflowDefinitionByFqn(fqn: string): Promise<WorkflowDefinitionDetail> {
+  const raw = await apiRequest<unknown>(
+    `${WORKFLOW_DEFINITIONS_PATH}/name/${encodeURIComponent(fqn)}`,
+  );
+  const mapped = mapWorkflowDefinitionDetail(asRecord(raw) ?? {});
+  if (!mapped) {
+    throw new Error('Workflow definition response was missing its name');
+  }
+  return mapped;
+}
+
+/** Official workflowDefinitionsAPI: PUT /v1/governance/workflowDefinitions. */
+export async function updateWorkflowDefinition(
+  body: WorkflowDefinitionDetail,
+): Promise<WorkflowDefinitionDetail> {
+  const raw = await apiRequest<unknown>(WORKFLOW_DEFINITIONS_PATH, {
+    method: 'PUT',
+    json: body,
+  });
+  const mapped = mapWorkflowDefinitionDetail(asRecord(raw) ?? {});
+  if (!mapped) {
+    throw new Error('Workflow definition response was missing its name');
+  }
+  return mapped;
+}
