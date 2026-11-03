@@ -104,6 +104,17 @@ const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vu
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
 const TaskDetailView = () => import('@/views/collaboration/TaskDetailView.vue');
 const TasksListView = () => import('@/views/collaboration/TasksListView.vue');
+const ContextCenterOverviewView = () => import('@/views/contextCenter/ContextCenterOverviewView.vue');
+const ContextCenterArticlesView = () => import('@/views/contextCenter/ContextCenterArticlesView.vue');
+const ContextCenterDocumentsView = () =>
+  import('@/views/contextCenter/ContextCenterDocumentsView.vue');
+const ContextCenterMemoriesView = () => import('@/views/contextCenter/ContextCenterMemoriesView.vue');
+const ContextCenterFilterView = () => import('@/views/contextCenter/ContextCenterFilterView.vue');
+const ContextCenterIntegrationsView = () =>
+  import('@/views/contextCenter/ContextCenterIntegrationsView.vue');
+const ContextCenterAiContextView = () =>
+  import('@/views/contextCenter/ContextCenterAiContextView.vue');
+const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCenterArchiveView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
@@ -303,6 +314,66 @@ export const router = createRouter({
           name: 'governance-metric',
           component: MetricDetailView,
           props: true,
+        },
+        // P2 B1: the five context-center shells are real pages now; the
+        // residual entries were removed from residualPages.ts with them.
+        // The overview keeps its product path and gains the official
+        // /context-center/overview path as an alias.
+        {
+          path: 'context-center',
+          name: 'context-center-overview',
+          component: ContextCenterOverviewView,
+          alias: 'context-center/overview',
+        },
+        {
+          path: 'context-center/articles',
+          name: 'context-center-articles',
+          component: ContextCenterArticlesView,
+        },
+        {
+          path: 'context-center/articles/:fqn',
+          name: 'context-center-article',
+          component: ContextCenterArticlesView,
+          meta: { titleKey: 'contextCenter.articles' },
+        },
+        {
+          path: 'context-center/documents',
+          name: 'context-center-documents',
+          component: ContextCenterDocumentsView,
+        },
+        {
+          path: 'context-center/memories',
+          name: 'context-center-memories',
+          component: ContextCenterMemoriesView,
+        },
+        {
+          path: 'context-center/filter',
+          name: 'context-center-filter',
+          component: ContextCenterFilterView,
+          meta: { titleKey: 'contextCenter.filter' },
+        },
+        {
+          path: 'context-center/integrations',
+          name: 'context-center-integrations',
+          component: ContextCenterIntegrationsView,
+          meta: { titleKey: 'contextCenter.integrations' },
+        },
+        {
+          path: 'context-center/ai-context',
+          name: 'context-center-ai-context',
+          component: ContextCenterAiContextView,
+          meta: { titleKey: 'contextCenter.aiContext' },
+        },
+        {
+          path: 'context-center/ai-context/:fqn',
+          name: 'context-center-ai-context-detail',
+          component: ContextCenterAiContextView,
+          meta: { titleKey: 'contextCenter.aiContext' },
+        },
+        {
+          path: 'context-center/archive',
+          name: 'context-center-archive',
+          component: ContextCenterArchiveView,
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,
