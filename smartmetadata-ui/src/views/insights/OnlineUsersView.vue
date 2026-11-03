@@ -5,11 +5,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, InputSearch, Select, Spin } from 'ant-design-vue';
+import { InputSearch, Select, Spin } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import { usePermissionStore } from '@/stores/permissions';
 import { listOnlineUsers, searchUsers } from '@/api/users';
 import {
   ONLINE_USERS_TIME_WINDOWS,
@@ -22,12 +24,15 @@ import type { AdminUser } from '@/types/admin';
 /**
  * Official OnlineUsersPage, product scope. Activity bands and status colours
  * are the official values (green #52c41a / yellow #faad14 / red #ff4d4f).
- * Admin gating is residual: the product session has no role field, so the
- * page states that plainly instead of faking a permission check. Search
- * results carry no activity timestamp, so their activity cell says so
- * instead of inventing an online state.
+ * Admin gating follows the official page (OnlineUsersPage.tsx:255):
+ * non-admins get the permission placeholder, here ForbiddenView.
+ * Search results carry no activity timestamp, so their activity cell
+ * says so instead of inventing an online state.
  */
 const { t } = useI18n();
+
+/** Official OnlineUsers gate: isAdminUser from the session. */
+const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -123,8 +128,9 @@ onMounted(() => {
 
 <template>
   <PageLayout test-id="online-users-layout">
+    <ForbiddenView v-if="!isAdminUser" />
+    <template v-else>
     <PageHeader :header="t('insights.onlineUsers.title')" :sub-header="t('insights.onlineUsers.lead')" />
-    <Alert type="warning" show-icon :message="t('insights.onlineUsers.adminResidual')" class="online-users__alert" />
     <Spin :spinning="loading">
       <div class="online-users__controls">
         <Select
@@ -175,13 +181,11 @@ onMounted(() => {
         </template>
       </SmTable>
     </Spin>
+    </template>
   </PageLayout>
 </template>
 
 <style scoped>
-.online-users__alert {
-  margin-block: 12px;
-}
 .online-users__controls {
   display: flex;
   gap: 12px;

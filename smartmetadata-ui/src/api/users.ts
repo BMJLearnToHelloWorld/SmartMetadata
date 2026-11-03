@@ -14,6 +14,92 @@ import { apiRequest } from './client';
 
 export const USER_FIELDS = 'profile,roles,teams';
 
+// P2 B5: personal access tokens (UserResource /security/token + /generateToken).
+// Expiry values are the official JWTTokenExpiry enum members.
+export const JWT_TOKEN_EXPIRY_OPTIONS = ['OneHour', '1', '7', '30', '60', '90', 'Unlimited'] as const;
+export type JwtTokenExpiry = (typeof JWT_TOKEN_EXPIRY_OPTIONS)[number];
+
+export interface PersonalAccessToken {
+  token: string;
+  tokenName?: string;
+  tokenType?: string;
+  expiryDate?: string;
+  userId?: string;
+}
+
+export interface CreatedPersonalToken extends PersonalAccessToken {
+  secret?: string;
+}
+
+function mapPersonalToken(raw: Record<string, unknown>): PersonalAccessToken | null {
+  const token = asString(raw.token);
+  if (!token) {
+    return null;
+  }
+  return {
+    token,
+    tokenName: asString(raw.tokenName) || undefined,
+    tokenType: asString(raw.tokenType) || undefined,
+    expiryDate: asString(raw.expiryDate) || undefined,
+    userId: asString(raw.userId) || undefined,
+  };
+}
+
+function mapCreatedToken(payload: unknown): CreatedPersonalToken | null {
+  const raw = asRecord(payload);
+  if (!raw) {
+    // The admin generate endpoint answers with the raw token string.
+    return typeof payload === 'string' && payload ? { token: payload, secret: payload } : null;
+  }
+  const base = mapPersonalToken(raw);
+  if (!base) {
+    return null;
+  }
+  // The one-time secret arrives as jwtToken on create; the list items
+  // never carry it, so a created token is the only place it is shown.
+  const secret = asString(raw.jwtToken) || asString(raw.token) || undefined;
+  return { ...base, secret };
+}
+
+/** Own tokens, or another user's when an admin passes username. */
+export function listPersonalTokens(username?: string): Promise<Paged<PersonalAccessToken>> {
+  return apiRequest<unknown>('/v1/users/security/token', {
+    query: { username },
+  }).then((payload) => parsePaged(payload, mapPersonalToken));
+}
+
+/** Create schema: tokenName + JWTTokenExpiry, both required. */
+export function createPersonalToken(tokenName: string, JWTTokenExpiry: JwtTokenExpiry): Promise<CreatedPersonalToken | null> {
+  return apiRequest<unknown>('/v1/users/security/token', {
+    method: 'PUT',
+    json: { tokenName, JWTTokenExpiry },
+  }).then(mapCreatedToken);
+}
+
+/**
+ * Per-token revoke passes tokenIds: [token.token] (official AccessTokenRow);
+ * revoke-all passes removeAll=true, with username for an admin revoking
+ * another user's tokens.
+ */
+export function revokePersonalTokens(
+  tokenIds: string[],
+  opts: { username?: string; removeAll?: boolean } = {},
+): Promise<unknown> {
+  return apiRequest<unknown>('/v1/users/security/token/revoke', {
+    method: 'PUT',
+    query: { username: opts.username, removeAll: opts.removeAll ? true : undefined },
+    json: { tokenIds },
+  });
+}
+
+/** Admin generate for a user or bot: PUT /v1/users/generateToken/{id}. */
+export function generateUserToken(userId: string, JWTTokenExpiry: JwtTokenExpiry): Promise<CreatedPersonalToken | null> {
+  return apiRequest<unknown>(`/v1/users/generateToken/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    json: { JWTTokenExpiry },
+  }).then(mapCreatedToken);
+}
+
 export interface ListUsersQuery {
   limit?: number;
   after?: string;

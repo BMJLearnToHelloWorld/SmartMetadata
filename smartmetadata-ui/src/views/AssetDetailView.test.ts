@@ -37,7 +37,7 @@ function lastMatchingFetch(predicate: (url: string, init?: RequestInit) => boole
   return { url: String(match[0]), init: match[1] };
 }
 
-async function mountView() {
+async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -54,10 +54,10 @@ async function mountView() {
       },
     ],
   });
-  await router.push('/assets/table/svc.db.schema.orders');
+  await router.push(`/assets/${entityType}/${fqn}`);
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
-    props: { entityType: 'table', fqn: 'svc.db.schema.orders' },
+    props: { entityType, fqn },
     attachTo: document.body,
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
@@ -615,4 +615,77 @@ describe('AssetDetailView R2 header and split tabs', () => {
     const follow = wrapper.find('[data-testid="asset-follow"]');
     expect((follow.element as HTMLButtonElement).disabled).toBe(true);
   });
+});
+
+describe('AssetDetailView API collection and endpoint (P2 B5)', () => {
+  // Scoped stub: secondary loads (quality, activity, custom properties)
+  // 404 and are caught by the view; only the API payloads are faked.
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/apiCollections/name/')) {
+          return jsonResponse({
+            id: 'ac-1',
+            name: 'petstore',
+            fullyQualifiedName: 'svc.petstore',
+            description: 'Petstore API',
+            owners: [],
+            tags: [],
+            domains: [],
+            service: { name: 'rest', displayName: 'REST' },
+          });
+        }
+        if (url.includes('/api/v1/apiEndpoints/name/')) {
+          return jsonResponse({
+            id: 'ae-1',
+            name: 'getPet',
+            fullyQualifiedName: 'svc.petstore.getPet',
+            endpointURL: '/pets/{id}',
+            requestMethod: 'GET',
+            requestSchema: { type: 'object', properties: { id: { type: 'integer' } } },
+            responseSchema: { type: 'object' },
+            owners: [],
+            tags: [],
+            domains: [],
+          });
+        }
+        if (url.includes('/api/v1/apiEndpoints')) {
+          return jsonResponse({
+            data: [
+              { name: 'getPet', endpointURL: '/pets/{id}', requestMethod: 'GET', fullyQualifiedName: 'svc.petstore.getPet' },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('lists collection endpoints on the apiEndpoints tab', async () => {
+    const { wrapper } = await mountView('apiCollection', 'svc.petstore');
+    expect(wrapper.text()).toContain('Petstore API');
+    expect(wrapper.text()).toContain('API endpoints');
+    expect(wrapper.find('[data-testid="asset-api-endpoints-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('getPet');
+    expect(wrapper.text()).toContain('/pets/{id}');
+    expect(wrapper.text()).toContain('GET');
+  }, 20000);
+
+  it('shows endpoint URL, method, and schemas on the endpoint tab', async () => {
+    const { wrapper } = await mountView('apiEndpoint', 'svc.petstore.getPet');
+    expect(wrapper.text()).toContain('Endpoint');
+    expect(wrapper.find('[data-testid="asset-api-request-schema"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('/pets/{id}');
+    expect(wrapper.text()).toContain('GET');
+  }, 20000);
 });

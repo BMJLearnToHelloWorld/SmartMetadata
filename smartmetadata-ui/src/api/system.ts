@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asBoolean, asNumber, asRecord, asString, parsePaged } from '@/api/json';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import type {
   AppConfiguration,
   AssetTypeConfiguration,
@@ -162,6 +163,59 @@ export function updateSetting(configType: string, configValue: unknown): Promise
       return { configType, configValue };
     }
     return mapped;
+  });
+}
+
+export interface SsoAuthConfiguration {
+  provider?: string;
+  providerName?: string;
+  clientType?: string;
+  authority?: string;
+  clientId?: string;
+  callbackUrl?: string;
+  enableSelfSignup?: boolean;
+}
+
+/** Defensive mapping of the authenticationConfiguration object. */
+export function mapSsoAuthConfiguration(value: unknown): SsoAuthConfiguration {
+  const rec = asRecord(value) ?? {};
+  const str = (key: string): string | undefined => {
+    const v = asString(rec[key]);
+    return v ? v : undefined;
+  };
+  return {
+    provider: str('provider'),
+    providerName: str('providerName'),
+    clientType: str('clientType'),
+    authority: str('authority'),
+    clientId: str('clientId'),
+    callbackUrl: str('callbackUrl'),
+    enableSelfSignup: asBoolean(rec.enableSelfSignup),
+  };
+}
+
+/**
+ * Official securityConfigAPI: GET /v1/system/security/config, whose
+ * authenticationConfiguration object is the SSO page's source of truth.
+ */
+export async function getSecurityConfig(): Promise<{ authenticationConfiguration?: SsoAuthConfiguration }> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/system/security/config');
+  const auth = asRecord(raw.authenticationConfiguration);
+  return { authenticationConfiguration: auth ? mapSsoAuthConfiguration(auth) : undefined };
+}
+
+/**
+ * Official securityConfigAPI.patchAuthenticationConfiguration: JSON Patch
+ * on /v1/system/settings/authenticationConfiguration. An absent secret
+ * op means "keep the server value": the server masks stored secrets
+ * (preserveMaskedSecuritySecrets), so sending an empty secret would
+ * clear it — callers must omit the op instead.
+ */
+export function patchAuthenticationConfiguration(ops: JsonPatchOp[]): Promise<unknown> {
+  return apiRequest<unknown>('/v1/system/settings/authenticationConfiguration', {
+    method: 'PATCH',
+    json: ops,
+    contentType: 'application/json-patch+json',
   });
 }
 

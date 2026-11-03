@@ -164,7 +164,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div data-testid="ontology-explorer">
+  <div data-testid="ontology-explorer" data-tour-step="ontology-studio" data-tour-page>
     <PageHeader :header="t('ontology.title')" :sub-header="t('ontology.lead')" />
     <Typography.Text v-if="errorMessage" type="danger" data-testid="ontology-error">
       {{ errorMessage }}

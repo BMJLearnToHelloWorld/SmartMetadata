@@ -5,15 +5,31 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Checkbox, Descriptions, Form, Input, Select, Tag, message} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Descriptions, Form, Input, Popconfirm, Select, Space, Tag, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
-import { assignUserRolesPatch, deactivateUser, getUser, patchUser, restoreUser, updateUser } from '@/api/users';
+import {
+  JWT_TOKEN_EXPIRY_OPTIONS,
+  assignUserRolesPatch,
+  createPersonalToken,
+  deactivateUser,
+  generateUserToken,
+  getUser,
+  listPersonalTokens,
+  patchUser,
+  restoreUser,
+  revokePersonalTokens,
+  updateUser,
+  type JwtTokenExpiry,
+  type PersonalAccessToken,
+} from '@/api/users';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
+import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 
 const props = defineProps<{ id: string }>();
@@ -47,10 +63,109 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(user.value) || t('admin.users.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'user-tab-overview' },
-  { key: 'roles', label: t('admin.users.rolesTab'), testId: 'user-tab-roles' },
+const isOwnProfile = computed(() => useAuthStore().user?.id === props.id);
+const showTokensTab = computed(() => isOwnProfile.value || isAdminUser.value);
+const tabs = computed<EntityDetailTab[]>(() => {
+  const base: EntityDetailTab[] = [
+    { key: 'overview', label: t('crud.overview'), testId: 'user-tab-overview' },
+    { key: 'roles', label: t('admin.users.rolesTab'), testId: 'user-tab-roles' },
+  ];
+  if (showTokensTab.value) {
+    base.push({ key: 'tokens', label: t('tokens.title'), testId: 'user-tab-tokens' });
+  }
+  return base;
+});
+
+// Personal access tokens: the profile page IS the product's profile view
+// (AppShell routes profile to admin-user), so both PAT landings live here.
+const tokens = ref<PersonalAccessToken[]>([]);
+const tokensError = ref('');
+const createdSecret = ref('');
+const newTokenName = ref('');
+const newTokenExpiry = ref<JwtTokenExpiry>('30');
+const adminExpiry = ref<JwtTokenExpiry>('30');
+const adminGeneratedSecret = ref('');
+
+const tokenColumns = computed(() => [
+  { title: t('tokens.name'), dataIndex: 'tokenName', key: 'tokenName' },
+  { title: t('tokens.type'), dataIndex: 'tokenType', key: 'tokenType' },
+  { title: t('tokens.expiryDate'), dataIndex: 'expiryDate', key: 'expiryDate' },
+  { title: t('tokens.actions'), dataIndex: 'actions', key: 'actions' },
 ]);
+
+const expiryLabel = (value: JwtTokenExpiry): string => {
+  if (value === 'OneHour') {
+    return t('tokens.expiryOneHour');
+  }
+  if (value === 'Unlimited') {
+    return t('tokens.expiryUnlimited');
+  }
+  return t('tokens.expiryDays', { days: value });
+};
+
+async function loadTokens(): Promise<void> {
+  if (!isOwnProfile.value) {
+    return;
+  }
+  try {
+    const page = await listPersonalTokens();
+    tokens.value = page.data;
+    tokensError.value = '';
+  } catch (error) {
+    tokens.value = [];
+    tokensError.value = error instanceof Error ? error.message : t('tokens.loadFailed');
+  }
+}
+
+async function onCreateToken(): Promise<void> {
+  if (!newTokenName.value.trim()) {
+    return;
+  }
+  try {
+    const created = await createPersonalToken(newTokenName.value.trim(), newTokenExpiry.value);
+    createdSecret.value = created?.secret ?? '';
+    newTokenName.value = '';
+    await loadTokens();
+    message.success(t('tokens.created'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('tokens.createFailed'));
+  }
+}
+
+async function onRevokeToken(token: PersonalAccessToken): Promise<void> {
+  try {
+    await revokePersonalTokens([token.token]);
+    await loadTokens();
+    message.success(t('tokens.revoked'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('tokens.revokeFailed'));
+  }
+}
+
+async function onGenerateAdminToken(): Promise<void> {
+  if (!user.value?.id) {
+    return;
+  }
+  try {
+    const created = await generateUserToken(user.value.id, adminExpiry.value);
+    adminGeneratedSecret.value = created?.secret ?? '';
+    message.success(t('tokens.generated'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('tokens.generateFailed'));
+  }
+}
+
+async function onRevokeAllTokens(): Promise<void> {
+  if (!user.value?.name) {
+    return;
+  }
+  try {
+    await revokePersonalTokens([], { username: user.value.name, removeAll: true });
+    message.success(t('tokens.revokedAll'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('tokens.revokeFailed'));
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -160,6 +275,12 @@ watch(
     void load();
   },
 );
+
+watch(activeTab, (tab) => {
+  if (tab === 'tokens') {
+    void loadTokens();
+  }
+});
 </script>
 
 <template>
@@ -232,6 +353,83 @@ watch(
       >
         {{ t('admin.users.saveRoles') }}
       </Button>
+    </template>
+    <template #tokens>
+      <template v-if="isOwnProfile">
+        <p class="entity-detail__tab-lead">{{ t('tokens.lead') }}</p>
+        <Space wrap>
+          <Input
+            v-model:value="newTokenName"
+            style="width: 240px"
+            :placeholder="t('tokens.namePlaceholder')"
+            data-testid="pat-name"
+          />
+          <Select v-model:value="newTokenExpiry" style="width: 160px" data-testid="pat-expiry">
+            <Select.Option v-for="option in JWT_TOKEN_EXPIRY_OPTIONS" :key="option" :value="option">
+              {{ expiryLabel(option) }}
+            </Select.Option>
+          </Select>
+          <Button type="primary" data-testid="pat-generate" :disabled="!newTokenName.trim()" @click="onCreateToken">
+            {{ t('tokens.generate') }}
+          </Button>
+        </Space>
+        <Alert
+          v-if="createdSecret"
+          type="success"
+          show-icon
+          style="margin-top: 12px"
+          :message="t('tokens.createdSecret')"
+          :description="createdSecret"
+          data-testid="pat-created-secret"
+        />
+        <Alert v-if="tokensError" type="error" show-icon style="margin-top: 12px" :message="tokensError" />
+        <Empty v-else-if="!tokens.length" style="margin-top: 12px" data-testid="pat-empty" :description="t('tokens.empty')" />
+        <SmTable
+          v-else
+          style="margin-top: 12px"
+          row-key="token"
+          test-id="pat-table"
+          :columns="tokenColumns"
+          :data-source="tokens"
+          :pagination="false"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }: { column: { key: string }; record: PersonalAccessToken }">
+            <template v-if="column.key === 'actions'">
+              <Popconfirm :title="t('tokens.revokeConfirm')" @confirm="onRevokeToken(record)">
+                <Button danger size="small" :data-testid="`pat-revoke-${record.tokenName ?? record.token}`">
+                  {{ t('tokens.revoke') }}
+                </Button>
+              </Popconfirm>
+            </template>
+          </template>
+        </SmTable>
+      </template>
+      <template v-if="isAdminUser && !isOwnProfile">
+        <p class="entity-detail__tab-lead">{{ t('tokens.adminLead') }}</p>
+        <Space wrap>
+          <Select v-model:value="adminExpiry" style="width: 160px" data-testid="pat-admin-expiry">
+            <Select.Option v-for="option in JWT_TOKEN_EXPIRY_OPTIONS" :key="option" :value="option">
+              {{ expiryLabel(option) }}
+            </Select.Option>
+          </Select>
+          <Button type="primary" data-testid="pat-admin-generate" @click="onGenerateAdminToken">
+            {{ t('tokens.generate') }}
+          </Button>
+          <Popconfirm :title="t('tokens.revokeAllConfirm')" @confirm="onRevokeAllTokens">
+            <Button danger data-testid="pat-revoke-all">{{ t('tokens.revokeAll') }}</Button>
+          </Popconfirm>
+        </Space>
+        <Alert
+          v-if="adminGeneratedSecret"
+          type="success"
+          show-icon
+          style="margin-top: 12px"
+          :message="t('tokens.createdSecret')"
+          :description="adminGeneratedSecret"
+          data-testid="pat-admin-secret"
+        />
+      </template>
     </template>
   </EntityDetailShell>
   <FormModal

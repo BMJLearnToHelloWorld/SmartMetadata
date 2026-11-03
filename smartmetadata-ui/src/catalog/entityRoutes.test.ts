@@ -113,6 +113,18 @@ describe('entityRoutes', () => {
     expect(resolveVersionsPath('table', '')).toBeNull();
   });
 
+  // P2 B5: API collection / endpoint wired through the generic asset route.
+  it('maps API collection and endpoint onto their collections', () => {
+    expect(resolveDetailEndpoint('apiCollection', 'svc.coll')).toEqual({
+      path: `/v1/apiCollections/name/${encodeURIComponent('svc.coll')}`,
+      fields: 'owners,tags,domains,extension,service,followers',
+    });
+    expect(resolveDetailEndpoint('apiEndpoint', 'svc.coll.getPet')).toEqual({
+      path: `/v1/apiEndpoints/name/${encodeURIComponent('svc.coll.getPet')}`,
+      fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers',
+    });
+  });
+
   it('routes tableColumn hits to the parent table only when a table FQN exists (Fix3)', () => {
     expect(parentTableLocation('tableColumn', 'svc.db.schema.orders')).toEqual({
       name: 'asset',

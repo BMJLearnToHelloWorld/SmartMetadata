@@ -118,8 +118,26 @@ describe('entityDetailTabs', () => {
     expect(entityDetailTabDefs('pipeline')).toBeNull();
     // Unwired entities stay unsplit: their detail endpoint does not exist,
     // so a tab definition would never render and would misreport parity.
-    expect(isOfficiallySplit('apiCollection')).toBe(false);
     expect(isOfficiallySplit('query')).toBe(false);
     expect(entityDetailTabDefs('query')).toBeNull();
+  });
+
+  // P2 B5: API collection / endpoint are now wired through the generic
+  // entity detail route (official pages exist; only the mount is generic).
+  it('splits API collection and endpoint with their official tabs', () => {
+    expect(isOfficiallySplit('apiCollection')).toBe(true);
+    expect(entityDetailTabDefs('apiCollection')?.map((tab) => tab.key)).toEqual([
+      'overview',
+      'apiEndpoints',
+      'activity_feed',
+      'custom_properties',
+    ]);
+    expect(isOfficiallySplit('apiEndpoint')).toBe(true);
+    expect(entityDetailTabDefs('apiEndpoint')?.map((tab) => tab.key)).toEqual([
+      'overview',
+      'endpoint',
+      'activity_feed',
+      'custom_properties',
+    ]);
   });
 });

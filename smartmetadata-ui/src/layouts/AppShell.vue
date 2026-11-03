@@ -8,7 +8,9 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { BellOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue';
 import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
-import { Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
+import { getInboxCounts } from '@/api/inbox';
+import TourOverlay from '@/components/shared/TourOverlay.vue';
+import { Badge, Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
 import monogramUrl from '@/assets/iqvia-monogram.svg';
 import logoUrl from '@/assets/iqvia-logo.svg';
 import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
@@ -70,12 +72,46 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
   }
 }
 
+/**
+ * Official InboxIconButton badge: open tasks + unread activity. The
+ * counts refetch on navigation so the badge clears after an inbox
+ * visit marks activity seen. No auth check here: the router guard
+ * already redirects session-less navigation to login, so this shell
+ * only renders post-login; getInboxCounts itself degrades to zero
+ * on failure, so the shell never breaks on a count error.
+ */
+const inboxOpenTasks = ref(0);
+const inboxPending = ref(0);
+
+async function loadInboxCounts(): Promise<void> {
+  const counts = await getInboxCounts();
+  inboxOpenTasks.value = counts.openTaskCount;
+  inboxPending.value = counts.pendingCount;
+}
+
+function goInbox(): void {
+  // Official button behaviour: land on the tasks tab when open tasks
+  // exist, otherwise on the activity tab.
+  void router.push({
+    name: 'inbox',
+    query: inboxOpenTasks.value > 0 ? { tab: 'tasks' } : {},
+  });
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeyDown);
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
+  void loadInboxCounts();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    void loadInboxCounts();
+  },
+);
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeyDown);
@@ -279,7 +315,17 @@ async function onLogout(): Promise<void> {
             {{ localeMark }}
             <DownOutlined class="shell__lang-caret" />
           </button>
-          <BellOutlined class="shell__bell" />
+          <button
+            type="button"
+            data-testid="inbox-button"
+            class="shell__bell-button"
+            :aria-label="t('inbox.title')"
+            @click="goInbox"
+          >
+            <Badge :count="inboxPending" :overflow-count="99" data-testid="inbox-badge">
+              <BellOutlined class="shell__bell" />
+            </Badge>
+          </button>
           <Dropdown
             :trigger="['click']"
             :get-popup-container="popupParent"
@@ -311,6 +357,7 @@ async function onLogout(): Promise<void> {
         <router-view />
       </Layout.Content>
     </Layout>
+    <TourOverlay />
   </Layout>
 </template>
 
@@ -642,6 +689,12 @@ async function onLogout(): Promise<void> {
   height: 36px;
   color: var(--sm-text-secondary);
   font-size: 18px;
+}
+.shell__bell-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 .shell__user {
   display: inline-flex;

@@ -141,7 +141,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div data-testid="context-center-memories">
+  <div data-testid="context-center-memories" data-tour-step="memories" data-tour-page>
     <ContextCenterNav />
     <EntityListShell
       :title="t('contextCenter.memories')"

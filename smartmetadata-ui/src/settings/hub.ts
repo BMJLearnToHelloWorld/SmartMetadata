@@ -17,8 +17,8 @@
  * Preferences children follow Apache GlobalSettingsClassBase Preference
  * cards (Appearance, Email, Login, Health, Profiler, DQ, Search, Lineage,
  * Brand URL, Data Asset Rules, Learning, App Mode, Glossary, Time Format).
- * Collate CustomizeAppModeSidebar and SSO stay residual / out of scope;
- * Persona flipped residual → route with P2 B5.
+ * Collate CustomizeAppModeSidebar stays residual / out of scope;
+ * Persona and SSO flipped residual → route with P2 B5.
  */
 export type SettingsItemKind = 'route' | 'residual';
 
@@ -52,6 +52,10 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'governance-classifications',
   'governance-domains',
   'governance-data-products',
+  'insights-online-users',
+  'admin-settings-sso',
+  'admin-admins',
+  'inbox',
   'admin-settings-governance-intake-forms',
   'admin-settings-governance-task-forms',
   'admin-settings-persona',
@@ -85,12 +89,12 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     items: [
       { key: 'users', titleKey: 'nav.users', kind: 'route', routeName: 'admin-users' },
       { key: 'teams', titleKey: 'nav.teams', kind: 'route', routeName: 'admin-teams' },
-      { key: 'admins', titleKey: 'settings.items.admins', kind: 'residual', residualKey: 'settings.residual.admins' },
+      { key: 'admins', titleKey: 'settings.items.admins', kind: 'route', routeName: 'admin-admins' },
       {
         key: 'online-users',
         titleKey: 'settings.items.onlineUsers',
-        kind: 'residual',
-        residualKey: 'settings.residual.onlineUsers',
+        kind: 'route',
+        routeName: 'insights-online-users',
       },
     ],
   },
@@ -250,7 +254,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     items: [
       { key: 'alerts', titleKey: 'nav.alerts', kind: 'route', routeName: 'observability-alerts' },
       { key: 'announcements', titleKey: 'nav.announcements', kind: 'route', routeName: 'announcements' },
-      { key: 'inbox', titleKey: 'settings.items.inbox', kind: 'residual', residualKey: 'settings.residual.inbox' },
+      { key: 'inbox', titleKey: 'settings.items.inbox', kind: 'route', routeName: 'inbox' },
     ],
   },
   {
@@ -271,7 +275,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     titleKey: 'settings.categories.sso.title',
     descriptionKey: 'settings.categories.sso.description',
     items: [
-      { key: 'sso', titleKey: 'settings.items.sso', kind: 'residual', residualKey: 'settings.residual.sso' },
+      { key: 'sso', titleKey: 'settings.items.sso', kind: 'route', routeName: 'admin-settings-sso' },
     ],
   },
   {

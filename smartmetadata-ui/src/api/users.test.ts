@@ -11,11 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   assignUserRolesPatch,
+  createPersonalToken,
   createUser,
   deactivateUser,
+  generateUserToken,
   listOnlineUsers,
+  listPersonalTokens,
   listUsers,
   restoreUser,
+  revokePersonalTokens,
   searchUsers,
 } from './users';
 
@@ -172,5 +176,77 @@ describe('users API', () => {
     expect(lastFetch().url).toContain('/api/v1/search/query');
     expect(lastFetch().url).toContain('index=user');
     expect(lastFetch().url).toContain('q=alice');
+  });
+});
+
+describe('users personal access tokens (P2 B5)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('lists own tokens and maps the revoke key', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ token: 'tok-1', tokenName: 'cli', tokenType: 'PERSONAL', expiryDate: '2026-12-01' }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listPersonalTokens();
+    expect(lastFetch().url).toContain('/api/v1/users/security/token');
+    expect(page.data[0]).toMatchObject({ token: 'tok-1', tokenName: 'cli', expiryDate: '2026-12-01' });
+  });
+
+  it('creates with tokenName + JWTTokenExpiry via PUT and surfaces the one-time secret', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ token: 'tok-2', tokenName: 'cli', jwtToken: 'secret-xyz' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const created = await createPersonalToken('cli', '30');
+    const call = lastFetch();
+    expect(call.url).toContain('/api/v1/users/security/token');
+    expect(call.init?.method).toBe('PUT');
+    expect(JSON.parse(String(call.init?.body))).toEqual({ tokenName: 'cli', JWTTokenExpiry: '30' });
+    expect(created?.secret).toBe('secret-xyz');
+  });
+
+  it('revokes by tokenIds and revokes all for an admin with username + removeAll', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    await revokePersonalTokens(['tok-1']);
+    expect(lastFetch().url).toContain('/api/v1/users/security/token/revoke');
+    expect(JSON.parse(String(lastFetch().init?.body))).toEqual({ tokenIds: ['tok-1'] });
+    await revokePersonalTokens([], { username: 'alice', removeAll: true });
+    expect(lastFetch().url).toContain('username=alice');
+    expect(lastFetch().url).toContain('removeAll=true');
+  });
+
+  it('generates an admin token for a user id via PUT', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ token: 'tok-3', jwtToken: 'secret-abc' }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+    );
+    const created = await generateUserToken('u1', '7');
+    expect(lastFetch().url).toContain('/api/v1/users/generateToken/u1');
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(created?.secret).toBe('secret-abc');
   });
 });

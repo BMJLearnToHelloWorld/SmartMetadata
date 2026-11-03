@@ -485,7 +485,7 @@ watch(expandedKeys, (keys) => {
 </script>
 
 <template>
-  <div class="explore">
+  <div class="explore" data-tour-step="explore-search" data-tour-page>
     <PageHeader :header="t('explore.title')" :sub-header="query ? t('explore.leadQuery', { query }) : t('explore.lead')" />
     <DetailTabs
       :tabs="exploreTabItems"

@@ -6,10 +6,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import {Alert, Button, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
+import { apiEndpointLocation, listApiEndpoints, type ApiEndpointRef } from '@/api/apiCollections';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -86,6 +87,8 @@ const customPropsError = ref('');
 const pipelineStatuses = ref<CatalogPipelineStatus[]>([]);
 const pipelineStatusError = ref('');
 const pipelineStatusTried = ref(false);
+const apiEndpoints = ref<ApiEndpointRef[]>([]);
+const apiEndpointsError = ref('');
 const activeTab = ref('');
 const editOpen = ref(false);
 const commentOpen = ref(false);
@@ -207,6 +210,23 @@ function onTabChange(key: string): void {
     .catch(() => undefined);
 }
 
+const apiEndpointColumns = computed(() => [
+  { title: t('asset.name'), dataIndex: 'name', key: 'name' },
+  { title: t('asset.apiRequestMethod'), dataIndex: 'requestMethod', key: 'requestMethod' },
+  { title: t('asset.apiEndpointUrl'), dataIndex: 'endpointURL', key: 'endpointURL' },
+]);
+
+const apiEndpointSchemaJson = (schema: Record<string, unknown> | undefined): string => {
+  if (!schema) {
+    return '';
+  }
+  try {
+    return JSON.stringify(schema, null, 2);
+  } catch {
+    return '';
+  }
+};
+
 const taskGraph = computed(() => mapPipelineTaskGraph(asset.value?.tasks, asset.value?.pipelineStatus));
 const taskGraphEmpty = computed(() => isPipelineTaskGraphEmpty(taskGraph.value));
 const executionRows = computed(() => {
@@ -279,6 +299,8 @@ function resetSecondary(): void {
   pipelineStatuses.value = [];
   pipelineStatusError.value = '';
   pipelineStatusTried.value = false;
+  apiEndpoints.value = [];
+  apiEndpointsError.value = '';
   activeTab.value = '';
 }
 
@@ -297,7 +319,7 @@ async function load(): Promise<void> {
     const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
     const validKeys = tabs.value.map((tab) => tab.key);
     activeTab.value = requestedTab && validKeys.includes(requestedTab) ? requestedTab : firstTabKey();
-    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses()]);
+    await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses(), loadApiEndpoints()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
   } finally {
@@ -367,6 +389,22 @@ async function loadQuality(): Promise<void> {
       topicSample.value = null;
       observabilityError.value = error instanceof Error ? error.message : t('asset.sampleUnavailable');
     }
+  }
+}
+
+async function loadApiEndpoints(): Promise<void> {
+  // Official APIEndpointsTab: endpoints are listed per collection, not
+  // embedded in the collection payload.
+  if (props.entityType !== 'apiCollection' || !asset.value) {
+    return;
+  }
+  try {
+    const page = await listApiEndpoints({ apiCollection: asset.value.fullyQualifiedName });
+    apiEndpoints.value = page.data;
+    apiEndpointsError.value = '';
+  } catch (error) {
+    apiEndpoints.value = [];
+    apiEndpointsError.value = error instanceof Error ? error.message : t('asset.apiEndpointsFailed');
   }
 }
 
@@ -832,6 +870,38 @@ onMounted(() => {
               :pagination="false"
               size="small"
             />
+          </template>
+      </template>
+      <template v-if="asset" #apiEndpoints>
+          <Alert v-if="apiEndpointsError" type="error" :message="apiEndpointsError" show-icon />
+          <Empty
+            v-else-if="!apiEndpoints.length"
+            data-testid="asset-api-endpoints-empty"
+            :description="t('asset.apiEndpointsEmpty')"
+          />
+          <SmTable
+            v-else
+            row-key="name"
+            test-id="asset-api-endpoints-table"
+            :columns="apiEndpointColumns"
+            :data-source="apiEndpoints"
+            :pagination="false"
+            size="small"
+            :custom-row="(row: ApiEndpointRef) => ({ onClick: () => router.push(apiEndpointLocation(row)) })"
+          />
+      </template>
+      <template v-if="asset" #endpoint>
+          <Descriptions bordered size="small" :column="1">
+            <Descriptions.Item :label="t('asset.apiEndpointUrl')">{{ asset.apiEndpointUrl || '—' }}</Descriptions.Item>
+            <Descriptions.Item :label="t('asset.apiRequestMethod')">{{ asset.apiRequestMethod || '—' }}</Descriptions.Item>
+          </Descriptions>
+          <template v-if="asset.apiRequestSchema">
+            <Typography.Title :level="5">{{ t('asset.apiRequestSchema') }}</Typography.Title>
+            <pre data-testid="asset-api-request-schema" class="detail__code">{{ apiEndpointSchemaJson(asset.apiRequestSchema) }}</pre>
+          </template>
+          <template v-if="asset.apiResponseSchema">
+            <Typography.Title :level="5">{{ t('asset.apiResponseSchema') }}</Typography.Title>
+            <pre data-testid="asset-api-response-schema" class="detail__code">{{ apiEndpointSchemaJson(asset.apiResponseSchema) }}</pre>
           </template>
       </template>
       <template v-if="asset" #activity_feed>

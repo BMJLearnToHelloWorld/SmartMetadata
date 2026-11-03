@@ -54,6 +54,10 @@ async function mountHub() {
       { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
       { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
       { path: '/admin/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
+      { path: '/insights/online-users', name: 'insights-online-users', component: stub('online') },
+      { path: '/admin/settings/sso', name: 'admin-settings-sso', component: stub('sso') },
+      { path: '/admin/users/admins', name: 'admin-admins', component: stub('admins') },
+      { path: '/inbox', name: 'inbox', component: stub('inbox') },
       // Preferences residual→route (BACKEND_09 / hub pattern)
       { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
       { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },
@@ -121,8 +125,12 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-residual-apps"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-sso"]').exists()).toBe(true);
+    // B5-3: inbox flipped residual → route.
+    expect(wrapper.find('[data-testid="settings-link-inbox"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(false);
+    // B5-8: SSO flipped residual → route.
+    expect(wrapper.find('[data-testid="settings-link-sso"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-residual-sso"]').exists()).toBe(false);
     // Appearance / search / profiler flipped residual → route (Preferences full-chain).
     expect(wrapper.find('[data-testid="settings-residual-appearance"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-link-appearance"]').exists()).toBe(true);

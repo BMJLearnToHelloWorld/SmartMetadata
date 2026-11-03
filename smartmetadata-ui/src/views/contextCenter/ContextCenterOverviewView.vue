@@ -152,7 +152,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div data-testid="context-center-overview">
+  <div data-testid="context-center-overview" data-tour-step="context-center" data-tour-page>
     <PageHeader :header="t('contextCenter.overview')" :sub-header="t('contextCenter.overviewLead')" />
     <ContextCenterNav />
     <Space wrap style="margin-bottom: 16px">

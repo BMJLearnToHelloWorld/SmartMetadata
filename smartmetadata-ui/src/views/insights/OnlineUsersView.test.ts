@@ -9,9 +9,11 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import OnlineUsersView from './OnlineUsersView.vue';
 
 const listOnlineUsers = vi.fn();
@@ -26,14 +28,19 @@ vi.mock('@/api/users', async () => {
   };
 });
 
-async function mountView() {
+async function mountView(asAdmin = true) {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  useAuthStore().user = asAdmin
+    ? { id: 'admin', name: 'admin', isAdmin: true }
+    : { id: 'u9', name: 'bob' };
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/insights/online-users', name: 'insights-online-users', component: OnlineUsersView }],
   });
   await router.push({ name: 'insights-online-users' });
   await router.isReady();
-  const wrapper = mount(OnlineUsersView, { global: { plugins: [router, Antd, createTestI18n()] } });
+  const wrapper = mount(OnlineUsersView, { global: { plugins: [pinia, router, Antd, createTestI18n()] } });
   await flushPromises();
   return wrapper;
 }
@@ -69,7 +76,14 @@ describe('OnlineUsersView', () => {
     expect(wrapper.text()).toContain('Alice');
     expect(wrapper.text()).toContain('Engineering');
     expect(wrapper.text()).toContain('DataConsumer');
-    expect(wrapper.text()).toContain('admin-only');
+    // B5-7: the admin gate is real now, so the old residual warning is gone.
+    expect(wrapper.text()).not.toContain('Residual');
+  });
+
+  it('shows the forbidden view, not the table, for non-admins', async () => {
+    const wrapper = await mountView(false);
+    expect(wrapper.find('[data-testid="forbidden-view"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="online-users-table"]').exists()).toBe(false);
   });
 
   it('shows an honest error, not an empty list, when the endpoint is missing', async () => {
