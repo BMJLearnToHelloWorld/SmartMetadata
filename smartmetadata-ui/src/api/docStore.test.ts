@@ -86,6 +86,22 @@ describe('docStore API', () => {
     expect(lastFetch().url).toContain('/api/v1/docStore/name/persona.Analyst');
   });
 
+  it('keeps an array page layout verbatim through mapping (B3-6 reader source)', async () => {
+    const layout = [
+      { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
+      { i: 'KnowledgePanel.MarketplaceDataProducts', y: 1 },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'doc1',
+      name: 'Analyst-Analyst',
+      fullyQualifiedName: 'persona.Analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'DataMarketplace', layout }], personaPreferences: [] },
+    })));
+    const doc = await getDocumentByFqn('persona.Analyst');
+    expect(doc.data.pages?.[0]?.layout).toEqual(layout);
+  });
+
   it('saves an existing document with a pages replace patch only', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc })));
     const saved = await savePersonaDocument(storedDoc, (draft) => {

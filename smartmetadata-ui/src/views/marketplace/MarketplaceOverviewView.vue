@@ -21,19 +21,46 @@ import type { Announcement } from '@/types/collaboration';
 import type { Domain } from '@/types/governance';
 import { entityLabel } from '@/features/crud/paging';
 import { useAuthStore } from '@/stores/auth';
+import { usePersonaStore } from '@/stores/persona';
+import { getPersonaPage } from '@/views/admin/personaPage';
 import { buildDataProductCreateBody, buildDomainCreateBody } from './marketplaceCreate';
+import {
+  DEFAULT_MARKETPLACE_WIDGET_ORDER,
+  resolveMarketplaceWidgetOrder,
+  type MarketplaceWidgetKey,
+} from './marketplaceLayout';
 
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
+const personaStore = usePersonaStore();
+
+/**
+ * B3-6: the widget column order. The persona document is the store's
+ * (loaded on mount below, refreshed by the persona switcher), so the
+ * order reacts to persona switches without a watcher here. No selected
+ * persona, no document, or a document without a DataMarketplace page
+ * all resolve to the default order inside the helper; a layout fetch
+ * failure leaves the store document null, which is the same default.
+ */
+const widgetOrder = computed<MarketplaceWidgetKey[]>(() =>
+  personaStore.selectedPersona
+    ? resolveMarketplaceWidgetOrder(
+        getPersonaPage(personaStore.document, 'DataMarketplace'),
+      )
+    : [...DEFAULT_MARKETPLACE_WIDGET_ORDER],
+);
 
 /**
  * Official page shape (pages/DataMarketplacePage + DataMarketplaceClassBase):
- * a greeting + search hero, an announcements widget, then the default widget
- * column — data products first, domains second. The official widgets search
- * the search index (dataProduct / domain, updatedAt desc, 3 cards); the
- * persona-customized layout is a customization layer this console does not
- * ship, so the default column is what lands here.
+ * a greeting + search hero, an announcements widget, then the widget
+ * column — data products first, domains second by default. The official
+ * widgets search the search index (dataProduct / domain, updatedAt desc,
+ * 3 cards). B3-6 reader: when a persona is selected, the column order
+ * follows that persona's DataMarketplace page layout (overview-tab
+ * layout first, then page layout, else the default order); unknown
+ * layout entries are skipped. The hero and announcements stay fixed
+ * above the column — official renders them outside the layout too.
  */
 const DISPLAY_COUNT = 3;
 
@@ -306,6 +333,14 @@ async function onCreateDomain(): Promise<void> {
 
 onMounted(() => {
   void loadWidgets();
+  // The persona document drives widgetOrder above; loading it here (and
+  // skipping when the switcher already loaded it) is what makes a
+  // stored or default persona's layout apply on first render.
+  void personaStore.ensureLoaded().then(() => {
+    if (!personaStore.documentLoaded && !personaStore.documentLoading) {
+      void personaStore.loadDocument();
+    }
+  });
   void getNLPEnabledStatus()
     .then((enabled) => {
       nlqEnabled.value = enabled;
@@ -401,8 +436,9 @@ onUnmounted(() => {
       </List>
     </Card>
     <Row :gutter="16">
-      <Col :span="12">
+      <Col v-for="widget in widgetOrder" :key="widget" :span="12">
         <Card
+          v-if="widget === 'data-products'"
           :title="`${t('marketplace.dataProducts')} (${dataProductsTotal})`"
           :loading="loading"
           data-testid="marketplace-data-products"
@@ -435,9 +471,8 @@ onUnmounted(() => {
             </template>
           </List>
         </Card>
-      </Col>
-      <Col :span="12">
         <Card
+          v-else
           :title="`${t('marketplace.domains')} (${domainsTotal})`"
           :loading="loading"
           data-testid="marketplace-domains"

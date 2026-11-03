@@ -48,7 +48,12 @@ function mapDocument(raw: Record<string, unknown>): PersonaDocument | null {
           {
             pageType: rec.pageType as string,
             entityType: asString(rec.entityType) || undefined,
-            layout: asRecord(rec.layout) ?? undefined,
+            // Official page layout is a WidgetConfig array; asRecord
+            // rejects arrays, so an array layout must be kept verbatim
+            // or the B3-6 reader's page-level fallback could never fire.
+            layout: Array.isArray(rec.layout)
+              ? (rec.layout as unknown[])
+              : (asRecord(rec.layout) ?? undefined),
             knowledgePanels: mapEntityRefs(rec.knowledgePanels),
             tabs: Array.isArray(rec.tabs) ? (rec.tabs as never[]) : undefined,
             persona: undefined,

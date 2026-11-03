@@ -77,7 +77,9 @@ export interface PageTab {
 export interface PersonaPage {
   pageType: string;
   entityType?: string;
-  layout?: Record<string, unknown>;
+  // Official layout is a WidgetConfig array; a Record is kept as a
+  // tolerated shape because the JSON editor stores pages verbatim.
+  layout?: unknown[] | Record<string, unknown>;
   knowledgePanels?: EntityRef[];
   tabs?: PageTab[];
   persona?: EntityRef;
