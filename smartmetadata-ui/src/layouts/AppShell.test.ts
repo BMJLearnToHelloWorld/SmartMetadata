@@ -222,6 +222,8 @@ describe('AppShell', () => {
     const { wrapper, router } = await mountShell();
     await wrapper.get('[data-testid="section-title-marketplace"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('governance-domains');
+    // B3-5: the marketplace overview is a real page now, so the section
+    // title lands on it instead of the Fix6 workaround target (domains).
+    expect(router.currentRoute.value.name).toBe('marketplace-overview');
   });
 });

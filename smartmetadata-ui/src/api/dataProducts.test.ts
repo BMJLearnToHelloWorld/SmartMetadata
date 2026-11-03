@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createDataProduct, listDataProducts } from './dataProducts';
+import { createDataProduct, getDataProductByName, listDataProducts } from './dataProducts';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -84,5 +84,20 @@ describe('dataProducts API', () => {
     expect(created.id).toBe('p2');
     expect(lastFetch().init?.method).toBe('POST');
     expect(lastFetch().url).toContain('/api/v1/dataProducts');
+  });
+
+  it('resolves a data product by name from GET /v1/dataProducts/name/{name}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 'p3', name: 'churn', fullyQualifiedName: 'churn' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const product = await getDataProductByName('churn');
+    expect(product.id).toBe('p3');
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/name/churn');
   });
 });

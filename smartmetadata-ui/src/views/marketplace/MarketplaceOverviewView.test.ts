@@ -154,6 +154,178 @@ describe('MarketplaceOverviewView', () => {
     expect(results.text()).toContain('Sales');
   });
 
+  it('shows search results grouped into data products and domains', { timeout: 15000 }, async () => {
+    stubFetch();
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const search = wrapper.get('[data-testid="marketplace-search"]');
+    const native = search.find('input');
+    if (native.exists()) {
+      await native.setValue('sales');
+    } else {
+      await search.setValue('sales');
+    }
+    await wrapper.find('.ant-input-search-button').trigger('click');
+    await flushPromises();
+    const productGroup = wrapper.find('[data-testid="marketplace-search-data-products"]');
+    const domainGroup = wrapper.find('[data-testid="marketplace-search-domains"]');
+    expect(productGroup.exists()).toBe(true);
+    expect(productGroup.text()).toContain('Sales Metrics');
+    expect(domainGroup.exists()).toBe(true);
+    expect(domainGroup.text()).toContain('Sales');
+  });
+
+  it('navigates an announcement click to the domain detail via fqn resolution', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          return jsonResponse({});
+        }
+        if (url.includes('/v1/domains/name/')) {
+          return jsonResponse({ id: 'd1', name: 'sales', fullyQualifiedName: 'sales', domainType: 'Source-aligned' });
+        }
+        if (url.includes('/v1/search/query')) {
+          const index = new URL(url).searchParams.get('index');
+          return jsonResponse(searchPayload(index === 'domain' ? [DOMAIN_HIT] : [PRODUCT_HIT]));
+        }
+        if (url.includes('/v1/announcements')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'a1',
+                name: 'launch',
+                displayName: 'Launch',
+                description: 'New domain launched',
+                entityLink: '<#E::domain::sales>',
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/domains')) {
+          return jsonResponse({
+            data: [{ id: 'd1', name: 'sales', fullyQualifiedName: 'sales' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const item = wrapper.find('[data-testid="marketplace-announcements"] .ant-list-item');
+    expect(item.exists()).toBe(true);
+    await item.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('governance-domain');
+    expect(router.currentRoute.value.params.id).toBe('d1');
+  });
+
+  it('offers NLQ only when enabled, and NLQ search hits the nlq endpoint', { timeout: 15000 }, async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        urls.push(url);
+        if (init?.method === 'POST') {
+          return jsonResponse({});
+        }
+        if (url.includes('/v1/system/search/nlq')) {
+          return jsonResponse(true);
+        }
+        if (url.includes('/v1/search/nlq/query')) {
+          const index = new URL(url).searchParams.get('index');
+          return jsonResponse(searchPayload(index === 'domain' ? [DOMAIN_HIT] : [PRODUCT_HIT]));
+        }
+        if (url.includes('/v1/search/query')) {
+          const index = new URL(url).searchParams.get('index');
+          return jsonResponse(searchPayload(index === 'domain' ? [DOMAIN_HIT] : [PRODUCT_HIT]));
+        }
+        if (url.includes('/v1/announcements')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/domains')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const toggle = wrapper.find('[data-testid="marketplace-nlq-toggle"]');
+    expect(toggle.exists()).toBe(true);
+    await toggle.trigger('click');
+    await flushPromises();
+    const search = wrapper.get('[data-testid="marketplace-search"]');
+    const native = search.find('input');
+    if (native.exists()) {
+      await native.setValue('sales');
+    } else {
+      await search.setValue('sales');
+    }
+    await wrapper.find('.ant-input-search-button').trigger('click');
+    await flushPromises();
+    const nlqUrls = urls.filter((u) => u.includes('/v1/search/nlq/query'));
+    expect(nlqUrls.length).toBe(2);
+    expect(nlqUrls.some((u) => u.includes('index=dataProduct'))).toBe(true);
+    expect(nlqUrls.some((u) => u.includes('index=domain'))).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-search-data-products"]').text()).toContain('Sales Metrics');
+    expect(wrapper.find('[data-testid="marketplace-search-domains"]').text()).toContain('Sales');
+  });
+
+  it('hides the NLQ toggle when the server reports NLQ disabled', { timeout: 15000 }, async () => {
+    stubFetch();
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="marketplace-nlq-toggle"]').exists()).toBe(false);
+  });
+
+  it('renders owners, experts, icon, and color fields in both create modals', { timeout: 15000 }, async () => {
+    stubFetch();
+    const { pinia, router } = mountPage();
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="marketplace-add-data-product"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="marketplace-data-product-owners"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-data-product-experts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-data-product-icon-url"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-data-product-color"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="marketplace-add-domain"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="marketplace-domain-owners"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-domain-experts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-domain-icon-url"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-domain-color"]').exists()).toBe(true);
+  });
+
   it('creates a data product with name + description', { timeout: 15000 }, async () => {
     const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
     stubFetch((url, init) => {

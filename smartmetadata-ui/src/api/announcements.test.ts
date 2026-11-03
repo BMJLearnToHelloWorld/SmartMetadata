@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createAnnouncement, listAnnouncements } from './announcements';
+import { createAnnouncement, listAnnouncements, parseAnnouncementEntityLink } from './announcements';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -79,5 +79,25 @@ describe('announcements API', () => {
     expect(created.id).toBe('a2');
     expect(lastFetch().init?.method).toBe('POST');
     expect(lastFetch().url).toContain('/api/v1/announcements');
+  });
+});
+
+describe('parseAnnouncementEntityLink', () => {
+  it('parses domain and data-product links, keeping dotted fqns whole', () => {
+    expect(parseAnnouncementEntityLink('<#E::domain::sales>')).toEqual({
+      entityType: 'domain',
+      fullyQualifiedName: 'sales',
+    });
+    expect(parseAnnouncementEntityLink('<#E::dataProduct::marketing.churn-scores>')).toEqual({
+      entityType: 'dataProduct',
+      fullyQualifiedName: 'marketing.churn-scores',
+    });
+  });
+
+  it('returns null for other entity types, malformed links, and missing links', () => {
+    expect(parseAnnouncementEntityLink('<#E::table::svc.db.t')).toBeNull();
+    expect(parseAnnouncementEntityLink('not-a-link')).toBeNull();
+    expect(parseAnnouncementEntityLink('<#E::domain::>')).toBeNull();
+    expect(parseAnnouncementEntityLink(undefined)).toBeNull();
   });
 });

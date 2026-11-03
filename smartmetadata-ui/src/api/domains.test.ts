@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createDomain, listDomainAssets, listDomains } from './domains';
+import { createDomain, getDomainByName, listDomainAssets, listDomains } from './domains';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -104,6 +104,21 @@ describe('domains API', () => {
     });
     expect(created.id).toBe('d2');
     expect(lastFetch().init?.method).toBe('POST');
+  });
+
+  it('resolves a domain by name from GET /v1/domains/name/{name}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 'd9', name: 'sales', fullyQualifiedName: 'sales', domainType: 'Source-aligned' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const domain = await getDomainByName('sales');
+    expect(domain.id).toBe('d9');
+    expect(lastFetch().url).toContain('/api/v1/domains/name/sales');
   });
 
   it('lists domain assets from GET /v1/domains/{id}/assets', async () => {

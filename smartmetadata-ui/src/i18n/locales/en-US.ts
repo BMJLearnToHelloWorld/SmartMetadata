@@ -2230,6 +2230,12 @@ const enUS = {
     emptyDomains: 'No domains yet',
     empty: 'No data products or domains yet.',
     createRequired: 'Name and description are required.',
+    owners: 'Owners',
+    experts: 'Experts',
+    iconUrl: 'Icon URL',
+    color: 'Color',
+    nlq: 'Natural language',
+    openFailed: 'Could not open this announcement target.',
   },
   ontology: {
     title: 'Ontology Explorer',

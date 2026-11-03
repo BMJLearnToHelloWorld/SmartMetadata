@@ -53,6 +53,37 @@ export async function patchAnnouncement(id: string, ops: AnnouncementPatchOp[]):
   return mapped;
 }
 
+export interface AnnouncementEntityTarget {
+  entityType: 'domain' | 'dataProduct';
+  fullyQualifiedName: string;
+}
+
+/**
+ * Parse an announcement entityLink into its click target. Official format
+ * (AnnouncementsWidgetV2 + FeedUtilsPure prepareFeedLink): the link is
+ * `<#E::<entityType>::<fqn>>`; the marketplace widget only keeps domain
+ * and data-product items, so any other type returns null rather than a
+ * half-parsed target. The fqn may itself contain dots and separators, so
+ * only the first two fields are split off.
+ */
+export function parseAnnouncementEntityLink(entityLink: string | undefined): AnnouncementEntityTarget | null {
+  if (!entityLink) {
+    return null;
+  }
+  const match = /^<#E::([^:]+)::(.+)>$/.exec(entityLink.trim());
+  if (!match) {
+    return null;
+  }
+  const [, entityType, fullyQualifiedName] = match;
+  if (entityType !== 'domain' && entityType !== 'dataProduct') {
+    return null;
+  }
+  if (!fullyQualifiedName) {
+    return null;
+  }
+  return { entityType, fullyQualifiedName };
+}
+
 export interface ListAnnouncementsQuery {
   limit?: number;
   after?: string;
