@@ -44,9 +44,13 @@ describe('document title', () => {
   });
 
   it('prefers the residual shell title over the nav overview name', () => {
-    expect(resolveDocumentTitleKey(route('marketplace-overview'))).toBe(
-      'shells.marketplaceOverview.title',
+    expect(resolveDocumentTitleKey(route('column-bulk-ops'))).toBe(
+      'shells.columnBulkOps.title',
     );
+  });
+
+  it('uses the sidebar entry for a former shell page turned real page (P2 B2)', () => {
+    expect(resolveDocumentTitleKey(route('marketplace-overview'))).toBe('nav.overview');
   });
 
   it('uses existing auth/error keys for routes outside the sidebar', () => {

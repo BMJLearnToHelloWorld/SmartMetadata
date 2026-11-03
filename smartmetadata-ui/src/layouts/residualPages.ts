@@ -29,26 +29,13 @@ export interface ResidualPageDef {
   links?: ResidualPageLink[];
 }
 
-/** Nav shells with no product API in this console. Honest Empty, no fake rows. */
+/**
+ * Nav shells with no product API in this console. Honest Empty, no fake rows.
+ * P2 B2 removed marketplace-overview, ontology-explorer and workflows with
+ * their real pages; column-bulk-ops stays until its fate is adjudicated
+ * (the original "no counterpart" judgment for it was correct).
+ */
 export const RESIDUAL_PAGES: ResidualPageDef[] = [
-  {
-    name: 'marketplace-overview',
-    path: 'marketplace',
-    titleKey: 'shells.marketplaceOverview.title',
-    leadKey: 'shells.marketplaceOverview.lead',
-    emptyKey: 'shells.marketplaceOverview.empty',
-    testId: 'residual-marketplace-overview',
-    links: [{ routeName: 'governance-domains', titleKey: 'nav.domains' }, { routeName: 'governance-data-products', titleKey: 'nav.dataProducts' }],
-  },
-  {
-    name: 'ontology-explorer',
-    path: 'govern/ontology',
-    titleKey: 'shells.ontologyExplorer.title',
-    leadKey: 'shells.ontologyExplorer.lead',
-    emptyKey: 'shells.ontologyExplorer.empty',
-    testId: 'residual-ontology-explorer',
-    links: [{ routeName: 'governance-glossaries', titleKey: 'nav.glossary' }, { routeName: 'governance-classifications', titleKey: 'nav.classification' }],
-  },
   {
     name: 'column-bulk-ops',
     path: 'govern/column-bulk-ops',
@@ -57,14 +44,5 @@ export const RESIDUAL_PAGES: ResidualPageDef[] = [
     emptyKey: 'shells.columnBulkOps.empty',
     testId: 'residual-column-bulk-ops',
     links: [{ routeName: 'search', titleKey: 'nav.explore' }],
-  },
-  {
-    name: 'workflows',
-    path: 'govern/workflows',
-    titleKey: 'shells.workflows.title',
-    leadKey: 'shells.workflows.lead',
-    emptyKey: 'shells.workflows.empty',
-    testId: 'residual-workflows',
-    links: [{ routeName: 'admin-settings', titleKey: 'nav.settings' }],
   },
 ];

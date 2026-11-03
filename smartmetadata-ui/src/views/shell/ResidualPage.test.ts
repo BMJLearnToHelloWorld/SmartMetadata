@@ -48,17 +48,12 @@ async function mountPage(name: string) {
 
 describe('ResidualPage', () => {
   it('lists every residual nav shell with an honest empty and no invented rows', async () => {
-    expect(RESIDUAL_PAGES.map((page) => page.name)).toEqual([
-      'marketplace-overview',
-      'ontology-explorer',
-      'column-bulk-ops',
-      'workflows',
-    ]);
-    const { wrapper, def } = await mountPage('ontology-explorer');
+    expect(RESIDUAL_PAGES.map((page) => page.name)).toEqual(['column-bulk-ops']);
+    const { wrapper, def } = await mountPage('column-bulk-ops');
     expect(wrapper.find(`[data-testid="${def.testId}"]`).exists()).toBe(true);
-    expect(wrapper.text()).toContain('Ontology Explorer');
+    expect(wrapper.text()).toContain('Column Bulk Ops');
     expect(wrapper.find('[data-testid="residual-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toMatch(/residual|not wired|no ontology/i);
+    expect(wrapper.text()).toMatch(/residual|not wired|bulk/i);
     expect(wrapper.findAll('table').length).toBe(0);
   });
 
@@ -66,18 +61,24 @@ describe('ResidualPage', () => {
     const names = RESIDUAL_PAGES.map((page) => page.name);
     expect(names.some((name) => name.startsWith('context-center-'))).toBe(false);
   });
+
+  it('no longer lists B2 shells (P2 B2 replaced them with real pages)', () => {
+    const names = RESIDUAL_PAGES.map((page) => page.name);
+    expect(names).not.toContain('marketplace-overview');
+    expect(names).not.toContain('ontology-explorer');
+    expect(names).not.toContain('workflows');
+  });
 });
 
 describe('ResidualPage onward links (Fix6)', () => {
   it('renders working links instead of leaving the residual page a dead end', async () => {
-    const { wrapper, def } = await mountPage('marketplace-overview');
+    const { wrapper, def } = await mountPage('column-bulk-ops');
     expect(def.links?.length).toBeGreaterThan(0);
-    const domainsLink = wrapper.get('[data-testid="residual-link-governance-domains"]');
-    expect(domainsLink.text()).toBe('Domains');
-    expect(wrapper.get('[data-testid="residual-link-governance-data-products"]').text()).toBe('Data Products');
+    const exploreLink = wrapper.get('[data-testid="residual-link-search"]');
+    expect(exploreLink.text()).toBe('Explore');
     expect(wrapper.find('[data-testid="residual-links"]').exists()).toBe(true);
-    await domainsLink.trigger('click');
+    await exploreLink.trigger('click');
     await flushPromises();
-    expect(wrapper.vm.$router.currentRoute.value.name).toBe('governance-domains');
+    expect(wrapper.vm.$router.currentRoute.value.name).toBe('search');
   });
 });

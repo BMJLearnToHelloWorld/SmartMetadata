@@ -115,6 +115,9 @@ const ContextCenterIntegrationsView = () =>
 const ContextCenterAiContextView = () =>
   import('@/views/contextCenter/ContextCenterAiContextView.vue');
 const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCenterArchiveView.vue');
+const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
+const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
+const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
@@ -375,6 +378,27 @@ export const router = createRouter({
           path: 'context-center/archive',
           name: 'context-center-archive',
           component: ContextCenterArchiveView,
+        },
+        // P2 B2: the three remaining shells are real pages now; the
+        // residual entries were removed from residualPages.ts with them.
+        // Each keeps its product path and gains the official path as an alias.
+        {
+          path: 'marketplace',
+          name: 'marketplace-overview',
+          component: MarketplaceOverviewView,
+          alias: 'data-marketplace',
+        },
+        {
+          path: 'govern/ontology',
+          name: 'ontology-explorer',
+          component: OntologyExplorerView,
+          alias: 'governance/ontology',
+        },
+        {
+          path: 'govern/workflows',
+          name: 'workflows',
+          component: WorkflowsView,
+          alias: 'workflows',
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,
