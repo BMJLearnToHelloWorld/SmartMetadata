@@ -786,8 +786,8 @@ watch(expandedKeys, (keys) => {
 }
 .explore__pane {
   border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius, 6px);
-  background: var(--sm-bg-container, #fff);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
   padding: 12px;
   min-width: 0;
 }
@@ -798,7 +798,7 @@ watch(expandedKeys, (keys) => {
 }
 .explore__crumbs {
   font-size: 12px;
-  color: var(--sm-text-tertiary, #535862);
+  color: var(--sm-text-tertiary);
   margin-bottom: 8px;
 }
 .explore__error {
@@ -812,9 +812,9 @@ watch(expandedKeys, (keys) => {
 }
 .explore__card {
   border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius, 6px);
+  border-radius: var(--sm-border-radius);
   padding: 8px 12px;
-  background: var(--sm-bg-container, #fff);
+  background: var(--sm-bg-container);
   cursor: pointer;
 }
 .explore__card--dense {
@@ -822,13 +822,13 @@ watch(expandedKeys, (keys) => {
 }
 .explore__card--dense:hover,
 .explore__card--selected {
-  border-color: var(--sm-color-primary, #1570ef);
-  background: var(--sm-color-primary-bg, #eff8ff);
-  box-shadow: inset 3px 0 0 var(--sm-color-primary, #1570ef);
+  border-color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
+  box-shadow: inset 3px 0 0 var(--sm-color-primary);
 }
 .explore__card--dense:hover .explore__card-name,
 .explore__card--selected .explore__card-name {
-  color: var(--sm-color-primary, #1570ef);
+  color: var(--sm-color-primary);
 }
 .explore__card-head {
   display: flex;
@@ -840,7 +840,7 @@ watch(expandedKeys, (keys) => {
 .explore__card-name {
   font-size: 14px;
   font-weight: 600;
-  color: var(--sm-text-primary, #181d27);
+  color: var(--sm-text-primary);
   line-height: 1.3;
 }
 .explore__fqn,
@@ -852,7 +852,7 @@ watch(expandedKeys, (keys) => {
   line-height: 1.4;
 }
 .explore__desc {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--sm-text-secondary);
 }
 .explore__meta {
@@ -861,7 +861,7 @@ watch(expandedKeys, (keys) => {
   gap: 4px 10px;
   margin-bottom: 2px;
   font-size: 12px;
-  color: var(--sm-text-tertiary, #535862);
+  color: var(--sm-text-tertiary);
 }
 .explore__footer {
   display: flex;

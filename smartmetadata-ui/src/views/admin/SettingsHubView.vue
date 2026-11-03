@@ -59,14 +59,14 @@ const { t } = useI18n();
   gap: 8px;
 }
 .settings-hub__residual {
-  color: var(--sm-text-secondary);
+  color: var(--sm-text-tertiary);
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-size: 14px;
 }
 .settings-hub__residual-why {
-  color: var(--sm-text-tertiary);
+  color: var(--sm-text-quaternary);
   font-size: 12px;
 }
 </style>

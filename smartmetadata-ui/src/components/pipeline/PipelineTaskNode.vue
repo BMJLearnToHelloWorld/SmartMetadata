@@ -38,9 +38,9 @@ const statusColor = computed(() =>
   width: 220px;
   min-height: 72px;
   padding: 8px 10px;
-  border: 1px solid var(--ant-color-border, #d5d7da);
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
-  background: var(--ant-color-bg-container, #fff);
+  background: var(--sm-bg-container);
   font-size: 12px;
 }
 .pipeline-task-node__name {
@@ -48,7 +48,7 @@ const statusColor = computed(() =>
   line-height: 1.3;
 }
 .pipeline-task-node__type {
-  color: var(--ant-color-text-secondary, #414651);
+  color: var(--sm-text-secondary);
   margin-top: 2px;
 }
 .pipeline-task-node__status {

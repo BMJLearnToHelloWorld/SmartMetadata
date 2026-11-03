@@ -94,18 +94,18 @@ function columnClass(fqn: string): string {
   width: 252px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--sm-border-color, #d5d7da);
-  border-radius: var(--sm-border-radius, 6px);
-  background: var(--sm-bg-container, #fff);
+  border: 1px solid var(--sm-border-color);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
   box-shadow: var(--sm-shadow-card);
 }
 .lineage-node--center {
-  border: 2px solid var(--sm-color-primary, #1570ef);
-  box-shadow: 0 0 0 1px var(--sm-color-primary, #1570ef) inset;
+  border: 2px solid var(--sm-color-primary);
+  box-shadow: 0 0 0 1px var(--sm-color-primary) inset;
 }
 .lineage-node--highlighted {
-  border-color: var(--sm-color-warning, #dc6803);
-  box-shadow: 0 0 0 1px var(--sm-color-warning, #dc6803) inset;
+  border-color: var(--sm-color-warning);
+  box-shadow: 0 0 0 1px var(--sm-color-warning) inset;
 }
 .lineage-node__head {
   display: flex;
@@ -113,11 +113,11 @@ function columnClass(fqn: string): string {
   justify-content: space-between;
   gap: 8px;
   padding: 5px 10px;
-  background: var(--sm-table-header-bg, #fafafa);
-  border-bottom: 1px solid var(--sm-border-secondary, #e9eaeb);
+  background: var(--sm-table-header-bg);
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 .lineage-node--center .lineage-node__head {
-  background: var(--sm-color-primary-bg, #eff8ff);
+  background: var(--sm-color-primary-bg);
 }
 .lineage-node__body {
   padding: 8px 10px 10px;
@@ -131,13 +131,13 @@ function columnClass(fqn: string): string {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--sm-color-primary, #1570ef);
+  color: var(--sm-color-primary);
   cursor: pointer;
   font-size: 11px;
 }
 .lineage-node__name {
   font-weight: 600;
-  color: var(--sm-text-primary, #181d27);
+  color: var(--sm-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -145,14 +145,14 @@ function columnClass(fqn: string): string {
 .lineage-node__path,
 .lineage-node__fqn {
   font-size: 11px;
-  color: var(--sm-text-tertiary, #535862);
+  color: var(--sm-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .lineage-node__columns {
   margin-top: 8px;
-  border-top: 1px solid var(--sm-border-secondary, #e9eaeb);
+  border-top: 1px solid var(--sm-border-secondary);
   padding-top: 6px;
 }
 .lineage-node__column {
@@ -162,10 +162,10 @@ function columnClass(fqn: string): string {
   min-height: 22px;
   padding: 0 4px;
   font-size: 12px;
-  color: var(--sm-text-secondary, #414651);
+  color: var(--sm-text-secondary);
 }
 .lineage-node__column--active {
-  background: var(--sm-color-warning-bg);
+  background: var(--sm-color-warning-highlight-bg);
   border-radius: 4px;
 }
 .lineage-node__column-name {

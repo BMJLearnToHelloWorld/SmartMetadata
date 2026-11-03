@@ -6,7 +6,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Layout, Select, Space, Tag, Tooltip, message } from 'ant-design-vue';
+import { BellOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue';
+import { Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
+import monogramUrl from '@/assets/iqvia-monogram.svg';
+import logoUrl from '@/assets/iqvia-logo.svg';
 import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
@@ -14,65 +17,36 @@ import {
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
+  NAV_ENTRIES,
   sectionKeyForRoute,
   sectionLanding,
   selectedNavKey,
 } from '@/layouts/nav';
 import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
+import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
-import { useShellConfigStore } from '@/stores/shellConfig';
-import { useShellPreferencesStore } from '@/stores/shellPreferences';
-import DomainSelect from '@/components/shared/DomainSelect.vue';
-import GlobalSearchBar from '@/components/shared/GlobalSearchBar.vue';
-import HelpMenu from '@/components/shared/HelpMenu.vue';
-import NotificationBox from '@/components/shared/NotificationBox.vue';
-import SidebarNav from '@/components/shared/SidebarNav.vue';
-import UserMenu from '@/components/shared/UserMenu.vue';
-import VersionTag from '@/components/shared/VersionTag.vue';
 
-/**
- * Application shell, mirroring the official currently-running shell
- * (LeftSidebar + NavBar) as a Vue bridge — not the un-enabled new
- * Sidebar, which stays out of this tree.
- *
- * Sider width follows the official LeftSidebar classes: 228px expanded,
- * 72px collapsed (the product's previous 64px collapsed width was a
- * deviation, fixed here). The header carries, in order: the global
- * search bar (hidden on home), Help, notifications, domain scope,
- * server version, an AppMode residual marker, locale, and the user
- * menu. Header height 56px is kept as an Ant bridge value: the
- * official layout-header-height / navbar-height relationship was not
- * verified in this snapshot, so it is flagged residual, not changed
- * blindly. Startup fetches server version + lineage settings through
- * the shell config store; the limit configuration has no product
- * endpoint, so no LimitBanner is rendered (absence recorded, not
- * papered over).
- */
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
-const shellConfig = useShellConfigStore();
-const shellPreferences = useShellPreferencesStore();
 const { t, locale } = useI18n();
 
+const collapsed = ref(false);
 const openKeys = ref<string[]>(defaultOpenNavKeys());
 
-const collapsed = computed({
-  get: () => shellPreferences.sidebarCollapsed,
-  set: (value: boolean) => shellPreferences.setSidebarCollapsed(value),
-});
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
 const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
 
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
 const profileUserId = computed(() => auth.user?.id || '');
+const avatarLetter = computed(() => (displayName.value || 'A').slice(0, 1).toUpperCase());
+const localeMark = computed(() => (locale.value.startsWith('zh') ? 'ZH' : 'EN'));
 
 /**
- * Stage 9 global shortcut: mod+K focuses the header search input, or
- * navigates to /search when the header search is hidden (home page).
- * Installed here — the only place the search bar lives — and removed
- * on unmount. Typing inside an input/textarea is never hijacked.
+ * Re-applied on the dev_ui shell (Fix6/Fix1/Stage 9 mechanisms that the
+ * redesign dropped): section-title navigation, nav-failure surfacing,
+ * and the mod+K shortcut. The dev_ui layout itself is untouched.
  */
 function onGlobalKeyDown(event: KeyboardEvent): void {
   const handled = handleGlobalShortcut(
@@ -96,14 +70,10 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
-  shellPreferences.hydrate();
   window.addEventListener('keydown', onGlobalKeyDown);
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
-  // Shell config errors are recorded on the store; a failed version or
-  // lineage fetch must not break shell startup.
-  void shellConfig.loadShellConfig().catch(() => undefined);
 });
 
 onUnmounted(() => {
@@ -134,34 +104,38 @@ watch(collapsed, (isCollapsed) => {
   openKeys.value = section && !next.includes(section) ? [...next, section] : next;
 });
 
-function onSidebarClick(key: string): void {
-  if (isNavSectionKey(key)) {
-    // Fix6: a section title click is a navigation, not a no-op — it lands on
-    // the section's first working page (SECTION_LANDING). Menu expand/collapse
-    // still flows through the separate openChange channel.
-    const landing = sectionLanding(key);
-    if (landing) {
-      try {
-        router.push({ name: landing }).catch(() => {
-          message.error(t('chrome.navFailed'));
-        });
-      } catch {
+function onSectionTitle(key: string): void {
+  // Fix6, re-applied: a section title click is a navigation to the
+  // section's first working page. The click still bubbles to the submenu
+  // row, so expand/collapse behaviour is unchanged.
+  const landing = sectionLanding(key);
+  if (landing) {
+    try {
+      router.push({ name: landing }).catch(() => {
         message.error(t('chrome.navFailed'));
-      }
+      });
+    } catch {
+      message.error(t('chrome.navFailed'));
     }
+  }
+}
+
+function onMenuClick({ key }: { key: string | number }): void {
+  const name = String(key);
+  if (isNavSectionKey(name)) {
     return;
   }
-  if (isNavActionKey(key)) {
-    if (key === 'logout') {
+  if (isNavActionKey(name)) {
+    if (name === 'logout') {
       void onLogout();
     }
     return;
   }
-  // Fix1 nav contract: a failed navigation must surface, never vanish silently.
-  // vue-router throws synchronously for an unresolvable name, so .catch
-  // alone is not enough — the try/catch covers the synchronous throw.
+  // Fix1, re-applied: a failed navigation must surface, never vanish
+  // silently. vue-router throws synchronously for an unresolvable name,
+  // so .catch alone is not enough.
   try {
-    router.push({ name: key }).catch(() => {
+    router.push({ name }).catch(() => {
       message.error(t('chrome.navFailed'));
     });
   } catch {
@@ -181,20 +155,30 @@ function onSearch(value: string): void {
   void router.push({ name: 'search', query: searchRouteQuery(nextQuery, {}, 0) });
 }
 
-function onLocaleChange(value: unknown): void {
-  if (isSupportedLocale(value)) {
-    setAppLocale(value, locale);
+function toggleLocale(): void {
+  const next = locale.value.startsWith('zh') ? 'en-US' : 'zh-CN';
+  if (isSupportedLocale(next)) {
+    setAppLocale(next, locale);
   }
 }
 
-function onUserProfile(): void {
-  if (profileUserId.value) {
+function popupParent(node: HTMLElement): HTMLElement {
+  return node.parentElement ?? document.body;
+}
+
+function onUserMenu({ key }: { key: string | number }): void {
+  const action = String(key);
+  if (action === 'profile' && profileUserId.value) {
     void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
+    return;
   }
-}
-
-function onUserSettings(): void {
-  void router.push({ name: 'admin-settings' });
+  if (action === 'settings') {
+    void router.push({ name: 'admin-settings' });
+    return;
+  }
+  if (action === 'logout') {
+    void onLogout();
+  }
 }
 
 async function onLogout(): Promise<void> {
@@ -215,58 +199,111 @@ async function onLogout(): Promise<void> {
       class="shell__sider"
       breakpoint="lg"
       collapsible
-      :collapsed-width="72"
-      :width="228"
-      :theme="shellPreferences.isDark ? 'dark' : 'light'"
+      :trigger="null"
+      :collapsed-width="88"
+      :width="272"
+      theme="light"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
-        <span class="shell__brand-name">{{ collapsed ? t('product.monogram') : t('product.name') }}</span>
-        <span v-if="!collapsed" class="shell__brand-sub">{{ t('product.subtitle') }}</span>
+        <img class="shell__logo" :src="collapsed ? monogramUrl : logoUrl" alt="IQVIA" />
       </div>
-      <SidebarNav
-        :selected-key="selectedKeys[0]"
-        :open-keys="openKeys"
-        :collapsed="collapsed"
-        @click="onSidebarClick"
-        @update:open-keys="(keys) => (openKeys = keys)"
-      />
+      <div class="shell__nav">
+        <Menu
+          class="shell__nav-main"
+          theme="light"
+          mode="inline"
+          :inline-collapsed="collapsed"
+          :selected-keys="selectedKeys"
+          v-model:openKeys="openKeys"
+          @click="onMenuClick"
+        >
+          <template v-for="entry in NAV_ENTRIES" :key="entry.key">
+            <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
+              <template #icon>
+                <component :is="navIcon(entry.key)" />
+              </template>
+              {{ t(entry.titleKey) }}
+            </Menu.Item>
+            <Menu.SubMenu
+              v-else-if="entry.kind === 'section'"
+              :key="entry.key"
+              :data-testid="entry.testId"
+              popup-class-name="shell__nav-popup"
+            >
+              <template #icon>
+                <component :is="navIcon(entry.key)" />
+              </template>
+              <template #title>
+                <span :data-testid="`section-title-${entry.key}`" @click="onSectionTitle(entry.key)">
+                  {{ t(entry.titleKey) }}
+                </span>
+              </template>
+              <Menu.Item v-for="item in entry.items" :key="item.key" :data-testid="item.testId">
+                <template #icon>
+                  <component :is="navIcon(item.key)" />
+                </template>
+                {{ t(item.titleKey) }}
+              </Menu.Item>
+            </Menu.SubMenu>
+          </template>
+        </Menu>
+        <p v-if="!collapsed" class="shell__legal">{{ t('chrome.copyright') }}</p>
+      </div>
     </Layout.Sider>
     <Layout>
       <Layout.Header class="shell__header">
-        <GlobalSearchBar
+        <button type="button" class="shell__sider-toggle" :aria-label="t('chrome.collapse')" @click="collapsed = !collapsed">
+          <MenuUnfoldOutlined v-if="collapsed" />
+          <MenuFoldOutlined v-else />
+        </button>
+        <Input.Search
           v-if="!hideHeaderSearch"
-          :initial-query="typeof route.query.q === 'string' ? route.query.q : ''"
+          data-testid="global-search"
+          class="shell__search"
+          :placeholder="t('chrome.searchPlaceholder')"
+          allow-clear
+          :default-value="typeof route.query.q === 'string' ? route.query.q : ''"
           @search="onSearch"
         />
         <div v-else class="shell__search-spacer" />
-        <Space size="middle" class="shell__toolbar">
-          <HelpMenu :version="shellConfig.displayVersion" />
-          <NotificationBox />
-          <DomainSelect />
-          <VersionTag :version="shellConfig.displayVersion" />
-          <Tooltip :title="t('chrome.appModeResidual')">
-            <Tag data-testid="app-mode-residual">{{ t('chrome.appMode') }}</Tag>
-          </Tooltip>
-          <Select
+        <div class="shell__toolbar">
+          <button
+            type="button"
             data-testid="locale-switcher"
-            class="shell__locale"
-            :value="locale"
+            class="shell__lang"
             :aria-label="t('chrome.locale')"
-            @change="onLocaleChange"
+            @click="toggleLocale"
           >
-            <Select.Option value="en-US">{{ t('chrome.localeEn') }}</Select.Option>
-            <Select.Option value="zh-CN">{{ t('chrome.localeZh') }}</Select.Option>
-          </Select>
-          <UserMenu
-            :display-name="displayName"
-            :profile-user-id="profileUserId"
-            :theme-mode="shellPreferences.themeMode"
-            @profile="onUserProfile"
-            @settings="onUserSettings"
-            @theme="(mode) => shellPreferences.setThemeMode(mode)"
-            @logout="onLogout"
-          />
-        </Space>
+            {{ localeMark }}
+            <DownOutlined class="shell__lang-caret" />
+          </button>
+          <BellOutlined class="shell__bell" />
+          <Dropdown
+            :trigger="['click']"
+            :get-popup-container="popupParent"
+          >
+            <button type="button" data-testid="user-menu-trigger" class="shell__user" :aria-label="t('chrome.userMenu')">
+              <span class="shell__avatar">{{ avatarLetter }}</span>
+              <span class="shell__user-copy">
+                <span class="shell__user-name">{{ displayName }}</span>
+                <span class="shell__user-role">{{ t('chrome.defaultPersona') }}</span>
+              </span>
+            </button>
+            <template #overlay>
+              <Menu data-testid="user-menu" @click="onUserMenu">
+                <Menu.Item v-if="profileUserId" key="profile" data-testid="user-profile-item">
+                  {{ t('chrome.viewProfile') }}
+                </Menu.Item>
+                <Menu.Item key="settings" data-testid="user-settings-item">
+                  {{ t('chrome.settings') }}
+                </Menu.Item>
+                <Menu.Item key="logout" data-testid="logout-button">
+                  {{ t('chrome.logout') }}
+                </Menu.Item>
+              </Menu>
+            </template>
+          </Dropdown>
+        </div>
       </Layout.Header>
       <Layout.Content class="shell__content" :class="{ 'shell__content--flush': flushContent }">
         <router-view />
@@ -278,28 +315,40 @@ async function onLogout(): Promise<void> {
 <style scoped>
 .shell {
   min-height: 100%;
+  background: var(--sm-home-canvas);
 }
 .shell__sider {
-  /*
-   * Fix7: the sider height is pinned to the viewport and sticks to the top
-   * while the page scrolls. min-height alone only floored the height, so an
-   * expanded menu grew the whole shell instead of scrolling inside itself;
-   * with a definite height, the nav's existing flex: 1 + overflow-y: auto
-   * finally engages. Sticky (not fixed) keeps the sider in flow, so the
-   * collapse-width animation and the lg breakpoint behaviour are untouched.
-   */
-  height: 100vh;
   position: sticky;
   top: 0;
-  background: var(--sm-sider-bg);
-  border-right: 1px solid var(--sm-border-secondary);
+  align-self: flex-start;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  background: var(--sm-home-canvas);
+  border-right: 0;
+  transition: flex 0.2s ease, max-width 0.2s ease, min-width 0.2s ease, width 0.2s ease !important;
 }
 .shell__sider :deep(.ant-layout-sider-children) {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
-  background: var(--sm-sider-bg);
+  background: var(--sm-home-canvas);
+}
+.shell__nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.shell__nav-main {
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.shell__nav-main::-webkit-scrollbar {
+  display: none;
 }
 .shell__sider :deep(.ant-layout-sider-trigger) {
   height: 40px;
@@ -312,49 +361,233 @@ async function onLogout(): Promise<void> {
   background: var(--sm-trigger-hover-bg);
   color: var(--sm-color-primary);
 }
+.shell__sider :deep(.ant-menu),
+.shell__sider :deep(.ant-menu-item),
+.shell__sider :deep(.ant-menu-submenu),
+.shell__sider :deep(.ant-menu-submenu-title),
+.shell__sider :deep(.ant-menu-sub),
+.shell__sider :deep(.ant-motion-collapse) {
+  transition: none !important;
+  animation: none !important;
+}
 .shell__sider :deep(.ant-menu) {
   background: transparent;
   border-inline-end: none;
 }
 .shell__sider :deep(.ant-menu-item),
 .shell__sider :deep(.ant-menu-submenu-title) {
-  height: 36px;
-  line-height: 36px;
-  margin-inline: 8px;
-  width: calc(100% - 16px);
-  border-radius: var(--sm-border-radius);
+  display: flex;
+  align-items: center;
+  height: 52px;
+  margin: 4px 16px !important;
+  width: calc(100% - 32px) !important;
+  padding-inline: 16px !important;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--sm-text-secondary);
+}
+.shell__sider :deep(.ant-menu-item::after) {
+  display: none;
+}
+.shell__sider :deep(.anticon) {
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  line-height: 22px;
+}
+.shell__sider :deep(.ant-menu-title-content) {
+  margin-inline-start: 14px !important;
+}
+.shell__sider :deep(.ant-menu-item:not(.ant-menu-item-selected):hover),
+.shell__sider :deep(.ant-menu-submenu:not(.ant-menu-submenu-open) > .ant-menu-submenu-title:hover) {
+  background: var(--sm-bg-base) !important;
+  color: var(--sm-text-primary) !important;
+  box-shadow: var(--sm-shadow-widget);
+}
+.shell__sider :deep(.ant-menu-item-selected) {
+  background: var(--sm-bg-base) !important;
+  color: var(--sm-color-primary) !important;
+  font-weight: 600;
+  box-shadow: var(--sm-shadow-card);
+}
+.shell__sider :deep(.ant-menu-item-selected .anticon),
+.shell__sider :deep(.ant-menu-item-selected .ant-menu-title-content) {
+  color: var(--sm-color-primary) !important;
+}
+.shell__sider :deep(.ant-menu-submenu-open) {
+  margin: 4px 16px 10px;
+  padding: 0 0 8px;
+  background: var(--sm-bg-base) !important;
+  border-radius: 18px;
+  box-shadow: var(--sm-shadow-card);
+}
+.shell__sider :deep(.ant-menu-submenu-open > .ant-menu-submenu-title) {
+  width: 100% !important;
+  height: 52px;
+  margin: 0 !important;
+  padding-inline: 16px !important;
+  background: transparent !important;
+  color: var(--sm-color-primary) !important;
+  font-weight: 600;
+  box-shadow: none;
+}
+.shell__sider :deep(.ant-menu-submenu-open > .ant-menu-submenu-title .anticon),
+.shell__sider :deep(.ant-menu-submenu-open > .ant-menu-submenu-title .ant-menu-title-content),
+.shell__sider :deep(.ant-menu-submenu-open > .ant-menu-submenu-title .ant-menu-submenu-arrow) {
+  color: var(--sm-color-primary) !important;
+}
+.shell__sider :deep(.ant-menu-submenu-open > .ant-menu) {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 2px 2px;
+  background: transparent;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none;
+}
+.shell__sider :deep(.ant-menu-sub .ant-menu-item) {
+  height: 44px;
+  width: 100% !important;
+  margin: 0 !important;
+  padding-inline: 16px !important;
+  border-radius: 12px;
+  background: transparent !important;
+  box-shadow: none;
+  color: var(--sm-text-tertiary) !important;
+  font-weight: 500;
+}
+.shell__sider :deep(.ant-menu-sub .anticon) {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+}
+.shell__sider :deep(.ant-menu-sub .ant-menu-item:hover) {
+  background: var(--sm-color-primary-bg) !important;
+  color: var(--sm-color-primary) !important;
+  box-shadow: none;
+}
+.shell__sider :deep(.ant-menu-sub .ant-menu-item .anticon),
+.shell__sider :deep(.ant-menu-sub .ant-menu-item .ant-menu-title-content) {
+  color: inherit !important;
+}
+.shell__sider :deep(.ant-menu-sub .ant-menu-item-selected) {
+  background: var(--sm-color-primary-bg) !important;
+  color: var(--sm-color-primary) !important;
+  box-shadow: none;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu) {
+  padding: 0 !important;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-submenu-open) {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-submenu-open > .ant-menu-submenu-title) {
+  width: 52px !important;
+  margin: 4px 18px !important;
+  background: var(--sm-bg-base) !important;
+  color: var(--sm-color-primary) !important;
+  box-shadow: var(--sm-shadow-card);
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-item),
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-submenu-title) {
+  justify-content: center;
+  width: 52px !important;
+  height: 52px;
+  margin: 4px 18px !important;
+  padding: 0 !important;
+  padding-inline: 0 !important;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-title-content),
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-submenu-arrow) {
+  display: none !important;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-item-icon),
+.shell__sider.ant-layout-sider-collapsed :deep(.anticon) {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+  font-size: 22px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+}
+.shell__sider.ant-layout-sider-collapsed :deep(.ant-menu-item-selected) {
+  box-shadow: var(--sm-shadow-card);
 }
 .shell__brand {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  color: var(--sm-text-primary);
-  padding: 16px 16px 12px;
-  min-height: 56px;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin: 22px 16px 14px;
+  padding: 0;
 }
 .shell__brand--collapsed {
+  justify-content: flex-start;
+  margin: 22px 0 14px 26px;
+}
+.shell__logo {
+  height: 36px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+.shell__brand--collapsed .shell__logo {
+  width: 36px;
+  height: 36px;
+}
+.shell__sider-toggle {
+  display: inline-flex;
+  flex: none;
   align-items: center;
-  padding: 16px 8px 12px;
+  justify-content: center;
+  align-self: flex-start;
+  width: 36px;
+  height: 36px;
+  margin-top: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sm-text-secondary);
+  cursor: pointer;
+  line-height: 0;
 }
-.shell__brand-name {
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-  font-size: 16px;
+.shell__sider-toggle :deep(.anticon) {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  line-height: 1;
+}
+.shell__sider-toggle:hover {
   color: var(--sm-color-primary);
+  background: var(--sm-bg-base);
+  box-shadow: var(--sm-shadow-widget);
 }
-.shell__brand-sub {
-  color: var(--sm-text-tertiary);
+.shell__legal {
+  margin: auto 20px 16px;
+  color: var(--sm-text-quaternary);
   font-size: 12px;
-  line-height: 1.3;
-  margin-top: 2px;
 }
 .shell__header {
   /*
-   * Fix8: the header sticks to the viewport top while the page scrolls.
-   * Sticky (not fixed) keeps it in flow: no content jump, no 56px padding
-   * compensation. z-index uses the existing sticky token: above page
-   * content, below dropdowns, overlays, modals and popovers.
+   * Fix8, re-applied on the dev_ui header (height 64 stays dev_ui's):
+   * the header sticks to the viewport top while the page scrolls.
+   * z-index uses the existing sticky token, re-added to theme.css
+   * because the dev_ui theme dropped the whole z-token block.
    */
   position: sticky;
   top: 0;
@@ -362,18 +595,107 @@ async function onLogout(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  height: 56px;
-  line-height: 56px;
-  background: var(--sm-layout-bg);
-  padding-inline: 20px;
-  border-bottom: 1px solid var(--sm-border-secondary);
+  gap: 12px;
+  height: 64px;
+  line-height: 1.2;
+  background: var(--sm-home-canvas);
+  padding-inline: 12px 20px;
+  border-bottom: 0;
 }
 .shell__toolbar {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+  gap: 8px;
+  line-height: 1.2;
 }
-.shell__locale {
-  min-width: 104px;
+.shell__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sm-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  cursor: pointer;
+}
+.shell__lang:hover {
+  color: var(--sm-color-primary);
+  background: var(--sm-bg-base);
+}
+.shell__lang-caret {
+  font-size: 10px;
+}
+.shell__bell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--sm-text-secondary);
+  font-size: 18px;
+}
+.shell__user {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  height: 40px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  line-height: 1.2;
+  cursor: pointer;
+  text-align: left;
+}
+.shell__avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--sm-color-primary);
+  color: var(--sm-text-on-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+.shell__user-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-width: max-content;
+  line-height: 1.2;
+}
+.shell__user-name,
+.shell__user-role {
+  display: block;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.shell__user-name {
+  color: var(--sm-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.shell__user-role {
+  color: var(--sm-text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.shell__search {
+  max-width: 520px;
+  flex: 1;
 }
 .shell__search-spacer {
   flex: 1;
@@ -383,5 +705,38 @@ async function onLogout(): Promise<void> {
 }
 .shell__content--flush {
   margin: 0;
+}
+</style>
+
+<style>
+.shell__nav-popup.ant-menu-submenu-popup {
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--sm-bg-base) !important;
+  box-shadow: var(--sm-shadow-raised);
+}
+.shell__nav-popup.ant-menu-submenu-popup .ant-menu {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.shell__nav-popup.ant-menu-submenu-popup .ant-menu-item {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  margin: 2px 0;
+  padding-inline: 12px !important;
+  border-radius: 10px;
+  color: var(--sm-text-secondary);
+  line-height: 40px;
+}
+.shell__nav-popup.ant-menu-submenu-popup .ant-menu-item .anticon {
+  font-size: 16px;
+  color: inherit;
+}
+.shell__nav-popup.ant-menu-submenu-popup .ant-menu-item:hover,
+.shell__nav-popup.ant-menu-submenu-popup .ant-menu-item-selected {
+  background: var(--sm-color-primary-bg) !important;
+  color: var(--sm-color-primary) !important;
 }
 </style>

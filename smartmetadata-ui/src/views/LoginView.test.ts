@@ -77,7 +77,8 @@ describe('LoginView', () => {
   it('renders the sign-in form', async () => {
     const { wrapper } = await mountLogin();
     expect(wrapper.text()).toContain('Sign In');
-    expect(wrapper.text()).toContain('Sign in with your catalog account.');
+    expect(wrapper.text()).toContain('Welcome to the IQVIA Metadata Platform');
+    expect(wrapper.text()).toContain('Human Data Science');
     expect(wrapper.text()).not.toMatch(/Base64/);
     expect(wrapper.find('[data-testid="login-email"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="login-submit"]').exists()).toBe(true);

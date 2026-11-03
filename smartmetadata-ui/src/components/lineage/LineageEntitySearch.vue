@@ -120,14 +120,14 @@ function pick(hit: SearchHit): void {
   gap: 8px;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--sm-border-secondary);
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--sm-border-color);
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-bg-container);
   padding: 6px 8px;
   cursor: pointer;
 }
 .lineage-search__hit:hover {
-  border-color: #2e90fa;
+  border-color: var(--sm-color-primary);
 }
 .lineage-search__name {
   font-weight: 600;
@@ -135,7 +135,7 @@ function pick(hit: SearchHit): void {
 }
 .lineage-search__fqn {
   margin-left: auto;
-  color: var(--sm-text-quaternary);
+  color: var(--sm-text-tertiary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;

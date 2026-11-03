@@ -202,6 +202,31 @@ function onTotalRange(value: unknown): void {
   }
 }
 
+function actorName(event: ActivityEvent): string {
+  return event.actor?.displayName || event.actor?.name || '';
+}
+
+function actorInitial(event: ActivityEvent): string {
+  return (actorName(event) || event.eventType || '?').slice(0, 1).toUpperCase();
+}
+
+function relativeTime(timestamp?: number): string {
+  if (!timestamp) {
+    return '';
+  }
+  const rtf = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' });
+  const delta = timestamp - Date.now();
+  const days = Math.round(delta / 86_400_000);
+  if (Math.abs(days) >= 1) {
+    return rtf.format(days, 'day');
+  }
+  const hours = Math.round(delta / 3_600_000);
+  if (Math.abs(hours) >= 1) {
+    return rtf.format(hours, 'hour');
+  }
+  return rtf.format(Math.round(delta / 60_000), 'minute');
+}
+
 function formatAxisLabel(value: string): string {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) {
@@ -292,19 +317,10 @@ watch(totalRange, (days) => {
 
 <template>
   <div class="my-data" data-testid="my-data-page">
-    <HomeHero
-      :user-name="userName"
-      :domains="domainOptions"
-      :selected-domain="selectedDomain"
-      :service-chips="serviceChips"
-      :domains-unavailable="domainsUnavailable"
-      @search="onHeroSearch"
-      @update:selected-domain="selectedDomain = $event"
-      @select-service="onSelectServiceName"
-    />
     <Spin :spinning="loading">
+      <div class="my-data__scroll">
       <div class="my-data__grid">
-        <HomeWidgetCard :title="t('home.activity')" test-id="home-widget-activity">
+        <HomeWidgetCard class="home-area home-area--activity" :title="t('home.activity')" test-id="home-widget-activity">
           <template #extra>
             <Select
               data-testid="home-activity-filter"
@@ -330,17 +346,23 @@ watch(totalRange, (days) => {
             <li v-for="event in visibleActivity" :key="event.id">
               <button
                 type="button"
-                class="home-list__row"
+                class="feed"
                 :data-testid="`home-activity-row-${event.id}`"
                 @click="openActivity(event)"
               >
-                {{ activityLabel(event) }}
+                <span class="feed__top">
+                  <span class="feed__avatar">{{ actorInitial(event) }}</span>
+                  <span class="feed__name">{{ actorName(event) }}</span>
+                  <span class="feed__time">{{ relativeTime(event.timestamp) }}</span>
+                </span>
+                <span class="feed__tag">{{ event.eventType }}</span>
+                <span class="feed__body">{{ activityLabel(event) }}</span>
               </button>
             </li>
           </ul>
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.dataAssets')" test-id="home-widget-data-assets">
+        <HomeWidgetCard class="home-area home-area--assets" :title="t('home.dataAssets')" test-id="home-widget-data-assets">
           <template #extra>
             <Select
               data-testid="home-data-assets-sort"
@@ -368,7 +390,7 @@ watch(totalRange, (days) => {
           <Empty v-else data-testid="home-data-assets-empty" :description="t('home.dataAssetsEmpty')" />
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.contextCenter')" test-id="home-widget-context">
+        <HomeWidgetCard class="home-area home-area--context" :title="t('home.contextCenter')" test-id="home-widget-context">
           <Empty data-testid="home-context-empty" :description="t('home.contextEmptyTitle')">
             <template #description>
               <Typography.Title :level="5">{{ t('home.contextEmptyTitle') }}</Typography.Title>
@@ -377,7 +399,7 @@ watch(totalRange, (days) => {
           </Empty>
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.myData')" test-id="home-widget-my-data">
+        <HomeWidgetCard class="home-area home-area--mine" :title="t('home.myData')" test-id="home-widget-my-data">
           <template #extra>
             <Select
               data-testid="home-owned-sort"
@@ -399,7 +421,7 @@ watch(totalRange, (days) => {
           <Empty v-else data-testid="home-owned-empty" :description="t('home.myDataEmpty')" />
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.kpi')" test-id="home-widget-kpi">
+        <HomeWidgetCard class="home-area home-area--kpi" :title="t('home.kpi')" test-id="home-widget-kpi">
           <ul v-if="kpis.length" class="home-list" data-testid="home-kpi-list">
             <li v-for="kpi in kpis" :key="kpi.name">
               <div class="home-list__row home-list__row--static" :data-testid="`home-kpi-${kpi.name}`">
@@ -417,7 +439,8 @@ watch(totalRange, (days) => {
           </Empty>
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.totalAssets')" test-id="home-widget-total">
+        <div class="my-data__rail">
+        <HomeWidgetCard class="home-area home-area--total" :title="t('home.totalAssets')" test-id="home-widget-total">
           <template #extra>
             <Select
               data-testid="home-total-range"
@@ -443,7 +466,19 @@ watch(totalRange, (days) => {
           </div>
         </HomeWidgetCard>
 
-        <HomeWidgetCard :title="t('home.following')" test-id="home-widget-following">
+        <HomeHero
+          class="home-area home-area--welcome"
+          :user-name="userName"
+          :domains="domainOptions"
+          :selected-domain="selectedDomain"
+          :service-chips="serviceChips"
+          :domains-unavailable="domainsUnavailable"
+          @search="onHeroSearch"
+          @update:selected-domain="selectedDomain = $event"
+          @select-service="onSelectServiceName"
+        />
+
+        <HomeWidgetCard class="home-area home-area--follow" :title="t('home.following')" test-id="home-widget-following">
           <template #extra>
             <Select
               data-testid="home-followed-sort"
@@ -470,6 +505,8 @@ watch(totalRange, (days) => {
             <Button data-testid="home-following-explore" @click="goExplore()">{{ t('home.exploreAssets') }}</Button>
           </Empty>
         </HomeWidgetCard>
+        </div>
+      </div>
       </div>
     </Spin>
   </div>
@@ -477,14 +514,59 @@ watch(totalRange, (days) => {
 
 <style scoped>
 .my-data {
-  background: var(--sm-content-bg);
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+  background: var(--sm-home-canvas);
+}
+.my-data :deep(.ant-spin-nested-loading),
+.my-data :deep(.ant-spin-container) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.my-data__scroll {
+  flex: 1;
+  min-height: 0;
+  margin: 14px;
+  overflow: hidden;
 }
 .my-data__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  padding: 20px 24px 32px;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+}
+.home-area--activity { grid-column: 1; grid-row: 1 / span 2; }
+.home-area--assets { grid-column: 2; grid-row: 1; }
+.home-area--kpi { grid-column: 2; grid-row: 2; }
+.home-area--context { grid-column: 1; grid-row: 3; }
+.home-area--mine { grid-column: 2; grid-row: 3; }
+.my-data__rail {
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.my-data__rail > .home-area--total,
+.my-data__rail > .home-area--follow {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+.my-data__rail > .home-area--welcome {
+  flex: 0 0 auto;
+  height: auto;
 }
 .home-list {
   list-style: none;
@@ -540,7 +622,64 @@ watch(totalRange, (days) => {
   color: var(--sm-text-secondary);
 }
 .home-services__count {
+  min-width: 28px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--sm-count-pill-bg);
+  color: var(--sm-count-pill-text);
+  font-size: 12px;
   font-weight: 600;
+}
+.feed {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 4px 0 12px;
+  cursor: pointer;
+  color: var(--sm-text-primary);
+}
+.feed__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.feed__avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--sm-color-success-bg);
+  color: var(--sm-color-success-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.feed__name {
+  font-weight: 600;
+}
+.feed__time {
+  margin-left: auto;
+  color: var(--sm-text-tertiary);
+  font-size: 12px;
+}
+.feed__tag {
+  align-self: flex-start;
+  margin: 8px 0 8px 36px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--sm-bg-elevated);
+  color: var(--sm-text-secondary);
+  font-size: 12px;
+}
+.feed__body {
+  margin-left: 36px;
+  padding: 10px 12px;
+  border: 1px solid var(--sm-home-card-border);
+  border-radius: 8px;
 }
 .home-total {
   display: flex;
@@ -562,8 +701,39 @@ watch(totalRange, (days) => {
   font-size: 12px;
 }
 @media (max-width: 1100px) {
+  .my-data {
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow: visible;
+  }
+  .my-data__scroll {
+    overflow: visible;
+  }
   .my-data__grid {
+    height: auto;
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+  .my-data__rail {
+    display: contents;
+    height: auto;
+  }
+  .home-area--activity,
+  .home-area--assets,
+  .home-area--total,
+  .home-area--follow,
+  .home-area--kpi,
+  .home-area--context,
+  .home-area--mine {
+    grid-column: auto;
+    grid-row: auto;
+    height: auto;
+  }
+  .home-area--activity :deep(.ant-card-body) {
+    max-height: 480px;
+  }
+  .home-area--welcome {
+    order: -1;
   }
 }
 </style>

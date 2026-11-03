@@ -1000,6 +1000,6 @@ onMounted(() => {
   font-size: 12px;
   white-space: pre-wrap;
   background: var(--sm-bg-elevated);
-  border-radius: var(--sm-border-radius);
+  border-radius: 6px;
 }
 </style>

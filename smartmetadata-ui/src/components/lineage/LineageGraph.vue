@@ -310,7 +310,7 @@ watch(
   flex-direction: column;
   min-height: 420px;
   border: 1px solid var(--sm-border-color);
-  border-radius: var(--sm-radius-card, 6px);
+  border-radius: var(--sm-radius-card);
   background: var(--sm-content-bg);
 }
 .lineage-graph--page {
@@ -362,7 +362,7 @@ watch(
 .lineage-graph :deep(.vue-flow__controls) {
   overflow: hidden;
   border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius, 6px);
+  border-radius: var(--sm-border-radius);
   box-shadow: var(--sm-shadow-card);
 }
 .lineage-graph :deep(.vue-flow__controls-button) {
@@ -377,6 +377,6 @@ watch(
 .lineage-graph :deep(.vue-flow__minimap) {
   overflow: hidden;
   border: 1px solid var(--sm-border-secondary);
-  border-radius: var(--sm-border-radius, 6px);
+  border-radius: var(--sm-border-radius);
 }
 </style>

@@ -31,7 +31,7 @@ describe('HomeHero', () => {
     const wrapper = mountHero();
     expect(wrapper.get('[data-testid="home-hero-welcome"]').text()).toBe('Welcome, admin!');
     const input = wrapper.get('[data-testid="home-hero-search"]');
-    expect(input.attributes('placeholder')).toBe('Search for Tables, Database, Schema...');
+    expect(input.attributes('placeholder')).toBe('Search tables, databases, fields…');
     await input.setValue('orders');
     await input.trigger('keydown.enter');
     expect(wrapper.emitted('search')?.[0]).toEqual(['orders']);
