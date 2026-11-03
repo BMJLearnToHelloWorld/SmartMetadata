@@ -185,7 +185,13 @@ export interface CreateEventSubscriptionRequest {
   description?: string;
   displayName?: string;
   enabled?: boolean;
-  filteringRules?: { resources?: string[] };
+  /**
+   * Top-level resources only. The create schema has no filteringRules
+   * field and rejects unknown fields, so sending filteringRules fails
+   * the create with a Jackson error; the server builds the stored
+   * filtering rules from this list instead.
+   */
+  resources?: string[];
   destinations: Array<{
     category: string;
     type: string;

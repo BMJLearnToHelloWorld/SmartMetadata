@@ -13,10 +13,21 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
+import type { OperationPermissions } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import type { EventSubscription } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
+/**
+ * Official NotificationListPage row gating: edit needs EditAll, delete
+ * needs Delete on this alert's entity permission by FQN. A missing or
+ * failed fetch denies.
+ */
+const permissionStore = usePermissionStore();
+const alertOps = ref<OperationPermissions>({});
+const canEditAlert = computed(() => alertOps.value.EditAll === true);
+const canDeleteAlert = computed(() => alertOps.value.Delete === true);
 const loading = ref(false);
 const errorMessage = ref('');
 const alert = ref<EventSubscription | null>(null);
@@ -41,7 +52,10 @@ function filterRuleText(rule: { name?: string; effect?: string; condition?: stri
 }
 
 async function onDeleteAlert(): Promise<void> {
-  if (!alert.value) {
+  if (!alert.value || !canDeleteAlert.value) {
+    if (alert.value) {
+      message.error(t('errors.forbidden'));
+    }
     return;
   }
   const confirmed = await confirmDelete({
@@ -63,7 +77,10 @@ async function onDeleteAlert(): Promise<void> {
 }
 
 function openEdit(): void {
-  if (!alert.value) {
+  if (!alert.value || !canEditAlert.value) {
+    if (alert.value) {
+      message.error(t('errors.forbidden'));
+    }
     return;
   }
   editForm.displayName = alert.value.displayName || '';
@@ -77,7 +94,10 @@ function openEdit(): void {
 }
 
 async function onSaveEdit(): Promise<void> {
-  if (!alert.value) {
+  if (!alert.value || !canEditAlert.value) {
+    if (alert.value) {
+      message.error(t('errors.forbidden'));
+    }
     return;
   }
   saving.value = true;
@@ -88,7 +108,9 @@ async function onSaveEdit(): Promise<void> {
       displayName: editForm.displayName.trim() || undefined,
       description: editForm.description.trim() || undefined,
       enabled: editForm.enabled,
-      filteringRules: editForm.resources.length > 0 ? { resources: editForm.resources } : undefined,
+      // Top-level resources, as on create: the schema has no
+      // filteringRules field.
+      resources: editForm.resources,
       destinations: editForm.endpoint.trim()
         ? [
             {
@@ -132,6 +154,13 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   try {
     alert.value = await getEventSubscription(props.id);
+    try {
+      alertOps.value = alert.value.fullyQualifiedName
+        ? await permissionStore.getEntityPermissionByFqn('eventsubscription', alert.value.fullyQualifiedName)
+        : {};
+    } catch {
+      alertOps.value = {};
+    }
   } catch (error) {
     alert.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -166,8 +195,8 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button data-testid="edit-alert" :disabled="!alert" @click="openEdit">{{ t('observability.alerts.edit') }}</Button>
-      <Button danger data-testid="delete-alert" :disabled="!alert" @click="onDeleteAlert">{{ t('crud.delete') }}</Button>
+      <Button data-testid="edit-alert" :disabled="!alert || !canEditAlert" @click="openEdit">{{ t('observability.alerts.edit') }}</Button>
+      <Button danger data-testid="delete-alert" :disabled="!alert || !canDeleteAlert" @click="onDeleteAlert">{{ t('crud.delete') }}</Button>
     </template>
     <template #overview>
       <Descriptions v-if="alert" bordered :column="1" size="small">
@@ -223,7 +252,7 @@ onMounted(() => {
         <Select v-model:value="editForm.destinationType">
           <Select.Option value="Webhook">Webhook</Select.Option>
           <Select.Option value="Slack">Slack</Select.Option>
-          <Select.Option value="MSTeams">MSTeams</Select.Option>
+          <Select.Option value="MsTeams">MsTeams</Select.Option>
           <Select.Option value="GChat">GChat</Select.Option>
         </Select>
       </Form.Item>

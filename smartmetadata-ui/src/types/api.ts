@@ -21,6 +21,15 @@ export interface LoginUser {
   name?: string;
   email?: string;
   displayName?: string;
+  /**
+   * Full-profile fields from GET /v1/users/loggedInUser. The login call
+   * itself returns a JWT only; these arrive with the profile, and the
+   * permission chain (isAdminUser line) reads isAdmin from here, exactly
+   * as official useAuth reads currentUser?.isAdmin.
+   */
+  isAdmin?: boolean;
+  roles?: EntityRef[];
+  teams?: EntityRef[];
 }
 
 export interface EntityRef {

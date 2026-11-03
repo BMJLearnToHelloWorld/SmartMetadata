@@ -118,6 +118,7 @@ const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCent
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
+import { useAuthStore } from '@/stores/auth';
 import { resolveGuard } from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
 
@@ -474,6 +475,11 @@ router.beforeEach((to) => {
     isPublic: to.meta.public === true,
     hasSession: loadSession(window.localStorage) !== null,
     fullPath: to.fullPath,
+    // Admin dual line, first line: isAdminUser from the auth store profile
+    // (official AdminProtectedRoute reads currentUser?.isAdmin). No
+    // route-level permission source exists yet, so until one is passed,
+    // admin routes are admin-gated only — never silently open.
+    isAdminUser: useAuthStore().user?.isAdmin === true,
   });
   if (decision.kind === 'login') {
     return { name: 'login', query: { redirect: decision.redirect } };

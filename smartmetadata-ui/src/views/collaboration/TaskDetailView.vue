@@ -9,6 +9,8 @@ import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
 import { addTaskComment, closeTask, deleteTask, getTask, resolveTask } from '@/api/tasks';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
+import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
@@ -40,7 +42,40 @@ const title = computed(
 
 const actionable = computed(() => isTaskActionable(task.value?.status));
 
+/**
+ * Official TaskFeedCard getHasTaskEditAccess: an admin on a
+ * non-approval task, an assignee, or a member of an assignee team
+ * (unless also the creator) may act. When the profile has not loaded
+ * the identity terms are unknown, so the status rule stands alone
+ * rather than newly locking out a legitimate actor; the server still
+ * enforces task writes.
+ */
+const canAct = computed(() => {
+  if (!actionable.value) {
+    return false;
+  }
+  const user = useAuthStore().user;
+  if (!user) {
+    return true;
+  }
+  const matches = (ref?: { id?: string; name?: string }) =>
+    Boolean(ref && ((ref.id && ref.id === user.id) || (ref.name && ref.name === user.name)));
+  const isAssignee = (task.value?.assignees ?? []).some((ref) => matches(ref));
+  const isPartOfAssigneeTeam = (task.value?.assignees ?? []).some(
+    (ref) =>
+      ref.type === 'team' &&
+      (user.teams ?? []).some((team) => team.id === ref.id || team.name === ref.name),
+  );
+  const isCreator = matches(task.value?.createdBy);
+  const isAdminNonApproval =
+    usePermissionStore().isAdminUser && task.value?.type !== 'RequestApproval';
+  return isAdminNonApproval || isAssignee || (isPartOfAssigneeTeam && !isCreator);
+});
+
 async function onClose(): Promise<void> {
+  if (!canAct.value) {
+    return;
+  }
   saving.value = true;
   try {
     task.value = await closeTask(props.id, form.comment.trim() || undefined);
@@ -53,6 +88,9 @@ async function onClose(): Promise<void> {
 }
 
 async function onDelete(): Promise<void> {
+  if (!canAct.value) {
+    return;
+  }
   const confirmed = await confirmDelete({
     title: t('collaboration.task.deleteTitle'),
     content: t('collaboration.task.deleteContent'),
@@ -76,7 +114,7 @@ async function onDelete(): Promise<void> {
 
 function onActionMenuClick(info: { key: string }): void {
   const action = TASK_ACTIONS.find((item) => item.key === (info.key as TaskActionMode));
-  if (!action || !action.wired || !actionable.value) {
+  if (!action || !action.wired || !canAct.value) {
     return;
   }
   if (action.key === 'resolve') {
@@ -100,6 +138,9 @@ async function load(): Promise<void> {
 }
 
 async function onResolve(): Promise<void> {
+  if (!canAct.value) {
+    return;
+  }
   saving.value = true;
   try {
     task.value = await resolveTask(props.id, {
@@ -147,14 +188,14 @@ watch(
     <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="collab-alert" />
     <template v-if="task">
       <Space class="collab-actions" wrap>
-        <Button data-testid="resolve-task" type="primary" :loading="saving" :disabled="!actionable" @click="onResolve">
+        <Button data-testid="resolve-task" type="primary" :loading="saving" :disabled="!canAct" @click="onResolve">
           {{ t('collaboration.task.resolve') }}
         </Button>
-        <Button data-testid="delete-task" danger :loading="saving" @click="onDelete">
+        <Button data-testid="delete-task" danger :loading="saving" :disabled="!canAct" @click="onDelete">
           {{ t('collaboration.task.delete') }}
         </Button>
         <Dropdown :trigger="['click']">
-          <Button data-testid="task-actions-menu" :disabled="!actionable">
+          <Button data-testid="task-actions-menu" :disabled="!canAct">
             {{ t('collaboration.task.actions') }}
           </Button>
           <template #overlay>

@@ -34,9 +34,12 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser, IncludeFilter } from '@/types/admin';
+import { usePermissionStore } from '@/stores/permissions';
 
 const { t } = useI18n();
 const router = useRouter();
+/** Official Users gating line: create/edit entry points need an admin. */
+const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 const loading = ref(false);
 const errorMessage = ref('');
 const users = ref<AdminUser[]>([]);
@@ -201,7 +204,7 @@ onMounted(() => {
     :data-source="users"
     table-test-id="admin-users-table"
     show-row-actions
-    show-edit-action
+    :show-edit-action="isAdminUser"
     show-search
     :search-value="query"
     :search-placeholder="t('admin.users.searchPlaceholder')"
@@ -217,7 +220,7 @@ onMounted(() => {
     @edit="openUser($event as AdminUser)"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-user" @click="createOpen = true">
+      <Button v-if="isAdminUser" type="primary" data-testid="create-user" @click="createOpen = true">
         {{ t('admin.users.create') }}
       </Button>
     </template>

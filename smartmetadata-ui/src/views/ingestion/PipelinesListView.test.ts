@@ -78,6 +78,27 @@ describe('PipelinesListView', () => {
         if (url.includes('/api/v1/services/storageServices')) {
           return jsonResponse({ data: [] });
         }
+        // P1 permission line: allow-all by default so existing tests keep
+        // exercising the wired actions; the deny test below overrides.
+        if (url.includes('/api/v1/permissions/ingestionPipeline/name/')) {
+          return jsonResponse({
+            resource: 'ingestionPipeline',
+            permissions: [
+              { operation: 'EditAll', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/permissions/ingestionPipeline')) {
+          return jsonResponse({
+            resource: 'ingestionPipeline',
+            permissions: [
+              { operation: 'Create', access: 'allow' },
+              { operation: 'EditAll', access: 'allow' },
+              { operation: 'Delete', access: 'allow' },
+            ],
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -104,6 +125,46 @@ describe('PipelinesListView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline');
     expect(router.currentRoute.value.params.id).toBe('p1');
+  });
+
+  it('disables create and row delete when the permission line denies (P1)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'p1',
+                name: 'warehouse-metadata',
+                fullyQualifiedName: 'warehouse.warehouse-metadata',
+                pipelineType: 'metadata',
+                service: { id: 's1', type: 'databaseService', name: 'warehouse' },
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/permissions/ingestionPipeline')) {
+          return jsonResponse({
+            resource: 'ingestionPipeline',
+            permissions: [
+              { operation: 'Create', access: 'deny' },
+              { operation: 'EditAll', access: 'deny' },
+              { operation: 'Delete', access: 'deny' },
+            ],
+          });
+        }
+        return jsonResponse({ data: [] });
+      }),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="create-pipeline"]').attributes('disabled')).not.toBeUndefined();
+    await wrapper.get('[data-testid="row-overflow-p1"]').trigger('click');
+    await flushPromises();
+    const deleteItem = document.querySelector('[data-testid="row-overflow-delete"]');
+    expect(deleteItem?.className).toContain('disabled');
   });
 
   it('shows pipelineType select with Postgres agent kinds from service_spec', async () => {

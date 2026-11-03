@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import UsersListView from './UsersListView.vue';
 
@@ -23,9 +24,11 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountUsers() {
+async function mountUsers(asAdmin = true) {
   const pinia = createPinia();
   setActivePinia(pinia);
+  // P1 gating line: the view reads isAdminUser from the auth store.
+  useAuthStore().user = asAdmin ? { id: 'admin', name: 'admin', isAdmin: true } : { id: 'u9', name: 'bob' };
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -90,6 +93,19 @@ describe('UsersListView', () => {
     expect(wrapper.text()).toContain('alice@example.com');
     expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
+  });
+
+  it('hides create and edit entry points for a non-admin viewer (P1)', async () => {
+    const { wrapper } = await mountUsers(false);
+    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-edit"]')).toBeNull();
+    // Close the dropdown again so its overlay cannot shadow later tests'
+    // first-match queries (the file's Edit test already guards with
+    // last-match for the same reason).
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
   });
 
   it('opens user detail from the overflow menu', async () => {

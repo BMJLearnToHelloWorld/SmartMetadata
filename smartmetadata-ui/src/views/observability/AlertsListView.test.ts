@@ -9,6 +9,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
@@ -17,6 +18,8 @@ import AlertsListView from './AlertsListView.vue';
 const listEventSubscriptions = vi.fn();
 const createEventSubscription = vi.fn();
 const deleteEventSubscription = vi.fn();
+const getResourcePermission = vi.fn();
+const getEntityPermissionByFqn = vi.fn();
 
 vi.mock('@/api/eventSubscriptions', () => ({
   listEventSubscriptions: (...args: unknown[]) => listEventSubscriptions(...args),
@@ -24,7 +27,20 @@ vi.mock('@/api/eventSubscriptions', () => ({
   deleteEventSubscription: (...args: unknown[]) => deleteEventSubscription(...args),
 }));
 
+// P1 gating line: the view reads permissions through the store, which
+// calls this module. Helpers stay real; only the fetchers are stubbed.
+vi.mock('@/api/permissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/permissions')>();
+  return {
+    ...actual,
+    getResourcePermission: (...args: unknown[]) => getResourcePermission(...args),
+    getEntityPermissionByFqn: (...args: unknown[]) => getEntityPermissionByFqn(...args),
+  };
+});
+
 async function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -35,7 +51,7 @@ async function mountView() {
   await router.push({ name: 'observability-alerts' });
   await router.isReady();
   const wrapper = mount(AlertsListView, {
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return wrapper;
@@ -46,8 +62,21 @@ describe('AlertsListView create form (Fix4)', () => {
     listEventSubscriptions.mockReset();
     createEventSubscription.mockReset();
     deleteEventSubscription.mockReset();
+    getResourcePermission.mockReset();
+    getEntityPermissionByFqn.mockReset();
     listEventSubscriptions.mockResolvedValue({ data: [], total: 0, after: undefined });
     createEventSubscription.mockResolvedValue({ id: 'al1', name: 'dq-webhook' });
+    getResourcePermission.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [{ operation: 'Create', access: 'allow' }],
+    });
+    getEntityPermissionByFqn.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [
+        { operation: 'EditAll', access: 'allow' },
+        { operation: 'Delete', access: 'allow' },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -101,5 +130,14 @@ describe('AlertsListView create form (Fix4)', () => {
         ],
       }),
     );
+  });
+
+  it('disables create when the resource permission denies Create (P1)', async () => {
+    getResourcePermission.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [{ operation: 'Create', access: 'deny' }],
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="create-alert"]').attributes('disabled')).not.toBeUndefined();
   });
 });

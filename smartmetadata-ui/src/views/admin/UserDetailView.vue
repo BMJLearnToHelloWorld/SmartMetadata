@@ -14,9 +14,12 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
+import { usePermissionStore } from '@/stores/permissions';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
+/** Official Users gating line: edit/deactivate/restore need an admin. */
+const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 const loading = ref(false);
 const errorMessage = ref('');
 const user = ref<AdminUser | null>(null);
@@ -173,11 +176,11 @@ watch(
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button v-if="user" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
-      <Button v-if="user && !user.deleted" danger data-testid="deactivate-user" @click="onDeactivate">
+      <Button v-if="user && isAdminUser" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button v-if="user && !user.deleted && isAdminUser" danger data-testid="deactivate-user" @click="onDeactivate">
         {{ t('admin.users.deactivate') }}
       </Button>
-      <Button v-if="user?.deleted" type="primary" data-testid="restore-user" @click="onRestore">
+      <Button v-if="user?.deleted && isAdminUser" type="primary" data-testid="restore-user" @click="onRestore">
         {{ t('admin.users.restore') }}
       </Button>
     </template>
