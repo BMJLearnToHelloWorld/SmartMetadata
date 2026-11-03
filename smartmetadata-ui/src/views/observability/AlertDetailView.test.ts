@@ -4,6 +4,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
@@ -11,13 +12,25 @@ import AlertDetailView from './AlertDetailView.vue';
 
 const getEventSubscription = vi.fn();
 const updateEventSubscription = vi.fn();
+const getEntityPermissionByFqn = vi.fn();
 
 vi.mock('@/api/eventSubscriptions', () => ({
   getEventSubscription: (...args: unknown[]) => getEventSubscription(...args),
   updateEventSubscription: (...args: unknown[]) => updateEventSubscription(...args),
 }));
 
+// P1 gating line: edit/delete read the per-alert entity permission.
+vi.mock('@/api/permissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/permissions')>();
+  return {
+    ...actual,
+    getEntityPermissionByFqn: (...args: unknown[]) => getEntityPermissionByFqn(...args),
+  };
+});
+
 async function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -29,7 +42,7 @@ async function mountView() {
   await router.isReady();
   const wrapper = mount(AlertDetailView, {
     props: { id: 'al1' },
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return wrapper;
@@ -39,6 +52,14 @@ describe('AlertDetailView edit', () => {
   beforeEach(() => {
     getEventSubscription.mockReset();
     updateEventSubscription.mockReset();
+    getEntityPermissionByFqn.mockReset();
+    getEntityPermissionByFqn.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [
+        { operation: 'EditAll', access: 'allow' },
+        { operation: 'Delete', access: 'allow' },
+      ],
+    });
     getEventSubscription.mockResolvedValue({
       id: 'al1',
       name: 'dq-alert',
@@ -112,5 +133,18 @@ describe('AlertDetailView trigger display (Fix4)', () => {
     expect(wrapper.text()).toContain('table, testCase');
     expect(wrapper.text()).toContain('matchAnyTag === PII');
     expect(wrapper.text()).toContain('Amy');
+  });
+
+  it('disables edit and delete when the entity permission denies (P1)', async () => {
+    getEntityPermissionByFqn.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [
+        { operation: 'EditAll', access: 'deny' },
+        { operation: 'Delete', access: 'deny' },
+      ],
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="edit-alert"]').attributes('disabled')).not.toBeUndefined();
+    expect(wrapper.find('[data-testid="delete-alert"]').attributes('disabled')).not.toBeUndefined();
   });
 });

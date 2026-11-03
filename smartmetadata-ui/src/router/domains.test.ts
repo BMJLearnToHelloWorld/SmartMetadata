@@ -47,7 +47,13 @@ describe('router domain scheme and guards (Stage 1)', () => {
       kind: 'login',
       redirect: '/admin/settings',
     });
-    expect(resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings' })).toEqual({ kind: 'allow' });
+    // P1 dual line: a session alone no longer passes an admin route.
+    expect(resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings' })).toEqual({
+      kind: 'forbidden',
+    });
+    expect(
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings', isAdminUser: true }),
+    ).toEqual({ kind: 'allow' });
     expect(isAdminPath('/admin/settings')).toBe(true);
     expect(isAdminPath('/admin')).toBe(true);
     expect(isAdminPath('/administrator')).toBe(false);

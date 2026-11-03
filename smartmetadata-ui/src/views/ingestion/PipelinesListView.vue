@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Checkbox, Form, Input, Select, message} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Form, Input, Menu, Select, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listDatabaseServices } from '@/api/databaseServices';
 import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
@@ -28,6 +28,8 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import type { OperationPermissions } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { buildSourceConfig } from '@/ingestion/sourceConfig';
 import {
@@ -40,6 +42,15 @@ import {
 
 const { t } = useI18n();
 const router = useRouter();
+/**
+ * Official IngestionListTable gating: row actions come from the
+ * per-pipeline entity permission by FQN, create from the
+ * ingestionPipeline resource permission. A missing or failed fetch
+ * denies (fail-closed), matching official canCreate=false-on-error.
+ */
+const permissionStore = usePermissionStore();
+const pipelinePermissions = ref(new Map<string, OperationPermissions>());
+const pipelineCreateAllowed = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const pipelines = ref<IngestionPipeline[]>([]);
@@ -115,12 +126,48 @@ async function load(): Promise<void> {
     const storage = storageResult.status === 'fulfilled' ? storageResult.value.data : [];
     const pipelineServices = pipelineServicesResult.status === 'fulfilled' ? pipelineServicesResult.value.data : [];
     catalogServices.value = [...databases, ...messaging, ...dashboards, ...storage, ...pipelineServices];
+    void loadPipelinePermissions();
   } catch (error) {
     pipelines.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
+}
+
+async function loadPipelinePermissions(): Promise<void> {
+  try {
+    const resourceOps = await permissionStore.getResourcePermission('ingestionPipeline');
+    pipelineCreateAllowed.value = resourceOps.Create === true;
+  } catch {
+    pipelineCreateAllowed.value = false;
+  }
+  const results = await Promise.allSettled(
+    pipelines.value
+      .filter((pipeline) => Boolean(pipeline.fullyQualifiedName))
+      .map(async (pipeline) => ({
+        id: pipeline.id,
+        ops: await permissionStore.getEntityPermissionByFqn(
+          'ingestionPipeline',
+          pipeline.fullyQualifiedName as string,
+        ),
+      })),
+  );
+  const next = new Map<string, OperationPermissions>();
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      next.set(result.value.id, result.value.ops);
+    }
+  }
+  pipelinePermissions.value = next;
+}
+
+function canEditPipeline(pipeline: IngestionPipeline): boolean {
+  return pipelinePermissions.value.get(pipeline.id)?.EditAll === true;
+}
+
+function canDeletePipeline(pipeline: IngestionPipeline): boolean {
+  return pipelinePermissions.value.get(pipeline.id)?.Delete === true;
 }
 
 function onNext(): void {
@@ -181,7 +228,19 @@ function openDetail(pipeline: IngestionPipeline): void {
   void router.push({ name: 'ingestion-pipeline', params: { id: pipeline.id } });
 }
 
+function onEditPipeline(pipeline: IngestionPipeline): void {
+  if (!canEditPipeline(pipeline)) {
+    message.error(t('errors.forbidden'));
+    return;
+  }
+  openDetail(pipeline);
+}
+
 async function onDelete(pipeline: IngestionPipeline): Promise<void> {
+  if (!canDeletePipeline(pipeline)) {
+    message.error(t('errors.forbidden'));
+    return;
+  }
   const confirmed = await confirmDelete({
     title: t('crud.deleteTitle'),
     content: t('ingestion.pipelines.deleteConfirm', { name: pipeline.name }),
@@ -215,8 +274,6 @@ onMounted(() => {
     :data-source="pipelines"
     table-test-id="pipelines-table"
     show-row-actions
-    show-edit-action
-    show-delete-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -224,11 +281,29 @@ onMounted(() => {
     @next="onNext"
     @prev="onPrev"
     @view="openDetail($event as IngestionPipeline)"
-    @edit="openDetail($event as IngestionPipeline)"
     @delete="onDelete($event as IngestionPipeline)"
   >
+    <template #rowActions="{ record }">
+      <Menu.Item
+        key="edit"
+        data-testid="row-overflow-edit"
+        :disabled="!canEditPipeline(record as IngestionPipeline)"
+        @click="onEditPipeline(record as IngestionPipeline)"
+      >
+        {{ t('crud.edit') }}
+      </Menu.Item>
+      <Menu.Item
+        key="delete"
+        danger
+        data-testid="row-overflow-delete"
+        :disabled="!canDeletePipeline(record as IngestionPipeline)"
+        @click="onDelete(record as IngestionPipeline)"
+      >
+        {{ t('crud.delete') }}
+      </Menu.Item>
+    </template>
     <template #actions>
-      <Button type="primary" data-testid="create-pipeline" @click="createOpen = true">
+      <Button type="primary" data-testid="create-pipeline" :disabled="!pipelineCreateAllowed" @click="createOpen = true">
         {{ t('ingestion.pipelines.create') }}
       </Button>
     </template>

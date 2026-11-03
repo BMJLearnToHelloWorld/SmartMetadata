@@ -23,10 +23,13 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
+import { usePermissionStore } from '@/stores/permissions';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
+/** Official Team gating line: write entry points need an admin. */
+const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 const loading = ref(false);
 const errorMessage = ref('');
 const team = ref<AdminTeam | null>(null);
@@ -193,7 +196,7 @@ watch(
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button v-if="team" data-testid="edit-team" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button v-if="team && isAdminUser" data-testid="edit-team" @click="openEdit">{{ t('crud.edit') }}</Button>
     </template>
     <template #overview>
       <Descriptions v-if="team" bordered :column="2" size="small">
@@ -216,7 +219,7 @@ watch(
                 {{ entityLabel(role) }}
               </Select.Option>
             </Select>
-            <Button type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
+            <Button v-if="isAdminUser" type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
               {{ t('admin.teams.saveRoles') }}
             </Button>
           </Space>
@@ -240,7 +243,7 @@ watch(
           option-filter-prop="label"
           :options="users.map((u) => ({ value: u.id, label: `${entityLabel(u)} <${u.email || ''}>` }))"
         />
-        <Button type="primary" data-testid="add-team-member" @click="onAddMember">
+        <Button v-if="isAdminUser" type="primary" data-testid="add-team-member" @click="onAddMember">
           {{ t('admin.teams.addMember') }}
         </Button>
       </Space>

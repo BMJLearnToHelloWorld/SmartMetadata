@@ -49,7 +49,7 @@ describe('eventSubscriptions API', () => {
     expect(lastFetch().url).toContain('/api/v1/events/subscriptions');
   });
 
-  it('creates an alert with required name, alertType, and a webhook destination', async () => {
+  it('creates an alert with required name, alertType, top-level resources, and a webhook destination', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,7 +57,9 @@ describe('eventSubscriptions API', () => {
         expect(body).toMatchObject({
           name: 'dq-webhook',
           alertType: 'Observability',
+          resources: ['table'],
         });
+        expect(body).not.toHaveProperty('filteringRules');
         expect(body.destinations).toEqual([
           { category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com/hook' } },
         ]);
@@ -70,6 +72,7 @@ describe('eventSubscriptions API', () => {
     const created = await createEventSubscription({
       name: 'dq-webhook',
       alertType: 'Observability',
+      resources: ['table'],
       destinations: [
         { category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com/hook' } },
       ],
@@ -114,12 +117,13 @@ describe('eventSubscriptions API', () => {
     expect(alert?.destinations[0]?.readTimeout).toBe(12);
   });
 
-  it('sends filteringRules and readTimeout in the create payload when provided (Fix4)', async () => {
+  it('sends top-level resources (never filteringRules) and destination-level readTimeout (P1 contract)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
-        expect(body.filteringRules).toEqual({ resources: ['table'] });
+        expect(body.resources).toEqual(['table']);
+        expect(body).not.toHaveProperty('filteringRules');
         expect(body.destinations).toEqual([
           { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x' }, readTimeout: 12 },
         ]);
@@ -133,11 +137,57 @@ describe('eventSubscriptions API', () => {
       name: 'dq-slack',
       alertType: 'Observability',
       enabled: true,
-      filteringRules: { resources: ['table'] },
+      resources: ['table'],
       destinations: [
         { category: 'External', type: 'Slack', config: { endpoint: 'https://hooks.slack.com/x' }, readTimeout: 12 },
       ],
     });
     expect(created.id).toBe('al3');
+  });
+
+  it('rejects zero or multiple resources and wrong-case destination types before any request', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    const base = {
+      name: 'dq-x',
+      alertType: 'Observability',
+      destinations: [{ category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com' } }],
+    };
+    await expect(createEventSubscription({ ...base, resources: [] })).rejects.toThrow('exactly one resource');
+    await expect(
+      createEventSubscription({ ...base, resources: ['table', 'testCase'] }),
+    ).rejects.toThrow('exactly one resource');
+    await expect(
+      createEventSubscription({
+        ...base,
+        resources: ['table'],
+        destinations: [{ category: 'External', type: 'MSTeams', config: { endpoint: 'https://example.com' } }],
+      }),
+    ).rejects.toThrow('Unknown destination type: MSTeams');
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  });
+
+  it('drops entity-only fields from the wire payload', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        expect(body).not.toHaveProperty('id');
+        expect(body).not.toHaveProperty('fullyQualifiedName');
+        expect(body).not.toHaveProperty('href');
+        return new Response(JSON.stringify({ id: 'al4', name: 'dq-x', alertType: 'Observability' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    await createEventSubscription({
+      name: 'dq-x',
+      alertType: 'Observability',
+      resources: ['table'],
+      destinations: [{ category: 'External', type: 'Webhook', config: { endpoint: 'https://example.com' } }],
+      id: 'al4',
+      fullyQualifiedName: 'dq-x',
+      href: '/api/v1/events/subscriptions/al4',
+    } as never);
   });
 });

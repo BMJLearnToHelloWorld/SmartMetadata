@@ -118,12 +118,88 @@ export async function getEventSubscription(id: string): Promise<EventSubscriptio
   return mapped;
 }
 
+/**
+ * Server subscriptionCategory / subscriptionType enums (eventSubscription
+ * schema). Case is significant: the server rejects an unknown case with
+ * a Jackson error, so a wrong-case type never reaches validation.
+ */
+export const DESTINATION_CATEGORIES = [
+  'Users',
+  'Teams',
+  'Admins',
+  'Assignees',
+  'Owners',
+  'Mentions',
+  'Followers',
+  'External',
+] as const;
+
+export const DESTINATION_TYPES = [
+  'Webhook',
+  'Slack',
+  'MsTeams',
+  'GChat',
+  'Email',
+  'ActivityFeed',
+  'GovernanceWorkflowChangeEvent',
+] as const;
+
+/**
+ * Build the exact create/update wire payload. The create schema's only
+ * required fields are name and alertType, it has no filteringRules
+ * field, and it rejects unknown fields — so this whitelist drops
+ * filteringRules and every entity-only field (id, fqn, href, version)
+ * instead of forwarding the form object. Resources must be exactly
+ * one: the server builds the stored filtering rules from this list
+ * and rejects any other count. Destination readTimeout stays beside
+ * config, never inside it, where the server rejects it for webhooks.
+ */
+export function buildEventSubscriptionPayload(
+  body: CreateEventSubscriptionRequest,
+): Record<string, unknown> {
+  const name = body.name?.trim();
+  if (!name) {
+    throw new Error('An alert needs a name');
+  }
+  if (!body.alertType) {
+    throw new Error('An alert needs an alertType');
+  }
+  const resources = (body.resources ?? []).filter((item) => item.trim().length > 0);
+  if (resources.length !== 1) {
+    throw new Error('An alert needs exactly one resource');
+  }
+  const destinations = body.destinations.map((destination) => {
+    if (destination.category && !DESTINATION_CATEGORIES.includes(destination.category as (typeof DESTINATION_CATEGORIES)[number])) {
+      throw new Error(`Unknown destination category: ${destination.category}`);
+    }
+    if (destination.type && !DESTINATION_TYPES.includes(destination.type as (typeof DESTINATION_TYPES)[number])) {
+      throw new Error(`Unknown destination type: ${destination.type}`);
+    }
+    const config = destination.config ? { ...destination.config } : undefined;
+    return {
+      category: destination.category,
+      type: destination.type,
+      config,
+      readTimeout: destination.readTimeout,
+    };
+  });
+  return {
+    name,
+    alertType: body.alertType,
+    displayName: body.displayName,
+    description: body.description,
+    enabled: body.enabled,
+    resources,
+    destinations,
+  };
+}
+
 export async function createEventSubscription(
   body: CreateEventSubscriptionRequest,
 ): Promise<EventSubscription> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/events/subscriptions', {
     method: 'POST',
-    json: body,
+    json: buildEventSubscriptionPayload(body),
   });
   const mapped = mapSubscription(raw);
   if (!mapped) {
@@ -137,7 +213,7 @@ export async function updateEventSubscription(
 ): Promise<EventSubscription> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/events/subscriptions', {
     method: 'PUT',
-    json: body,
+    json: buildEventSubscriptionPayload(body),
   });
   const mapped = mapSubscription(raw);
   if (!mapped) {
