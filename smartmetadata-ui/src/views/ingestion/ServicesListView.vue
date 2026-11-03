@@ -131,6 +131,8 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    data-tour-step="services"
+    data-tour-page
     :title="t('ingestion.services.title')"
     :lead="t('ingestion.services.lead')"
     :loading="loading"

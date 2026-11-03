@@ -50,6 +50,7 @@ const PoliciesListView = () => import('@/views/admin/PoliciesListView.vue');
 const PolicyDetailView = () => import('@/views/admin/PolicyDetailView.vue');
 const PolicyRuleFormView = () => import('@/views/admin/PolicyRuleFormView.vue');
 const AuditLogsView = () => import('@/views/admin/AuditLogsView.vue');
+const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
 const SettingsHubView = () => import('@/views/admin/SettingsHubView.vue');
 const SystemSettingsView = () => import('@/views/admin/SystemSettingsView.vue');
 const AppearanceSettingsView = () => import('@/views/admin/AppearanceSettingsView.vue');
@@ -103,6 +104,7 @@ const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
 const TaskDetailView = () => import('@/views/collaboration/TaskDetailView.vue');
+const InboxView = () => import('@/views/inbox/InboxView.vue');
 const TasksListView = () => import('@/views/collaboration/TasksListView.vue');
 const ContextCenterOverviewView = () => import('@/views/contextCenter/ContextCenterOverviewView.vue');
 const ContextCenterArticlesView = () => import('@/views/contextCenter/ContextCenterArticlesView.vue');
@@ -125,6 +127,8 @@ const PersonaListView = () => import('@/views/admin/PersonaListView.vue');
 const PersonaDetailView = () => import('@/views/admin/PersonaDetailView.vue');
 const PersonaCustomizeView = () => import('@/views/admin/persona/PersonaCustomizeView.vue');
 const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
+const DocsView = () => import('@/views/docs/DocsView.vue');
+const TourStartView = () => import('@/views/tour/TourStartView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const PersonaLandingRedirect = () => import('@/views/shell/PersonaLandingRedirect.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
@@ -226,6 +230,9 @@ export const router = createRouter({
           props: true,
         },
         { path: 'admin/users', name: 'admin-users', component: UsersListView },
+        // P2 B5: official Admins tab surface (UserListPageV1 isAdminPage);
+        // no standalone Admins page exists officially, only the tab.
+        { path: 'admin/users/admins', name: 'admin-admins', component: UsersListView },
         { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true },
         { path: 'admin/teams', name: 'admin-teams', component: TeamsListView },
         { path: 'admin/teams/:id', name: 'admin-team', component: TeamDetailView, props: true },
@@ -236,6 +243,13 @@ export const router = createRouter({
         { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
         { path: 'admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
+        // P2 B5: official Settings SSO page (configuration page only).
+        {
+          path: 'admin/settings/sso',
+          name: 'admin-settings-sso',
+          component: SsoSettingsView,
+          meta: { titleKey: 'sso.title' },
+        },
         { path: 'admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView },
         { path: 'admin/settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView },
         { path: 'admin/settings/preferences/login', name: 'settings-preferences-login', component: LoginConfigurationView },
@@ -459,6 +473,13 @@ export const router = createRouter({
           alias: 'governance/sparql',
           meta: { titleKey: 'sparql.title' },
         },
+        // P2 B5: official SWAGGER route ('/docs', constants.ts:195).
+        {
+          path: 'docs',
+          name: 'docs',
+          component: DocsView,
+          meta: { titleKey: 'docs.title' },
+        },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,
           name: page.name,
@@ -543,6 +564,10 @@ export const router = createRouter({
           props: true,
         },
         { path: 'activity', name: 'activity', component: ActivityFeedView },
+        // P2 B5: official Inbox page (personal-space InboxPage).
+        { path: 'inbox', name: 'inbox', component: InboxView, meta: { titleKey: 'inbox.title' } },
+        // P2 B5: official /tour page (ProductTourPage): starts the tour.
+        { path: 'tour', name: 'tour', component: TourStartView, meta: { titleKey: 'tour.title' } },
         { path: 'tasks', name: 'tasks', component: TasksListView },
         { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
         { path: 'announcements', name: 'announcements', component: AnnouncementsListView },

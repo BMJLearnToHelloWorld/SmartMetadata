@@ -233,7 +233,7 @@ onMounted(() => {
 
 <template>
   <PageLayout test-id="dq-landing-layout">
-  <div class="dq-landing" data-testid="dq-landing">
+  <div class="dq-landing" data-testid="dq-landing" data-tour-step="data-quality-data-health" data-tour-page>
     <div class="dq-landing__head">
       <div data-testid="dq-landing-title">
         <PageHeader :header="t('quality.landing.title')" :sub-header="t('quality.landing.lead')" />

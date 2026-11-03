@@ -154,6 +154,8 @@ onMounted(() => {
     test-id="glossaries-header"
   />
   <EntityListShell
+    data-tour-step="glossary"
+    data-tour-page
     :title="t('governance.glossaries.title')"
     :loading="loading"
     :error="errorMessage"

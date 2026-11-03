@@ -130,6 +130,23 @@ const METRIC_TABS: EntityDetailTabDef[] = [
   { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
 ];
 
+// Official: pages/APICollectionPage (overview + endpoints tab) and
+// pages/APIEndpointPage (overview + endpoint tab), reached through the
+// generic entity detail route.
+const API_COLLECTION_TABS: EntityDetailTabDef[] = [
+  { key: 'overview', labelKey: 'overview', slot: 'overview' },
+  { key: 'apiEndpoints', labelKey: 'apiEndpoints', slot: 'apiEndpoints' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
+const API_ENDPOINT_TABS: EntityDetailTabDef[] = [
+  { key: 'overview', labelKey: 'overview', slot: 'overview' },
+  { key: 'endpoint', labelKey: 'endpoint', slot: 'endpoint' },
+  { key: 'activity_feed', labelKey: 'activityFeed', slot: 'activity' },
+  { key: 'custom_properties', labelKey: 'customProperties', slot: 'customProperties' },
+];
+
 const OFFICIAL_TABS: Record<string, EntityDetailTabDef[]> = {
   table: TABLE_TABS,
   topic: TOPIC_TABS,
@@ -142,6 +159,8 @@ const OFFICIAL_TABS: Record<string, EntityDetailTabDef[]> = {
   searchIndex: SEARCH_INDEX_TABS,
   storedProcedure: STORED_PROCEDURE_TABS,
   metric: METRIC_TABS,
+  apiCollection: API_COLLECTION_TABS,
+  apiEndpoint: API_ENDPOINT_TABS,
 };
 
 /** True when the entity's tabs follow the official tab ids in this stage. */

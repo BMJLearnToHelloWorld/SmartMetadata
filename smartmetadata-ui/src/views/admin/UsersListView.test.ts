@@ -24,7 +24,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountUsers(asAdmin = true) {
+async function mountUsers(asAdmin = true, initialPath = '/admin/users') {
   const pinia = createPinia();
   setActivePinia(pinia);
   // P1 gating line: the view reads isAdminUser from the auth store.
@@ -33,10 +33,11 @@ async function mountUsers(asAdmin = true) {
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/users', name: 'admin-users', component: UsersListView },
+      { path: '/admin/users/admins', name: 'admin-admins', component: UsersListView },
       { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
     ],
   });
-  await router.push('/admin/users');
+  await router.push(initialPath);
   await router.isReady();
   const wrapper = mount(UsersListView, {
     global: {
@@ -93,6 +94,24 @@ describe('UsersListView', () => {
     expect(wrapper.text()).toContain('alice@example.com');
     expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
+  });
+
+  it('loads the Admins tab with isAdmin=true on the admins route', async () => {
+    const { wrapper, router } = await mountUsers(true, '/admin/users/admins');
+    expect(router.currentRoute.value.name).toBe('admin-admins');
+    const usersCalls = vi.mocked(fetch).mock.calls.filter((call) => String(call[0]).includes('/api/v1/users'));
+    expect(usersCalls.length).toBeGreaterThan(0);
+    expect(String(usersCalls[0][0])).toContain('isAdmin=true');
+    expect(wrapper.find('[data-testid="users-tabs"]').exists()).toBe(true);
+  });
+
+  it('navigates back to all users when the All tab is clicked', async () => {
+    const { wrapper, router } = await mountUsers(true, '/admin/users/admins');
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    expect(tabs.length).toBeGreaterThanOrEqual(2);
+    await tabs[0].trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-users');
   });
 
   it('hides create and edit entry points for a non-admin viewer (P1)', async () => {

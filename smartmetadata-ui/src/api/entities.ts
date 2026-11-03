@@ -266,6 +266,11 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     domains: mapOwners(body.domains),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
+    // P2 B5: API endpoint detail fields (entity/data/apiEndpoint.json).
+    apiEndpointUrl: asString(body.endpointURL) || undefined,
+    apiRequestMethod: asString(body.requestMethod) || undefined,
+    apiRequestSchema: asRecord(body.requestSchema) || undefined,
+    apiResponseSchema: asRecord(body.responseSchema) || undefined,
     extension: asRecord(body.extension) || undefined,
   };
 }

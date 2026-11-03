@@ -3,10 +3,10 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import {Button, Checkbox, Form, Input, Select, message} from 'ant-design-vue';
+import { useRoute, useRouter } from 'vue-router';
+import {Button, Checkbox, Form, Input, Select, Tabs, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
@@ -38,6 +38,7 @@ import { usePermissionStore } from '@/stores/permissions';
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 /** Official Users gating line: create/edit entry points need an admin. */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 const loading = ref(false);
@@ -48,7 +49,12 @@ const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const offset = ref<OffsetPager>(createOffsetPager());
 const query = ref('');
-const isAdminOnly = ref(false);
+/**
+ * Official UserListPage tab surface (UserListPageV1.tsx:82 isAdminPage):
+ * the Admins tab is a route state (admin-admins), not a checkbox filter.
+ */
+const isAdminTab = computed(() => route.name === 'admin-admins');
+const isAdminOnly = computed(() => isAdminTab.value);
 const isBotOnly = ref(false);
 const include = ref<IncludeFilter>('non-deleted');
 const createOpen = ref(false);
@@ -128,6 +134,23 @@ function onFilterChange(): void {
   void loadUsers();
 }
 
+function onTabChange(key: string | number): void {
+  const target = key === 'admins' ? 'admin-admins' : 'admin-users';
+  if (route.name !== target) {
+    void router.push({ name: target });
+  }
+}
+
+// Same component serves both routes: a tab switch only changes the route
+// name, so reload on it (covers tab clicks and browser back/forward).
+watch(
+  () => route.name,
+  () => {
+    resetPaging();
+    void loadUsers();
+  },
+);
+
 function onNext(): void {
   if (searching.value) {
     offset.value = goNextOffset(offset.value);
@@ -195,6 +218,10 @@ onMounted(() => {
 </script>
 
 <template>
+  <Tabs :active-key="isAdminTab ? 'admins' : 'all'" data-testid="users-tabs" @change="onTabChange">
+    <Tabs.TabPane key="all" :tab="t('admin.users.allUsers')" />
+    <Tabs.TabPane key="admins" :tab="t('admin.users.admins')" />
+  </Tabs>
   <EntityListShell
     :title="t('admin.users.title')"
     :lead="t('admin.users.lead')"
@@ -225,7 +252,6 @@ onMounted(() => {
       </Button>
     </template>
     <template #filters>
-      <Checkbox v-model:checked="isAdminOnly" @change="onFilterChange">{{ t('admin.users.admins') }}</Checkbox>
       <Checkbox v-model:checked="isBotOnly" @change="onFilterChange">{{ t('admin.users.bots') }}</Checkbox>
       <Select v-model:value="include" style="width: 160px" @change="onFilterChange">
         <Select.Option value="non-deleted">{{ t('crud.includeActive') }}</Select.Option>

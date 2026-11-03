@@ -323,7 +323,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div data-testid="marketplace-overview">
+  <div data-testid="marketplace-overview" data-tour-step="data-marketplace" data-tour-page>
     <PageHeader :header="t('marketplace.title')" :sub-header="t('marketplace.lead')" />
     <Typography.Text v-if="errorMessage" type="danger" data-testid="marketplace-error">
       {{ errorMessage }}

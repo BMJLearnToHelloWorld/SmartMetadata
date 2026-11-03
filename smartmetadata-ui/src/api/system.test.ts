@@ -9,7 +9,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { fetchAuthConfig, listSettings, updateSetting } from './system';
+import {
+  fetchAuthConfig,
+  getSecurityConfig,
+  listSettings,
+  mapSsoAuthConfiguration,
+  patchAuthenticationConfiguration,
+  updateSetting,
+} from './system';
 
 describe('system API', () => {
   beforeEach(() => {
@@ -76,5 +83,57 @@ describe('system API', () => {
       jwtTokenExpiryTime: 3600,
     });
     expect(saved.configType).toBe('loginConfiguration');
+  });
+});
+
+describe('system SSO API', () => {
+  it('maps the security config authentication object, ignoring unknown fields', () => {
+    expect(
+      mapSsoAuthConfiguration({
+        provider: 'google',
+        clientId: 'cid',
+        enableSelfSignup: true,
+        unknownField: 'ignored',
+      }),
+    ).toEqual({
+      provider: 'google',
+      providerName: undefined,
+      clientType: undefined,
+      authority: undefined,
+      clientId: 'cid',
+      callbackUrl: undefined,
+      enableSelfSignup: true,
+    });
+  });
+
+  it('loads GET /v1/system/security/config', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ authenticationConfiguration: { provider: 'okta', clientId: 'cid' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const config = await getSecurityConfig();
+    expect(config.authenticationConfiguration?.provider).toBe('okta');
+  });
+
+  it('patches authenticationConfiguration with the JSON Patch content type', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(input)).toContain('/v1/system/settings/authenticationConfiguration');
+        expect(init?.method).toBe('PATCH');
+        expect((init?.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json');
+        expect(String(init?.body)).toContain('/provider');
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    await patchAuthenticationConfiguration([{ op: 'replace', path: '/provider', value: 'google' }]);
   });
 });

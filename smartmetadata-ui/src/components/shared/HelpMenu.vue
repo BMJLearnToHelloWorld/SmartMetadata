@@ -6,22 +6,31 @@
 import { Button, Dropdown, Menu, Tooltip } from 'ant-design-vue';
 import { QuestionCircleOutlined } from '@ant-design/icons-vue';
 import { useI18n } from 'vue-i18n';
-import { helpItems } from './helpItems';
+import { useRouter } from 'vue-router';
+import { helpItems, type HelpItem } from './helpItems';
 
 /**
  * Official Help dropdown bridge: tour / docs / API / Slack / version
- * items, data-driven from helpItems.ts. Tour and API are disabled
- * residual items (no tour or swagger route exists in this console);
- * docs, Slack and version are external links with the official URLs.
+ * items, data-driven from helpItems.ts. Route items navigate internally
+ * (API → /docs); items with neither a link nor a route render as
+ * disabled residual items; docs, Slack and version are external links
+ * with the official URLs.
  */
 withDefaults(defineProps<{ version?: string; testId?: string }>(), {
   version: undefined,
   testId: 'help-menu',
 });
 const { t } = useI18n();
+const router = useRouter();
 
 function popupParent(node: HTMLElement): HTMLElement {
   return node.parentElement ?? document.body;
+}
+
+function goToRoute(item: HelpItem): void {
+  if (item.routeName) {
+    void router.push({ name: item.routeName });
+  }
 }
 </script>
 
@@ -37,6 +46,9 @@ function popupParent(node: HTMLElement): HTMLElement {
             <a :href="item.href" target="_blank" rel="noreferrer">
               {{ item.key === 'version' ? t(item.labelKey, { version: version ?? t('chrome.helpVersionUnknown') }) : t(item.labelKey) }}
             </a>
+          </Menu.Item>
+          <Menu.Item v-else-if="item.routeName" :key="item.key" :data-testid="`help-item-${item.key}`" @click="goToRoute(item)">
+            {{ t(item.labelKey) }}
           </Menu.Item>
           <Tooltip v-else :title="item.residualKey ? t(item.residualKey) : ''" placement="left">
             <Menu.Item :key="item.key" disabled :data-testid="`help-item-${item.key}`">

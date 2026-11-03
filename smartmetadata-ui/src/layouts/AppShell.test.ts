@@ -10,11 +10,17 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { LOCALE_STORAGE_KEY } from '@/i18n/localePreference';
 import { createTestI18n } from '@/test/i18n';
 import AppShell from './AppShell.vue';
+
+const getInboxCounts = vi.fn();
+
+vi.mock('@/api/inbox', () => ({
+  getInboxCounts: (...args: unknown[]) => getInboxCounts(...args),
+}));
 
 async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
   const pinia = createPinia();
@@ -53,6 +59,7 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
           { path: 'context-center', name: 'context-center-overview', component: { template: '<div>cc</div>' } },
           { path: 'login', name: 'login', component: { template: '<div>login</div>' } },
           { path: 'admin/settings', name: 'admin-settings', component: { template: '<div>settings</div>' } },
+          { path: 'inbox', name: 'inbox', component: { template: '<div>inbox</div>' } },
           { path: 'admin/users/:id', name: 'admin-user', component: { template: '<div>profile</div>' } },
         ],
       },
@@ -72,6 +79,8 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
 describe('AppShell', () => {
   beforeEach(() => {
     localStorage.clear();
+    getInboxCounts.mockReset();
+    getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
   });
 
   afterEach(() => {
@@ -112,7 +121,7 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
     // dev_ui shell composition: the old header widgets (real notifications,
     // help menu, domain scope, version tag, AppMode marker) are not rendered
-    // by the redesigned shell; the bell is a static icon.
+    // by the redesigned shell; the bell is the inbox button (B5-3).
     expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(false);
@@ -225,5 +234,21 @@ describe('AppShell', () => {
     // B3-5: the marketplace overview is a real page now, so the section
     // title lands on it instead of the Fix6 workaround target (domains).
     expect(router.currentRoute.value.name).toBe('marketplace-overview');
+  });
+
+  it('shows the inbox pending count on the bell button (B5-3)', async () => {
+    getInboxCounts.mockResolvedValue({ openTaskCount: 3, unreadActivityCount: 2, pendingCount: 5 });
+    const { wrapper } = await mountShell();
+    expect(wrapper.find('[data-testid="inbox-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="inbox-badge"]').text()).toContain('5');
+  });
+
+  it('lands on the inbox tasks tab when open tasks exist (B5-3)', async () => {
+    getInboxCounts.mockResolvedValue({ openTaskCount: 2, unreadActivityCount: 0, pendingCount: 2 });
+    const { wrapper, router } = await mountShell();
+    await wrapper.find('[data-testid="inbox-button"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('inbox');
+    expect(router.currentRoute.value.query.tab).toBe('tasks');
   });
 });

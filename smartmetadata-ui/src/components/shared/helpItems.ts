@@ -12,14 +12,16 @@
  * Help menu items, mirroring the official HELP_ITEMS structure
  * (constants/Navbar.constants.ts): tour, docs, API, Slack, version.
  * External URLs are the official constants (URL.constants.ts).
- * Tour and API are internal routes this console does not have, so
- * they render as disabled residual items rather than dead links.
+ * Items with an internal route navigate to it; items with neither a
+ * link nor a route render as disabled (no such item remains: tour now routes)
+ * residual items rather than dead links.
  */
 export interface HelpItem {
   key: 'tour' | 'docs' | 'api' | 'slack' | 'version';
   labelKey: string;
   href?: string;
   external?: boolean;
+  routeName?: string;
   residualKey?: string;
 }
 
@@ -29,9 +31,10 @@ export const HELP_RELEASE_URL_TEMPLATE = 'https://open-metadata.org/product-upda
 
 export function helpItems(version?: string): HelpItem[] {
   return [
-    { key: 'tour', labelKey: 'chrome.helpTour', residualKey: 'chrome.helpTourResidual' },
+    { key: 'tour', labelKey: 'chrome.helpTour', routeName: 'tour' },
     { key: 'docs', labelKey: 'chrome.helpDocs', href: HELP_DOCS_URL, external: true },
-    { key: 'api', labelKey: 'chrome.helpApi', residualKey: 'chrome.helpApiResidual' },
+    // B5-5: the API reference is an internal route now, not a residual.
+    { key: 'api', labelKey: 'chrome.helpApi', routeName: 'docs' },
     { key: 'slack', labelKey: 'chrome.helpSlack', href: HELP_SLACK_URL, external: true },
     {
       key: 'version',

@@ -62,6 +62,17 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
     collection: 'databaseSchemas',
     fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers',
   },
+  // P2 B5: official APICollectionPage / APIEndpointPage, reached through
+  // the generic entity detail route (no explicit router entries exist
+  // officially either — EntityDetailComponentUtils maps the types).
+  apiCollection: {
+    collection: 'apiCollections',
+    fields: 'owners,tags,domains,extension,service,followers',
+  },
+  apiEndpoint: {
+    collection: 'apiEndpoints',
+    fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers',
+  },
 };
 
 export function assetLocation(entityType: string, fqn: string): { name: string; params: { entityType: string; fqn: string } } {

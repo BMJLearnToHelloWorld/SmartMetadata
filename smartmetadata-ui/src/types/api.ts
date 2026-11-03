@@ -166,6 +166,10 @@ export interface AssetDetail {
   indexType?: string;
   storedProcedureType?: string;
   storedProcedureCode?: StoredProcedureCode;
+  apiEndpointUrl?: string;
+  apiRequestMethod?: string;
+  apiRequestSchema?: Record<string, unknown>;
+  apiResponseSchema?: Record<string, unknown>;
   parent?: EntityRef;
   children?: EntityRef[];
   charts?: EntityRef[];

@@ -316,7 +316,9 @@ watch(totalRange, (days) => {
 </script>
 
 <template>
-  <div class="my-data" data-testid="my-data-page">
+  <!-- P2 B5 tour: no topics section exists on this page, so the tour
+       step falls back to the page content per TOUR_PAGE_SELECTOR. -->
+  <div class="my-data" data-testid="my-data-page" data-tour-page>
     <Spin :spinning="loading">
       <div class="my-data__scroll">
       <div class="my-data__grid">
