@@ -53,11 +53,6 @@ describe('ResidualPage', () => {
       'ontology-explorer',
       'column-bulk-ops',
       'workflows',
-      'context-center-overview',
-      'context-center-articles',
-      'context-center-documents',
-      'context-center-memories',
-      'context-center-archive',
     ]);
     const { wrapper, def } = await mountPage('ontology-explorer');
     expect(wrapper.find(`[data-testid="${def.testId}"]`).exists()).toBe(true);
@@ -67,11 +62,9 @@ describe('ResidualPage', () => {
     expect(wrapper.findAll('table').length).toBe(0);
   });
 
-  it('keeps Context Center articles empty without fake CMS copy', async () => {
-    const { wrapper } = await mountPage('context-center-articles');
-    expect(wrapper.text()).toContain('Articles');
-    expect(wrapper.find('[data-testid="residual-empty"]').exists()).toBe(true);
-    expect(wrapper.text().toLowerCase()).not.toContain('lorem');
+  it('no longer lists Context Center shells (P2 B1 replaced them with real pages)', () => {
+    const names = RESIDUAL_PAGES.map((page) => page.name);
+    expect(names.some((name) => name.startsWith('context-center-'))).toBe(false);
   });
 });
 
