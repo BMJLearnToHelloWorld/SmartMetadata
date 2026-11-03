@@ -129,12 +129,27 @@ export interface Domain {
   childrenCount?: number;
 }
 
+/**
+ * Official UI style (type/basic.json#/definitions/style, cover image
+ * excluded: the marketplace create forms do not offer it). Color is a hex
+ * code, iconURL an icon URL; both optional.
+ */
+export interface EntityStyle {
+  color?: string;
+  iconURL?: string;
+}
+
 export interface CreateDomainRequest {
   name: string;
   description: string;
   domainType: DomainType | string;
   displayName?: string;
   parent?: string;
+  /** Official createDomain owners: entity references (type user/team). */
+  owners?: EntityRef[];
+  /** Official createDomain experts: user/login names, not references. */
+  experts?: string[];
+  style?: EntityStyle;
 }
 
 export interface DataProduct {
@@ -154,6 +169,11 @@ export interface CreateDataProductRequest {
   description: string;
   domains: string[];
   displayName?: string;
+  /** Official createDataProduct owners: entity references (type user/team). */
+  owners?: EntityRef[];
+  /** Official createDataProduct experts: user/login names, not references. */
+  experts?: string[];
+  style?: EntityStyle;
 }
 
 export interface AssetTagOption {

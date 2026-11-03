@@ -69,6 +69,23 @@ export async function getDomain(id: string): Promise<Domain> {
   return mapped;
 }
 
+/**
+ * Official getDomainByName (rest/domainAPI.ts): GET /v1/domains/name/{name}.
+ * The marketplace announcement widget only carries the fqn, so this is
+ * the fqn→id resolution for its click-through.
+ */
+export async function getDomainByName(name: string): Promise<Domain> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/domains/name/${encodeURIComponent(name)}`,
+    { query: { fields: DOMAIN_FIELDS } },
+  );
+  const mapped = mapDomain(raw);
+  if (!mapped) {
+    throw new Error('Domain response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function createDomain(body: CreateDomainRequest): Promise<Domain> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/domains', {
     method: 'POST',

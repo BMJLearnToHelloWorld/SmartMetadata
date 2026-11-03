@@ -24,6 +24,48 @@ export interface SearchAssetsOptions {
   deleted?: boolean;
 }
 
+export interface NlqSearchOptions {
+  index?: string;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+  deleted?: boolean;
+}
+
+/**
+ * Natural-language search. The official UI calls /hybrid/nlq/search, but
+ * this snapshot's server exposes no /hybrid route; the verified equivalent
+ * is GET /v1/search/nlq/query, whose parameters match the UI call one to
+ * one (q, index, size, from, deleted, sort_field, sort_order,
+ * query_filter) and whose response is the same SearchResponse shape, so
+ * the keyword mapper is reused. A live /hybrid probe may one day justify
+ * a one-line switch; it does not block this wiring.
+ */
+export async function nlqSearch(
+  query: string,
+  from = 0,
+  size = 10,
+  options: NlqSearchOptions = {},
+): Promise<SearchPage> {
+  const payload = await apiRequest<unknown>('/v1/search/nlq/query', {
+    query: {
+      q: query,
+      index: options.index ?? 'dataAsset',
+      from,
+      size,
+      sort_field: options.sortField,
+      sort_order: options.sortOrder,
+      deleted: options.deleted === true ? true : undefined,
+    },
+  });
+  return mapSearchResponse(payload);
+}
+
+/** Official getNLPEnabledStatus (rest/searchAPI.ts): GET /system/search/nlq. */
+export async function getNLPEnabledStatus(): Promise<boolean> {
+  const payload = await apiRequest<unknown>('/v1/system/search/nlq');
+  return payload === true;
+}
+
 export async function searchAssets(
   query: string,
   from = 0,

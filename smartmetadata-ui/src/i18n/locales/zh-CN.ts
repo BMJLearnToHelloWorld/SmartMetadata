@@ -2220,6 +2220,12 @@ const zhCN = {
     emptyDomains: '暂无域。',
     empty: '暂无数据产品或域。',
     createRequired: '名称与描述为必填项。',
+    owners: '负责人',
+    experts: '专家',
+    iconUrl: '图标链接',
+    color: '颜色',
+    nlq: '自然语言',
+    openFailed: '无法打开该公告目标。',
   },
   ontology: {
     title: '本体探索器',

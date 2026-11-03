@@ -62,6 +62,23 @@ export async function getDataProduct(id: string): Promise<DataProduct> {
   return mapped;
 }
 
+/**
+ * Official getDataProductByName (rest/dataProductAPI.ts): GET
+ * /v1/dataProducts/name/{name}. The marketplace announcement widget only
+ * carries the fqn, so this is the fqn→id resolution for its click-through.
+ */
+export async function getDataProductByName(name: string): Promise<DataProduct> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataProducts/name/${encodeURIComponent(name)}`,
+    { query: { fields: DATA_PRODUCT_FIELDS } },
+  );
+  const mapped = mapDataProduct(raw);
+  if (!mapped) {
+    throw new Error('Data product response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function createDataProduct(body: CreateDataProductRequest): Promise<DataProduct> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/dataProducts', {
     method: 'POST',

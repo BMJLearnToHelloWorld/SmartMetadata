@@ -127,7 +127,9 @@ describe('nav IA', () => {
   });
 
   it('lands section title clicks on a working page, never on a section key (Fix6)', () => {
-    expect(sectionLanding('marketplace')).toBe('governance-domains');
+    // B3-5: the marketplace overview is a real page now, so the section
+    // lands on it instead of the Fix6 workaround target (domains list).
+    expect(sectionLanding('marketplace')).toBe('marketplace-overview');
     expect(sectionLanding('governance')).toBe('governance-glossaries');
     expect(sectionLanding('observability')).toBe('quality-test-cases');
     // Context Center has no working child: its landing is its own overview

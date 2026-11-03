@@ -8,7 +8,7 @@
  *     http://www.apache.org/LICENSE-2.0
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { searchAssets } from './search';
+import { getNLPEnabledStatus, nlqSearch, searchAssets } from './search';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -59,6 +59,35 @@ describe('searchAssets', () => {
     expect(String(vi.mocked(fetch).mock.calls[1][0])).not.toContain('deleted=');
     await searchAssets('orders', 0, 15);
     expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('deleted=');
+  });
+
+  it('nlqSearch queries GET /v1/search/nlq/query with the UI nlq params', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [{ _source: { name: 'orders', fullyQualifiedName: 'svc.db.schema.orders', entityType: 'table' } }],
+          },
+        }),
+      ),
+    );
+    const page = await nlqSearch('top selling products', 0, 10, { index: 'dataProduct' });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.pathname).toContain('/api/v1/search/nlq/query');
+    expect(url.searchParams.get('q')).toBe('top selling products');
+    expect(url.searchParams.get('index')).toBe('dataProduct');
+    expect(url.searchParams.get('size')).toBe('10');
+    expect(url.searchParams.get('from')).toBe('0');
+    expect(page.hits[0]?.name).toBe('orders');
+  });
+
+  it('getNLPEnabledStatus returns true only for a true payload', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(true)));
+    expect(await getNLPEnabledStatus()).toBe(true);
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(false)));
+    expect(await getNLPEnabledStatus()).toBe(false);
   });
 
   it('can skip aggregations for My Data owned/followed term queries', async () => {

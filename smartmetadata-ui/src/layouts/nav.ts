@@ -117,7 +117,7 @@ export const NAV_FOOTER_ENTRIES: NavEntry[] = [
  */
 export const SECTION_LANDING: Record<string, string> = {
   observability: 'quality-test-cases',
-  marketplace: 'governance-domains',
+  marketplace: 'marketplace-overview',
   governance: 'governance-glossaries',
   'context-center': 'context-center-overview',
 };
