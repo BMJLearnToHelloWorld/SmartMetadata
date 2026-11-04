@@ -159,7 +159,7 @@ describe('i18n catalogs', () => {
     expect(enUS.nav.govern).toBe('Govern');
     expect(enUS.nav.glossary).toBe('Glossary');
     expect(enUS.nav.incidentManager).toBe('Incident Manager');
-    expect(enUS.nav.columnBulkOps).toBe('Column Bulk Ops (Beta)');
+    expect(enUS.nav.columnBulkOps).toBe('Column Bulk Operations');
     expect(enUS.nav.marketplace).toBe('Data Marketplace');
     expect(zhCN.nav.govern).toBe('治理');
     expect(zhCN.nav.contextCenter).toBe('知识中心');

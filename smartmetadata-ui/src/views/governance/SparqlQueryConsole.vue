@@ -310,7 +310,9 @@ onMounted(() => {
             <Button
               type="link"
               size="small"
+              class="sparql-library-name"
               :data-testid="`sparql-template-${template.id}`"
+              :title="template.name"
               style="flex: 1; justify-content: flex-start; min-width: 0"
               @click="handleLoadTemplate(template)"
             >
@@ -358,7 +360,9 @@ onMounted(() => {
           <Button
             type="link"
             size="small"
+            class="sparql-library-name"
             :data-testid="`sparql-saved-${saved.id}`"
+            :title="saved.name"
             @click="handleLoadSaved(saved)"
           >
             {{ saved.name }}
@@ -497,3 +501,23 @@ onMounted(() => {
     />
   </FormModal>
 </template>
+
+<style scoped>
+/*
+ * The 220px library column holds unbroken query names; without an
+ * ellipsis the Ant link-button text (nowrap by default) spills out of
+ * its box and paints over the Edit/Delete buttons. Truncate with an
+ * ellipsis and keep the full name on hover via the title attribute.
+ */
+.sparql-library-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.sparql-library-name > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

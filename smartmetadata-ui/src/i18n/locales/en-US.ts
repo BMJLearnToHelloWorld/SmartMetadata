@@ -56,7 +56,7 @@ const enUS = {
     overview: 'Overview',
     ontologyExplorer: 'Ontology Explorer',
     metrics: 'Metrics',
-    columnBulkOps: 'Column Bulk Ops (Beta)',
+    columnBulkOps: 'Column Bulk Operations',
     workflows: 'Workflows',
     sparqlPlayground: 'SPARQL Playground',
     contextCenter: 'Context Center',
@@ -693,8 +693,6 @@ const enUS = {
       empty: 'No users were active in this time window.',
       searchEmpty: 'No users match this search.',
       searchPlaceholder: 'Search users',
-      adminResidual:
-        'Residual: the official page is admin-only, but this console has no role field, so no admin gate is enforced here.',
       windows: {
         last5: 'Last 5 minutes',
         last60: 'Last hour',
@@ -1405,7 +1403,7 @@ const enUS = {
         testConnectionResidual:
           'Connection testing is not offered here: no test-connection endpoint is wired. Save the service and verify it with smartmetadata-ingest.',
         filterResidual:
-          'Ingestion scope is applied when an ingestion pipeline is created, not when the service record is created. This wizard creates only the service record; create the pipeline from the service detail page to apply this scope.',
+          'Scope entered here is carried into a metadata pipeline created with the service (paused, not deployed). With no scope entered, only the service record is created.',
       },
     },
     pipelines: {
@@ -1995,11 +1993,7 @@ const enUS = {
       lead: 'Explore business ontology relationships.',
       empty: 'Ontology Explorer is residual. This console has no ontology graph API.',
     },
-    columnBulkOps: {
-      title: 'Column Bulk Ops',
-      lead: 'Apply bulk column updates across tables.',
-      empty: 'Column bulk operations are residual. This console does not call a bulk column-update API.',
-    },
+
     workflows: {
       title: 'Workflows',
       lead: 'Author and run metadata workflows.',
@@ -2383,6 +2377,28 @@ const enUS = {
         description: 'Your workflow runs automatically, every time.',
       },
     },
+    detail: {
+      back: 'Back to workflows',
+      workflowTab: 'Workflow',
+      historyTab: 'Execution history',
+      trigger: 'Trigger',
+      nodes: 'Nodes',
+      edges: 'Edges',
+      configuration: 'Configuration',
+      version: 'Version {version}',
+      notFound: 'Workflow definition was not found.',
+      loadFailed: 'Failed to load the workflow definition.',
+      noTrigger: 'No trigger on this workflow definition.',
+      noNodes: 'No nodes on this workflow definition.',
+      noEdges: 'No edges on this workflow definition.',
+      noConfiguration: 'No configuration on this workflow definition.',
+      edgeCount: '{count} edges',
+      startedAt: 'Execution date',
+      status: 'Status',
+      relatedEntity: 'Related entity',
+      historyEmpty: 'No executions yet.',
+      historyLoadFailed: 'Failed to load execution history.',
+    },
   },
   apps: {
     install: {
@@ -2562,9 +2578,46 @@ const enUS = {
     noFieldsConfigured: 'No fields configured',
     addFieldsToPreview: 'Add fields to preview the form',
   },
+  columnBulkOperations: {
+    subtitle:
+      'Bulk edit metadata across columns to improve consistency and governance.',
+    deprecated: 'Deprecated',
+    deprecatedNote:
+      'This page is deprecated upstream but still functional; its grid, bulk edit, preview and apply flows are supported.',
+    summary: '{columns} unique columns, {occurrences} occurrences',
+    searchPlaceholder: 'Search columns by name',
+    search: 'Search',
+    reset: 'Reset',
+    previous: 'Previous',
+    serviceName: 'Service',
+    databaseName: 'Database',
+    schemaName: 'Schema',
+    entityTypes: 'Entity types',
+    metadataStatus: 'Metadata status',
+    tags: 'Tags',
+    glossaryTerms: 'Glossary terms',
+    commaSeparated: 'Comma-separated FQNs',
+    columnName: 'Column',
+    dataType: 'Data type',
+    displayName: 'Display name',
+    description: 'Description',
+    occurrences: 'Occurrences',
+    empty: 'No columns match the current search and filters.',
+    editTitle: 'Edit column metadata',
+    editNote:
+      'The edit applies to every occurrence of this column group. Clearing the tag or glossary inputs removes all tags of that kind.',
+    noOccurrences: 'This column group has no occurrences to update.',
+    previewTitle: 'Preview bulk update',
+    previewSummary: '{changed} of {total} columns will change.',
+    currentDisplayName: 'Current display name',
+    newDisplayName: 'New display name',
+    apply: 'Apply',
+    applySuccess: 'Bulk update submitted.',
+  },
   sparql: {
     title: 'SPARQL Playground',
-    subtitle: 'Run SPARQL queries against the knowledge graph.',
+    subtitle:
+      'Run read-only SPARQL queries against the OpenMetadata knowledge graph. SELECT, ASK, CONSTRUCT, and DESCRIBE are accepted; UPDATE, DROP, INSERT, and DELETE are rejected.',
     format: 'Format',
     inference: 'Inference',
     formats: {

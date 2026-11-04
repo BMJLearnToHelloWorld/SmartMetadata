@@ -232,7 +232,29 @@ export function assignUserRolesPatch(currentRoles: unknown, roleIds: string[]): 
   );
 }
 
-export async function searchUsers(query: string, from = 0, size = 25): Promise<Paged<AdminUser>> {
+/**
+ * R-16: the Admins tab used to search the user index without any admin
+ * constraint, so search mode ignored the tab. Official UserListPageV1
+ * passes queryFilter = getTermQuery({ isAdmin: String(isAdmin) }) to
+ * the USER-index search (SearchPureUtils.getTermQuery wraps each term
+ * as { term: { [field]: value } } under query.bool.must), and the
+ * server search API accepts it as the query_filter param
+ * (searchAPI.ts sends query_filter: JSON.stringify(queryFilter)).
+ * The filter below is that exact shape, stringified — no server
+ * parameter is added and no backend code changes.
+ */
+export function buildAdminUserQueryFilter(): string {
+  return JSON.stringify({
+    query: { bool: { must: [{ term: { isAdmin: 'true' } }] } },
+  });
+}
+
+export async function searchUsers(
+  query: string,
+  from = 0,
+  size = 25,
+  queryFilter?: string,
+): Promise<Paged<AdminUser>> {
   const q = query.trim().length > 0 ? query.trim() : '*';
   const payload = await apiRequest<unknown>('/v1/search/query', {
     query: {
@@ -241,6 +263,7 @@ export async function searchUsers(query: string, from = 0, size = 25): Promise<P
       from,
       size,
       include_aggregations: false,
+      query_filter: queryFilter,
     },
   });
   const root = asRecord(payload);

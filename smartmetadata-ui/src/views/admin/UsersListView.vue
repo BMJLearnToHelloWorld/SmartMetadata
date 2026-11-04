@@ -10,7 +10,7 @@ import {Button, Checkbox, Form, Input, Select, Tabs, message} from 'ant-design-v
 import FormModal from '@/components/shared/FormModal.vue';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
-import { createUser, listUsers, searchUsers } from '@/api/users';
+import { buildAdminUserQueryFilter, createUser, listUsers, searchUsers } from '@/api/users';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -100,7 +100,12 @@ async function loadUsers(): Promise<void> {
   errorMessage.value = '';
   try {
     if (searching.value) {
-      const page = await searchUsers(query.value.trim(), offset.value.from, offset.value.size);
+      const page = await searchUsers(
+        query.value.trim(),
+        offset.value.from,
+        offset.value.size,
+        isAdminTab.value ? buildAdminUserQueryFilter() : undefined,
+      );
       users.value = page.data;
       total.value = page.total;
       pageAfter.value = undefined;

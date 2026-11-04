@@ -86,6 +86,50 @@ describe('WorkflowsView', () => {
     expect(empty.text()).toContain('Sit back');
   });
 
+  it('navigates to the detail route when a card is clicked', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'w1',
+              name: 'nightly-dq',
+              fullyQualifiedName: 'nightly-dq',
+              displayName: 'Nightly DQ',
+              description: 'Runs nightly checks',
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/govern/workflows', name: 'workflows', component: WorkflowsView },
+        {
+          path: '/govern/workflows/:fqn/:tab',
+          name: 'workflow-detail',
+          component: { template: '<div>detail stub</div>' },
+        },
+      ],
+    });
+    await router.push('/govern/workflows');
+    await router.isReady();
+    const wrapper = mount(WorkflowsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="workflow-card-w1"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('workflow-detail');
+    expect(router.currentRoute.value.params.fqn).toBe('nightly-dq');
+    expect(router.currentRoute.value.params.tab).toBe('workflow');
+  });
+
   it('shows the forbidden placeholder on 403', { timeout: 15000 }, async () => {
     vi.stubGlobal(
       'fetch',

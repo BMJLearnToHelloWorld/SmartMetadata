@@ -85,6 +85,63 @@ async function mountPlayground(asAdmin = false) {
 }
 
 describe('SparqlPlaygroundView', () => {
+  it('truncates long library names with the full name on hover', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useAuthStore().user = { id: 'admin', name: 'admin', isAdmin: true };
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/govern/sparql',
+          name: 'sparql-playground',
+          component: SparqlPlaygroundView,
+        },
+      ],
+    });
+    await router.push('/govern/sparql');
+    await router.isReady();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/rdf/status')) {
+          return jsonResponse({ enabled: true, inference: { availableLevels: ['RDFS'] } });
+        }
+        if (url.includes('/v1/rdf/queries/saved')) {
+          return jsonResponse({ queries: [] });
+        }
+        if (url.includes('/v1/rdf/queries/templates')) {
+          return jsonResponse({
+            queryTemplates: [
+              {
+                id: 't-long',
+                name: 'A very long built-in query name that must not spill over its row',
+                query: 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 1',
+                format: 'json',
+                inference: 'none',
+                savedAt: 0,
+              },
+            ],
+          });
+        }
+        return jsonResponse({});
+      }),
+    );
+    const wrapper = mount(SparqlPlaygroundView, {
+      global: {
+        plugins: [pinia, router, Antd, createTestI18n()],
+      },
+    });
+    await flushPromises();
+    const button = wrapper.find('[data-testid="sparql-template-t-long"]');
+    expect(button.exists()).toBe(true);
+    expect(button.attributes('title')).toBe(
+      'A very long built-in query name that must not spill over its row',
+    );
+    expect(button.classes()).toContain('sparql-library-name');
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });

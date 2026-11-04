@@ -204,6 +204,64 @@ describe('UsersListView', () => {
     expect(searchCalls.some((url) => url.includes('index=user') && url.includes('q=alice'))).toBe(true);
   });
 
+  it('passes the isAdmin term filter when searching from the Admins tab (R-16)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/v1/search/query')) {
+        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
+      }
+      if (url.includes('/api/v1/users')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      if (url.includes('/api/v1/teams') || url.includes('/api/v1/roles')) {
+        return jsonResponse({ data: [], paging: {} });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountUsers(true, '/admin/users/admins');
+    const shell = wrapper.getComponent(EntityListShell);
+    await shell.vm.$emit('update:searchValue', 'alice');
+    await shell.vm.$emit('search');
+    await flushPromises();
+    const searchCalls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/v1/search/query'));
+    expect(searchCalls.length).toBeGreaterThan(0);
+    const filter = new URL(searchCalls[0], 'http://localhost').searchParams.get('query_filter');
+    expect(filter).not.toBeNull();
+    expect(JSON.parse(filter!)).toEqual({
+      query: { bool: { must: [{ term: { isAdmin: 'true' } }] } },
+    });
+  });
+
+  it('sends no query filter when searching from the All users tab (R-16)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/v1/search/query')) {
+        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
+      }
+      if (url.includes('/api/v1/users')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      if (url.includes('/api/v1/teams') || url.includes('/api/v1/roles')) {
+        return jsonResponse({ data: [], paging: {} });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountUsers(true, '/admin/users');
+    const shell = wrapper.getComponent(EntityListShell);
+    await shell.vm.$emit('update:searchValue', 'alice');
+    await shell.vm.$emit('search');
+    await flushPromises();
+    const searchCalls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes('/api/v1/search/query'));
+    expect(searchCalls.length).toBeGreaterThan(0);
+    expect(new URL(searchCalls[0], 'http://localhost').searchParams.has('query_filter')).toBe(false);
+  });
+
   it('requests the next cursor page from GET /v1/users', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

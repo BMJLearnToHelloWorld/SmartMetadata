@@ -15,11 +15,7 @@ import { RESIDUAL_PAGES } from '@/layouts/residualPages';
 import { createTestI18n } from '@/test/i18n';
 import ResidualPage from './ResidualPage.vue';
 
-async function mountPage(name: string) {
-  const def = RESIDUAL_PAGES.find((page) => page.name === name);
-  if (!def) {
-    throw new Error(`missing residual page ${name}`);
-  }
+async function mountPage(def: (typeof RESIDUAL_PAGES)[number]) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -46,14 +42,33 @@ async function mountPage(name: string) {
   return { wrapper, def };
 }
 
+/**
+ * Fixes batch 1: the last residual shell (column-bulk-ops) became a real
+ * page, so RESIDUAL_PAGES is empty. The component is still covered by
+ * mounting it with a locally built def — the mechanism, not the list,
+ * is what these tests guard.
+ */
+const LOCAL_DEF = {
+  name: 'residual-example',
+  path: 'govern/residual-example',
+  titleKey: 'nav.columnBulkOps',
+  leadKey: 'columnBulkOperations.subtitle',
+  emptyKey: 'columnBulkOperations.empty',
+  testId: 'residual-example',
+  links: [{ routeName: 'search', titleKey: 'nav.explore' }],
+};
+
 describe('ResidualPage', () => {
-  it('lists every residual nav shell with an honest empty and no invented rows', async () => {
-    expect(RESIDUAL_PAGES.map((page) => page.name)).toEqual(['column-bulk-ops']);
-    const { wrapper, def } = await mountPage('column-bulk-ops');
+  it('no residual nav shells remain (fixes batch 1 replaced the last one)', () => {
+    expect(RESIDUAL_PAGES).toEqual([]);
+  });
+
+  it('renders an honest empty and no invented rows for a residual def', async () => {
+    const { wrapper, def } = await mountPage(LOCAL_DEF);
     expect(wrapper.find(`[data-testid="${def.testId}"]`).exists()).toBe(true);
-    expect(wrapper.text()).toContain('Column Bulk Ops');
+    expect(wrapper.text()).toContain('Column Bulk Operations');
     expect(wrapper.find('[data-testid="residual-empty"]').exists()).toBe(true);
-    expect(wrapper.text()).toMatch(/residual|not wired|bulk/i);
+    expect(wrapper.text()).toMatch(/bulk/i);
     expect(wrapper.findAll('table').length).toBe(0);
   });
 
@@ -72,7 +87,7 @@ describe('ResidualPage', () => {
 
 describe('ResidualPage onward links (Fix6)', () => {
   it('renders working links instead of leaving the residual page a dead end', async () => {
-    const { wrapper, def } = await mountPage('column-bulk-ops');
+    const { wrapper, def } = await mountPage(LOCAL_DEF);
     expect(def.links?.length).toBeGreaterThan(0);
     const exploreLink = wrapper.get('[data-testid="residual-link-search"]');
     expect(exploreLink.text()).toBe('Explore');

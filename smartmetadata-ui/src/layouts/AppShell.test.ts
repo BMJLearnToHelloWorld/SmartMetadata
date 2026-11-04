@@ -101,7 +101,7 @@ describe('AppShell', () => {
     expect(wrapper.text()).toContain('Govern');
     expect(wrapper.text()).toContain('Glossary');
     expect(wrapper.text()).toContain('Ontology Explorer');
-    expect(wrapper.text()).toContain('Column Bulk Ops (Beta)');
+    expect(wrapper.text()).toContain('Column Bulk Operations');
     expect(wrapper.text()).toContain('Context Center');
     expect(wrapper.find('[data-testid="observability-nav"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="quality-nav"]').exists()).toBe(true);

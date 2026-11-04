@@ -11,9 +11,9 @@ import PageLayout from '@/components/shared/PageLayout.vue';
 
 /**
  * Access-not-allowed page (official AccessNotAllowedPage equivalent).
- * Reachable by direct navigation; the guard itself does not enforce
- * an admin role today (LoginUser carries no role field — see
- * router/guards.ts), so this page must not be read as enforcement.
+ * Admin routes are gated by router/guards.ts (isAdminUser from the
+ * profile || hasPermission); this page is the denial target, not the
+ * enforcement itself.
  */
 const { t } = useI18n();
 const router = useRouter();
