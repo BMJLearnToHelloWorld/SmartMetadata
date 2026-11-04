@@ -2442,6 +2442,21 @@ const enUS = {
       cronExpression: 'Cron expression',
       invalidCron: 'Cron expression must have five fields',
     },
+    detail: {
+      title: 'Marketplace app details',
+      browseApps: 'Browse Apps',
+      install: 'Install',
+      alreadyInstalled: 'Application already installed',
+      paidAddonDescription: '{app} is a paid add-on.',
+      cacheServiceNotConfigured:
+        'Configure a Cache Service such as Redis or ElastiCache and make sure it is reachable to enable Cache Warmup.',
+      marketplaceVerified:
+        '{brandName} has verified that the publisher controls the domain and meets other requirements.',
+      getAppSupport: 'Get App Support',
+      visitDeveloperWebsite: 'Visit developer website',
+      privacyPolicy: 'Privacy Policy',
+      notFound: 'Application {app} was not found',
+    },
   },
   intakeForms: {
     title: 'Intake Forms',

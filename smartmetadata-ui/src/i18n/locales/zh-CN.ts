@@ -2432,6 +2432,20 @@ const zhCN = {
       cronExpression: 'Cron 表达式',
       invalidCron: 'Cron 表达式必须有五个字段',
     },
+    detail: {
+      title: '应用详情',
+      browseApps: '浏览应用',
+      install: '安装',
+      alreadyInstalled: '应用已安装',
+      paidAddonDescription: '{app} 是付费附加组件。',
+      cacheServiceNotConfigured:
+        '请配置 Redis 或 ElastiCache 等缓存服务并确保其可达，以启用缓存预热。',
+      marketplaceVerified: '{brandName} 已验证发布者拥有该域名并满足其他要求。',
+      getAppSupport: '获取应用支持',
+      visitDeveloperWebsite: '访问开发者网站',
+      privacyPolicy: '隐私政策',
+      notFound: '未找到应用 {app}',
+    },
   },
   intakeForms: {
     title: 'Intake 表单',

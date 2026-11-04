@@ -178,10 +178,8 @@ async function loadApp(): Promise<void> {
 }
 
 function onCancel(): void {
-  // The official cancel target is the marketplace app details page, which
-  // the product does not ship yet; the marketplace overview is the
-  // closest existing landing until that page lands.
-  void router.push({ name: 'marketplace-overview' });
+  // The official cancel target is the marketplace app details page.
+  void router.push({ name: 'marketplace-app-detail', params: { fqn: fqn.value } });
 }
 
 function goToAppsPage(): void {

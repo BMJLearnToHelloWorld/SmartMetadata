@@ -53,3 +53,21 @@ export async function getApp(id: string): Promise<AdminApp> {
   }
   return mapped;
 }
+
+/**
+ * Official applicationAPI getApplicationByName: GET /v1/apps/name/{name}.
+ * The marketplace detail page uses it only as an installed probe
+ * (success means installed, any failure means not installed), mirroring
+ * official's fetchInstalledAppDetails, which swallows the error.
+ */
+export async function getAppByName(name: string): Promise<AdminApp> {
+  const raw = await apiRequest<unknown>(`/v1/apps/name/${encodeURIComponent(name)}`, {
+    query: { fields: 'owners', include: 'all' },
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapApp(rec) : null;
+  if (!mapped) {
+    throw new Error('App response was missing id and name');
+  }
+  return mapped;
+}
