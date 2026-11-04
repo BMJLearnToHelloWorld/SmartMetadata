@@ -84,4 +84,71 @@ describe('AddServiceView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's9' });
   });
+
+  it('carries entered filter scope into a metadata pipeline (R-17)', async () => {
+    const bodies: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
+          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines') && init?.method === 'POST') {
+          bodies.push({ url, body: JSON.parse(String(init?.body)) });
+          return jsonResponse({
+            id: 'p1',
+            name: 'warehouse-metadata',
+            pipelineType: 'metadata',
+            service: { id: 's9', type: 'databaseService' },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+        {
+          path: '/ingestion/services/:kind/:id',
+          name: 'ingestion-service',
+          component: { template: '<div>svc</div>' },
+          props: true,
+        },
+      ],
+    });
+    await router.push('/ingestion/services/add');
+    await router.isReady();
+    const wrapper = mount(AddServiceView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
+    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
+    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
+    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="filter-include-schemas"]').setValue('public');
+    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
+    await flushPromises();
+
+    expect(bodies).toHaveLength(1);
+    const pipelineBody = bodies[0].body as {
+      name: string;
+      pipelineType: string;
+      service: { id: string };
+      sourceConfig: { config: { schemaFilterPattern?: { includes: string[] } } };
+      airflowConfig: { pausePipeline: boolean };
+    };
+    expect(pipelineBody.name).toBe('warehouse-metadata');
+    expect(pipelineBody.pipelineType).toBe('metadata');
+    expect(pipelineBody.service.id).toBe('s9');
+    expect(pipelineBody.sourceConfig.config.schemaFilterPattern?.includes).toEqual(['public']);
+    expect(pipelineBody.airflowConfig.pausePipeline).toBe(true);
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+  });
 });

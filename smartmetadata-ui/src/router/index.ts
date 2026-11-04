@@ -120,6 +120,7 @@ const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCent
 const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
+const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
 const IntakeFormsView = () => import('@/views/admin/IntakeFormsView.vue');
 const TaskFormSettingsView = () => import('@/views/admin/TaskFormSettingsView.vue');
@@ -127,6 +128,8 @@ const PersonaListView = () => import('@/views/admin/PersonaListView.vue');
 const PersonaDetailView = () => import('@/views/admin/PersonaDetailView.vue');
 const PersonaCustomizeView = () => import('@/views/admin/persona/PersonaCustomizeView.vue');
 const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
+const ColumnBulkOperationsView = () =>
+  import('@/views/governance/ColumnBulkOperationsView.vue');
 const DocsView = () => import('@/views/docs/DocsView.vue');
 const TourStartView = () => import('@/views/tour/TourStartView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
@@ -440,6 +443,16 @@ export const router = createRouter({
           component: WorkflowsView,
           alias: 'workflows',
         },
+        // Fixes batch 1: official detail route WORKFLOWS_WITH_FQN_TAB
+        // (/workflows/:fqn/:tab, default tab 'workflow'); the interactive
+        // canvas editor is a later subsystem batch, not this route.
+        {
+          path: 'govern/workflows/:fqn/:tab',
+          name: 'workflow-detail',
+          component: WorkflowDetailView,
+          alias: 'workflows/:fqn/:tab',
+          props: true,
+        },
         // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
         // IntakeForms + TaskFormSettings (official settings governance
         // pages, kept under the product admin/settings tree with the
@@ -479,6 +492,16 @@ export const router = createRouter({
           name: 'docs',
           component: DocsView,
           meta: { titleKey: 'docs.title' },
+        },
+        // Fixes batch 1: column-bulk-ops is no longer a residual shell —
+        // official COLUMN_BULK_OPERATIONS (/column-bulk-operations,
+        // constants.ts:180) has a real page, so this route serves the
+        // real grid view at the product's existing path.
+        {
+          path: 'govern/column-bulk-ops',
+          name: 'column-bulk-ops',
+          component: ColumnBulkOperationsView,
+          alias: 'column-bulk-operations',
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,

@@ -31,18 +31,11 @@ export interface ResidualPageDef {
 
 /**
  * Nav shells with no product API in this console. Honest Empty, no fake rows.
- * P2 B2 removed marketplace-overview, ontology-explorer and workflows with
- * their real pages; column-bulk-ops stays until its fate is adjudicated
- * (the original "no counterpart" judgment for it was correct).
+ * Fixes batch 1: the last shell, column-bulk-ops, is gone — the original
+ * "no counterpart" judgment for it was WRONG (official
+ * pages/ColumnBulkOperations + /v1/columns/grid exist), so it became a
+ * real page at its existing route instead of being deleted. The list is
+ * intentionally empty; keep the type so a future shell can be added
+ * without changing the router spread.
  */
-export const RESIDUAL_PAGES: ResidualPageDef[] = [
-  {
-    name: 'column-bulk-ops',
-    path: 'govern/column-bulk-ops',
-    titleKey: 'shells.columnBulkOps.title',
-    leadKey: 'shells.columnBulkOps.lead',
-    emptyKey: 'shells.columnBulkOps.empty',
-    testId: 'residual-column-bulk-ops',
-    links: [{ routeName: 'search', titleKey: 'nav.explore' }],
-  },
-];
+export const RESIDUAL_PAGES: ResidualPageDef[] = [];

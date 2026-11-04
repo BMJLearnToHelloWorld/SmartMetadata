@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createWorkflow, listWorkflows } from './workflows';
+import { createWorkflow, listWorkflowInstances, listWorkflows } from './workflows';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -63,6 +63,23 @@ describe('workflows API', () => {
     expect(page.data[0]?.fullyQualifiedName).toBe('nightly-dq');
     expect(page.after).toBe('next-cursor');
     expect(page.total).toBe(1);
+  });
+
+  it('lists workflow instances by definition fqn', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ id: 'i1', status: 'SUCCESS', startedAt: 1700000000000 }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listWorkflowInstances('nightly-dq');
+    expect(lastFetch().url).toContain('/api/v1/governance/workflowInstances');
+    expect(lastFetch().url).toContain('workflowDefinitionName=nightly-dq');
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.status).toBe('SUCCESS');
   });
 
   it('creates a workflow with the official required name + description', async () => {

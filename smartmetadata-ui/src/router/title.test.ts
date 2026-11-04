@@ -43,10 +43,8 @@ describe('document title', () => {
     expect(documentTitleFor(route('asset'), t)).toBe('Explore - iSmart');
   });
 
-  it('prefers the residual shell title over the nav overview name', () => {
-    expect(resolveDocumentTitleKey(route('column-bulk-ops'))).toBe(
-      'shells.columnBulkOps.title',
-    );
+  it('uses the sidebar entry for a former shell page turned real page (fixes batch 1)', () => {
+    expect(resolveDocumentTitleKey(route('column-bulk-ops'))).toBe('nav.columnBulkOps');
   });
 
   it('uses the sidebar entry for a former shell page turned real page (P2 B2)', () => {

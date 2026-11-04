@@ -120,3 +120,43 @@ export async function updateWorkflowDefinition(
   }
   return mapped;
 }
+
+/**
+ * Official execution-history surface
+ * (openmetadata-ui/.../rest/workflowDefinitionsAPI.ts getWorkflowInstancesByFQN):
+ * GET /v1/governance/workflowInstances?workflowDefinitionName={fqn}.
+ * Server WorkflowInstanceResource @Path /v1/governance/workflowInstances.
+ */
+export interface WorkflowInstance {
+  id: string;
+  status?: string;
+  startedAt?: number;
+  variables?: Record<string, unknown>;
+}
+
+function mapWorkflowInstance(raw: Record<string, unknown>): WorkflowInstance | null {
+  const id = asString(raw.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    status: asString(raw.status) || undefined,
+    startedAt: typeof raw.startedAt === 'number' ? raw.startedAt : undefined,
+    variables: asRecord(raw.variables) ?? undefined,
+  };
+}
+
+export function listWorkflowInstances(
+  fqn: string,
+  query: ListWorkflowsQuery = {},
+): Promise<Paged<WorkflowInstance>> {
+  return apiRequest<unknown>('/v1/governance/workflowInstances', {
+    query: {
+      workflowDefinitionName: fqn,
+      limit: query.limit,
+      after: query.after,
+      before: query.before,
+    },
+  }).then((payload) => parsePaged(payload, mapWorkflowInstance));
+}

@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { Button, Card, Col, Empty, Form, Input, Row, Select, Space, Typography, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
@@ -24,6 +25,17 @@ import {
 } from '@/features/crud/paging';
 
 const { t } = useI18n();
+const router = useRouter();
+
+/**
+ * Official click-through (WorkflowsPage onWorkflowClick): a card navigates
+ * to the detail route with the default tab 'workflow'
+ * (WorkflowRouterUtils.getWorkflowDefinitionDetailPath).
+ */
+function goDetail(workflow: WorkflowDefinition): void {
+  const fqn = workflow.fullyQualifiedName || workflow.name;
+  void router.push({ name: 'workflow-detail', params: { fqn, tab: 'workflow' } });
+}
 
 /**
  * Official page shape (pages/WorkflowDefinitions/WorkflowsPage): a header
@@ -183,10 +195,14 @@ onMounted(() => {
           <Col v-for="workflow in workflows" :key="workflow.id" :span="8" style="margin-bottom: 16px">
             <Card
               hoverable
+              class="workflows__card"
               :data-testid="`workflow-card-${workflow.id}`"
               :title="entityLabel(workflow)"
+              tabindex="0"
+              @click="goDetail(workflow)"
+              @keydown.enter="goDetail(workflow)"
             >
-              {{ workflow.description || '—' }}
+              <p class="workflows__card-description">{{ workflow.description || '—' }}</p>
             </Card>
           </Col>
         </Row>
@@ -231,3 +247,24 @@ onMounted(() => {
     </FormModal>
   </div>
 </template>
+
+<style scoped>
+/*
+ * Official card geometry (WorkflowCard): min-height 160px (tw:min-h-40),
+ * flex column, description clamped to 3 lines. The Ant Row already
+ * stretches its columns, so height: 100% makes every card in a row equal
+ * height instead of sizing to its own description length.
+ */
+.workflows__card {
+  height: 100%;
+  min-height: 160px;
+}
+
+.workflows__card-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+</style>
