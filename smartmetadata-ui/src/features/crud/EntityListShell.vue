@@ -35,6 +35,7 @@ const props = withDefaults(
     hideHeading?: boolean;
     isBeta?: boolean;
     learningPageId?: string;
+    rowSelection?: import('ant-design-vue').TableProps['rowSelection'];
   }>(),
   {
     isBeta: false,
@@ -54,6 +55,7 @@ const props = withDefaults(
     showEditAction: false,
     showDeleteAction: false,
     hideHeading: false,
+    rowSelection: undefined,
   },
 );
 
@@ -146,6 +148,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         :data-source="dataSource"
         :loading="loading"
         :pagination="false"
+        :row-selection="rowSelection"
         size="small"
       >
         <template #bodyCell="slotProps">

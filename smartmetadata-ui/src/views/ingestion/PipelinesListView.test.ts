@@ -113,7 +113,7 @@ describe('PipelinesListView', () => {
   it('renders pipelines from GET /v1/services/ingestionPipelines', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('warehouse-metadata');
-    expect(wrapper.text()).toContain('Jobs run with smartmetadata-ingest');
+    expect(wrapper.text()).toContain('Deploy and trigger write through to the pipeline service');
     expect(wrapper.find('[data-testid="entity-list-shell"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipelines-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-pipeline"]').exists()).toBe(true);
@@ -165,6 +165,12 @@ describe('PipelinesListView', () => {
     await flushPromises();
     const deleteItem = document.querySelector('[data-testid="row-overflow-delete"]');
     expect(deleteItem?.className).toContain('disabled');
+  });
+
+  it('shows bulk deploy disabled with no selection', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="bulk-deploy-pipelines"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bulk-deploy-pipelines"]').attributes('disabled')).toBeDefined();
   });
 
   it('shows pipelineType select with Postgres agent kinds from service_spec', async () => {

@@ -40,49 +40,21 @@ export interface ServiceCategoryRow {
   residualReason?: string;
 }
 
-/** Official service categories; only the five product kinds have API modules. */
+/** Official service categories; every kind now has an API module. */
 export const SERVICE_CATEGORIES: ServiceCategoryRow[] = [
   { key: 'database', labelKey: 'ingestion.services.database', supported: true },
   { key: 'messaging', labelKey: 'ingestion.services.messaging', supported: true },
   { key: 'dashboard', labelKey: 'ingestion.services.dashboard', supported: true },
   { key: 'storage', labelKey: 'ingestion.services.storage', supported: true },
   { key: 'pipeline', labelKey: 'ingestion.services.pipeline', supported: true },
-  {
-    key: 'metadata',
-    labelKey: 'ingestion.services.metadata',
-    supported: false,
-    residualReason: 'No metadata-service API module is wired in this console.',
-  },
-  {
-    key: 'security',
-    labelKey: 'ingestion.services.security',
-    supported: false,
-    residualReason: 'No security-service API module is wired in this console.',
-  },
-  {
-    key: 'mlmodel',
-    labelKey: 'ingestion.services.mlmodel',
-    supported: false,
-    residualReason: 'No mlmodel-service API module is wired in this console.',
-  },
-  {
-    key: 'search',
-    labelKey: 'ingestion.services.search',
-    supported: false,
-    residualReason: 'No search-service API module is wired in this console.',
-  },
-  {
-    key: 'api',
-    labelKey: 'ingestion.services.api',
-    supported: false,
-    residualReason: 'No api-service API module is wired in this console.',
-  },
-  {
-    key: 'drive',
-    labelKey: 'ingestion.services.drive',
-    supported: false,
-    residualReason: 'No drive-service API module is wired in this console.',
-  },
+  { key: 'metadata', labelKey: 'ingestion.services.metadata', supported: true },
+  { key: 'security', labelKey: 'ingestion.services.security', supported: true },
+  { key: 'mlmodel', labelKey: 'ingestion.services.mlmodel', supported: true },
+  { key: 'search', labelKey: 'ingestion.services.search', supported: true },
+  { key: 'api', labelKey: 'ingestion.services.api', supported: true },
+  { key: 'drive', labelKey: 'ingestion.services.drive', supported: true },
+  { key: 'llm', labelKey: 'ingestion.services.llm', supported: true },
+  { key: 'mcp', labelKey: 'ingestion.services.mcp', supported: true },
 ];
 
 export const SERVICE_DETAIL_TABS: IngestionTab[] = [
@@ -110,8 +82,7 @@ export const SERVICE_DETAIL_TABS: IngestionTab[] = [
   {
     key: 'versions',
     labelKey: 'ingestion.services.versionsTab',
-    supported: false,
-    residualReason: 'No service versions API is wired; the generic version resolver has no service collections.',
+    supported: true,
   },
 ];
 
@@ -121,8 +92,7 @@ export const INGESTION_PIPELINE_TABS: IngestionTab[] = [
   {
     key: 'trigger',
     labelKey: 'ingestion.pipelines.triggerTab',
-    supported: false,
-    residualReason: 'No pipeline trigger/deploy endpoint is wired; jobs run with smartmetadata-ingest.',
+    supported: true,
   },
 ];
 

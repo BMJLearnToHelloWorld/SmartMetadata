@@ -7,18 +7,13 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Tabs, message } from 'ant-design-vue';
-import { listDatabaseServices } from '@/api/databaseServices';
-import { listDashboardServices } from '@/api/dashboardServices';
-import { listMessagingServices } from '@/api/messagingServices';
-import { listStorageServices } from '@/api/storageServices';
-import { listPipelineServices } from '@/api/pipelineServices';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
-import { SERVICE_DELETE_API } from '@/ingestion/serviceApis';
-import type { CatalogService } from '@/types/ingestion';
+import { SERVICE_DELETE_API, SERVICE_LIST_API } from '@/ingestion/serviceApis';
+import type { CatalogService, ServiceKind } from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -46,48 +41,17 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [databasesResult, messagingResult, dashboardsResult, storageResult, pipelinesResult] =
-      await Promise.allSettled([
-        listDatabaseServices({ limit: 100 }),
-        listMessagingServices({ limit: 100 }),
-        listDashboardServices({ limit: 100 }),
-        listStorageServices({ limit: 100 }),
-        listPipelineServices({ limit: 100 }),
-      ]);
-    const databases = databasesResult.status === 'fulfilled' ? databasesResult.value : { data: [], total: undefined };
-    const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value : { data: [], total: undefined };
-    const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value : { data: [], total: undefined };
-    const storage = storageResult.status === 'fulfilled' ? storageResult.value : { data: [], total: undefined };
-    const pipelines = pipelinesResult.status === 'fulfilled' ? pipelinesResult.value : { data: [], total: undefined };
-    services.value = [
-      ...databases.data,
-      ...messaging.data,
-      ...dashboards.data,
-      ...storage.data,
-      ...pipelines.data,
-    ];
-    total.value =
-      databases.total !== undefined &&
-      messaging.total !== undefined &&
-      dashboards.total !== undefined &&
-      storage.total !== undefined &&
-      pipelines.total !== undefined
-        ? databases.total + messaging.total + dashboards.total + storage.total + pipelines.total
-        : undefined;
-    if (
-      databasesResult.status !== 'fulfilled' &&
-      messagingResult.status !== 'fulfilled' &&
-      dashboardsResult.status !== 'fulfilled' &&
-      storageResult.status !== 'fulfilled' &&
-      pipelinesResult.status !== 'fulfilled'
-    ) {
-      const first = [
-        databasesResult,
-        messagingResult,
-        dashboardsResult,
-        storageResult,
-        pipelinesResult,
-      ].find((item) => item.status === 'rejected') as PromiseRejectedResult;
+    const kinds = supportedCategories.value.map((row) => row.key as ServiceKind);
+    const settled = await Promise.allSettled(kinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })));
+    const pages = settled.map((result) =>
+      result.status === 'fulfilled' ? result.value : { data: [], total: undefined },
+    );
+    services.value = pages.flatMap((page) => page.data);
+    total.value = pages.every((page) => page.total !== undefined)
+      ? pages.reduce((sum, page) => sum + (page.total ?? 0), 0)
+      : undefined;
+    if (settled.every((result) => result.status === 'rejected')) {
+      const first = settled.find((item) => item.status === 'rejected') as PromiseRejectedResult;
       throw first.reason instanceof Error ? first.reason : new Error(String(first.reason));
     }
   } catch (error) {

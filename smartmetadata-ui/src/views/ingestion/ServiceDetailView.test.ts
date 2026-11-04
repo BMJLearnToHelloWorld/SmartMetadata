@@ -117,14 +117,20 @@ describe('ServiceDetailView', () => {
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's1' });
   });
 
-  it('renders registry tabs including honest residual tabs', async () => {
+  it('offers test connection on the connection tab', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="test-service-connection"]').exists()).toBe(true);
+  });
+
+  it('renders registry tabs including the wired versions tab', async () => {
     const { wrapper } = await mountView();
     // Ant Tabs does not forward TabPane testids (Stage 5 lesson), so assert
-    // the rendered tab labels plus the force-rendered residual slot content.
+    // the rendered tab labels plus the force-rendered versions slot content.
     expect(wrapper.text()).toContain('Overview');
     expect(wrapper.text()).toContain('Connection');
     expect(wrapper.text()).toContain('Pipelines');
     expect(wrapper.text()).toContain('Versions');
-    expect(wrapper.find('[data-testid="service-versions-residual-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="service-versions-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="service-versions-empty"]').exists()).toBe(true);
   });
 });

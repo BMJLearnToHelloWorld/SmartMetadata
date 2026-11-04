@@ -24,6 +24,7 @@ withDefaults(
     size?: TableProps['size'];
     emptyText?: string;
     testId?: string;
+    rowSelection?: TableProps['rowSelection'];
   }>(),
   {
     rowKey: 'id',
@@ -34,6 +35,7 @@ withDefaults(
     size: undefined,
     emptyText: undefined,
     testId: 'sm-table',
+    rowSelection: undefined,
   },
 );
 </script>
@@ -48,6 +50,7 @@ withDefaults(
     :loading="loading"
     :pagination="pagination"
     :custom-row="customRow"
+    :row-selection="rowSelection"
     :size="size"
     :locale="emptyText ? { emptyText } : undefined"
   >

@@ -17,30 +17,37 @@ import {
 } from './ingestionTabs';
 
 describe('ingestionTabs', () => {
-  it('marks exactly the five product service kinds as supported categories', () => {
+  it('marks exactly the thirteen product service kinds as supported categories', () => {
     expect(SERVICE_CATEGORIES.filter((row) => row.supported).map((row) => row.key)).toEqual([
       'database',
       'messaging',
       'dashboard',
       'storage',
       'pipeline',
+      'metadata',
+      'security',
+      'mlmodel',
+      'search',
+      'api',
+      'drive',
+      'llm',
+      'mcp',
     ]);
     for (const row of SERVICE_CATEGORIES.filter((row) => !row.supported)) {
       expect(row.residualReason).toBeTruthy();
     }
   });
 
-  it('marks service detail pipelines as supported and versions as residual', () => {
+  it('marks service detail pipelines and versions as supported', () => {
     const byKey = new Map(SERVICE_DETAIL_TABS.map((tab) => [tab.key, tab]));
     expect(byKey.get('overview')?.supported).toBe(true);
     expect(byKey.get('connection')?.supported).toBe(true);
     expect(byKey.get('pipelines')?.supported).toBe(true);
-    expect(byKey.get('versions')?.supported).toBe(false);
-    expect(byKey.get('versions')?.residualReason).toContain('versions');
+    expect(byKey.get('versions')?.supported).toBe(true);
   });
 
-  it('marks ingestion pipeline trigger as residual and entity DAG tabs as supported', () => {
-    expect(INGESTION_PIPELINE_TABS.find((tab) => tab.key === 'trigger')?.supported).toBe(false);
+  it('marks ingestion pipeline trigger as supported and entity DAG tabs as supported', () => {
+    expect(INGESTION_PIPELINE_TABS.find((tab) => tab.key === 'trigger')?.supported).toBe(true);
     expect(ingestionTabKeys(PIPELINE_ENTITY_TABS)).toEqual(['tasks', 'executions']);
     expect(PIPELINE_ENTITY_TABS.every((tab) => tab.supported)).toBe(true);
   });

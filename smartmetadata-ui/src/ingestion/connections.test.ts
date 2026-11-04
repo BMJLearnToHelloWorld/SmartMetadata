@@ -500,6 +500,14 @@ describe('service kind tables', () => {
       dashboard: 'Superset',
       storage: 'S3',
       pipeline: 'Prefect',
+      api: 'Rest',
+      mlmodel: 'Mlflow',
+      metadata: 'OpenMetadata',
+      drive: 'GoogleDrive',
+      search: 'ElasticSearch',
+      llm: 'OpenAI',
+      mcp: 'Mcp',
+      security: 'Ranger',
     });
     for (const kind of Object.keys(SERVICE_KIND_DEFAULT_TYPE) as ServiceKind[]) {
       expect(kindForServiceType(SERVICE_KIND_DEFAULT_TYPE[kind])).toBe(kind);

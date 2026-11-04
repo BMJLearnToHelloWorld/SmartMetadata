@@ -10,10 +10,14 @@ import {Alert, Button, Descriptions, Tooltip, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import {
   deleteIngestionPipeline,
+  deployIngestionPipeline,
   getIngestionPipeline,
   getOrchestratorStatus,
   listPipelineStatuses,
+  triggerIngestionPipeline,
 } from '@/api/ingestionPipelines';
+import type { OperationPermissions } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
@@ -25,6 +29,7 @@ import type {
   CatalogService,
   IngestionPipeline,
   OrchestratorStatus,
+  PipelineServiceClientResponse,
   PipelineStatus,
   ServiceKind,
 } from '@/types/ingestion';
@@ -32,6 +37,7 @@ import type {
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const pipeline = ref<IngestionPipeline | null>(null);
@@ -40,6 +46,40 @@ const statuses = ref<PipelineStatus[]>([]);
 const orchestrator = ref<OrchestratorStatus | null>(null);
 const activeTab = ref('overview');
 const deleting = ref(false);
+const deploying = ref(false);
+const triggering = ref(false);
+const actionResult = ref<PipelineServiceClientResponse | null>(null);
+const pipelineOps = ref<OperationPermissions | null>(null);
+
+/**
+ * Official PipelineActions gating (openmetadata-ui
+ * IngestionListTable/PipelineActions): deploy needs EditAll or Deploy,
+ * trigger needs Trigger, both need the pipeline enabled, trigger also
+ * needs it deployed. The P1 isAdminUser line ORs in on top; a failed or
+ * missing permission fetch denies (fail-closed, as the list view does).
+ */
+const canDeploy = computed(
+  () =>
+    pipeline.value?.enabled !== false &&
+    (permissionStore.isAdminUser ||
+      pipelineOps.value?.EditAll === true ||
+      pipelineOps.value?.Deploy === true),
+);
+const canTrigger = computed(
+  () =>
+    pipeline.value?.enabled !== false &&
+    pipeline.value?.deployed === true &&
+    (permissionStore.isAdminUser || pipelineOps.value?.Trigger === true),
+);
+const actionResultType = computed(() => {
+  if (!actionResult.value) {
+    return 'info';
+  }
+  if (actionResult.value.reason === 'Pipeline Client Disabled') {
+    return 'warning';
+  }
+  return actionResult.value.code === 200 ? 'success' : 'info';
+});
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('ingestion.pipelines.title'), to: { name: 'ingestion-pipelines' } },
@@ -102,13 +142,51 @@ async function load(): Promise<void> {
     service.value = linked;
     statuses.value = statusPage.data;
     orchestrator.value = orch;
+    pipelineOps.value = current.fullyQualifiedName
+      ? await permissionStore
+          .getEntityPermissionByFqn('ingestionPipeline', current.fullyQualifiedName)
+          .catch(() => null)
+      : null;
   } catch (error) {
     pipeline.value = null;
     service.value = null;
     statuses.value = [];
+    pipelineOps.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onDeploy(): Promise<void> {
+  if (!pipeline.value || !canDeploy.value) {
+    message.error(t('errors.forbidden'));
+    return;
+  }
+  deploying.value = true;
+  try {
+    actionResult.value = await deployIngestionPipeline(pipeline.value.id);
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('ingestion.pipelines.actionFailed'));
+  } finally {
+    deploying.value = false;
+  }
+}
+
+async function onTrigger(): Promise<void> {
+  if (!pipeline.value || !canTrigger.value) {
+    message.error(t('errors.forbidden'));
+    return;
+  }
+  triggering.value = true;
+  try {
+    actionResult.value = await triggerIngestionPipeline(pipeline.value.id);
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('ingestion.pipelines.actionFailed'));
+  } finally {
+    triggering.value = false;
   }
 }
 
@@ -163,6 +241,23 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
+      <Button
+        data-testid="deploy-pipeline"
+        type="primary"
+        :disabled="!pipeline || !canDeploy"
+        :loading="deploying"
+        @click="onDeploy"
+      >
+        {{ t('ingestion.pipelines.deploy') }}
+      </Button>
+      <Button
+        data-testid="trigger-pipeline"
+        :disabled="!pipeline || !canTrigger"
+        :loading="triggering"
+        @click="onTrigger"
+      >
+        {{ t('ingestion.pipelines.trigger') }}
+      </Button>
       <Button data-testid="edit-pipeline" :disabled="!pipeline" @click="router.push({ name: 'ingestion-pipeline-edit', params: { id: props.id } })">{{ t('crud.edit') }}</Button>
       <Tooltip :title="t('crud.deleteHelp')">
         <Button
@@ -183,6 +278,20 @@ onMounted(() => {
         show-icon
         data-testid="pipeline-run-note"
         :message="t('ingestion.pipelines.runNote')"
+      />
+      <Alert
+        v-if="actionResult"
+        :type="actionResultType"
+        show-icon
+        data-testid="pipeline-action-result"
+        :message="t('ingestion.pipelines.actionResult')"
+        :description="[
+          `${t('ingestion.pipelines.resultCode')}: ${actionResult.code ?? '—'}`,
+          `${t('ingestion.pipelines.resultPlatform')}: ${actionResult.platform ?? '—'}`,
+          `${t('ingestion.pipelines.resultReason')}: ${actionResult.reason ?? '—'}`,
+          `${t('ingestion.pipelines.resultRun')}: ${actionResult.runId ?? '—'}`,
+        ].join(' · ')"
+        style="margin-top: 16px"
       />
       <Descriptions v-if="pipeline" bordered :column="1" size="small" style="margin-top: 16px">
         <Descriptions.Item :label="t('crud.name')">{{ pipeline.name }}</Descriptions.Item>
