@@ -365,8 +365,8 @@ onMounted(() => {
 <template>
   <div>
     <PageHeader
-      :title="t('nav.columnBulkOps')"
-      :subtitle="t('columnBulkOperations.subtitle')"
+      :header="t('nav.columnBulkOps')"
+      :sub-header="t('columnBulkOperations.subtitle')"
     />
     <Space style="margin-bottom: 16px">
       <Tag color="warning" :title="t('columnBulkOperations.deprecatedNote')">

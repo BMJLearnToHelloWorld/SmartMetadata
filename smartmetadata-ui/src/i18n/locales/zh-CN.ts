@@ -2113,11 +2113,6 @@ const zhCN = {
       empty: '本体探索器仍是 residual。本控制台没有本体图接口。',
     },
 
-    workflows: {
-      title: '工作流',
-      lead: '编写并运行元数据工作流。',
-      empty: '工作流仍是 residual。本控制台不调用工作流定义接口。',
-    },
     contextOverview: {
       title: '上下文中心',
       lead: '知识文章、文档、记忆和归档。',
