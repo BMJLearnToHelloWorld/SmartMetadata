@@ -49,6 +49,7 @@ const CustomPropertyTypesListView = () => import('@/views/admin/CustomPropertyTy
 const PoliciesListView = () => import('@/views/admin/PoliciesListView.vue');
 const PolicyDetailView = () => import('@/views/admin/PolicyDetailView.vue');
 const PolicyRuleFormView = () => import('@/views/admin/PolicyRuleFormView.vue');
+const PermissionDebuggerView = () => import('@/views/admin/PermissionDebuggerView.vue');
 const AuditLogsView = () => import('@/views/admin/AuditLogsView.vue');
 const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
 const SettingsHubView = () => import('@/views/admin/SettingsHubView.vue');
@@ -253,6 +254,14 @@ export const router = createRouter({
         { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
         { path: 'admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
+        // P2 B R-5: official Settings/Users/AdminPermissionDebugger
+        // (Access category): user search + evaluate + user permissions.
+        {
+          path: 'admin/settings/permission-debugger',
+          name: 'admin-settings-permission-debugger',
+          component: PermissionDebuggerView,
+          meta: { titleKey: 'permissionDebugger.title' },
+        },
         // P2 B5: official Settings SSO page (configuration page only).
         {
           path: 'admin/settings/sso',
