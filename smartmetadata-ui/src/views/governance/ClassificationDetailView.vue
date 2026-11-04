@@ -24,6 +24,9 @@ const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const classification = ref<Classification | null>(null);
+// Same upstream isEditable rule as the tag view (see TagDetailView): disabled
+// revokes Edit; Delete is not an Edit* operation and keeps its own gate.
+const isEditable = computed(() => !!classification.value && classification.value.disabled !== true);
 const tags = ref<ClassificationTag[]>([]);
 const activeTab = ref('overview');
 const editOpen = ref(false);
@@ -197,7 +200,7 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button type="primary" :disabled="!classification" data-testid="edit-classification" @click="openEdit">
+      <Button type="primary" :disabled="!isEditable" data-testid="edit-classification" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
       <Button danger :disabled="!classification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>

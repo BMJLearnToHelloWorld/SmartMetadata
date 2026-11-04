@@ -66,6 +66,21 @@ export function permissionFlags(ops: OperationPermissions): {
   };
 }
 
+/**
+ * Upstream revokeEditPermissions (PermissionsUtils, ca4dc96d4f): for a
+ * read-only entity (disabled or soft-deleted), revoke EVERY Edit* operation.
+ * Revoking EditAll alone is not enough: derived flags prefer a field key
+ * (EditDomains, EditDescription, …) over EditAll when it is present.
+ * Delete is not an Edit* operation and is left unchanged.
+ */
+export function revokeEditPermissions(ops: OperationPermissions): OperationPermissions {
+  const result: OperationPermissions = {};
+  for (const [operation, granted] of Object.entries(ops)) {
+    result[operation] = operation.startsWith('Edit') ? false : granted;
+  }
+  return result;
+}
+
 function mapResourcePermission(raw: Record<string, unknown>): ResourcePermission | null {
   const resource = asString(raw.resource);
   if (!resource) {
