@@ -12,9 +12,12 @@ import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDomainRequest, Domain } from '@/types/governance';
 import { apiRequest } from './client';
+import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
 import { mapTags } from './entities';
 
-export const DOMAIN_FIELDS = 'tags,children,childrenCount,owners,experts';
+export type { BulkAssetResult };
+
+export const DOMAIN_FIELDS = 'tags,children,childrenCount,owners,experts,extension';
 
 export interface ListDomainsQuery {
   limit?: number;
@@ -40,6 +43,10 @@ function mapDomain(raw: Record<string, unknown>): Domain | null {
     owners: mapEntityRefs(raw.owners),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
+    extension:
+      raw.extension && typeof raw.extension === 'object'
+        ? (raw.extension as Record<string, unknown>)
+        : undefined,
     // The domain list renders flat: a truthy empty children array would draw
     // a dead expand icon on every row, so childless domains carry no key.
     // Sub-domains are shown on the detail page, not as nested list rows.
@@ -114,6 +121,30 @@ export function listDomainAssets(id: string, limit = 25): Promise<Paged<EntityRe
   return apiRequest<unknown>(`/v1/domains/${encodeURIComponent(id)}/assets`, {
     query: { limit },
   }).then((payload) => parsePaged(payload, (raw) => mapEntityRefs([raw])[0] ?? null));
+}
+
+/**
+ * Domain bulk asset writes (DomainResource /{name}/assets/add|remove):
+ * same BulkAssets contract and EDIT_ALL authorization as data products.
+ */
+export function addDomainAssets(fqn: string, assets: EntityRef[]): Promise<BulkAssetResult> {
+  return addBulkAssets('domains', fqn, assets);
+}
+
+export function removeDomainAssets(fqn: string, assets: EntityRef[]): Promise<BulkAssetResult> {
+  return removeBulkAssets('domains', fqn, assets);
+}
+
+/**
+ * Generic entity JSON Patch for custom-property (extension) edits on a
+ * domain — same contract note as patchDataProduct in api/dataProducts.ts.
+ */
+export function patchDomain(id: string, patch: unknown[]): Promise<unknown> {
+  return apiRequest(`/v1/domains/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
 }
 
 export interface DeleteEntityOptions {

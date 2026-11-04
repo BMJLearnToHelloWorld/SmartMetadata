@@ -123,6 +123,8 @@ export interface Domain {
   owners: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
+  /** Custom-property values, keyed by property name. */
+  extension?: Record<string, unknown>;
   /** Absent when the domain has no sub-domains: the list renders flat, and a
       truthy empty array would draw a dead expand icon on every row. */
   children?: EntityRef[];
@@ -162,6 +164,8 @@ export interface DataProduct {
   owners: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
+  /** Custom-property values, keyed by property name. */
+  extension?: Record<string, unknown>;
 }
 
 export interface CreateDataProductRequest {

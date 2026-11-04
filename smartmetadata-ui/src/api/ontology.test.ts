@@ -12,9 +12,15 @@ import { persistSession } from '@/auth/token';
 import {
   createOntology,
   getOntology,
+  getOntologyConcept,
+  getOntologyConceptBindings,
+  getOntologyPackSample,
   listOntologies,
+  listOntologyAxioms,
   listOntologyConcepts,
+  listOntologyPacks,
   listOntologyProperties,
+  listOntologyReleases,
 } from './ontology';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -145,5 +151,103 @@ describe('ontology API', () => {
     expect(lastFetch().url).toContain('/api/v1/ontologyProperties');
     expect(lastFetch().url).toContain('ontology=sales-ontology');
     expect(page.data[0]?.range).toBe('Order');
+  });
+
+  it('gets a concept by id from GET /v1/ontologyConcepts/{id}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          id: 'c1',
+          name: 'Customer',
+          synonyms: ['Buyer'],
+          superClasses: [{ id: 'c0', name: 'Party', type: 'ontologyConcept' }],
+        }),
+      ),
+    );
+    const concept = await getOntologyConcept('c1');
+    expect(lastFetch().url).toContain('/api/v1/ontologyConcepts/c1');
+    expect(concept.synonyms).toEqual(['Buyer']);
+    expect(concept.superClasses?.[0]?.name).toBe('Party');
+  });
+
+  it('lists axioms by ontology id from GET /v1/ontologyAxioms', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ id: 'ax1', name: 'CustomerSubClassOfParty', axiomType: 'SubClassOf' }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listOntologyAxioms({ ontologyId: 'o1' });
+    expect(lastFetch().url).toContain('/api/v1/ontologyAxioms');
+    expect(lastFetch().url).toContain('ontologyId=o1');
+    expect(page.data[0]?.axiomType).toBe('SubClassOf');
+  });
+
+  it('lists sealed releases by ontology id from GET /v1/ontologyReleases', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ id: 'r1', name: 'sales-1.0', semanticVersion: '1.0.0', memberCount: 12 }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listOntologyReleases({ ontologyId: 'o1' });
+    expect(lastFetch().url).toContain('/api/v1/ontologyReleases');
+    expect(page.data[0]?.semanticVersion).toBe('1.0.0');
+  });
+
+  it('lists library packs from GET /v1/ontologyPacks', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          packs: [{ name: 'fibo', standard: 'FIBO', modules: [{ name: 'core', conceptCount: 10 }] }],
+          installations: [],
+        }),
+      ),
+    );
+    const packs = await listOntologyPacks();
+    expect(lastFetch().url).toContain('/api/v1/ontologyPacks');
+    expect(packs[0]?.modules[0]?.conceptCount).toBe(10);
+  });
+
+  it('samples a pack from GET /v1/ontologyPacks/{packId}/sample', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ packId: 'fibo', conceptCount: 2, relationCount: 1, concepts: [{ name: 'Party' }] }),
+      ),
+    );
+    const sample = await getOntologyPackSample('fibo', ['core']);
+    expect(lastFetch().url).toContain('/api/v1/ontologyPacks/fibo/sample');
+    expect(lastFetch().url).toContain('moduleIds=core');
+    expect(sample.concepts[0]?.name).toBe('Party');
+  });
+
+  it('gets concept bindings from GET /v1/ontologyConcepts/{id}/bindings', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          assets: [
+            {
+              assetType: 'table',
+              assetId: 't1',
+              asset: { id: 't1', name: 'orders', type: 'table' },
+              columns: [{ propertyId: 'p1', columnPath: 'orders.id', state: 'resolved' }],
+            },
+          ],
+        }),
+      ),
+    );
+    const bindings = await getOntologyConceptBindings('c1');
+    expect(lastFetch().url).toContain('/api/v1/ontologyConcepts/c1/bindings');
+    expect(bindings.assets[0]?.columnCount).toBe(1);
   });
 });

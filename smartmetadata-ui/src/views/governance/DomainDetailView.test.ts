@@ -94,4 +94,32 @@ describe('DomainDetailView delete', () => {
     expect(router.currentRoute.value.name).toBe('governance-domains');
     wrapper.unmount();
   });
+
+  it('renders activity and custom-properties tabs with asset writes denied without a grant', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/d1');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { id: 'd1' },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    // The stub answers 404 for the permission endpoint, so the view must
+    // fail closed: the add-assets button renders disabled.
+    expect(wrapper.text()).toContain('Activity');
+    expect(wrapper.text()).toContain('Custom Properties');
+    const addButton = wrapper.find('[data-testid="add-domain-assets"]');
+    expect(addButton.exists()).toBe(true);
+    expect((addButton.element as HTMLButtonElement).disabled).toBe(true);
+    wrapper.unmount();
+  });
 });

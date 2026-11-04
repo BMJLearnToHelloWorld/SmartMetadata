@@ -12,8 +12,12 @@ import type { Paged } from '@/types/admin';
 import type {
   CreateOntologyRequest,
   Ontology,
+  OntologyAxiom,
   OntologyConcept,
+  OntologyConceptBinding,
+  OntologyPack,
   OntologyProperty,
+  OntologyRelease,
 } from '@/types/ontology';
 import { apiRequest } from './client';
 
@@ -189,4 +193,210 @@ export function listOntologyProperties(
       after: query.after,
     },
   }).then((payload) => parsePaged(payload, mapOntologyProperty));
+}
+
+/** Official getOntologyConceptById: GET /v1/ontologyConcepts/{id}. */
+export async function getOntologyConcept(id: string): Promise<OntologyConcept> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `${ONTOLOGY_CONCEPTS_PATH}/${encodeURIComponent(id)}`,
+    { query: { fields: CONCEPT_FIELDS } },
+  );
+  const mapped = mapOntologyConcept(asRecord(raw) ?? {});
+  if (!mapped) {
+    throw new Error('Ontology concept response was missing id and name');
+  }
+  return mapped;
+}
+
+function mapOntologyAxiom(raw: Record<string, unknown>): OntologyAxiom | null {
+  const id = asString(raw.id);
+  const name = asString(raw.name);
+  if (!id && !name) {
+    return null;
+  }
+  const expressions = Array.isArray(raw.expressions)
+    ? raw.expressions.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const ontologyRefs = mapEntityRefs(raw.ontology ? [raw.ontology] : []);
+  return {
+    id,
+    name,
+    displayName: asString(raw.displayName) || undefined,
+    fullyQualifiedName: asString(raw.fullyQualifiedName) || undefined,
+    description: asString(raw.description) || undefined,
+    ontology: ontologyRefs[0],
+    axiomType: asString(raw.axiomType) || undefined,
+    subjectIri: asString(raw.subjectIri) || undefined,
+    expressions,
+    propertyIri: asString(raw.propertyIri) || undefined,
+    targetIri: asString(raw.targetIri) || undefined,
+    literal: asString(raw.literal) || undefined,
+    owners: mapEntityRefs(raw.owners),
+  };
+}
+
+/** Official listOntologyAxioms: GET /v1/ontologyAxioms?ontologyId={id}. */
+export function listOntologyAxioms(
+  query: { ontologyId: string; limit?: number; after?: string },
+): Promise<Paged<OntologyAxiom>> {
+  return apiRequest<unknown>('/v1/ontologyAxioms', {
+    query: { ontologyId: query.ontologyId, limit: query.limit, after: query.after },
+  }).then((payload) => parsePaged(payload, mapOntologyAxiom));
+}
+
+function mapOntologyRelease(raw: Record<string, unknown>): OntologyRelease | null {
+  const id = asString(raw.id);
+  const name = asString(raw.name);
+  if (!id && !name) {
+    return null;
+  }
+  const ontologyRefs = mapEntityRefs(raw.ontology ? [raw.ontology] : []);
+  return {
+    id,
+    name,
+    displayName: asString(raw.displayName) || undefined,
+    fullyQualifiedName: asString(raw.fullyQualifiedName) || undefined,
+    description: asString(raw.description) || undefined,
+    ontology: ontologyRefs[0],
+    semanticVersion: asString(raw.semanticVersion) || undefined,
+    releaseNotes: asString(raw.releaseNotes) || undefined,
+    sealedAt: asNumber(raw.sealedAt),
+    sealedBy: asString(raw.sealedBy) || undefined,
+    memberCount: asNumber(raw.memberCount),
+    entityStatus: asString(raw.entityStatus) || undefined,
+    owners: mapEntityRefs(raw.owners),
+    reviewers: mapEntityRefs(raw.reviewers),
+  };
+}
+
+/** Official listOntologyReleases: GET /v1/ontologyReleases?ontologyId={id}. */
+export function listOntologyReleases(
+  query: { ontologyId: string; limit?: number; after?: string },
+): Promise<Paged<OntologyRelease>> {
+  return apiRequest<unknown>('/v1/ontologyReleases', {
+    query: { ontologyId: query.ontologyId, limit: query.limit, after: query.after },
+  }).then((payload) => parsePaged(payload, mapOntologyRelease));
+}
+
+function mapOntologyPack(raw: Record<string, unknown>): OntologyPack | null {
+  const name = asString(raw.name);
+  if (!name) {
+    return null;
+  }
+  const modules = Array.isArray(raw.modules)
+    ? raw.modules.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec || !asString(rec.name)) {
+          return [];
+        }
+        return [
+          {
+            id: asString(rec.id) || undefined,
+            name: asString(rec.name),
+            description: asString(rec.description) || undefined,
+            format: asString(rec.format) || undefined,
+            conceptCount: asNumber(rec.conceptCount),
+            relationshipCount: asNumber(rec.relationshipCount),
+            selectedByDefault: asBoolean(rec.selectedByDefault) ?? undefined,
+          },
+        ];
+      })
+    : [];
+  return {
+    id: asString(raw.id) || undefined,
+    name,
+    abbreviation: asString(raw.abbreviation) || undefined,
+    standard: asString(raw.standard) || undefined,
+    industry: asString(raw.industry) || undefined,
+    layer: asString(raw.layer) || undefined,
+    version: asString(raw.version) || undefined,
+    description: asString(raw.description) || undefined,
+    license: asString(raw.license) || undefined,
+    sourceUrl: asString(raw.sourceUrl) || undefined,
+    bundled: asBoolean(raw.bundled) ?? undefined,
+    modules,
+  };
+}
+
+/**
+ * Official listOntologyPacks: GET /v1/ontologyPacks returns
+ * {packs: [...], installations: [...]}; only the catalogue is mapped here
+ * (install is an E2 write flow, not a browse surface).
+ */
+export async function listOntologyPacks(): Promise<OntologyPack[]> {
+  const payload = await apiRequest<unknown>('/v1/ontologyPacks');
+  const root = asRecord(payload) ?? {};
+  const packs = Array.isArray(root.packs) ? root.packs : [];
+  return packs.flatMap((item) => {
+    const mapped = mapOntologyPack(asRecord(item) ?? {});
+    return mapped ? [mapped] : [];
+  });
+}
+
+export interface OntologyPackSample {
+  packId?: string;
+  version?: string;
+  moduleIds?: string[];
+  conceptCount?: number;
+  relationCount?: number;
+  concepts: { name: string; iri?: string }[];
+}
+
+/** Official sampleOntologyPack: GET /v1/ontologyPacks/{packId}/sample?moduleIds=. */
+export async function getOntologyPackSample(
+  packId: string,
+  moduleIds: string[],
+): Promise<OntologyPackSample> {
+  const payload = await apiRequest<unknown>(
+    `/v1/ontologyPacks/${encodeURIComponent(packId)}/sample`,
+    { query: { moduleIds: moduleIds.join(',') } },
+  );
+  const root = asRecord(payload) ?? {};
+  const concepts = Array.isArray(root.concepts)
+    ? root.concepts.flatMap((item) => {
+        const rec = asRecord(item);
+        const name = rec ? asString(rec.name) || asString(rec.displayName) : '';
+        return name ? [{ name, iri: asString(rec?.iri) || undefined }] : [];
+      })
+    : [];
+  return {
+    packId: asString(root.packId) || undefined,
+    version: asString(root.version) || undefined,
+    moduleIds: Array.isArray(root.moduleIds)
+      ? root.moduleIds.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    conceptCount: asNumber(root.conceptCount),
+    relationCount: asNumber(root.relationCount),
+    concepts,
+  };
+}
+
+/** Official getOntologyConceptBindings: GET /v1/ontologyConcepts/{id}/bindings. */
+export async function getOntologyConceptBindings(
+  id: string,
+  after?: string,
+): Promise<{ assets: OntologyConceptBinding[]; after?: string }> {
+  const payload = await apiRequest<unknown>(
+    `${ONTOLOGY_CONCEPTS_PATH}/${encodeURIComponent(id)}/bindings`,
+    { query: { after } },
+  );
+  const root = asRecord(payload) ?? {};
+  const assets = Array.isArray(root.assets)
+    ? root.assets.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        const assetRefs = mapEntityRefs(rec.asset ? [rec.asset] : []);
+        return [
+          {
+            assetType: asString(rec.assetType) || undefined,
+            assetId: asString(rec.assetId) || undefined,
+            asset: assetRefs[0],
+            columnCount: Array.isArray(rec.columns) ? rec.columns.length : undefined,
+          },
+        ];
+      })
+    : [];
+  return { assets, after: asString(root.after) || undefined };
 }
