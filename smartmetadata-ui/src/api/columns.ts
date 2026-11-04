@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asRecord, asString } from '@/api/json';
+import { mapCsvImportResult, type CsvImportResult } from '@/api/csvImport';
 import { apiRequest } from './client';
 
 /**
@@ -263,4 +264,66 @@ export async function bulkUpdateColumnsAsync(
     method: 'POST',
     json: { columnUpdates: toRequestUpdates(columnUpdates) },
   });
+}
+
+export interface ColumnCsvFilters {
+  columnNamePattern?: string;
+  serviceName?: string;
+  databaseName?: string;
+  schemaName?: string;
+  entityTypes?: string[];
+  domainId?: string;
+}
+
+function columnCsvQuery(filters: ColumnCsvFilters, extra?: Record<string, string>): string {
+  const params = new URLSearchParams();
+  const set = (key: string, value: string | undefined): void => {
+    if (value) {
+      params.set(key, value);
+    }
+  };
+  set('columnName', filters.columnNamePattern);
+  set('serviceName', filters.serviceName);
+  set('databaseName', filters.databaseName);
+  set('schemaName', filters.schemaName);
+  set('domainId', filters.domainId);
+  for (const entityType of filters.entityTypes ?? []) {
+    if (entityType) {
+      params.append('entityTypes', entityType);
+    }
+  }
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    params.set(key, value);
+  }
+  const suffix = params.toString();
+  return suffix ? `?${suffix}` : '';
+}
+
+/**
+ * Official columnAPI exportColumnsCSV: GET /v1/columns/export with the
+ * grid filters, returning the CSV text (Accept: text/plain).
+ */
+export async function exportColumnsCsv(filters: ColumnCsvFilters): Promise<string> {
+  return apiRequest<string>(`/v1/columns/export${columnCsvQuery(filters)}`, {
+    response: 'text',
+    headers: { Accept: 'text/plain' },
+  });
+}
+
+/**
+ * Official columnAPI importColumnsCSV: POST /v1/columns/import with the
+ * CSV text body (Content-Type: text/plain). Unlike the entity bulk
+ * import, this endpoint returns the CSVImportResult synchronously, so
+ * dryRun preview and real apply are two calls to the same function.
+ */
+export async function importColumnsCsv(
+  csv: string,
+  filters: ColumnCsvFilters,
+  dryRun: boolean,
+): Promise<CsvImportResult> {
+  const payload = await apiRequest<unknown>(
+    `/v1/columns/import${columnCsvQuery(filters, { dryRun: String(dryRun) })}`,
+    { method: 'POST', text: csv },
+  );
+  return mapCsvImportResult(payload);
 }
