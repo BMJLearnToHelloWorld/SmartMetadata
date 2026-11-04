@@ -17,7 +17,7 @@ describe('LineageTimeFilter', () => {
     });
     expect(wrapper.find('[data-testid="lineage-time-preset"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="lineage-time-residual"]').text()).toContain(
-      'does not reload or filter the graph',
+      'Custom ranges and point-in-time still need date inputs',
     );
   });
 });

@@ -10,13 +10,18 @@ import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { listSystemChartData, SYSTEM_CHART_NAMES } from '@/api/dataInsights';
+import {
+  DATA_REPORT_INDEXES,
+  getAggregateChartData,
+  type DataInsightAggregateRow,
+} from '@/api/dataInsights';
 import { searchAssets } from '@/api/search';
 import { listTestCases } from '@/api/testCases';
 import { listTestIncidents } from '@/api/testIncidents';
 import { INSIGHT_DATE_PRESETS, insightsDatePresetFromKey } from '@/catalog/insightsTabs';
 import type { FacetId } from '@/catalog/searchFacets';
 import SmChart from '@/features/charts/SmChart.vue';
-import { bucketsToPoints, insightResultsToSeries, namedSeries, testResultsToStatusPoints } from '@/features/charts/series';
+import { bucketsToPoints, formatChartTs, insightResultsToSeries, namedSeries, testResultsToStatusPoints } from '@/features/charts/series';
 import type { ChartSeries } from '@/features/charts/types';
 import { seriesWindow } from '@/features/charts/types';
 import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
@@ -34,6 +39,11 @@ const incidentSeries = ref<ChartSeries[]>([]);
 const pipeline = ref<Array<{ name: string; title: string; series: ChartSeries[] }>>([]);
 const pipelineError = ref('');
 const pipelineTried = ref(false);
+const webError = ref('');
+const webTried = ref(false);
+const mostActiveUsers = ref<DataInsightAggregateRow[]>([]);
+const dailyActiveSeries = ref<ChartSeries[]>([]);
+const pageViewEntities = ref<DataInsightAggregateRow[]>([]);
 const datePreset = ref(insightsDatePresetFromKey('last30').key);
 
 function entityLabel(entityType: string): string {
@@ -97,6 +107,73 @@ async function load(): Promise<void> {
     } catch (error) {
       pipeline.value = [];
       pipelineError.value = error instanceof Error ? error.message : t('insights.pipelineFailed');
+    }
+    // Web-activity landing aggregation (official DataInsightSummary):
+    // MostActiveUsers + DailyActiveUsers + PageViewsByEntities via
+    // /aggregate. Each chart settles independently; the section only
+    // errors when all three fail, and never breaks the page.
+    webTried.value = true;
+    webError.value = '';
+    try {
+      const [mostActive, dailyActive, pageViews] = await Promise.allSettled([
+        getAggregateChartData({
+          dataInsightChartName: 'MostActiveUsers',
+          dataReportIndex: DATA_REPORT_INDEXES.webAnalyticUserActivity,
+          startTs: window.startTs,
+          endTs: window.endTs,
+        }),
+        getAggregateChartData({
+          dataInsightChartName: 'DailyActiveUsers',
+          dataReportIndex: DATA_REPORT_INDEXES.webAnalyticUserActivity,
+          startTs: window.startTs,
+          endTs: window.endTs,
+        }),
+        getAggregateChartData({
+          dataInsightChartName: 'PageViewsByEntities',
+          dataReportIndex: DATA_REPORT_INDEXES.webAnalyticEntityView,
+          startTs: window.startTs,
+          endTs: window.endTs,
+        }),
+      ]);
+      const rowsOf = (settled: PromiseSettledResult<unknown>): DataInsightAggregateRow[] => {
+        if (settled.status !== 'fulfilled') {
+          return [];
+        }
+        const results = settled.value as Array<{ data?: DataInsightAggregateRow[] }>;
+        return results.flatMap((item) => item.data ?? []);
+      };
+      const mostActiveRows = rowsOf(mostActive);
+      mostActiveUsers.value = [...mostActiveRows]
+        .toSorted((a, b) => (b.sessions ?? b.pageViews ?? 0) - (a.sessions ?? a.pageViews ?? 0))
+        .slice(0, 5);
+      const dailyRows = rowsOf(dailyActive);
+      const byDay = new Map<string, number>();
+      for (const row of dailyRows) {
+        if (row.timestamp === undefined || row.activeUsers === undefined) {
+          continue;
+        }
+        const label = formatChartTs(row.timestamp);
+        if (!label) {
+          continue;
+        }
+        byDay.set(label, (byDay.get(label) ?? 0) + row.activeUsers);
+      }
+      dailyActiveSeries.value = namedSeries(
+        t('insights.web.dailyActive'),
+        [...byDay.entries()].toSorted((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value })),
+      );
+      pageViewEntities.value = [...rowsOf(pageViews)]
+        .toSorted((a, b) => (b.pageViews ?? 0) - (a.pageViews ?? 0))
+        .slice(0, 5);
+      if (
+        mostActive.status === 'rejected' &&
+        dailyActive.status === 'rejected' &&
+        pageViews.status === 'rejected'
+      ) {
+        webError.value = t('insights.webFailed');
+      }
+    } catch (error) {
+      webError.value = error instanceof Error ? error.message : t('insights.webFailed');
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('insights.loadFailed');
@@ -190,6 +267,47 @@ onMounted(() => {
               :colors="SM_DATA_INSIGHT_COLORS"
               :empty="t('insights.pipelineEmpty')"
             />
+          </Card>
+        </Col>
+      </Row>
+      <Typography.Title :level="5" class="insights__sub">{{ t('insights.webTitle') }}</Typography.Title>
+      <Typography.Paragraph type="secondary">{{ t('insights.webLead') }}</Typography.Paragraph>
+      <Alert v-if="webError" type="warning" show-icon :message="webError" class="insights__alert" />
+      <Empty
+        v-if="webTried && !webError && !mostActiveUsers.length && !dailyActiveSeries.length && !pageViewEntities.length"
+        data-testid="insights-web-empty"
+        :description="t('insights.webEmpty')"
+      />
+      <Row v-else :gutter="[16, 16]">
+        <Col :xs="24" :lg="12">
+          <Card size="small" :title="t('insights.web.dailyActive')">
+            <SmChart
+              kind="line"
+              test-id="insights-web-daily-active"
+              :series="dailyActiveSeries"
+              :colors="SM_DATA_INSIGHT_COLORS"
+              :empty="t('insights.webEmpty')"
+            />
+          </Card>
+        </Col>
+        <Col :xs="24" :lg="12">
+          <Card size="small" :title="t('insights.web.mostActive')">
+            <ul v-if="mostActiveUsers.length" data-testid="insights-web-users">
+              <li v-for="user in mostActiveUsers" :key="user.userName ?? ''">
+                {{ user.userName }} — {{ t('insights.web.sessions', { count: user.sessions ?? user.pageViews ?? 0 }) }}
+              </li>
+            </ul>
+            <Empty v-else :description="t('insights.webEmpty')" />
+          </Card>
+        </Col>
+        <Col :xs="24" :lg="12">
+          <Card size="small" :title="t('insights.web.pageViews')">
+            <ul v-if="pageViewEntities.length" data-testid="insights-web-entities">
+              <li v-for="entity in pageViewEntities" :key="entity.entityFqn ?? ''">
+                {{ entity.entityFqn }} — {{ t('insights.web.views', { count: entity.pageViews ?? 0 }) }}
+              </li>
+            </ul>
+            <Empty v-else :description="t('insights.webEmpty')" />
           </Card>
         </Col>
       </Row>

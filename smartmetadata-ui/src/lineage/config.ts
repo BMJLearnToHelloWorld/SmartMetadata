@@ -61,7 +61,7 @@ export interface LineageTimePresetOption {
   value: LineageTimePreset;
   labelKey: string;
   days?: number;
-  /** Custom ranges and point-in-time need date inputs the product fetch cannot send. */
+  /** Custom ranges and point-in-time need date inputs the UI does not offer yet. */
   supported: boolean;
 }
 
@@ -82,9 +82,9 @@ export interface LineageTimeRange {
 /**
  * Pure preset resolution, mirroring the official time filter: all-time is
  * undefined/undefined, last-N-days ends at `now`, point-in-time would be
- * end-only. The product lineage GET accepts no start/end, so callers must
- * not send this range; it is kept as session state for when the backend
- * lands, and the UI says so instead of refetching on preset change.
+ * end-only. The canvas sends this range to the search-backed
+ * GET /v1/lineage/getLineage (the traversal GET accepts no time params);
+ * custom ranges and point-in-time stay unsupported until date inputs land.
  */
 export function timeRangeForPreset(preset: LineageTimePreset, now = Date.now()): LineageTimeRange {
   const option = LINEAGE_TIME_PRESETS.find((item) => item.value === preset);

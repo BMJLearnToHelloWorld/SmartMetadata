@@ -23,9 +23,18 @@ import {
   Typography,
 } from 'ant-design-vue';
 import { listGlossaryTerms } from '@/api/glossaryTerms';
+import {
+  DQ_COVERED_ASSETS_AGGREGATION,
+  DQ_DIMENSION_STATUS_AGGREGATION,
+  DQ_NO_DIMENSION_QUERY,
+  DQ_STATUS_AGGREGATION,
+  DQ_TABLE_INDEX,
+  DQ_TEST_CASE_INDEX,
+  DQ_TOTAL_TABLES_AGGREGATION,
+  getDataQualityReportBatch,
+} from '@/api/dataQualityReports';
 import { searchAssets } from '@/api/search';
 import { isTestCaseSearchListAvailable, listTestCases } from '@/api/testCases';
-import { listTestDefinitions } from '@/api/testDefinitions';
 import { isTestSuiteSearchListAvailable, listTestSuites } from '@/api/testSuites';
 import type { SearchFacet } from '@/catalog/searchFacets';
 import SmChart from '@/features/charts/SmChart.vue';
@@ -34,14 +43,17 @@ import PageLayout from '@/components/shared/PageLayout.vue';
 import { namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
+  cardinalityFromReportRows,
   coverageFrom,
   dimensionCards,
+  dimensionCardsFromReportRows,
   facetOptions,
   governanceFiltersActive,
   healthFromCases,
   healthFromTableSuites,
   parseDqTab,
   statusCountsFromCases,
+  statusCountsFromReportRows,
   tableCountFromFacets,
   uniqueCoveredAssets,
   type CoverageCounts,
@@ -51,7 +63,7 @@ import {
   type HealthCounts,
   type StatusCounts,
 } from '@/quality/landing';
-import type { TestCase, TestDefinition, TestSuite } from '@/types/quality';
+import type { TestCase, TestSuite } from '@/types/quality';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
 
@@ -150,10 +162,9 @@ async function loadSummary(): Promise<void> {
   residualNotes.value = [];
   casesError.value = '';
   try {
-    const [casesPage, suitesPage, defsPage, searchPage, caseSearch, suiteSearch, glossaryPage] = await Promise.all([
+    const [casesPage, suitesPage, searchPage, caseSearch, suiteSearch, glossaryPage] = await Promise.all([
       settle(listTestCases({ limit: 100, includeAllTests: true }), { data: [] as TestCase[], total: undefined }, 'quality.landing.residualCases'),
       settle(listTestSuites({ limit: 100, includeEmptyTestSuites: true, testSuiteType: 'basic' }), { data: [] as TestSuite[], total: undefined }, 'quality.landing.residualSuites'),
-      settle(listTestDefinitions({ limit: 100 }), { data: [] as TestDefinition[] }, 'quality.landing.residualDefinitions'),
       settle(searchAssets('*', 0, 1), { total: 0, hits: [], facets: [] as SearchFacet[] }, 'quality.landing.residualSearch'),
       settle(isTestCaseSearchListAvailable(), false, undefined),
       settle(isTestSuiteSearchListAvailable(), false, undefined),
@@ -166,17 +177,48 @@ async function loadSummary(): Promise<void> {
       value: term.fullyQualifiedName || term.name,
       label: term.displayName || term.name,
     }));
-    const tableCount = tableCountFromFacets(facets.value);
-    const coveredFromSuites = suitesPage.total ?? (suitesPage.data.length || undefined);
-    const coveredFromCases = uniqueCoveredAssets(casesPage.data) || undefined;
-    coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
+    // Health is still list-derived: per-asset healthy/unhealthy needs the
+    // official unhealthy must-filter (terms on testCaseResult.testCaseStatus
+    // with capitalized Failed/Aborted), whose casing against the live index
+    // is unverified — the aggregation rows the official dashboard transform
+    // reads are lowercase. Until the live ES check lands, health keeps the
+    // listed-suites/cases computation and says so (residualHealthCap).
     const suiteHealth = healthFromTableSuites(suitesPage.data);
     const caseHealth = healthFromCases(casesPage.data);
     health.value = suiteHealth.total ? suiteHealth : caseHealth.total ? caseHealth : null;
-    const status = statusCountsFromCases(casesPage.data);
-    results.value = status.total ? status : null;
-    dimensions.value = dimensionCards(casesPage.data, defsPage.data);
-    residualNotes.value.push('quality.landing.residualReport');
+    residualNotes.value.push('quality.landing.residualHealthCap');
+    // Status, dimensions and coverage come from one dataQualityReport batch
+    // (official mechanism), not from the capped lists. If the batch fails,
+    // the cards fall back to the listed rows and say so — never silently.
+    try {
+      const reports = await getDataQualityReportBatch([
+        { key: 'status', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION },
+        { key: 'dimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_DIMENSION_STATUS_AGGREGATION },
+        { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: DQ_NO_DIMENSION_QUERY },
+        { key: 'covered', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_COVERED_ASSETS_AGGREGATION },
+        { key: 'totalTables', index: DQ_TABLE_INDEX, aggregationQuery: DQ_TOTAL_TABLES_AGGREGATION },
+      ]);
+      const status = statusCountsFromReportRows(reports.get('status')?.data ?? []);
+      results.value = status.total ? status : null;
+      dimensions.value = dimensionCardsFromReportRows([
+        ...(reports.get('dimensionStatus')?.data ?? []),
+        ...(reports.get('noDimensionStatus')?.data ?? []),
+      ]);
+      const covered = cardinalityFromReportRows(reports.get('covered')?.data ?? [], 'originEntityFQN');
+      const totalTables =
+        cardinalityFromReportRows(reports.get('totalTables')?.data ?? [], 'fullyQualifiedName') ??
+        tableCountFromFacets(facets.value);
+      coverage.value = coverageFrom(covered, totalTables);
+    } catch {
+      residualNotes.value.push('quality.landing.residualAggregationFallback');
+      const status = statusCountsFromCases(casesPage.data);
+      results.value = status.total ? status : null;
+      const tableCount = tableCountFromFacets(facets.value);
+      const coveredFromSuites = suitesPage.total ?? (suitesPage.data.length || undefined);
+      const coveredFromCases = uniqueCoveredAssets(casesPage.data) || undefined;
+      coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
+      dimensions.value = dimensionCards(casesPage.data, []);
+    }
     if (!caseSearch) {
       residualNotes.value.push('quality.landing.residualSearchList');
     }

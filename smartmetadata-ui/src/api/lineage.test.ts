@@ -13,6 +13,7 @@ import {
   deleteEntityLineageByName,
   fetchEntityLineage,
   putEntityLineage,
+  searchLineage,
 } from './lineage';
 
 function lastFetch(): { url: string; init?: RequestInit } {
@@ -146,5 +147,40 @@ describe('lineage API', () => {
       deleteEntityLineageByName({ fromType: 'table', fromFqn: '', toType: 'table', toFqn: 'b' }),
     ).rejects.toThrow(/FQN/i);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('GETs /v1/lineage/getLineage with time params only when a range is set', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
+    );
+    await searchLineage({
+      entityType: 'table',
+      fqn: 'svc.db.schema.orders',
+      upstreamDepth: 1,
+      downstreamDepth: 1,
+      size: 50,
+      startTime: 1000,
+      endTime: 2000,
+    });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/lineage/getLineage');
+    expect(url).toContain('fqn=svc.db.schema.orders');
+    expect(url).toContain('type=table');
+    expect(url).toContain('startTime=1000');
+    expect(url).toContain('endTime=2000');
+    expect(url).toContain('size=50');
+    expect(url).toContain('includeDeleted=false');
+  });
+
+  it('omits time params for all-time search lineage', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ nodes: {} }), { status: 200 })),
+    );
+    await searchLineage({ entityType: 'table', fqn: 'svc.db.schema.orders' });
+    const url = lastFetch().url;
+    expect(url).not.toContain('startTime');
+    expect(url).not.toContain('endTime');
   });
 });

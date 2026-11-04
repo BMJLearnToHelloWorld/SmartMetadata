@@ -56,6 +56,53 @@ function stubFetch(mode: 'ok' | 'quality-404' = 'ok'): void {
           paging: { total: 2 },
         });
       }
+      if (url.includes('/api/v1/dataQuality/testSuites/dataQualityReport/batch')) {
+        return jsonResponse({
+          results: [
+            {
+              key: 'status',
+              report: {
+                metadata: { keys: ['sterms#status'], dimensions: ['testCaseResult.testCaseStatus'], metrics: ['document_count'] },
+                data: [
+                  { 'testCaseResult.testCaseStatus': 'Success', document_count: '1' },
+                  { 'testCaseResult.testCaseStatus': 'Failed', document_count: '1' },
+                ],
+              },
+            },
+            {
+              key: 'dimensionStatus',
+              report: {
+                metadata: { keys: ['sterms#dimension', 'sterms#status'], dimensions: ['dataQualityDimensionName', 'testCaseResult.testCaseStatus'], metrics: ['document_count'] },
+                data: [
+                  { dataQualityDimensionName: 'Completeness', 'testCaseResult.testCaseStatus': 'Success', document_count: '1' },
+                  { dataQualityDimensionName: 'Completeness', 'testCaseResult.testCaseStatus': 'Failed', document_count: '1' },
+                ],
+              },
+            },
+            {
+              key: 'noDimensionStatus',
+              report: {
+                metadata: { keys: ['sterms#status'], dimensions: ['testCaseResult.testCaseStatus'], metrics: ['document_count'] },
+                data: [],
+              },
+            },
+            {
+              key: 'covered',
+              report: {
+                metadata: { keys: ['cardinality#entityWithTests'], dimensions: [], metrics: ['originEntityFQN'] },
+                data: [{ originEntityFQN: '2' }],
+              },
+            },
+            {
+              key: 'totalTables',
+              report: {
+                metadata: { keys: ['cardinality#count'], dimensions: [], metrics: ['fullyQualifiedName'] },
+                data: [{ fullyQualifiedName: '20' }],
+              },
+            },
+          ],
+        });
+      }
       if (url.includes('/api/v1/dataQuality/testSuites')) {
         return jsonResponse({
           data: [
@@ -150,7 +197,7 @@ describe('DataQualityLandingView', () => {
     expect(wrapper.get('[data-testid="dq-results-card"]').text()).toContain('Success');
     expect(wrapper.get('[data-testid="dq-dimension-Completeness"]').text()).toMatch(/Completeness/);
     expect(wrapper.get('[data-testid="dq-status-failed"]').text()).toContain('1');
-    expect(wrapper.get('[data-testid="dq-residual-residualReport"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="dq-residual-residualHealthCap"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="dq-residual-residualSearchList"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="dq-filter-owner"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="dq-filter-range"]').exists()).toBe(true);

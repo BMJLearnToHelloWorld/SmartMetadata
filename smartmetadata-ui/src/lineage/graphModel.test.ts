@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { layoutLineageGraph, lineageNeighbors, lineageNodeSize, mapEntityLineage } from './graphModel';
+import { layoutLineageGraph, lineageNeighbors, lineageNodeSize, mapEntityLineage, mapSearchLineage } from './graphModel';
 
 const PAYLOAD = {
   entity: {
@@ -128,6 +128,65 @@ describe('mapEntityLineage', () => {
       hasColumnLineage: false,
     });
     expect(mapEntityLineage({})).toMatchObject({ centerId: '', nodes: [], edges: [] });
+  });
+});
+
+describe('mapSearchLineage', () => {
+  it('maps FQN-keyed nodes and top-level column lineage to the graph model', () => {
+    const model = mapSearchLineage(
+      {
+        nodes: {
+          'svc.db.schema.orders': {
+            entity: { id: 'center-id', type: 'table', name: 'orders', displayName: 'orders', fullyQualifiedName: 'svc.db.schema.orders' },
+            nodeDepth: 0,
+          },
+          'svc.db.schema.raw_orders': {
+            entity: { id: 'up-id', type: 'table', name: 'raw_orders', fullyQualifiedName: 'svc.db.schema.raw_orders' },
+            nodeDepth: 1,
+          },
+        },
+        upstreamEdges: {
+          e1: {
+            fromEntity: { id: 'up-id', fullyQualifiedName: 'svc.db.schema.raw_orders', type: 'table' },
+            toEntity: { id: 'center-id', fullyQualifiedName: 'svc.db.schema.orders', type: 'table' },
+            columns: [{ fromColumns: ['svc.db.schema.raw_orders.id'], toColumn: 'svc.db.schema.orders.id' }],
+          },
+        },
+        downstreamEdges: {},
+      },
+      'svc.db.schema.orders',
+    );
+    expect(model.centerId).toBe('center-id');
+    expect(model.nodes.find((node) => node.isCenter)?.fullyQualifiedName).toBe('svc.db.schema.orders');
+    expect(model.edges).toHaveLength(1);
+    expect(model.edges[0]).toMatchObject({ source: 'up-id', target: 'center-id' });
+    expect(model.columnMappings).toEqual([
+      { fromColumns: ['svc.db.schema.raw_orders.id'], toColumn: 'svc.db.schema.orders.id', function: undefined },
+    ]);
+    expect(model.hasColumnLineage).toBe(true);
+  });
+
+  it('falls back to the nodeDepth-0 node when the requested FQN is absent', () => {
+    const model = mapSearchLineage(
+      {
+        nodes: {
+          't.a': { entity: { id: 'a', type: 'table', name: 'a', fullyQualifiedName: 't.a' }, nodeDepth: 0 },
+          't.b': { entity: { id: 'b', type: 'table', name: 'b', fullyQualifiedName: 't.b' }, nodeDepth: 1 },
+        },
+        upstreamEdges: {},
+        downstreamEdges: {},
+      },
+      't.missing',
+    );
+    expect(model.centerId).toBe('a');
+  });
+
+  it('returns an empty graph when the search result has no nodes', () => {
+    expect(mapSearchLineage({ nodes: {}, upstreamEdges: {}, downstreamEdges: {} }, 't.a')).toMatchObject({
+      centerId: '',
+      nodes: [],
+      edges: [],
+    });
   });
 });
 
