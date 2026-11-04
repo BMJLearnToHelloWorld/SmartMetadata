@@ -17,9 +17,11 @@ describe('taskActions', () => {
     );
   });
 
-  it('wires only resolve and close; every unwired action carries a residual key', () => {
+  it('wires resolve, close, edit and re-assign; every unwired action carries a residual key', () => {
     expect(TASK_ACTIONS.filter((action) => action.wired).map((action) => action.key).sort()).toEqual([
       'close',
+      'edit',
+      're-assign',
       'resolve',
     ]);
     for (const action of TASK_ACTIONS.filter((item) => !item.wired)) {
