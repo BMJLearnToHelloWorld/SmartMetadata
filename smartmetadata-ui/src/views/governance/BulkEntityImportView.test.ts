@@ -140,4 +140,47 @@ describe('BulkEntityImportView', () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="bulk-import-file-input"]').exists()).toBe(false);
   });
+
+  it('renders owner and glossary-term editors for those preview columns', async () => {
+    const editorFetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const target = String(url);
+      if (target.includes('/v1/permissions/')) {
+        return jsonResponse(PERMISSION_ALLOW);
+      }
+      if (target.includes('/v1/csv/documentation/')) {
+        return jsonResponse({
+          headers: [
+            { name: 'name', required: true },
+            { name: 'owners', required: false },
+            { name: 'glossaryTerms', required: false },
+          ],
+        });
+      }
+      if (
+        target.includes('/v1/users') ||
+        target.includes('/v1/teams') ||
+        target.includes('/v1/glossaryTerms')
+      ) {
+        return jsonResponse({ data: [], paging: {} });
+      }
+      if (target.includes('/importAsync')) {
+        expect(init?.method).toBe('PUT');
+        return jsonResponse({ jobId: '7', message: 'queued' });
+      }
+      if (target.includes('/csvAsyncJobs/7/import-result')) {
+        return jsonResponse(resultPayload('foo,success,Entity created\n'));
+      }
+      if (target.includes('/csvAsyncJobs/7')) {
+        return jsonResponse({ jobId: '7', status: 'COMPLETED' });
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    });
+    vi.stubGlobal('fetch', editorFetch);
+    const wrapper = await mountView();
+    await uploadFile(wrapper, 'name,owners,glossaryTerms\nfoo,user:alice,Glossary.Term\n');
+    await wrapper.find('[data-testid="bulk-import-preview-button"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="bulk-import-cell-0-owners"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="bulk-import-cell-0-glossaryTerms"]').exists()).toBe(true);
+  });
 });

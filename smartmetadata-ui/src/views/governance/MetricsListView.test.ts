@@ -9,9 +9,11 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useBulkEditScopeStore } from '@/stores/bulkEditScope';
 import MetricsListView from './MetricsListView.vue';
 
 const searchAssets = vi.fn();
@@ -21,18 +23,21 @@ vi.mock('@/api/search', () => ({
 }));
 
 async function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/governance/metrics', name: 'governance-metrics', component: MetricsListView },
       { path: '/governance/metrics/:fqn', name: 'governance-metric', component: { template: '<div>metric</div>' } },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+      { path: '/bulk/edit/:entityType/:fqn', name: 'bulk-edit', component: { template: '<div>bulk-edit</div>' } },
     ],
   });
   await router.push({ name: 'governance-metrics' });
   await router.isReady();
   const wrapper = mount(MetricsListView, {
-    global: { plugins: [router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -80,5 +85,29 @@ describe('MetricsListView', () => {
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
     expect(wrapper.text()).toMatch(/no metrics/i);
+  });
+
+  it('navigates to the metric bulk-edit collection scope with the selected scope', async () => {
+    searchAssets.mockResolvedValue({
+      total: 1,
+      hits: [
+        {
+          id: 'm1',
+          name: 'mau',
+          displayName: 'Monthly Active Users',
+          fullyQualifiedName: 'kpi.mau',
+          entityType: 'metric',
+          owners: [],
+          tags: [],
+        },
+      ],
+      facets: [],
+    });
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="metrics-bulk-edit-button"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('bulk-edit');
+    expect(router.currentRoute.value.params).toMatchObject({ entityType: 'metric', fqn: '*' });
+    expect(useBulkEditScopeStore().scope).toEqual({ mode: 'filtered', filters: {} });
   });
 });

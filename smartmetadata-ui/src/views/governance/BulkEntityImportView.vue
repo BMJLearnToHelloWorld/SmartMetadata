@@ -27,7 +27,10 @@ import {
   type CsvDocumentation,
   type CsvImportResult,
 } from '@/api/csvImport';
+import { notifyCsvJobsRefresh } from '@/api/csvJobs';
 import CsvImportResultPanel from '@/components/shared/CsvImportResultPanel.vue';
+import GlossaryTermCellEditor from '@/components/shared/GlossaryTermCellEditor.vue';
+import OwnerCellEditor from '@/components/shared/OwnerCellEditor.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import {
   classifyImportRow,
@@ -38,6 +41,7 @@ import {
   safeFileFragment,
   stringifyCsv,
 } from '@/features/csv/csv';
+import { csvColumnLeaf } from '@/features/csv/metricBulkEdit';
 import { usePermissionStore } from '@/stores/permissions';
 
 const props = defineProps<{ entityType: string; fqn: string }>();
@@ -52,9 +56,9 @@ const permissionStore = usePermissionStore();
  * as the authoritative echo. Two product adaptations, both explicit:
  * completion is polled from /csvAsyncJobs (the product has no import-job
  * websocket channel, and official's csvAPI ships the pollable getCsvAsyncJob
- * for exactly this), and the preview grid is a plain editable table
- * (official's rich grid editors — owner dropdowns, glossary pickers,
- * metric bulk-edit scope, background jobs tray — are not ported here).
+ * for exactly this), and the preview grid renders rich editors for the
+ * owner and glossary-term columns (official CSV_EDITOR_FACTORIES) while
+ * every other column stays a plain text input.
  * Per-row authorization is server-side (upstream S3): one denied row
  * fails inside the result, never the whole file, so results always render
  * per row.
@@ -241,6 +245,7 @@ async function runImportJob(dryRun: boolean): Promise<CsvImportResult | null> {
     if (!response.jobId) {
       throw new Error(t('bulkImport.noJobId'));
     }
+    notifyCsvJobsRefresh();
     const terminal = await pollCsvAsyncJob(response.jobId, {
       onProgress: (progress) => {
         job.value = progress;
@@ -475,7 +480,23 @@ onMounted(() => {
             size="small"
           >
             <template #bodyCell="{ column, record }">
+              <OwnerCellEditor
+                v-if="csvColumnLeaf(column.dataIndex) === 'owner' || csvColumnLeaf(column.dataIndex) === 'owners'"
+                :model-value="record[column.dataIndex]"
+                :test-id="`bulk-import-cell-${record.key}-${column.dataIndex}`"
+                @update:model-value="(value: string) => onCellEdit(Number(record.key), column.dataIndex, value)"
+              />
+              <GlossaryTermCellEditor
+                v-else-if="
+                  csvColumnLeaf(column.dataIndex) === 'glossaryTerms' ||
+                  csvColumnLeaf(column.dataIndex) === 'relatedTerms'
+                "
+                :model-value="record[column.dataIndex]"
+                :test-id="`bulk-import-cell-${record.key}-${column.dataIndex}`"
+                @update:model-value="(value: string) => onCellEdit(Number(record.key), column.dataIndex, value)"
+              />
               <Input
+                v-else
                 :value="record[column.dataIndex]"
                 :data-testid="`bulk-import-cell-${record.key}-${column.dataIndex}`"
                 @change="
