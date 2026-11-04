@@ -46,8 +46,25 @@ describe('ActivityFeedView', () => {
     localStorage.clear();
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url.includes('/api/v1/activity/act-1/replies')) {
+          if (init?.method === 'POST') {
+            const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
+            return jsonResponse({ id: 'r2', conversationId: 'c1', message: body.message });
+          }
+          return jsonResponse({
+            data: [{ id: 'r1', conversationId: 'c1', message: 'agreed', author: { id: 'u2', name: 'bob', type: 'user' } }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/activity/act-1/reaction/thumbsUp')) {
+          const reactions =
+            init?.method === 'PUT'
+              ? [{ reactionType: 'thumbsUp', user: { id: 'u1', name: 'amy', type: 'user' } }]
+              : [];
+          return jsonResponse({ id: 'act-1', eventType: 'DescriptionUpdated', reactions });
+        }
         if (url.includes('/api/v1/activity') && !url.includes('/replies') && !url.includes('/conversations')) {
           if (url.includes('after=cursor-1')) {
             return jsonResponse({
@@ -139,5 +156,41 @@ describe('ActivityFeedView', () => {
     await wrapper.find('[data-testid="activity-card-act-1"]').trigger('click');
     await flushPromises();
     expect(document.body.textContent ?? '').toContain('old-desc');
+  });
+
+  it('loads replies in the detail drawer and posts a reply that echoes back', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="activity-card-act-1"]').trigger('click');
+    await flushPromises();
+    expect(document.body.textContent ?? '').toContain('agreed');
+    const textarea = document.querySelector('[data-testid="activity-reply"]') as HTMLTextAreaElement;
+    expect(textarea).not.toBeNull();
+    textarea.value = 'seconded';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    const submit = document.querySelector('[data-testid="activity-reply-submit"]') as HTMLElement;
+    submit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const post = [...vi.mocked(fetch).mock.calls]
+      .reverse()
+      .find(([input, init]) => String(input).includes('/replies') && init?.method === 'POST');
+    expect(post).toBeDefined();
+    expect(JSON.parse(String(post?.[1]?.body ?? '{}'))).toEqual({ message: 'seconded' });
+    expect(document.body.textContent ?? '').toContain('seconded');
+  });
+
+  it('toggles a reaction from the detail drawer and echoes the updated event', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="activity-card-act-1"]').trigger('click');
+    await flushPromises();
+    const button = document.querySelector('[data-testid="activity-reaction-thumbsUp"]') as HTMLElement;
+    expect(button).not.toBeNull();
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const put = [...vi.mocked(fetch).mock.calls]
+      .reverse()
+      .find(([input, init]) => String(input).includes('/reaction/thumbsUp') && init?.method === 'PUT');
+    expect(put).toBeDefined();
+    expect(document.body.textContent ?? '').toContain('👍 1');
   });
 });

@@ -37,8 +37,8 @@ export interface TaskAction {
 
 export const TASK_ACTIONS: TaskAction[] = [
   { key: 'view', labelKey: 'collaboration.task.actionView', wired: false, residualKey: 'collaboration.task.actionViewResidual' },
-  { key: 'edit', labelKey: 'collaboration.task.actionEdit', wired: false, residualKey: 'collaboration.task.actionEditResidual' },
-  { key: 're-assign', labelKey: 'collaboration.task.actionReassign', wired: false, residualKey: 'collaboration.task.actionReassignResidual' },
+  { key: 'edit', labelKey: 'collaboration.task.actionEdit', wired: true },
+  { key: 're-assign', labelKey: 'collaboration.task.actionReassign', wired: true },
   { key: 'resolve', labelKey: 'collaboration.task.actionResolve', wired: true },
   { key: 'close', labelKey: 'collaboration.task.actionClose', wired: true },
 ];

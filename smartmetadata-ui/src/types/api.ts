@@ -46,6 +46,14 @@ export interface EntityRef {
   fullyQualifiedName?: string;
 }
 
+/** Official votes shape (openmetadata-spec type/votes.json). */
+export interface EntityVotes {
+  upVotes: number;
+  downVotes: number;
+  upVoters?: EntityRef[];
+  downVoters?: EntityRef[];
+}
+
 export interface TagRef {
   tagFQN: string;
   name: string;
@@ -180,6 +188,7 @@ export interface AssetDetail {
   pipelineStatus?: CatalogPipelineStatus;
   owners: EntityRef[];
   followers?: EntityRef[];
+  votes?: EntityVotes;
   tags: TagRef[];
   domains: EntityRef[];
   schemaRows: SchemaRow[];

@@ -3,19 +3,39 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {Alert, Button, Card, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
-import { listActivityEvents } from '@/api/activity';
+import {
+  addActivityReaction,
+  listActivityEvents,
+  listActivityReplies,
+  removeActivityReaction,
+  replyToActivity,
+} from '@/api/activity';
 import { ACTIVITY_RANGE_PRESETS } from '@/catalog/collaborationTabs';
 import { requiredField } from '@/features/crud/formRules';
 import { createConversation } from '@/api/conversations';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { toEntityLink } from '@/quality/entityLink';
-import type { ActivityEvent } from '@/types/collaboration';
+import { useAuthStore } from '@/stores/auth';
+import type { ActivityEvent, ConversationReply } from '@/types/collaboration';
+
+/** Official reaction types (openmetadata-spec type/reaction.json), with display glyphs. */
+const REACTION_TYPES = ['thumbsUp', 'thumbsDown', 'hooray', 'laugh', 'confused', 'heart', 'rocket', 'eyes'] as const;
+const REACTION_GLYPHS: Record<string, string> = {
+  thumbsUp: '👍',
+  thumbsDown: '👎',
+  hooray: '🎉',
+  laugh: '😄',
+  confused: '😕',
+  heart: '❤️',
+  rocket: '🚀',
+  eyes: '👀',
+};
 
 const router = useRouter();
 const { t } = useI18n();
@@ -28,6 +48,94 @@ const after = ref<string | undefined>();
 const rangeDays = ref(7);
 const typeFilter = ref('all');
 const detailEvent = ref<ActivityEvent | null>(null);
+const detailReplies = ref<ConversationReply[]>([]);
+const repliesLoading = ref(false);
+const replyMessage = ref('');
+const replying = ref(false);
+const reactionLoading = ref(false);
+
+const currentUserId = computed(() => useAuthStore().user?.id || '');
+
+/**
+ * Official Reactions grouping (openmetadata-ui/.../Reactions.tsx):
+ * reactions grouped by type with their user lists; the current user's own
+ * reaction per type decides whether a click adds or removes it.
+ */
+const reactionGroups = computed(() => {
+  const byType = new Map<string, { type: string; count: number; own: boolean }>();
+  for (const reaction of detailEvent.value?.reactions ?? []) {
+    const entry = byType.get(reaction.reactionType) ?? { type: reaction.reactionType, count: 0, own: false };
+    entry.count += 1;
+    if (currentUserId.value && reaction.user?.id === currentUserId.value) {
+      entry.own = true;
+    }
+    byType.set(reaction.reactionType, entry);
+  }
+  return REACTION_TYPES.map(
+    (type) => byType.get(type) ?? { type, count: 0, own: false },
+  );
+});
+
+async function loadReplies(eventId: string): Promise<void> {
+  repliesLoading.value = true;
+  try {
+    const page = await listActivityReplies(eventId);
+    detailReplies.value = page.data;
+  } catch {
+    detailReplies.value = [];
+  } finally {
+    repliesLoading.value = false;
+  }
+}
+
+watch(detailEvent, (event) => {
+  detailReplies.value = [];
+  replyMessage.value = '';
+  if (event) {
+    void loadReplies(event.id);
+  }
+});
+
+async function onToggleReaction(reactionType: string): Promise<void> {
+  const event = detailEvent.value;
+  if (!event || reactionLoading.value) {
+    return;
+  }
+  const own = reactionGroups.value.find((group) => group.type === reactionType)?.own ?? false;
+  reactionLoading.value = true;
+  try {
+    const updated = own
+      ? await removeActivityReaction(event.id, reactionType)
+      : await addActivityReaction(event.id, reactionType);
+    detailEvent.value = updated;
+    const index = events.value.findIndex((item) => item.id === updated.id);
+    if (index >= 0) {
+      events.value[index] = updated;
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.activity.reactionFailed'));
+  } finally {
+    reactionLoading.value = false;
+  }
+}
+
+async function onReply(): Promise<void> {
+  const event = detailEvent.value;
+  if (!event || !replyMessage.value.trim()) {
+    return;
+  }
+  replying.value = true;
+  try {
+    const reply = await replyToActivity(event.id, { message: replyMessage.value.trim() });
+    detailReplies.value = [...detailReplies.value, reply];
+    replyMessage.value = '';
+    message.success(t('collaboration.activity.replyAdded'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.activity.replyFailed'));
+  } finally {
+    replying.value = false;
+  }
+}
 const createOpen = ref(false);
 const creating = ref(false);
 const form = reactive({
@@ -264,6 +372,47 @@ onMounted(() => {
         <Typography.Paragraph v-if="detailEvent.newValue !== undefined">
           {{ t('collaboration.activity.newValue') }}: {{ detailEvent.newValue }}
         </Typography.Paragraph>
+        <Typography.Title :level="5">{{ t('collaboration.activity.reactions') }}</Typography.Title>
+        <Space wrap>
+          <Button
+            v-for="group in reactionGroups"
+            :key="group.type"
+            size="small"
+            :type="group.own ? 'primary' : 'default'"
+            :loading="reactionLoading"
+            :data-testid="`activity-reaction-${group.type}`"
+            @click="onToggleReaction(group.type)"
+          >
+            {{ REACTION_GLYPHS[group.type] ?? group.type }} {{ group.count }}
+          </Button>
+        </Space>
+        <Typography.Title :level="5">{{ t('collaboration.activity.replies') }}</Typography.Title>
+        <div v-if="repliesLoading" data-testid="activity-replies-loading">
+          <Typography.Text type="secondary">{{ t('collaboration.activity.repliesLoading') }}</Typography.Text>
+        </div>
+        <div v-else-if="!detailReplies.length" data-testid="activity-replies-empty">
+          <Typography.Text type="secondary">{{ t('collaboration.activity.repliesEmpty') }}</Typography.Text>
+        </div>
+        <div v-else data-testid="activity-replies-list">
+          <Typography.Paragraph v-for="reply in detailReplies" :key="reply.id">
+            <Typography.Text strong>{{ reply.author?.displayName || reply.author?.name || '—' }}: </Typography.Text>
+            {{ reply.message }}
+          </Typography.Paragraph>
+        </div>
+        <Form layout="vertical">
+          <Form.Item :label="t('collaboration.activity.reply')">
+            <Input.TextArea v-model:value="replyMessage" data-testid="activity-reply" :rows="2" />
+          </Form.Item>
+          <Button
+            type="primary"
+            :loading="replying"
+            :disabled="!replyMessage.trim()"
+            data-testid="activity-reply-submit"
+            @click="onReply"
+          >
+            {{ t('collaboration.activity.replySubmit') }}
+          </Button>
+        </Form>
       </Space>
     </SmDrawer>
   </Card>

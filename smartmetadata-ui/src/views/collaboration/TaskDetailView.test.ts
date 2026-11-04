@@ -70,12 +70,33 @@ describe('TaskDetailView', () => {
             comments: [{ id: 'cm1', message: 'noted' }],
           });
         }
+        if (init?.method === 'PATCH' && url.includes('/api/v1/tasks/t1')) {
+          const ops = JSON.parse(String(init.body ?? '[]')) as Array<Record<string, unknown>>;
+          const descriptionOp = ops.find((op) => op.path === '/description');
+          const assigneesOp = ops.find((op) => op.path === '/assignees');
+          return jsonResponse({
+            id: 't1',
+            name: 'review-orders',
+            status: 'Open',
+            description: descriptionOp ? descriptionOp.value : 'old desc',
+            assignees: assigneesOp
+              ? (assigneesOp.value as Array<Record<string, unknown>>).map((ref) => ({
+                  id: ref.id,
+                  type: ref.type,
+                  name: 'amy',
+                }))
+              : [{ id: 'u1', type: 'user', name: 'amy' }],
+            comments: [],
+          });
+        }
         if (url.includes('/api/v1/tasks/t1')) {
           return jsonResponse({
             id: 't1',
             name: 'review-orders',
             status: 'Open',
             type: 'CustomTask',
+            description: 'old desc',
+            assignees: [{ id: 'u1', type: 'user', name: 'amy' }],
             comments: [],
           });
         }
@@ -128,5 +149,55 @@ describe('TaskDetailView', () => {
     expect(close).toBeDefined();
     expect(wrapper.text()).toContain('Closed');
     expect(wrapper.find('[data-testid="task-terminal-note"]').exists()).toBe(true);
+  });
+
+  it('edits the description through PATCH /v1/tasks/{id}', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="task-actions-menu"]').trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const editItem = document.querySelector('[data-testid="task-action-menu-item-edit"]');
+    expect(editItem).not.toBeNull();
+    (editItem as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const textarea = document.querySelector('[data-testid="task-description-edit"]') as HTMLTextAreaElement;
+    expect(textarea).not.toBeNull();
+    textarea.value = 'new desc';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    const save = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Save',
+    ) as HTMLElement;
+    expect(save).toBeDefined();
+    save.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const patch = lastMatchingFetch((url, init) => url.includes('/api/v1/tasks/t1') && init?.method === 'PATCH');
+    expect(JSON.parse(String(patch.init?.body ?? '[]'))).toEqual([
+      { op: 'replace', path: '/description', value: 'new desc' },
+    ]);
+    expect(patch.init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
+    expect(wrapper.text()).toContain('new desc');
+  });
+
+  it('re-assigns through PATCH /v1/tasks/{id} with the prefilled assignees', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="task-actions-menu"]').trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const reassignItem = document.querySelector('[data-testid="task-action-menu-item-re-assign"]');
+    expect(reassignItem).not.toBeNull();
+    (reassignItem as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(document.querySelector('[data-testid="task-assignees-edit"]')).not.toBeNull();
+    const save = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Save',
+    ) as HTMLElement;
+    expect(save).toBeDefined();
+    save.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const patch = lastMatchingFetch((url, init) => url.includes('/api/v1/tasks/t1') && init?.method === 'PATCH');
+    expect(JSON.parse(String(patch.init?.body ?? '[]'))).toEqual([
+      { op: 'replace', path: '/assignees', value: [{ id: 'u1', type: 'user' }] },
+    ]);
   });
 });

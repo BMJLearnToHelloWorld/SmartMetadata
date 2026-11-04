@@ -10,8 +10,39 @@
 import { asNumber, asRecord, asString, parsePaged } from '@/api/json';
 import { encodeFqnForApi } from '@/catalog/entityRoutes';
 import type { Paged } from '@/types/admin';
-import type { ActivityEvent, ConversationReply, CreatePostRequest } from '@/types/collaboration';
+import type { ActivityEvent, ActivityReaction, ConversationReply, CreatePostRequest } from '@/types/collaboration';
 import { apiRequest } from './client';
+
+function mapActivityReaction(raw: unknown): ActivityReaction | null {
+  const rec = asRecord(raw);
+  const reactionType = rec ? asString(rec.reactionType) : '';
+  if (!reactionType) {
+    return null;
+  }
+  const user = rec ? asRecord(rec.user) : undefined;
+  return {
+    reactionType,
+    user: user
+      ? {
+          id: asString(user.id) || undefined,
+          name: asString(user.name) || asString(user.displayName) || asString(user.id),
+          displayName: asString(user.displayName) || undefined,
+          type: asString(user.type) || undefined,
+          fullyQualifiedName: asString(user.fullyQualifiedName) || undefined,
+        }
+      : undefined,
+  };
+}
+
+function mapActivityReactions(value: unknown): ActivityReaction[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const mapped = mapActivityReaction(item);
+    return mapped ? [mapped] : [];
+  });
+}
 
 function mapActivityEvent(raw: Record<string, unknown>): ActivityEvent | null {
   const id = asString(raw.id);
@@ -30,6 +61,7 @@ function mapActivityEvent(raw: Record<string, unknown>): ActivityEvent | null {
     oldValue: asString(raw.oldValue) || undefined,
     newValue: asString(raw.newValue) || undefined,
     about: asString(raw.about) || undefined,
+    reactions: mapActivityReactions(raw.reactions),
     entity: entity
       ? {
           id: asString(entity.id) || undefined,
@@ -118,4 +150,40 @@ export async function replyToActivity(id: string, body: CreatePostRequest): Prom
     throw new Error('Activity reply succeeded but the response had no reply');
   }
   return mapped;
+}
+
+export function listActivityReplies(id: string): Promise<Paged<ConversationReply>> {
+  return apiRequest<unknown>(`/v1/activity/${encodeURIComponent(id)}/replies`).then((payload) =>
+    parsePaged(payload, mapConversationReply),
+  );
+}
+
+function requireActivityEvent(raw: Record<string, unknown>, action: string): ActivityEvent {
+  const mapped = mapActivityEvent(raw);
+  if (!mapped) {
+    throw new Error(`${action} succeeded but the response had no activity event`);
+  }
+  return mapped;
+}
+
+/**
+ * Official add/removeActivityReaction (openmetadata-ui/.../rest/activityAPI.ts):
+ * PUT / DELETE /v1/activity/{id}/reaction/{reactionType}, both returning the
+ * activity event with updated reactions, so the UI echoes the response
+ * instead of optimistically editing counts.
+ */
+export async function addActivityReaction(id: string, reactionType: string): Promise<ActivityEvent> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/activity/${encodeURIComponent(id)}/reaction/${encodeURIComponent(reactionType)}`,
+    { method: 'PUT' },
+  );
+  return requireActivityEvent(raw, 'Add activity reaction');
+}
+
+export async function removeActivityReaction(id: string, reactionType: string): Promise<ActivityEvent> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/activity/${encodeURIComponent(id)}/reaction/${encodeURIComponent(reactionType)}`,
+    { method: 'DELETE' },
+  );
+  return requireActivityEvent(raw, 'Remove activity reaction');
 }

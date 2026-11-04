@@ -553,7 +553,10 @@ describe('AssetDetailView R2 header and split tabs', () => {
     localStorage.clear();
   });
 
-  function stubDatabase(followers: Array<Record<string, unknown>>) {
+  function stubDatabase(
+    followers: Array<Record<string, unknown>>,
+    votes: Record<string, unknown> = { upVotes: 2, downVotes: 0, upVoters: [], downVoters: [] },
+  ) {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -565,10 +568,14 @@ describe('AssetDetailView R2 header and split tabs', () => {
             fullyQualifiedName: 'svc.analytics',
             owners: [{ id: 'u2', name: 'bob', type: 'user' }],
             followers,
+            votes,
             tags: [{ tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' }],
             service: { name: 'svc' },
             databaseSchemas: [{ name: 'marts', type: 'databaseSchema' }],
           });
+        }
+        if (url.includes('/api/v1/databases/db-1/vote') && init?.method === 'PUT') {
+          return jsonResponse({ eventType: 'ENTITY_UPDATED' });
         }
         if (url.includes('/api/v1/databases/db-1/followers')) {
           return jsonResponse({ id: 'db-1' });
@@ -614,6 +621,36 @@ describe('AssetDetailView R2 header and split tabs', () => {
     const { wrapper } = await mountTypedView('database', 'svc.analytics');
     const follow = wrapper.find('[data-testid="asset-follow"]');
     expect((follow.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('sends votedUp to PUT /v1/{collection}/{id}/vote and reloads the asset', async () => {
+    stubDatabase([]);
+    const { wrapper } = await mountTypedView('database', 'svc.analytics');
+    useAuthStore().user = { id: 'u1', name: 'alice' };
+    await wrapper.vm.$nextTick();
+    await flushPromises();
+    const up = wrapper.find('[data-testid="asset-vote-up"]');
+    expect(up.text()).toContain('Upvote (2)');
+    await up.trigger('click');
+    await flushPromises();
+    const call = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/databases/db-1/vote') && init?.method === 'PUT',
+    );
+    expect(JSON.parse(String(call.init?.body ?? '{}'))).toEqual({ updatedVoteType: 'votedUp' });
+  });
+
+  it('sends unVoted when the current user already voted up', async () => {
+    stubDatabase([], { upVotes: 3, downVotes: 0, upVoters: [{ id: 'u1', name: 'alice', type: 'user' }], downVoters: [] });
+    const { wrapper } = await mountTypedView('database', 'svc.analytics');
+    useAuthStore().user = { id: 'u1', name: 'alice' };
+    await wrapper.vm.$nextTick();
+    await flushPromises();
+    await wrapper.find('[data-testid="asset-vote-up"]').trigger('click');
+    await flushPromises();
+    const call = lastMatchingFetch(
+      (url, init) => url.includes('/api/v1/databases/db-1/vote') && init?.method === 'PUT',
+    );
+    expect(JSON.parse(String(call.init?.body ?? '{}'))).toEqual({ updatedVoteType: 'unVoted' });
   });
 });
 
