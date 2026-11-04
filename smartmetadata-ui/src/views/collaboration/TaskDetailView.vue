@@ -293,8 +293,11 @@ watch(
           </template>
         </Dropdown>
       </Space>
-      <Typography.Paragraph v-if="!actionable" type="secondary" data-testid="task-terminal-note">
+      <Typography.Paragraph v-if="!actionable && !(task.type === 'DataAccessRequest' && task.status === 'Approved')" type="secondary" data-testid="task-terminal-note">
         {{ t('collaboration.task.terminalNote') }}
+      </Typography.Paragraph>
+      <Typography.Paragraph v-else-if="task.type === 'DataAccessRequest' && task.status === 'Approved'" type="secondary" data-testid="task-dar-approved-note">
+        {{ t('collaboration.dataAccess.awaitingGrantNote') }}
       </Typography.Paragraph>
       <Typography.Paragraph v-else type="secondary" data-testid="task-actions-residual">
         {{ t('collaboration.task.unwiredNote') }}
@@ -312,6 +315,22 @@ watch(
         </Descriptions.Item>
         <Descriptions.Item :label="t('collaboration.task.description')">{{ task.description || '—' }}</Descriptions.Item>
       </Descriptions>
+      <template v-if="task.type === 'DataAccessRequest' && task.payload">
+        <Typography.Title :level="5" class="collab-section" data-testid="task-dar-payload-title">{{ t('collaboration.dataAccess.payloadTitle') }}</Typography.Title>
+        <Descriptions bordered :column="1" size="small">
+          <Descriptions.Item :label="t('collaboration.dataAccess.accessType')">{{ task.payload.accessType || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.requestedAccess')">{{ task.payload.requestedAccess || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.columns')">{{ (task.payload.columns ?? []).join(', ') || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.duration')">{{ task.payload.duration || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.reason')">{{ task.payload.reason || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.extraAssets')">{{ (task.payload.assets ?? []).map((asset) => asset.fullyQualifiedName || asset.name).join(', ') || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.ticketId')">{{ task.payload.ticketId || '—' }}</Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.dataAccess.expirationDate')">{{ task.payload.expirationDate ? new Date(task.payload.expirationDate).toLocaleString() : '—' }}</Descriptions.Item>
+        </Descriptions>
+        <Typography.Paragraph v-if="task.payload.manualGrantReason" type="secondary" data-testid="task-dar-manual-reason">
+          {{ t('collaboration.dataAccess.manualGrantReason', { reason: task.payload.manualGrantReason }) }}
+        </Typography.Paragraph>
+      </template>
       <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.resolve') }}</Typography.Title>
       <Typography.Paragraph type="secondary">
         {{ t('collaboration.task.resolveLead') }}

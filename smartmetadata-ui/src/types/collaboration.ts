@@ -70,6 +70,7 @@ export const TASK_CATEGORIES = [
 
 export const CREATABLE_TASK_TYPES = [
   'RequestApproval',
+  'DataAccessRequest',
   'DescriptionUpdate',
   'TagUpdate',
   'OwnershipUpdate',
@@ -91,6 +92,30 @@ export interface TaskComment {
   author?: EntityRef;
 }
 
+/**
+ * Data access request payload, mirroring openmetadata-spec
+ * type/dataAccessRequestPayload.json field for field: accessType and
+ * reason are required; columns only scopes a ColumnLevel request;
+ * manualGrantReason is system-generated and never sent by the client.
+ */
+export const DATA_ACCESS_TYPES = ['FullAccess', 'ColumnLevel', 'Masked'] as const;
+export type DataAccessType = (typeof DATA_ACCESS_TYPES)[number];
+
+export const DATA_ACCESS_PERMISSIONS = ['Read', 'Write', 'Admin'] as const;
+export type DataAccessPermission = (typeof DATA_ACCESS_PERMISSIONS)[number];
+
+export interface DataAccessRequestPayload {
+  accessType: string;
+  requestedAccess?: string;
+  columns?: string[];
+  duration?: string;
+  reason?: string;
+  assets?: EntityRef[];
+  ticketId?: string;
+  expirationDate?: number;
+  manualGrantReason?: string;
+}
+
 export interface CollaborationTask {
   id: string;
   name?: string;
@@ -104,6 +129,7 @@ export interface CollaborationTask {
   assignees: EntityRef[];
   createdBy?: EntityRef;
   comments: TaskComment[];
+  payload?: DataAccessRequestPayload;
 }
 
 export interface CreateTaskRequest {
@@ -115,6 +141,7 @@ export interface CreateTaskRequest {
   about?: string;
   assignees?: string[];
   priority?: string;
+  payload?: DataAccessRequestPayload;
 }
 
 export interface ResolveTaskRequest {

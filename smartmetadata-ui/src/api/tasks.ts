@@ -12,6 +12,7 @@ import type { Paged } from '@/types/admin';
 import type {
   CollaborationTask,
   CreateTaskRequest,
+  DataAccessRequestPayload,
   ResolveTaskRequest,
   TaskComment,
 } from '@/types/collaboration';
@@ -55,6 +56,32 @@ function mapComments(value: unknown): TaskComment[] {
   });
 }
 
+function mapDataAccessPayload(value: unknown): DataAccessRequestPayload | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const accessType = asString(rec.accessType);
+  if (!accessType) {
+    return undefined;
+  }
+  const columns = Array.isArray(rec.columns)
+    ? rec.columns.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : undefined;
+  const assets = mapEntityRefs(rec.assets);
+  return {
+    accessType,
+    requestedAccess: asString(rec.requestedAccess) || undefined,
+    columns: columns?.length ? columns : undefined,
+    duration: asString(rec.duration) || undefined,
+    reason: asString(rec.reason) || undefined,
+    assets: assets.length ? assets : undefined,
+    ticketId: asString(rec.ticketId) || undefined,
+    expirationDate: asNumber(rec.expirationDate),
+    manualGrantReason: asString(rec.manualGrantReason) || undefined,
+  };
+}
+
 function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
   const id = asString(raw.id);
   if (!id) {
@@ -73,6 +100,7 @@ function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
     assignees: mapEntityRefs(raw.assignees),
     createdBy: mapEntityRefs(raw.createdBy ? [raw.createdBy] : [])[0],
     comments: mapComments(raw.comments),
+    payload: asString(raw.type) === 'DataAccessRequest' ? mapDataAccessPayload(raw.payload) : undefined,
   };
 }
 
@@ -118,9 +146,61 @@ export async function createTask(body: CreateTaskRequest): Promise<Collaboration
       about: body.about,
       assignees: body.assignees,
       priority: body.priority,
+      payload: body.payload,
     },
   });
   return requireTask(raw, 'Create task');
+}
+
+/**
+ * Official listDataAccessRequests
+ * (openmetadata-ui/.../rest/tasksAPI.ts): GET
+ * /v1/tasks/dataAccessRequests. The server pre-applies
+ * category=DataAccess and type=DataAccessRequest and paginates by
+ * offset, not by cursor — so callers page with offset, never after.
+ * statusGroup buckets are the server's own: open = awaiting review,
+ * active = full non-terminal lifecycle (an Approved request still
+ * awaits its grant), closed = terminal bucket.
+ */
+export interface ListDataAccessRequestsQuery {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  statusGroup?: string;
+  dataset?: string;
+  service?: string;
+  requestedBy?: string;
+  approver?: string;
+  accessType?: string;
+  assignee?: string;
+  domain?: string;
+  q?: string;
+  sortOrder?: string;
+}
+
+export function listDataAccessRequests(
+  query: ListDataAccessRequestsQuery = {},
+): Promise<Paged<CollaborationTask>> {
+  return apiRequest<unknown>('/v1/tasks/dataAccessRequests', {
+    query: {
+      // The server list default omits payload; the list shows each
+      // request's access scope and reason, so payload is requested.
+      fields: `${TASK_LIST_FIELDS},payload`,
+      limit: query.limit ?? 50,
+      offset: query.offset ?? 0,
+      status: query.status,
+      statusGroup: query.statusGroup,
+      dataset: query.dataset,
+      service: query.service,
+      requestedBy: query.requestedBy,
+      approver: query.approver,
+      accessType: query.accessType,
+      assignee: query.assignee,
+      domain: query.domain,
+      q: query.q,
+      sortOrder: query.sortOrder ?? 'desc',
+    },
+  }).then((payload) => parsePaged(payload, mapTask));
 }
 
 export async function resolveTask(id: string, body: ResolveTaskRequest): Promise<CollaborationTask> {
