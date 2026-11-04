@@ -90,6 +90,38 @@ describe('AssetDetailView governance', () => {
             databaseSchema: { name: 'marts' },
           });
         }
+        if (url.includes('/api/v1/lineage/getLineage')) {
+          return jsonResponse({
+            nodes: {
+              'svc.db.schema.orders': {
+                entity: {
+                  id: 'tbl-1',
+                  type: 'table',
+                  name: 'orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                },
+                nodeDepth: 0,
+              },
+              'svc.db.schema.raw_orders': {
+                entity: {
+                  id: 'up-1',
+                  type: 'table',
+                  name: 'raw_orders',
+                  fullyQualifiedName: 'svc.db.schema.raw_orders',
+                },
+                nodeDepth: 1,
+              },
+            },
+            upstreamEdges: {
+              e1: {
+                fromEntity: { id: 'up-1', fullyQualifiedName: 'svc.db.schema.raw_orders', type: 'table' },
+                toEntity: { id: 'tbl-1', fullyQualifiedName: 'svc.db.schema.orders', type: 'table' },
+                columns: [],
+              },
+            },
+            downstreamEdges: {},
+          });
+        }
         if (url.includes('/api/v1/lineage/')) {
           return jsonResponse({
             entity: {

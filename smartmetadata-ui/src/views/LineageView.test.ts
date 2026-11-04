@@ -31,30 +31,34 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 const GRAPH = {
-  entity: {
-    id: 'center-id',
-    type: 'table',
-    name: 'orders',
-    fullyQualifiedName: 'svc.db.schema.orders',
-  },
-  nodes: [
-    {
-      id: 'up-id',
-      type: 'table',
-      name: 'raw_orders',
-      fullyQualifiedName: 'svc.db.schema.raw_orders',
-    },
-  ],
-  upstreamEdges: [
-    {
-      fromEntity: 'up-id',
-      toEntity: 'center-id',
-      lineageDetails: {
-        columnsLineage: [{ fromColumns: ['raw_orders.id'], toColumn: 'orders.id' }],
+  nodes: {
+    'svc.db.schema.orders': {
+      entity: {
+        id: 'center-id',
+        type: 'table',
+        name: 'orders',
+        fullyQualifiedName: 'svc.db.schema.orders',
       },
+      nodeDepth: 0,
     },
-  ],
-  downstreamEdges: [],
+    'svc.db.schema.raw_orders': {
+      entity: {
+        id: 'up-id',
+        type: 'table',
+        name: 'raw_orders',
+        fullyQualifiedName: 'svc.db.schema.raw_orders',
+      },
+      nodeDepth: 1,
+    },
+  },
+  upstreamEdges: {
+    e1: {
+      fromEntity: { id: 'up-id', fullyQualifiedName: 'svc.db.schema.raw_orders', type: 'table' },
+      toEntity: { id: 'center-id', fullyQualifiedName: 'svc.db.schema.orders', type: 'table' },
+      columns: [{ fromColumns: ['svc.db.schema.raw_orders.id'], toColumn: 'svc.db.schema.orders.id' }],
+    },
+  },
+  downstreamEdges: {},
 };
 
 async function mountLineage() {
@@ -87,7 +91,7 @@ describe('LineageView', () => {
     localStorage.clear();
   });
 
-  it('renders nodes from GET /v1/lineage/{entity}/name/{fqn} and shows column mappings', async () => {
+  it('renders nodes from GET /v1/lineage/getLineage and shows column mappings', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(GRAPH)),
@@ -100,7 +104,7 @@ describe('LineageView', () => {
     expect(wrapper.find('[data-testid="lineage-find-node"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="column-lineage-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('raw_orders.id');
-    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/api/v1/lineage/table/name/');
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toContain('/api/v1/lineage/getLineage');
   });
 
   it('shows an empty state when the API returns only the focus entity', async () => {
