@@ -13,8 +13,10 @@ import {
   createContextMemory,
   createKnowledgePage,
   deleteKnowledgePage,
+  getKnowledgePageVersion,
   listArchivedContextFiles,
   listContextMemories,
+  listKnowledgePageVersions,
   listKnowledgePages,
   pinContextMemory,
   restoreKnowledgePage,
@@ -215,5 +217,58 @@ describe('contextCenter API', () => {
     const uploaded = await uploadDriveFile(new File(['x'], 'guide.pdf'), 'handbook');
     expect(uploaded?.id).toBe('f2');
     expect(lastFetch().url).toContain('/api/v1/contextCenter/drive/files/upload');
+  });
+
+  it('lists knowledge page versions from GET /v1/contextCenter/pages/{id}/versions', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          versions: [
+            {
+              version: 0.2,
+              updatedAt: 1700000000000,
+              updatedBy: 'alice',
+              changeDescription: {
+                fieldsUpdated: [{ name: 'description', oldValue: 'old', newValue: 'new' }],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const versions = await listKnowledgePageVersions('p1');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/pages/p1/versions');
+    expect(versions).toHaveLength(1);
+    expect(versions[0]?.version).toBe(0.2);
+    expect(versions[0]?.updatedBy).toBe('alice');
+    expect(versions[0]?.changeDescription?.fieldsUpdated?.[0]?.field).toBe('description');
+  });
+
+  it('returns an empty list when the versions payload carries no array', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    await expect(listKnowledgePageVersions('p1')).resolves.toEqual([]);
+  });
+
+  it('fetches one knowledge page version with its changeDescription', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          id: 'p1',
+          name: 'getting-started',
+          fullyQualifiedName: 'getting-started',
+          version: 0.1,
+          description: 'old text',
+          changeDescription: {
+            fieldsAdded: [{ name: 'tags', newValue: 'a' }],
+          },
+        }),
+      ),
+    );
+    const snapshot = await getKnowledgePageVersion('p1', '0.1');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/pages/p1/versions/0.1');
+    expect(snapshot?.version).toBe(0.1);
+    expect(snapshot?.changeDescription?.fieldsAdded?.[0]?.field).toBe('tags');
   });
 });

@@ -108,6 +108,8 @@ const InboxView = () => import('@/views/inbox/InboxView.vue');
 const TasksListView = () => import('@/views/collaboration/TasksListView.vue');
 const ContextCenterOverviewView = () => import('@/views/contextCenter/ContextCenterOverviewView.vue');
 const ContextCenterArticlesView = () => import('@/views/contextCenter/ContextCenterArticlesView.vue');
+const KnowledgePageVersionView = () =>
+  import('@/views/contextCenter/KnowledgePageVersionView.vue');
 const ContextCenterDocumentsView = () =>
   import('@/views/contextCenter/ContextCenterDocumentsView.vue');
 const ContextCenterMemoriesView = () => import('@/views/contextCenter/ContextCenterMemoriesView.vue');
@@ -383,6 +385,12 @@ export const router = createRouter({
           name: 'context-center-article',
           component: ContextCenterArticlesView,
           meta: { titleKey: 'contextCenter.articles' },
+        },
+        {
+          path: 'context-center/articles/:fqn/versions/:version',
+          name: 'context-center-article-version',
+          component: KnowledgePageVersionView,
+          meta: { titleKey: 'contextCenter.versionHistory' },
         },
         {
           path: 'context-center/documents',
