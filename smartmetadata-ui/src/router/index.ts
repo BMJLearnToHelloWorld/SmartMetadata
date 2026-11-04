@@ -133,6 +133,8 @@ const PersonaCustomizeView = () => import('@/views/admin/persona/PersonaCustomiz
 const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
 const ColumnBulkOperationsView = () =>
   import('@/views/governance/ColumnBulkOperationsView.vue');
+const BulkEntityImportView = () =>
+  import('@/views/governance/BulkEntityImportView.vue');
 const DocsView = () => import('@/views/docs/DocsView.vue');
 const TourStartView = () => import('@/views/tour/TourStartView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
@@ -521,6 +523,15 @@ export const router = createRouter({
           name: 'column-bulk-ops',
           component: ColumnBulkOperationsView,
           alias: 'column-bulk-operations',
+        },
+        // Batch B slice 1: official ENTITY_IMPORT
+        // (/bulk/import/:entityType/:fqn, constants.ts:340).
+        {
+          path: 'bulk/import/:entityType/:fqn',
+          name: 'bulk-import',
+          component: BulkEntityImportView,
+          props: true,
+          meta: { titleKey: 'bulkImport.title' },
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,

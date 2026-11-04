@@ -159,4 +159,80 @@ describe('ColumnBulkOperationsView', () => {
     const wrapper = await mountView();
     expect(wrapper.text()).toContain('Access not allowed');
   });
+
+  it('exports the current grid filters as CSV', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/columns/export')) {
+          return new Response('name,description\nemail,Contact email\n', {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain' },
+          });
+        }
+        return jsonResponse(GRID_PAYLOAD);
+      }),
+    );
+    const createObjectURL = vi.fn(() => 'blob:columns');
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+    try {
+      const wrapper = await mountView();
+      await wrapper.find('[data-testid="column-export-button"]').trigger('click');
+      await flushPromises();
+      expect(
+        vi.mocked(fetch).mock.calls.some((call) => String(call[0]).includes('/columns/export')),
+      ).toBe(true);
+      expect(createObjectURL).toHaveBeenCalled();
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  });
+
+  it('imports columns with a dry-run preview before applying', { timeout: 15000 }, async () => {
+    const resultPayload = (dryRun: boolean) => ({
+      dryRun,
+      status: 'partialSuccess',
+      numberOfRowsProcessed: 2,
+      numberOfRowsPassed: 1,
+      numberOfRowsFailed: 1,
+      importResultsCsv:
+        'columnFQN,status,details\nsvc.db.schema.users.email,success,Entity updated\nsvc.db.schema.customers.email,failure,denied\n',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/columns/import')) {
+          return jsonResponse(resultPayload(url.includes('dryRun=true')));
+        }
+        return jsonResponse(GRID_PAYLOAD);
+      }),
+    );
+    const wrapper = await mountView();
+    await wrapper.find('[data-testid="column-import-button"]').trigger('click');
+    await flushPromises();
+    const fileInput = wrapper.find('[data-testid="column-import-file-input"]');
+    const file = new File(['columnFQN,description\nsvc.db.schema.users.email,Contact\n'], 'cols.csv', {
+      type: 'text/csv',
+    });
+    Object.defineProperty(fileInput.element, 'files', { value: [file] });
+    await fileInput.trigger('change');
+    await flushPromises();
+    await modalPrimaryButton(wrapper, 'Import columns CSV').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('denied');
+    expect(
+      vi.mocked(fetch).mock.calls.some((call) => String(call[0]).includes('dryRun=true')),
+    ).toBe(true);
+    await modalPrimaryButton(wrapper, 'Import columns CSV').trigger('click');
+    await flushPromises();
+    expect(
+      vi.mocked(fetch).mock.calls.some((call) => String(call[0]).includes('dryRun=false')),
+    ).toBe(true);
+  });
 });

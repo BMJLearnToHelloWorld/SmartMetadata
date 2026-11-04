@@ -13,11 +13,16 @@ import { ApiError } from '@/api/client';
 import {
   bulkUpdateColumnsAsync,
   bulkUpdateColumnsPreview,
+  exportColumnsCsv,
   getColumnGrid,
+  importColumnsCsv,
   type BulkColumnUpdatePreview,
   type ColumnGridGroup,
   type ColumnGridItem,
 } from '@/api/columns';
+import type { CsvImportResult } from '@/api/csvImport';
+import CsvImportResultPanel from '@/components/shared/CsvImportResultPanel.vue';
+import { downloadTextFile, normalizeCsvLineBreaks } from '@/features/csv/csv';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -40,10 +45,12 @@ const { t } = useI18n();
  * filters, group rows (one per column-name + metadata group, with
  * occurrence count and expandable occurrences), per-group editing of
  * display name, description, tags and glossary terms, and a
- * bulk-update-preview step before the async bulk apply. CSV
- * export/import (GET /columns/export, POST /columns/import) are a
- * follow-up, not faked here: the grid + edit + preview + apply flow
- * below is the page's core capability.
+ * bulk-update-preview step before the async bulk apply. CSV export
+ * (GET /columns/export) and import (POST /columns/import, dryRun preview
+ * then apply) from official rest/columnAPI follow the grid filters and
+ * render the same per-row CSVImportResult echo as the bulk-import page;
+ * the column import endpoint returns its result synchronously, so no
+ * job polling is involved here.
  */
 const PAGE_SIZE_OPTIONS = [15, 25, 50];
 const ENTITY_TYPE_OPTIONS = ['table', 'dashboardDataModel'];
@@ -259,6 +266,97 @@ const columns = computed(() => [
   { title: t('crud.actions'), key: 'actions' },
 ]);
 
+// CSV export/import (official rest/columnAPI exportColumnsCSV /
+// importColumnsCSV): export downloads the current grid filters as CSV;
+// import runs a dryRun preview first, then the real apply, and renders
+// the synchronous CSVImportResult per row — one denied row fails inside
+// the result, never the whole file.
+const showImportModal = ref(false);
+const importCsvContent = ref<string | null>(null);
+const importFileName = ref('');
+const importPreview = ref<CsvImportResult | null>(null);
+const importResult = ref<CsvImportResult | null>(null);
+const importStage = ref<'pick' | 'preview' | 'done'>('pick');
+const importBusy = ref(false);
+const importError = ref('');
+
+function currentCsvFilters() {
+  return {
+    columnNamePattern: filters.value.columnNamePattern || undefined,
+    serviceName: filters.value.serviceName || undefined,
+    databaseName: filters.value.databaseName || undefined,
+    schemaName: filters.value.schemaName || undefined,
+    entityTypes: filters.value.entityTypes.length ? filters.value.entityTypes : undefined,
+  };
+}
+
+function openImportModal(): void {
+  showImportModal.value = true;
+  importCsvContent.value = null;
+  importFileName.value = '';
+  importPreview.value = null;
+  importResult.value = null;
+  importStage.value = 'pick';
+  importError.value = '';
+}
+
+async function onImportFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) {
+    return;
+  }
+  importCsvContent.value = normalizeCsvLineBreaks(await file.text());
+  importFileName.value = file.name;
+  importError.value = '';
+}
+
+async function onImportOk(): Promise<void> {
+  if (importStage.value === 'done') {
+    showImportModal.value = false;
+    return;
+  }
+  if (!importCsvContent.value) {
+    importError.value = t('columnBulkOperations.importNoFile');
+    return;
+  }
+  importBusy.value = true;
+  importError.value = '';
+  try {
+    if (importStage.value === 'pick') {
+      importPreview.value = await importColumnsCsv(importCsvContent.value, currentCsvFilters(), true);
+      importStage.value = 'preview';
+    } else {
+      importResult.value = await importColumnsCsv(importCsvContent.value, currentCsvFilters(), false);
+      importStage.value = 'done';
+      message.success(t('columnBulkOperations.importApplySuccess'));
+      void load();
+    }
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      forbidden.value = true;
+      showImportModal.value = false;
+    } else {
+      importError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    }
+  } finally {
+    importBusy.value = false;
+  }
+}
+
+async function onExportCsv(): Promise<void> {
+  try {
+    const csv = await exportColumnsCsv(currentCsvFilters());
+    downloadTextFile('columns.csv', csv);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 403) {
+      forbidden.value = true;
+    } else {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  }
+}
+
 onMounted(() => {
   void load();
 });
@@ -345,8 +443,16 @@ onMounted(() => {
 
     <Empty v-if="forbidden" :description="t('errors.forbidden')" />
     <Empty v-else-if="errorMessage" :description="errorMessage" />
+    <template v-else>
+    <Space style="margin-bottom: 16px">
+      <Button data-testid="column-export-button" @click="onExportCsv">
+        {{ t('columnBulkOperations.exportCsv') }}
+      </Button>
+      <Button type="primary" data-testid="column-import-button" @click="openImportModal">
+        {{ t('columnBulkOperations.importCsv') }}
+      </Button>
+    </Space>
     <SmTable
-      v-else
       :columns="columns"
       :data-source="rows"
       row-key="key"
@@ -372,6 +478,7 @@ onMounted(() => {
         </template>
       </template>
     </SmTable>
+    </template>
 
     <Space style="margin-top: 16px">
       <Button :disabled="!canGoPrev(cursor)" @click="onPrev">{{ t('columnBulkOperations.previous') }}</Button>
@@ -445,6 +552,43 @@ onMounted(() => {
         <Table.Column :title="t('columnBulkOperations.currentDisplayName')" data-index="currentDisplayName" />
         <Table.Column :title="t('columnBulkOperations.newDisplayName')" data-index="newDisplayName" />
       </Table>
+    </FormModal>
+
+    <FormModal
+      v-model:open="showImportModal"
+      :get-container="false"
+      :title="t('columnBulkOperations.importTitle')"
+      :confirm-loading="importBusy"
+      :error="importError"
+      :ok-text="
+        importStage === 'pick'
+          ? t('columnBulkOperations.importPreview')
+          : importStage === 'preview'
+            ? t('columnBulkOperations.importApply')
+            : t('crud.close')
+      "
+      @ok="onImportOk"
+    >
+      <Space direction="vertical" style="width: 100%">
+        <Typography.Text type="secondary">{{ t('columnBulkOperations.importHint') }}</Typography.Text>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          data-testid="column-import-file-input"
+          @change="onImportFileSelected"
+        />
+        <Typography.Text v-if="importFileName" type="secondary">{{ importFileName }}</Typography.Text>
+        <CsvImportResultPanel
+          v-if="importPreview && importStage !== 'done'"
+          :result="importPreview"
+          download-name="columns"
+        />
+        <CsvImportResultPanel
+          v-if="importResult && importStage === 'done'"
+          :result="importResult"
+          download-name="columns"
+        />
+      </Space>
     </FormModal>
   </div>
 </template>

@@ -42,6 +42,8 @@ function readErrorMessage(body: string, status: number): string {
 export interface ApiRequestOptions {
   method?: string;
   json?: unknown;
+  /** Raw text body (e.g. a CSV payload); Content-Type defaults to text/plain. */
+  text?: string;
   query?: Record<string, string | number | boolean | undefined>;
   auth?: boolean;
   /** Defaults to application/json when `json` is set. Use for RFC 6902 patches. */
@@ -95,6 +97,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   };
   if (options.json !== undefined) {
     headers['Content-Type'] = options.contentType || 'application/json';
+  } else if (options.text !== undefined) {
+    headers['Content-Type'] = options.contentType || 'text/plain';
   }
   if (options.auth !== false) {
     const session = loadSession(window.localStorage);
@@ -103,11 +107,11 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     }
   }
 
-  const method = options.method ?? (options.json !== undefined ? 'POST' : 'GET');
+  const method = options.method ?? (options.json !== undefined || options.text !== undefined ? 'POST' : 'GET');
   const response = await fetch(url.toString(), {
     method,
     headers,
-    body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+    body: options.json !== undefined ? JSON.stringify(options.json) : options.text,
   });
 
   const text = await response.text();
