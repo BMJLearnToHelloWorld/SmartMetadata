@@ -125,6 +125,7 @@ const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCent
 const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
 const MarketplaceAppDetailView = () => import('@/views/marketplace/MarketplaceAppDetailView.vue');
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
+const OntologyStudioView = () => import('@/views/governance/OntologyStudioView.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
@@ -460,6 +461,12 @@ export const router = createRouter({
           name: 'ontology-explorer',
           component: OntologyExplorerView,
           alias: 'governance/ontology',
+        },
+        {
+          path: 'govern/ontology/studio',
+          name: 'ontology-studio',
+          component: OntologyStudioView,
+          meta: { titleKey: 'ontology.edit.studioTitle' },
         },
         {
           path: 'govern/workflows',

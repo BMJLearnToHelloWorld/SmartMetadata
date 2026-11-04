@@ -340,6 +340,9 @@ onMounted(() => {
       <Button type="primary" data-testid="ontology-create" @click="showCreateModal = true">
         {{ t('ontology.create') }}
       </Button>
+      <Button data-testid="ontology-open-studio" @click="router.push({ name: 'ontology-studio' })">
+        {{ t('ontology.edit.openStudio') }}
+      </Button>
     </Space>
     <Empty
       v-if="!loading && ontologies.length === 0 && !errorMessage"
