@@ -16,11 +16,19 @@ import type {
   ServiceKind,
 } from '@/types/ingestion';
 import {
+  API_SERVICE_TYPES,
   DATABASE_SERVICE_TYPES,
   DASHBOARD_SERVICE_TYPES,
+  DRIVE_SERVICE_TYPES,
+  LLM_SERVICE_TYPES,
+  MCP_SERVICE_TYPES,
+  METADATA_SERVICE_TYPES,
   MESSAGING_SERVICE_TYPES,
-  STORAGE_SERVICE_TYPES,
+  MLMODEL_SERVICE_TYPES,
   PIPELINE_SERVICE_TYPES,
+  SEARCH_SERVICE_TYPES,
+  SECURITY_SERVICE_TYPES,
+  STORAGE_SERVICE_TYPES,
 } from '@/types/ingestion';
 
 /** Service-kind tables: views look kinds up here instead of if-else chains. */
@@ -30,6 +38,14 @@ export const SERVICE_TYPES_BY_KIND: Record<ServiceKind, readonly string[]> = {
   dashboard: DASHBOARD_SERVICE_TYPES,
   storage: STORAGE_SERVICE_TYPES,
   pipeline: PIPELINE_SERVICE_TYPES,
+  api: API_SERVICE_TYPES,
+  mlmodel: MLMODEL_SERVICE_TYPES,
+  metadata: METADATA_SERVICE_TYPES,
+  drive: DRIVE_SERVICE_TYPES,
+  search: SEARCH_SERVICE_TYPES,
+  llm: LLM_SERVICE_TYPES,
+  mcp: MCP_SERVICE_TYPES,
+  security: SECURITY_SERVICE_TYPES,
 };
 
 export const SERVICE_KIND_DEFAULT_TYPE: Record<ServiceKind, string> = {
@@ -38,6 +54,14 @@ export const SERVICE_KIND_DEFAULT_TYPE: Record<ServiceKind, string> = {
   dashboard: 'Superset',
   storage: 'S3',
   pipeline: 'Prefect',
+  api: 'Rest',
+  mlmodel: 'Mlflow',
+  metadata: 'OpenMetadata',
+  drive: 'GoogleDrive',
+  search: 'ElasticSearch',
+  llm: 'OpenAI',
+  mcp: 'Mcp',
+  security: 'Ranger',
 };
 
 export const SERVICE_ENTITY_TYPE_BY_KIND: Record<ServiceKind, string> = {
@@ -46,6 +70,14 @@ export const SERVICE_ENTITY_TYPE_BY_KIND: Record<ServiceKind, string> = {
   dashboard: 'dashboardService',
   storage: 'storageService',
   pipeline: 'pipelineService',
+  api: 'apiService',
+  mlmodel: 'mlmodelService',
+  metadata: 'metadataService',
+  drive: 'driveService',
+  search: 'searchService',
+  llm: 'llmService',
+  mcp: 'mcpService',
+  security: 'securityService',
 };
 
 /** Entity-type string (as stored on a pipeline's service reference) back to kind. */
@@ -55,6 +87,14 @@ export const SERVICE_KIND_BY_ENTITY_TYPE: Record<string, ServiceKind> = {
   dashboardService: 'dashboard',
   storageService: 'storage',
   pipelineService: 'pipeline',
+  apiService: 'api',
+  mlmodelService: 'mlmodel',
+  metadataService: 'metadata',
+  driveService: 'drive',
+  searchService: 'search',
+  llmService: 'llm',
+  mcpService: 'mcp',
+  securityService: 'security',
 };
 
 /** Password placeholder shown in connection forms, per service type. */

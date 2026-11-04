@@ -6,14 +6,11 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Checkbox, Form, Input, Menu, Select, message} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Form, Input, Menu, Modal, Select, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { listDatabaseServices } from '@/api/databaseServices';
-import { createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
-import { listDashboardServices } from '@/api/dashboardServices';
-import { listMessagingServices } from '@/api/messagingServices';
-import { listStorageServices } from '@/api/storageServices';
-import { listPipelineServices } from '@/api/pipelineServices';
+import SmTable from '@/components/shared/SmTable.vue';
+import { bulkDeployIngestionPipelines, createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
+import { SERVICE_LIST_API } from '@/ingestion/serviceApis';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -37,6 +34,7 @@ import {
   type CatalogService,
   type IngestionPipeline,
   type PipelineFormValues,
+  type PipelineServiceClientResponse,
   type PipelineType,
 } from '@/types/ingestion';
 
@@ -51,6 +49,10 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 const pipelinePermissions = ref(new Map<string, OperationPermissions>());
 const pipelineCreateAllowed = ref(false);
+const selectedRowKeys = ref<string[]>([]);
+const bulkDeploying = ref(false);
+const bulkResults = ref<Array<{ id: string; name: string } & PipelineServiceClientResponse>>([]);
+const bulkResultsOpen = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const pipelines = ref<IngestionPipeline[]>([]);
@@ -102,15 +104,12 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [pageResult, databasesResult, messagingResult, dashboardsResult, storageResult, pipelineServicesResult] =
-      await Promise.allSettled([
-        listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
-        listDatabaseServices({ limit: 100 }),
-        listMessagingServices({ limit: 100 }),
-        listDashboardServices({ limit: 100 }),
-        listStorageServices({ limit: 100 }),
-        listPipelineServices({ limit: 100 }),
-      ]);
+    const serviceKinds = Object.keys(SERVICE_LIST_API) as Array<keyof typeof SERVICE_LIST_API>;
+    const settled = await Promise.allSettled([
+      listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
+      ...serviceKinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })),
+    ]);
+    const pageResult = settled[0];
     if (pageResult.status !== 'fulfilled') {
       throw pageResult.reason instanceof Error
         ? pageResult.reason
@@ -120,12 +119,9 @@ async function load(): Promise<void> {
     pipelines.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
-    const databases = databasesResult.status === 'fulfilled' ? databasesResult.value.data : [];
-    const messaging = messagingResult.status === 'fulfilled' ? messagingResult.value.data : [];
-    const dashboards = dashboardsResult.status === 'fulfilled' ? dashboardsResult.value.data : [];
-    const storage = storageResult.status === 'fulfilled' ? storageResult.value.data : [];
-    const pipelineServices = pipelineServicesResult.status === 'fulfilled' ? pipelineServicesResult.value.data : [];
-    catalogServices.value = [...databases, ...messaging, ...dashboards, ...storage, ...pipelineServices];
+    catalogServices.value = settled.slice(1).flatMap((result) =>
+      result.status === 'fulfilled' ? result.value.data : [],
+    );
     void loadPipelinePermissions();
   } catch (error) {
     pipelines.value = [];
@@ -168,6 +164,59 @@ function canEditPipeline(pipeline: IngestionPipeline): boolean {
 
 function canDeletePipeline(pipeline: IngestionPipeline): boolean {
   return pipelinePermissions.value.get(pipeline.id)?.Delete === true;
+}
+
+/** Same official deploy rule as the detail view: EditAll or Deploy, plus the P1 admin line. */
+function canDeployPipeline(pipeline: IngestionPipeline): boolean {
+  if (pipeline.enabled === false) {
+    return false;
+  }
+  const ops = pipelinePermissions.value.get(pipeline.id);
+  return permissionStore.isAdminUser || ops?.EditAll === true || ops?.Deploy === true;
+}
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: Array<string | number>) => {
+    selectedRowKeys.value = keys.map((key) => String(key));
+  },
+}));
+
+const deployableSelected = computed(() =>
+  pipelines.value.filter(
+    (pipeline) => selectedRowKeys.value.includes(pipeline.id) && canDeployPipeline(pipeline),
+  ),
+);
+
+const bulkResultColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('ingestion.pipelines.resultCode'), dataIndex: 'code', key: 'code', width: 120 },
+  { title: t('ingestion.pipelines.resultPlatform'), dataIndex: 'platform', key: 'platform', width: 140 },
+  { title: t('ingestion.pipelines.resultReason'), dataIndex: 'reason', key: 'reason' },
+]);
+
+async function onBulkDeploy(): Promise<void> {
+  const targets = deployableSelected.value;
+  if (targets.length === 0) {
+    message.warning(t('ingestion.pipelines.bulkDeployNoneSelected'));
+    return;
+  }
+  bulkDeploying.value = true;
+  try {
+    const results = await bulkDeployIngestionPipelines(targets.map((pipeline) => pipeline.id));
+    bulkResults.value = targets.map((pipeline, index) => ({
+      id: pipeline.id,
+      name: pipeline.name,
+      ...(results[index] ?? {}),
+    }));
+    bulkResultsOpen.value = true;
+    selectedRowKeys.value = [];
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('ingestion.pipelines.actionFailed'));
+  } finally {
+    bulkDeploying.value = false;
+  }
 }
 
 function onNext(): void {
@@ -274,6 +323,7 @@ onMounted(() => {
     :data-source="pipelines"
     table-test-id="pipelines-table"
     show-row-actions
+    :row-selection="rowSelection"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -303,6 +353,14 @@ onMounted(() => {
       </Menu.Item>
     </template>
     <template #actions>
+      <Button
+        data-testid="bulk-deploy-pipelines"
+        :disabled="deployableSelected.length === 0"
+        :loading="bulkDeploying"
+        @click="onBulkDeploy"
+      >
+        {{ t('ingestion.pipelines.deploySelected') }}
+      </Button>
       <Button type="primary" data-testid="create-pipeline" :disabled="!pipelineCreateAllowed" @click="createOpen = true">
         {{ t('ingestion.pipelines.create') }}
       </Button>
@@ -330,6 +388,21 @@ onMounted(() => {
       </template>
     </template>
   </EntityListShell>
+  <Modal
+    :open="bulkResultsOpen"
+    :title="t('ingestion.pipelines.bulkDeployResults')"
+    :footer="null"
+    @cancel="bulkResultsOpen = false"
+  >
+    <SmTable
+      row-key="id"
+      size="small"
+      test-id="bulk-deploy-results-table"
+      :columns="bulkResultColumns"
+      :data-source="bulkResults"
+      :pagination="false"
+    />
+  </Modal>
   <FormModal
     :open="createOpen"
     :title="t('ingestion.pipelines.createTitle')"

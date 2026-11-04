@@ -14,6 +14,7 @@ import type {
   CreateIngestionPipelineRequest,
   IngestionPipeline,
   OrchestratorStatus,
+  PipelineServiceClientResponse,
   PipelineSourceConfig,
   PipelineStatus,
 } from '@/types/ingestion';
@@ -167,6 +168,69 @@ export function deleteIngestionPipeline(id: string): Promise<void> {
   return apiRequest<void>(`/v1/services/ingestionPipelines/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
+}
+
+function mapPipelineServiceClientResponse(raw: unknown): PipelineServiceClientResponse {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return {};
+  }
+  return {
+    code: asNumber(rec.code),
+    reason: asString(rec.reason) || undefined,
+    platform: asString(rec.platform) || undefined,
+    version: asString(rec.version) || undefined,
+    runId: asString(rec.runId) || undefined,
+  };
+}
+
+/**
+ * Official deployIngestionPipelineById (openmetadata-ui
+ * rest/ingestionPipelineAPI.ts): POST
+ * /v1/services/ingestionPipelines/deploy/{id}, authorized server-side
+ * with the DEPLOY operation. Returns the client response verbatim — a
+ * 200 with reason "Pipeline Client Disabled" is not a deploy.
+ */
+export async function deployIngestionPipeline(id: string): Promise<PipelineServiceClientResponse> {
+  const raw = await apiRequest<unknown>(
+    `/v1/services/ingestionPipelines/deploy/${encodeURIComponent(id)}`,
+    { method: 'POST' },
+  );
+  return mapPipelineServiceClientResponse(raw);
+}
+
+/**
+ * Official triggerIngestionPipelineById: POST
+ * /v1/services/ingestionPipelines/trigger/{id}, authorized server-side
+ * via IngestionPipelineTriggers.authorizeTrigger. With the product's
+ * in-memory airflow-apis backend the response records a queued run;
+ * nothing executes until a real Airflow backend lands.
+ */
+export async function triggerIngestionPipeline(id: string): Promise<PipelineServiceClientResponse> {
+  const raw = await apiRequest<unknown>(
+    `/v1/services/ingestionPipelines/trigger/${encodeURIComponent(id)}`,
+    { method: 'POST' },
+  );
+  return mapPipelineServiceClientResponse(raw);
+}
+
+/**
+ * Bulk deploy (IngestionPipelineResource /bulk/deploy): POST a list of
+ * pipeline ids; the server authorizes DEPLOY per id and returns one
+ * PipelineServiceClientResponse per id, in request order. Empty lists
+ * and duplicates are rejected server-side, so the caller filters first.
+ */
+export async function bulkDeployIngestionPipelines(
+  ids: string[],
+): Promise<PipelineServiceClientResponse[]> {
+  const raw = await apiRequest<unknown>('/v1/services/ingestionPipelines/bulk/deploy', {
+    method: 'POST',
+    json: ids,
+  });
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map(mapPipelineServiceClientResponse);
 }
 
 export function listPipelineStatuses(

@@ -103,6 +103,14 @@ describe('PipelineDetailView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
   });
 
+  it('shows deploy and trigger actions disabled without a permission grant (P1 fail-closed)', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="deploy-pipeline"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="trigger-pipeline"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="deploy-pipeline"]').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('[data-testid="trigger-pipeline"]').attributes('disabled')).toBeDefined();
+  });
+
   it('shows catalog status, CLI YAML, and no trigger call', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);

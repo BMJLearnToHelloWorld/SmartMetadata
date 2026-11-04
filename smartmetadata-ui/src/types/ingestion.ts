@@ -24,6 +24,38 @@ export type StorageServiceType = (typeof STORAGE_SERVICE_TYPES)[number];
 export const PIPELINE_SERVICE_TYPES = ['Prefect', 'Dagster'] as const;
 export type PipelineServiceType = (typeof PIPELINE_SERVICE_TYPES)[number];
 
+/**
+ * Remaining official service kinds (openmetadata-ui generated
+ * ApiServiceType / MlModelServiceType / MetadataServiceType /
+ * DriveServiceType / SearchServiceType / LlmServiceType / MCPType /
+ * security Type). Kept out of SUPPORTED_SERVICE_TYPES on purpose: that
+ * union feeds CLI_SOURCE_BY_SERVICE_TYPE, and these kinds have no CLI
+ * source mapping in this console — their connection JSON stays read-only.
+ */
+export const API_SERVICE_TYPES = ['Rest', 'WEBHOOK'] as const;
+export type ApiServiceType = (typeof API_SERVICE_TYPES)[number];
+
+export const MLMODEL_SERVICE_TYPES = ['CustomMlModel', 'Mlflow', 'SageMaker', 'Sklearn', 'VertexAI'] as const;
+export type MlModelServiceType = (typeof MLMODEL_SERVICE_TYPES)[number];
+
+export const METADATA_SERVICE_TYPES = ['Alation', 'AlationSink', 'Amundsen', 'Atlas', 'Collibra', 'MetadataES', 'OpenMetadata'] as const;
+export type MetadataServiceType = (typeof METADATA_SERVICE_TYPES)[number];
+
+export const DRIVE_SERVICE_TYPES = ['CustomDrive', 'GoogleDrive', 'Sftp', 'SharePoint'] as const;
+export type DriveServiceType = (typeof DRIVE_SERVICE_TYPES)[number];
+
+export const SEARCH_SERVICE_TYPES = ['CustomSearch', 'ElasticSearch', 'OpenSearch'] as const;
+export type SearchServiceType = (typeof SEARCH_SERVICE_TYPES)[number];
+
+export const LLM_SERVICE_TYPES = ['Anthropic', 'AzureOpenAI', 'Bedrock', 'CustomLLM', 'HuggingFace', 'Ollama', 'OpenAI', 'VertexAI'] as const;
+export type LlmServiceType = (typeof LLM_SERVICE_TYPES)[number];
+
+export const MCP_SERVICE_TYPES = ['Mcp'] as const;
+export type McpServiceType = (typeof MCP_SERVICE_TYPES)[number];
+
+export const SECURITY_SERVICE_TYPES = ['Ranger'] as const;
+export type SecurityServiceType = (typeof SECURITY_SERVICE_TYPES)[number];
+
 export const SUPPORTED_SERVICE_TYPES = [
   ...DATABASE_SERVICE_TYPES,
   ...MESSAGING_SERVICE_TYPES,
@@ -33,7 +65,20 @@ export const SUPPORTED_SERVICE_TYPES = [
 ] as const;
 export type SupportedServiceType = (typeof SUPPORTED_SERVICE_TYPES)[number];
 
-export type ServiceKind = 'database' | 'messaging' | 'dashboard' | 'storage' | 'pipeline';
+export type ServiceKind =
+  | 'database'
+  | 'messaging'
+  | 'dashboard'
+  | 'storage'
+  | 'pipeline'
+  | 'api'
+  | 'mlmodel'
+  | 'metadata'
+  | 'drive'
+  | 'search'
+  | 'llm'
+  | 'mcp'
+  | 'security';
 
 export const CLI_SOURCE_BY_SERVICE_TYPE: Record<SupportedServiceType, string> = {
   Postgres: 'postgres',
@@ -189,6 +234,33 @@ export interface CatalogService {
   kind: ServiceKind;
   serviceType: string;
   connection?: ServiceConnection;
+  /**
+   * Stored test-connection outcome (openmetadata-spec
+   * entity/services/connections/testConnectionResult.json), written by a
+   * test-connection runner — never written by this console. The UI only
+   * displays it and triggers a fresh run through an automations workflow.
+   */
+  testConnectionResult?: TestConnectionResult;
+}
+
+/** One step of a stored TestConnectionResult. */
+export interface TestConnectionStepResult {
+  name: string;
+  mandatory?: boolean;
+  passed?: boolean;
+  message?: string;
+  errorLog?: string;
+  status?: string;
+  skipReason?: string;
+  diagnosisTitle?: string;
+  diagnosisRemediation?: string;
+}
+
+/** Stored TestConnectionResult: status + ordered steps. */
+export interface TestConnectionResult {
+  lastUpdatedAt?: number;
+  status?: string;
+  steps: TestConnectionStepResult[];
 }
 
 export interface ServiceFormValues {
@@ -322,6 +394,21 @@ export interface IngestionPipeline {
   deployed?: boolean;
   enabled?: boolean;
   loggerLevel?: string;
+}
+
+/**
+ * PipelineServiceClientResponse (openmetadata-spec
+ * entity/services/ingestionPipelines/pipelineServiceClientResponse.json):
+ * what deploy/trigger/bulk-deploy return. `code` 200 with reason
+ * "Pipeline Client Disabled" means no pipeline client is configured — the
+ * UI must surface the reason verbatim, never report it as a deploy.
+ */
+export interface PipelineServiceClientResponse {
+  code?: number;
+  reason?: string;
+  platform?: string;
+  version?: string;
+  runId?: string;
 }
 
 export interface CreateIngestionPipelineRequest {

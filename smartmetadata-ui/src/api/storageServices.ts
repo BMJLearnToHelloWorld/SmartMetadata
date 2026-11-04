@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asRecord, asString, parsePaged } from '@/api/json';
+import { mapTestConnectionResult } from '@/api/serviceCommon';
 import type { Paged } from '@/types/admin';
 import type { CatalogService, CreateStorageServiceRequest, ServiceConnection } from '@/types/ingestion';
 import { apiRequest } from './client';
@@ -43,6 +44,7 @@ export function mapStorageService(raw: Record<string, unknown>): CatalogService 
     kind: 'storage',
     serviceType: asString(raw.serviceType),
     connection: mapConnection(raw.connection),
+    testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
   };
 }
 

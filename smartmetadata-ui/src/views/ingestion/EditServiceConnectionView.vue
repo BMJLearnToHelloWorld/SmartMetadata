@@ -15,6 +15,7 @@ import {
   buildServiceConnection,
   createEmptyServiceForm,
   formValuesFromService,
+  SERVICE_TYPES_BY_KIND,
 } from '@/ingestion/connections';
 import { SERVICE_GET_API, SERVICE_UPDATE_API } from '@/ingestion/serviceApis';
 import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
@@ -28,7 +29,7 @@ const saving = ref(false);
 const service = ref<CatalogService | null>(null);
 const form = reactive<ServiceFormValues>(createEmptyServiceForm());
 
-const kind = (['messaging', 'dashboard', 'storage', 'pipeline'] as readonly string[]).includes(props.kind)
+const kind = (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)
   ? (props.kind as ServiceKind)
   : 'database';
 
