@@ -15,6 +15,7 @@ import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset } from '@/api/entities';
+import { getVoteStatus, voteAsset, type VoteType } from '@/api/votes';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
 import { getEntityUsage } from '@/api/usage';
@@ -145,6 +146,29 @@ const isFollowing = computed(
   () => Boolean(currentUserId.value) && followers.value.some((follower) => follower.id === currentUserId.value),
 );
 const followLoading = ref(false);
+
+const voteStatus = computed(() =>
+  getVoteStatus(currentUserId.value, asset.value?.votes),
+);
+const voteLoading = ref(false);
+
+async function onToggleVote(direction: 'votedUp' | 'votedDown'): Promise<void> {
+  if (!asset.value?.id || !currentUserId.value) {
+    return;
+  }
+  voteLoading.value = true;
+  try {
+    const next: VoteType = voteStatus.value === direction ? 'unVoted' : direction;
+    await voteAsset(props.entityType, asset.value.id, next);
+    // The vote endpoint answers a ChangeEvent, not the entity, so reload
+    // for authoritative counts — the same pattern as follow/unfollow.
+    await load();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.voteFailed'));
+  } finally {
+    voteLoading.value = false;
+  }
+}
 
 async function onToggleFollow(): Promise<void> {
   if (!asset.value?.id || !currentUserId.value) {
@@ -636,6 +660,24 @@ onMounted(() => {
         >
           {{ isFollowing ? t('asset.unfollow') : t('asset.follow') }}
           <template v-if="followers.length">({{ followers.length }})</template>
+        </Button>
+        <Button
+          data-testid="asset-vote-up"
+          :type="voteStatus === 'votedUp' ? 'primary' : 'default'"
+          :loading="voteLoading"
+          :disabled="!asset?.id || !currentUserId"
+          @click="onToggleVote('votedUp')"
+        >
+          {{ t('asset.voteUp') }} ({{ asset?.votes?.upVotes ?? 0 }})
+        </Button>
+        <Button
+          data-testid="asset-vote-down"
+          :type="voteStatus === 'votedDown' ? 'primary' : 'default'"
+          :loading="voteLoading"
+          :disabled="!asset?.id || !currentUserId"
+          @click="onToggleVote('votedDown')"
+        >
+          {{ t('asset.voteDown') }} ({{ asset?.votes?.downVotes ?? 0 }})
         </Button>
         <Button
           data-testid="view-lineage"

@@ -15,63 +15,63 @@
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
     collection: 'tables',
-    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers',
+    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes',
   },
-  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes' },
   dashboard: {
     collection: 'dashboards',
-    fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers',
+    fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers,votes',
   },
   pipeline: {
     collection: 'pipelines',
-    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers',
+    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers,votes',
   },
   mlmodel: {
     collection: 'mlmodels',
-    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers',
+    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers,votes',
   },
   container: {
     collection: 'containers',
-    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers',
+    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers,votes',
   },
   searchIndex: {
     collection: 'searchIndexes',
-    fields: 'owners,tags,domains,extension,service,fields,indexType,followers',
+    fields: 'owners,tags,domains,extension,service,fields,indexType,followers,votes',
   },
   storedProcedure: {
     collection: 'storedProcedures',
-    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers',
+    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers,votes',
   },
   chart: {
     collection: 'charts',
-    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers',
+    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers,votes',
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',
-    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers',
+    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers,votes',
   },
   database: {
     collection: 'databases',
-    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers',
+    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers,votes',
   },
   databaseSchema: {
     collection: 'databaseSchemas',
-    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers',
+    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers,votes',
   },
   // P2 B5: official APICollectionPage / APIEndpointPage, reached through
   // the generic entity detail route (no explicit router entries exist
   // officially either — EntityDetailComponentUtils maps the types).
   apiCollection: {
     collection: 'apiCollections',
-    fields: 'owners,tags,domains,extension,service,followers',
+    fields: 'owners,tags,domains,extension,service,followers,votes',
   },
   apiEndpoint: {
     collection: 'apiEndpoints',
-    fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers',
+    fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes',
   },
 };
 
@@ -136,6 +136,20 @@ export function resolveVersionsPath(entityType: string, id: string): string | nu
     return null;
   }
   return `/v1/${spec.collection}/${encodeURIComponent(id)}/versions`;
+}
+
+/**
+ * Official vote endpoint, per collection (openmetadata-ui rest/*API.ts
+ * updateVote): PUT /v1/{collection}/{id}/vote. Every DETAIL_ENDPOINTS
+ * collection has a server updateVote (EntityResource generic), so the
+ * collection map is the single source — no per-type enumeration here.
+ */
+export function resolveVotePath(entityType: string, id: string): string | null {
+  const spec = DETAIL_ENDPOINTS[entityType];
+  if (!spec || !id) {
+    return null;
+  }
+  return `/v1/${spec.collection}/${encodeURIComponent(id)}/vote`;
 }
 
 /**

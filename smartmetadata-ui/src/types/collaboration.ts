@@ -9,6 +9,11 @@
  */
 import type { EntityRef } from './api';
 
+export interface ActivityReaction {
+  reactionType: string;
+  user?: EntityRef;
+}
+
 export interface ActivityEvent {
   id: string;
   eventType: string;
@@ -20,6 +25,7 @@ export interface ActivityEvent {
   about?: string;
   entity?: EntityRef;
   actor?: EntityRef;
+  reactions?: ActivityReaction[];
 }
 
 export interface ConversationReply {

@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { addTaskComment, createTask, deleteTask, getTask, listTasks, resolveTask } from './tasks';
+import { addTaskComment, createTask, deleteTask, getTask, listTasks, patchTask, resolveTask } from './tasks';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -124,5 +124,33 @@ describe('tasks API', () => {
     expect(lastFetch().url).toContain('/api/v1/tasks/t1');
     expect(lastFetch().url).toContain('hardDelete=false');
     expect(lastFetch().init?.method).toBe('DELETE');
+  });
+
+  it('patches via PATCH /v1/tasks/{id} with a JSON Patch document', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('PATCH');
+        expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
+        expect(JSON.parse(String(init?.body ?? '[]'))).toEqual([
+          { op: 'replace', path: '/assignees', value: [{ id: 'u1', type: 'user' }] },
+        ]);
+        return new Response(
+          JSON.stringify({
+            id: 't1',
+            name: 'review-orders',
+            status: 'Open',
+            assignees: [{ id: 'u1', type: 'user', name: 'amy' }],
+            comments: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const task = await patchTask('t1', [
+      { op: 'replace', path: '/assignees', value: [{ id: 'u1', type: 'user' }] },
+    ]);
+    expect(task.assignees[0]?.id).toBe('u1');
+    expect(lastFetch().url).toContain('/api/v1/tasks/t1');
   });
 });

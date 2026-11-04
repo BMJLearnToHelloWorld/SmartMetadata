@@ -15,6 +15,7 @@ import type {
   ResolveTaskRequest,
   TaskComment,
 } from '@/types/collaboration';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { apiRequest } from './client';
 
 export const TASK_LIST_FIELDS = 'assignees,about,createdBy';
@@ -166,4 +167,21 @@ export async function addTaskComment(id: string, message: string): Promise<Colla
     json: { message },
   });
   return requireTask(raw, 'Add task comment');
+}
+
+/**
+ * Official patchTask (openmetadata-ui/.../rest/tasksAPI.ts): PATCH
+ * /v1/tasks/{id} with a JSON Patch document (application/json-patch+json).
+ * The server gates field families itself: assignees/priority need
+ * ReassignTask, status/resolution/approvedBy/approvedAt need ResolveTask,
+ * description needs EditAll — the UI gate (canAct) is the task-level
+ * official TaskFeedCard rule, never a substitute for the server check.
+ */
+export async function patchTask(id: string, patch: JsonPatchOp[]): Promise<CollaborationTask> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tasks/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+  return requireTask(raw, 'Patch task');
 }

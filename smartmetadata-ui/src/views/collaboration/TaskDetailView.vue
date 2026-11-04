@@ -7,14 +7,23 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
-import { addTaskComment, closeTask, deleteTask, getTask, resolveTask } from '@/api/tasks';
+import { addTaskComment, closeTask, deleteTask, getTask, patchTask, resolveTask } from '@/api/tasks';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
 import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
+import { setFieldPatch } from '@/admin/jsonPatch';
+import {
+  loadGovernanceCatalog,
+  ownerKey,
+  parseOwnerKey,
+  type GovernanceCatalog,
+  type OwnerOption,
+} from '@/governance/catalogOptions';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 
 const props = defineProps<{ id: string }>();
@@ -35,6 +44,17 @@ const commentColumns = computed(() => [
   { title: t('collaboration.task.author'), key: 'author', width: 180 },
   { title: t('collaboration.task.message'), dataIndex: 'message', key: 'message' },
 ]);
+
+const editOpen = ref(false);
+const editDescription = ref('');
+const editSaving = ref(false);
+const reassignOpen = ref(false);
+const assigneeKeys = ref<string[]>([]);
+const reassignSaving = ref(false);
+const catalog = ref<GovernanceCatalog | null>(null);
+const catalogLoading = ref(false);
+
+const assigneeOptions = computed<OwnerOption[]>(() => catalog.value?.owners ?? []);
 
 const title = computed(
   () => task.value?.displayName || task.value?.name || props.id,
@@ -121,6 +141,67 @@ function onActionMenuClick(info: { key: string }): void {
     void onResolve();
   } else if (action.key === 'close') {
     void onClose();
+  } else if (action.key === 'edit') {
+    editDescription.value = task.value?.description ?? '';
+    editOpen.value = true;
+  } else if (action.key === 're-assign') {
+    void openReassign();
+  }
+}
+
+async function openReassign(): Promise<void> {
+  assigneeKeys.value = (task.value?.assignees ?? [])
+    .filter((ref) => ref.id && ref.type)
+    .map((ref) => ownerKey(ref.id as string, ref.type as string));
+  reassignOpen.value = true;
+  if (!catalog.value && !catalogLoading.value) {
+    catalogLoading.value = true;
+    try {
+      catalog.value = await loadGovernanceCatalog();
+    } catch {
+      catalog.value = { owners: [], tags: [], domains: [] };
+    } finally {
+      catalogLoading.value = false;
+    }
+  }
+}
+
+async function onEditSave(): Promise<void> {
+  if (!canAct.value || !task.value) {
+    return;
+  }
+  editSaving.value = true;
+  try {
+    task.value = await patchTask(
+      props.id,
+      setFieldPatch('/description', task.value.description, editDescription.value),
+    );
+    editOpen.value = false;
+    message.success(t('collaboration.task.descriptionSaved'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.descriptionFailed'));
+  } finally {
+    editSaving.value = false;
+  }
+}
+
+async function onReassignSave(): Promise<void> {
+  if (!canAct.value || !task.value) {
+    return;
+  }
+  reassignSaving.value = true;
+  try {
+    const assignees = assigneeKeys.value.flatMap((key) => {
+      const parsed = parseOwnerKey(key);
+      return parsed ? [{ id: parsed.id, type: parsed.type }] : [];
+    });
+    task.value = await patchTask(props.id, [{ op: 'replace', path: '/assignees', value: assignees }]);
+    reassignOpen.value = false;
+    message.success(t('collaboration.task.reassignSaved'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.reassignFailed'));
+  } finally {
+    reassignSaving.value = false;
   }
 }
 
@@ -267,6 +348,47 @@ watch(
         </Button>
       </Form>
     </template>
+    <SmDrawer
+      :open="editOpen"
+      :title="t('collaboration.task.editDescription')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="editSaving"
+      @ok="onEditSave"
+      @cancel="editOpen = false"
+    >
+      <Form layout="vertical">
+        <Form.Item :label="t('collaboration.task.description')">
+          <Input.TextArea v-model:value="editDescription" data-testid="task-description-edit" :rows="4" />
+        </Form.Item>
+      </Form>
+    </SmDrawer>
+    <SmDrawer
+      :open="reassignOpen"
+      :title="t('collaboration.task.reassignTitle')"
+      :ok-text="t('crud.save')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="reassignSaving"
+      @ok="onReassignSave"
+      @cancel="reassignOpen = false"
+    >
+      <Form layout="vertical">
+        <Form.Item :label="t('collaboration.task.assignees')">
+          <Select
+            v-model:value="assigneeKeys"
+            mode="multiple"
+            allow-clear
+            :loading="catalogLoading"
+            data-testid="task-assignees-edit"
+            style="width: 100%"
+          >
+            <Select.Option v-for="owner in assigneeOptions" :key="owner.key" :value="owner.key">
+              {{ owner.label }} ({{ owner.type }})
+            </Select.Option>
+          </Select>
+        </Form.Item>
+      </Form>
+    </SmDrawer>
   </Card>
   </Spin>
 </template>

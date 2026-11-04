@@ -9,7 +9,7 @@
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
-import type { AssetDetail, EntityRef, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
 import { asNumber, mapEntityRefs } from './json';
@@ -20,6 +20,19 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function mapVotes(value: unknown): EntityVotes | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  return {
+    upVotes: asNumber(rec.upVotes),
+    downVotes: asNumber(rec.downVotes),
+    upVoters: mapOwners(rec.upVoters),
+    downVoters: mapOwners(rec.downVoters),
+  };
 }
 
 function mapOwners(value: unknown): EntityRef[] {
@@ -262,6 +275,7 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     pipelineStatus,
     owners: mapOwners(body.owners),
     followers: mapOwners(body.followers),
+    votes: mapVotes(body.votes),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),
     schemaRows: schema.rows,

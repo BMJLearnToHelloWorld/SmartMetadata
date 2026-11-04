@@ -9,7 +9,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { listActivityEvents, listEntityActivity, replyToActivity } from './activity';
+import {
+  addActivityReaction,
+  listActivityEvents,
+  listActivityReplies,
+  listEntityActivity,
+  removeActivityReaction,
+  replyToActivity,
+} from './activity';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -92,5 +99,46 @@ describe('activity API', () => {
     expect(reply.id).toBe('r1');
     expect(lastFetch().url).toContain('/api/v1/activity/act-1/replies');
     expect(lastFetch().init?.method).toBe('POST');
+  });
+
+  it('lists activity replies from GET /v1/activity/{id}/replies', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 'r1', conversationId: 'c1', message: 'agreed' }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listActivityReplies('act-1');
+    expect(page.data[0]?.message).toBe('agreed');
+    expect(lastFetch().url).toContain('/api/v1/activity/act-1/replies');
+  });
+
+  it('adds and removes reactions via PUT/DELETE /v1/activity/{id}/reaction/{type}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(_input);
+        const reactionType = url.includes('/reaction/thumbsUp') ? 'thumbsUp' : 'unknown';
+        const reactions =
+          init?.method === 'PUT' ? [{ reactionType, user: { id: 'u1', type: 'user', name: 'amy' } }] : [];
+        return new Response(
+          JSON.stringify({ id: 'act-1', eventType: 'EntityUpdated', reactions }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const added = await addActivityReaction('act-1', 'thumbsUp');
+    expect(added.reactions?.[0]?.reactionType).toBe('thumbsUp');
+    expect(lastFetch().url).toContain('/api/v1/activity/act-1/reaction/thumbsUp');
+    expect(lastFetch().init?.method).toBe('PUT');
+    const removed = await removeActivityReaction('act-1', 'thumbsUp');
+    expect(removed.reactions).toEqual([]);
+    expect(lastFetch().init?.method).toBe('DELETE');
   });
 });
