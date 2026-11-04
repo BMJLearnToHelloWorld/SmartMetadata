@@ -160,4 +160,132 @@ describe('OntologyExplorerView', () => {
       namespace: 'https://example.com/sales#',
     });
   });
+
+  it('opens concept detail with hierarchy and bindings, and shows axioms, releases and packs', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          return jsonResponse({});
+        }
+        if (url.includes('/v1/ontologyConcepts/c1/bindings')) {
+          return jsonResponse({
+            assets: [
+              {
+                assetType: 'table',
+                assetId: 't1',
+                asset: { id: 't1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+                columns: [{ propertyId: 'p1', columnPath: 'orders.id', state: 'resolved' }],
+              },
+            ],
+          });
+        }
+        if (url.includes('/v1/ontologyConcepts/c1')) {
+          return jsonResponse({
+            id: 'c1',
+            name: 'Customer',
+            displayName: 'Customer',
+            description: 'A buyer',
+            synonyms: ['Buyer'],
+            superClasses: [{ id: 'c0', name: 'Party', type: 'ontologyConcept' }],
+            subClasses: [{ id: 'c2', name: 'VIPCustomer', type: 'ontologyConcept' }],
+            owners: [],
+          });
+        }
+        if (url.includes('/v1/ontologyConcepts/c0')) {
+          return jsonResponse({ id: 'c0', name: 'Party', displayName: 'Party', owners: [] });
+        }
+        if (url.includes('/v1/ontologyConcepts')) {
+          return jsonResponse({
+            data: [
+              { id: 'c1', name: 'Customer', displayName: 'Customer', conceptType: 'Class' },
+              { id: 'c2', name: 'Order', displayName: 'Order', conceptType: 'Class' },
+            ],
+            paging: { total: 2 },
+          });
+        }
+        if (url.includes('/v1/ontologyProperties')) {
+          return jsonResponse({
+            data: [{ id: 'p1', name: 'hasOrder', kind: 'ObjectProperty', domain: 'Customer', range: 'Order' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/ontologyAxioms')) {
+          return jsonResponse({
+            data: [{ id: 'ax1', name: 'CustomerSubClassOfParty', axiomType: 'SubClassOf' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/ontologyReleases')) {
+          return jsonResponse({
+            data: [{ id: 'r1', name: 'sales-1.0', semanticVersion: '1.0.0', memberCount: 12 }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/ontologyPacks')) {
+          return jsonResponse({
+            packs: [{ name: 'fibo', standard: 'FIBO', modules: [{ name: 'core', conceptCount: 10 }] }],
+            installations: [],
+          });
+        }
+        if (url.includes('/v1/ontologies/')) {
+          return jsonResponse({
+            id: 'o1',
+            name: 'sales-ontology',
+            displayName: 'Sales Ontology',
+            fullyQualifiedName: 'sales-ontology',
+            iri: 'https://example.com/sales',
+            namespace: 'https://example.com/sales#',
+            owners: [],
+            reviewers: [],
+          });
+        }
+        if (url.includes('/v1/ontologies')) {
+          return jsonResponse({
+            data: [{ id: 'o1', name: 'sales-ontology', displayName: 'Sales Ontology' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { pinia, router } = mountPage();
+    await router.push('/govern/ontology');
+    await router.isReady();
+    const wrapper = mount(OntologyExplorerView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="ontology-axioms"]').text()).toContain('CustomerSubClassOfParty');
+    expect(wrapper.find('[data-testid="ontology-releases"]').text()).toContain('1.0.0');
+    expect(wrapper.find('[data-testid="ontology-packs"]').text()).toContain('fibo');
+    // Concept search filters the loaded rows client-side.
+    await wrapper.find('[data-testid="ontology-concepts-search"]').setValue('cust');
+    await flushPromises();
+    const conceptsCard = wrapper.find('[data-testid="ontology-concepts"]');
+    expect(conceptsCard.text()).toContain('Customer');
+    expect(conceptsCard.text()).not.toContain('Order');
+    await wrapper.find('[data-testid="ontology-concepts-search"]').setValue('');
+    await flushPromises();
+    // Clicking a concept name opens the detail card with hierarchy + bindings.
+    const conceptLinks = wrapper.findAll('[data-testid="ontology-concepts"] a');
+    const customerLink = conceptLinks.find((link) => link.text() === 'Customer');
+    expect(customerLink).toBeDefined();
+    await customerLink?.trigger('click');
+    await flushPromises();
+    const detail = wrapper.find('[data-testid="ontology-concept-detail"]');
+    expect(detail.exists()).toBe(true);
+    expect(detail.text()).toContain('Buyer');
+    expect(detail.text()).toContain('Party');
+    expect(detail.text()).toContain('VIPCustomer');
+    expect(detail.text()).toContain('orders');
+    // Hierarchy navigation follows the super-class link to its own detail.
+    const partyLink = detail.findAll('a').find((link) => link.text() === 'Party');
+    expect(partyLink).toBeDefined();
+    await partyLink?.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="ontology-concept-detail"]').text()).toContain('Party');
+    wrapper.unmount();
+  });
 });

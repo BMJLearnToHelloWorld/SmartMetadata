@@ -9,7 +9,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createDomain, getDomainByName, listDomainAssets, listDomains } from './domains';
+import {
+  addDomainAssets,
+  createDomain,
+  getDomainByName,
+  listDomainAssets,
+  listDomains,
+  removeDomainAssets,
+} from './domains';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -136,5 +143,48 @@ describe('domains API', () => {
     const page = await listDomainAssets('d1');
     expect(page.data[0]?.name).toBe('orders');
     expect(lastFetch().url).toContain('/api/v1/domains/d1/assets');
+  });
+
+  it('adds assets with PUT /v1/domains/{fqn}/assets/add and maps the bulk result', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            numberOfRowsProcessed: 1,
+            numberOfRowsPassed: 0,
+            numberOfRowsFailed: 0,
+            numberOfRowsPendingApproval: 1,
+            successRequest: [],
+            failedRequest: [],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const result = await addDomainAssets('finance', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/domains/finance/assets/add');
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(result.pendingApproval).toBe(1);
+  });
+
+  it('removes assets with PUT /v1/domains/{fqn}/assets/remove', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ status: 'success', numberOfRowsPassed: 1, successRequest: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const result = await removeDomainAssets('finance', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/domains/finance/assets/remove');
+    expect(result.passed).toBe(1);
   });
 });

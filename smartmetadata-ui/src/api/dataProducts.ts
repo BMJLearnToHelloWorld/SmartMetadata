@@ -12,9 +12,44 @@ import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDataProductRequest, DataProduct } from '@/types/governance';
 import { apiRequest } from './client';
+import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
 import { mapTags } from './entities';
 
-export const DATA_PRODUCT_FIELDS = 'domains,owners,reviewers,experts,tags';
+export const DATA_PRODUCT_FIELDS = 'domains,owners,reviewers,experts,tags,extension';
+
+export type { BulkAssetResult };
+
+/**
+ * Official addAssetsToDataProduct (rest/dataProductAPI.ts): PUT
+ * /v1/dataProducts/{name}/assets/add with {assets}; server authorizes
+ * EDIT_ALL on the data product and answers a BulkOperationResult.
+ * {name} is the fully qualified name.
+ */
+export function addDataProductAssets(fqn: string, assets: EntityRef[]): Promise<BulkAssetResult> {
+  return addBulkAssets('dataProducts', fqn, assets);
+}
+
+/** Official removeAssetsFromDataProduct: PUT /v1/dataProducts/{name}/assets/remove. */
+export function removeDataProductAssets(
+  fqn: string,
+  assets: EntityRef[],
+): Promise<BulkAssetResult> {
+  return removeBulkAssets('dataProducts', fqn, assets);
+}
+
+/**
+ * Generic entity JSON Patch for custom-property (extension) edits on a
+ * data product — the same application/json-patch+json contract the asset
+ * detail view uses via patchAsset, scoped here so the shared patch
+ * registry (which does not cover governance collections) stays untouched.
+ */
+export function patchDataProduct(id: string, patch: unknown[]): Promise<unknown> {
+  return apiRequest(`/v1/dataProducts/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
+}
 
 export interface ListDataProductsQuery {
   limit?: number;
@@ -37,6 +72,10 @@ function mapDataProduct(raw: Record<string, unknown>): DataProduct | null {
     owners: mapEntityRefs(raw.owners),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
+    extension:
+      raw.extension && typeof raw.extension === 'object'
+        ? (raw.extension as Record<string, unknown>)
+        : undefined,
   };
 }
 

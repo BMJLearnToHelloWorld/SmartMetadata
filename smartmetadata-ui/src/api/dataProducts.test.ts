@@ -9,7 +9,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createDataProduct, getDataProductByName, listDataProducts } from './dataProducts';
+import {
+  addDataProductAssets,
+  createDataProduct,
+  getDataProductByName,
+  listDataProducts,
+  removeDataProductAssets,
+} from './dataProducts';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -99,5 +105,55 @@ describe('dataProducts API', () => {
     const product = await getDataProductByName('churn');
     expect(product.id).toBe('p3');
     expect(lastFetch().url).toContain('/api/v1/dataProducts/name/churn');
+  });
+
+  it('adds assets with PUT /v1/dataProducts/{fqn}/assets/add and maps the bulk result', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            numberOfRowsProcessed: 2,
+            numberOfRowsPassed: 1,
+            numberOfRowsFailed: 1,
+            numberOfRowsPendingApproval: 0,
+            successRequest: [{ request: { id: 'a1', name: 'orders', type: 'table' }, status: 200 }],
+            failedRequest: [
+              { request: { id: 'a2', name: 'secret', type: 'table' }, message: 'Denied', status: 403 },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const result = await addDataProductAssets('marketing.churn', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+      { id: 'a2', name: 'secret', type: 'table', fullyQualifiedName: 'svc.db.secret' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/marketing.churn/assets/add');
+    expect(lastFetch().init?.method).toBe('PUT');
+    const body = JSON.parse(String(lastFetch().init?.body));
+    expect(body.assets).toHaveLength(2);
+    expect(result.passed).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.failedRequests[0]?.message).toBe('Denied');
+  });
+
+  it('removes assets with PUT /v1/dataProducts/{fqn}/assets/remove', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ status: 'success', numberOfRowsPassed: 1, successRequest: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const result = await removeDataProductAssets('marketing.churn', [
+      { id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/dataProducts/marketing.churn/assets/remove');
+    expect(result.passed).toBe(1);
   });
 });
