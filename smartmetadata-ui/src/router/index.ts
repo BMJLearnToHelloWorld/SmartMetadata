@@ -104,6 +104,8 @@ const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
 const TaskDetailView = () => import('@/views/collaboration/TaskDetailView.vue');
+const DataAccessRequestsView = () => import('@/views/collaboration/DataAccessRequestsView.vue');
+const DataAccessRequestCreateView = () => import('@/views/collaboration/DataAccessRequestCreateView.vue');
 const InboxView = () => import('@/views/inbox/InboxView.vue');
 const TasksListView = () => import('@/views/collaboration/TasksListView.vue');
 const ContextCenterOverviewView = () => import('@/views/contextCenter/ContextCenterOverviewView.vue');
@@ -623,6 +625,8 @@ export const router = createRouter({
         { path: 'tour', name: 'tour', component: TourStartView, meta: { titleKey: 'tour.title' } },
         { path: 'tasks', name: 'tasks', component: TasksListView },
         { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
+        { path: 'data-access-requests', name: 'data-access-requests', component: DataAccessRequestsView, meta: { titleKey: 'collaboration.dataAccess.title' } },
+        { path: 'data-access-requests/new', name: 'data-access-request-new', component: DataAccessRequestCreateView, meta: { titleKey: 'collaboration.dataAccess.createTitle' } },
         { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
         { path: 'forbidden', name: 'forbidden', component: ForbiddenView },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },

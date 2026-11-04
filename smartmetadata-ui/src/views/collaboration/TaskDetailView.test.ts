@@ -49,6 +49,53 @@ async function mountView() {
   return { wrapper };
 }
 
+describe('TaskDetailView data access request', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tasks/t1')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'dar-orders',
+            type: 'DataAccessRequest',
+            status: 'Approved',
+            assignees: [{ id: 'u1', type: 'user', name: 'amy' }],
+            comments: [],
+            payload: {
+              accessType: 'Masked',
+              requestedAccess: 'Read',
+              reason: 'audit',
+              ticketId: 'AUD-7',
+              manualGrantReason: 'partial automatic grant',
+            },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders the DAR payload and the awaiting-grant note instead of the terminal note', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="task-dar-payload-title"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Masked');
+    expect(wrapper.text()).toContain('audit');
+    expect(wrapper.text()).toContain('AUD-7');
+    expect(wrapper.text()).toContain('partial automatic grant');
+    expect(wrapper.find('[data-testid="task-dar-approved-note"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="task-terminal-note"]').exists()).toBe(false);
+  });
+});
+
 describe('TaskDetailView', () => {
   beforeEach(() => {
     localStorage.clear();

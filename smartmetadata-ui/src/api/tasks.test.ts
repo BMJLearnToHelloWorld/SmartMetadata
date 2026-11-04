@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { addTaskComment, createTask, deleteTask, getTask, listTasks, patchTask, resolveTask } from './tasks';
+import { addTaskComment, createTask, deleteTask, getTask, listDataAccessRequests, listTasks, patchTask, resolveTask } from './tasks';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -152,5 +152,118 @@ describe('tasks API', () => {
     ]);
     expect(task.assignees[0]?.id).toBe('u1');
     expect(lastFetch().url).toContain('/api/v1/tasks/t1');
+  });
+
+  it('lists data access requests from GET /v1/tasks/dataAccessRequests with DAR filters', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        expect(url).toContain('/api/v1/tasks/dataAccessRequests');
+        expect(url).toContain('statusGroup=active');
+        expect(url).toContain('accessType=Masked');
+        expect(url).toContain('offset=50');
+        expect(url).toContain('fields=');
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'dar1',
+                name: 'dar-orders',
+                type: 'DataAccessRequest',
+                status: 'Open',
+                payload: { accessType: 'Masked', requestedAccess: 'Read', reason: 'audit' },
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const page = await listDataAccessRequests({ statusGroup: 'active', accessType: 'Masked', offset: 50 });
+    expect(page.data[0]?.payload?.accessType).toBe('Masked');
+    expect(page.data[0]?.payload?.reason).toBe('audit');
+    expect(page.total).toBe(1);
+  });
+
+  it('creates a DataAccessRequest with the spec payload and maps it back on read', async () => {
+    const about = toEntityLink('table', 'svc.db.schema.orders');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST' && url.endsWith('/api/v1/tasks')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          expect(body).toMatchObject({
+            category: 'DataAccess',
+            type: 'DataAccessRequest',
+            about,
+            payload: {
+              accessType: 'ColumnLevel',
+              requestedAccess: 'Read',
+              columns: ['svc.db.schema.orders.email'],
+              reason: 'support investigation',
+            },
+          });
+          return new Response(
+            JSON.stringify({
+              id: 'dar9',
+              type: 'DataAccessRequest',
+              status: 'Open',
+              payload: {
+                accessType: 'ColumnLevel',
+                requestedAccess: 'Read',
+                columns: ['svc.db.schema.orders.email'],
+                reason: 'support investigation',
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: 'dar9',
+            type: 'DataAccessRequest',
+            status: 'Open',
+            payload: {
+              accessType: 'ColumnLevel',
+              columns: ['svc.db.schema.orders.email'],
+              reason: 'support investigation',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const created = await createTask({
+      category: 'DataAccess',
+      type: 'DataAccessRequest',
+      about,
+      payload: {
+        accessType: 'ColumnLevel',
+        requestedAccess: 'Read',
+        columns: ['svc.db.schema.orders.email'],
+        reason: 'support investigation',
+      },
+    });
+    expect(created.id).toBe('dar9');
+    expect(created.payload?.accessType).toBe('ColumnLevel');
+    const read = await getTask('dar9');
+    expect(read.payload?.columns).toEqual(['svc.db.schema.orders.email']);
+  });
+
+  it('drops a non-DAR payload instead of misreading another task type', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 't3', type: 'CustomTask', status: 'Open', payload: { accessType: 'Masked' } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const task = await getTask('t3');
+    expect(task.payload).toBeUndefined();
   });
 });
