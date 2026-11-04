@@ -167,17 +167,375 @@ export function getEntityTypeFieldPermissions(
   );
 }
 
+/**
+ * Permission-debug types, mirroring official rest/permissionAPI.ts
+ * (PermissionDebugInfo / PermissionEvaluationDebugInfo) against the
+ * server policyevaluator classes of the same names: every list defaults
+ * to [] and every scalar to its empty value, so a partial server
+ * payload still renders instead of throwing mid-page.
+ */
+export interface DebugEntityRef {
+  id?: string;
+  name: string;
+  displayName?: string;
+  type?: string;
+  fullyQualifiedName?: string;
+}
+
+export interface DebugRuleInfo {
+  name: string;
+  effect: string;
+  operations: string[];
+  resources: string[];
+  condition?: string;
+  matches: boolean;
+}
+
+export interface DebugPolicyInfo {
+  policy: DebugEntityRef;
+  rules: DebugRuleInfo[];
+  effect: string;
+}
+
+export interface DebugDirectRolePermission {
+  role: DebugEntityRef;
+  policies: DebugPolicyInfo[];
+  source: string;
+}
+
+export interface DebugRolePermission {
+  role: DebugEntityRef;
+  policies: DebugPolicyInfo[];
+  inheritedFrom: string;
+  isDefaultRole: boolean;
+}
+
+export interface DebugTeamPermission {
+  team: DebugEntityRef;
+  teamHierarchy: DebugEntityRef[];
+  rolePermissions: DebugRolePermission[];
+  directPolicies: DebugPolicyInfo[];
+  teamType: string;
+  hierarchyLevel: number;
+}
+
+export interface DebugInheritedPermission {
+  permissionType: string;
+  source?: DebugEntityRef;
+  policies: DebugPolicyInfo[];
+  description: string;
+}
+
+export interface DebugPermissionSummary {
+  totalRoles: number;
+  totalPolicies: number;
+  totalRules: number;
+  directRoles: number;
+  inheritedRoles: number;
+  teamCount: number;
+  maxHierarchyDepth: number;
+  effectiveOperations: string[];
+  deniedOperations: string[];
+}
+
 export interface PermissionDebugInfo {
-  user?: unknown;
-  directRoles?: unknown;
-  teamPermissions?: unknown;
-  inheritedPermissions?: unknown;
-  summary?: unknown;
+  user: DebugEntityRef;
+  directRoles: DebugDirectRolePermission[];
+  teamPermissions: DebugTeamPermission[];
+  inheritedPermissions: DebugInheritedPermission[];
+  summary: DebugPermissionSummary;
+}
+
+export interface DebugConditionEvaluation {
+  condition: string;
+  result: boolean;
+  evaluationDetails: string;
+}
+
+export interface DebugPolicyEvaluationStep {
+  stepNumber: number;
+  source: string;
+  sourceEntity: DebugEntityRef;
+  policy: DebugEntityRef;
+  rule: string;
+  effect: string;
+  matched: boolean;
+  matchReason: string;
+  conditionEvaluations: DebugConditionEvaluation[];
+}
+
+export interface DebugEvaluationSummary {
+  totalPoliciesEvaluated: number;
+  totalRulesEvaluated: number;
+  matchingRules: number;
+  denyRules: number;
+  allowRules: number;
+  appliedPolicies: string[];
+  reasonsForDecision: string[];
+  evaluationTimeMs: number;
+}
+
+export interface PermissionEvaluationDebugInfo {
+  user: DebugEntityRef;
+  resource: string;
+  resourceId?: string;
+  operation: string;
+  allowed: boolean;
+  finalDecision: string;
+  evaluationSteps: DebugPolicyEvaluationStep[];
+  summary: DebugEvaluationSummary;
+}
+
+/**
+ * Official AdminPermissionDebugger.constants.ts: the debugger's curated
+ * resource list (not every entity type — only the resources the server
+ * evaluates policies against) and operation list (the evaluation
+ * operations, not the full MetadataOperation enum — task-scoped
+ * operations such as ResolveTask and Impersonate are absent upstream).
+ */
+export const PERMISSION_DEBUG_RESOURCES = [
+  'table',
+  'database',
+  'databaseSchema',
+  'dashboard',
+  'pipeline',
+  'topic',
+  'container',
+  'mlmodel',
+  'searchIndex',
+  'glossary',
+  'glossaryTerm',
+  'tag',
+  'policy',
+  'role',
+  'team',
+  'user',
+] as const;
+
+export const PERMISSION_DEBUG_OPERATIONS = [
+  'ViewAll',
+  'ViewBasic',
+  'ViewUsage',
+  'ViewTests',
+  'ViewQueries',
+  'ViewDataProfile',
+  'ViewSampleData',
+  'ViewProfilerGlobalConfiguration',
+  'ViewTestCaseFailedRowsSample',
+  'Create',
+  'CreateIngestionPipelineAutomator',
+  'EditAll',
+  'EditDescription',
+  'EditDisplayName',
+  'EditDomains',
+  'EditLineage',
+  'EditOwners',
+  'EditCustomFields',
+  'EditTags',
+  'EditQueries',
+  'EditDataProfile',
+  'EditSampleData',
+  'EditTests',
+  'EditCertification',
+  'EditEntityRelationship',
+  'EditPolicy',
+  'EditReviewers',
+  'EditRole',
+  'EditStatus',
+  'EditGlossaryTerms',
+  'EditTeams',
+  'EditTier',
+  'EditUsage',
+  'EditUsers',
+  'EditLifeCycle',
+  'EditKnowledgePanel',
+  'EditPage',
+  'EditIngestionPipelineStatus',
+  'Delete',
+  'DeleteTestCaseFailedRowsSample',
+  'Deploy',
+  'Trigger',
+  'Kill',
+  'GenerateToken',
+  'CreateScim',
+  'EditScim',
+  'DeleteScim',
+  'ViewScim',
+] as const;
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function mapDebugEntityRef(raw: unknown): DebugEntityRef {
+  const rec = asRecord(raw) ?? {};
+  return {
+    id: asString(rec.id) || undefined,
+    name: asString(rec.name) || asString(rec.displayName),
+    displayName: asString(rec.displayName) || undefined,
+    type: asString(rec.type) || undefined,
+    fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+  };
+}
+
+function mapDebugRule(raw: unknown): DebugRuleInfo {
+  const rec = asRecord(raw) ?? {};
+  return {
+    name: asString(rec.name),
+    effect: asString(rec.effect),
+    operations: asStringList(rec.operations),
+    resources: asStringList(rec.resources),
+    condition: asString(rec.condition) || undefined,
+    matches: rec.matches === true,
+  };
+}
+
+function mapDebugPolicy(raw: unknown): DebugPolicyInfo {
+  const rec = asRecord(raw) ?? {};
+  return {
+    policy: mapDebugEntityRef(rec.policy),
+    rules: Array.isArray(rec.rules) ? rec.rules.map(mapDebugRule) : [],
+    effect: asString(rec.effect),
+  };
+}
+
+function mapDebugPolicies(value: unknown): DebugPolicyInfo[] {
+  return Array.isArray(value) ? value.map(mapDebugPolicy) : [];
+}
+
+function mapDebugSummary(raw: unknown): DebugPermissionSummary {
+  const rec = asRecord(raw) ?? {};
+  const num = (value: unknown): number =>
+    typeof value === 'number' ? value : 0;
+  return {
+    totalRoles: num(rec.totalRoles),
+    totalPolicies: num(rec.totalPolicies),
+    totalRules: num(rec.totalRules),
+    directRoles: num(rec.directRoles),
+    inheritedRoles: num(rec.inheritedRoles),
+    teamCount: num(rec.teamCount),
+    maxHierarchyDepth: num(rec.maxHierarchyDepth),
+    effectiveOperations: asStringList(rec.effectiveOperations),
+    deniedOperations: asStringList(rec.deniedOperations),
+  };
+}
+
+function mapDebugInfo(raw: unknown): PermissionDebugInfo {
+  const rec = asRecord(raw) ?? {};
+  const directRoles: DebugDirectRolePermission[] = Array.isArray(rec.directRoles)
+    ? rec.directRoles.map((item) => {
+        const r = asRecord(item) ?? {};
+        return {
+          role: mapDebugEntityRef(r.role),
+          policies: mapDebugPolicies(r.policies),
+          source: asString(r.source),
+        };
+      })
+    : [];
+  const teamPermissions: DebugTeamPermission[] = Array.isArray(rec.teamPermissions)
+    ? rec.teamPermissions.map((item) => {
+        const r = asRecord(item) ?? {};
+        return {
+          team: mapDebugEntityRef(r.team),
+          teamHierarchy: Array.isArray(r.teamHierarchy)
+            ? r.teamHierarchy.map(mapDebugEntityRef)
+            : [],
+          rolePermissions: Array.isArray(r.rolePermissions)
+            ? r.rolePermissions.map((roleItem) => {
+                const rp = asRecord(roleItem) ?? {};
+                return {
+                  role: mapDebugEntityRef(rp.role),
+                  policies: mapDebugPolicies(rp.policies),
+                  inheritedFrom: asString(rp.inheritedFrom),
+                  isDefaultRole: rp.isDefaultRole === true,
+                };
+              })
+            : [],
+          directPolicies: mapDebugPolicies(r.directPolicies),
+          teamType: asString(r.teamType),
+          hierarchyLevel: typeof r.hierarchyLevel === 'number' ? r.hierarchyLevel : 0,
+        };
+      })
+    : [];
+  const inheritedPermissions: DebugInheritedPermission[] = Array.isArray(
+    rec.inheritedPermissions,
+  )
+    ? rec.inheritedPermissions.map((item) => {
+        const r = asRecord(item) ?? {};
+        return {
+          permissionType: asString(r.permissionType),
+          source: r.source ? mapDebugEntityRef(r.source) : undefined,
+          policies: mapDebugPolicies(r.policies),
+          description: asString(r.description),
+        };
+      })
+    : [];
+  return {
+    user: mapDebugEntityRef(rec.user),
+    directRoles,
+    teamPermissions,
+    inheritedPermissions,
+    summary: mapDebugSummary(rec.summary),
+  };
+}
+
+function mapEvaluation(raw: unknown): PermissionEvaluationDebugInfo {
+  const rec = asRecord(raw) ?? {};
+  const summaryRec = asRecord(rec.summary) ?? {};
+  const num = (value: unknown): number =>
+    typeof value === 'number' ? value : 0;
+  return {
+    user: mapDebugEntityRef(rec.user),
+    resource: asString(rec.resource),
+    resourceId: asString(rec.resourceId) || undefined,
+    operation: asString(rec.operation),
+    allowed: rec.allowed === true,
+    finalDecision: asString(rec.finalDecision),
+    evaluationSteps: Array.isArray(rec.evaluationSteps)
+      ? rec.evaluationSteps.map((item) => {
+          const s = asRecord(item) ?? {};
+          return {
+            stepNumber: num(s.stepNumber),
+            source: asString(s.source),
+            sourceEntity: mapDebugEntityRef(s.sourceEntity),
+            policy: mapDebugEntityRef(s.policy),
+            rule: asString(s.rule),
+            effect: asString(s.effect),
+            matched: s.matched === true,
+            matchReason: asString(s.matchReason),
+            conditionEvaluations: Array.isArray(s.conditionEvaluations)
+              ? s.conditionEvaluations.map((cond) => {
+                  const c = asRecord(cond) ?? {};
+                  return {
+                    condition: asString(c.condition),
+                    result: c.result === true,
+                    evaluationDetails: asString(c.evaluationDetails),
+                  };
+                })
+              : [],
+          };
+        })
+      : [],
+    summary: {
+      totalPoliciesEvaluated: num(summaryRec.totalPoliciesEvaluated),
+      totalRulesEvaluated: num(summaryRec.totalRulesEvaluated),
+      matchingRules: num(summaryRec.matchingRules),
+      denyRules: num(summaryRec.denyRules),
+      allowRules: num(summaryRec.allowRules),
+      appliedPolicies: asStringList(summaryRec.appliedPolicies),
+      reasonsForDecision: asStringList(summaryRec.reasonsForDecision),
+      evaluationTimeMs: num(summaryRec.evaluationTimeMs),
+    },
+  };
 }
 
 /** Server GET /v1/permissions/debug/me: debug for the current user. */
-export function debugMyPermissions(): Promise<PermissionDebugInfo> {
-  return apiRequest<PermissionDebugInfo>('/v1/permissions/debug/me');
+export async function debugMyPermissions(): Promise<PermissionDebugInfo> {
+  const raw = await apiRequest<unknown>('/v1/permissions/debug/me');
+  return mapDebugInfo(raw);
 }
 
 /**
@@ -185,10 +543,11 @@ export function debugMyPermissions(): Promise<PermissionDebugInfo> {
  * allows another user's debug info to admins; callers surface a 403
  * as an honest error, never as empty data.
  */
-export function debugUserPermissions(username: string): Promise<PermissionDebugInfo> {
-  return apiRequest<PermissionDebugInfo>(
+export async function debugUserPermissions(username: string): Promise<PermissionDebugInfo> {
+  const raw = await apiRequest<unknown>(
     `/v1/permissions/debug/user/${encodeURIComponent(username)}`,
   );
+  return mapDebugInfo(raw);
 }
 
 export interface DebugEvaluateQuery {
@@ -199,8 +558,10 @@ export interface DebugEvaluateQuery {
 }
 
 /** Server GET /v1/permissions/debug/evaluate?user&resource&resourceId&operation. */
-export function debugEvaluatePermission(query: DebugEvaluateQuery): Promise<unknown> {
-  return apiRequest<unknown>('/v1/permissions/debug/evaluate', {
+export async function debugEvaluatePermission(
+  query: DebugEvaluateQuery,
+): Promise<PermissionEvaluationDebugInfo> {
+  const raw = await apiRequest<unknown>('/v1/permissions/debug/evaluate', {
     query: {
       user: query.user,
       resource: query.resource,
@@ -208,4 +569,5 @@ export function debugEvaluatePermission(query: DebugEvaluateQuery): Promise<unkn
       operation: query.operation,
     },
   });
+  return mapEvaluation(raw);
 }

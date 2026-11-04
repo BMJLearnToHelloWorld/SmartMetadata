@@ -10,8 +10,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
+  PERMISSION_DEBUG_OPERATIONS,
+  PERMISSION_DEBUG_RESOURCES,
   debugEvaluatePermission,
   debugMyPermissions,
+  debugUserPermissions,
   getEntityPermissionByFqn,
   getEntityPermissionById,
   getEntityTypeFieldPermissions,
@@ -116,6 +119,81 @@ describe('permissions API', () => {
     expect(lastFetchUrl()).toContain('/api/v1/permissions/debug/evaluate');
     expect(lastFetchUrl()).toContain('user=admin');
     expect(lastFetchUrl()).toContain('operation=ViewAll');
+  });
+
+  it('maps a nested user debug payload into typed sections with safe defaults', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          user: { id: 'u1', name: 'bob', displayName: 'Bob' },
+          directRoles: [
+            {
+              role: { id: 'r1', name: 'DataConsumer' },
+              policies: [
+                {
+                  policy: { id: 'p1', name: 'DataConsumerPolicy' },
+                  effect: 'ALLOW',
+                  rules: [{ name: 'ViewData', effect: 'ALLOW', operations: ['ViewAll'], resources: ['table'] }],
+                },
+              ],
+            },
+          ],
+          teamPermissions: [],
+          inheritedPermissions: [],
+          summary: { totalRoles: 1, totalPolicies: 1, totalRules: 1, effectiveOperations: ['ViewAll'] },
+        }),
+      ),
+    );
+    const info = await debugUserPermissions('bob');
+    expect(lastFetchUrl()).toContain('/api/v1/permissions/debug/user/bob');
+    expect(info.user.name).toBe('bob');
+    expect(info.directRoles[0]?.policies[0]?.rules[0]?.operations).toEqual(['ViewAll']);
+    expect(info.directRoles[0]?.policies[0]?.rules[0]?.matches).toBe(false);
+    expect(info.teamPermissions).toEqual([]);
+    expect(info.summary.totalRoles).toBe(1);
+    expect(info.summary.deniedOperations).toEqual([]);
+  });
+
+  it('maps an evaluation payload into the typed decision shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          user: { name: 'bob' },
+          resource: 'table',
+          operation: 'ViewAll',
+          allowed: false,
+          finalDecision: 'DENIED',
+          evaluationSteps: [
+            {
+              stepNumber: 1,
+              source: 'DIRECT_ROLE',
+              sourceEntity: { name: 'DataConsumer' },
+              policy: { name: 'DataConsumerPolicy' },
+              rule: 'ViewData',
+              effect: 'DENY',
+              matched: true,
+              matchReason: 'Deny wins',
+              conditionEvaluations: [],
+            },
+          ],
+          summary: { totalPoliciesEvaluated: 1, reasonsForDecision: ['Deny wins'] },
+        }),
+      ),
+    );
+    const evaluation = await debugEvaluatePermission({ user: 'bob', resource: 'table', operation: 'ViewAll' });
+    expect(evaluation.allowed).toBe(false);
+    expect(evaluation.evaluationSteps[0]?.effect).toBe('DENY');
+    expect(evaluation.summary.reasonsForDecision).toEqual(['Deny wins']);
+    expect(evaluation.summary.matchingRules).toBe(0);
+  });
+
+  it('keeps the debugger selects on the official curated lists', () => {
+    expect(PERMISSION_DEBUG_RESOURCES).toContain('table');
+    expect(PERMISSION_DEBUG_OPERATIONS).toContain('ViewAll');
+    expect(PERMISSION_DEBUG_OPERATIONS).not.toContain('ResolveTask');
+    expect(PERMISSION_DEBUG_OPERATIONS).not.toContain('Impersonate');
   });
 
   it('treats conditionalAllow as denied under the strict translation', () => {
