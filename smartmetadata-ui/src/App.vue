@@ -10,6 +10,7 @@ import { ConfigProvider, theme } from 'ant-design-vue';
 import enUS from 'ant-design-vue/es/locale/en_US';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { SESSION_EXPIRED_EVENT } from '@/auth/sessionEvents';
+import CsvJobsTray from '@/components/shared/CsvJobsTray.vue';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import { smAntdTheme } from '@/theme/tokens';
 
@@ -59,5 +60,6 @@ onUnmounted(() => {
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :form="{ validateMessages: formValidateMessages }">
     <router-view />
+    <CsvJobsTray />
   </ConfigProvider>
 </template>

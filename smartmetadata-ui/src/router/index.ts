@@ -138,6 +138,8 @@ const ColumnBulkOperationsView = () =>
   import('@/views/governance/ColumnBulkOperationsView.vue');
 const BulkEntityImportView = () =>
   import('@/views/governance/BulkEntityImportView.vue');
+const MetricBulkEditView = () =>
+  import('@/views/governance/MetricBulkEditView.vue');
 const DocsView = () => import('@/views/docs/DocsView.vue');
 const TourStartView = () => import('@/views/tour/TourStartView.vue');
 const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
@@ -543,6 +545,17 @@ export const router = createRouter({
           component: BulkEntityImportView,
           props: true,
           meta: { titleKey: 'bulkImport.title' },
+        },
+        // R-2 residuals: official bulk edit (BULK_EDIT_ENTITY
+        // /bulk/edit/:entityType/:fqn, MetricListPage handleBulkEdit):
+        // fqn === '*' is the collection scope; the listing page stores
+        // the selected/filtered scope before navigating here.
+        {
+          path: 'bulk/edit/:entityType/:fqn',
+          name: 'bulk-edit',
+          component: MetricBulkEditView,
+          props: true,
+          meta: { titleKey: 'metricBulkEdit.title' },
         },
         ...RESIDUAL_PAGES.map((page) => ({
           path: page.path,

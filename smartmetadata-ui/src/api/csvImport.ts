@@ -109,7 +109,7 @@ function mapCsvDocumentation(payload: unknown): CsvDocumentation {
   };
 }
 
-function mapCsvAsyncJob(payload: unknown): CsvAsyncJob {
+export function mapCsvAsyncJob(payload: unknown): CsvAsyncJob {
   const rec = asRecord(payload) ?? {};
   return {
     jobId: asString(rec.jobId) ?? '',

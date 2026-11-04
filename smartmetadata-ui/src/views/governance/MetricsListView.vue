@@ -6,6 +6,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { Button } from 'ant-design-vue';
 import { searchAssets } from '@/api/search';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { composeSearchQuery } from '@/catalog/searchQuery';
@@ -22,6 +23,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { SearchHit } from '@/types/api';
+import { useBulkEditScopeStore } from '@/stores/bulkEditScope';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -30,6 +32,37 @@ const errorMessage = ref('');
 const hits = ref<SearchHit[]>([]);
 const total = ref<number | undefined>();
 const pager = ref<OffsetPager>(createOffsetPager());
+const selectedKeys = ref<string[]>([]);
+const scopeStore = useBulkEditScopeStore();
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedKeys.value,
+  onChange: (keys: unknown) => {
+    selectedKeys.value = (keys as string[]).filter((key) => typeof key === 'string');
+  },
+}));
+
+/**
+ * Official MetricListPage handleBulkEdit: navigate to the bulk-edit
+ * route with fqn '*' and a scope — the selected metrics, or the listing
+ * filters when nothing is selected. The product listing has no search /
+ * status filter UI, so the filtered scope carries empty filters, i.e.
+ * everything in the listing (official's default for an empty filter set).
+ */
+function onBulkEdit(): void {
+  const selected = hits.value.filter((hit) => selectedKeys.value.includes(hit.fullyQualifiedName));
+  if (selected.length > 0) {
+    scopeStore.setScope({
+      mode: 'selected',
+      metricIds: selected.map((hit) => hit.id ?? '').filter(Boolean),
+      metricNames: selected.map((hit) => hit.name),
+      filters: {},
+    });
+  } else {
+    scopeStore.setScope({ mode: 'filtered', filters: {} });
+  }
+  void router.push({ name: 'bulk-edit', params: { entityType: 'metric', fqn: '*' } });
+}
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -107,11 +140,17 @@ onMounted(() => {
     :has-next="hasNext"
     :has-prev="hasPrev"
     :empty-text="t('metrics.empty')"
+    :row-selection="rowSelection"
     @refresh="onRefresh"
     @next="onNext"
     @prev="onPrev"
     @view="(record) => openMetric(record as SearchHit)"
   >
+    <template #actions>
+      <Button data-testid="metrics-bulk-edit-button" @click="onBulkEdit">
+        {{ t('metricBulkEdit.bulkEdit') }}
+      </Button>
+    </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
         <a
