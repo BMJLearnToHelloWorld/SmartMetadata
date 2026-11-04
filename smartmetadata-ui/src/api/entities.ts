@@ -313,7 +313,7 @@ function mapChangeFields(value: unknown): ChangeField[] {
   });
 }
 
-function mapChangeDescription(value: unknown): ChangeDescription | undefined {
+export function mapChangeDescription(value: unknown): ChangeDescription | undefined {
   const rec = asRecord(value);
   if (!rec) {
     return undefined;

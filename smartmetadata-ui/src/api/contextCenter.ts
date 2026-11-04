@@ -22,7 +22,8 @@ import type {
   PersonaAiContextStatus,
 } from '@/types/contextCenter';
 import { apiBaseUrl, apiRequest, ApiError } from './client';
-import { mapTags } from './entities';
+import type { ChangeDescription, EntityVersion } from './entities';
+import { mapChangeDescription, mapTags } from './entities';
 import { authorizationHeader, loadSession } from '@/auth/token';
 
 const PAGES_PATH = '/v1/contextCenter/pages';
@@ -262,6 +263,58 @@ export async function deleteKnowledgePage(id: string, hardDelete = false): Promi
 
 export async function restoreKnowledgePage(id: string): Promise<void> {
   await apiRequest(`${PAGES_PATH}/restore`, { method: 'PUT', json: { id } });
+}
+
+/** A knowledge-page snapshot at one version, carrying its changeDescription. */
+export interface VersionedKnowledgePage extends KnowledgePage {
+  changeDescription?: ChangeDescription;
+}
+
+function mapEntityVersion(raw: Record<string, unknown>): EntityVersion {
+  return {
+    version: asNumber(raw.version) ?? asString(raw.version) ?? undefined,
+    updatedAt: asNumber(raw.updatedAt),
+    updatedBy: asString(raw.updatedBy) || undefined,
+    changeDescription: mapChangeDescription(raw.changeDescription),
+  };
+}
+
+/**
+ * Official getKnowledgePageVersionsList: GET /v1/contextCenter/pages/{id}/versions,
+ * returning EntityHistory.versions in server order.
+ */
+export async function listKnowledgePageVersions(id: string): Promise<EntityVersion[]> {
+  const payload = await apiRequest<unknown>(`${PAGES_PATH}/${encodeURIComponent(id)}/versions`);
+  const versions = asRecord(payload)?.versions;
+  if (!Array.isArray(versions)) {
+    return [];
+  }
+  return versions.flatMap((item) => {
+    const rec = asRecord(item);
+    return rec ? [mapEntityVersion(rec)] : [];
+  });
+}
+
+/**
+ * Official getKnowledgePageVersionData: GET /v1/contextCenter/pages/{id}/versions/{version},
+ * returning the page snapshot at that version (with its changeDescription).
+ */
+export async function getKnowledgePageVersion(
+  id: string,
+  version: string,
+): Promise<VersionedKnowledgePage | null> {
+  const payload = await apiRequest<unknown>(
+    `${PAGES_PATH}/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`,
+  );
+  const rec = asRecord(payload);
+  if (!rec) {
+    return null;
+  }
+  const page = mapKnowledgePage(rec);
+  if (!page) {
+    return null;
+  }
+  return { ...page, changeDescription: mapChangeDescription(rec.changeDescription) };
 }
 
 export interface ListContextMemoriesQuery {

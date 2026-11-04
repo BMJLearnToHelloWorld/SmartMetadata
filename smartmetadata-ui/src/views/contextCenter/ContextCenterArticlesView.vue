@@ -208,6 +208,18 @@ onMounted(() => {
             <Button data-testid="article-edit" @click="showEditModal = true">
               {{ t('crud.edit') }}
             </Button>
+            <Button
+              v-if="detail?.version !== undefined && detail?.version !== null"
+              data-testid="article-versions"
+              @click="
+                router.push({
+                  name: 'context-center-article-version',
+                  params: { fqn: detail.fullyQualifiedName, version: String(detail.version) },
+                })
+              "
+            >
+              {{ t('contextCenter.versions') }}
+            </Button>
             <Button danger data-testid="article-delete" @click="detail && onDelete(detail)">
               {{ t('crud.delete') }}
             </Button>
