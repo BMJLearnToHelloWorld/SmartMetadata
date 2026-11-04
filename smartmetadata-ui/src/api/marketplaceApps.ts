@@ -12,9 +12,12 @@ import { apiRequest } from './client';
 
 /**
  * Marketplace application definition, mirroring the official
- * AppMarketPlaceDefinition fields the install flow reads: identity,
- * developer, schedule shape, configuration allowance and the default
- * appConfiguration the install payload carries forward.
+ * AppMarketPlaceDefinition fields the detail and install flows read:
+ * identity, developer, schedule shape, configuration allowance, the
+ * default appConfiguration the install payload carries forward, the
+ * enabled flag the detail page gates Install on, the support links,
+ * and the screenshot asset names (bundled artwork the product does
+ * not ship — carried so the field survives the round trip).
  */
 export interface MarketplaceApp {
   id?: string;
@@ -30,6 +33,10 @@ export interface MarketplaceApp {
   allowConfiguration?: boolean;
   appConfiguration?: unknown;
   supportsIngestionRunner?: boolean;
+  enabled?: boolean;
+  supportEmail?: string;
+  privacyPolicyUrl?: string;
+  appScreenshots?: string[];
 }
 
 export function mapMarketplaceApp(raw: Record<string, unknown>): MarketplaceApp | null {
@@ -51,6 +58,15 @@ export function mapMarketplaceApp(raw: Record<string, unknown>): MarketplaceApp 
     allowConfiguration: asBoolean(raw.allowConfiguration),
     appConfiguration: raw.appConfiguration,
     supportsIngestionRunner: asBoolean(raw.supportsIngestionRunner),
+    // asBoolean preserves undefined, so the detail page's
+    // `enabled === false` check matches official: a definition without
+    // the flag is not treated as disabled.
+    enabled: asBoolean(raw.enabled),
+    supportEmail: asString(raw.supportEmail) || undefined,
+    privacyPolicyUrl: asString(raw.privacyPolicyUrl) || undefined,
+    appScreenshots: Array.isArray(raw.appScreenshots)
+      ? raw.appScreenshots.filter((item): item is string => typeof item === 'string')
+      : undefined,
   };
 }
 

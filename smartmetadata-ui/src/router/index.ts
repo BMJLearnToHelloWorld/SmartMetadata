@@ -118,6 +118,7 @@ const ContextCenterAiContextView = () =>
   import('@/views/contextCenter/ContextCenterAiContextView.vue');
 const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCenterArchiveView.vue');
 const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
+const MarketplaceAppDetailView = () => import('@/views/marketplace/MarketplaceAppDetailView.vue');
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
@@ -452,6 +453,16 @@ export const router = createRouter({
           component: WorkflowDetailView,
           alias: 'workflows/:fqn/:tab',
           props: true,
+        },
+        // P2 R-4: marketplace app detail (official
+        // /marketplace/apps/:fqn). The install route below keeps its own
+        // longer path, so the two never collide.
+        {
+          path: 'marketplace/apps/:fqn',
+          name: 'marketplace-app-detail',
+          component: MarketplaceAppDetailView,
+          props: true,
+          meta: { titleKey: 'apps.detail.title' },
         },
         // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
         // IntakeForms + TaskFormSettings (official settings governance
