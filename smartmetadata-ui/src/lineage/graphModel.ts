@@ -250,6 +250,140 @@ export function mapEntityLineage(payload: unknown): LineageGraphModel {
   });
 }
 
+function mapSearchEdge(
+  raw: unknown,
+  index: number,
+  direction: 'up' | 'down',
+): LineageGraphEdge | null {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return null;
+  }
+  // EsLineageData endpoints carry {id, fullyQualifiedName, type}; the id
+  // is what node ids are built from, so endpointId's string-or-{id}
+  // reading applies unchanged.
+  const source = endpointId(rec.fromEntity);
+  const target = endpointId(rec.toEntity);
+  if (!source || !target) {
+    return null;
+  }
+  // Search edges carry columns + pipeline at top level (not nested under
+  // lineageDetails like traversal edges); column entries share the
+  // {fromColumns, toColumn, function} shape, so the same mapper applies.
+  const columnMappings = mapColumnMappings(rec.columns);
+  const pipeline = asRecord(rec.pipeline);
+  const pipelineName =
+    asString(pipeline?.name) || asString(pipeline?.displayName) || asString(rec.pipeline) || undefined;
+  const mapped = {
+    description: asString(rec.description) || undefined,
+    sourceKind: undefined,
+    pipelineName,
+    columnMappings,
+  };
+  return {
+    id: `${direction}:${source}->${target}:${index}`,
+    source,
+    target,
+    label: edgeLabel(mapped),
+    ...mapped,
+  };
+}
+
+/**
+ * Adapt a SearchLineageResult (GET /v1/lineage/getLineage) to the graph
+ * model. Nodes arrive as a map keyed by FQN whose values hold the ES
+ * entity map (NodeInformation.entity) + nodeDepth; edges arrive as
+ * upstream/downstream maps of EsLineageData. The center is the node
+ * whose FQN matches the requested entity, falling back to the nodeDepth-0
+ * node, then the first node — the search response carries no single
+ * root.entity the way EntityLineage does.
+ */
+export function mapSearchLineage(payload: unknown, centerFqn: string): LineageGraphModel {
+  const root = asRecord(payload);
+  const nodesMap = asRecord(root?.nodes);
+  const byId = new Map<string, LineageGraphNode>();
+  let center: LineageGraphNode | null = null;
+  let depthZero: LineageGraphNode | null = null;
+  if (nodesMap) {
+    for (const [key, item] of Object.entries(nodesMap)) {
+      const info = asRecord(item);
+      const node = referenceFrom(info?.entity);
+      if (!node) {
+        continue;
+      }
+      // The ES entity map may omit fullyQualifiedName; the map key IS the
+      // FQN, so it fills the gap for center matching and display.
+      if (!node.fullyQualifiedName) {
+        node.fullyQualifiedName = key;
+        node.pathLabel = lineagePathLabel(key);
+        node.truncatedFqn = truncateLineageFqn(key);
+        node.serviceName = lineageServiceName(key);
+      }
+      if (!byId.has(node.id)) {
+        byId.set(node.id, node);
+      }
+      const depth = asRecord(item)?.nodeDepth;
+      if (typeof depth === 'number' && depth === 0 && !depthZero) {
+        depthZero = node;
+      }
+      if (!center && (key === centerFqn || node.fullyQualifiedName === centerFqn)) {
+        center = node;
+      }
+    }
+  }
+  if (!center) {
+    center = depthZero ?? [...byId.values()][0] ?? null;
+  }
+  if (!center) {
+    return { ...EMPTY_MODEL };
+  }
+  center.isCenter = true;
+
+  const edges: LineageGraphEdge[] = [];
+  const upstream = asRecord(root?.upstreamEdges);
+  const downstream = asRecord(root?.downstreamEdges);
+  if (upstream) {
+    Object.values(upstream).forEach((raw, index) => {
+      const edge = mapSearchEdge(raw, index, 'up');
+      if (edge) {
+        edges.push(edge);
+      }
+    });
+  }
+  if (downstream) {
+    Object.values(downstream).forEach((raw, index) => {
+      const edge = mapSearchEdge(raw, index, 'down');
+      if (edge) {
+        edges.push(edge);
+      }
+    });
+  }
+
+  for (const edge of edges) {
+    if (!byId.has(edge.source)) {
+      const stub = referenceFrom(null, edge.source);
+      if (stub) {
+        byId.set(stub.id, stub);
+      }
+    }
+    if (!byId.has(edge.target)) {
+      const stub = referenceFrom(null, edge.target);
+      if (stub) {
+        byId.set(stub.id, stub);
+      }
+    }
+  }
+
+  const columnMappings = edges.flatMap((edge) => edge.columnMappings);
+  return attachColumnPorts({
+    centerId: center.id,
+    nodes: [...byId.values()],
+    edges,
+    columnMappings,
+    hasColumnLineage: columnMappings.length > 0,
+  });
+}
+
 export function isLineageEmpty(model: LineageGraphModel): boolean {
   return model.edges.length === 0;
 }

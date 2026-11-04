@@ -659,6 +659,17 @@ const enUS = {
     pipelineLead: 'Historical Data Insights charts appear after a Data Insights job writes report data.',
     pipelineEmpty: 'No Data Insights series yet. Residual until a job writes report data.',
     pipelineFailed: 'Failed to load Data Insights chart data',
+    webTitle: 'Web activity',
+    webLead: 'Most active users, daily active users and page views by entity, from the /aggregate endpoint.',
+    webEmpty: 'No web activity yet. Residual until web analytics report data is indexed.',
+    webFailed: 'Failed to load web activity aggregates',
+    web: {
+      dailyActive: 'Daily active users',
+      mostActive: 'Most active users',
+      pageViews: 'Page views by entity',
+      sessions: '{count} sessions',
+      views: '{count} views',
+    },
     appAnalyticsEmpty:
       'App analytics stay residual. This console does not call web-analytics report indexes.',
     kpisLead: 'Review KPI targets and stored results.',
@@ -762,7 +773,7 @@ const enUS = {
     layerObservabilityResidual: 'Data observability overlay has no data on the product graph and stays disabled.',
     pipelineViewMode: 'Pipeline view mode',
     timeFilter: 'Time range',
-    timeFilterResidual: 'The product lineage API accepts no start or end time, so changing the time range does not reload or filter the graph. The selection is kept for when the backend lands.',
+    timeFilterResidual: 'The graph reloads from the search-backed lineage endpoint with the selected range. Custom ranges and point-in-time still need date inputs, so those options stay disabled.',
     timeAllTime: 'All time',
     timeLast7Days: 'Last 7 days',
     timeLast14Days: 'Last 14 days',
@@ -1238,13 +1249,14 @@ const enUS = {
         none: 'No Dimension',
       },
       statusTitle: 'Test Case Status',
-      statusLead: 'Latest listed results. Daily trends need dataQualityReport aggregations.',
+      statusLead: 'Catalog-wide counts from dataQualityReport aggregations.',
       residualCases: 'GET /v1/dataQuality/testCases did not return rows. Health cards stay empty instead of inventing counts.',
       residualSuites: 'GET /v1/dataQuality/testSuites did not return table suites. Coverage uses listed test-case assets when present.',
-      residualDefinitions: 'GET /v1/dataQuality/testDefinitions is residual. Dimension cards stay on No Dimension.',
       residualSearch: 'Search aggregations did not return a table count. Coverage denominator stays residual.',
-      residualReport:
-        'Cards use listed test cases and suites (up to 100) plus the table search facet. Catalog-wide dataQualityReport aggregations and daily status trends are residual.',
+      residualHealthCap:
+        'Health is still computed from listed suites and cases (up to 100). The per-asset healthy/unhealthy aggregation split needs a live index check first.',
+      residualAggregationFallback:
+        'The dataQualityReport batch did not return, so status, dimension and coverage cards fall back to listed rows (up to 100).',
       residualSearchList:
         'GET /v1/dataQuality/testCases/search/list is residual on this server. Owner, tier, tag, glossary, data product, and date filters apply only when that index is present.',
       residualFilterApply:

@@ -18,6 +18,7 @@ const searchAssets = vi.fn();
 const listTestCases = vi.fn();
 const listTestIncidents = vi.fn();
 const listSystemChartData = vi.fn();
+const getAggregateChartData = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
@@ -33,6 +34,7 @@ vi.mock('@/api/dataInsights', async () => {
   return {
     ...actual,
     listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
+    getAggregateChartData: (...args: unknown[]) => getAggregateChartData(...args),
   };
 });
 
@@ -56,6 +58,8 @@ describe('DataAssetsView', () => {
     listTestCases.mockReset();
     listTestIncidents.mockReset();
     listSystemChartData.mockReset();
+    getAggregateChartData.mockReset();
+    getAggregateChartData.mockResolvedValue([]);
     searchAssets.mockResolvedValue({
       total: 7,
       hits: [],
@@ -115,6 +119,22 @@ describe('DataAssetsView', () => {
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="insights-pipeline-empty"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="insights-pipeline-total_data_assets"]').attributes('data-points')).toBe('1');
+  });
+
+  it('renders web activity aggregates for users, daily actives and page views', async () => {
+    getAggregateChartData.mockImplementation(async (options: { dataInsightChartName: string }) => {
+      if (options.dataInsightChartName === 'MostActiveUsers') {
+        return [{ chartType: 'MostActiveUsers', data: [{ userName: 'alice', sessions: 5 }] }];
+      }
+      if (options.dataInsightChartName === 'DailyActiveUsers') {
+        return [{ chartType: 'DailyActiveUsers', data: [{ timestamp: Date.UTC(2026, 0, 2), activeUsers: 3 }] }];
+      }
+      return [{ chartType: 'PageViewsByEntities', data: [{ entityFqn: 'svc.db.schema.orders', pageViews: 9 }] }];
+    });
+    const wrapper = await mountView();
+    expect(wrapper.find('[data-testid="insights-web-users"]').text()).toContain('alice');
+    expect(wrapper.find('[data-testid="insights-web-daily-active"]').attributes('data-points')).toBe('1');
+    expect(wrapper.find('[data-testid="insights-web-entities"]').text()).toContain('svc.db.schema.orders');
   });
 
   it('defaults the pipeline window to the 30-day preset', async () => {

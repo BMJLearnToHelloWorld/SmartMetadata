@@ -17,7 +17,7 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import { fetchEntityLineage, putEntityLineage } from '@/api/lineage';
+import { putEntityLineage, searchLineage } from '@/api/lineage';
 import { assetLocation, isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
 import { highlightForColumn } from '@/lineage/columnPorts';
 import {
@@ -28,11 +28,12 @@ import {
 } from '@/lineage/depth';
 import {
   isLineageEmpty,
-  mapEntityLineage,
+  mapSearchLineage,
   type LineageGraphModel,
   type LineageGraphNode,
 } from '@/lineage/graphModel';
 import type { LineageCanvasConfig } from '@/lineage/config';
+import { timeRangeForPreset } from '@/lineage/config';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
@@ -163,13 +164,24 @@ async function load(): Promise<void> {
   graph.value = null;
   clearHighlight();
   try {
-    const payload = await fetchEntityLineage({
+    // The graph is search-backed, like the official lineage page
+    // (rest/lineageAPI.ts getLineageDataByFQN → /v1/lineage/getLineage):
+    // the traversal GET accepts no time params, so a time-filtered graph
+    // can only come from the search endpoint. The time preset is part of
+    // the reload key below; all-time sends no time params. A search
+    // failure is shown, never silently replaced by an unfiltered
+    // traversal fetch (that would present unfiltered data as filtered).
+    const range = timeRangeForPreset(lineageStore.config.timePreset);
+    const payload = await searchLineage({
       entityType: props.entityType,
       fqn: props.fqn,
       upstreamDepth: upstreamDepth.value,
       downstreamDepth: downstreamDepth.value,
+      size: lineageStore.config.nodesPerLayer,
+      ...(range.startTime !== undefined ? { startTime: range.startTime } : {}),
+      ...(range.endTime !== undefined ? { endTime: range.endTime } : {}),
     });
-    graph.value = mapEntityLineage(payload);
+    graph.value = mapSearchLineage(payload, props.fqn);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('lineage.loadFailed');
   } finally {
@@ -230,7 +242,7 @@ function highlightRow(row: { fromColumns: string; toColumn: string }): void {
 }
 
 watch(
-  () => [props.entityType, props.fqn, upstreamDepth.value, downstreamDepth.value],
+  () => [props.entityType, props.fqn, upstreamDepth.value, downstreamDepth.value, lineageStore.config.timePreset],
   () => {
     void load();
   },

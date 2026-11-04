@@ -247,6 +247,89 @@ export function tableCountFromFacets(facets: SearchFacet[]): number | undefined 
   return table?.count;
 }
 
+/**
+ * Aggregation-row mappers for the dataQualityReport batch (api/dataQualityReports.ts).
+ * Row shape is fixed server-side (SearchIndexUtils.parseAggregationResults):
+ * one entry per aggregation dimension holding the bucket key, plus
+ * `document_count` for term leaves. Status values are compared
+ * case-insensitively: the official dashboard transform reads lowercase
+ * (`success`/`failed`/`aborted`) while the official unhealthy filter
+ * sends capitalized (`Failed`/`Aborted`), so neither casing is trusted
+ * blindly — the live index value is still owed a live-pass check.
+ */
+export const DQ_STATUS_FIELD = 'testCaseResult.testCaseStatus';
+export const DQ_DIMENSION_FIELD = 'dataQualityDimensionName';
+export const DQ_DOCUMENT_COUNT_FIELD = 'document_count';
+
+type ReportRow = Record<string, string | undefined>;
+
+function rowCount(row: ReportRow): number {
+  const parsed = Number(row[DQ_DOCUMENT_COUNT_FIELD]);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function statusCountsFromReportRows(rows: ReportRow[]): StatusCounts {
+  const counts = emptyStatusCounts();
+  for (const row of rows) {
+    // Unlike statusCountsFromCases (one row per case), one aggregation row
+    // stands for document_count cases — sum the counts, don't count rows.
+    const status = row[DQ_STATUS_FIELD]?.trim().toLowerCase();
+    const count = rowCount(row);
+    if (status === 'success') {
+      counts.success += count;
+    } else if (status === 'failed') {
+      counts.failed += count;
+    } else if (status === 'aborted') {
+      counts.aborted += count;
+    } else if (status === 'queued') {
+      counts.queued += count;
+    }
+  }
+  counts.total = counts.success + counts.failed + counts.aborted + counts.queued;
+  return counts;
+}
+
+export function dimensionCardsFromReportRows(rows: ReportRow[]): DimensionCard[] {
+  const byId = new Map<string, StatusCounts>();
+  for (const id of [...DQ_DIMENSIONS, NO_DIMENSION]) {
+    byId.set(id, emptyStatusCounts());
+  }
+  for (const row of rows) {
+    const id = normalizeDimension(row[DQ_DIMENSION_FIELD]);
+    const counts = byId.get(id) ?? emptyStatusCounts();
+    // Dimension rows carry their own document_count per (dimension, status)
+    // pair; bumpStatus counts 1 per row, so count by documents instead.
+    const status = row[DQ_STATUS_FIELD]?.trim().toLowerCase();
+    const count = rowCount(row);
+    if (status === 'success') {
+      counts.success += count;
+    } else if (status === 'failed') {
+      counts.failed += count;
+    } else if (status === 'aborted') {
+      counts.aborted += count;
+    } else if (status === 'queued') {
+      counts.queued += count;
+    }
+    counts.total = counts.success + counts.failed + counts.aborted + counts.queued;
+    byId.set(id, counts);
+  }
+  return [...DQ_DIMENSIONS, NO_DIMENSION].map((id) => ({
+    id,
+    ...(byId.get(id) ?? emptyStatusCounts()),
+  }));
+}
+
+/** Cardinality leaf rows carry the count under the aggregated field name. */
+export function cardinalityFromReportRows(rows: ReportRow[], field: string): number | undefined {
+  for (const row of rows) {
+    const parsed = Number(row[field]);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
 export function facetOptions(facets: SearchFacet[], id: SearchFacet['id']): Array<{ value: string; label: string }> {
   return (facets.find((facet) => facet.id === id)?.buckets ?? []).map((bucket) => ({
     value: bucket.key,

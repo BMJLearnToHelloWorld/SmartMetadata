@@ -77,6 +77,54 @@ export async function fetchEntityLineage(options: FetchEntityLineageOptions): Pr
   });
 }
 
+export interface SearchLineageOptions {
+  entityType: string;
+  fqn: string;
+  upstreamDepth?: number;
+  downstreamDepth?: number;
+  /** Nodes per layer; the server defaults to 1000 when omitted. */
+  size?: number;
+  from?: number;
+  startTime?: number;
+  endTime?: number;
+}
+
+/**
+ * GET /v1/lineage/getLineage — the search-backed lineage endpoint the
+ * official lineage page uses (openmetadata-ui rest/lineageAPI.ts
+ * getLineageDataByFQN). Unlike the traversal GET above, this endpoint
+ * accepts startTime/endTime/size (LineageResource.java:392-476, with
+ * validateTemporalBounds) and returns a SearchLineageResult: nodes as a
+ * map keyed by FQN (NodeInformation: ES entity map + nodeDepth + paging)
+ * plus upstreamEdges/downstreamEdges maps (EsLineageData: fromEntity /
+ * toEntity {id, fullyQualifiedName, type} + pipeline + sqlQuery +
+ * columns). See graphModel.mapSearchLineage for the graph adapter.
+ * Time params are only sent when defined, so all-time stays unfiltered.
+ */
+export async function searchLineage(options: SearchLineageOptions): Promise<unknown> {
+  const entityType = options.entityType.trim();
+  const fqn = options.fqn.trim();
+  if (!entityType) {
+    throw new Error('Lineage requires an entity type');
+  }
+  if (!fqn) {
+    throw new Error('Lineage requires an FQN');
+  }
+  return apiRequest<unknown>('/v1/lineage/getLineage', {
+    query: {
+      fqn,
+      type: entityType,
+      upstreamDepth: clampLineageDepth(options.upstreamDepth ?? LINEAGE_DEPTH_DEFAULT),
+      downstreamDepth: clampLineageDepth(options.downstreamDepth ?? LINEAGE_DEPTH_DEFAULT),
+      includeDeleted: false,
+      ...(options.size !== undefined ? { size: options.size } : {}),
+      ...(options.from !== undefined ? { from: options.from } : {}),
+      ...(options.startTime !== undefined ? { startTime: options.startTime } : {}),
+      ...(options.endTime !== undefined ? { endTime: options.endTime } : {}),
+    },
+  });
+}
+
 /**
  * PUT lineage edge by name. Body defaults to `{ source: 'Manual' }` (MCP create_lineage).
  */

@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { listSystemChartData, mapSystemChartData, SYSTEM_CHART_NAMES } from './dataInsights';
+import { DATA_REPORT_INDEXES, getAggregateChartData } from './dataInsights';
 
 function lastFetch(): string {
   const call = vi.mocked(fetch).mock.calls.at(-1);
@@ -67,5 +68,37 @@ describe('data insights API', () => {
   it('treats 404 as residual empty instead of fake points', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('no pipeline', { status: 404 })));
     await expect(listSystemChartData(['total_data_assets'], 1, 2)).resolves.toEqual({});
+  });
+
+  it('calls GET /v1/analytics/dataInsights/charts/aggregate with chart name and index', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                chartType: 'MostActiveUsers',
+                total: 1,
+                data: [{ userName: 'alice', sessions: 5, pageViews: 9 }],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const results = await getAggregateChartData({
+      dataInsightChartName: 'MostActiveUsers',
+      dataReportIndex: DATA_REPORT_INDEXES.webAnalyticUserActivity,
+      startTs: 10,
+      endTs: 20,
+    });
+    expect(lastFetch()).toContain('/api/v1/analytics/dataInsights/charts/aggregate');
+    expect(lastFetch()).toContain('dataInsightChartName=MostActiveUsers');
+    expect(lastFetch()).toContain(`dataReportIndex=${DATA_REPORT_INDEXES.webAnalyticUserActivity}`);
+    expect(lastFetch()).toContain('startTs=10');
+    expect(results[0]?.data[0]).toMatchObject({ userName: 'alice', sessions: 5 });
   });
 });
