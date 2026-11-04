@@ -12,9 +12,11 @@ import { persistSession } from '@/auth/token';
 import {
   fetchAuthConfig,
   getSecurityConfig,
+  getSettingsSource,
   listSettings,
   mapSsoAuthConfiguration,
-  patchAuthenticationConfiguration,
+  parseSecurityValidationErrors,
+  patchSecurityConfiguration,
   updateSetting,
 } from './system';
 
@@ -120,20 +122,78 @@ describe('system SSO API', () => {
     expect(config.authenticationConfiguration?.provider).toBe('okta');
   });
 
-  it('patches authenticationConfiguration with the JSON Patch content type', async () => {
+  it('patches the whole security document with the JSON Patch content type', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        expect(String(input)).toContain('/v1/system/settings/authenticationConfiguration');
+        expect(String(input)).toContain('/v1/system/security/config');
+        expect(String(input)).not.toContain('/v1/system/settings/');
         expect(init?.method).toBe('PATCH');
         expect((init?.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json');
-        expect(String(init?.body)).toContain('/provider');
-        return new Response(JSON.stringify({}), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        expect(String(init?.body)).toContain('/authenticationConfiguration/provider');
+        return new Response(null, { status: 204 });
       }),
     );
-    await patchAuthenticationConfiguration([{ op: 'replace', path: '/provider', value: 'google' }]);
+    await patchSecurityConfiguration([
+      { op: 'replace', path: '/authenticationConfiguration/provider', value: 'google' },
+    ]);
+  });
+
+  it('maps the settings source auth entry to editable and managed paths', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            settings: [
+              {
+                configType: 'authenticationConfiguration',
+                source: 'ENV',
+                editable: true,
+                managedPaths: ['/provider'],
+              },
+              { configType: 'authorizerConfiguration', source: 'DB', editable: true, managedPaths: [] },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const source = await getSettingsSource();
+    expect(source.authenticationEditable).toBe(true);
+    expect(source.authenticationManagedPaths).toEqual(['/provider']);
+  });
+
+  it('treats editable false as wholesale deployment ownership', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            settings: [{ configType: 'authenticationConfiguration', source: 'ENV', editable: false }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const source = await getSettingsSource();
+    expect(source.authenticationEditable).toBe(false);
+    expect(source.authenticationManagedPaths).toEqual([]);
+  });
+
+  it('parses field errors from a 400 validation body, and null otherwise', () => {
+    expect(
+      parseSecurityValidationErrors(
+        JSON.stringify({
+          status: 'failed',
+          errors: [
+            { field: 'provider', message: 'Provider is required' },
+            { field: 'clientId', error: 'Client ID is required' },
+          ],
+        }),
+      ),
+    ).toBe('provider: Provider is required\nclientId: Client ID is required');
+    expect(parseSecurityValidationErrors('not json')).toBeNull();
+    expect(parseSecurityValidationErrors(JSON.stringify({ status: 'failed', errors: [] }))).toBeNull();
   });
 });

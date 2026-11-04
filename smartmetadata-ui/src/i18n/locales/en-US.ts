@@ -2697,6 +2697,9 @@ const enUS = {
     saved: 'SSO configuration saved.',
     loadFailed: 'Failed to load the SSO configuration',
     saveFailed: 'Failed to save the SSO configuration',
+    saveManagedConflict: 'Some fields are owned by the deployment configuration; change them in the deployment configuration (yaml or environment variables).',
+    saveConflictRetry: 'The configuration changed since it was read; it has been reloaded — please review and retry.',
+    managedNote: 'Some fields are owned by the deployment configuration and are locked.',
     providers: {
       basic: 'Basic',
       azure: 'Azure AD',
