@@ -2668,6 +2668,8 @@ const enUS = {
     falseValue: 'false',
     reasonsForDecision: 'Reasons for decision',
     permissionsFor: 'Permissions for',
+    myPermissions: 'My permissions',
+    myPermissionsLead: 'Your own roles, teams, and policies, as the server resolves them for your account.',
     permissionSummary: 'Permission summary',
     totalRoles: 'Total roles',
     direct: 'direct',

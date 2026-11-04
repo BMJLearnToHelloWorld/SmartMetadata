@@ -27,6 +27,7 @@ import {
 } from '@/api/users';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import MyPermissionsPanel from '@/views/admin/MyPermissionsPanel.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
 import { useAuthStore } from '@/stores/auth';
@@ -72,6 +73,11 @@ const tabs = computed<EntityDetailTab[]>(() => {
   ];
   if (showTokensTab.value) {
     base.push({ key: 'tokens', label: t('tokens.title'), testId: 'user-tab-tokens' });
+  }
+  // Self-service permissions: the own profile only. Other users'
+  // profiles never show this tab — admins use the debugger page.
+  if (isOwnProfile.value) {
+    base.push({ key: 'permissions', label: t('permissionDebugger.myPermissions'), testId: 'user-tab-permissions' });
   }
   return base;
 });
@@ -429,6 +435,12 @@ watch(activeTab, (tab) => {
           :description="adminGeneratedSecret"
           data-testid="pat-admin-secret"
         />
+      </template>
+    </template>
+    <template #permissions>
+      <template v-if="isOwnProfile">
+        <p class="entity-detail__tab-lead">{{ t('permissionDebugger.myPermissionsLead') }}</p>
+        <MyPermissionsPanel :active="activeTab === 'permissions'" />
       </template>
     </template>
   </EntityDetailShell>

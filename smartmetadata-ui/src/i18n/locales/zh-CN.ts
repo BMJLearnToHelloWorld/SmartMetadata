@@ -2657,6 +2657,8 @@ const zhCN = {
     falseValue: '假',
     reasonsForDecision: '判定原因',
     permissionsFor: '权限归属',
+    myPermissions: '我的权限',
+    myPermissionsLead: '服务端为你的账号解析出的角色、团队与策略。',
     permissionSummary: '权限摘要',
     totalRoles: '角色总数',
     direct: '直接',

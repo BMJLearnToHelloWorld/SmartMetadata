@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   createPersonalToken: vi.fn(),
   revokePersonalTokens: vi.fn(),
   generateUserToken: vi.fn(),
+  debugMyPermissions: vi.fn(),
 }));
 
 vi.mock('@/api/users', async () => {
@@ -32,6 +33,11 @@ vi.mock('@/api/users', async () => {
   };
 });
 
+vi.mock('@/api/permissions', async () => {
+  const actual = await vi.importActual<typeof import('@/api/permissions')>('@/api/permissions');
+  return { ...actual, debugMyPermissions: mocks.debugMyPermissions };
+});
+
 vi.mock('@/api/roles', () => ({ listRoles: vi.fn(async () => ({ data: [], paging: { total: 0 } })) }));
 vi.mock('@/api/teams', () => ({ listTeams: vi.fn(async () => ({ data: [], paging: { total: 0 } })) }));
 
@@ -44,6 +50,9 @@ async function mountDetail(viewedId: string, sessionUser: { id: string; name: st
     routes: [
       { path: '/admin/users', name: 'admin-users', component: { template: '<div>users</div>' } },
       { path: '/admin/users/:id', name: 'admin-user', component: UserDetailView, props: true },
+      { path: '/admin/roles/:id', name: 'admin-role', component: { template: '<div>role</div>' } },
+      { path: '/admin/teams/:id', name: 'admin-team', component: { template: '<div>team</div>' } },
+      { path: '/admin/policies/:id', name: 'admin-policy', component: { template: '<div>policy</div>' } },
     ],
   });
   await router.push({ name: 'admin-user', params: { id: viewedId } });
@@ -119,5 +128,88 @@ describe('UserDetailView tokens (P2 B5)', () => {
     await flushPromises();
     expect(mocks.generateUserToken).toHaveBeenCalledWith('u1', '30');
     expect(wrapper.find('[data-testid="pat-admin-secret"]').exists()).toBe(true);
+  });
+});
+
+describe('UserDetailView my permissions tab', () => {
+  const myInfo = {
+    user: { id: 'u1', name: 'alice', type: 'user' },
+    directRoles: [
+      {
+        role: { id: 'r1', name: 'DataConsumer', type: 'role' },
+        source: 'DIRECT_ASSIGNMENT',
+        policies: [
+          {
+            policy: { id: 'p1', name: 'DataConsumerPolicy', type: 'policy' },
+            effect: 'ALLOW',
+            rules: [{ name: 'ViewData', effect: 'ALLOW', operations: ['ViewAll'], resources: ['table'], matches: true }],
+          },
+        ],
+      },
+    ],
+    teamPermissions: [],
+    inheritedPermissions: [],
+    summary: {
+      totalRoles: 1,
+      totalPolicies: 1,
+      totalRules: 1,
+      directRoles: 1,
+      inheritedRoles: 0,
+      teamCount: 0,
+      maxHierarchyDepth: 0,
+      effectiveOperations: ['ViewAll'],
+      deniedOperations: [],
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getUser.mockImplementation(async (id: string) => ({
+      id,
+      name: id === 'u1' ? 'alice' : 'admin',
+      displayName: id === 'u1' ? 'Alice' : 'Admin',
+      isAdmin: false,
+      isBot: false,
+      roles: [],
+      teams: [],
+    }));
+    mocks.debugMyPermissions.mockResolvedValue(myInfo);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function openPermissionsTab(wrapper: ReturnType<typeof mount>) {
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    const tab = tabs.find((item) => item.text().includes('My permissions'));
+    expect(tab).toBeTruthy();
+    await tab!.trigger('click');
+    await flushPromises();
+  }
+
+  function hasPermissionsTab(wrapper: ReturnType<typeof mount>) {
+    return wrapper
+      .findAll('.ant-tabs-tab')
+      .some((item) => item.text().includes('My permissions'));
+  }
+
+  it('shows the tab on the own profile and loads debug/me without any admin gate', async () => {
+    const wrapper = await mountDetail('u1', { id: 'u1', name: 'alice' });
+    expect(hasPermissionsTab(wrapper)).toBe(true);
+    await openPermissionsTab(wrapper);
+    expect(mocks.debugMyPermissions).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('[data-testid="my-permissions-panel"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('DataConsumer');
+  });
+
+  it('hides the tab when an admin views another user', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    expect(hasPermissionsTab(wrapper)).toBe(false);
+  });
+
+  it('hides the tab when a non-admin views another user', async () => {
+    const wrapper = await mountDetail('u2', { id: 'u1', name: 'alice' });
+    expect(hasPermissionsTab(wrapper)).toBe(false);
   });
 });
