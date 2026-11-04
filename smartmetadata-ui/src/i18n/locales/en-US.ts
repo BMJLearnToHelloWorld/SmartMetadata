@@ -2122,11 +2122,6 @@ const enUS = {
       empty: 'Ontology Explorer is residual. This console has no ontology graph API.',
     },
 
-    workflows: {
-      title: 'Workflows',
-      lead: 'Author and run metadata workflows.',
-      empty: 'Workflows is residual. This console does not call a workflow-definition API.',
-    },
     contextOverview: {
       title: 'Context Center',
       lead: 'Knowledge articles, documents, memories, and archive.',

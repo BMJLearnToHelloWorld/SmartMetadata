@@ -20,7 +20,9 @@ describe('data access request routes', () => {
     expect(routes.find((route) => route.name === 'task')?.path).toBe('/tasks/:id');
     // Names are not unique in this router: alias records share their
     // route's name (e.g. the task-forms settings alias). Paths are not
-    // globally unique either: '/' is registered twice on main already.
+    // globally unique either: getRoutes() flattens the tree, so the
+    // AppShell parent '/' and its '' index child both surface as '/'.
+    // That is standard Vue Router structure, not a duplicate registration.
     // So collision is asserted on the new paths only: each occurs once.
     const paths = routes.map((route) => route.path);
     expect(paths.filter((path) => path === '/data-access-requests').length).toBe(1);
