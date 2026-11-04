@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {Alert, Button, Card, Descriptions, Form, Input, Space, Spin, Switch, Typography, message} from 'ant-design-vue';
@@ -19,6 +19,10 @@ const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const tag = ref<ClassificationTag | null>(null);
+// Upstream TagPage isEditable (disabled AND deleted): the product read path
+// never surfaces deleted tags (the server default excludes them), so disabled
+// is the observable half. Delete is not an Edit* operation and keeps its own gate.
+const isEditable = computed(() => !!tag.value && tag.value.disabled !== true);
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -138,7 +142,7 @@ onMounted(() => {
               {{ t('tags.back') }}
             </Button>
             <Button danger data-testid="delete-tag" :disabled="!tag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
-            <Button type="primary" data-testid="edit-tag" :disabled="!tag" @click="openEdit">
+            <Button type="primary" data-testid="edit-tag" :disabled="!isEditable" @click="openEdit">
               {{ t('tags.edit') }}
             </Button>
           </Space>

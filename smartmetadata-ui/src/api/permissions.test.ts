@@ -18,6 +18,7 @@ import {
   getLoggedInUserPermissions,
   getResourcePermission,
   permissionFlags,
+  revokeEditPermissions,
   toOperationPermissions,
 } from './permissions';
 
@@ -130,5 +131,36 @@ describe('permissions API', () => {
       { resource: 'table', permissions: [{ operation: 'EditAll', access: 'conditionalAllow' }] },
       true,
     )).toEqual({ EditAll: true });
+  });
+});
+
+describe('revokeEditPermissions (upstream ca4dc96d4f)', () => {
+  it('revokes field-level edits that derived flags prefer over EditAll', () => {
+    const revoked = revokeEditPermissions({
+      EditAll: true,
+      EditDomains: true,
+      EditDescription: true,
+      EditOwners: true,
+      ViewAll: true,
+      Delete: true,
+    });
+    expect(revoked).toEqual({
+      EditAll: false,
+      EditDomains: false,
+      EditDescription: false,
+      EditOwners: false,
+      ViewAll: true,
+      Delete: true,
+    });
+    expect(permissionFlags(revoked).canEditAll).toBe(false);
+    expect(permissionFlags(revoked).canDelete).toBe(true);
+  });
+
+  it('leaves non-Edit operations and an empty map untouched', () => {
+    expect(revokeEditPermissions({ ViewAll: true, Create: true })).toEqual({
+      ViewAll: true,
+      Create: true,
+    });
+    expect(revokeEditPermissions({})).toEqual({});
   });
 });
