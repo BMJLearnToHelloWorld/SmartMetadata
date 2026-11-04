@@ -2678,6 +2678,9 @@ const zhCN = {
     saved: 'SSO 配置已保存。',
     loadFailed: 'SSO 配置加载失败',
     saveFailed: 'SSO 配置保存失败',
+    saveManagedConflict: '部分字段由部署配置托管，请在部署配置（yaml 或环境变量）中修改。',
+    saveConflictRetry: '配置在读取后已被他人修改，已重新加载，请确认后重试。',
+    managedNote: '部分字段由部署配置托管，已锁定，在此无法修改。',
     providers: {
       basic: '基础',
       azure: 'Azure AD',

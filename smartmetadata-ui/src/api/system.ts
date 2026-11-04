@@ -205,18 +205,79 @@ export async function getSecurityConfig(): Promise<{ authenticationConfiguration
 }
 
 /**
- * Official securityConfigAPI.patchAuthenticationConfiguration: JSON Patch
- * on /v1/system/settings/authenticationConfiguration. An absent secret
- * op means "keep the server value": the server masks stored secrets
+ * Official securityConfigAPI.patchSecurityConfiguration: JSON Patch on the
+ * whole SecurityConfiguration document at /v1/system/security/config.
+ * Paths are rooted at /authenticationConfiguration/... (or
+ * /authorizerConfiguration/...). An absent secret op means "keep the
+ * server value": the server masks stored secrets
  * (preserveMaskedSecuritySecrets), so sending an empty secret would
- * clear it — callers must omit the op instead.
+ * clear it — callers must omit the op instead. 204 No Content on success.
+ * NOTE: the settings endpoint (/v1/system/settings/...) refuses auth config
+ * by design (SystemResource guard, also present upstream); it must not be
+ * used for SSO saves.
  */
-export function patchAuthenticationConfiguration(ops: JsonPatchOp[]): Promise<unknown> {
-  return apiRequest<unknown>('/v1/system/settings/authenticationConfiguration', {
+export function patchSecurityConfiguration(ops: JsonPatchOp[]): Promise<void> {
+  return apiRequest<void>('/v1/system/security/config', {
     method: 'PATCH',
     json: ops,
     contentType: 'application/json-patch+json',
   });
+}
+
+/** Deployment-ownership info for the authenticationConfiguration setting. */
+export interface SettingsSourceInfo {
+  authenticationEditable: boolean;
+  authenticationManagedPaths: string[];
+}
+
+/**
+ * GET /v1/system/settings/source: for each dual-source setting, its source
+ * and the fields the deployment owns. managedPaths are JSON pointers inside
+ * the setting document (e.g. /provider); editable is false when the
+ * deployment owns every field of the setting.
+ */
+export async function getSettingsSource(): Promise<SettingsSourceInfo> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/system/settings/source');
+  const settings = Array.isArray(raw.settings) ? raw.settings : [];
+  const auth = settings
+    .map((entry) => asRecord(entry))
+    .find((entry) => entry?.configType === 'authenticationConfiguration');
+  const managed = Array.isArray(auth?.managedPaths)
+    ? (auth?.managedPaths as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [];
+  return {
+    authenticationEditable: auth?.editable !== false,
+    authenticationManagedPaths: managed,
+  };
+}
+
+/**
+ * Parse a 400 SecurityValidationResponse body ({ status, errors: [{ field,
+ * message }] }) into readable lines. Returns null when the body carries no
+ * usable field errors, so callers can fall back to the generic message.
+ */
+export function parseSecurityValidationErrors(body: string): string | null {
+  try {
+    const parsed = asRecord(JSON.parse(body)) ?? {};
+    const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+    const lines = errors
+      .map((entry) => {
+        const rec = asRecord(entry) ?? {};
+        // asString returns '' (not undefined) for a missing key, so fall
+        // back with ||, not ?? — otherwise a message-only error would
+        // swallow the error field entirely.
+        const field = asString(rec.field);
+        const detail = asString(rec.message) || asString(rec.error);
+        if (field && detail) {
+          return `${field}: ${detail}`;
+        }
+        return detail || field || null;
+      })
+      .filter((line): line is string => typeof line === 'string' && line.length > 0);
+    return lines.length > 0 ? lines.join('\n') : null;
+  } catch {
+    return null;
+  }
 }
 
 export function settingAsLoginConfig(value: unknown): LoginConfiguration {
