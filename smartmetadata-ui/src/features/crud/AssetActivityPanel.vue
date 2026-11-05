@@ -306,7 +306,7 @@ async function onReply(conversation: Conversation): Promise<void> {
   margin-top: 24px;
 }
 .conversation {
-  border-top: 1px solid var(--sm-border, #eee);
+  border-top: 1px solid var(--sm-border-secondary);
   padding: 12px 0;
 }
 .conversation__reactions {

@@ -174,7 +174,7 @@ const html = computed(() => renderMarkdown(props.markdown ?? ''));
 .sm-markdown :deep(pre) {
   padding: 8px 12px;
   overflow-x: auto;
-  background: var(--sm-bg-subtle, #f5f5f5);
+  background: var(--sm-bg-elevated);
   border-radius: 4px;
 }
 .sm-markdown :deep(code) {
