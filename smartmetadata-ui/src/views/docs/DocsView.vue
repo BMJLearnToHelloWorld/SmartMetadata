@@ -5,10 +5,21 @@
 <script setup lang="ts">
 /**
  * Official OM SwaggerPage equivalent (constants SWAGGER '/docs').
- * Align with openmetadata-ui SwaggerPage: in-page RapiDoc against Jersey
- * /api/swagger.json (server.rootPath is /api/*), with the logged-in JWT as
- * Authorization bearer. Do not iframe /api/swagger-ui - that path is not
- * under Jersey and #139 nginx rewrites for it were wrong.
+ * Align with openmetadata-ui SwaggerPage: in-page RapiDoc with
+ * spec-url="./swagger.json" (public UI-root OpenAPI document) and the
+ * logged-in JWT as Authorization bearer for Try-it calls.
+ *
+ * RapiDoc's api-key-* attrs are applied to Try-it requests only — they are
+ * NOT attached to the initial spec fetch (rapidoc loadSpec passes api-key
+ * into securitySchemes for Try-it; the document URL fetch does not send
+ * Authorization). Pointing spec-url at /api/swagger.json therefore 401s
+ * even when the user is logged in. Official OM serves ./swagger.json
+ * outside Jersey auth (AssetServlet); on the rebuild stack we mirror that
+ * with nginx /swagger.json → Jersey /api/swagger.json plus JwtFilter
+ * exclusions for swagger.json/.yaml.
+ *
+ * Do not iframe /api/swagger-ui — that path is not under Jersey and #139
+ * nginx rewrites for it were wrong.
  */
 import 'rapidoc';
 import { computed } from 'vue';
@@ -24,8 +35,12 @@ const { t } = useI18n();
 const auth = useAuthStore();
 const { session } = storeToRefs(auth);
 
-/** Jersey serves the generated OpenAPI spec at /api/swagger.json. */
-const specUrl = '/api/swagger.json';
+/**
+ * Same relative URL as OM SwaggerPage.tsx (`./swagger.json`). Resolves to
+ * /swagger.json from /docs; nginx proxies that to Jersey without requiring
+ * the browser to send Authorization on the document fetch.
+ */
+const specUrl = './swagger.json';
 
 const apiKeyValue = computed(() => {
   const token = session.value?.accessToken;

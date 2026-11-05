@@ -38,7 +38,7 @@ describe('DocsView', () => {
     window.localStorage.clear();
   });
 
-  it('renders in-page RapiDoc against /api/swagger.json with bearer auth', async () => {
+  it('renders in-page RapiDoc against ./swagger.json with bearer for Try-it', async () => {
     window.localStorage.setItem(
       AUTH_STORAGE_KEY,
       JSON.stringify({
@@ -54,13 +54,13 @@ describe('DocsView', () => {
     const wrapper = await mountDocs(pinia);
     const rapidoc = wrapper.find('[data-testid="docs-rapidoc"]');
     expect(rapidoc.exists()).toBe(true);
-    expect(rapidoc.attributes('spec-url')).toBe('/api/swagger.json');
+    expect(rapidoc.attributes('spec-url')).toBe('./swagger.json');
     expect(rapidoc.attributes('api-key-name')).toBe('Authorization');
     expect(rapidoc.attributes('api-key-location')).toBe('header');
     expect(rapidoc.attributes('api-key-value')).toBe('Bearer fakeToken');
     expect(wrapper.find('[data-testid="docs-swagger-frame"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="docs-spec-download"]').attributes('href')).toBe(
-      '/api/swagger.json',
+      './swagger.json',
     );
   });
 
