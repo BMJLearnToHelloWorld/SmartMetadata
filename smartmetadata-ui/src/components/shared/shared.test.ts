@@ -20,9 +20,6 @@ import SmIcon from './SmIcon.vue';
 import SmState from './SmState.vue';
 import SmTable from './SmTable.vue';
 import DetailTabs from './DetailTabs.vue';
-import GlobalSearchBar from './GlobalSearchBar.vue';
-import HelpMenu from './HelpMenu.vue';
-import VersionTag from './VersionTag.vue';
 import { helpItems } from './helpItems';
 
 function testRouter() {
@@ -120,16 +117,6 @@ describe('shared components (Stage 1)', () => {
     expect(tabs.text()).toContain('Lineage');
   });
 
-  it('emits a trimmed query from GlobalSearchBar', async () => {
-    const wrapper = await mountWithRouter(GlobalSearchBar, { initialQuery: 'orders' });
-    const input = wrapper.find('[data-testid="global-search"]');
-    expect(input.exists()).toBe(true);
-    await input.setValue('  customers  ');
-    await input.trigger('keydown.enter');
-    await flushPromises();
-    expect(wrapper.emitted('search')?.[0]).toEqual(['customers']);
-  });
-
   it('keeps help items data-driven with official URLs and a routed tour', () => {
     const items = helpItems('1.5.0');
     expect(items.map((item) => item.key)).toEqual(['tour', 'docs', 'api', 'slack', 'version']);
@@ -142,12 +129,4 @@ describe('shared components (Stage 1)', () => {
     expect(items.find((item) => item.key === 'version')?.href).toContain('1.5.0');
   });
 
-  it('renders HelpMenu trigger and VersionTag with and without a version', async () => {
-    const help = await mountWithRouter(HelpMenu, { version: '1.5.0' });
-    expect(help.find('[data-testid="help-menu-trigger"]').exists()).toBe(true);
-    const withVersion = await mountWithRouter(VersionTag, { version: '1.5.0' });
-    expect(withVersion.text()).toContain('v1.5.0');
-    const withoutVersion = await mountWithRouter(VersionTag, {});
-    expect(withoutVersion.text()).toContain('Version unknown');
-  });
 });

@@ -26,12 +26,26 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, IncludeFilter } from '@/types/admin';
+import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 
 const { t } = useI18n();
 const router = useRouter();
-/** Official Team gating line: create/edit entry points need an admin. */
+/**
+ * Dual line for team management: isAdminUser (first line) OR a
+ * resource grant on 'team' via the permission API (second line,
+ * same client as the debugger). Create uses the Create operation,
+ * row edit uses EditAll. A failed query is not a grant (fail
+ * closed); the server still enforces team writes.
+ */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
+const teamResourceOps = ref<OperationPermissions | null>(null);
+const canCreateTeam = computed(
+  () => isAdminUser.value || teamResourceOps.value?.Create === true,
+);
+const canEditTeam = computed(
+  () => isAdminUser.value || teamResourceOps.value?.EditAll === true,
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const teams = ref<AdminTeam[]>([]);
@@ -75,6 +89,9 @@ async function load(): Promise<void> {
     teams.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
+    teamResourceOps.value = await usePermissionStore()
+      .getResourcePermission('team')
+      .catch(() => null);
   } catch (error) {
     teams.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -149,7 +166,7 @@ onMounted(() => {
     :data-source="teams"
     table-test-id="admin-teams-table"
     show-row-actions
-    :show-edit-action="isAdminUser"
+    :show-edit-action="canEditTeam"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
@@ -160,7 +177,7 @@ onMounted(() => {
     @edit="openTeam($event as AdminTeam)"
   >
     <template #actions>
-      <Button v-if="isAdminUser" type="primary" data-testid="create-team" @click="createOpen = true">
+      <Button v-if="canCreateTeam" type="primary" data-testid="create-team" @click="createOpen = true">
         {{ t('admin.teams.create') }}
       </Button>
     </template>

@@ -213,3 +213,60 @@ describe('UserDetailView my permissions tab', () => {
     expect(hasPermissionsTab(wrapper)).toBe(false);
   });
 });
+
+describe('UserDetailView P1 dual line', () => {
+  let userGrant: 'deny' | 'grant' = 'deny';
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  beforeEach(() => {
+    userGrant = 'deny';
+    vi.clearAllMocks();
+    mocks.getUser.mockImplementation(async (id: string) => ({
+      id,
+      name: id === 'u1' ? 'alice' : 'admin',
+      displayName: id === 'u1' ? 'Alice' : 'Admin',
+      isAdmin: false,
+      isBot: false,
+      roles: [],
+      teams: [],
+    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/user/u1')) {
+          if (userGrant === 'grant') {
+            return jsonResponse({
+              resource: 'user',
+              permissions: [{ operation: 'EditAll', access: 'allow' }],
+            });
+          }
+          return new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('hides the edit button for a non-admin without a grant', async () => {
+    const wrapper = await mountDetail('u1', { id: 'u9', name: 'bob' });
+    expect(wrapper.find('[data-testid="edit-user"]').exists()).toBe(false);
+  });
+
+  it('shows the edit button for a non-admin with an EditAll grant', async () => {
+    userGrant = 'grant';
+    const wrapper = await mountDetail('u1', { id: 'u9', name: 'bob' });
+    expect(wrapper.find('[data-testid="edit-user"]').exists()).toBe(true);
+  });
+});

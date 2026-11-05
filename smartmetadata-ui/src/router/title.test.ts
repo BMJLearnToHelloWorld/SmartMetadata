@@ -16,7 +16,6 @@ const translations: Record<string, string> = {
   'nav.explore': 'Explore',
   'nav.domains': 'Domains',
   'nav.overview': 'Overview',
-  'shells.marketplaceOverview.title': 'Marketplace overview',
   'auth.forgotTitle': 'Forgot password',
   'auth.logoutTitle': 'Logging out',
 };

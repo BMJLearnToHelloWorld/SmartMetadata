@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
 import { addTaskComment, closeTask, deleteTask, getTask, patchTask, resolveTask } from '@/api/tasks';
+import type { OperationPermissions } from '@/api/permissions';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
@@ -34,6 +35,13 @@ const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
 const task = ref<CollaborationTask | null>(null);
+/**
+ * Second permission line for task actions: an EditAll grant on this
+ * task via the permission API (server TaskResourceContext, same
+ * client as the debugger). A failed query is not a grant (fail
+ * closed); the server still enforces task writes.
+ */
+const taskOps = ref<OperationPermissions | null>(null);
 const form = reactive({
   resolutionType: 'Completed',
   comment: '',
@@ -65,7 +73,8 @@ const actionable = computed(() => isTaskActionable(task.value?.status));
 /**
  * Official TaskFeedCard getHasTaskEditAccess: an admin on a
  * non-approval task, an assignee, or a member of an assignee team
- * (unless also the creator) may act. When the profile has not loaded
+ * (unless also the creator) may act — plus the permission-API line
+ * (an EditAll grant on the task). When the profile has not loaded
  * the identity terms are unknown, so the status rule stands alone
  * rather than newly locking out a legitimate actor; the server still
  * enforces task writes.
@@ -89,7 +98,8 @@ const canAct = computed(() => {
   const isCreator = matches(task.value?.createdBy);
   const isAdminNonApproval =
     usePermissionStore().isAdminUser && task.value?.type !== 'RequestApproval';
-  return isAdminNonApproval || isAssignee || (isPartOfAssigneeTeam && !isCreator);
+  const taskGrant = taskOps.value?.EditAll === true;
+  return isAdminNonApproval || taskGrant || isAssignee || (isPartOfAssigneeTeam && !isCreator);
 });
 
 async function onClose(): Promise<void> {
@@ -210,6 +220,9 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   try {
     task.value = await getTask(props.id);
+    taskOps.value = task.value?.id
+      ? await usePermissionStore().getEntityPermissionById('task', task.value.id).catch(() => null)
+      : null;
   } catch (error) {
     task.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('collaboration.task.loadFailed');
