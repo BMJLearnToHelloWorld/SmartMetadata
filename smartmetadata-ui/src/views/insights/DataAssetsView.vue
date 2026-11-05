@@ -157,6 +157,11 @@ const tierProgress = computed(() =>
   totalAssets.value > 0 ? progressRows(systemData.value.total_data_assets_by_tier ?? [], totalAssets.value) : [],
 );
 
+/** Official EntitySummaryProgressBar strokeColor: palette index by sorted row. */
+function progressColor(index: number): string {
+  return SM_DATA_INSIGHT_COLORS[index % SM_DATA_INSIGHT_COLORS.length] ?? SM_DATA_INSIGHT_COLORS[0];
+}
+
 const summaryTitle = computed(() =>
   orgName.value
     ? t('insights.summaryFor', { organization: orgName.value })
@@ -326,18 +331,50 @@ onMounted(() => {
           </Card>
         </Col>
       </Row>
-      <div v-if="entityProgress.length" data-testid="insights-entity-progress">
+      <div v-if="entityProgress.length" data-testid="insights-entity-progress" class="insights-progress">
         <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byEntityType') }}</Typography.Title>
-        <div v-for="row in entityProgress" :key="row.group" data-testid="insights-entity-progress-row">
-          <span>{{ entityLabel(row.group) }} — {{ row.count }}</span>
-          <Progress :percent="row.percent" />
+        <!--
+          Official EntitySummaryProgressBar.component.tsx: name + count on one
+          flex row, ProgressBar below with no trailing % info (count is the
+          label). Ant Progress showInfo must stay false — the default % text
+          after the bar overflows and creates a horizontal scrollbar.
+        -->
+        <div
+          v-for="(row, index) in entityProgress"
+          :key="row.group"
+          class="insights-progress__row"
+          data-testid="insights-entity-progress-row"
+        >
+          <div class="insights-progress__meta">
+            <span class="insights-progress__name" data-testid="insights-progress-name">{{ entityLabel(row.group) }}</span>
+            <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
+          </div>
+          <Progress
+            :percent="row.percent"
+            :show-info="false"
+            :stroke-color="progressColor(index)"
+            size="small"
+          />
         </div>
       </div>
-      <div v-if="tierProgress.length" data-testid="insights-tier-progress">
+      <div v-if="tierProgress.length" data-testid="insights-tier-progress" class="insights-progress">
         <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byTier') }}</Typography.Title>
-        <div v-for="row in tierProgress" :key="row.group" data-testid="insights-tier-progress-row">
-          <span>{{ row.group }} — {{ row.count }}</span>
-          <Progress :percent="row.percent" />
+        <div
+          v-for="(row, index) in tierProgress"
+          :key="row.group"
+          class="insights-progress__row"
+          data-testid="insights-tier-progress-row"
+        >
+          <div class="insights-progress__meta">
+            <span class="insights-progress__name" data-testid="insights-progress-name">{{ row.group }}</span>
+            <span class="insights-progress__value" data-testid="insights-progress-value">{{ row.count }}</span>
+          </div>
+          <Progress
+            :percent="row.percent"
+            :show-info="false"
+            :stroke-color="progressColor(index)"
+            size="small"
+          />
         </div>
       </div>
     </div>
@@ -467,5 +504,43 @@ onMounted(() => {
 }
 .insights__sub {
   margin-top: 20px;
+}
+.insights-progress {
+  min-width: 0;
+  overflow-x: hidden;
+}
+.insights-progress__row {
+  min-width: 0;
+  margin-block-end: 8px;
+}
+.insights-progress__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.insights-progress__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.insights-progress__value {
+  flex-shrink: 0;
+}
+/* Ant Progress defaults leave room for showInfo % text; keep bar full-width. */
+.insights-progress__row :deep(.ant-progress) {
+  display: block;
+  width: 100%;
+  margin-inline-end: 0;
+  line-height: 1;
+}
+.insights-progress__row :deep(.ant-progress-outer) {
+  margin-inline-end: 0 !important;
+  padding-inline-end: 0 !important;
+}
+.insights-progress__row :deep(.ant-progress-text) {
+  display: none;
 }
 </style>

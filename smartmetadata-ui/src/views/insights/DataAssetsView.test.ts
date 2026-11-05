@@ -174,12 +174,17 @@ describe('DataAssetsView', () => {
     expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('80%');
     const entityRows = wrapper.findAll('[data-testid="insights-entity-progress-row"]');
     expect(entityRows).toHaveLength(2);
-    expect(entityRows[0].text()).toContain('Table');
+    // Official EntitySummaryProgressBar: name + count meta, ProgressBar with no trailing % info.
+    expect(entityRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Table');
+    expect(entityRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('6');
     expect(entityRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 60%');
+    expect(entityRows[0].find('.ant-progress-text').exists()).toBe(false);
     const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
     expect(tierRows).toHaveLength(2);
-    expect(tierRows[0].text()).toContain('Tier.Gold');
+    expect(tierRows[0].get('[data-testid="insights-progress-name"]').text()).toContain('Tier.Gold');
+    expect(tierRows[0].get('[data-testid="insights-progress-value"]').text()).toBe('7');
     expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 70%');
+    expect(tierRows[0].find('.ant-progress-text').exists()).toBe(false);
   });
 
   it('falls back to the generic summary title when the Organization team is missing', async () => {
