@@ -1111,6 +1111,8 @@ const zhCN = {
       status: '状态',
       expandAll: '全部展开',
       collapseAll: '全部折叠',
+      loadingChildren: '正在加载子术语…',
+      loadMoreChildren: '加载更多子术语',
       customize: '自定义',
       customizeResidual: '列自定义尚未接入偏好设置 API，暂为残留能力。',
       relationsTab: '关系图',

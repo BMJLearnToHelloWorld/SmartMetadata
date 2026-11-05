@@ -6,7 +6,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Card, Descriptions, Form, Input, Space, Spin, Switch, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Card, Descriptions, Form, Input, Space, Spin, Switch, message} from 'ant-design-vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -133,7 +134,7 @@ onMounted(() => {
     <Card>
       <Space direction="vertical" size="middle" style="width: 100%">
         <div class="gov-head">
-          <Typography.Title :level="4">{{ tag?.displayName || tag?.name || t('tags.fallback') }}</Typography.Title>
+          <PageHeader :header="tag?.displayName || tag?.name || t('tags.fallback')" test-id="tag-detail" />
           <Space>
             <Button
               v-if="tag?.classification?.id"

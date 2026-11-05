@@ -85,6 +85,50 @@ describe('GlossaryDetailView', () => {
           });
         }
         if (url.includes('/api/v1/glossaryTerms')) {
+          if (url.includes('directChildrenOf=')) {
+            if (url.includes('after=c2')) {
+              return jsonResponse({
+                data: [
+                  {
+                    id: 'c3',
+                    name: 'Online',
+                    displayName: 'Online',
+                    description: 'Web channel',
+                    fullyQualifiedName: 'Business.Customer.Online',
+                    entityStatus: 'Approved',
+                    owners: [],
+                    childrenCount: 0,
+                  },
+                ],
+                paging: { total: 3 },
+              });
+            }
+            return jsonResponse({
+              data: [
+                {
+                  id: 'c1',
+                  name: 'Retail',
+                  displayName: 'Retail',
+                  description: 'Shop channel',
+                  fullyQualifiedName: 'Business.Customer.Retail',
+                  entityStatus: 'Approved',
+                  owners: [{ id: 'u1', name: 'amy', type: 'user' }],
+                  childrenCount: 0,
+                },
+                {
+                  id: 'c2',
+                  name: 'Wholesale',
+                  displayName: 'Wholesale',
+                  description: 'Bulk channel',
+                  fullyQualifiedName: 'Business.Customer.Wholesale',
+                  entityStatus: 'Draft',
+                  owners: [],
+                  childrenCount: 3,
+                },
+              ],
+              paging: { total: 3, after: 'c2' },
+            });
+          }
           return jsonResponse({
             data: [
               {
@@ -95,6 +139,7 @@ describe('GlossaryDetailView', () => {
                 fullyQualifiedName: 'Business.Customer',
                 entityStatus: 'Approved',
                 owners: [],
+                childrenCount: 2,
               },
             ],
             paging: { total: 1 },
@@ -137,5 +182,127 @@ describe('GlossaryDetailView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-term');
     expect(router.currentRoute.value.params.id).toBe('t1');
+  });
+
+  function childrenFetchCount(): number {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter((call) => String(call[0]).includes('directChildrenOf='))
+      .length;
+  }
+
+  async function expandFirstTerm(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
+    const icon = wrapper.find('.ant-table-row-expand-icon');
+    expect(icon.exists()).toBe(true);
+    await icon.trigger('click');
+    await flushPromises();
+  }
+
+  it('lazy-loads full children on expand and does not refetch on re-expand', async () => {
+    const { wrapper } = await mountView();
+    expect(childrenFetchCount()).toBe(0);
+    await expandFirstTerm(wrapper);
+    expect(childrenFetchCount()).toBe(1);
+    const lastUrl = String(vi.mocked(fetch).mock.calls.at(-1)?.[0]);
+    expect(lastUrl).toContain(`directChildrenOf=${encodeURIComponent('Business.Customer')}`);
+    // Full terms, not bare refs: child status and owners render.
+    expect(wrapper.text()).toContain('Retail');
+    expect(wrapper.text()).toContain('Wholesale');
+    expect(wrapper.text()).toContain('amy');
+    // Collapse and re-expand: cached, no second fetch.
+    await expandFirstTerm(wrapper);
+    await expandFirstTerm(wrapper);
+    expect(childrenFetchCount()).toBe(1);
+    expect(wrapper.text()).toContain('Retail');
+  });
+
+  it('appends the next children page via load-more and drops the button at the end', async () => {
+    const { wrapper } = await mountView();
+    await expandFirstTerm(wrapper);
+    const more = wrapper.find('[data-testid="term-children-more-t1"]');
+    expect(more.exists()).toBe(true);
+    await more.trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Online');
+    expect(wrapper.find('[data-testid="term-children-more-t1"]').exists()).toBe(false);
+  });
+
+  it('shows a retry row when children fail to load and recovers on retry', async () => {
+    let childrenCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('directChildrenOf=')) {
+          childrenCalls += 1;
+          if (childrenCalls === 1) {
+            return new Response('boom', { status: 500 });
+          }
+          return jsonResponse({
+            data: [
+              {
+                id: 'c1',
+                name: 'Retail',
+                displayName: 'Retail',
+                description: 'Shop channel',
+                fullyQualifiedName: 'Business.Customer.Retail',
+                entityStatus: 'Approved',
+                owners: [],
+                childrenCount: 0,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/glossaries/') && !url.includes('glossaryTerms')) {
+          return jsonResponse({
+            id: 'g1',
+            name: 'Business',
+            displayName: 'Business Glossary',
+            description: 'Core terms',
+            fullyQualifiedName: 'Business',
+            owners: [],
+            reviewers: [],
+            tags: [],
+            domains: [],
+            termCount: 1,
+          });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({
+            data: [{ id: 'g1', name: 'Business', displayName: 'Business Glossary', termCount: 1 }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 't1',
+                name: 'Customer',
+                displayName: 'Customer',
+                description: 'A buyer',
+                fullyQualifiedName: 'Business.Customer',
+                entityStatus: 'Approved',
+                owners: [],
+                childrenCount: 2,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    await expandFirstTerm(wrapper);
+    const errorRow = wrapper.find('[data-testid="term-children-error-t1"]');
+    expect(errorRow.exists()).toBe(true);
+    const retry = errorRow.find('button');
+    expect(retry.exists()).toBe(true);
+    await retry.trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Retail');
+    expect(wrapper.find('[data-testid="term-children-error-t1"]').exists()).toBe(false);
   });
 });

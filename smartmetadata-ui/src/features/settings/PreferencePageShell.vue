@@ -4,8 +4,9 @@
 -->
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
-import { Alert, Card, Space, Typography } from 'ant-design-vue';
+import { Alert, Card, Space } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
+import PageHeader from '@/components/shared/PageHeader.vue';
 
 defineProps<{
   title: string;
@@ -22,8 +23,7 @@ const { t } = useI18n();
   <Space direction="vertical" size="middle" style="width: 100%" :data-testid="testId">
     <Card :loading="loading">
       <RouterLink data-testid="settings-back" :to="{ name: 'admin-settings' }">{{ t('settings.back') }}</RouterLink>
-      <Typography.Title :level="4" :data-testid="`${testId}-title`">{{ title }}</Typography.Title>
-      <Typography.Paragraph v-if="lead" type="secondary">{{ lead }}</Typography.Paragraph>
+      <PageHeader :header="title" :sub-header="lead" :test-id="testId" />
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
       <slot />
     </Card>

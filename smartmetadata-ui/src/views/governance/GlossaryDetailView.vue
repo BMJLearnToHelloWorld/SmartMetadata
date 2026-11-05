@@ -6,21 +6,13 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {
-  BookOutlined,
-  CopyOutlined,
-  DownOutlined,
-  PlusOutlined,
-  RightOutlined,
-  SearchOutlined,
-  TableOutlined,
-} from '@ant-design/icons-vue';
 import {Alert, Breadcrumb, Button, Checkbox, Collapse, Empty, Form, Input, Pagination, Select, Space, Spin, Tag, Tabs, Typography, message} from 'ant-design-vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
 import { confirmDelete } from '@/features/crud/confirmDelete';
-import { createGlossaryTerm, listGlossaryTerms } from '@/api/glossaryTerms';
+import { createGlossaryTerm, listGlossaryTermChildrenLazy, listGlossaryTerms } from '@/api/glossaryTerms';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
@@ -46,6 +38,43 @@ const termSearch = ref('');
 const statusFilter = ref<string | undefined>();
 const termPage = ref(1);
 const expandAll = ref(false);
+
+// Lazy term-children state, keyed by parent term FQN (official
+// GlossaryTermTab mechanism, adapted to this tree table):
+// - loadingChildren: a fetch is in flight for this parent;
+// - enrichedChildren: a lazy page replaced the embedded refs, so re-expand
+//   never refetches;
+// - childPageAfter: the next-page cursor for this parent, if any;
+// - childErrors: the last fetch error for this parent, shown as a retry row.
+// Synthetic rows (loading / error / load-more) live inside the tree as
+// EntityRefs whose id carries the parent id and whose fullyQualifiedName
+// carries the parent FQN; they are never term links.
+const CHILD_PAGE_SIZE = 50;
+const loadingChildren = reactive(new Set<string>());
+const enrichedChildren = reactive(new Set<string>());
+const childPageAfter = reactive(new Map<string, string | undefined>());
+const childErrors = reactive(new Map<string, string>());
+
+type SyntheticChildKind = 'loading' | 'error' | 'more';
+
+function syntheticKind(record: GlossaryTerm): SyntheticChildKind | null {
+  const id = record.id || '';
+  if (id.startsWith('__gterm-loading__:')) {
+    return 'loading';
+  }
+  if (id.startsWith('__gterm-error__:')) {
+    return 'error';
+  }
+  if (id.startsWith('__gterm-more__:')) {
+    return 'more';
+  }
+  return null;
+}
+
+function syntheticParentId(record: GlossaryTerm): string {
+  const id = record.id || '';
+  return id.slice(id.indexOf(':') + 1);
+}
 
 const editOpen = ref(false);
 const createGlossaryOpen = ref(false);
@@ -129,11 +158,115 @@ const termColumns = computed(() => [
   { title: t('crud.owners'), key: 'owners', width: 140 },
 ]);
 
-// Official SchemaTable's second guard: only rows with loaded children get an
-// expand icon, so a row never expands to an empty body.
-const termExpandable = {
-  rowExpandable: (record: GlossaryTerm) => (record.children?.length ?? 0) > 0,
-};
+// How expansion works in this Ant version (verified against the installed
+// ant-design-vue): nest-mode icons render only for rows with a truthy
+// `children` field, and the `expandable` object is not an antd Table prop —
+// the old code's expand worked purely from embedded children data, and its
+// rowExpandable guard was dead. So: a term that reports childrenCount but
+// arrived without embedded refs gets an empty array (icon appears, expanding
+// it lazy-loads the page), childless terms keep no children key (no icon),
+// and expansion is hooked via SmTable's onExpand prop.
+function normalizeTermChildren(term: GlossaryTerm): GlossaryTerm {
+  if ((term.childrenCount ?? 0) > 0 && !term.children?.length) {
+    return { ...term, children: [] };
+  }
+  return term;
+}
+
+function onTermExpand(expanded: boolean, record: GlossaryTerm): void {
+  if (expanded && !syntheticKind(record)) {
+    void ensureChildrenLoaded(record);
+  }
+}
+
+/** Recursively replace one term (by FQN, at any tree depth) with its update. */
+function updateTermTree(
+  list: GlossaryTerm[],
+  fqn: string,
+  update: (term: GlossaryTerm) => GlossaryTerm,
+): GlossaryTerm[] {
+  return list.map((term) => {
+    if (term.fullyQualifiedName === fqn) {
+      return update(term);
+    }
+    const children = term.children;
+    if (children?.length) {
+      return { ...term, children: updateTermTree(children as GlossaryTerm[], fqn, update) };
+    }
+    return term;
+  });
+}
+
+/**
+ * Lazy-load a term's direct children (official getGlossaryTermChildrenLazy:
+ * directChildrenOf + after cursor, 50 per page). First expand replaces the
+ * embedded EntityRefs — which carry no status or owners — with full terms;
+ * later pages append. A failed page leaves previously loaded children in
+ * place and appends a retry row instead of an empty tree.
+ */
+async function ensureChildrenLoaded(term: GlossaryTerm, after?: string): Promise<void> {
+  const fqn = term.fullyQualifiedName || term.name;
+  const isLoadMore = after !== undefined;
+  if (!fqn || loadingChildren.has(fqn)) {
+    return;
+  }
+  // Re-expand never refetches; a zero subtree count is authoritative empty.
+  if (!isLoadMore && (enrichedChildren.has(fqn) || term.childrenCount === 0)) {
+    return;
+  }
+  loadingChildren.add(fqn);
+  if (!isLoadMore) {
+    childErrors.delete(fqn);
+    terms.value = updateTermTree(terms.value, fqn, (current) => {
+      const kept = (current.children ?? []).filter(
+        (child) => syntheticKind(child as GlossaryTerm) !== 'error',
+      );
+      const loadingRow: EntityRef = {
+        id: `__gterm-loading__:${current.id}`,
+        name: '',
+        fullyQualifiedName: fqn,
+      };
+      return { ...current, children: kept.length ? kept : [loadingRow] };
+    });
+  }
+  try {
+    const page = await listGlossaryTermChildrenLazy(fqn, CHILD_PAGE_SIZE, after);
+    enrichedChildren.add(fqn);
+    childPageAfter.set(fqn, page.after);
+    terms.value = updateTermTree(terms.value, fqn, (current) => {
+      const prev = (current.children ?? []).filter((child) => !syntheticKind(child as GlossaryTerm));
+      const fresh = page.data.map(normalizeTermChildren);
+      const next = isLoadMore ? [...prev, ...fresh] : [...fresh];
+      const moreRow: EntityRef | null = page.after
+        ? { id: `__gterm-more__:${current.id}`, name: '', fullyQualifiedName: fqn }
+        : null;
+      return { ...current, children: moreRow ? [...next, moreRow] : next };
+    });
+  } catch (error) {
+    childErrors.set(fqn, error instanceof Error ? error.message : t('crud.loadFailed'));
+    terms.value = updateTermTree(terms.value, fqn, (current) => {
+      const prev = (current.children ?? []).filter((child) => !syntheticKind(child as GlossaryTerm));
+      const errorRow: EntityRef = {
+        id: `__gterm-error__:${current.id}`,
+        name: '',
+        fullyQualifiedName: fqn,
+      };
+      return { ...current, children: [...prev, errorRow] };
+    });
+  } finally {
+    loadingChildren.delete(fqn);
+  }
+}
+
+/** Load the next children page (or retry the failed page) for a synthetic row. */
+function fetchMoreChildren(row: GlossaryTerm): void {
+  const fqn = row.fullyQualifiedName || '';
+  if (!fqn) {
+    return;
+  }
+  const stub = { id: syntheticParentId(row), name: '', fullyQualifiedName: fqn } as GlossaryTerm;
+  void ensureChildrenLoaded(stub, childPageAfter.get(fqn));
+}
 
 const termCountLabel = computed(() => {
   const n = glossary.value?.termCount ?? terms.value.length;
@@ -166,11 +299,15 @@ async function loadDetail(id: string): Promise<void> {
   detailLoading.value = true;
   detailError.value = '';
   residualNotes.value = [];
+  loadingChildren.clear();
+  enrichedChildren.clear();
+  childPageAfter.clear();
+  childErrors.clear();
   try {
     glossary.value = await getGlossary(id);
     try {
       const page = await listGlossaryTerms({ glossary: id, limit: 100 });
-      terms.value = page.data;
+      terms.value = page.data.map(normalizeTermChildren);
     } catch (error) {
       terms.value = [];
       residualNotes.value.push('governance.glossaries.residualTerms');
@@ -340,7 +477,7 @@ function onTermPageChange(page: number): void {
 }
 
 function openTerm(term: GlossaryTerm): void {
-  if (!term.id) {
+  if (!term.id || syntheticKind(term)) {
     return;
   }
   void router.push({ name: 'governance-term', params: { id: term.id } });
@@ -388,7 +525,7 @@ onMounted(() => {
           data-testid="create-glossary"
           @click="createGlossaryOpen = true"
         >
-          <template #icon><PlusOutlined /></template>
+          <template #icon><SmIcon icon-key="action-plus" /></template>
           {{ t('governance.glossaries.add') }}
         </Button>
       </div>
@@ -408,7 +545,7 @@ onMounted(() => {
             :data-testid="`glossary-row-${item.id}`"
             @click="selectGlossary(item)"
           >
-            <BookOutlined class="glossary__list-icon" />
+            <SmIcon icon-key="action-book" class="glossary__list-icon" />
             <span class="glossary__list-label">{{ entityLabel(item) }}</span>
           </li>
         </ul>
@@ -445,7 +582,7 @@ onMounted(() => {
                   :aria-label="t('governance.glossaries.copyFqn')"
                   @click="copyFqn"
                 >
-                  <CopyOutlined />
+                  <SmIcon icon-key="action-copy" />
                 </Button>
               </div>
             </div>
@@ -496,7 +633,7 @@ onMounted(() => {
                   class="glossary__search"
                   :placeholder="t('governance.glossaries.searchTerms')"
                 >
-                  <template #prefix><SearchOutlined /></template>
+                  <template #prefix><SmIcon icon-key="action-search" /></template>
                 </Input>
                 <Space wrap>
                   <Select
@@ -512,7 +649,7 @@ onMounted(() => {
                     {{ expandAll ? t('governance.glossaries.collapseAll') : t('governance.glossaries.expandAll') }}
                   </Button>
                   <Button data-testid="terms-customize" @click="onCustomize">
-                    <template #icon><TableOutlined /></template>
+                    <template #icon><SmIcon icon-key="action-table" /></template>
                     {{ t('governance.glossaries.customize') }}
                   </Button>
                 </Space>
@@ -524,11 +661,41 @@ onMounted(() => {
                 size="small"
                 :columns="termColumns"
                 :data-source="pagedTerms"
-                :expandable="termExpandable"
+                :on-expand="onTermExpand"
                 :pagination="false"
               >
                 <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'name'">
+                  <template v-if="syntheticKind(record as GlossaryTerm)">
+                    <template v-if="column.key === 'name'">
+                      <span
+                        v-if="syntheticKind(record as GlossaryTerm) === 'loading'"
+                        :data-testid="`term-children-loading-${syntheticParentId(record as GlossaryTerm)}`"
+                      >
+                        <Spin size="small" /> {{ t('governance.glossaries.loadingChildren') }}
+                      </span>
+                      <span
+                        v-else-if="syntheticKind(record as GlossaryTerm) === 'error'"
+                        :data-testid="`term-children-error-${syntheticParentId(record as GlossaryTerm)}`"
+                      >
+                        {{ childErrors.get((record as GlossaryTerm).fullyQualifiedName || '') }}
+                        <Button type="link" size="small" @click="fetchMoreChildren(record as GlossaryTerm)">
+                          {{ t('crud.retry') }}
+                        </Button>
+                      </span>
+                      <Button
+                        v-else
+                        type="link"
+                        size="small"
+                        :data-testid="`term-children-more-${syntheticParentId(record as GlossaryTerm)}`"
+                        :loading="loadingChildren.has((record as GlossaryTerm).fullyQualifiedName || '')"
+                        @click="fetchMoreChildren(record as GlossaryTerm)"
+                      >
+                        {{ t('governance.glossaries.loadMoreChildren') }}
+                      </Button>
+                    </template>
+                    <Typography.Text v-else type="secondary">—</Typography.Text>
+                  </template>
+                  <template v-else-if="column.key === 'name'">
                     <a
                       href="#"
                       class="glossary__term-link"
@@ -537,6 +704,11 @@ onMounted(() => {
                     >
                       {{ entityLabel(record as GlossaryTerm) }}
                     </a>
+                    <Spin
+                      v-if="loadingChildren.has((record as GlossaryTerm).fullyQualifiedName || '')"
+                      size="small"
+                      class="glossary__term-loading"
+                    />
                     <Typography.Paragraph
                       v-if="expandAll && (record as GlossaryTerm).fullyQualifiedName"
                       type="secondary"
@@ -601,8 +773,8 @@ onMounted(() => {
         :default-active-key="['domain', 'owners', 'reviewers', 'tags']"
       >
         <template #expandIcon="{ isActive }">
-          <DownOutlined v-if="isActive" />
-          <RightOutlined v-else />
+          <SmIcon v-if="isActive" icon-key="action-chevron-down" />
+          <SmIcon v-else icon-key="action-chevron-right" />
         </template>
         <Collapse.Panel key="domain" data-testid="rail-domain">
           <template #header>
@@ -615,7 +787,7 @@ onMounted(() => {
                 :disabled="!glossary"
                 @click.stop="onRailAdd(t('governance.glossaries.railDomain'))"
               >
-                <PlusOutlined />
+                <SmIcon icon-key="action-plus" />
               </Button>
             </div>
           </template>
@@ -641,7 +813,7 @@ onMounted(() => {
                 :disabled="!glossary"
                 @click.stop="onRailAdd(t('governance.glossaries.railOwners'))"
               >
-                <PlusOutlined />
+                <SmIcon icon-key="action-plus" />
               </Button>
             </div>
           </template>
@@ -667,7 +839,7 @@ onMounted(() => {
                 :disabled="!glossary"
                 @click.stop="onRailAdd(t('governance.glossaries.railReviewers'))"
               >
-                <PlusOutlined />
+                <SmIcon icon-key="action-plus" />
               </Button>
             </div>
           </template>
@@ -693,7 +865,7 @@ onMounted(() => {
                 :disabled="!glossary"
                 @click.stop="onRailAdd(t('governance.glossaries.railTags'))"
               >
-                <PlusOutlined />
+                <SmIcon icon-key="action-plus" />
               </Button>
             </div>
           </template>

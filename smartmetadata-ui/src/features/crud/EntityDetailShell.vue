@@ -7,7 +7,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Breadcrumb, Card, Empty, Space, Spin, Tag, Tabs, Typography, message } from 'ant-design-vue';
-import SmIcon from '@/components/shared/SmIcon.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from './types';
 
 const { t } = useI18n();
@@ -52,6 +52,18 @@ const emit = defineEmits<{
 }>();
 
 const showName = computed(() => Boolean(props.name) && props.name !== props.title);
+
+/** Subtitle text for PageHeader: name and FQN joined, empty when neither. */
+const subtitleText = computed(() => {
+  const parts: string[] = [];
+  if (showName.value && props.name) {
+    parts.push(props.name);
+  }
+  if (props.fqn) {
+    parts.push(props.fqn);
+  }
+  return parts.join(' · ');
+});
 const currentTab = computed(() => props.activeTab || props.tabs[0]?.key || '');
 const emptyDescription = computed(() => t('crud.empty'));
 
@@ -89,25 +101,23 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
           </Breadcrumb.Item>
         </Breadcrumb>
         <div class="entity-detail__head">
-          <div>
-            <Space align="center" wrap>
-              <h5 class="entity-detail__title" data-testid="entity-detail-title">
-                {{ title }}
-              </h5>
-              <Tag v-if="isBeta" color="blue" data-testid="entity-detail-beta">{{ t('shared.beta') }}</Tag>
-              <SmIcon v-if="learningPageId" icon-key="learning" data-testid="entity-detail-learning" :aria-label="learningPageId" />
+          <PageHeader
+            :header="title"
+            :sub-header="subtitleText || undefined"
+            :is-beta="isBeta"
+            :learning-page-id="learningPageId"
+            test-id="entity-detail"
+          >
+            <template #badge>
               <Tag v-if="deleted" color="red" data-testid="entity-detail-deleted">{{ t('crud.deleted') }}</Tag>
-            </Space>
-            <Typography.Paragraph v-if="showName || fqn" type="secondary" data-testid="entity-detail-subtitle">
-              <template v-if="showName">{{ name }}</template>
-              <template v-if="showName && fqn"> · </template>
-              <template v-if="fqn">{{ fqn }}</template>
-            </Typography.Paragraph>
-            <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-detail-lead">
-              {{ lead }}
-            </Typography.Paragraph>
-            <slot name="meta" />
-          </div>
+            </template>
+            <template #below>
+              <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-detail-lead">
+                {{ lead }}
+              </Typography.Paragraph>
+              <slot name="meta" />
+            </template>
+          </PageHeader>
           <Space class="entity-detail__actions" wrap>
             <slot name="actions" />
           </Space>
@@ -147,14 +157,6 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-}
-
-.entity-detail__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: var(--sm-text-primary);
 }
 
 .entity-detail__actions {

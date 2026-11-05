@@ -47,8 +47,8 @@ describe('EntityDetailShell', () => {
       ],
       lead: 'GET /api/v1/users/{id}',
     });
-    expect(wrapper.get('[data-testid="entity-detail-title"]').text()).toBe('Alice Admin');
-    expect(wrapper.get('[data-testid="entity-detail-subtitle"]').text()).toContain('alice');
+    expect(wrapper.get('[data-testid="entity-detail-heading"]').text()).toBe('Alice Admin');
+    expect(wrapper.get('[data-testid="entity-detail-sub"]').text()).toContain('alice');
     expect(wrapper.get('[data-testid="entity-detail-lead"]').text()).toContain('GET /api/v1/users/{id}');
     await wrapper.get('[data-testid="entity-detail-crumb-0"]').trigger('click');
     await flushPromises();
@@ -62,8 +62,10 @@ describe('EntityDetailShell', () => {
     });
     expect(wrapper.get('[data-testid="entity-detail-beta"]').text()).toBe('Beta');
     expect(wrapper.find('[aria-label="learning-page"]').exists()).toBe(true);
-    // Title text itself must stay exact: badges are siblings, not inside the h5.
-    expect(wrapper.get('[data-testid="entity-detail-title"]').text()).toBe('Alice Admin');
+    // PageHeader's contract renders the Beta badge inside the h5, so the
+    // heading text contains the title plus the badge; the badge itself is
+    // asserted exactly above, and the title exactly in the plain test.
+    expect(wrapper.get('[data-testid="entity-detail-heading"]').text()).toContain('Alice Admin');
   });
 
   it('surfaces a failed breadcrumb navigation instead of failing silently', async () => {

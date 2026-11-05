@@ -5,8 +5,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GlobalOutlined, SearchOutlined } from '@ant-design/icons-vue';
 import { Input, Select } from 'ant-design-vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -65,7 +65,7 @@ function onDomainChange(value: unknown): void {
         @pressEnter="onSearch"
       >
         <template #prefix>
-          <SearchOutlined />
+          <SmIcon icon-key="action-search" />
         </template>
       </Input>
       <Select
@@ -79,7 +79,7 @@ function onDomainChange(value: unknown): void {
         @change="onDomainChange"
       >
         <template #suffixIcon>
-          <GlobalOutlined />
+          <SmIcon icon-key="action-globe" />
         </template>
       </Select>
       </div>

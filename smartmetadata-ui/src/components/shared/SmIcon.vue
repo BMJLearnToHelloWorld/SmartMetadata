@@ -6,10 +6,12 @@
 import { navIcon } from '@/layouts/navIcons';
 
 /**
- * Icon bridge over the single nav icon map. Ant icons are a transition
- * only: the official shell uses ui-core icons plus assets/svg, so this
- * mapping must not be cited as a 1:1 visual match. An unknown key
- * renders an explicit missing marker instead of a guessed icon.
+ * Icon bridge over the single icon map (layouts/navIcons): every view icon
+ * in the product resolves through here, so no view imports Ant icons
+ * directly. Ant icons are a transition only: the official shell uses
+ * ui-core icons plus assets/svg, so this mapping must not be cited as a
+ * 1:1 visual match. An unknown key renders an explicit missing marker
+ * instead of a guessed icon.
  */
 withDefaults(defineProps<{ iconKey: string; testId?: string }>(), { testId: 'sm-icon' });
 </script>

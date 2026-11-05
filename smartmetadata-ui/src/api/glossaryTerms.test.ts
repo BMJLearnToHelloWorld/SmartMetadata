@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms } from './glossaryTerms';
+import { createGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms } from './glossaryTerms';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -172,5 +172,38 @@ describe('glossaryTerms API', () => {
     const page = await listGlossaryTermAssets('t1');
     expect(page.data[0]?.fullyQualifiedName).toBe('svc.db.schema.orders');
     expect(lastFetch().url).toContain('/api/v1/glossaryTerms/t1/assets');
+  });
+
+  it('lazy-loads direct children with directChildrenOf, full fields, and the after cursor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'c1',
+                name: 'Retail',
+                fullyQualifiedName: 'Business.Customer.Retail',
+                entityStatus: 'Approved',
+                owners: [{ id: 'u1', name: 'amy', type: 'user' }],
+                childrenCount: 0,
+              },
+            ],
+            paging: { total: 2, after: 'c1' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listGlossaryTermChildrenLazy('Business.Customer', 50, 'c0');
+    expect(page.data[0]?.status).toBe('Approved');
+    expect(page.data[0]?.owners).toHaveLength(1);
+    expect(page.after).toBe('c1');
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/glossaryTerms');
+    expect(url).toContain(`directChildrenOf=${encodeURIComponent('Business.Customer')}`);
+    expect(url).toContain('after=c0');
+    expect(url).toContain('limit=50');
   });
 });
