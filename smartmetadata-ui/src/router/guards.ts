@@ -18,19 +18,55 @@
  * page (the official PermissionPlaceholder equivalent), not a silent
  * pass on session alone.
  *
- * MERGE REQUIREMENT: the router beforeEach call site must pass
- * isAdminUser from the auth store (and hasPermission once a route
- * permission source exists). Without isAdminUser, this guard forbids
- * admin routes for everyone, admins included. The call site lives in
- * router/index.ts, which this track does not own, so the wiring is
- * a merge-time step, not a runtime fallback. Until a hasPermission
- * value is passed, admin routes are admin-gated only.
+ * Second-line wiring (router/index.ts beforeEach): for admin routes
+ * with a mapped resource (ADMIN_ROUTE_RESOURCE below), the guard
+ * queries the permission store (the PermissionProvider equivalent,
+ * cached per principal) and admits entry on any view-or-better grant
+ * (hasAdminEntryGrant). Entry is deliberately coarser than action
+ * gating: the views behind the route still enforce their own
+ * operation-level buttons (EditAll/Create/...), so entry never
+ * grants an action by itself. A permission query that fails is NOT
+ * a grant (fail closed); an unmapped admin route stays admin-only
+ * until its resource mapping is determined — no permission key is
+ * invented for it. Official precedent: AdminProtectedRoute itself
+ * takes an optional hasPermission, and several official admin
+ * routes pass none (admin-only by design).
  *
  * AppMode separate routes are a Stage 1 placeholder: only the
  * app-mode preference page exists; no fake AppMode shell is created
  * here.
  */
+import type { OperationPermissions } from '@/api/permissions';
 export const ADMIN_ROUTE_PREFIXES = ['/admin'] as const;
+
+/**
+ * Admin route name -> permission resource for the guard's second
+ * line. Only routes with a determined mapping are listed: users and
+ * teams are entity resources served by GET /v1/permissions/{resource}
+ * (the same client the debugger and the governance views use).
+ * Roles, bots, policies, settings, personas, intake/task forms and
+ * the permission debugger stay admin-only until their mappings are
+ * determined — the debugger in particular is admin-only by design
+ * (its debug/user/{username} endpoint is admin-only server-side).
+ */
+export const ADMIN_ROUTE_RESOURCE: Record<string, string> = {
+  'admin-users': 'user',
+  'admin-user': 'user',
+  'admin-admins': 'user',
+  'admin-teams': 'team',
+  'admin-team': 'team',
+};
+
+/**
+ * Entry grant for a mapped admin route: any view-or-better grant
+ * admits entry. Action buttons inside the view enforce their own
+ * operations (Create/EditAll/...), so entry alone grants nothing.
+ */
+export function hasAdminEntryGrant(
+  ops: OperationPermissions | null | undefined,
+): boolean {
+  return ops?.ViewAll === true || ops?.ViewBasic === true || ops?.EditAll === true;
+}
 
 export type GuardDecision =
   | { kind: 'allow' }

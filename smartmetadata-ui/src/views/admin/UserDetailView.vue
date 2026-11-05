@@ -30,13 +30,26 @@ import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import MyPermissionsPanel from '@/views/admin/MyPermissionsPanel.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
+import type { OperationPermissions } from '@/api/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
-/** Official Users gating line: edit/deactivate/restore need an admin. */
+/**
+ * Dual line for user management: isAdminUser (first line) OR an
+ * EditAll grant on this user via the permission API (second line,
+ * same client as the debugger). A failed query is not a grant
+ * (fail closed); the server still enforces user writes. Token
+ * issuance for other users (the PAT admin panel below) stays
+ * admin-only on purpose: minting another user's token is not
+ * covered by user EditAll semantics.
+ */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
+const userOps = ref<OperationPermissions | null>(null);
+const canManageUser = computed(
+  () => isAdminUser.value || userOps.value?.EditAll === true,
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const user = ref<AdminUser | null>(null);
@@ -180,6 +193,9 @@ async function load(): Promise<void> {
     user.value = await getUser(props.id, 'all');
     editForm.roleIds = idsOf(user.value.roles);
     editForm.teamIds = idsOf(user.value.teams);
+    userOps.value = await usePermissionStore()
+      .getEntityPermissionById('user', user.value.id)
+      .catch(() => null);
   } catch (error) {
     user.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -303,11 +319,11 @@ watch(activeTab, (tab) => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button v-if="user && isAdminUser" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
-      <Button v-if="user && !user.deleted && isAdminUser" danger data-testid="deactivate-user" @click="onDeactivate">
+      <Button v-if="user && canManageUser" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button v-if="user && !user.deleted && canManageUser" danger data-testid="deactivate-user" @click="onDeactivate">
         {{ t('admin.users.deactivate') }}
       </Button>
-      <Button v-if="user?.deleted && isAdminUser" type="primary" data-testid="restore-user" @click="onRestore">
+      <Button v-if="user?.deleted && canManageUser" type="primary" data-testid="restore-user" @click="onRestore">
         {{ t('admin.users.restore') }}
       </Button>
     </template>

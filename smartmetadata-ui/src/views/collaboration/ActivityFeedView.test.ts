@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import ActivityFeedView from './ActivityFeedView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -22,9 +23,12 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(sessionUser?: { id: string; name: string }) {
   const pinia = createPinia();
   setActivePinia(pinia);
+  if (sessionUser) {
+    useAuthStore().user = sessionUser;
+  }
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -42,12 +46,27 @@ async function mountView() {
 }
 
 describe('ActivityFeedView', () => {
+  let detailGrant: 'fail' | 'deny' | 'grant' = 'fail';
+
   beforeEach(() => {
+    detailGrant = 'fail';
     localStorage.clear();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url.includes('/api/v1/permissions/table/name/')) {
+          if (detailGrant === 'grant') {
+            return jsonResponse({
+              resource: 'table',
+              permissions: [{ operation: 'ViewAll', access: 'allow' }],
+            });
+          }
+          if (detailGrant === 'deny') {
+            return jsonResponse({ resource: 'table', permissions: [] });
+          }
+          return new Response('not found', { status: 404 });
+        }
         if (url.includes('/api/v1/activity/act-1/replies')) {
           if (init?.method === 'POST') {
             const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
@@ -192,5 +211,25 @@ describe('ActivityFeedView', () => {
       .find(([input, init]) => String(input).includes('/reaction/thumbsUp') && init?.method === 'PUT');
     expect(put).toBeDefined();
     expect(document.body.textContent ?? '').toContain('👍 1');
+  });
+
+  it('disables detail reactions for a non-admin without a view grant on the detail entity (P1)', async () => {
+    detailGrant = 'deny';
+    const { wrapper } = await mountView({ id: 'u9', name: 'bob' });
+    await wrapper.find('[data-testid="activity-card-act-1"]').trigger('click');
+    await flushPromises();
+    const button = document.querySelector('[data-testid="activity-reaction-thumbsUp"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.disabled).toBe(true);
+  });
+
+  it('enables detail reactions for a non-admin with a ViewAll grant on the detail entity (P1)', async () => {
+    detailGrant = 'grant';
+    const { wrapper } = await mountView({ id: 'u9', name: 'bob' });
+    await wrapper.find('[data-testid="activity-card-act-1"]').trigger('click');
+    await flushPromises();
+    const button = document.querySelector('[data-testid="activity-reaction-thumbsUp"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.disabled).toBe(false);
   });
 });

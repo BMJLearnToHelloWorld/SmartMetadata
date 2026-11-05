@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { isAdminPath, resolveAdminAccess, resolveGuard } from './guards';
+import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, resolveAdminAccess, resolveGuard } from './guards';
 
 describe('route guards', () => {
   it('keeps public routes open without a session', () => {
@@ -59,5 +59,27 @@ describe('route guards', () => {
     expect(isAdminPath('/admin/users')).toBe(true);
     expect(isAdminPath('/administrator')).toBe(false);
     expect(isAdminPath('/my-data')).toBe(false);
+  });
+
+  it('maps only user/team admin routes to a permission resource', () => {
+    expect(ADMIN_ROUTE_RESOURCE['admin-users']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-user']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-admins']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-teams']).toBe('team');
+    expect(ADMIN_ROUTE_RESOURCE['admin-team']).toBe('team');
+    // Roles, bots, policies, settings, personas and the debugger stay
+    // admin-only until their resource mappings are determined.
+    expect(ADMIN_ROUTE_RESOURCE['admin-roles']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-permission-debugger']).toBeUndefined();
+  });
+
+  it('admits mapped admin entry on any view-or-better grant', () => {
+    expect(hasAdminEntryGrant({ ViewAll: true })).toBe(true);
+    expect(hasAdminEntryGrant({ ViewBasic: true })).toBe(true);
+    expect(hasAdminEntryGrant({ EditAll: true })).toBe(true);
+    expect(hasAdminEntryGrant({ Create: true })).toBe(false);
+    expect(hasAdminEntryGrant({})).toBe(false);
+    expect(hasAdminEntryGrant(null)).toBe(false);
+    expect(hasAdminEntryGrant(undefined)).toBe(false);
   });
 });

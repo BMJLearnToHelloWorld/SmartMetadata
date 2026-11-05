@@ -127,6 +127,54 @@ describe('UsersListView', () => {
     await flushPromises();
   });
 
+  it('shows create and edit entry points for a non-admin with a user grant (P1)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/user')) {
+          return jsonResponse({
+            resource: 'user',
+            permissions: [
+              { operation: 'Create', access: 'allow' },
+              { operation: 'EditAll', access: 'allow' },
+            ],
+          });
+        }
+        if (url.includes('/api/v1/users?') || url.endsWith('/api/v1/users')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'u1',
+                name: 'alice',
+                displayName: 'Alice Admin',
+                email: 'alice@example.com',
+                isAdmin: true,
+                teams: [{ id: 't1', name: 'Engineering', type: 'team' }],
+                roles: [{ id: 'r1', name: 'Admin', type: 'role' }],
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/teams')) {
+          return jsonResponse({ data: [{ id: 't1', name: 'Engineering', teamType: 'Group' }], paging: {} });
+        }
+        if (url.includes('/api/v1/roles')) {
+          return jsonResponse({ data: [{ id: 'r1', name: 'Admin' }], paging: {} });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountUsers(false);
+    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-edit"]')).not.toBeNull();
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+  });
+
   it('opens user detail from the overflow menu', async () => {
     const { wrapper, router } = await mountUsers();
     await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');

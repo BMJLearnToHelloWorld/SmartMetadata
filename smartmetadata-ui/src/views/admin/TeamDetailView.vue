@@ -23,13 +23,23 @@ import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
+import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import type { EntityRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
-/** Official Team gating line: write entry points need an admin. */
+/**
+ * Dual line for team management: isAdminUser (first line) OR an
+ * EditAll grant on this team via the permission API (second line,
+ * same client as the debugger). A failed query is not a grant
+ * (fail closed); the server still enforces team writes.
+ */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
+const teamOps = ref<OperationPermissions | null>(null);
+const canManageTeam = computed(
+  () => isAdminUser.value || teamOps.value?.EditAll === true,
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const team = ref<AdminTeam | null>(null);
@@ -75,6 +85,9 @@ async function load(): Promise<void> {
   try {
     team.value = await getTeam(props.id, 'all');
     form.defaultRoleIds = idsOf(team.value.defaultRoles);
+    teamOps.value = await usePermissionStore()
+      .getEntityPermissionById('team', team.value.id)
+      .catch(() => null);
   } catch (error) {
     team.value = null;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -196,7 +209,7 @@ watch(
     v-model:active-tab="activeTab"
   >
     <template #actions>
-      <Button v-if="team && isAdminUser" data-testid="edit-team" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button v-if="team && canManageTeam" data-testid="edit-team" @click="openEdit">{{ t('crud.edit') }}</Button>
     </template>
     <template #overview>
       <Descriptions v-if="team" bordered :column="2" size="small">
@@ -219,7 +232,7 @@ watch(
                 {{ entityLabel(role) }}
               </Select.Option>
             </Select>
-            <Button v-if="isAdminUser" type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
+            <Button v-if="canManageTeam" type="primary" data-testid="save-team-roles" @click="onDefaultRoles(form.defaultRoleIds)">
               {{ t('admin.teams.saveRoles') }}
             </Button>
           </Space>
@@ -243,7 +256,7 @@ watch(
           option-filter-prop="label"
           :options="users.map((u) => ({ value: u.id, label: `${entityLabel(u)} <${u.email || ''}>` }))"
         />
-        <Button v-if="isAdminUser" type="primary" data-testid="add-team-member" @click="onAddMember">
+        <Button v-if="canManageTeam" type="primary" data-testid="add-team-member" @click="onAddMember">
           {{ t('admin.teams.addMember') }}
         </Button>
       </Space>

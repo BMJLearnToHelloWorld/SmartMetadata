@@ -22,6 +22,8 @@ import { createConversation } from '@/api/conversations';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
+import type { OperationPermissions } from '@/api/permissions';
 import type { ActivityEvent, ConversationReply } from '@/types/collaboration';
 
 /** Official reaction types (openmetadata-spec type/reaction.json), with display glyphs. */
@@ -55,6 +57,37 @@ const replying = ref(false);
 const reactionLoading = ref(false);
 
 const currentUserId = computed(() => useAuthStore().user?.id || '');
+
+/**
+ * Dual line for feed writes (post/react/reply), keyed on the
+ * about-entity: isAdminUser (first line) OR a view-or-better grant
+ * on that entity via the permission API (second line, same client
+ * as the debugger). The feed list itself stays open to any
+ * authenticated user — official gates no feed page, it scopes by
+ * entity access — so only the writes are gated, and only when an
+ * entity link exists. A permission query that fails falls back to
+ * allowing the write (the server still enforces conversation and
+ * activity writes); an explicit deny hides the action.
+ */
+const isAdminUser = computed(() => usePermissionStore().isAdminUser);
+function hasViewGrant(ops: OperationPermissions | null): boolean {
+  return (
+    ops?.ViewAll === true || ops?.ViewBasic === true || ops?.EditAll === true
+  );
+}
+const detailEntityOps = ref<OperationPermissions | null>(null);
+const detailEntityFailed = ref(false);
+const canInteractWithDetail = computed(() => {
+  const event = detailEvent.value;
+  const fqn = event?.entity?.fullyQualifiedName || event?.entity?.name;
+  if (!event?.entity?.type || !fqn) {
+    return true;
+  }
+  if (detailEntityFailed.value) {
+    return true;
+  }
+  return isAdminUser.value || hasViewGrant(detailEntityOps.value);
+});
 
 /**
  * Official Reactions grouping (openmetadata-ui/.../Reactions.tsx):
@@ -91,14 +124,29 @@ async function loadReplies(eventId: string): Promise<void> {
 watch(detailEvent, (event) => {
   detailReplies.value = [];
   replyMessage.value = '';
+  detailEntityOps.value = null;
+  detailEntityFailed.value = false;
   if (event) {
     void loadReplies(event.id);
+    const fqn = event.entity?.fullyQualifiedName || event.entity?.name;
+    if (event.entity?.type && fqn) {
+      void usePermissionStore()
+        .getEntityPermissionByFqn(event.entity.type, fqn)
+        .then((ops) => {
+          detailEntityOps.value = ops;
+          detailEntityFailed.value = false;
+        })
+        .catch(() => {
+          detailEntityOps.value = null;
+          detailEntityFailed.value = true;
+        });
+    }
   }
 });
 
 async function onToggleReaction(reactionType: string): Promise<void> {
   const event = detailEvent.value;
-  if (!event || reactionLoading.value) {
+  if (!event || reactionLoading.value || !canInteractWithDetail.value) {
     return;
   }
   const own = reactionGroups.value.find((group) => group.type === reactionType)?.own ?? false;
@@ -121,7 +169,7 @@ async function onToggleReaction(reactionType: string): Promise<void> {
 
 async function onReply(): Promise<void> {
   const event = detailEvent.value;
-  if (!event || !replyMessage.value.trim()) {
+  if (!event || !replyMessage.value.trim() || !canInteractWithDetail.value) {
     return;
   }
   replying.value = true;
@@ -143,6 +191,48 @@ const form = reactive({
   entityFqn: '',
   message: '',
 });
+
+/** Create-post dual line: resolved when the drawer is open and an
+ * entity FQN is entered; see the dual-line comment above. */
+const createEntityOps = ref<OperationPermissions | null>(null);
+const createEntityFailed = ref(false);
+const createEntityLoading = ref(false);
+const canPost = computed(() => {
+  if (!form.entityFqn.trim()) {
+    return true;
+  }
+  if (createEntityFailed.value) {
+    return true;
+  }
+  if (createEntityLoading.value) {
+    return false;
+  }
+  return isAdminUser.value || hasViewGrant(createEntityOps.value);
+});
+watch(
+  [createOpen, () => form.entityType, () => form.entityFqn],
+  async ([open, type, fqn]) => {
+    if (!open || !fqn.trim()) {
+      createEntityOps.value = null;
+      createEntityFailed.value = false;
+      createEntityLoading.value = false;
+      return;
+    }
+    createEntityLoading.value = true;
+    try {
+      createEntityOps.value = await usePermissionStore().getEntityPermissionByFqn(
+        type,
+        fqn.trim(),
+      );
+      createEntityFailed.value = false;
+    } catch {
+      createEntityOps.value = null;
+      createEntityFailed.value = true;
+    } finally {
+      createEntityLoading.value = false;
+    }
+  },
+);
 
 /**
  * Official merged-feed sort (ActivityFeedListV1New): timestamp descending,
@@ -214,6 +304,9 @@ function onRangeChange(): void {
 }
 
 async function onCreate(): Promise<void> {
+  if (!canPost.value) {
+    return;
+  }
   creating.value = true;
   try {
     await createConversation({
@@ -329,6 +422,7 @@ onMounted(() => {
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="creating"
+      :ok-disabled="!canPost"
       @ok="onCreate"
     @cancel="createOpen = false"
     >
@@ -380,6 +474,7 @@ onMounted(() => {
             size="small"
             :type="group.own ? 'primary' : 'default'"
             :loading="reactionLoading"
+            :disabled="!canInteractWithDetail"
             :data-testid="`activity-reaction-${group.type}`"
             @click="onToggleReaction(group.type)"
           >
@@ -406,7 +501,7 @@ onMounted(() => {
           <Button
             type="primary"
             :loading="replying"
-            :disabled="!replyMessage.trim()"
+            :disabled="!replyMessage.trim() || !canInteractWithDetail"
             data-testid="activity-reply-submit"
             @click="onReply"
           >

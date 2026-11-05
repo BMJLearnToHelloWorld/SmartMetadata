@@ -8,7 +8,6 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { loadSession } from '@/auth/token';
-import { RESIDUAL_PAGES } from '@/layouts/residualPages';
 import AppShell from '@/layouts/AppShell.vue';
 /**
  * Route views are lazy-loaded (R8 code-splitting): the shell stays in the
@@ -143,12 +142,12 @@ const MetricBulkEditView = () =>
   import('@/views/governance/MetricBulkEditView.vue');
 const DocsView = () => import('@/views/docs/DocsView.vue');
 const TourStartView = () => import('@/views/tour/TourStartView.vue');
-const ResidualPage = () => import('@/views/shell/ResidualPage.vue');
 const PersonaLandingRedirect = () => import('@/views/shell/PersonaLandingRedirect.vue');
 const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
 import { useAuthStore } from '@/stores/auth';
-import { resolveGuard } from '@/router/guards';
+import { usePermissionStore } from '@/stores/permissions';
+import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, resolveGuard } from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -564,12 +563,6 @@ export const router = createRouter({
           props: true,
           meta: { titleKey: 'metricBulkEdit.title' },
         },
-        ...RESIDUAL_PAGES.map((page) => ({
-          path: page.path,
-          name: page.name,
-          component: ResidualPage,
-          meta: { ...page },
-        })),
         {
           path: 'quality/test-definitions',
           name: 'quality-test-definitions',
@@ -664,16 +657,33 @@ export const router = createRouter({
   ],
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  const auth = useAuthStore();
+  const isAdminUser = auth.user?.isAdmin === true;
+  // Admin dual line, second line: for mapped admin routes, a
+  // view-or-better grant on the route's resource admits entry even
+  // for non-admins (official AdminProtectedRoute hasPermission).
+  // The permission store caches per principal, so repeat navigations
+  // do not re-query. A failed query is NOT a grant (fail closed);
+  // unmapped admin routes stay admin-only (see ADMIN_ROUTE_RESOURCE).
+  let hasPermission: boolean | undefined;
+  if (isAdminPath(to.fullPath) && !isAdminUser) {
+    const resource = ADMIN_ROUTE_RESOURCE[to.name as string];
+    if (resource) {
+      try {
+        const ops = await usePermissionStore().getResourcePermission(resource);
+        hasPermission = hasAdminEntryGrant(ops);
+      } catch {
+        hasPermission = false;
+      }
+    }
+  }
   const decision = resolveGuard({
     isPublic: to.meta.public === true,
     hasSession: loadSession(window.localStorage) !== null,
     fullPath: to.fullPath,
-    // Admin dual line, first line: isAdminUser from the auth store profile
-    // (official AdminProtectedRoute reads currentUser?.isAdmin). No
-    // route-level permission source exists yet, so until one is passed,
-    // admin routes are admin-gated only — never silently open.
-    isAdminUser: useAuthStore().user?.isAdmin === true,
+    isAdminUser,
+    hasPermission,
   });
   if (decision.kind === 'login') {
     return { name: 'login', query: { redirect: decision.redirect } };

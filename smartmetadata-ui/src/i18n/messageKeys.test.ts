@@ -99,8 +99,6 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('nav.contextCenter');
     expect(keys).toContain('nav.incidentManager');
     expect(keys).toContain('nav.columnBulkOps');
-    expect(keys).toContain('shells.ontologyExplorer.empty');
-    expect(keys).toContain('shells.contextArticles.empty');
     expect(keys).toContain('metrics.title');
     expect(keys).toContain('metrics.empty');
     expect(keys).toContain('insights.title');
@@ -156,7 +154,7 @@ describe('i18n catalogs', () => {
     expect(enUS.chrome.logout).toBe('Logout');
     expect(enUS.login.submit).toBe('Sign In');
     expect(enUS.nav.dataProducts).toBe('Data Products');
-    expect(enUS.nav.testCases).toBe('Test Cases');
+    expect(enUS.nav.testLibrary).toBe('Test Library');
     expect(enUS.nav.govern).toBe('Govern');
     expect(enUS.nav.glossary).toBe('Glossary');
     expect(enUS.nav.incidentManager).toBe('Incident Manager');
@@ -169,11 +167,11 @@ describe('i18n catalogs', () => {
     expect(zhCN.chrome.logout).toBe('退出');
     expect(zhCN.login.submit).toBe('登入');
     expect(zhCN.nav.lineage).toBe('血缘关系');
-    expect(zhCN.nav.governance).toBe('数据治理');
+    expect(zhCN.nav.testLibrary).toBe('测试库');
     expect(zhCN.nav.glossaries).toBe('术语库');
     expect(zhCN.crud.create).toBe('新建');
     expect(enUS.crud.fieldRequired).toBe('{field} is required');
-    expect(enUS.crud.fieldRequiredPlain).toBe('This field is required');
+    expect(enUS.crud.shownOf).toBe('{shown} shown of {total}');
     expect(enUS.crud.empty).toBe('No data');
     expect(enUS.crud.emptyHint).toBe('Adding a new record is easy, just give it a spin!');
     expect(enUS.crud.deleteTitle).toBe('Delete');
@@ -181,17 +179,17 @@ describe('i18n catalogs', () => {
     expect(enUS.observability.incidents.statusAck).toBe('Acknowledged');
     expect(enUS.observability.incidents.statusResolved).toBe('Resolved');
     expect(enUS.home.hiUser).toBe('Hi {user}');
-    expect(enUS.home.subtitle).toBe("Here's what needs your attention across your data.");
+    expect(enUS.home.welcome).toBe('Welcome, {name}!');
     expect(enUS.home.topicsTitle).toBe('Topics to catch up on');
-    expect(enUS.home.noActiveAnnouncements).toBe('No Active Announcements');
-    expect(enUS.home.widgets.yoursAndFollowed).toBe('Yours and Followed');
+    expect(enUS.home.activityEmptyTitle).toBe('No Recent Activity');
+    expect(enUS.home.following).toBe('Following Assets');
     expect(zhCN.home.hiUser).toBe('你好 {user}');
     expect(zhCN.home.topicsTitle).toBe('需要了解的主题');
     expect(enUS.insights.kpisEmpty).toBe(
       'Define key performance indicators to monitor impact and drive smarter decisions.',
     );
     expect(zhCN.crud.fieldRequired).toBe('需要{field}');
-    expect(zhCN.crud.fieldRequiredPlain).toBe('此字段为必填项');
+    expect(zhCN.crud.shownOf).toBe('显示 {shown} / {total} 条');
     expect(zhCN.observability.incidents.statusAck).toBe('已确认');
     expect(zhCN.observability.incidents.statusResolved).toBe('已解决');
   });
@@ -212,15 +210,15 @@ describe('i18n catalogs', () => {
     expect(enUS.admin.roles.lead).toBe('Roles are assigned to users. A role is a collection of policies.');
     expect(enUS.governance.glossaries.lead).toBe('Define concepts in plain business language.');
     expect(enUS.observability.alerts.lead).toBe('Stay current with timely alerts using webhooks.');
-    expect(enUS.settings.residual.appearance).toMatch(/residual|read-only|theme/i);
-    expect(enUS.settings.residual.sso).toMatch(/SSO/);
+    expect(enUS.settings.residual.generic).toBe('Not wired in this console.');
+    expect(enUS.sso.lead).toMatch(/single sign-on/i);
     expect(zhCN.login.lead).toBe('使用目录账号登入。');
     expect(zhCN.explore.lead).not.toMatch(/GET \/api/);
   });
 
   it('replaces Batch 3 tab and settings leads with OM-style help, not API tutorials', () => {
     const apiTutorial = /GET \/api|POST \/api|PUT \/api|PATCH \/api|RFC 6902/i;
-    expect(enUS.asset.lineageLead).toBe('Upstream and downstream lineage for this asset.');
+    expect(enUS.sso.lead).toBe('Identity provider configuration for single sign-on.');
     expect(enUS.asset.activityLead).not.toMatch(apiTutorial);
     expect(enUS.asset.conversationsLead).not.toMatch(apiTutorial);
     expect(enUS.asset.customPropertiesLead).not.toMatch(apiTutorial);
@@ -247,11 +245,11 @@ describe('i18n catalogs', () => {
     expect(enUS.admin.users.rolesLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.pipelines.detailLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.services.connectionJsonHelp).toMatch(/JSON/i);
-    expect(enUS.settings.residual.appearance).toMatch(/theme|read-only/i);
-    expect(enUS.settings.residual.applications).toMatch(/wired|residual/i);
-    expect(enUS.settings.residual.sso).toMatch(/SSO/);
-    expect(enUS.settings.residual.persona).toMatch(/persona/i);
-    expect(enUS.settings.residual.inbox).toMatch(/inbox|Activity|Tasks/i);
+    expect(enUS.settings.residual.generic).not.toMatch(apiTutorial);
+    expect(enUS.sso.lead).not.toMatch(apiTutorial);
+    expect(enUS.governance.glossaries.lead).not.toMatch(apiTutorial);
+    expect(enUS.admin.users.lead).not.toMatch(apiTutorial);
+    expect(enUS.observability.alerts.lead).not.toMatch(apiTutorial);
     expect(zhCN.asset.activityLead).not.toMatch(apiTutorial);
     expect(zhCN.collaboration.activity.lead).not.toMatch(apiTutorial);
     expect(zhCN.settings.system.lead).not.toMatch(apiTutorial);

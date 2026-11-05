@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import TaskDetailView from './TaskDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -31,9 +32,12 @@ function lastMatchingFetch(predicate: (url: string, init?: RequestInit) => boole
   return { url: String(match[0]), init: match[1] };
 }
 
-async function mountView() {
+async function mountView(sessionUser?: { id: string; name: string }) {
   const pinia = createPinia();
   setActivePinia(pinia);
+  if (sessionUser) {
+    useAuthStore().user = sessionUser;
+  }
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/tasks/:id', name: 'task', component: TaskDetailView, props: true }],
@@ -97,12 +101,24 @@ describe('TaskDetailView data access request', () => {
 });
 
 describe('TaskDetailView', () => {
+  let taskGrant: 'deny' | 'grant' = 'deny';
+
   beforeEach(() => {
+    taskGrant = 'deny';
     localStorage.clear();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url.includes('/api/v1/permissions/task/t1')) {
+          if (taskGrant === 'grant') {
+            return jsonResponse({
+              resource: 'task',
+              permissions: [{ operation: 'EditAll', access: 'allow' }],
+            });
+          }
+          return new Response('not found', { status: 404 });
+        }
         if (init?.method === 'POST' && url.includes('/resolve')) {
           return jsonResponse({ id: 't1', name: 'review-orders', status: 'Completed', comments: [] });
         }
@@ -181,6 +197,17 @@ describe('TaskDetailView', () => {
   it('renders the task delete button (R7)', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="delete-task"]').exists()).toBe(true);
+  });
+
+  it('disables action buttons for a non-assignee non-admin without a grant (P1)', async () => {
+    const { wrapper } = await mountView({ id: 'u9', name: 'bob' });
+    expect((wrapper.find('[data-testid="resolve-task"]').element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('enables action buttons for a non-assignee non-admin with an EditAll grant (P1)', async () => {
+    taskGrant = 'grant';
+    const { wrapper } = await mountView({ id: 'u9', name: 'bob' });
+    expect((wrapper.find('[data-testid="resolve-task"]').element as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('closes the task from the action menu and then marks it terminal', async () => {

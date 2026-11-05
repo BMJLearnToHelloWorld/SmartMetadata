@@ -34,13 +34,27 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminRole, AdminTeam, AdminUser, IncludeFilter } from '@/types/admin';
+import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
-/** Official Users gating line: create/edit entry points need an admin. */
+/**
+ * Dual line for user management: isAdminUser (first line) OR a
+ * resource grant on 'user' via the permission API (second line,
+ * same client as the debugger). Create uses the Create operation,
+ * row edit uses EditAll. A failed query is not a grant (fail
+ * closed); the server still enforces user writes.
+ */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
+const userResourceOps = ref<OperationPermissions | null>(null);
+const canCreateUser = computed(
+  () => isAdminUser.value || userResourceOps.value?.Create === true,
+);
+const canEditUser = computed(
+  () => isAdminUser.value || userResourceOps.value?.EditAll === true,
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const users = ref<AdminUser[]>([]);
@@ -121,6 +135,9 @@ async function loadUsers(): Promise<void> {
       total.value = page.total;
       pageAfter.value = page.after;
     }
+    userResourceOps.value = await usePermissionStore()
+      .getResourcePermission('user')
+      .catch(() => null);
   } catch (error) {
     users.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -236,7 +253,7 @@ onMounted(() => {
     :data-source="users"
     table-test-id="admin-users-table"
     show-row-actions
-    :show-edit-action="isAdminUser"
+    :show-edit-action="canEditUser"
     show-search
     :search-value="query"
     :search-placeholder="t('admin.users.searchPlaceholder')"
@@ -252,7 +269,7 @@ onMounted(() => {
     @edit="openUser($event as AdminUser)"
   >
     <template #actions>
-      <Button v-if="isAdminUser" type="primary" data-testid="create-user" @click="createOpen = true">
+      <Button v-if="canCreateUser" type="primary" data-testid="create-user" @click="createOpen = true">
         {{ t('admin.users.create') }}
       </Button>
     </template>
