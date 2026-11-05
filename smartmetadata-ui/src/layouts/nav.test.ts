@@ -106,6 +106,16 @@ describe('nav IA', () => {
     expect(selectedNavKey('announcements')).toBe('admin-settings');
     expect(selectedNavKey('activity')).toBe('activity');
     expect(selectedNavKey('tasks')).toBe('tasks');
+    // Top-level-only Insights leaf: child tabs keep the same selected key
+    // as Explore (search) and Lineage (lineage-home) do for their details.
+    expect(selectedNavKey('insights')).toBe('insights');
+    expect(selectedNavKey('insights-data-assets')).toBe('insights');
+    expect(selectedNavKey('insights-app-analytics')).toBe('insights');
+    expect(selectedNavKey('insights-kpis')).toBe('insights');
+    expect(selectedNavKey('insights-kpi-detail')).toBe('insights');
+    expect(selectedNavKey('insights-kpis-add')).toBe('insights');
+    expect(selectedNavKey('insights-kpis-edit')).toBe('insights');
+    expect(selectedNavKey('insights-online-users')).toBe('insights');
   });
 
   it('opens the section that owns the current route', () => {

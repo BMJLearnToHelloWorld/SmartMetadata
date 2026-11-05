@@ -188,6 +188,16 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'admin-settings-governance-glossary-term-relations': 'admin-settings',
   'marketplace-app-catalog': 'marketplace-overview',
   'announcement-duplicate': 'admin-settings',
+  // Insights is a top-level-only leaf (same as search / lineage-home).
+  // /insights redirects to /insights/data-assets; child routes must keep
+  // highlighting `insights`, not a missing menu key.
+  'insights-data-assets': 'insights',
+  'insights-app-analytics': 'insights',
+  'insights-kpis': 'insights',
+  'insights-kpis-add': 'insights',
+  'insights-kpi-detail': 'insights',
+  'insights-kpis-edit': 'insights',
+  'insights-online-users': 'insights',
   task: 'tasks',
 };
 
