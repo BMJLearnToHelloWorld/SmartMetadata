@@ -38,8 +38,8 @@ async function mountShell(props: Record<string, unknown> = {}, slots: Record<str
 describe('EntityListShell', () => {
   it('renders title, lead, empty state, and refresh', async () => {
     const wrapper = await mountShell();
-    expect(wrapper.get('[data-testid="entity-list-title"]').text()).toBe('Users');
-    expect(wrapper.get('[data-testid="entity-list-lead"]').text()).toContain('GET /api/v1/users');
+    expect(wrapper.get('[data-testid="entity-list-heading"]').text()).toBe('Users');
+    expect(wrapper.get('[data-testid="entity-list-sub"]').text()).toContain('GET /api/v1/users');
     expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="entity-list-empty"]').text()).toContain('No data');
     expect(wrapper.get('[data-testid="entity-list-empty"]').text()).toContain('just give it a spin');
@@ -57,7 +57,10 @@ describe('EntityListShell', () => {
     });
     expect(wrapper.get('[data-testid="entity-list-beta"]').text()).toBe('Beta');
     expect(wrapper.find('[aria-label="learning-page"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="entity-list-title"]').text()).toBe('Users');
+    // PageHeader's contract renders the Beta badge inside the h5, so the
+    // heading text contains the title plus the badge; the badge itself is
+    // asserted exactly above, and the title exactly in the plain test.
+    expect(wrapper.get('[data-testid="entity-list-heading"]').text()).toContain('Users');
   });
 
   it('shows rows, error, and search when provided', async () => {
@@ -103,8 +106,8 @@ describe('EntityListShell', () => {
 
   it('hides title and lead when hideHeading is set', async () => {
     const wrapper = await mountShell({ hideHeading: true });
-    expect(wrapper.find('[data-testid="entity-list-title"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="entity-list-lead"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-heading"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-sub"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="entity-list-empty"]').exists()).toBe(true);
   });
 

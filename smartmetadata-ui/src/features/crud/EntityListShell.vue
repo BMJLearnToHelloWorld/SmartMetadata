@@ -5,7 +5,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tag, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tooltip, Typography } from 'ant-design-vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import type { EntityListColumn } from './types';
@@ -94,14 +95,13 @@ const tableColumns = computed<EntityListColumn[]>(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div v-if="!hideHeading || $slots.actions" class="entity-list__head">
         <div v-if="!hideHeading">
-          <Space align="center" wrap>
-            <h5 class="entity-list-title" data-testid="entity-list-title">{{ title }}</h5>
-            <Tag v-if="isBeta" color="blue" data-testid="entity-list-beta">{{ t('shared.beta') }}</Tag>
-            <SmIcon v-if="learningPageId" icon-key="learning" data-testid="entity-list-learning" :aria-label="learningPageId" />
-          </Space>
-          <Typography.Paragraph v-if="lead" type="secondary" data-testid="entity-list-lead">
-            {{ lead }}
-          </Typography.Paragraph>
+          <PageHeader
+            :header="title"
+            :sub-header="lead || undefined"
+            :is-beta="isBeta"
+            :learning-page-id="learningPageId"
+            test-id="entity-list"
+          />
         </div>
         <div class="entity-list__actions">
           <slot name="actions" />
@@ -214,14 +214,6 @@ const tableColumns = computed<EntityListColumn[]>(() => {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-}
-
-.entity-list-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: var(--sm-text-primary);
 }
 
 .entity-list__actions {

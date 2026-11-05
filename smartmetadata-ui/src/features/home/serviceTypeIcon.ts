@@ -7,14 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import {
-  ApartmentOutlined,
-  AppstoreOutlined,
-  CloudOutlined,
-  CommentOutlined,
-  DatabaseOutlined,
-  PieChartOutlined,
-} from '@ant-design/icons-vue';
+import { navIcon } from '@/layouts/navIcons';
 import type { Component } from 'vue';
 
 const DASHBOARD = /superset|tableau|looker|metabase|powerbi|quicksight|mode|redash/;
@@ -22,22 +15,27 @@ const PIPELINE = /airflow|dagster|prefect|glue|pipeline|nifi|fivetran|dbt/;
 const STORAGE = /s3|gcs|azure|storage|minio|adls/;
 const MESSAGING = /kafka|kinesis|pubsub|pulsar|redpanda|rabbit/;
 
+/**
+ * Semantic resolver only: it picks a key, and the glyph itself comes from
+ * the single icon map (layouts/navIcons) like every other icon, so the home
+ * buckets never import Ant icons directly (R-19 convergence).
+ */
 export function serviceTypeIcon(serviceType: string): Component {
   const key = serviceType.trim().toLowerCase();
   if (DASHBOARD.test(key)) {
-    return PieChartOutlined;
+    return navIcon('service-dashboard')!;
   }
   if (PIPELINE.test(key)) {
-    return ApartmentOutlined;
+    return navIcon('service-pipeline')!;
   }
   if (STORAGE.test(key)) {
-    return CloudOutlined;
+    return navIcon('service-storage')!;
   }
   if (MESSAGING.test(key)) {
-    return CommentOutlined;
+    return navIcon('service-messaging')!;
   }
   if (key) {
-    return DatabaseOutlined;
+    return navIcon('service-database')!;
   }
-  return AppstoreOutlined;
+  return navIcon('service-default')!;
 }

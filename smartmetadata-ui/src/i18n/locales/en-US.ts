@@ -1116,6 +1116,8 @@ const enUS = {
       status: 'Status',
       expandAll: 'Expand All',
       collapseAll: 'Collapse All',
+      loadingChildren: 'Loading children…',
+      loadMoreChildren: 'Load more children',
       customize: 'Customize',
       customizeResidual: 'Column customize is residual until a preferences API is wired.',
       relationsTab: 'Relations Graph',

@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { Badge, Button, Dropdown, Tabs } from 'ant-design-vue';
-import { BellOutlined } from '@ant-design/icons-vue';
+import SmIcon from './SmIcon.vue';
 import { useI18n } from 'vue-i18n';
 import SmState from './SmState.vue';
 
@@ -28,7 +28,7 @@ function popupParent(node: HTMLElement): HTMLElement {
   <Dropdown :trigger="['click']" :get-popup-container="popupParent">
     <Badge :data-testid="`${testId}-badge`">
       <Button :data-testid="`${testId}-button`" :aria-label="t('chrome.notifications')">
-        <BellOutlined />
+        <SmIcon icon-key="notification-bell" />
       </Button>
     </Badge>
     <template #overlay>

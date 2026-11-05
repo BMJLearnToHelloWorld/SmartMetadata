@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { Button, Dropdown, Menu, Tooltip } from 'ant-design-vue';
-import { QuestionCircleOutlined } from '@ant-design/icons-vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { helpItems, type HelpItem } from './helpItems';
@@ -37,7 +37,7 @@ function goToRoute(item: HelpItem): void {
 <template>
   <Dropdown :trigger="['click']" :get-popup-container="popupParent">
     <Button :data-testid="`${testId}-trigger`" :aria-label="t('chrome.help')">
-      <QuestionCircleOutlined /> {{ t('chrome.help') }}
+      <SmIcon icon-key="help" /> {{ t('chrome.help') }}
     </Button>
     <template #overlay>
       <Menu :data-testid="testId">

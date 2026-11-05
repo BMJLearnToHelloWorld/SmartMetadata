@@ -6,8 +6,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { BellOutlined, DownOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue';
 import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
+import SmIcon from '@/components/shared/SmIcon.vue';
 import { getInboxCounts } from '@/api/inbox';
 import TourOverlay from '@/components/shared/TourOverlay.vue';
 import { Badge, Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
@@ -290,8 +290,8 @@ async function onLogout(): Promise<void> {
     <Layout>
       <Layout.Header class="shell__header">
         <button type="button" class="shell__sider-toggle" :aria-label="t('chrome.collapse')" @click="collapsed = !collapsed">
-          <MenuUnfoldOutlined v-if="collapsed" />
-          <MenuFoldOutlined v-else />
+          <SmIcon v-if="collapsed" icon-key="action-menu-unfold" />
+          <SmIcon v-else icon-key="action-menu-fold" />
         </button>
         <Input.Search
           v-if="!hideHeaderSearch"
@@ -313,7 +313,7 @@ async function onLogout(): Promise<void> {
             @click="toggleLocale"
           >
             {{ localeMark }}
-            <DownOutlined class="shell__lang-caret" />
+            <SmIcon icon-key="action-chevron-down" class="shell__lang-caret" />
           </button>
           <button
             type="button"
@@ -323,7 +323,7 @@ async function onLogout(): Promise<void> {
             @click="goInbox"
           >
             <Badge :count="inboxPending" :overflow-count="99" data-testid="inbox-badge">
-              <BellOutlined class="shell__bell" />
+              <SmIcon icon-key="notification-bell" class="shell__bell" />
             </Badge>
           </button>
           <Dropdown

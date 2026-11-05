@@ -7,6 +7,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {Alert, Button, Card, Descriptions, Form, Input, Select, Space, Spin, Tag, Typography, message} from 'ant-design-vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -151,14 +152,15 @@ onMounted(() => {
     <Card>
       <Space direction="vertical" size="middle" style="width: 100%">
         <div class="gov-head">
-          <Typography.Title :level="4">
-            {{ term?.displayName || term?.name || t('terms.fallback') }}
-            <!-- Status renders only when the server returned entityStatus;
-                 it is never defaulted to Approved (see GlossaryTerm type). -->
-            <Tag v-if="term?.status" data-testid="term-status" color="purple" style="margin-left: 8px">
-              {{ term.status }}
-            </Tag>
-          </Typography.Title>
+          <!-- Status renders only when the server returned entityStatus;
+               it is never defaulted to Approved (see GlossaryTerm type). -->
+          <PageHeader :header="term?.displayName || term?.name || t('terms.fallback')" test-id="term-detail">
+            <template #badge>
+              <Tag v-if="term?.status" data-testid="term-status" color="purple" style="margin-left: 8px">
+                {{ term.status }}
+              </Tag>
+            </template>
+          </PageHeader>
           <Space>
             <Button
               v-if="term?.glossary?.id"

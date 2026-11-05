@@ -18,6 +18,9 @@ withDefaults(
     dataSource: TableProps['dataSource'];
     rowKey?: TableProps['rowKey'];
     expandable?: TableProps['expandable'];
+    /** Antd Table onExpand prop (expanded, record); SmTable otherwise has no
+     *  expansion hook — the `expandable` object prop is not an antd prop. */
+    onExpand?: (expanded: boolean, record: unknown) => void;
     loading?: boolean;
     pagination?: TableProps['pagination'];
     customRow?: TableProps['customRow'];
@@ -29,6 +32,7 @@ withDefaults(
   {
     rowKey: 'id',
     expandable: undefined,
+    onExpand: undefined,
     loading: false,
     pagination: undefined,
     customRow: undefined,
@@ -47,6 +51,7 @@ withDefaults(
     :data-source="dataSource"
     :row-key="rowKey"
     :expandable="expandable"
+    :on-expand="onExpand"
     :loading="loading"
     :pagination="pagination"
     :custom-row="customRow"

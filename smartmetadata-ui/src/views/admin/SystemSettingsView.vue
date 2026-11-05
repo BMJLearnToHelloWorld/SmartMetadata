@@ -5,9 +5,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { RouterLink } from 'vue-router';
-import {Alert, Button, Card, Descriptions, Form, Input, InputNumber, Select, Space, Switch, Typography, message} from 'ant-design-vue';
+import {Button, Card, Descriptions, Form, Input, InputNumber, Select, Switch, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import { isSsoOnlyProvider, ssoProviderLabel, supportsPasswordLogin } from '@/admin/authProvider';
 import {
   EDITABLE_SETTING_TYPES,
@@ -136,15 +136,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <Space direction="vertical" size="middle" style="width: 100%" data-testid="system-settings">
-    <Card>
-      <RouterLink data-testid="settings-back" :to="{ name: 'admin-settings' }">{{ t('settings.back') }}</RouterLink>
-      <Typography.Title :level="4" data-testid="system-settings-title">{{ t('settings.system.title') }}</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        {{ t('settings.system.lead') }}
-      </Typography.Paragraph>
-      <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
-      <Descriptions v-if="version" bordered size="small" :column="2" style="margin-bottom: 16px">
+  <PreferencePageShell
+    :title="t('settings.system.title')"
+    :lead="t('settings.system.lead')"
+    test-id="system-settings"
+    :error-message="errorMessage"
+  >
+    <Descriptions v-if="version" bordered size="small" :column="2" style="margin-bottom: 16px">
         <Descriptions.Item :label="t('settings.system.serverVersion')">{{ version.version || '—' }}</Descriptions.Item>
         <Descriptions.Item :label="t('settings.system.revision')">{{ version.revision || '—' }}</Descriptions.Item>
       </Descriptions>
@@ -166,7 +164,6 @@ onMounted(() => {
           {{ authConfig.enableSelfSignup ? t('settings.system.enabled') : t('settings.system.disabled') }}
         </Descriptions.Item>
       </Descriptions>
-    </Card>
 
     <Card v-if="loginLoaded" :title="t('settings.system.loginTitle')">
       <Typography.Paragraph type="secondary">
@@ -249,5 +246,5 @@ onMounted(() => {
         </template>
       </SmTable>
     </Card>
-  </Space>
+  </PreferencePageShell>
 </template>

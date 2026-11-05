@@ -37,6 +37,7 @@ import { timeRangeForPreset } from '@/lineage/config';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import LineageConfigModal from './LineageConfigModal.vue';
 import LineageExportPanel from './LineageExportPanel.vue';
@@ -254,10 +255,7 @@ watch(
   <Spin :spinning="loading || writing">
     <Space direction="vertical" size="middle" class="lineage-canvas">
       <div v-if="variant === 'page'">
-        <Typography.Title :level="4">{{ t('lineage.title') }}</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          {{ t('lineage.graphLead', { type: entityType, fqn }) }}
-        </Typography.Paragraph>
+        <PageHeader :header="t('lineage.title')" :sub-header="t('lineage.graphLead', { type: entityType, fqn })" test-id="lineage" />
       </div>
       <Typography.Paragraph v-else type="secondary">
         {{ t('lineage.tabLead', { type: entityType, fqn }) }}

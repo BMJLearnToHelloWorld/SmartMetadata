@@ -20,6 +20,9 @@ export const GLOSSARY_TERM_FIELDS =
 export interface ListGlossaryTermsQuery {
   glossary?: string;
   parent?: string;
+  /** Direct-children-of filter (parent term FQN), the official lazy-children
+   *  parameter (GlossaryTermResource list accepts directChildrenOf + after). */
+  directChildrenOf?: string;
   limit?: number;
   after?: string;
 }
@@ -113,8 +116,25 @@ export function listGlossaryTerms(query: ListGlossaryTermsQuery = {}): Promise<P
       after: query.after,
       glossary: query.glossary,
       parent: query.parent,
+      directChildrenOf: query.directChildrenOf,
     },
   }).then((payload) => parsePaged(payload, mapTerm));
+}
+
+/**
+ * Official getGlossaryTermChildrenLazy (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms?directChildrenOf={parentFqn}&limit=50&after={cursor}.
+ * Unlike the embedded `children` refs of a list response (name + description
+ * only), each page carries full terms — status, owners, and their own
+ * childrenCount — so an expanded child row shows the same columns as a
+ * top-level row, and its own children lazy-load on expand in turn.
+ */
+export function listGlossaryTermChildrenLazy(
+  parentFqn: string,
+  limit = 50,
+  after?: string,
+): Promise<Paged<GlossaryTerm>> {
+  return listGlossaryTerms({ directChildrenOf: parentFqn, limit, after });
 }
 
 export async function getGlossaryTerm(id: string): Promise<GlossaryTerm> {
