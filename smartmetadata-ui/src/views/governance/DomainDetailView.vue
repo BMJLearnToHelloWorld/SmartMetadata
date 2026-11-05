@@ -6,12 +6,14 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import {Alert, Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { listEntityActivity } from '@/api/activity';
-import type { BulkAssetResult } from '@/api/bulkAssets';
+import { getDomainDryRunImpacts, type BulkAssetResponse, type BulkAssetResult } from '@/api/bulkAssets';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getDomainVersionPath } from '@/catalog/versionPaths';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import {
@@ -61,6 +63,9 @@ const propsOpen = ref(false);
 const propsSaving = ref(false);
 const addAssetsOpen = ref(false);
 const bulkResult = ref<BulkAssetResult | null>(null);
+const dryRunImpacts = ref<BulkAssetResponse[]>([]);
+const pendingAssets = ref<EntityRef[]>([]);
+const dryRunSaving = ref(false);
 const removingFqn = ref<string | null>(null);
 const editForm = reactive({
   displayName: '',
@@ -153,19 +158,64 @@ async function load(): Promise<void> {
   }
 }
 
+/**
+ * Official useAssetSelectionState.handleSave (domain branch): a domain
+ * add first runs with {dryRun: true}; when the dryRun answer carries
+ * hasSideEffects rows, the save stops and the impacts + pending entities
+ * wait for the user's confirm (confirmDomainAssetMove) or cancel.
+ * Product entry differs — official dryRuns inside the asset-selection
+ * modal's save, the product dryRuns on the AddAssetsModal confirm —
+ * but the step, the pending set and the confirm/cancel pair are the
+ * official ones; the picker closes and the impact panel renders in the
+ * assets tab so the pending selection stays visible while deciding.
+ */
 async function onConfirmAddAssets(selected: EntityRef[]): Promise<void> {
   if (!domain.value) {
     return;
   }
   const fqn = domain.value.fullyQualifiedName || domain.value.name;
   try {
-    bulkResult.value = await addDomainAssets(fqn, selected);
-    addAssetsOpen.value = false;
-    message.success(t('governance.domains.assetsUpdated'));
-    await load();
+    const dryRun = await addDomainAssets(fqn, selected, { dryRun: true });
+    const impacts = getDomainDryRunImpacts(dryRun);
+    if (impacts.length > 0) {
+      dryRunImpacts.value = impacts;
+      pendingAssets.value = selected;
+      addAssetsOpen.value = false;
+      return;
+    }
+    await submitDomainAssets(fqn, selected);
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   }
+}
+
+async function submitDomainAssets(fqn: string, selected: EntityRef[]): Promise<void> {
+  bulkResult.value = await addDomainAssets(fqn, selected);
+  addAssetsOpen.value = false;
+  message.success(t('governance.domains.assetsUpdated'));
+  await load();
+}
+
+async function onConfirmDryRun(): Promise<void> {
+  if (!domain.value || !pendingAssets.value.length) {
+    return;
+  }
+  const fqn = domain.value.fullyQualifiedName || domain.value.name;
+  dryRunSaving.value = true;
+  try {
+    await submitDomainAssets(fqn, pendingAssets.value);
+    dryRunImpacts.value = [];
+    pendingAssets.value = [];
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+  } finally {
+    dryRunSaving.value = false;
+  }
+}
+
+function onCancelDryRun(): void {
+  dryRunImpacts.value = [];
+  pendingAssets.value = [];
 }
 
 async function onRemoveAsset(asset: EntityRef): Promise<void> {
@@ -268,6 +318,23 @@ async function onSave(): Promise<void> {
   }
 }
 
+async function onOpenVersions(): Promise<void> {
+  const targetId = domain.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('domain', targetId, (version) => getDomainVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
+  }
+}
+
 function openSubDomain(subDomain: EntityRef): void {
   if (!subDomain.id) {
     return;
@@ -310,6 +377,7 @@ onMounted(() => {
     v-model:active-tab="activeTab"
   >
     <template #actions>
+      <Button data-testid="domain-versions" :disabled="!domain" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
       <Button danger data-testid="delete-domain" :disabled="!domain" @click="onDeleteDomain">{{ t('crud.delete') }}</Button>
       <Button type="primary" data-testid="edit-domain" :disabled="!domain" @click="openEdit">
         {{ t('crud.edit') }}
@@ -339,6 +407,30 @@ onMounted(() => {
         </Button>
       </div>
       <BulkAssetResultPanel v-if="bulkResult" :result="bulkResult" />
+      <div v-if="dryRunImpacts.length" data-testid="domain-dryrun-panel" style="margin-bottom: 12px">
+        <Alert type="warning" show-icon :message="t('governance.domains.dryRunTitle')" />
+        <ul>
+          <li
+            v-for="impact in dryRunImpacts"
+            :key="impact.request?.id || impact.request?.fullyQualifiedName || impact.request?.name"
+            :data-testid="`domain-dryrun-item-${impact.request?.id || impact.request?.name}`"
+          >
+            {{ impact.request?.fullyQualifiedName || impact.request?.name }}
+            <span v-if="impact.message"> — {{ impact.message }}</span>
+          </li>
+        </ul>
+        <Button
+          type="primary"
+          data-testid="domain-dryrun-confirm"
+          :loading="dryRunSaving"
+          @click="onConfirmDryRun"
+        >
+          {{ t('governance.domains.dryRunConfirm') }}
+        </Button>
+        <Button data-testid="domain-dryrun-cancel" style="margin-left: 8px" @click="onCancelDryRun">
+          {{ t('crud.cancel') }}
+        </Button>
+      </div>
       <SmTable
         row-key="id"
         test-id="domain-assets-table"

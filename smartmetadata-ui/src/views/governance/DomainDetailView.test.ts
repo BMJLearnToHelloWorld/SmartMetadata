@@ -12,6 +12,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import AddAssetsModal from '@/features/crud/AddAssetsModal.vue';
 import DomainDetailView from './DomainDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -120,6 +121,96 @@ describe('DomainDetailView delete', () => {
     const addButton = wrapper.find('[data-testid="add-domain-assets"]');
     expect(addButton.exists()).toBe(true);
     expect((addButton.element as HTMLButtonElement).disabled).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('DomainDetailView dryRun', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'PUT' && url.includes('/assets/add')) {
+          const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
+          if (body.dryRun === true) {
+            return jsonResponse({
+              successRequest: [
+                {
+                  request: { id: 'a1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' },
+                  hasSideEffects: true,
+                  message: 'moves from another domain',
+                },
+              ],
+              failedRequest: [],
+            });
+          }
+          return jsonResponse({ successRequest: [], failedRequest: [] });
+        }
+        if (url.includes('/api/v1/domains/d1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/domains/d1')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'Finance',
+            displayName: 'Finance Domain',
+            description: 'Finance assets',
+            domainType: 'Consumer-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('dryRuns on confirm, shows impacts, and only submits after confirmation', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/d1');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { id: 'd1' },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const modal = wrapper.findComponent(AddAssetsModal);
+    expect(modal.exists()).toBe(true);
+    (modal.vm as unknown as { $emit: (event: string, value: unknown) => void }).$emit('confirm', [
+      { id: 'a1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    await flushPromises();
+    const puts = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(puts).toHaveLength(1);
+    expect(JSON.parse(String(puts[0][1]?.body))).toMatchObject({ dryRun: true });
+    expect(wrapper.find('[data-testid="domain-dryrun-panel"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('svc.db.orders');
+
+    await wrapper.find('[data-testid="domain-dryrun-confirm"]').trigger('click');
+    await flushPromises();
+    const putsAfter = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(putsAfter).toHaveLength(2);
+    expect(JSON.parse(String(putsAfter[1][1]?.body))).not.toHaveProperty('dryRun');
+    expect(wrapper.find('[data-testid="domain-dryrun-panel"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

@@ -285,7 +285,11 @@ describe('AssetDetailView governance', () => {
     expect(wrapper.text()).toContain('Retention days');
     expect(wrapper.text()).toContain('7');
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="asset-conversations-table"]').exists()).toBe(true);
+    // Expected change (A7): the read-only conversations table is now an
+    // interactive thread — same-strength presence check on the thread
+    // container plus its reaction controls, instead of the old table.
+    expect(wrapper.find('[data-testid="asset-conversation-c1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="conversation-reaction-c1-thumbsUp"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-custom-properties"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-asset-conversation"]').exists()).toBe(true);
   });

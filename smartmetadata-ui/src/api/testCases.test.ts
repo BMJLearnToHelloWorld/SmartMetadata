@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createTestCase, isTestCaseSearchListAvailable, listTestCases, listTestCasesBySearch, updateTestCase } from './testCases';
+import { createTestCase, isTestCaseSearchListAvailable, listTestCaseDimensionResults, listTestCases, listTestCasesBySearch, updateTestCase } from './testCases';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -30,6 +30,48 @@ describe('testCases API', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+  });
+
+  it('fetches dimension results from GET /v1/dataQuality/testCases/dimensionResults/{fqn} (A15)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                dimensionValues: [{ value: 'US' }],
+                testCaseStatus: 'Failed',
+                impactScore: 0.9,
+                excludedFromRollUp: true,
+                timestamp: 1700000000000,
+                dimensionKey: 'country=US',
+              },
+              { dimensionValues: 'not-an-array' },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTestCaseDimensionResults('svc.db.schema.orders.row_count', {
+      dimensionName: 'country',
+      startTs: 1699000000000,
+      endTs: 1700000000000,
+    });
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]).toMatchObject({
+      testCaseStatus: 'Failed',
+      impactScore: 0.9,
+      excludedFromRollUp: true,
+      dimensionKey: 'country=US',
+    });
+    expect(page.data[0]?.dimensionValues).toEqual([{ value: 'US' }]);
+    expect(lastFetch().url).toContain(
+      '/api/v1/dataQuality/testCases/dimensionResults/svc.db.schema.orders.row_count',
+    );
+    expect(lastFetch().url).toContain('dimensionName=country');
   });
 
   it('lists cases from GET /v1/dataQuality/testCases and can filter by entityFQN', async () => {

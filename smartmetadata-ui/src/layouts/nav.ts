@@ -185,6 +185,9 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'marketplace-app-install': 'marketplace-overview',
   'admin-settings-governance-intake-forms': 'admin-settings',
   'admin-settings-governance-task-forms': 'admin-settings',
+  'admin-settings-governance-glossary-term-relations': 'admin-settings',
+  'marketplace-app-catalog': 'marketplace-overview',
+  'announcement-duplicate': 'admin-settings',
   task: 'tasks',
 };
 

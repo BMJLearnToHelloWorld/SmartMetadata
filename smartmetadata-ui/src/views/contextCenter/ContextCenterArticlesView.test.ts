@@ -28,6 +28,8 @@ function buildRouter() {
     routes: [
       { path: '/context-center/articles', name: 'context-center-articles', component: ContextCenterArticlesView },
       { path: '/context-center/articles/:fqn', name: 'context-center-article', component: ContextCenterArticlesView },
+      { path: '/context-center/articles/:fqn/:tab', name: 'context-center-article-tab', component: ContextCenterArticlesView },
+      { path: '/context-center/articles/:fqn/:tab/:subTab', name: 'context-center-article-subtab', component: ContextCenterArticlesView },
       { path: '/context-center', name: 'context-center-overview', component: { template: '<div />' } },
       { path: '/context-center/documents', name: 'context-center-documents', component: { template: '<div />' } },
       { path: '/context-center/memories', name: 'context-center-memories', component: { template: '<div />' } },
@@ -102,6 +104,85 @@ describe('ContextCenterArticlesView', () => {
     });
     await flushPromises();
     expect(wrapper.text()).toContain('Getting Started');
+    expect(wrapper.text()).toContain('Intro.');
+  });
+
+  it('deep-links the activity tab from the :tab route segment', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/contextCenter/pages/name/')) {
+          return jsonResponse({
+            id: 'p1',
+            name: 'getting-started',
+            fullyQualifiedName: 'getting-started',
+            displayName: 'Getting Started',
+            description: 'Intro.',
+            pageType: 'Article',
+            page: {},
+            updatedBy: 'admin',
+          });
+        }
+        if (url.includes('/api/v1/activity/entity/page/name/')) {
+          return jsonResponse({
+            data: [{ id: 'e1', eventType: 'create', summary: 'Article created', timestamp: 1762051200000 }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/metadata/types/name/page/customProperties')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/contextCenter/pages')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = buildRouter();
+    await router.push('/context-center/articles/getting-started/activity_feed');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="article-detail-tabs"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Article created');
+  });
+
+  it('accepts a :subTab segment and keeps the detail on the routed tab', { timeout: 15000 }, async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = buildRouter();
+    await router.push('/context-center/articles/getting-started/overview/notes');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(router.currentRoute.value.params.subTab).toBe('notes');
+    expect(wrapper.find('[data-testid="article-detail-tabs"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Getting Started');
+    expect(wrapper.text()).toContain('Intro.');
+  });
+
+  it('falls back to overview for an unknown tab segment', { timeout: 15000 }, async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = buildRouter();
+    await router.push('/context-center/articles/getting-started/bogus');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="article-detail-tabs"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Intro.');
   });
 });

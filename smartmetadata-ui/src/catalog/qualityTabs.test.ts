@@ -14,19 +14,18 @@ describe('qualityTabs', () => {
     ]);
   });
 
-  it('marks test-case dimensionality and sql-query as residuals, issues as wired', () => {
+  it('marks test-case sql-query as residual, dimensionality and issues as wired (A15)', () => {
     expect(supportedQualityTabs('testCase').map((tab) => tab.key)).toContain('issues');
-    expect(residualQualityTabs('testCase').map((tab) => tab.key)).toEqual([
-      'dimensionality',
-      'sql-query',
-    ]);
+    expect(supportedQualityTabs('testCase').map((tab) => tab.key)).toContain('dimensionality');
+    expect(residualQualityTabs('testCase').map((tab) => tab.key)).toEqual(['sql-query']);
     for (const tab of residualQualityTabs('testCase')) {
       expect(tab.residualReason).toBeTruthy();
     }
   });
 
-  it('marks the test-suite pipeline tab as residual', () => {
-    expect(residualQualityTabs('testSuite').map((tab) => tab.key)).toEqual(['pipeline']);
+  it('marks the test-suite pipeline tab as wired (A15: add/edit ingestion page)', () => {
+    expect(supportedQualityTabs('testSuite').map((tab) => tab.key)).toContain('pipeline');
+    expect(residualQualityTabs('testSuite').map((tab) => tab.key)).toEqual([]);
   });
 
   it('gives every tab a label key and every residual a reason', () => {

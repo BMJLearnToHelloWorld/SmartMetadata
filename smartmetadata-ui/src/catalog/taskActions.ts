@@ -21,10 +21,12 @@
  * Unwired actions render disabled with a residual note — never as a
  * button that is bound to fail. The official kind-to-list mapping is NOT
  * reproduced here because the product task payload carries no kind
- * discriminator the official lists key on (no suggestion payload surface,
- * no incident-transition surface); collapsing the five modes into one
- * table with per-mode wired flags is the honest bridge, and the kind
- * split returns once those surfaces exist.
+ * discriminator the official lists key on; collapsing the five modes
+ * into one table with per-mode wired flags is the honest bridge.
+ * VIEW is wired since the suggestion payload surface landed
+ * (catalog/taskSuggestions.ts + tasks.ts mapping): VIEW accepts the
+ * suggestion by resolving with Approved + the normalized newValue,
+ * exactly the official TaskTabNew onTaskResolve path for VIEW.
  */
 export type TaskActionMode = 'view' | 'edit' | 're-assign' | 'resolve' | 'close';
 
@@ -36,7 +38,7 @@ export interface TaskAction {
 }
 
 export const TASK_ACTIONS: TaskAction[] = [
-  { key: 'view', labelKey: 'collaboration.task.actionView', wired: false, residualKey: 'collaboration.task.actionViewResidual' },
+  { key: 'view', labelKey: 'collaboration.task.actionView', wired: true },
   { key: 'edit', labelKey: 'collaboration.task.actionEdit', wired: true },
   { key: 're-assign', labelKey: 'collaboration.task.actionReassign', wired: true },
   { key: 'resolve', labelKey: 'collaboration.task.actionResolve', wired: true },

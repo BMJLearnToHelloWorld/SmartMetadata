@@ -15,6 +15,7 @@ import {
   cancelOntologyBulkJob,
   captureOntologyRelease,
   createOntologyChangeSet,
+  deleteGlossaryTermWithImpact,
   explainOntologyInference,
   getOntologyBulkResultArtifact,
   getOntologyEditLock,
@@ -199,6 +200,30 @@ describe('ontologyEdit API', () => {
     const review = await getOntologyReleaseReview('rel-1');
     expect(review.assignees[0]?.vote).toBe('APPROVE');
     expect(lastFetch().url).toContain('/api/v1/ontologyReleases/rel-1/review');
+  });
+
+  it('executes the impact delete with the preview token, cascade flag and reassignment target', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        expect(body).toEqual({
+          cascadeConfirmed: false,
+          hardDelete: false,
+          impactToken: 'tok-1',
+          reassignChildrenTo: { id: 't2', type: 'glossaryTerm' },
+        });
+        return jsonResponse({ deleted: true });
+      }),
+    );
+    await deleteGlossaryTermWithImpact('t1', {
+      cascadeConfirmed: false,
+      hardDelete: false,
+      impactToken: 'tok-1',
+      reassignChildrenTo: { id: 't2', type: 'glossaryTerm' },
+    });
+    expect(lastFetch().url).toContain('/api/v1/ontology/impacts/glossaryTerms/t1/delete');
+    expect(lastFetch().init?.method).toBe('POST');
   });
 
   it('maps delete impact previews to the real report shape', async () => {

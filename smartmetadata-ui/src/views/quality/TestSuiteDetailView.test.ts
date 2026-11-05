@@ -34,7 +34,7 @@ async function mountView() {
   return wrapper;
 }
 
-describe('TestSuiteDetailView pipeline residual', () => {
+describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', () => {
   beforeEach(() => {
     getTestSuite.mockReset();
     getTestSuite.mockResolvedValue({
@@ -50,12 +50,13 @@ describe('TestSuiteDetailView pipeline residual', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders overview and tests tabs plus an honest empty pipeline tab', async () => {
+  it('renders overview and tests tabs plus a wired pipeline tab with an add-ingestion entry', async () => {
     const wrapper = await mountView();
     // Ant Tabs does not forward TabPane testids to the DOM; the force-rendered
     // slot contents are the observable surface.
     expect(wrapper.text()).toContain('orders_suite');
-    expect(wrapper.find('[data-testid="test-suite-pipeline-residual"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-suite-pipeline-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-test-suite-ingestion"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Pipeline');
   });
 });

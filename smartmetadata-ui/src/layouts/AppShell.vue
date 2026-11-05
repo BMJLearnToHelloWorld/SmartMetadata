@@ -242,7 +242,7 @@ async function onLogout(): Promise<void> {
       theme="light"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
-        <img class="shell__logo" :src="collapsed ? monogramUrl : logoUrl" alt="IQVIA" />
+        <img class="shell__logo" :src="collapsed ? monogramUrl : logoUrl" alt="iSmart" />
       </div>
       <div class="shell__nav">
         <Menu

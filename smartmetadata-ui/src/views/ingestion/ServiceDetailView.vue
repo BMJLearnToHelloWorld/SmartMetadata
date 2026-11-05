@@ -442,6 +442,19 @@ onMounted(() => {
       <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
     </template>
     <template #pipelines>
+      <Button
+        v-if="service"
+        data-testid="add-service-ingestion"
+        style="margin-bottom: 16px"
+        @click="
+          router.push({
+            name: 'ingestion-service-add-ingestion',
+            params: { kind: props.kind, id: props.id, ingestionType: 'metadata' },
+          })
+        "
+      >
+        {{ t('ingestion.pipelines.addIngestion') }}
+      </Button>
       <SmState
         v-if="pipelinesError"
         state="error"

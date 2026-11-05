@@ -10,7 +10,13 @@
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
-import type { CreateTestCaseRequest, TestCase, TestCaseResult, TestParameterValue } from '@/types/quality';
+import type {
+  CreateTestCaseRequest,
+  TestCase,
+  TestCaseDimensionResult,
+  TestCaseResult,
+  TestParameterValue,
+} from '@/types/quality';
 import { ApiError, apiRequest } from './client';
 
 export const TEST_CASE_FIELDS =
@@ -105,7 +111,55 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     testCaseStatus: asString(raw.testCaseStatus) || undefined,
     incidentId: asString(raw.incidentId) || undefined,
     owners: mapEntityRefs(raw.owners),
+    dimensionColumns: Array.isArray(raw.dimensionColumns)
+      ? raw.dimensionColumns.filter((item): item is string => typeof item === 'string')
+      : undefined,
   };
+}
+
+function mapDimensionResult(raw: Record<string, unknown>): TestCaseDimensionResult | null {
+  if (!Array.isArray(raw.dimensionValues)) {
+    return null;
+  }
+  return {
+    dimensionValues: raw.dimensionValues.flatMap((item) => {
+      const rec = asRecord(item);
+      const value = rec ? asString(rec.value) : '';
+      return value ? [{ value }] : [];
+    }),
+    testCaseStatus: asString(raw.testCaseStatus) || undefined,
+    result: asString(raw.result) || undefined,
+    impactScore: asNumber(raw.impactScore),
+    excludedFromRollUp: raw.excludedFromRollUp === true ? true : undefined,
+    timestamp: asNumber(raw.timestamp),
+    dimensionKey: asString(raw.dimensionKey) || undefined,
+  };
+}
+
+/**
+ * Official getTestCaseDimensionResultsByFqn (rest/testAPI.ts):
+ * GET /v1/dataQuality/testCases/dimensionResults/{fqn} with
+ * dimensionName / startTs / endTs. Server side:
+ * TestCaseDimensionResultResource @Path
+ * "/v1/dataQuality/testCases/dimensionResults".
+ */
+export function listTestCaseDimensionResults(
+  fqn: string,
+  params: { dimensionName?: string; startTs?: number; endTs?: number } = {},
+): Promise<Paged<TestCaseDimensionResult>> {
+  const query: Record<string, string> = {};
+  if (params.dimensionName) {
+    query.dimensionName = params.dimensionName;
+  }
+  if (params.startTs !== undefined) {
+    query.startTs = String(params.startTs);
+  }
+  if (params.endTs !== undefined) {
+    query.endTs = String(params.endTs);
+  }
+  return apiRequest<unknown>(`/v1/dataQuality/testCases/dimensionResults/${encodeURIComponent(fqn)}`, {
+    query,
+  }).then((payload) => parsePaged(payload, mapDimensionResult));
 }
 
 export function listTestCases(query: ListTestCasesQuery = {}): Promise<Paged<TestCase>> {

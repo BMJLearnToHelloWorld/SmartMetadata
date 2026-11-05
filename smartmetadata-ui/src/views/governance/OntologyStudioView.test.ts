@@ -43,6 +43,7 @@ function mountStudio() {
       plugins: [pinia, Antd, createTestI18n()],
       stubs: {
         ChangeSetPanel: panelStub,
+        OntologyCanvasPanel: panelStub,
         ConceptEditorPanel: panelStub,
         BulkAuthoringPanel: panelStub,
         AiSuggestionsPanel: panelStub,

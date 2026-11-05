@@ -17,12 +17,17 @@ describe('taskActions', () => {
     );
   });
 
-  it('wires resolve, close, edit and re-assign; every unwired action carries a residual key', () => {
+  // Expected change (A8): VIEW is wired now that the suggestion payload
+  // surface exists (catalog/taskSuggestions.ts), so all five actions are
+  // wired and the residual-key invariant is kept for any future unwired
+  // action rather than asserting a specific unwired member.
+  it('wires all five actions including view; every unwired action carries a residual key', () => {
     expect(TASK_ACTIONS.filter((action) => action.wired).map((action) => action.key).sort()).toEqual([
       'close',
       'edit',
       're-assign',
       'resolve',
+      'view',
     ]);
     for (const action of TASK_ACTIONS.filter((item) => !item.wired)) {
       expect(action.residualKey).toBeTruthy();

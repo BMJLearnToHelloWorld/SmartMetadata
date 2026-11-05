@@ -19,6 +19,7 @@ const listTestCases = vi.fn();
 const listTestIncidents = vi.fn();
 const listSystemChartData = vi.fn();
 const getAggregateChartData = vi.fn();
+const getTeamByName = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
@@ -37,6 +38,10 @@ vi.mock('@/api/dataInsights', async () => {
     getAggregateChartData: (...args: unknown[]) => getAggregateChartData(...args),
   };
 });
+
+vi.mock('@/api/teams', () => ({
+  getTeamByName: (...args: unknown[]) => getTeamByName(...args),
+}));
 
 async function mountView() {
   const router = createRouter({
@@ -60,6 +65,8 @@ describe('DataAssetsView', () => {
     listSystemChartData.mockReset();
     getAggregateChartData.mockReset();
     getAggregateChartData.mockResolvedValue([]);
+    getTeamByName.mockReset();
+    getTeamByName.mockResolvedValue({ id: 'org', name: 'Organization', displayName: 'Acme Org' });
     searchAssets.mockResolvedValue({
       total: 7,
       hits: [],
@@ -142,5 +149,44 @@ describe('DataAssetsView', () => {
     expect(listSystemChartData).toHaveBeenCalledTimes(1);
     const [, startTs, endTs] = listSystemChartData.mock.calls[0];
     expect(endTs - startTs).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  it('renders the org-named summary cards and entity/tier progress shares', async () => {
+    listSystemChartData.mockResolvedValue({
+      total_data_assets: [
+        { count: 5, day: 1, group: 'table' },
+        { count: 6, day: 2, group: 'table' },
+        { count: 4, day: 2, group: 'topic' },
+      ],
+      percentage_of_data_asset_with_description: [{ count: 42.5, day: 2 }],
+      percentage_of_data_asset_with_owner: [{ count: 80, day: 2 }],
+      total_data_assets_by_tier: [
+        { count: 7, day: 2, group: 'Tier.Gold' },
+        { count: 3, day: 2, group: 'Tier.Silver' },
+      ],
+    });
+    const wrapper = await mountView();
+    expect(getTeamByName).toHaveBeenCalledWith('Organization');
+    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain('Acme Org');
+    // Total sums the latest per-group counts (6 + 4), not the stale day-1 point.
+    expect(wrapper.get('[data-testid="insights-summary-total"]').text()).toContain('10');
+    expect(wrapper.get('[data-testid="insights-summary-description"]').text()).toContain('42.5%');
+    expect(wrapper.get('[data-testid="insights-summary-owner"]').text()).toContain('80%');
+    const entityRows = wrapper.findAll('[data-testid="insights-entity-progress-row"]');
+    expect(entityRows).toHaveLength(2);
+    expect(entityRows[0].text()).toContain('Table');
+    expect(entityRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 60%');
+    const tierRows = wrapper.findAll('[data-testid="insights-tier-progress-row"]');
+    expect(tierRows).toHaveLength(2);
+    expect(tierRows[0].text()).toContain('Tier.Gold');
+    expect(tierRows[0].find('.ant-progress-bg').attributes('style')).toContain('width: 70%');
+  });
+
+  it('falls back to the generic summary title when the Organization team is missing', async () => {
+    getTeamByName.mockRejectedValue(new Error('not found'));
+    const wrapper = await mountView();
+    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).toContain('Data Insight summary');
+    expect(wrapper.get('[data-testid="insights-summary-title"]').text()).not.toContain('Acme Org');
+    expect(wrapper.find('.ant-alert-error').exists()).toBe(false);
   });
 });

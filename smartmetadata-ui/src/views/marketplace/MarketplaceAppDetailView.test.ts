@@ -51,6 +51,7 @@ async function mountDetail(
         props: true,
       },
       { path: '/marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
+      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: { template: '<div>catalog</div>' } },
       {
         path: '/marketplace/apps/:fqn/install',
         name: 'marketplace-app-install',
@@ -144,11 +145,33 @@ describe('MarketplaceAppDetailView', () => {
     expect(router.currentRoute.value.name).toBe('marketplace-app-install');
   });
 
-  it('navigates back to the marketplace overview', async () => {
+  it('navigates back to the app catalog, not the data marketplace', async () => {
+    // Expected-change redirection (A2): the browse target moves from
+    // marketplace-overview (data market) to the new app catalog route.
     const { wrapper, router } = await mountDetail();
     await wrapper.find('[data-testid="marketplace-app-detail-browse"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('marketplace-overview');
+    expect(router.currentRoute.value.name).toBe('marketplace-app-catalog');
+  });
+
+  it('renders the description as markdown through the shared renderer', async () => {
+    const { wrapper } = await mountDetail({ description: 'Insights **bold** and [docs](https://example.test).' });
+    const description = wrapper.find('[data-testid="marketplace-app-detail-description"]');
+    expect(description.exists()).toBe(true);
+    expect(description.find('strong').text()).toBe('bold');
+    expect(description.find('a').attributes('href')).toBe('https://example.test');
+  });
+
+  it('adds the contact line to the disabled alert, but not for cache warmup', async () => {
+    const { wrapper } = await mountDetail({ enabled: false });
+    expect(wrapper.find('[data-testid="marketplace-app-detail-contact"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-app-detail-contact"]').text()).toContain('Please contact us');
+    const cache = await mountDetail({
+      enabled: false,
+      name: 'CacheWarmupApplication',
+      fullyQualifiedName: 'CacheWarmupApplication',
+    });
+    expect(cache.wrapper.find('[data-testid="marketplace-app-detail-contact"]').exists()).toBe(false);
   });
 
   it('renders the forbidden page for non-admin users', async () => {

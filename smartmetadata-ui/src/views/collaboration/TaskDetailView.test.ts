@@ -275,3 +275,80 @@ describe('TaskDetailView', () => {
     ]);
   });
 });
+
+describe('TaskDetailView suggestion and transitions', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/task/t1')) {
+          return new Response('not found', { status: 404 });
+        }
+        if (init?.method === 'POST' && url.includes('/resolve')) {
+          return jsonResponse({ id: 't1', name: 'review-orders', status: 'Approved', comments: [] });
+        }
+        if (url.includes('/api/v1/tasks/t1')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'review-orders',
+            status: 'Open',
+            type: 'DescriptionUpdate',
+            description: 'old desc',
+            assignees: [{ id: 'u1', type: 'user', name: 'amy' }],
+            comments: [],
+            payload: { currentDescription: 'old desc', newDescription: 'new desc' },
+            availableTransitions: [
+              {
+                id: 'approve',
+                label: 'Approve',
+                resolutionType: 'Approved',
+                targetStageId: 'approved',
+                targetTaskStatus: 'Approved',
+              },
+              {
+                id: 'request-info',
+                label: 'Request info',
+                requiresComment: true,
+                targetStageId: 'info',
+                targetTaskStatus: 'Open',
+              },
+            ],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('accepts the suggestion with Approved plus the normalized newValue', async () => {
+    const { wrapper } = await mountView({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="task-suggestion-value"]').text()).toContain('new desc');
+    await wrapper.find('[data-testid="task-accept-suggestion"]').trigger('click');
+    await flushPromises();
+    const resolve = lastMatchingFetch((url, init) => url.includes('/resolve') && init?.method === 'POST');
+    expect(JSON.parse(String(resolve.init?.body))).toEqual({
+      resolutionType: 'Approved',
+      newValue: 'new desc',
+    });
+  });
+
+  it('runs the selected workflow transition with its transitionId and resolutionType', async () => {
+    const { wrapper } = await mountView({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="task-transition-run"]').text()).toContain('Approve');
+    await wrapper.find('[data-testid="task-transition-run"]').trigger('click');
+    await flushPromises();
+    const resolve = lastMatchingFetch((url, init) => url.includes('/resolve') && init?.method === 'POST');
+    expect(JSON.parse(String(resolve.init?.body))).toEqual({
+      resolutionType: 'Approved',
+      transitionId: 'approve',
+    });
+  });
+});

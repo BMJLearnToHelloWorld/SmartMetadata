@@ -1,7 +1,7 @@
-# SmartMetadata UI
+# iSmart UI
 
 Clean-room Vue 3 + Ant Design Vue console for the existing Apache OpenMetadata /
-SmartMetadata server REST API.
+iSmart server REST API.
 
 This module is **Apache-2.0**. It does **not** copy, transpile, or import
 `openmetadata-ui` or `openmetadata-ui-core-components` (Collate Community License).

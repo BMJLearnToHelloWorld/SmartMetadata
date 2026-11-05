@@ -8,12 +8,14 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { parseTaskSuggestionPayload } from '@/catalog/taskSuggestions';
 import type { Paged } from '@/types/admin';
 import type {
   CollaborationTask,
   CreateTaskRequest,
   DataAccessRequestPayload,
   ResolveTaskRequest,
+  TaskAvailableTransition,
   TaskComment,
 } from '@/types/collaboration';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
@@ -82,11 +84,39 @@ function mapDataAccessPayload(value: unknown): DataAccessRequestPayload | undefi
   };
 }
 
+function mapAvailableTransitions(value: unknown): TaskAvailableTransition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    const id = rec ? asString(rec.id) : '';
+    const label = rec ? asString(rec.label) : '';
+    const targetStageId = rec ? asString(rec.targetStageId) : '';
+    const targetTaskStatus = rec ? asString(rec.targetTaskStatus) : '';
+    if (!rec || !id || !label) {
+      return [];
+    }
+    return [
+      {
+        id,
+        label,
+        formRef: asString(rec.formRef) || undefined,
+        requiresComment: typeof rec.requiresComment === 'boolean' ? rec.requiresComment : undefined,
+        resolutionType: asString(rec.resolutionType) || undefined,
+        targetStageId,
+        targetTaskStatus,
+      },
+    ];
+  });
+}
+
 function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
   const id = asString(raw.id);
   if (!id) {
     return null;
   }
+  const isDar = asString(raw.type) === 'DataAccessRequest';
   return {
     id,
     name: asString(raw.name) || undefined,
@@ -100,7 +130,9 @@ function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
     assignees: mapEntityRefs(raw.assignees),
     createdBy: mapEntityRefs(raw.createdBy ? [raw.createdBy] : [])[0],
     comments: mapComments(raw.comments),
-    payload: asString(raw.type) === 'DataAccessRequest' ? mapDataAccessPayload(raw.payload) : undefined,
+    payload: isDar ? mapDataAccessPayload(raw.payload) : undefined,
+    suggestionPayload: isDar ? undefined : parseTaskSuggestionPayload(raw.payload),
+    availableTransitions: mapAvailableTransitions(raw.availableTransitions),
   };
 }
 
@@ -209,6 +241,9 @@ export async function resolveTask(id: string, body: ResolveTaskRequest): Promise
     json: {
       resolutionType: body.resolutionType,
       comment: body.comment,
+      newValue: body.newValue,
+      payload: body.payload,
+      transitionId: body.transitionId,
     },
   });
   return requireTask(raw, 'Resolve task');

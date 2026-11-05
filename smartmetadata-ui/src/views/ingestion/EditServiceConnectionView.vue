@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Form, Input, Spin, message } from 'ant-design-vue';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
+import { hasConnectionForm } from '@/ingestion/connectionFields';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
@@ -95,6 +96,14 @@ onMounted(() => {
           <Input.TextArea v-model:value="form.description" :rows="3" />
         </Form.Item>
         <ServiceConnectionFields :form="form" />
+        <Alert
+          v-if="service && !hasConnectionForm(service.serviceType)"
+          type="warning"
+          show-icon
+          data-testid="edit-connection-no-form"
+          :message="t('ingestion.services.wizard.noConnectionForm')"
+          style="margin: 16px 0"
+        />
         <Alert
           type="info"
           show-icon

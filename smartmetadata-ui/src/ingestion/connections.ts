@@ -178,6 +178,16 @@ export function createEmptyServiceForm(): ServiceFormValues {
     dagsterTimeout: 1000,
     stripAssetKeyPrefixLength: 0,
     storeConnectionSecrets: false,
+    trackingUri: '',
+    registryUri: '',
+    openApiSchemaUrl: '',
+    credentialsJson: '',
+    delegatedEmail: '',
+    driveId: '',
+    organization: '',
+    baseUrl: '',
+    registryUrl: '',
+    connectionTimeout: undefined,
   };
 }
 
@@ -218,7 +228,9 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
         ? config.username
         : typeof config.connection?.username === 'string'
           ? config.connection.username
-          : '',
+          : typeof (config.authType as { username?: string } | undefined)?.username === 'string'
+            ? ((config.authType as { username?: string }).username as string)
+            : '',
     database: typeof config.database === 'string' ? config.database : '',
     databaseName: typeof config.databaseName === 'string' ? config.databaseName : '',
     databaseSchema: typeof config.databaseSchema === 'string' ? config.databaseSchema : '',
@@ -285,6 +297,30 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     stripAssetKeyPrefixLength:
       typeof config.stripAssetKeyPrefixLength === 'number' ? config.stripAssetKeyPrefixLength : 0,
     storeConnectionSecrets: false,
+    // Eight-kind default types (see connectionFields.ts): secrets are never
+    // prefilled — the build step preserves a masked previous secret instead.
+    trackingUri: typeof config.trackingUri === 'string' ? config.trackingUri : '',
+    registryUri: typeof config.registryUri === 'string' ? config.registryUri : '',
+    openApiSchemaUrl:
+      typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)?.openAPISchemaURL ===
+      'string'
+        ? ((config.openAPISchemaConnection as Record<string, unknown>).openAPISchemaURL as string)
+        : '',
+    credentialsJson: '',
+    delegatedEmail: typeof config.delegatedEmail === 'string' ? config.delegatedEmail : '',
+    driveId: typeof config.driveId === 'string' ? config.driveId : '',
+    organization: typeof config.organization === 'string' ? config.organization : '',
+    // Server schema field is baseURL (openAIConnection.json); baseUrl is
+    // only accepted as a read fallback for records this branch wrote
+    // before the mapping was corrected.
+    baseUrl:
+      typeof config.baseURL === 'string'
+        ? config.baseURL
+        : typeof config.baseUrl === 'string'
+          ? config.baseUrl
+          : '',
+    registryUrl: typeof config.registryUrl === 'string' ? config.registryUrl : '',
+    connectionTimeout: typeof config.connectionTimeout === 'number' ? config.connectionTimeout : undefined,
   };
 }
 
@@ -720,11 +756,115 @@ export function buildServiceConnection(
     if (type === 'UnityCatalog' && typeof form.includeMetricViews === 'boolean') {
       config.includeMetricViews = form.includeMetricViews;
     }
+  } else if (type === 'Mlflow') {
+    if (form.trackingUri?.trim()) {
+      config.trackingUri = form.trackingUri.trim();
+    }
+    if (form.registryUri?.trim()) {
+      config.registryUri = form.registryUri.trim();
+    }
+  } else if (type === 'OpenMetadata') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+  } else if (type === 'Rest') {
+    if (form.openApiSchemaUrl?.trim()) {
+      config.openAPISchemaConnection = { openAPISchemaURL: form.openApiSchemaUrl.trim() };
+    }
+    const token = form.apiKey?.trim() ?? '';
+    if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+      config.token = token;
+    } else if (!token) {
+      const prev = existing?.config?.token;
+      if (prev && isMaskedSecret(prev)) {
+        config.token = prev;
+      }
+    }
+  } else if (type === 'GoogleDrive') {
+    const raw = form.credentialsJson?.trim() ?? '';
+    if (raw) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error('Google Drive credentials must be valid JSON');
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Google Drive credentials must be a JSON object');
+      }
+      config.credentials = parsed as Record<string, unknown>;
+    } else if (existing?.config?.credentials) {
+      config.credentials = existing.config.credentials;
+    }
+    if (form.delegatedEmail?.trim()) {
+      config.delegatedEmail = form.delegatedEmail.trim();
+    }
+    if (form.driveId?.trim()) {
+      config.driveId = form.driveId.trim();
+    }
+  } else if (type === 'ElasticSearch' || type === 'Ranger') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const auth: Record<string, string> = {};
+    if (form.username?.trim()) {
+      auth.username = form.username.trim();
+    }
+    const secret = form.password?.trim() ?? '';
+    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+      auth.password = secret;
+    } else if (!secret) {
+      const prevAuth = existing?.config?.authType;
+      const prev = prevAuth && typeof prevAuth === 'object' ? (prevAuth as { password?: string }).password : undefined;
+      if (prev && isMaskedSecret(prev)) {
+        auth.password = prev;
+      }
+    }
+    const apiKey = form.apiKey?.trim() ?? '';
+    if (type === 'ElasticSearch' && apiKey && shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+      config.authType = { apiKey };
+    } else if (Object.keys(auth).length) {
+      config.authType = auth;
+    }
+  } else if (type === 'OpenAI') {
+    const apiKey = form.apiKey?.trim() ?? '';
+    if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+      config.apiKey = apiKey;
+    } else if (!apiKey) {
+      const prev = existing?.config?.apiKey;
+      if (prev && isMaskedSecret(prev)) {
+        config.apiKey = prev;
+      }
+    }
+    if (form.organization?.trim()) {
+      config.organization = form.organization.trim();
+    }
+    if (form.baseUrl?.trim()) {
+      // Schema field name, not the product form key: baseURL.
+      config.baseURL = form.baseUrl.trim();
+    }
+  } else if (type === 'Mcp') {
+    if (form.registryUrl?.trim()) {
+      config.registryUrl = form.registryUrl.trim();
+    }
+    if (typeof form.connectionTimeout === 'number') {
+      config.connectionTimeout = form.connectionTimeout;
+    }
   } else {
     return existing;
   }
 
-  if (type !== 'S3' && type !== 'Prefect' && type !== 'Dagster') {
+  const NO_GENERIC_PASSWORD: readonly string[] = [
+    'S3',
+    'Prefect',
+    'Dagster',
+    'Rest',
+    'GoogleDrive',
+    'ElasticSearch',
+    'Ranger',
+    'OpenAI',
+  ];
+  if (!NO_GENERIC_PASSWORD.includes(type)) {
     applyPassword(config, form, existing?.config);
   }
   if (Object.keys(config).length <= 1) {

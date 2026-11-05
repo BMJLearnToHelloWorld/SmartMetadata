@@ -100,6 +100,10 @@ const PipelinesListView = () => import('@/views/ingestion/PipelinesListView.vue'
 const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
 const EditServiceConnectionView = () => import('@/views/ingestion/EditServiceConnectionView.vue');
 const ServiceDetailView = () => import('@/views/ingestion/ServiceDetailView.vue');
+const AddServiceIngestionView = () => import('@/views/ingestion/AddServiceIngestionView.vue');
+const TestSuiteIngestionView = () => import('@/views/quality/TestSuiteIngestionView.vue');
+const QueryFullScreenView = () => import('@/views/QueryFullScreenView.vue');
+const AddQueryView = () => import('@/views/AddQueryView.vue');
 const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
@@ -122,9 +126,13 @@ const ContextCenterAiContextView = () =>
   import('@/views/contextCenter/ContextCenterAiContextView.vue');
 const ContextCenterArchiveView = () => import('@/views/contextCenter/ContextCenterArchiveView.vue');
 const MarketplaceOverviewView = () => import('@/views/marketplace/MarketplaceOverviewView.vue');
+const MarketplaceAppCatalogView = () => import('@/views/marketplace/MarketplaceAppCatalogView.vue');
 const MarketplaceAppDetailView = () => import('@/views/marketplace/MarketplaceAppDetailView.vue');
+const GlossaryTermRelationSettingsView = () =>
+  import('@/views/admin/GlossaryTermRelationSettingsView.vue');
 const OntologyExplorerView = () => import('@/views/governance/OntologyExplorerView.vue');
 const OntologyStudioView = () => import('@/views/governance/OntologyStudioView.vue');
+const GovernanceVersionView = () => import('@/views/governance/GovernanceVersionView.vue');
 const WorkflowsView = () => import('@/views/governance/WorkflowsView.vue');
 const WorkflowDetailView = () => import('@/views/governance/WorkflowDetailView.vue');
 const AppInstallView = () => import('@/views/marketplace/AppInstallView.vue');
@@ -363,6 +371,57 @@ export const router = createRouter({
           props: true,
         },
         {
+          path: 'governance/domains/:id/versions/:version',
+          name: 'governance-domain-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'domain',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'governance/glossaries/:id/versions/:version',
+          name: 'governance-glossary-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'glossary',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'governance/terms/:id/versions/:version',
+          name: 'governance-term-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'term',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'governance/terms/:id/versions/:version/:tab',
+          name: 'governance-term-version-tab',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'term',
+            id: route.params.id as string,
+            version: route.params.version as string,
+            tab: route.params.tab as string,
+          }),
+        },
+        {
+          path: 'governance/classifications/:id/versions/:version',
+          name: 'governance-classification-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'classification',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
           path: 'governance/data-products',
           name: 'governance-data-products',
           component: DataProductsListView,
@@ -381,7 +440,7 @@ export const router = createRouter({
           props: true,
         },
         // P2 B1: the five context-center shells are real pages now; the
-        // residual entries were removed from residualPages.ts with them.
+        // the former residual entries are real pages now.
         // The overview keeps its product path and gains the official
         // /context-center/overview path as an alias.
         {
@@ -398,6 +457,22 @@ export const router = createRouter({
         {
           path: 'context-center/articles/:fqn',
           name: 'context-center-article',
+          component: ContextCenterArticlesView,
+          meta: { titleKey: 'contextCenter.articles' },
+        },
+        // A17 article detail tab segments (official
+        // CONTEXT_CENTER_ARTICLE_DETAIL_WITH_TAB*): the same view,
+        // with :tab driving the detail tab and :subTab accepted and
+        // preserved (official's detail component reads only tab).
+        {
+          path: 'context-center/articles/:fqn/:tab',
+          name: 'context-center-article-tab',
+          component: ContextCenterArticlesView,
+          meta: { titleKey: 'contextCenter.articles' },
+        },
+        {
+          path: 'context-center/articles/:fqn/:tab/:subTab',
+          name: 'context-center-article-subtab',
           component: ContextCenterArticlesView,
           meta: { titleKey: 'contextCenter.articles' },
         },
@@ -447,7 +522,7 @@ export const router = createRouter({
           component: ContextCenterArchiveView,
         },
         // P2 B2: the three remaining shells are real pages now; the
-        // residual entries were removed from residualPages.ts with them.
+        // the former residual entries are real pages now.
         // Each keeps its product path and gains the official path as an alias.
         {
           path: 'marketplace',
@@ -482,6 +557,17 @@ export const router = createRouter({
           component: WorkflowDetailView,
           alias: 'workflows/:fqn/:tab',
           props: true,
+        },
+        // A2 app catalog (official MarketPlacePage, /marketplace):
+        // /marketplace itself already serves the data marketplace
+        // (official /data-marketplace), so the catalog takes
+        // marketplace/apps — the parent of the detail route below —
+        // and the detail page's browse button points here.
+        {
+          path: 'marketplace/apps',
+          name: 'marketplace-app-catalog',
+          component: MarketplaceAppCatalogView,
+          meta: { titleKey: 'apps.catalog.title' },
         },
         // P2 R-4: marketplace app detail (official
         // /marketplace/apps/:fqn). The install route below keeps its own
@@ -518,6 +604,16 @@ export const router = createRouter({
           component: TaskFormSettingsView,
           alias: 'settings/governance/task-forms',
           meta: { titleKey: 'taskForms.title' },
+        },
+        // A14 glossary-term relations (official SettingsRouter
+        // GOVERNANCE + GLOSSARY_TERM_RELATIONS): same product-tree
+        // placement and official-path alias as intake/task forms.
+        {
+          path: 'admin/settings/governance/glossary-term-relations',
+          name: 'admin-settings-governance-glossary-term-relations',
+          component: GlossaryTermRelationSettingsView,
+          alias: 'settings/governance/glossary-term-relations',
+          meta: { titleKey: 'settings.glossaryTermRelations.title' },
         },
         {
           path: 'govern/sparql',
@@ -582,6 +678,27 @@ export const router = createRouter({
           props: true,
         },
         {
+          path: 'quality/test-cases/:id/versions/:version',
+          name: 'quality-test-case-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'testCase',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
+        {
+          path: 'quality/test-cases/:id/versions/:version/:tab',
+          name: 'quality-test-case-version-tab',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'testCase',
+            id: route.params.id as string,
+            version: route.params.version as string,
+            tab: route.params.tab as string,
+          }),
+        },
+        {
           path: 'quality/test-suites',
           name: 'quality-test-suites',
           redirect: (to) => ({
@@ -593,6 +710,30 @@ export const router = createRouter({
           path: 'quality/test-suites/:id',
           name: 'quality-test-suite',
           component: TestSuiteDetailView,
+          props: true,
+        },
+        {
+          path: 'quality/test-suites/:id/add-ingestion',
+          name: 'quality-test-suite-add-ingestion',
+          component: TestSuiteIngestionView,
+          props: true,
+        },
+        {
+          path: 'quality/test-suites/:id/edit-ingestion/:ingestionFqn',
+          name: 'quality-test-suite-edit-ingestion',
+          component: TestSuiteIngestionView,
+          props: true,
+        },
+        {
+          path: 'query-view/:fqn/:queryId',
+          name: 'query-full-screen',
+          component: QueryFullScreenView,
+          props: true,
+        },
+        {
+          path: 'query/:fqn/add-query',
+          name: 'query-add',
+          component: AddQueryView,
           props: true,
         },
         {
@@ -619,6 +760,12 @@ export const router = createRouter({
           path: 'ingestion/services/:kind/:id/connection',
           name: 'ingestion-service-connection',
           component: EditServiceConnectionView,
+          props: true,
+        },
+        {
+          path: 'ingestion/services/:kind/:id/add-ingestion/:ingestionType',
+          name: 'ingestion-service-add-ingestion',
+          component: AddServiceIngestionView,
           props: true,
         },
         {
@@ -650,6 +797,14 @@ export const router = createRouter({
         { path: 'data-access-requests', name: 'data-access-requests', component: DataAccessRequestsView, meta: { titleKey: 'collaboration.dataAccess.title' } },
         { path: 'data-access-requests/new', name: 'data-access-request-new', component: DataAccessRequestCreateView, meta: { titleKey: 'collaboration.dataAccess.createTitle' } },
         { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
+        // A20 announcement duplicate (official
+        // SETTINGS_ANNOUNCEMENT_DUPLICATE): the list view reuses its
+        // create form prefilled from the source announcement.
+        {
+          path: 'announcements/duplicate/:id',
+          name: 'announcement-duplicate',
+          component: AnnouncementsListView,
+        },
         { path: 'forbidden', name: 'forbidden', component: ForbiddenView },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },
       ],

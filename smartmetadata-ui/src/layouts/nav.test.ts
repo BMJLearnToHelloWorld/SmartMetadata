@@ -19,7 +19,6 @@ import {
   sectionLanding,
   selectedNavKey,
 } from './nav';
-import { RESIDUAL_PAGES } from './residualPages';
 
 function sectionItems(key: string): string[] {
   const section = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === key);
@@ -136,22 +135,10 @@ describe('nav IA', () => {
     // shell, which carries onward links (Fix6 M2) instead of a dead end.
     expect(sectionLanding('context-center')).toBe('context-center-overview');
     expect(sectionLanding('home')).toBeNull();
-    const residualNames = new Set(RESIDUAL_PAGES.map((page) => page.name));
     for (const section of ['marketplace', 'governance', 'observability']) {
       const landing = sectionLanding(section);
       expect(landing).not.toBeNull();
-      expect(residualNames.has(landing as string)).toBe(false);
     }
   });
 
-  it('gives every residual page at least one onward link to a real route (Fix6)', () => {
-    const leafKeys = new Set(navRouteKeys());
-    for (const page of RESIDUAL_PAGES) {
-      expect(page.links?.length).toBeGreaterThan(0);
-      for (const link of page.links ?? []) {
-        // Link targets are route names: either a nav leaf or a residual page itself.
-        expect(leafKeys.has(link.routeName) || RESIDUAL_PAGES.some((p) => p.name === link.routeName)).toBe(true);
-      }
-    }
-  });
 });

@@ -54,6 +54,7 @@ async function mountHub() {
       { path: '/admin/settings/permission-debugger', name: 'admin-settings-permission-debugger', component: stub('permdbg') },
       { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
       { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
+      { path: '/admin/settings/governance/glossary-term-relations', name: 'admin-settings-governance-glossary-term-relations', component: stub('termrelations') },
       { path: '/admin/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
       { path: '/insights/online-users', name: 'insights-online-users', component: stub('online') },
       { path: '/admin/settings/sso', name: 'admin-settings-sso', component: stub('sso') },

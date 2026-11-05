@@ -22,6 +22,7 @@ import {
   createEmptyServiceForm,
   entityTypeForKind,
 } from '@/ingestion/connections';
+import { hasConnectionForm } from '@/ingestion/connectionFields';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
 import type { ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
@@ -35,6 +36,15 @@ const filterFields = computed(() => serviceFilterFieldsForKind(form.kind));
 
 const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
 const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
+/**
+ * A9 tightening: a service type with no connection form must not be
+ * created with an undefined connection. The wizard still lists the type
+ * (the service entity exists server-side), but the connection step shows
+ * an explicit "no connection form" note and blocks Next/Create until a
+ * formed type is chosen. Only the eight kinds' default types have forms
+ * in this branch; their other types stay blocked, not invented.
+ */
+const connectionFormMissing = computed(() => !hasConnectionForm(form.serviceType));
 const steps = computed(() => [
   { title: t('ingestion.services.wizard.stepType') },
   { title: t('ingestion.services.wizard.stepConnection') },
@@ -82,6 +92,10 @@ function filterScopeEntered(): boolean {
 }
 
 async function onCreate(): Promise<void> {
+  if (connectionFormMissing.value) {
+    message.error(t('ingestion.services.wizard.noConnectionForm'));
+    return;
+  }
   creating.value = true;
   try {
     const created = await SERVICE_CREATE_API[form.kind]({
@@ -160,6 +174,14 @@ async function onCreate(): Promise<void> {
           <Input.TextArea v-model:value="form.description" :rows="3" data-testid="wizard-service-description" />
         </Form.Item>
         <ServiceConnectionFields :form="form" />
+        <Alert
+          v-if="connectionFormMissing"
+          type="warning"
+          show-icon
+          data-testid="wizard-no-connection-form"
+          :message="t('ingestion.services.wizard.noConnectionForm')"
+          style="margin-top: 16px"
+        />
       </Form>
       <Alert
         type="info"
@@ -194,7 +216,7 @@ async function onCreate(): Promise<void> {
         v-if="step < 2"
         type="primary"
         data-testid="wizard-next"
-        :disabled="step === 1 && !form.name.trim()"
+        :disabled="(step === 1 && !form.name.trim()) || (step === 1 && connectionFormMissing)"
         @click="onNext"
       >
         {{ step === 1 ? t('ingestion.services.wizard.nextFilter') : t('crud.next') }}

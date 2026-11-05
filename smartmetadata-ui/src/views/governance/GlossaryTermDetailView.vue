@@ -12,6 +12,8 @@ import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getGlossaryTermVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { EntityRef } from '@/types/api';
 import type { GlossaryTerm } from '@/types/governance';
@@ -60,6 +62,23 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('terms.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onOpenVersions(): Promise<void> {
+  const targetId = term.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('term', targetId, (version) => getGlossaryTermVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
   }
 }
 
@@ -168,6 +187,7 @@ onMounted(() => {
             >
               {{ t('terms.back') }}
             </Button>
+            <Button data-testid="term-versions" :disabled="!term" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
             <Button danger data-testid="delete-term" :disabled="!term" @click="onDeleteTerm">{{ t('crud.delete') }}</Button>
             <Button type="primary" data-testid="edit-term" :disabled="!term" @click="openEdit">
               {{ t('terms.edit') }}

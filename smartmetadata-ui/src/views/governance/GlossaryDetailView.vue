@@ -6,11 +6,21 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Breadcrumb, Button, Checkbox, Collapse, Empty, Form, Input, Pagination, Select, Space, Spin, Tag, Tabs, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Checkbox, Collapse, Empty, Form, Input, Pagination, Select, Space, Spin, Table, Tag, Tabs, Typography, message} from 'ant-design-vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getGlossaryVersionPath } from '@/catalog/versionPaths';
+import { listEntityActivity } from '@/api/activity';
+import { listConversations } from '@/api/conversations';
+import { listTasks } from '@/api/tasks';
+import { toEntityLink } from '@/quality/entityLink';
+import type { ActivityEvent, CollaborationTask, Conversation } from '@/types/collaboration';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { createGlossaryTerm, listGlossaryTermChildrenLazy, listGlossaryTerms } from '@/api/glossaryTerms';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
@@ -34,6 +44,55 @@ const glossaries = ref<Glossary[]>([]);
 const glossary = ref<Glossary | null>(null);
 const terms = ref<GlossaryTerm[]>([]);
 const activeTab = ref('terms');
+
+// Activity feed + tasks (A3, official GlossaryDetails ActivityFeedTab):
+// activity events via listEntityActivity('glossary', fqn), conversations
+// via listConversations(entityLink), tasks via listTasks(aboutEntity).
+// Each source fails independently (a tasks failure must not blank the
+// feed), mirroring the domain/detail precedent of failing soft with an
+// honest error note. Loaded lazily on first activity-tab activation per
+// glossary, never eagerly on the terms tab.
+const activityEvents = ref<ActivityEvent[]>([]);
+const activityConversations = ref<Conversation[]>([]);
+const activityTasks = ref<CollaborationTask[]>([]);
+const activityError = ref('');
+const activityLoadedFor = ref('');
+const activityLoading = ref(false);
+
+async function loadActivity(): Promise<void> {
+  const current = glossary.value;
+  const fqn = current?.fullyQualifiedName || current?.name;
+  if (!fqn || activityLoadedFor.value === current?.id || activityLoading.value) {
+    return;
+  }
+  activityLoading.value = true;
+  activityError.value = '';
+  try {
+    const [activityPage, conversationPage, taskPage] = await Promise.all([
+      listEntityActivity('glossary', fqn).catch(() => ({ data: [] as ActivityEvent[] })),
+      listConversations({ entityLink: toEntityLink('glossary', fqn), limit: 20 }).catch(
+        () => ({ data: [] as Conversation[] }),
+      ),
+      listTasks({ aboutEntity: toEntityLink('glossary', fqn), limit: 20 }).catch(
+        () => ({ data: [] as CollaborationTask[] }),
+      ),
+    ]);
+    activityEvents.value = activityPage.data;
+    activityConversations.value = conversationPage.data;
+    activityTasks.value = taskPage.data;
+    activityLoadedFor.value = current?.id ?? '';
+  } catch (error) {
+    activityError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+  } finally {
+    activityLoading.value = false;
+  }
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'activity') {
+    void loadActivity();
+  }
+});
 const termSearch = ref('');
 const statusFilter = ref<string | undefined>();
 const termPage = ref(1);
@@ -122,8 +181,13 @@ const filteredTerms = computed(() => {
 });
 
 /** Glossary tabs are data from the Stage 4 governance registry; the terms
- *  label keeps its live count, the activity label keeps its zero count,
- *  and residual panes keep their honest Empty content below. */
+ *  label keeps its live count, and the activity label counts the items
+ *  actually rendered in the activity pane (events + conversations +
+ *  tasks) once loaded — never a hard-coded 0. The relations pane stays
+ *  an honest residual (see the A3 note below). */
+const activityCount = computed(
+  () => activityEvents.value.length + activityConversations.value.length + activityTasks.value.length,
+);
 const glossaryTabs = computed(() =>
   governanceTabsFor('glossary').map((tab) => ({
     ...tab,
@@ -131,7 +195,7 @@ const glossaryTabs = computed(() =>
       tab.key === 'terms'
         ? termCountLabel.value
         : tab.key === 'activity'
-          ? t(tab.labelKey, { count: 0 })
+          ? t(tab.labelKey, { count: activityCount.value })
           : t(tab.labelKey),
   })),
 );
@@ -299,6 +363,11 @@ async function loadDetail(id: string): Promise<void> {
   detailLoading.value = true;
   detailError.value = '';
   residualNotes.value = [];
+  activityEvents.value = [];
+  activityConversations.value = [];
+  activityTasks.value = [];
+  activityError.value = '';
+  activityLoadedFor.value = '';
   loadingChildren.clear();
   enrichedChildren.clear();
   childPageAfter.clear();
@@ -316,6 +385,9 @@ async function loadDetail(id: string): Promise<void> {
       }
     }
     termPage.value = 1;
+    if (activeTab.value === 'activity') {
+      await loadActivity();
+    }
   } catch (error) {
     glossary.value = null;
     terms.value = [];
@@ -380,6 +452,23 @@ async function onDeleteGlossary(): Promise<void> {
     await router.push({ name: 'governance-glossaries' });
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  }
+}
+
+async function onOpenVersions(): Promise<void> {
+  const targetId = glossary.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('glossary', targetId, (version) => getGlossaryVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
   }
 }
 
@@ -562,34 +651,44 @@ onMounted(() => {
         <template v-else-if="glossary">
           <div class="glossary__header">
             <div class="glossary__title-block">
-              <Breadcrumb class="glossary__crumb" data-testid="glossary-breadcrumb">
-                <Breadcrumb.Item>
-                  <a href="#" @click.prevent="router.push({ name: 'governance-glossaries' })">{{ t('nav.glossaries') }}</a>
-                </Breadcrumb.Item>
-                <Breadcrumb.Item>{{ entityLabel(glossary) }}</Breadcrumb.Item>
-              </Breadcrumb>
-              <Typography.Title :level="3" class="glossary__title">
-                {{ entityLabel(glossary) }}
-              </Typography.Title>
-              <div class="glossary__fqn">
-                <Typography.Text type="secondary" data-testid="glossary-fqn">
-                  {{ glossary.fullyQualifiedName || glossary.name }}
-                </Typography.Text>
-                <Button
-                  type="text"
-                  size="small"
-                  data-testid="glossary-copy-fqn"
-                  :aria-label="t('governance.glossaries.copyFqn')"
-                  @click="copyFqn"
-                >
-                  <SmIcon icon-key="action-copy" />
-                </Button>
-              </div>
+              <!-- A19: the hand-written Breadcrumb + level-3 title block
+                   converges into the single PageHeader (D5:收敛，不豁免),
+                   following the GlossaryTermDetailView precedent. The
+                   breadcrumb keeps its testid via SmBreadcrumb; the FQN
+                   line (with its copy button) moves into PageHeader's
+                   `below` slot, so no title information is lost. -->
+              <SmBreadcrumb
+                class="glossary__crumb"
+                test-id="glossary-breadcrumb"
+                :items="[
+                  { label: t('nav.glossaries'), routeName: 'governance-glossaries' },
+                  { label: entityLabel(glossary) },
+                ]"
+              />
+              <PageHeader :header="entityLabel(glossary)" test-id="glossary-page-header">
+                <template #below>
+                  <div class="glossary__fqn">
+                    <Typography.Text type="secondary" data-testid="glossary-fqn">
+                      {{ glossary.fullyQualifiedName || glossary.name }}
+                    </Typography.Text>
+                    <Button
+                      type="text"
+                      size="small"
+                      data-testid="glossary-copy-fqn"
+                      :aria-label="t('governance.glossaries.copyFqn')"
+                      @click="copyFqn"
+                    >
+                      <SmIcon icon-key="action-copy" />
+                    </Button>
+                  </div>
+                </template>
+              </PageHeader>
             </div>
             <Space>
               <Button type="primary" data-testid="create-term" @click="createTermOpen = true">
                 {{ t('governance.glossaries.addTerm') }}
               </Button>
+              <Button data-testid="glossary-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
               <Button data-testid="edit-glossary" @click="openEdit">{{ t('crud.edit') }}</Button>
               <Button danger data-testid="delete-glossary" :disabled="!glossary" @click="onDeleteGlossary">{{ t('crud.delete') }}</Button>
             </Space>
@@ -747,16 +846,54 @@ onMounted(() => {
               </div>
               </template>
               <template v-else-if="tab.key === 'relations'">
+                <!-- A3 relations stays residual, honestly: official
+                     relations is OntologyExplorer scope=glossary — a G6
+                     graph canvas (A5's stage, product has no @antv/g6)
+                     over ontology graph endpoints, not a list the
+                     product can render from its concept/property APIs
+                     without inventing a graph surface. No fake graph,
+                     no invented endpoint. -->
                 <Empty
                   data-testid="glossary-relations-residual"
                   :description="t('governance.glossaries.relationsResidual')"
                 />
               </template>
               <template v-else-if="tab.key === 'activity'">
-                <Empty
-                  data-testid="glossary-activity-residual"
-                  :description="t('governance.glossaries.activityResidual')"
-                />
+                <Spin :spinning="activityLoading" data-testid="glossary-activity-loading">
+                  <Alert v-if="activityError" type="error" show-icon :message="activityError" />
+                  <AssetActivityPanel
+                    :activity="activityEvents"
+                    :conversations="activityConversations"
+                    :collaboration-error="''"
+                    entity-type="glossary"
+                    :fqn="glossary.fullyQualifiedName || glossary.name"
+                  />
+                  <Typography.Title :level="5" style="margin-top: 24px">
+                    {{ t('governance.glossaries.tasksTitle') }}
+                  </Typography.Title>
+                  <Table
+                    row-key="id"
+                    data-testid="glossary-tasks-table"
+                    :columns="[
+                      { title: t('crud.name'), dataIndex: 'displayName', key: 'name' },
+                      { title: t('governance.glossaries.taskType'), dataIndex: 'type', key: 'type' },
+                      { title: t('governance.glossaries.taskStatus'), dataIndex: 'status', key: 'status' },
+                    ]"
+                    :data-source="
+                      activityTasks.map((task) => ({
+                        ...task,
+                        displayName: task.displayName || task.name || task.id,
+                      }))
+                    "
+                    :pagination="false"
+                    size="small"
+                  />
+                  <Empty
+                    v-if="!activityLoading && !activityTasks.length"
+                    :description="t('governance.glossaries.tasksEmpty')"
+                    data-testid="glossary-tasks-empty"
+                  />
+                </Spin>
               </template>
             </Tabs.TabPane>
           </Tabs>

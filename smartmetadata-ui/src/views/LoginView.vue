@@ -99,7 +99,7 @@ onMounted(() => {
 <template>
   <div class="login-screen">
     <header class="login__bar">
-      <img class="login__logo" :src="logoUrl" alt="IQVIA" />
+      <img class="login__logo" :src="logoUrl" alt="iSmart" />
       <button
         type="button"
         data-testid="locale-switcher"

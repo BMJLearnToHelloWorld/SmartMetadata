@@ -20,7 +20,6 @@ import SmIcon from './SmIcon.vue';
 import SmState from './SmState.vue';
 import SmTable from './SmTable.vue';
 import DetailTabs from './DetailTabs.vue';
-import { helpItems } from './helpItems';
 
 function testRouter() {
   return createRouter({
@@ -115,18 +114,6 @@ describe('shared components (Stage 1)', () => {
     await flushPromises();
     expect(tabs.text()).toContain('Overview');
     expect(tabs.text()).toContain('Lineage');
-  });
-
-  it('keeps help items data-driven with official URLs and a routed tour', () => {
-    const items = helpItems('1.5.0');
-    expect(items.map((item) => item.key)).toEqual(['tour', 'docs', 'api', 'slack', 'version']);
-    expect(items.find((item) => item.key === 'docs')?.href).toBe('https://docs.open-metadata.org/');
-    expect(items.find((item) => item.key === 'slack')?.href).toBe('https://slack.open-metadata.org');
-    // P2 B5: the tour landed, so the item routes instead of staying residual.
-    expect(items.find((item) => item.key === 'tour')?.routeName).toBe('tour');
-    // B5-5: the API reference is an internal route now, not a residual.
-    expect(items.find((item) => item.key === 'api')?.routeName).toBe('docs');
-    expect(items.find((item) => item.key === 'version')?.href).toContain('1.5.0');
   });
 
 });

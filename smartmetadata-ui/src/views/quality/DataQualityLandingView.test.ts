@@ -24,11 +24,21 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const batchRequests: unknown[] = [];
+
 function stubFetch(mode: 'ok' | 'quality-404' = 'ok'): void {
+  batchRequests.length = 0;
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes('/dataQualityReport/batch') && typeof init?.body === 'string') {
+        try {
+          batchRequests.push(JSON.parse(init.body));
+        } catch {
+          batchRequests.push(init.body);
+        }
+      }
       if (url.includes('/testCases/search/list') || url.includes('/testSuites/search/list')) {
         return new Response('not found', { status: 404 });
       }
@@ -241,6 +251,56 @@ describe('DataQualityLandingView', () => {
     expect(wrapper.get('[data-testid="dq-health-empty"]').text()).toMatch(/empty|Add a test|no test/i);
     expect(wrapper.find('[data-testid="dq-residual-residualCases"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('20897');
+  });
+
+  it('re-runs the aggregation batch with the filter-built query on filter change', async () => {
+    const { wrapper } = await mountLanding();
+    const initialBatchCount = batchRequests.length;
+    expect(initialBatchCount).toBeGreaterThanOrEqual(1);
+    const firstBatch = batchRequests[initialBatchCount - 1] as {
+      requests: Array<{ key: string; q?: string }>;
+    };
+    expect(firstBatch.requests.find((item) => item.key === 'status')?.q).toContain('deleted');
+    batchRequests.length = 0;
+    const ownerSelect = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    ownerSelect.vm.$emit('change', 'alice');
+    await flushPromises();
+    expect(batchRequests.length).toBeGreaterThanOrEqual(1);
+    const rerun = batchRequests[batchRequests.length - 1] as {
+      requests: Array<{ key: string; index: string; q?: string }>;
+    };
+    const statusRequest = rerun.requests.find((item) => item.key === 'status');
+    expect(statusRequest?.q).toContain('owners.name');
+    expect(statusRequest?.q).toContain('alice');
+    const totalTables = rerun.requests.find((item) => item.key === 'totalTables');
+    expect(totalTables?.index).toBe('table');
+    expect(totalTables?.q).toContain('alice');
+    const noDimension = rerun.requests.find((item) => item.key === 'noDimensionStatus');
+    expect(noDimension?.q).toContain('dataQualityDimensionName');
+  });
+
+  it('re-runs the aggregation batch with the time-range clause on range change', async () => {
+    const { wrapper } = await mountLanding();
+    expect(batchRequests.length).toBeGreaterThanOrEqual(1);
+    batchRequests.length = 0;
+    const rangeSelect = wrapper
+      .findAllComponents({ name: 'ASelect' })
+      .find((component) => component.attributes('data-testid') === 'dq-filter-range');
+    expect(rangeSelect?.exists()).toBe(true);
+    // v-model:value listens to update:value (the owner filter test uses an
+    // explicit @change handler, which is why it emits 'change').
+    rangeSelect?.vm.$emit('update:value', 7);
+    await flushPromises();
+    expect(batchRequests.length).toBeGreaterThanOrEqual(1);
+    const rerun = batchRequests[batchRequests.length - 1] as {
+      requests: Array<{ key: string; q?: string }>;
+    };
+    const statusRequest = rerun.requests.find((item) => item.key === 'status');
+    expect(statusRequest?.q).toContain('testCaseResult.timestamp');
+    // The table-index item never carries the time clause (official table
+    // builder has none), even when the range drives the dashboard items.
+    const totalTables = rerun.requests.find((item) => item.key === 'totalTables');
+    expect(totalTables?.q).not.toContain('testCaseResult.timestamp');
   });
 
   it('shows an honest residual when governance filters are used without search/list', async () => {

@@ -43,13 +43,13 @@ export const GOVERNANCE_ENTITY_TABS: Record<GovernanceEntity, GovernanceTab[]> =
       key: 'relations',
       labelKey: 'governance.glossaries.relationsTab',
       supported: false,
-      residualReason: 'No graph endpoint is wired for glossaries.',
+      residualReason:
+        'Official relations is OntologyExplorer scope=glossary (G6 graph canvas, A5 stage); no glossary graph endpoint is wired and no graph is faked.',
     },
     {
       key: 'activity',
       labelKey: 'governance.glossaries.activityTab',
-      supported: false,
-      residualReason: 'Activity feed APIs are not attached here.',
+      supported: true,
     },
   ],
   glossaryTerm: [
