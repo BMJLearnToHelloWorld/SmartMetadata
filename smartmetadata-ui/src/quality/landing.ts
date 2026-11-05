@@ -368,6 +368,12 @@ export function governanceFiltersActive(filters: DqGovernanceFilters): boolean {
  */
 export type DqEsClause = Record<string, unknown>;
 
+/** Official dashboard time window: seriesWindow start/end timestamps. */
+export interface DqTimeRange {
+  startTs: number;
+  endTs: number;
+}
+
 function dqMustForOwner(owner: string): DqEsClause {
   return {
     nested: {
@@ -399,7 +405,10 @@ function dqShouldTerm(field: string, value: string, minimumShouldMatch = true): 
   };
 }
 
-export function dqDashboardMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
+export function dqDashboardMustFilters(
+  filters: DqGovernanceFilters,
+  range?: DqTimeRange,
+): DqEsClause[] {
   const must: DqEsClause[] = [];
   if (filters.owner?.trim()) {
     must.push(dqMustForOwner(filters.owner));
@@ -415,6 +424,14 @@ export function dqDashboardMustFilters(filters: DqGovernanceFilters): DqEsClause
   }
   if (filters.dataProduct?.trim()) {
     must.push(dqShouldTerm('dataProducts.fullyQualifiedName', filters.dataProduct));
+  }
+  // Official time-range clause (buildStatusTypeAndTimeFilters): only the
+  // testCase-index dashboard builder carries it — the table builder has
+  // no time clause, so the table query never receives a range.
+  if (range?.startTs && range?.endTs) {
+    must.push({
+      range: { 'testCaseResult.timestamp': { gte: range.startTs, lte: range.endTs } },
+    });
   }
   must.push({ term: { deleted: false } });
   return must;
@@ -445,8 +462,11 @@ export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
   return must;
 }
 
-export function buildDqDashboardQuery(filters: DqGovernanceFilters): string {
-  return JSON.stringify({ query: { bool: { must: dqDashboardMustFilters(filters) } } });
+export function buildDqDashboardQuery(
+  filters: DqGovernanceFilters,
+  range?: DqTimeRange,
+): string {
+  return JSON.stringify({ query: { bool: { must: dqDashboardMustFilters(filters, range) } } });
 }
 
 export function buildDqTableQuery(filters: DqGovernanceFilters): string {
@@ -459,11 +479,14 @@ export function buildDqTableQuery(filters: DqGovernanceFilters): string {
  * so dimension-less cases land on the No Dimension card instead of
  * vanishing from the terms aggregation.
  */
-export function buildDqNoDimensionQuery(filters: DqGovernanceFilters): string {
+export function buildDqNoDimensionQuery(
+  filters: DqGovernanceFilters,
+  range?: DqTimeRange,
+): string {
   return JSON.stringify({
     query: {
       bool: {
-        must: dqDashboardMustFilters(filters),
+        must: dqDashboardMustFilters(filters, range),
         must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }],
       },
     },

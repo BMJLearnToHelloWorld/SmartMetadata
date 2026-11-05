@@ -202,6 +202,23 @@ describe('DQ landing helpers', () => {
     expect(buildDqDashboardQuery({ glossaryTerm: 'Glossary.Term' })).not.toContain('lossary');
   });
 
+  it('adds the official time-range clause to testCase-index queries only', () => {
+    const range = { startTs: 1000, endTs: 2000 };
+    const dashboard = JSON.parse(buildDqDashboardQuery({}, range));
+    expect(dashboard.query.bool.must).toContainEqual({
+      range: { 'testCaseResult.timestamp': { gte: 1000, lte: 2000 } },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({ term: { deleted: false } });
+    const noDimension = JSON.parse(buildDqNoDimensionQuery({}, range));
+    expect(noDimension.query.bool.must).toContainEqual({
+      range: { 'testCaseResult.timestamp': { gte: 1000, lte: 2000 } },
+    });
+    // No range, no clause — and the table builder never carries one:
+    // official buildDataQualityTableFilters has no time clause.
+    expect(JSON.stringify(JSON.parse(buildDqDashboardQuery({})))).not.toContain('testCaseResult.timestamp');
+    expect(JSON.stringify(JSON.parse(buildDqTableQuery({})))).not.toContain('timestamp');
+  });
+
   it('filters listed rows by name without inventing matches', () => {
     const rows = [
       testCase({ id: '1', name: 'row_count', entityFQN: 'svc.db.schema.orders' }),

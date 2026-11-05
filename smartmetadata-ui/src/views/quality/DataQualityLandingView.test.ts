@@ -279,6 +279,30 @@ describe('DataQualityLandingView', () => {
     expect(noDimension?.q).toContain('dataQualityDimensionName');
   });
 
+  it('re-runs the aggregation batch with the time-range clause on range change', async () => {
+    const { wrapper } = await mountLanding();
+    expect(batchRequests.length).toBeGreaterThanOrEqual(1);
+    batchRequests.length = 0;
+    const rangeSelect = wrapper
+      .findAllComponents({ name: 'ASelect' })
+      .find((component) => component.attributes('data-testid') === 'dq-filter-range');
+    expect(rangeSelect?.exists()).toBe(true);
+    // v-model:value listens to update:value (the owner filter test uses an
+    // explicit @change handler, which is why it emits 'change').
+    rangeSelect?.vm.$emit('update:value', 7);
+    await flushPromises();
+    expect(batchRequests.length).toBeGreaterThanOrEqual(1);
+    const rerun = batchRequests[batchRequests.length - 1] as {
+      requests: Array<{ key: string; q?: string }>;
+    };
+    const statusRequest = rerun.requests.find((item) => item.key === 'status');
+    expect(statusRequest?.q).toContain('testCaseResult.timestamp');
+    // The table-index item never carries the time clause (official table
+    // builder has none), even when the range drives the dashboard items.
+    const totalTables = rerun.requests.find((item) => item.key === 'totalTables');
+    expect(totalTables?.q).not.toContain('testCaseResult.timestamp');
+  });
+
   it('shows an honest residual when governance filters are used without search/list', async () => {
     const { wrapper } = await mountLanding();
     const ownerSelect = wrapper.findAllComponents({ name: 'ASelect' })[0];

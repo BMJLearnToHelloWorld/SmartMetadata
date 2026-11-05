@@ -165,8 +165,9 @@ async function settle<T>(promise: Promise<T>, fallback: T, residualKey?: string)
 
 /**
  * Aggregation cards only. Split out of loadSummary so a governance-filter
- * change re-runs exactly the official dashboard batch — status, dimensions
- * and coverage — with the filter-built `q` payloads (landing.ts), instead
+ * or range change re-runs exactly the official dashboard batch — status,
+ * dimensions and coverage — with the filter-built `q` payloads (landing.ts)
+ * plus the official time-range clause on the testCase-index items, instead
  * of only re-rendering the search-list path. Health deliberately stays
  * out of this path: it is still list-derived under residualHealthCap
  * (live ES casing check owed), so a filter change must not silently
@@ -183,11 +184,11 @@ async function loadAggregations(
   // (official mechanism), not from the capped lists. If the batch fails,
   // the cards fall back to the listed rows and say so — never silently.
   try {
-    const dashboardQuery = buildDqDashboardQuery(filters);
+    const dashboardQuery = buildDqDashboardQuery(filters, range.value);
     const reports = await getDataQualityReportBatch([
       { key: 'status', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: dashboardQuery },
       { key: 'dimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_DIMENSION_STATUS_AGGREGATION, q: dashboardQuery },
-      { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: buildDqNoDimensionQuery(filters) },
+      { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: buildDqNoDimensionQuery(filters, range.value) },
       { key: 'covered', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_COVERED_ASSETS_AGGREGATION, q: dashboardQuery },
       { key: 'totalTables', index: DQ_TABLE_INDEX, aggregationQuery: DQ_TOTAL_TABLES_AGGREGATION, q: buildDqTableQuery(filters) },
     ]);
@@ -287,6 +288,7 @@ async function openCreateSuite(): Promise<void> {
 
 watch(rangeDays, (days) => {
   range.value = seriesWindow(days);
+  void loadAggregations(lastCases.value, lastSuites.value);
 });
 
 // Governance-filter change re-runs the aggregation batch with the new
