@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTeam, removeTeamUser, replaceTeamUsers } from './teams';
+import { createTeam, getTeamByName, removeTeamUser, replaceTeamUsers } from './teams';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -57,6 +57,22 @@ describe('teams API', () => {
       { id: 'user-a', type: 'user' },
       { id: 'user-b', type: 'user' },
     ]);
+  });
+
+  it('fetches the Organization team by name for the Data Insight summary', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ id: 'org', name: 'Organization', displayName: 'Acme Org' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    const team = await getTeamByName('Organization');
+    expect(team.displayName).toBe('Acme Org');
+    expect(lastFetch().url).toContain('/api/v1/teams/name/Organization');
   });
 
   it('removes a member through DELETE /v1/teams/{teamId}/users/{userId}', async () => {

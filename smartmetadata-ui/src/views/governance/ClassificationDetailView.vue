@@ -10,6 +10,8 @@ import {Button, Checkbox, Descriptions, Form, Input, Select, Switch, message} fr
 import SmTable from '@/components/shared/SmTable.vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import { deleteClassification, getClassification, patchClassification, updateClassification } from '@/api/classifications';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getClassificationVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import { createTag, listTags } from '@/api/tags';
@@ -118,6 +120,23 @@ async function onToggleDisabled(disabled: boolean): Promise<void> {
   }
 }
 
+async function onOpenVersions(): Promise<void> {
+  const targetId = classification.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('classification', targetId, (version) => getClassificationVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
+  }
+}
+
 function openEdit(): void {
   if (!classification.value) {
     return;
@@ -203,6 +222,7 @@ onMounted(() => {
       <Button type="primary" :disabled="!isEditable" data-testid="edit-classification" @click="openEdit">
         {{ t('crud.edit') }}
       </Button>
+      <Button :disabled="!classification" data-testid="classification-versions" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
       <Button danger :disabled="!classification" data-testid="delete-classification" @click="onDeleteClassification">{{ t('crud.delete') }}</Button>
       <Button :disabled="!classification" data-testid="create-tag" @click="createTagOpen = true">
         {{ t('governance.classifications.createTag') }}

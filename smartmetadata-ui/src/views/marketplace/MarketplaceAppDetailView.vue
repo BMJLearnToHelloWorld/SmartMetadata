@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Alert, Avatar, Button, Empty, Spin, Tooltip, Typography } from 'ant-design-vue';
 import ForbiddenView from '@/views/shell/ForbiddenView.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmMarkdown from '@/components/shared/SmMarkdown.vue';
 import { getAppByName } from '@/api/apps';
 import {
   getMarketplaceAppByFqn,
@@ -31,10 +32,14 @@ const authStore = useAuthStore();
  * links; main column with the title and the description. The route is
  * AdminProtectedRoute-gated without a permission prop, so the gate here
  * is the admin line alone, the same precedent as the install page.
- * Two deliberate adaptations, both recorded, not silent: the product
- * has no markdown renderer, so the description renders as plain text;
- * the screenshot names are bundled per-app artwork the product does
- * not ship, so no screenshots region renders.
+ * One deliberate adaptation, recorded, not silent: the screenshot
+ * names are bundled per-app artwork the product does not ship, so no
+ * screenshots region renders (D3美术资源未决：不造假图、不留占位轮播).
+ * The description now renders through the shared SmMarkdown renderer
+ * (A10, same renderer A4 rich-text diffs reuse); the disabled alert
+ * carries the official please-contact-us line (without inventing a
+ * vendor support address — the per-app supportEmail link below it is
+ * the product's real contact route).
  */
 const fqn = computed(() => props.fqn ?? String(route.params.fqn ?? ''));
 
@@ -89,7 +94,7 @@ async function checkInstalled(): Promise<void> {
 }
 
 function onBrowseAppsClick(): void {
-  void router.push({ name: 'marketplace-overview' });
+  void router.push({ name: 'marketplace-app-catalog' });
 }
 
 function onInstallClick(): void {
@@ -155,6 +160,9 @@ onMounted(() => {
                 </span>
                 <span v-else>
                   {{ t('apps.detail.paidAddonDescription', { app: appName }) }}
+                  <span style="display: block" data-testid="marketplace-app-detail-contact">
+                    {{ t('apps.detail.pleaseContactUs') }}
+                  </span>
                 </span>
               </template>
             </Alert>
@@ -196,9 +204,10 @@ onMounted(() => {
             </div>
           </div>
           <div style="flex: 1; min-width: 0">
-            <Typography.Paragraph data-testid="marketplace-app-detail-description">
-              {{ appData.description }}
-            </Typography.Paragraph>
+            <SmMarkdown
+              :markdown="appData.description ?? ''"
+              test-id="marketplace-app-detail-description"
+            />
           </div>
         </div>
       </template>

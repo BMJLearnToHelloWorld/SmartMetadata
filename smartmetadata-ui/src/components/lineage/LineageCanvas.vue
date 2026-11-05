@@ -33,7 +33,7 @@ import {
   type LineageGraphNode,
 } from '@/lineage/graphModel';
 import type { LineageCanvasConfig } from '@/lineage/config';
-import { timeRangeForPreset } from '@/lineage/config';
+import { resolveLineageTimeRange } from '@/lineage/config';
 import { useLineageStore } from '@/stores/lineage';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import DetailTabs from '@/components/shared/DetailTabs.vue';
@@ -172,7 +172,7 @@ async function load(): Promise<void> {
     // the reload key below; all-time sends no time params. A search
     // failure is shown, never silently replaced by an unfiltered
     // traversal fetch (that would present unfiltered data as filtered).
-    const range = timeRangeForPreset(lineageStore.config.timePreset);
+    const range = resolveLineageTimeRange(lineageStore.config);
     const payload = await searchLineage({
       entityType: props.entityType,
       fqn: props.fqn,
@@ -243,7 +243,16 @@ function highlightRow(row: { fromColumns: string; toColumn: string }): void {
 }
 
 watch(
-  () => [props.entityType, props.fqn, upstreamDepth.value, downstreamDepth.value, lineageStore.config.timePreset],
+  () => [
+    props.entityType,
+    props.fqn,
+    upstreamDepth.value,
+    downstreamDepth.value,
+    lineageStore.config.timePreset,
+    lineageStore.config.customStartDate,
+    lineageStore.config.customEndDate,
+    lineageStore.config.pointDate,
+  ],
   () => {
     void load();
   },
@@ -317,7 +326,12 @@ watch(
       </Space>
       <LineageTimeFilter
         :value="lineageStore.config.timePreset"
+        :custom-start-date="lineageStore.config.customStartDate"
+        :custom-end-date="lineageStore.config.customEndDate"
+        :point-date="lineageStore.config.pointDate"
         @change="(preset) => lineageStore.update({ timePreset: preset })"
+        @apply-custom="(dates) => lineageStore.update({ timePreset: 'customRange', customStartDate: dates.startDate, customEndDate: dates.endDate })"
+        @apply-point="(date) => lineageStore.update({ timePreset: 'pointInTime', pointDate: date })"
       />
       <DetailTabs
         :tabs="viewTabs"

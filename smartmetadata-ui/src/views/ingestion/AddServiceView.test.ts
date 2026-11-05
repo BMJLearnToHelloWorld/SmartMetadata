@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -150,5 +150,33 @@ describe('AddServiceView', () => {
     expect(pipelineBody.sourceConfig.config.schemaFilterPattern?.includes).toEqual(['public']);
     expect(pipelineBody.airflowConfig.pausePipeline).toBe(true);
     expect(router.currentRoute.value.name).toBe('ingestion-service');
+  });
+
+  it('blocks a form-less type at the connection step instead of creating it with undefined connection (A9)', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+      ],
+    });
+    await router.push('/ingestion/services/add');
+    await router.isReady();
+    const wrapper = mount(AddServiceView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const selects = wrapper.findAllComponents(Select);
+    // Kind select first, type select second: switch to llm, then to a
+    // form-less llm type (Anthropic has no connection form in this branch).
+    await selects[0]?.vm.$emit('update:value', 'llm');
+    await selects[1]?.vm.$emit('update:value', 'Anthropic');
+    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
+    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="wizard-no-connection-form"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="wizard-service-name"]').setValue('chat');
+    expect((wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
   });
 });

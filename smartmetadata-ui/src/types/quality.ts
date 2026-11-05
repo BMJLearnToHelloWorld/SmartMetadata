@@ -96,6 +96,22 @@ export interface TestCase {
   testCaseStatus?: string;
   incidentId?: string;
   owners?: EntityRef[];
+  /** Columns to group results by dimensions (testCase.json dimensionColumns). */
+  dimensionColumns?: string[];
+}
+
+/**
+ * One dimension result (tests/dimensionResult.json + the timestamp /
+ * dimensionKey the DimensionalityTab carries alongside it).
+ */
+export interface TestCaseDimensionResult {
+  dimensionValues: { value: string }[];
+  testCaseStatus?: string;
+  result?: string;
+  impactScore?: number;
+  excludedFromRollUp?: boolean;
+  timestamp?: number;
+  dimensionKey?: string;
 }
 
 export interface CreateTestCaseRequest {

@@ -903,3 +903,36 @@ export async function previewGlossaryTermDeleteImpact(termId: string): Promise<O
     shaclRecheckRequired: asBoolean(root.shaclRecheckRequired) ?? undefined,
   };
 }
+
+/**
+ * Official deleteGlossaryTermWithImpact (rest/ontologyAPI.ts:863-873,
+ * OntologyDeleteImpactPanel.tsx:106-116): POST to the same
+ * /v1/ontology/impacts/glossaryTerms/{id}/delete path as the preview,
+ * carrying the preview's impactToken plus cascadeConfirmed / hardDelete /
+ * reassignChildrenTo ({id, type: 'glossaryTerm'}). The preview token is
+ * the execution token: without it the preview and the delete are
+ * disconnected, which is exactly the gap this closes. The response is
+ * the OntologyDeleteResult; callers only need success/failure, so the
+ * raw payload is returned unmapped.
+ */
+export interface DeleteGlossaryTermWithImpactRequest {
+  cascadeConfirmed?: boolean;
+  hardDelete?: boolean;
+  impactToken?: string;
+  reassignChildrenTo?: { id: string; type: string };
+}
+
+export async function deleteGlossaryTermWithImpact(
+  termId: string,
+  request: DeleteGlossaryTermWithImpactRequest,
+): Promise<unknown> {
+  return apiRequest<unknown>(`${IMPACTS_PATH}/${encodeURIComponent(termId)}/delete`, {
+    method: 'POST',
+    json: {
+      cascadeConfirmed: request.cascadeConfirmed ?? false,
+      hardDelete: request.hardDelete ?? false,
+      impactToken: request.impactToken,
+      reassignChildrenTo: request.reassignChildrenTo,
+    },
+  });
+}

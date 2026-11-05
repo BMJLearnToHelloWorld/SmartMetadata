@@ -21,6 +21,8 @@ export interface BulkAssetResponse {
   request: EntityRef | null;
   message?: string;
   status?: number;
+  /** Official BulkOperationResult.Response.hasSideEffects: a dryRun row that would move an asset. */
+  hasSideEffects?: boolean;
 }
 
 export interface BulkAssetResult {
@@ -41,7 +43,18 @@ function mapBulkAssetResponse(raw: unknown): BulkAssetResponse {
     request: refs[0] ?? null,
     message: asString(rec.message) || undefined,
     status: asNumber(rec.status),
+    hasSideEffects: typeof rec.hasSideEffects === 'boolean' ? rec.hasSideEffects : undefined,
   };
+}
+
+/**
+ * Official DomainDryRunUtils.getDomainDryRunImpacts: the dryRun rows
+ * that carry side effects are the pre-submit impacts. Non-domain
+ * callers share the same BulkOperationResult shape, so the helper lives
+ * here and the domain view is its caller.
+ */
+export function getDomainDryRunImpacts(result: BulkAssetResult): BulkAssetResponse[] {
+  return result.success.filter((row) => row.hasSideEffects === true);
 }
 
 function mapBulkAssetResult(raw: unknown): BulkAssetResult {
@@ -76,15 +89,25 @@ function toBulkAssetRefs(assets: EntityRef[]): Record<string, unknown>[] {
  * PUT /v1/{collection}/{name}/assets/add|remove with {assets}; the server
  * authorizes EDIT_ALL on the owning entity and answers a BulkOperationResult.
  * {name} is the fully qualified name.
+ *
+ * Official rest/domainAPI.ts addAssetsToDomain: options.dryRun adds
+ * {dryRun: true} to the same body and the server answers the same
+ * BulkOperationResult without applying it; the caller then filters
+ * successRequest for hasSideEffects rows (getDomainDryRunImpacts) and
+ * only submits for real after the user confirms the impacts.
  */
 export async function addBulkAssets(
   collection: 'dataProducts' | 'domains',
   fqn: string,
   assets: EntityRef[],
+  options?: { dryRun?: boolean },
 ): Promise<BulkAssetResult> {
   const raw = await apiRequest<unknown>(
     `/v1/${collection}/${encodeURIComponent(fqn)}/assets/add`,
-    { method: 'PUT', json: { assets: toBulkAssetRefs(assets) } },
+    {
+      method: 'PUT',
+      json: { assets: toBulkAssetRefs(assets), ...(options?.dryRun ? { dryRun: true } : {}) },
+    },
   );
   return mapBulkAssetResult(raw);
 }

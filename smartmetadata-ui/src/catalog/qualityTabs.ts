@@ -46,8 +46,7 @@ export const QUALITY_PAGE_TABS: Record<QualityPage, QualityTab[]> = {
     {
       key: 'dimensionality',
       labelKey: 'quality.tabs.dimensionality',
-      supported: false,
-      residualReason: 'quality.testCases.residualDimensionality',
+      supported: true,
     },
     {
       key: 'sql-query',
@@ -62,8 +61,7 @@ export const QUALITY_PAGE_TABS: Record<QualityPage, QualityTab[]> = {
     {
       key: 'pipeline',
       labelKey: 'quality.tabs.pipeline',
-      supported: false,
-      residualReason: 'quality.testSuites.residualPipeline',
+      supported: true,
     },
   ],
   incident: [

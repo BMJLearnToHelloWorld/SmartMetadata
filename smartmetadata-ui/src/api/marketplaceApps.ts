@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asRecord, asString } from '@/api/json';
+import { asBoolean, asRecord, asString, parsePaged } from '@/api/json';
+import type { Paged } from '@/types/admin';
 import { apiRequest } from './client';
 
 /**
@@ -68,6 +69,29 @@ export function mapMarketplaceApp(raw: Record<string, unknown>): MarketplaceApp 
       ? raw.appScreenshots.filter((item): item is string => typeof item === 'string')
       : undefined,
   };
+}
+
+export interface ListMarketplaceAppsQuery {
+  limit?: number;
+  after?: string;
+  before?: string;
+}
+
+/**
+ * Official applicationMarketPlaceAPI getMarketPlaceApplicationList:
+ * GET /v1/apps/marketplace (AppMarketPlaceResource.list, server-side
+ * @Path("/v1/apps/marketplace")). This is the installable-app catalog —
+ * distinct from the installed-app list (GET /v1/apps) and from the data
+ * marketplace overview the product's /marketplace route already serves.
+ */
+export function listMarketplaceApps(query: ListMarketplaceAppsQuery = {}): Promise<Paged<MarketplaceApp>> {
+  return apiRequest<unknown>('/v1/apps/marketplace', {
+    query: {
+      limit: query.limit ?? 25,
+      after: query.after,
+      before: query.before,
+    },
+  }).then((payload) => parsePaged(payload, mapMarketplaceApp));
 }
 
 /** Official applicationMarketPlaceAPI: GET /v1/apps/marketplace/name/{fqn}. */

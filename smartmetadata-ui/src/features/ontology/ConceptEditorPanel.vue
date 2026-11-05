@@ -5,11 +5,12 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Card, Form, Input, Select, Space, Typography, message } from 'ant-design-vue';
+import { Button, Card, Checkbox, Form, Input, Select, Space, Typography, message } from 'ant-design-vue';
 import {
   createOntologyAxiom,
   createOntologyConcept,
   createOntologyProperty,
+  deleteGlossaryTermWithImpact,
   patchOntologyConcept,
   previewGlossaryTermDeleteImpact,
 } from '@/api/ontologyEdit';
@@ -20,6 +21,8 @@ const props = defineProps<{
   canEdit: boolean;
 }>();
 
+const emit = defineEmits<{ (event: 'term-deleted', termId: string): void }>();
+
 const { t } = useI18n();
 
 const conceptForm = ref({ name: '', displayName: '', description: '', iri: '', conceptType: 'SKOS_CONCEPT', synonyms: '' });
@@ -28,6 +31,8 @@ const propertyForm = ref({ name: '', displayName: '', description: '', iri: '', 
 const axiomForm = ref({ name: '', displayName: '', description: '', axiomType: '', subjectIri: '', targetIri: '', literal: '' });
 const impactTermId = ref('');
 const impact = ref<OntologyDeleteImpact | null>(null);
+const reassignTermId = ref('');
+const cascadeConfirmed = ref(false);
 const errorMessage = ref('');
 const busy = ref('');
 
@@ -110,6 +115,51 @@ async function onPreviewImpact(): Promise<void> {
   errorMessage.value = '';
   try {
     impact.value = await previewGlossaryTermDeleteImpact(impactTermId.value);
+    reassignTermId.value = '';
+    cascadeConfirmed.value = false;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : t('ontology.edit.writeFailed');
+  } finally {
+    busy.value = '';
+  }
+}
+
+/**
+ * Official OntologyDeleteImpactPanel.remove: the preview's impactToken
+ * executes the delete (POST, same /delete path), with children either
+ * reassigned to the entered target term or explicitly cascaded. The
+ * confirm button stays disabled while children exist and neither choice
+ * is made — the official isDisabled rule — and a missing token blocks
+ * the call instead of falling back to the generic DELETE.
+ */
+const impactChildrenCount = () => impact.value?.children?.length ?? 0;
+const impactDeleteDisabled = () =>
+  !props.canEdit ||
+  !impact.value ||
+  !impact.value.impactToken ||
+  (impactChildrenCount() > 0 && !cascadeConfirmed.value && !reassignTermId.value.trim());
+
+async function onDeleteWithImpact(): Promise<void> {
+  if (impactDeleteDisabled() || !impact.value) {
+    return;
+  }
+  const termId = impactTermId.value;
+  busy.value = 'impact-delete';
+  errorMessage.value = '';
+  try {
+    await deleteGlossaryTermWithImpact(termId, {
+      cascadeConfirmed: cascadeConfirmed.value,
+      hardDelete: false,
+      impactToken: impact.value.impactToken,
+      reassignChildrenTo: reassignTermId.value.trim()
+        ? { id: reassignTermId.value.trim(), type: 'glossaryTerm' }
+        : undefined,
+    });
+    impact.value = null;
+    reassignTermId.value = '';
+    cascadeConfirmed.value = false;
+    message.success(t('ontology.edit.termDeleted'));
+    emit('term-deleted', termId);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('ontology.edit.writeFailed');
   } finally {
@@ -196,6 +246,32 @@ async function onPreviewImpact(): Promise<void> {
             {{ asset.fullyQualifiedName || asset.name }} ({{ asset.type }})
           </li>
         </ul>
+        <ul>
+          <li v-for="child in impact.children" :key="child.id ?? child.name">
+            {{ child.fullyQualifiedName || child.name }}
+          </li>
+        </ul>
+        <Form layout="inline" data-testid="ontology-impact-execute-form">
+          <Form.Item :label="t('ontology.edit.reassignTargetTermId')">
+            <Input v-model:value="reassignTermId" data-testid="ontology-impact-reassign-id" />
+          </Form.Item>
+          <Form.Item>
+            <Checkbox v-model:checked="cascadeConfirmed" data-testid="ontology-impact-cascade">
+              {{ t('ontology.edit.cascadeConfirm') }}
+            </Checkbox>
+          </Form.Item>
+          <Form.Item>
+            <Button
+              danger
+              :disabled="impactDeleteDisabled()"
+              :loading="busy === 'impact-delete'"
+              data-testid="ontology-impact-delete"
+              @click="onDeleteWithImpact"
+            >
+              {{ t('ontology.edit.deleteWithImpact') }}
+            </Button>
+          </Form.Item>
+        </Form>
       </div>
     </Space>
   </Card>

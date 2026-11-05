@@ -11,9 +11,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Empty, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
+import SmTable from '@/components/shared/SmTable.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { EntityListColumn } from '@/features/crud/types';
 import {
@@ -23,6 +25,11 @@ import {
   listKnowledgePages,
   updateKnowledgePage,
 } from '@/api/contextCenter';
+import { listEntityActivity } from '@/api/activity';
+import { listConversations } from '@/api/conversations';
+import { listCustomProperties } from '@/api/customProperties';
+import { toEntityLink } from '@/quality/entityLink';
+import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { KnowledgePage, KnowledgePageType } from '@/types/contextCenter';
 import ArticleFormModal from './ArticleFormModal.vue';
 import ContextCenterNav from './ContextCenterNav.vue';
@@ -50,6 +57,86 @@ const showEditModal = ref(false);
 const detail = ref<KnowledgePage | null>(null);
 const detailLoading = ref(false);
 const detailError = ref('');
+
+// Detail tabs (A17, official CONTEXT_CENTER_ARTICLE_DETAIL_WITH_TAB* +
+// KnowledgePageDetailComponent): the route's :tab drives the active
+// tab — overview (default), activity_feed, custom_properties — and
+// :subTab is accepted and preserved across tab switches, exactly as
+// official's detail component reads only `tab` from the route. Tab
+// labels reuse the official EntityTabs values ('overview',
+// 'activity_feed', 'custom_properties').
+const DETAIL_TABS = ['overview', 'activity_feed', 'custom_properties'] as const;
+type DetailTab = (typeof DETAIL_TABS)[number];
+// Kept as a plain string ref so ant-design-vue's Tabs v-model
+// (string | number) type-checks; tabFromRoute is the only writer of
+// non-validated values, and it validates against DETAIL_TABS.
+const detailTab = ref<string>('overview');
+const detailSubTab = computed(() => {
+  const param = route.params.subTab;
+  return Array.isArray(param) ? param[0] : param;
+});
+function tabFromRoute(): DetailTab {
+  const param = route.params.tab;
+  const value = Array.isArray(param) ? param[0] : param;
+  return (DETAIL_TABS as readonly string[]).includes(value ?? '') ? (value as DetailTab) : 'overview';
+}
+const detailActivity = ref<ActivityEvent[]>([]);
+const detailConversations = ref<Conversation[]>([]);
+const detailCollabError = ref('');
+const detailCustomProps = ref<CustomPropertyDef[]>([]);
+const detailCustomPropsError = ref('');
+const detailExtrasFor = ref('');
+
+async function loadDetailExtras(): Promise<void> {
+  const current = detail.value;
+  const pageFqn = current?.fullyQualifiedName;
+  if (!pageFqn || detailExtrasFor.value === pageFqn) {
+    return;
+  }
+  detailExtrasFor.value = pageFqn;
+  try {
+    const [activityPage, conversationPage] = await Promise.all([
+      listEntityActivity('page', pageFqn).catch(() => ({ data: [] as ActivityEvent[] })),
+      listConversations({ entityLink: toEntityLink('page', pageFqn), limit: 20 }).catch(
+        () => ({ data: [] as Conversation[] }),
+      ),
+    ]);
+    detailActivity.value = activityPage.data;
+    detailConversations.value = conversationPage.data;
+    detailCollabError.value = '';
+  } catch {
+    detailActivity.value = [];
+    detailConversations.value = [];
+    detailCollabError.value = t('crud.loadFailed');
+  }
+  try {
+    detailCustomProps.value = await listCustomProperties('page');
+    detailCustomPropsError.value = '';
+  } catch {
+    detailCustomProps.value = [];
+    detailCustomPropsError.value = t('crud.loadFailed');
+  }
+}
+
+function onDetailTabChange(key: string | number): void {
+  const next = String(key) as DetailTab;
+  if (next === detailTab.value || !detail.value) {
+    return;
+  }
+  detailTab.value = next;
+  const pageFqn = detail.value.fullyQualifiedName;
+  if (detailSubTab.value) {
+    void router.push({
+      name: 'context-center-article-subtab',
+      params: { fqn: pageFqn, tab: next, subTab: detailSubTab.value },
+    });
+  } else if (next === 'overview') {
+    void router.push({ name: 'context-center-article', params: { fqn: pageFqn } });
+  } else {
+    void router.push({ name: 'context-center-article-tab', params: { fqn: pageFqn, tab: next } });
+  }
+  void loadDetailExtras();
+}
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('contextCenter.name'), dataIndex: 'name', key: 'name' },
@@ -88,10 +175,13 @@ async function loadDetail(): Promise<void> {
   }
   detailLoading.value = true;
   detailError.value = '';
+  detailExtrasFor.value = '';
   try {
     detail.value = await getKnowledgePageByFqn(fqn.value);
     if (!detail.value) {
       detailError.value = t('crud.loadFailed');
+    } else if (detailTab.value !== 'overview') {
+      await loadDetailExtras();
     }
   } catch (error) {
     detailError.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -176,7 +266,18 @@ watch(
   },
 );
 
+watch(
+  () => route.params.tab,
+  () => {
+    detailTab.value = tabFromRoute();
+    if (detailTab.value !== 'overview') {
+      void loadDetailExtras();
+    }
+  },
+);
+
 onMounted(() => {
+  detailTab.value = tabFromRoute();
   void load();
   void loadDetail();
 });
@@ -229,28 +330,69 @@ onMounted(() => {
           </Space>
         </template>
         <div v-if="detail">
-          <Space wrap style="margin-bottom: 12px">
-            <Tag>{{ detail.pageType }}</Tag>
-            <Tag v-for="tag in detail.tags ?? []" :key="tag.tagFQN">{{ tag.tagFQN }}</Tag>
-          </Space>
-          <Typography.Paragraph type="secondary" data-testid="article-meta">
-            {{ t('contextCenter.updatedBy') }}: {{ detail.updatedBy || '' }}
-            {{ formatEpoch(detail.updatedAt) }}
-          </Typography.Paragraph>
-          <Typography.Paragraph
-            v-if="detail.owners && detail.owners.length > 0"
-            data-testid="article-owners"
+          <Tabs
+            v-model:active-key="detailTab"
+            data-testid="article-detail-tabs"
+            @change="onDetailTabChange"
           >
-            {{ t('contextCenter.owners') }}:
-            {{ detail.owners.map((owner) => owner.displayName || owner.name).join(', ') }}
-          </Typography.Paragraph>
-          <Typography.Paragraph
-            v-if="detail.children && detail.children.length > 0"
-            data-testid="article-children"
-          >
-            {{ t('contextCenter.children') }}:
-            {{ detail.children.map((child) => child.displayName || child.name).join(', ') }}
-          </Typography.Paragraph>
+            <Tabs.TabPane key="overview" :tab="t('contextCenter.detailTabs.overview')">
+              <Space wrap style="margin-bottom: 12px">
+                <Tag>{{ detail.pageType }}</Tag>
+                <Tag v-for="tag in detail.tags ?? []" :key="tag.tagFQN">{{ tag.tagFQN }}</Tag>
+              </Space>
+              <Typography.Paragraph type="secondary" data-testid="article-meta">
+                {{ t('contextCenter.updatedBy') }}: {{ detail.updatedBy || '' }}
+                {{ formatEpoch(detail.updatedAt) }}
+              </Typography.Paragraph>
+              <Typography.Paragraph
+                v-if="detail.owners && detail.owners.length > 0"
+                data-testid="article-owners"
+              >
+                {{ t('contextCenter.owners') }}:
+                {{ detail.owners.map((owner) => owner.displayName || owner.name).join(', ') }}
+              </Typography.Paragraph>
+              <Typography.Paragraph
+                v-if="detail.children && detail.children.length > 0"
+                data-testid="article-children"
+              >
+                {{ t('contextCenter.children') }}:
+                {{ detail.children.map((child) => child.displayName || child.name).join(', ') }}
+              </Typography.Paragraph>
+            </Tabs.TabPane>
+            <Tabs.TabPane key="activity_feed" :tab="t('contextCenter.detailTabs.activityFeed')">
+              <AssetActivityPanel
+                :activity="detailActivity"
+                :conversations="detailConversations"
+                :collaboration-error="detailCollabError"
+                entity-type="page"
+                :fqn="detail.fullyQualifiedName"
+              />
+            </Tabs.TabPane>
+            <Tabs.TabPane key="custom_properties" :tab="t('contextCenter.detailTabs.customProperties')">
+              <!-- Definitions only: the product KnowledgePage type carries
+                   no extension/custom-property values, so value editing
+                   (official CustomPropertyTable's edit path) is not
+                   faked here; definitions come from the official
+                   /metadata/types/name/page/customProperties surface. -->
+              <Alert v-if="detailCustomPropsError" type="error" show-icon :message="detailCustomPropsError" />
+              <SmTable
+                row-key="name"
+                test-id="article-custom-properties-table"
+                :columns="[
+                  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+                  { title: t('crud.displayName'), dataIndex: 'displayName', key: 'displayName' },
+                  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
+                ]"
+                :data-source="detailCustomProps"
+                :pagination="false"
+              />
+              <Empty
+                v-if="!detailCustomProps.length && !detailCustomPropsError"
+                :description="t('contextCenter.detailTabs.noCustomProperties')"
+                data-testid="article-custom-properties-empty"
+              />
+            </Tabs.TabPane>
+          </Tabs>
         </div>
       </EntityDetailShell>
       <ArticleFormModal

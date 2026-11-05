@@ -10,6 +10,8 @@ import {Button, Descriptions, Form, Input, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTestCase, getTestCase, updateTestCase } from '@/api/testCases';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listTestCaseResults } from '@/api/testCaseResults';
 import { listTestIncidents } from '@/api/testIncidents';
@@ -17,6 +19,7 @@ import SmChart from '@/features/charts/SmChart.vue';
 import { testResultsToTimeline } from '@/features/charts/series';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import SmState from '@/components/shared/SmState.vue';
+import DimensionalityPanel from '@/features/quality/DimensionalityPanel.vue';
 import { QUALITY_PAGE_TABS } from '@/catalog/qualityTabs';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -129,6 +132,23 @@ async function onDeleteTestCase(): Promise<void> {
   }
 }
 
+async function onOpenVersions(): Promise<void> {
+  const targetId = testCase.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('testCase', targetId, (version) => getTestCaseVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
+  }
+}
+
 function openEdit(): void {
   if (!testCase.value) {
     return;
@@ -217,6 +237,7 @@ onMounted(() => {
   >
     <template #actions>
       <Button data-testid="edit-test-case" :disabled="!testCase" @click="openEdit">{{ t('crud.edit') }}</Button>
+      <Button data-testid="test-case-versions" :disabled="!testCase" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
       <Button danger data-testid="delete-test-case" :disabled="!testCase" @click="onDeleteTestCase">{{ t('crud.delete') }}</Button>
       <Button :disabled="!testCase?.entityLink && !testCase?.entityFQN" @click="openAsset">
         {{ t('quality.testCases.openAsset') }}
@@ -297,7 +318,17 @@ onMounted(() => {
       </SmTable>
     </template>
     <template #dimensionality>
-      <SmState state="empty" test-id="test-case-dimensionality-residual" :empty-text="t('quality.testCases.residualDimensionality')" />
+      <DimensionalityPanel
+        v-if="testCase?.fullyQualifiedName"
+        :test-case-fqn="testCase.fullyQualifiedName"
+        :dimension-columns="testCase.dimensionColumns ?? []"
+      />
+      <SmState
+        v-else
+        state="empty"
+        test-id="test-case-dimensionality-residual"
+        :empty-text="t('quality.testCases.residualDimensionality')"
+      />
     </template>
     <template #sql-query>
       <SmState state="empty" test-id="test-case-sql-query-residual" :empty-text="t('quality.testCases.residualSqlQuery')" />

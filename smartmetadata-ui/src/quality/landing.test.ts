@@ -10,6 +10,9 @@
 import { describe, expect, it } from 'vitest';
 import type { TestCase, TestDefinition, TestSuite } from '@/types/quality';
 import {
+  buildDqDashboardQuery,
+  buildDqNoDimensionQuery,
+  buildDqTableQuery,
   coverageFrom,
   dimensionCards,
   filterCasesForSearch,
@@ -143,6 +146,60 @@ describe('DQ landing helpers', () => {
     expect(governanceFiltersActive({ owner: 'alice' })).toBe(true);
     expect(matchesOwner([{ name: 'alice' }], 'alice')).toBe(true);
     expect(matchesOwner([{ name: 'bob' }], 'alice')).toBe(false);
+  });
+
+  it('builds dashboard aggregation queries from governance filters, official shapes', () => {
+    const filters = {
+      owner: 'alice',
+      tier: 'Tier.Gold',
+      certification: 'Certified',
+      tag: 'PII.Sensitive',
+      dataProduct: 'dp.orders',
+    };
+    const dashboard = JSON.parse(buildDqDashboardQuery(filters));
+    expect(dashboard.query.bool.must).toContainEqual({
+      nested: { path: 'owners', query: { term: { 'owners.name': 'alice' } } },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({
+      nested: {
+        path: 'tags',
+        query: { bool: { should: [{ match: { 'tags.tagFQN': 'PII.Sensitive' } }] } },
+      },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({
+      bool: { should: [{ term: { 'tier.tagFQN': 'Tier.Gold' } }], minimum_should_match: 1 },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({
+      bool: { should: [{ term: { 'certification.tagLabel.tagFQN': 'Certified' } }] },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({
+      bool: { should: [{ term: { 'dataProducts.fullyQualifiedName': 'dp.orders' } }], minimum_should_match: 1 },
+    });
+    expect(dashboard.query.bool.must).toContainEqual({ term: { deleted: false } });
+    // The table index carries no test-case-only fields: flat term clauses,
+    // never the nested testCase forms.
+    const table = JSON.parse(buildDqTableQuery(filters));
+    expect(table.query.bool.must).toContainEqual({
+      bool: { should: [{ term: { 'tags.tagFQN': 'PII.Sensitive' } }] },
+    });
+    expect(table.query.bool.must).toContainEqual({ term: { deleted: false } });
+    expect(JSON.stringify(table)).not.toContain('testCase.');
+    const noDimension = JSON.parse(buildDqNoDimensionQuery(filters));
+    expect(noDimension.query.bool.must).toEqual(dashboard.query.bool.must);
+    expect(noDimension.query.bool.must_not).toEqual([
+      { exists: { field: 'dataQualityDimensionName' } },
+    ]);
+    // Unfiltered queries stay the previous constant shapes (deleted-only
+    // must, plus must_not for no-dimension) — no invented fields appear.
+    expect(JSON.parse(buildDqDashboardQuery({})).query.bool.must).toEqual([
+      { term: { deleted: false } },
+    ]);
+    expect(JSON.parse(buildDqNoDimensionQuery({})).query.bool.must_not).toEqual([
+      { exists: { field: 'dataQualityDimensionName' } },
+    ]);
+    // Glossary terms have no official dashboard-filter counterpart and
+    // must not leak into the aggregation query as an invented field.
+    expect(buildDqDashboardQuery({ glossaryTerm: 'Glossary.Term' })).not.toContain('lossary');
   });
 
   it('filters listed rows by name without inventing matches', () => {

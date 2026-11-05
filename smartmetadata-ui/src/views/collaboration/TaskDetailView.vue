@@ -10,6 +10,7 @@ import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select,
 import { addTaskComment, closeTask, deleteTask, getTask, patchTask, resolveTask } from '@/api/tasks';
 import type { OperationPermissions } from '@/api/permissions';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
+import { getTaskResolutionNewValue, normalizeTaskSuggestion } from '@/catalog/taskSuggestions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -56,6 +57,20 @@ const commentColumns = computed(() => [
 const editOpen = ref(false);
 const editDescription = ref('');
 const editSaving = ref(false);
+const selectedTransitionId = ref('');
+
+const suggestion = computed(() => (task.value ? normalizeTaskSuggestion(task.value) : null));
+
+const selectedTransition = computed(
+  () => task.value?.availableTransitions?.find((item) => item.id === selectedTransitionId.value),
+);
+
+watch(
+  () => task.value?.id,
+  () => {
+    selectedTransitionId.value = task.value?.availableTransitions?.[0]?.id ?? '';
+  },
+);
 const reassignOpen = ref(false);
 const assigneeKeys = ref<string[]>([]);
 const reassignSaving = ref(false);
@@ -147,7 +162,9 @@ function onActionMenuClick(info: { key: string }): void {
   if (!action || !action.wired || !canAct.value) {
     return;
   }
-  if (action.key === 'resolve') {
+  if (action.key === 'view') {
+    void onAcceptSuggestion();
+  } else if (action.key === 'resolve') {
     void onResolve();
   } else if (action.key === 'close') {
     void onClose();
@@ -156,6 +173,65 @@ function onActionMenuClick(info: { key: string }): void {
     editOpen.value = true;
   } else if (action.key === 're-assign') {
     void openReassign();
+  }
+}
+
+/**
+ * Official TASK_ACTION_LIST VIEW = accept-suggestion, routed through
+ * TaskTabNew.handleMenuItemClick's else branch into onTaskResolve:
+ * resolve with Approved + the normalized newValue (description text,
+ * or the suggested tag set serialized). The schema-driven payload is
+ * not sent: the product carries no task-form uiSchema surface, so
+ * there is no original form payload to echo — newValue is the
+ * operative field for the plain description/tag kinds.
+ */
+async function onAcceptSuggestion(): Promise<void> {
+  if (!canAct.value || !task.value || !suggestion.value || suggestion.value.isSuggestionEmpty) {
+    return;
+  }
+  saving.value = true;
+  try {
+    task.value = await resolveTask(props.id, {
+      resolutionType: 'Approved',
+      newValue: getTaskResolutionNewValue(task.value),
+      comment: form.comment.trim() || undefined,
+    });
+    message.success(t('collaboration.task.resolved'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
+  } finally {
+    saving.value = false;
+  }
+}
+
+/**
+ * Official TaskTabNew workflow actions: the transition menu is built
+ * from task.availableTransitions (id + label); picking one runs it
+ * via resolve with that transitionId and the transition's own
+ * resolutionType (undefined for non-terminal transitions — never
+ * defaulted to Approved). A transition that requires a comment
+ * refuses an empty comment instead of firing.
+ */
+async function onRunTransition(): Promise<void> {
+  if (!canAct.value || !task.value || !selectedTransition.value) {
+    return;
+  }
+  if (selectedTransition.value.requiresComment && !form.comment.trim()) {
+    message.error(t('collaboration.task.transitionCommentRequired'));
+    return;
+  }
+  saving.value = true;
+  try {
+    task.value = await resolveTask(props.id, {
+      resolutionType: selectedTransition.value.resolutionType as 'Approved' | 'Rejected' | 'Completed' | 'Cancelled' | undefined,
+      transitionId: selectedTransition.value.id,
+      comment: form.comment.trim() || undefined,
+    });
+    message.success(t('collaboration.task.resolved'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -312,8 +388,8 @@ watch(
       <Typography.Paragraph v-else-if="task.type === 'DataAccessRequest' && task.status === 'Approved'" type="secondary" data-testid="task-dar-approved-note">
         {{ t('collaboration.dataAccess.awaitingGrantNote') }}
       </Typography.Paragraph>
-      <Typography.Paragraph v-else type="secondary" data-testid="task-actions-residual">
-        {{ t('collaboration.task.unwiredNote') }}
+      <Typography.Paragraph v-else-if="suggestion && suggestion.isSuggestionEmpty" type="secondary" data-testid="task-suggestion-empty">
+        {{ t('collaboration.task.emptySuggestionNote') }}
       </Typography.Paragraph>
       <Descriptions bordered :column="1" size="small">
         <Descriptions.Item :label="t('collaboration.task.status')">{{ task.status || '—' }}</Descriptions.Item>
@@ -328,6 +404,51 @@ watch(
         </Descriptions.Item>
         <Descriptions.Item :label="t('collaboration.task.description')">{{ task.description || '—' }}</Descriptions.Item>
       </Descriptions>
+      <template v-if="suggestion && !suggestion.isSuggestionEmpty">
+        <Typography.Title :level="5" class="collab-section" data-testid="task-suggestion-title">{{ t('collaboration.task.suggestionTitle') }}</Typography.Title>
+        <Descriptions bordered :column="1" size="small">
+          <Descriptions.Item :label="t('collaboration.task.suggestionCurrent')">
+            <span data-testid="task-suggestion-current">{{ task.type === 'TagUpdate' ? suggestion.currentTags.join(', ') : suggestion.currentDescription || '—' }}</span>
+          </Descriptions.Item>
+          <Descriptions.Item :label="t('collaboration.task.suggestionValue')">
+            <span data-testid="task-suggestion-value">{{ task.type === 'TagUpdate' ? suggestion.suggestedTags.join(', ') : suggestion.suggestedValue || '—' }}</span>
+          </Descriptions.Item>
+        </Descriptions>
+        <Space class="collab-section">
+          <Button
+            type="primary"
+            data-testid="task-accept-suggestion"
+            :loading="saving"
+            :disabled="!canAct"
+            @click="onAcceptSuggestion"
+          >
+            {{ t('collaboration.task.actionView') }}
+          </Button>
+        </Space>
+      </template>
+      <template v-if="task.availableTransitions && task.availableTransitions.length">
+        <Typography.Title :level="5" class="collab-section" data-testid="task-transition-title">{{ t('collaboration.task.transitionTitle') }}</Typography.Title>
+        <Space>
+          <Select
+            v-model:value="selectedTransitionId"
+            style="width: 240px"
+            data-testid="task-transition-select"
+          >
+            <Select.Option v-for="transition in task.availableTransitions" :key="transition.id" :value="transition.id">
+              {{ transition.label }}
+            </Select.Option>
+          </Select>
+          <Button
+            type="primary"
+            data-testid="task-transition-run"
+            :loading="saving"
+            :disabled="!canAct || !selectedTransition"
+            @click="onRunTransition"
+          >
+            {{ selectedTransition?.label || t('collaboration.task.transitionRun') }}
+          </Button>
+        </Space>
+      </template>
       <template v-if="task.type === 'DataAccessRequest' && task.payload">
         <Typography.Title :level="5" class="collab-section" data-testid="task-dar-payload-title">{{ t('collaboration.dataAccess.payloadTitle') }}</Typography.Title>
         <Descriptions bordered :column="1" size="small">

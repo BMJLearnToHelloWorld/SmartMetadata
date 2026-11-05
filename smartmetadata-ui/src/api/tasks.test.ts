@@ -118,6 +118,56 @@ describe('tasks API', () => {
     expect(lastFetch().url).toContain('/api/v1/tasks/t1/comments');
   });
 
+  it('maps suggestion payloads and available transitions, and resolves with newValue and transitionId', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/resolve')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+          expect(body).toEqual({
+            resolutionType: 'Approved',
+            newValue: 'new text',
+            transitionId: 'approve',
+          });
+          return new Response(JSON.stringify({ id: 't1', status: 'Approved' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            id: 't1',
+            type: 'DescriptionUpdate',
+            status: 'Open',
+            comments: [],
+            payload: { currentDescription: 'old text', newDescription: 'new text' },
+            availableTransitions: [
+              {
+                id: 'approve',
+                label: 'Approve',
+                resolutionType: 'Approved',
+                targetStageId: 'approved',
+                targetTaskStatus: 'Approved',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const loaded = await getTask('t1');
+    expect(loaded.suggestionPayload?.newDescription).toBe('new text');
+    expect(loaded.availableTransitions?.[0]?.id).toBe('approve');
+    expect(loaded.availableTransitions?.[0]?.targetStageId).toBe('approved');
+    const resolved = await resolveTask('t1', {
+      resolutionType: 'Approved',
+      newValue: 'new text',
+      transitionId: 'approve',
+    });
+    expect(resolved.status).toBe('Approved');
+  });
+
   it('deletes via DELETE /v1/tasks/{id} with hardDelete defaulting to false', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
     await deleteTask('t1');

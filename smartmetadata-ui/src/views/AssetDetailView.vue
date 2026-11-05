@@ -991,6 +991,13 @@ onMounted(() => {
           />
       </template>
       <template v-if="asset" #table_queries>
+          <Button
+            data-testid="asset-add-query"
+            style="margin-bottom: 16px"
+            @click="router.push({ name: 'query-add', params: { fqn: asset.fullyQualifiedName ?? asset.name } })"
+          >
+            {{ t('query.addTitle') }}
+          </Button>
           <Empty data-testid="asset-tab-residual" :description="residualReasonFor('table_queries')" />
       </template>
       <template v-if="asset" #dbt>

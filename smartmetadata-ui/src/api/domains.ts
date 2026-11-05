@@ -127,8 +127,12 @@ export function listDomainAssets(id: string, limit = 25): Promise<Paged<EntityRe
  * Domain bulk asset writes (DomainResource /{name}/assets/add|remove):
  * same BulkAssets contract and EDIT_ALL authorization as data products.
  */
-export function addDomainAssets(fqn: string, assets: EntityRef[]): Promise<BulkAssetResult> {
-  return addBulkAssets('domains', fqn, assets);
+export function addDomainAssets(
+  fqn: string,
+  assets: EntityRef[],
+  options?: { dryRun?: boolean },
+): Promise<BulkAssetResult> {
+  return addBulkAssets('domains', fqn, assets, options);
 }
 
 export function removeDomainAssets(fqn: string, assets: EntityRef[]): Promise<BulkAssetResult> {

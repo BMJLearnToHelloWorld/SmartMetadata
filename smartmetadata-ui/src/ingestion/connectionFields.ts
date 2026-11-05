@@ -498,7 +498,123 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       storeSecretsField,
     ],
   },
+  // --- The eight kinds that previously had no form at all. Each group
+  // below covers that kind's wizard default type, taken from its official
+  // connection schema (openmetadata-spec .../connections/<kind>/...):
+  // Rest (api/restConnection: openAPISchemaConnection required, token),
+  // Mlflow (mlmodel/mlflowConnection: trackingUri + registryUri required),
+  // OpenMetadata (metadata/openMetadataConnection: hostPort required),
+  // GoogleDrive (drive/googleDriveConnection: credentials required),
+  // ElasticSearch (search/elasticSearchConnection: hostPort + authType),
+  // OpenAI (llm/openAIConnection: apiKey required), Mcp
+  // (mcp/mcpConnection: all optional) and Ranger
+  // (security/rangerConnection: hostPort + authType required).
+  // Non-default types in these kinds still have no group: the wizard
+  // must not offer them a silent undefined connection (see
+  // hasConnectionForm, used by AddServiceView to block creation).
+  {
+    types: ['Rest'],
+    fields: [
+      requiredText('openApiSchemaUrl', 'connection.openApiSchemaUrl', {
+        testId: 'service-openapi-schema-url',
+        placeholder: 'https://example.com/openapi.json',
+      }),
+      {
+        key: 'apiKey',
+        control: 'password',
+        labelKey: 'connection.token',
+        testId: 'service-api-key',
+        passwordPlaceholder: true,
+      },
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['Mlflow'],
+    fields: [
+      requiredText('trackingUri', 'connection.trackingUri', {
+        testId: 'service-tracking-uri',
+        placeholder: 'http://localhost:5000',
+      }),
+      requiredText('registryUri', 'connection.registryUri', {
+        testId: 'service-registry-uri',
+        placeholder: 'mysql+pymysql://mlflow:password@localhost:3306/mlflow',
+      }),
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['OpenMetadata'],
+    fields: [hostPort('http://localhost:8585'), storeSecretsField],
+  },
+  {
+    types: ['GoogleDrive'],
+    fields: [
+      requiredText('credentialsJson', 'connection.credentialsJson', {
+        testId: 'service-credentials-json',
+        placeholder: '{"type": "service_account", ...}',
+      }),
+      text('delegatedEmail', 'connection.delegatedEmail', { testId: 'service-delegated-email' }),
+      text('driveId', 'connection.driveId', { testId: 'service-drive-id' }),
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['ElasticSearch'],
+    fields: [
+      hostPort('http://localhost:9200'),
+      usernameOptional,
+      passwordField,
+      {
+        key: 'apiKey',
+        control: 'password',
+        labelKey: 'connection.apiKey',
+        testId: 'service-api-key',
+        passwordPlaceholder: true,
+      },
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['OpenAI'],
+    fields: [
+      {
+        key: 'apiKey',
+        control: 'password',
+        labelKey: 'connection.apiKey',
+        testId: 'service-api-key',
+        passwordPlaceholder: true,
+        required: true,
+      },
+      text('organization', 'connection.organization', { testId: 'service-organization' }),
+      text('baseUrl', 'connection.baseUrl', { testId: 'service-base-url', placeholder: 'https://api.openai.com/v1' }),
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['Mcp'],
+    fields: [
+      text('registryUrl', 'connection.registryUrl', { testId: 'service-registry-url' }),
+      {
+        key: 'connectionTimeout',
+        control: 'number',
+        labelKey: 'connection.timeout',
+        testId: 'service-connection-timeout',
+        min: 1,
+      },
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['Ranger'],
+    fields: [hostPort('http://localhost:6080'), usernameRequired, passwordField, storeSecretsField],
+  },
 ];
+
+/** True when the type has a connection form; false means the wizard must not create with it. */
+export function hasConnectionForm(serviceType: string): boolean {
+  return connectionFieldsForType(serviceType).length > 0;
+}
 
 export function connectionFieldsForType(serviceType: string): readonly ConnectionFieldDef[] {
   return CONNECTION_FIELD_GROUPS.find((group) => group.types.includes(serviceType))?.fields ?? [];

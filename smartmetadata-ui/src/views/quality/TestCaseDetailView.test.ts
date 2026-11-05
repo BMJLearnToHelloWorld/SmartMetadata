@@ -21,6 +21,7 @@ const listTestIncidents = vi.fn();
 vi.mock('@/api/testCases', () => ({
   getTestCase: (...args: unknown[]) => getTestCase(...args),
   updateTestCase: vi.fn(),
+  listTestCaseDimensionResults: vi.fn(async () => ({ data: [], paging: { total: 0 } })),
 }));
 vi.mock('@/api/testCaseResults', () => ({
   listTestCaseResults: (...args: unknown[]) => listTestCaseResults(...args),
@@ -96,7 +97,9 @@ describe('TestCaseDetailView results chart', () => {
     });
     expect(wrapper.find('[data-testid="test-case-issues-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-issue-inc1"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="test-case-dimensionality-residual"]').exists()).toBe(true);
+    // A15: the dimensionality tab is wired now — the panel renders instead
+    // of the residual, while the sql-query tab stays residual.
+    expect(wrapper.find('[data-testid="test-case-dimensionality"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-case-sql-query-residual"]').exists()).toBe(true);
   });
 });

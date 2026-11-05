@@ -26,7 +26,6 @@ import { listGlossaryTerms } from '@/api/glossaryTerms';
 import {
   DQ_COVERED_ASSETS_AGGREGATION,
   DQ_DIMENSION_STATUS_AGGREGATION,
-  DQ_NO_DIMENSION_QUERY,
   DQ_STATUS_AGGREGATION,
   DQ_TABLE_INDEX,
   DQ_TEST_CASE_INDEX,
@@ -43,6 +42,9 @@ import PageLayout from '@/components/shared/PageLayout.vue';
 import { namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
+  buildDqDashboardQuery,
+  buildDqNoDimensionQuery,
+  buildDqTableQuery,
   cardinalityFromReportRows,
   coverageFrom,
   dimensionCards,
@@ -88,6 +90,10 @@ const results = ref<StatusCounts | null>(null);
 const dimensions = ref<DimensionCard[]>([]);
 const casesView = ref<{ openCreate: () => void } | null>(null);
 const suitesView = ref<{ openCreate: () => void } | null>(null);
+// Last listed rows, reused only as the aggregation fallback when a filter
+// change re-runs the batch and the batch itself fails.
+const lastCases = ref<TestCase[]>([]);
+const lastSuites = ref<{ data: TestSuite[]; total?: number }>({ data: [] });
 
 const ownerOptions = computed(() => facetOptions(facets.value, 'owner'));
 const tierOptions = computed(() => facetOptions(facets.value, 'tier'));
@@ -157,6 +163,57 @@ async function settle<T>(promise: Promise<T>, fallback: T, residualKey?: string)
   }
 }
 
+/**
+ * Aggregation cards only. Split out of loadSummary so a governance-filter
+ * change re-runs exactly the official dashboard batch — status, dimensions
+ * and coverage — with the filter-built `q` payloads (landing.ts), instead
+ * of only re-rendering the search-list path. Health deliberately stays
+ * out of this path: it is still list-derived under residualHealthCap
+ * (live ES casing check owed), so a filter change must not silently
+ * re-derive it from an aggregation it does not read.
+ */
+async function loadAggregations(
+  cases: TestCase[],
+  suites: { data: TestSuite[]; total?: number },
+): Promise<void> {
+  residualNotes.value = residualNotes.value.filter(
+    (note) => note !== 'quality.landing.residualAggregationFallback',
+  );
+  // Status, dimensions and coverage come from one dataQualityReport batch
+  // (official mechanism), not from the capped lists. If the batch fails,
+  // the cards fall back to the listed rows and say so — never silently.
+  try {
+    const dashboardQuery = buildDqDashboardQuery(filters);
+    const reports = await getDataQualityReportBatch([
+      { key: 'status', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: dashboardQuery },
+      { key: 'dimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_DIMENSION_STATUS_AGGREGATION, q: dashboardQuery },
+      { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: buildDqNoDimensionQuery(filters) },
+      { key: 'covered', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_COVERED_ASSETS_AGGREGATION, q: dashboardQuery },
+      { key: 'totalTables', index: DQ_TABLE_INDEX, aggregationQuery: DQ_TOTAL_TABLES_AGGREGATION, q: buildDqTableQuery(filters) },
+    ]);
+    const status = statusCountsFromReportRows(reports.get('status')?.data ?? []);
+    results.value = status.total ? status : null;
+    dimensions.value = dimensionCardsFromReportRows([
+      ...(reports.get('dimensionStatus')?.data ?? []),
+      ...(reports.get('noDimensionStatus')?.data ?? []),
+    ]);
+    const covered = cardinalityFromReportRows(reports.get('covered')?.data ?? [], 'originEntityFQN');
+    const totalTables =
+      cardinalityFromReportRows(reports.get('totalTables')?.data ?? [], 'fullyQualifiedName') ??
+      tableCountFromFacets(facets.value);
+    coverage.value = coverageFrom(covered, totalTables);
+  } catch {
+    residualNotes.value.push('quality.landing.residualAggregationFallback');
+    const status = statusCountsFromCases(cases);
+    results.value = status.total ? status : null;
+    const tableCount = tableCountFromFacets(facets.value);
+    const coveredFromSuites = suites.total ?? (suites.data.length || undefined);
+    const coveredFromCases = uniqueCoveredAssets(cases) || undefined;
+    coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
+    dimensions.value = dimensionCards(cases, []);
+  }
+}
+
 async function loadSummary(): Promise<void> {
   loading.value = true;
   residualNotes.value = [];
@@ -187,38 +244,9 @@ async function loadSummary(): Promise<void> {
     const caseHealth = healthFromCases(casesPage.data);
     health.value = suiteHealth.total ? suiteHealth : caseHealth.total ? caseHealth : null;
     residualNotes.value.push('quality.landing.residualHealthCap');
-    // Status, dimensions and coverage come from one dataQualityReport batch
-    // (official mechanism), not from the capped lists. If the batch fails,
-    // the cards fall back to the listed rows and say so — never silently.
-    try {
-      const reports = await getDataQualityReportBatch([
-        { key: 'status', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION },
-        { key: 'dimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_DIMENSION_STATUS_AGGREGATION },
-        { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: DQ_NO_DIMENSION_QUERY },
-        { key: 'covered', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_COVERED_ASSETS_AGGREGATION },
-        { key: 'totalTables', index: DQ_TABLE_INDEX, aggregationQuery: DQ_TOTAL_TABLES_AGGREGATION },
-      ]);
-      const status = statusCountsFromReportRows(reports.get('status')?.data ?? []);
-      results.value = status.total ? status : null;
-      dimensions.value = dimensionCardsFromReportRows([
-        ...(reports.get('dimensionStatus')?.data ?? []),
-        ...(reports.get('noDimensionStatus')?.data ?? []),
-      ]);
-      const covered = cardinalityFromReportRows(reports.get('covered')?.data ?? [], 'originEntityFQN');
-      const totalTables =
-        cardinalityFromReportRows(reports.get('totalTables')?.data ?? [], 'fullyQualifiedName') ??
-        tableCountFromFacets(facets.value);
-      coverage.value = coverageFrom(covered, totalTables);
-    } catch {
-      residualNotes.value.push('quality.landing.residualAggregationFallback');
-      const status = statusCountsFromCases(casesPage.data);
-      results.value = status.total ? status : null;
-      const tableCount = tableCountFromFacets(facets.value);
-      const coveredFromSuites = suitesPage.total ?? (suitesPage.data.length || undefined);
-      const coveredFromCases = uniqueCoveredAssets(casesPage.data) || undefined;
-      coverage.value = coverageFrom(coveredFromSuites ?? coveredFromCases, tableCount);
-      dimensions.value = dimensionCards(casesPage.data, []);
-    }
+    lastCases.value = casesPage.data;
+    lastSuites.value = suitesPage;
+    await loadAggregations(casesPage.data, suitesPage);
     if (!caseSearch) {
       residualNotes.value.push('quality.landing.residualSearchList');
     }
@@ -260,6 +288,17 @@ async function openCreateSuite(): Promise<void> {
 watch(rangeDays, (days) => {
   range.value = seriesWindow(days);
 });
+
+// Governance-filter change re-runs the aggregation batch with the new
+// filter-built queries; the list tabs already react to the same filters
+// through their props, so the cards and the lists can no longer drift.
+watch(
+  filters,
+  () => {
+    void loadAggregations(lastCases.value, lastSuites.value);
+  },
+  { deep: true },
+);
 
 watch(
   () => route.query.tab,

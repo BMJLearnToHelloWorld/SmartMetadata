@@ -56,6 +56,23 @@ export function listTeams(query: ListTeamsQuery = {}): Promise<Paged<AdminTeam>>
   }).then((payload) => parsePaged(payload, mapTeam));
 }
 
+/**
+ * Official DataInsightSummary.tsx fetchOrganizationDetails:
+ * GET /teams/name/Organization (rest/teamsAPI.ts getTeamByName).
+ * Server-side presence of the /name route on the product fork could not
+ * be verified from this frontend-only tree, so callers must treat a
+ * failure as "organization unknown" (like the official silent catch),
+ * never as a page error.
+ */
+export async function getTeamByName(name: string): Promise<AdminTeam> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/teams/name/${encodeURIComponent(name)}`);
+  const mapped = mapTeam(raw);
+  if (!mapped) {
+    throw new Error('Team response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function getTeam(id: string, include: IncludeFilter = 'all'): Promise<AdminTeam> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/teams/${encodeURIComponent(id)}`, {
     query: { fields: TEAM_FIELDS, include },

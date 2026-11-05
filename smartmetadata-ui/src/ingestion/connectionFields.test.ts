@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECTION_FIELD_GROUPS,
   connectionFieldsForType,
+  hasConnectionForm,
   isConnectionFieldVisible,
   type ConnectionFieldGroup,
 } from './connectionFields';
@@ -26,9 +27,39 @@ describe('connectionFields', () => {
 
   it('covers every supported service type with at least one field', () => {
     const types = new Set(CONNECTION_FIELD_GROUPS.flatMap((group) => group.types));
-    expect(types.size).toBe(18);
+    // 18 pre-existing types + the eight kinds' default types (A9).
+    expect(types.size).toBe(26);
     for (const type of types) {
       expect(connectionFieldsForType(type).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('covers the eight previously form-less kinds via their default types, and blocks the rest', () => {
+    expect(connectionFieldsForType('Mlflow').map((field) => field.key)).toEqual([
+      'trackingUri',
+      'registryUri',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toContain('hostPort');
+    expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toContain('credentialsJson');
+    expect(connectionFieldsForType('ElasticSearch').map((field) => field.key)).toContain('hostPort');
+    expect(connectionFieldsForType('OpenAI').map((field) => field.key)).toContain('apiKey');
+    expect(connectionFieldsForType('Mcp').map((field) => field.key)).toContain('registryUrl');
+    expect(connectionFieldsForType('Ranger').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'password',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Rest').map((field) => field.key)).toContain('openApiSchemaUrl');
+    // Non-default types in those kinds stay form-less: the wizard must
+    // block creation for them rather than send an undefined connection.
+    for (const type of ['Anthropic', 'Atlas', 'Sftp', 'OpenSearch', 'WEBHOOK', 'SageMaker', 'CustomLLM']) {
+      expect(hasConnectionForm(type)).toBe(false);
+      expect(connectionFieldsForType(type)).toEqual([]);
+    }
+    for (const type of ['Mlflow', 'OpenMetadata', 'GoogleDrive', 'ElasticSearch', 'OpenAI', 'Mcp', 'Ranger', 'Rest']) {
+      expect(hasConnectionForm(type)).toBe(true);
     }
   });
 

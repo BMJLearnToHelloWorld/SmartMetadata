@@ -9,6 +9,8 @@ import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { deleteTestSuite, getTestSuite, updateTestSuite } from '@/api/testSuites';
+import { listIngestionPipelines } from '@/api/ingestionPipelines';
+import type { IngestionPipeline } from '@/types/ingestion';
 import {
   addTestCasesToLogicalTestSuite,
   listTestCases,
@@ -122,6 +124,39 @@ async function onSave(): Promise<void> {
   }
 }
 
+const suitePipelines = ref<IngestionPipeline[]>([]);
+const pipelinesLoading = ref(false);
+const pipelinesError = ref('');
+const pipelinesLoaded = ref(false);
+
+const pipelineColumns = computed<EntityListColumn[]>(() => [
+  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
+  { title: t('crud.actions'), key: 'actions', width: 160 },
+]);
+
+async function loadPipelines(): Promise<void> {
+  if (!suite.value?.fullyQualifiedName || pipelinesLoaded.value) {
+    return;
+  }
+  pipelinesLoading.value = true;
+  pipelinesError.value = '';
+  try {
+    const page = await listIngestionPipelines({
+      service: suite.value.fullyQualifiedName,
+      pipelineType: 'TestSuite',
+      limit: 100,
+    });
+    suitePipelines.value = page.data;
+    pipelinesLoaded.value = true;
+  } catch {
+    suitePipelines.value = [];
+    pipelinesError.value = t('crud.loadFailed');
+  } finally {
+    pipelinesLoading.value = false;
+  }
+}
+
 const addOpen = ref(false);
 const adding = ref(false);
 const availableCases = ref<{ id: string; name: string }[]>([]);
@@ -184,9 +219,17 @@ async function onRemoveTest(testCaseId: string, testCaseName: string): Promise<v
 watch(
   () => props.id,
   () => {
+    pipelinesLoaded.value = false;
+    suitePipelines.value = [];
     void load();
   },
 );
+
+watch(activeTab, (tab) => {
+  if (tab === 'pipeline') {
+    void loadPipelines();
+  }
+});
 
 onMounted(() => {
   void load();
@@ -234,7 +277,50 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #pipeline>
-      <SmState state="empty" test-id="test-suite-pipeline-residual" :empty-text="t('quality.testSuites.residualPipeline')" />
+      <Button
+        data-testid="add-test-suite-ingestion"
+        :disabled="!suite"
+        style="margin-bottom: 16px"
+        @click="router.push({ name: 'quality-test-suite-add-ingestion', params: { id: props.id } })"
+      >
+        {{ t('quality.testSuites.addIngestion') }}
+      </Button>
+      <SmState v-if="pipelinesError" state="error" test-id="test-suite-pipelines-error" :error-text="pipelinesError" />
+      <SmTable
+        v-else
+        row-key="id"
+        size="small"
+        :columns="pipelineColumns"
+        :data-source="suitePipelines"
+        :loading="pipelinesLoading"
+        :pagination="false"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            <a
+              href="#"
+              :data-testid="`test-suite-pipeline-${(record as IngestionPipeline).id}`"
+              @click.prevent="router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })"
+            >
+              {{ entityLabel(record as IngestionPipeline) }}
+            </a>
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <Button
+              type="link"
+              :data-testid="`edit-test-suite-pipeline-${(record as IngestionPipeline).id}`"
+              @click="
+                router.push({
+                  name: 'quality-test-suite-edit-ingestion',
+                  params: { id: props.id, ingestionFqn: (record as IngestionPipeline).fullyQualifiedName ?? '' },
+                })
+              "
+            >
+              {{ t('crud.edit') }}
+            </Button>
+          </template>
+        </template>
+      </SmTable>
     </template>
     <template #tests>
       <SmTable

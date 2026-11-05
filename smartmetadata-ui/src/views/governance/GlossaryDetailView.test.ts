@@ -174,6 +174,89 @@ describe('GlossaryDetailView', () => {
     expect(wrapper.find('[data-testid="glossary-breadcrumb"]').exists()).toBe(true);
   });
 
+  it('renders the title through PageHeader, not a hand-written title block', async () => {
+    // A19 convergence: breadcrumb + PageHeader carry the title info;
+    // the old level-3 title element is gone.
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="glossary-page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="glossary-page-header-heading"]').text()).toContain('Business Glossary');
+    expect(wrapper.find('[data-testid="glossary-fqn"]').text()).toContain('Business');
+    expect(wrapper.find('.glossary__title').exists()).toBe(false);
+  });
+
+  async function clickTab(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'], label: string) {
+    const tab = wrapper
+      .findAll('.ant-tabs-tab')
+      .find((node) => node.text().includes(label));
+    expect(tab).toBeDefined();
+    await tab!.trigger('click');
+    await flushPromises();
+  }
+
+  it('loads the real activity feed and tasks on the activity tab', async () => {
+    const { wrapper } = await mountView();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/activity/entity/glossary/name/')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'e1',
+                eventType: 'create',
+                summary: 'Glossary created',
+                timestamp: 1762051200000,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'c1',
+                about: '<#E::glossary::Business>',
+                message: 'Hello glossary',
+                replyCount: 0,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/tasks')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'task1',
+                name: 'Review glossary',
+                displayName: 'Review glossary',
+                type: 'RequestDescription',
+                status: 'Open',
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    await clickTab(wrapper, 'Activity');
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Glossary created');
+    expect(wrapper.text()).toContain('Hello glossary');
+    expect(wrapper.find('[data-testid="glossary-tasks-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Review glossary');
+    expect(wrapper.find('[data-testid="glossary-activity-residual"]').exists()).toBe(false);
+  });
+
+  it('keeps relations as an honest residual, not a fake graph', async () => {
+    const { wrapper } = await mountView();
+    await clickTab(wrapper, 'Relations Graph');
+    expect(wrapper.find('[data-testid="glossary-relations-residual"]').exists()).toBe(true);
+  });
+
   it('navigates to term detail from the terms table', async () => {
     const { wrapper, router } = await mountView();
     const link = wrapper.find('[data-testid="term-row-t1"]');

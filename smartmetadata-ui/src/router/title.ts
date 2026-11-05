@@ -11,15 +11,13 @@ import { watch } from 'vue';
 import type { Ref } from 'vue';
 import type { RouteLocationNormalized, Router } from 'vue-router';
 import { NAV_ENTRIES, selectedNavKey } from '@/layouts/nav';
-import { RESIDUAL_PAGES } from '@/layouts/residualPages';
 
 /**
  * Browser tab title follows the current page. Resolution order, first hit wins,
  * and every key is an existing i18n key (no new copy is invented here):
  * 1. route.meta.titleKey — explicit per-route override (extension point);
  * 2. special routes that never appear in the sidebar (auth forms, errors);
- * 3. residual shells, which render their own title, not the nav overview name;
- * 4. the sidebar entry for the route, via selectedNavKey, so detail pages
+ * 3. the sidebar entry for the route, via selectedNavKey, so detail pages
  *    fall back to their list page (domain detail -> domains, asset -> Explore).
  * Nothing matches (login included) -> the product name alone, no suffix.
  */
@@ -62,10 +60,6 @@ export function resolveDocumentTitleKey(route: TitleRoute): string | undefined {
   const name = String(route.name ?? '');
   if (SPECIAL_TITLES[name]) {
     return SPECIAL_TITLES[name];
-  }
-  const residual = RESIDUAL_PAGES.find((page) => page.name === name);
-  if (residual) {
-    return residual.titleKey;
   }
   return navTitleKey(route.name);
 }

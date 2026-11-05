@@ -95,6 +95,7 @@ export function mapConversationReply(raw: Record<string, unknown>): Conversation
     conversationId: asString(raw.conversationId) || undefined,
     message,
     createdAt: asNumber(raw.createdAt),
+    reactions: mapActivityReactions(raw.reactions),
     author: author
       ? {
           id: asString(author.id) || undefined,

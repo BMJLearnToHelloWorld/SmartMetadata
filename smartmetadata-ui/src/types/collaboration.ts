@@ -34,6 +34,7 @@ export interface ConversationReply {
   message: string;
   createdAt?: number;
   author?: EntityRef;
+  reactions?: ActivityReaction[];
 }
 
 export interface Conversation {
@@ -48,6 +49,7 @@ export interface Conversation {
   entityRef?: EntityRef;
   createdBy?: EntityRef;
   replies: ConversationReply[];
+  reactions?: ActivityReaction[];
 }
 
 export interface CreateConversationRequest {
@@ -116,6 +118,41 @@ export interface DataAccessRequestPayload {
   manualGrantReason?: string;
 }
 
+/**
+ * Generic suggestion payload, mirroring openmetadata-ui
+ * utils/TaskPayloadUtils.ts getNormalizedTaskPayload inputs: the raw
+ * task payload carries either description fields (currentDescription /
+ * currentValue, newDescription / suggestedValue) or tag fields
+ * (currentTags, tagsToAdd, tagsToRemove, legacy suggestedValue), plus
+ * fieldPath / field for column-scoped tasks.
+ */
+export interface TaskSuggestionPayload {
+  fieldPath?: string;
+  currentDescription?: string;
+  newDescription?: string;
+  currentTags?: string[];
+  tagsToAdd?: string[];
+  tagsToRemove?: string[];
+  suggestedValue?: string;
+}
+
+/**
+ * Workflow transition, mirroring openmetadata-spec entity/tasks/task.json
+ * TaskAvailableTransition: id + label are required; resolutionType is
+ * present only on terminal transitions (non-terminal ack/assign must
+ * NOT default to Approved — the server treats a non-null resolutionType
+ * as a terminal resolution, per TaskTabNew.getTransitionResolutionType).
+ */
+export interface TaskAvailableTransition {
+  id: string;
+  label: string;
+  formRef?: string;
+  requiresComment?: boolean;
+  resolutionType?: string;
+  targetStageId: string;
+  targetTaskStatus: string;
+}
+
 export interface CollaborationTask {
   id: string;
   name?: string;
@@ -130,6 +167,8 @@ export interface CollaborationTask {
   createdBy?: EntityRef;
   comments: TaskComment[];
   payload?: DataAccessRequestPayload;
+  suggestionPayload?: TaskSuggestionPayload;
+  availableTransitions?: TaskAvailableTransition[];
 }
 
 export interface CreateTaskRequest {
@@ -144,9 +183,18 @@ export interface CreateTaskRequest {
   payload?: DataAccessRequestPayload;
 }
 
+/**
+ * Official ResolveTask (generated/api/tasks/resolveTask.ts): resolutionType
+ * + comment + newValue (update tasks) + payload (schema-driven forms) +
+ * transitionId (workflow tasks). resolutionType is optional here because
+ * a non-terminal workflow transition resolves with transitionId alone.
+ */
 export interface ResolveTaskRequest {
-  resolutionType: TaskResolution;
+  resolutionType?: TaskResolution;
   comment?: string;
+  newValue?: string;
+  payload?: Record<string, unknown>;
+  transitionId?: string;
 }
 
 export const ANNOUNCEMENT_TYPES = ['Critical', 'Notice', 'Warning', 'Deprecation', 'Custom'] as const;

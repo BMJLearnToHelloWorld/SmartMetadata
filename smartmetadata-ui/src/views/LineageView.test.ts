@@ -184,4 +184,36 @@ describe('LineageView', () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
+  it('applies a custom date range through searchLineage start/end params', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountLineage();
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('startTime=');
+    const preset = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    preset.vm.$emit('update:value', 'customRange');
+    await flushPromises();
+    await wrapper.get('[data-testid="lineage-time-custom-start"]').setValue('2026-01-05');
+    await wrapper.get('[data-testid="lineage-time-custom-end"]').setValue('2026-01-07');
+    await wrapper.get('[data-testid="lineage-time-custom-apply"]').trigger('click');
+    await flushPromises();
+    const lastUrl = String(fetchMock.mock.calls.at(-1)?.[0]);
+    expect(lastUrl).toContain(`startTime=${new Date(2026, 0, 5).getTime()}`);
+    expect(lastUrl).toContain(`endTime=${new Date(2026, 0, 8).getTime() - 1}`);
+  });
+
+  it('applies point-in-time through an end-only searchLineage param', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(GRAPH));
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountLineage();
+    const preset = wrapper.findAllComponents({ name: 'ASelect' })[0];
+    preset.vm.$emit('update:value', 'pointInTime');
+    await flushPromises();
+    await wrapper.get('[data-testid="lineage-time-point"]').setValue('2026-01-07');
+    await wrapper.get('[data-testid="lineage-time-point-apply"]').trigger('click');
+    await flushPromises();
+    const lastUrl = String(fetchMock.mock.calls.at(-1)?.[0]);
+    expect(lastUrl).not.toContain('startTime=');
+    expect(lastUrl).toContain(`endTime=${new Date(2026, 0, 8).getTime() - 1}`);
+  });
+
 });

@@ -5,16 +5,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Card, Col, Empty, Row, Select, Spin, Typography } from 'ant-design-vue';
+import { Alert, Card, Col, Empty, Progress, Row, Select, Spin, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
-import { listSystemChartData, SYSTEM_CHART_NAMES } from '@/api/dataInsights';
+import { listSystemChartData, SYSTEM_CHART_NAMES, type SystemChartData } from '@/api/dataInsights';
 import {
   DATA_REPORT_INDEXES,
   getAggregateChartData,
   type DataInsightAggregateRow,
 } from '@/api/dataInsights';
+import { getTeamByName } from '@/api/teams';
 import { searchAssets } from '@/api/search';
 import { listTestCases } from '@/api/testCases';
 import { listTestIncidents } from '@/api/testIncidents';
@@ -45,6 +46,8 @@ const mostActiveUsers = ref<DataInsightAggregateRow[]>([]);
 const dailyActiveSeries = ref<ChartSeries[]>([]);
 const pageViewEntities = ref<DataInsightAggregateRow[]>([]);
 const datePreset = ref(insightsDatePresetFromKey('last30').key);
+const orgName = ref('');
+const systemData = ref<SystemChartData>({});
 
 function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
@@ -56,6 +59,120 @@ function facetBuckets(facets: Array<{ id: FacetId; buckets: Array<{ key: string;
 }
 
 const pipelineHasPoints = computed(() => pipeline.value.some((chart) => chart.series.some((item) => item.points.length)));
+
+/**
+ * Data Insight summary (official DataInsightSummary.tsx +
+ * utils/DataInsightUtils.tsx getEntitiesChartSummary +
+ * components/DataInsight/EntitySummaryProgressBar.component.tsx):
+ * the heading names the Organization team (GET /teams/name/Organization,
+ * silent on failure like the official fetch), the cards read the latest
+ * value of the entity system charts, and the progress bars show each
+ * group's share of the total, clamped to 0-100 like the official bar.
+ *
+ * Adaptation, stated plainly: the official cards read dedicated
+ * `*_summary_card` preview charts, which this console does not call
+ * (no preview API exists here); the cards below read the same four
+ * system charts the pipeline section already fetches. Total assets sums
+ * the latest per-entity-type counts (the groups partition the catalog);
+ * the description/owner cards read their percentage series' latest point.
+ * The tier series is grouped counts, not a percentage, so it is NOT
+ * rendered as a fake "%" card — its distribution appears as progress
+ * bars instead.
+ */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function latestPoint(points: readonly { count?: number; day?: number }[]): { count?: number; day?: number } | undefined {
+  let best: { count?: number; day?: number } | undefined;
+  for (const point of points) {
+    if (!best || (point.day ?? 0) > (best.day ?? 0)) {
+      best = point;
+    }
+  }
+  return best;
+}
+
+function latestByGroup(points: readonly { count?: number; day?: number; group?: string }[]): Array<{ group: string; count: number }> {
+  const byGroup = new Map<string, { count?: number; day?: number }>();
+  for (const point of points) {
+    const group = point.group ?? '';
+    const current = byGroup.get(group);
+    if (!current || (point.day ?? 0) > (current.day ?? 0)) {
+      byGroup.set(group, point);
+    }
+  }
+  return [...byGroup.entries()].map(([group, point]) => ({ group, count: point.count ?? 0 }));
+}
+
+const totalAssets = computed(() =>
+  latestByGroup(systemData.value.total_data_assets ?? []).reduce((sum, item) => sum + item.count, 0),
+);
+
+const summaryCards = computed(() => {
+  const data = systemData.value;
+  const hasData =
+    (data.total_data_assets?.length ?? 0) > 0 ||
+    (data.percentage_of_data_asset_with_description?.length ?? 0) > 0 ||
+    (data.percentage_of_data_asset_with_owner?.length ?? 0) > 0;
+  if (!hasData) {
+    return [];
+  }
+  return [
+    {
+      id: 'total',
+      label: t('insights.summary.totalAssets'),
+      value: round2(totalAssets.value),
+      suffix: '',
+    },
+    {
+      id: 'description',
+      label: t('insights.summary.withDescription'),
+      value: round2(latestPoint(data.percentage_of_data_asset_with_description ?? [])?.count ?? 0),
+      suffix: '%',
+    },
+    {
+      id: 'owner',
+      label: t('insights.summary.withOwner'),
+      value: round2(latestPoint(data.percentage_of_data_asset_with_owner ?? [])?.count ?? 0),
+      suffix: '%',
+    },
+  ];
+});
+
+function progressRows(points: readonly { count?: number; day?: number; group?: string }[], total: number) {
+  return latestByGroup(points)
+    .map((item) => ({
+      group: item.group,
+      count: item.count,
+      percent: total > 0 ? Math.min(100, Math.max(0, (item.count / total) * 100)) : 0,
+    }))
+    .toSorted((a, b) => b.count - a.count);
+}
+
+const entityProgress = computed(() =>
+  totalAssets.value > 0 ? progressRows(systemData.value.total_data_assets ?? [], totalAssets.value) : [],
+);
+const tierProgress = computed(() =>
+  totalAssets.value > 0 ? progressRows(systemData.value.total_data_assets_by_tier ?? [], totalAssets.value) : [],
+);
+
+const summaryTitle = computed(() =>
+  orgName.value
+    ? t('insights.summaryFor', { organization: orgName.value })
+    : t('insights.summaryTitle'),
+);
+
+async function loadOrganization(): Promise<void> {
+  try {
+    const team = await getTeamByName('Organization');
+    orgName.value = team.displayName || team.name;
+  } catch {
+    // Official fetchOrganizationDetails swallows this too: the heading
+    // falls back to the generic summary title, never an error state.
+    orgName.value = '';
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -100,11 +217,13 @@ async function load(): Promise<void> {
     pipelineTried.value = true;
     try {
       const data = await listSystemChartData(SYSTEM_CHART_NAMES, window.startTs, window.endTs);
+      systemData.value = data;
       pipeline.value = SYSTEM_CHART_NAMES.flatMap((name) => {
         const series = insightResultsToSeries(name, data[name] ?? []);
         return [{ name, title: t(`insights.pipeline.${name}`), series }];
       });
     } catch (error) {
+      systemData.value = {};
       pipeline.value = [];
       pipelineError.value = error instanceof Error ? error.message : t('insights.pipelineFailed');
     }
@@ -189,12 +308,39 @@ function onDatePresetChange(value: string): void {
 
 onMounted(() => {
   void load();
+  void loadOrganization();
 });
 </script>
 
 <template>
   <PageLayout test-id="data-assets-layout">
     <PageHeader :header="t('insights.tabs.dataAssets')" :sub-header="t('insights.lead')" />
+    <Typography.Title :level="5" data-testid="insights-summary-title" class="insights__sub">
+      {{ summaryTitle }}
+    </Typography.Title>
+    <div v-if="summaryCards.length" data-testid="insights-summary">
+      <Row :gutter="[16, 16]">
+        <Col v-for="card in summaryCards" :key="card.id" :xs="24" :md="8">
+          <Card size="small" :title="card.label" :data-testid="`insights-summary-${card.id}`">
+            <Typography.Title :level="4">{{ card.value }}{{ card.suffix }}</Typography.Title>
+          </Card>
+        </Col>
+      </Row>
+      <div v-if="entityProgress.length" data-testid="insights-entity-progress">
+        <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byEntityType') }}</Typography.Title>
+        <div v-for="row in entityProgress" :key="row.group" data-testid="insights-entity-progress-row">
+          <span>{{ entityLabel(row.group) }} — {{ row.count }}</span>
+          <Progress :percent="row.percent" />
+        </div>
+      </div>
+      <div v-if="tierProgress.length" data-testid="insights-tier-progress">
+        <Typography.Title :level="5" class="insights__sub">{{ t('insights.summary.byTier') }}</Typography.Title>
+        <div v-for="row in tierProgress" :key="row.group" data-testid="insights-tier-progress-row">
+          <span>{{ row.group }} — {{ row.count }}</span>
+          <Progress :percent="row.percent" />
+        </div>
+      </div>
+    </div>
     <Spin :spinning="loading">
       <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" class="insights__alert" />
       <Typography.Paragraph>

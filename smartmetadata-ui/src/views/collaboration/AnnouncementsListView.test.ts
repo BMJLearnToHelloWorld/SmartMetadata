@@ -84,7 +84,56 @@ describe('AnnouncementsListView', () => {
     expect(wrapper.find('[data-testid="announcements-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-announcement"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="announcement-edit-a1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="announcement-duplicate-a1"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="announcement-delete-a1"]').exists()).toBe(true);
+  });
+
+  it('duplicates by prefilling the create form and POSTing a new record', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="announcement-duplicate-a1"]').trigger('click');
+    await flushPromises();
+    const title = document.querySelector('[data-testid="announcement-title"]') as HTMLInputElement | null;
+    const description = document.querySelector('[data-testid="announcement-description"]') as HTMLTextAreaElement | null;
+    expect(title).not.toBeNull();
+    expect(title!.value).toBe('Maintenance');
+    expect(description!.value).toBe('Window');
+    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const post = vi
+      .mocked(fetch)
+      .mock.calls.map(([input, init]) => ({ url: String(input), init }))
+      .find((call) => call.url.includes('/api/v1/announcements') && call.init?.method === 'POST');
+    expect(post).toBeDefined();
+    // A duplicate is a new record: the POST body carries no source id.
+    expect(JSON.parse(String(post!.init?.body))).not.toHaveProperty('id');
+    expect(JSON.parse(String(post!.init?.body)).description).toBe('Window');
+  });
+
+  it('opens the duplicate form from the duplicate route', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/announcements', name: 'announcements', component: AnnouncementsListView },
+        {
+          path: '/announcements/duplicate/:id',
+          name: 'announcement-duplicate',
+          component: AnnouncementsListView,
+        },
+      ],
+    });
+    await router.push('/announcements/duplicate/a1');
+    await router.isReady();
+    mount(AnnouncementsListView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const title = document.querySelector('[data-testid="announcement-title"]') as HTMLInputElement | null;
+    expect(title).not.toBeNull();
+    expect(title!.value).toBe('Maintenance');
   });
 
   it('deletes after confirmation and reloads the list', async () => {

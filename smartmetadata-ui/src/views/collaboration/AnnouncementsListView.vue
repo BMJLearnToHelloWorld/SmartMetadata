@@ -3,8 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Card, Form, Input, Select, Space, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
@@ -22,12 +23,18 @@ import { toEntityLink } from '@/quality/entityLink';
 import { ANNOUNCEMENT_TYPES, type Announcement } from '@/types/collaboration';
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const announcements = ref<Announcement[]>([]);
 const total = ref<number | undefined>();
 const createOpen = ref(false);
 const creating = ref(false);
+// A20 duplicate mode: the create modal is reused, prefilled from the
+// source announcement. Saving still POSTs a new announcement (the
+// create API sends no id), so the copy is a genuinely new record.
+const duplicateMode = ref(false);
 const form = reactive({
   displayName: '',
   description: '',
@@ -81,6 +88,30 @@ function openEdit(announcement: Announcement): void {
   editForm.startLocal = toLocalInput(announcement.startTime);
   editForm.endLocal = toLocalInput(announcement.endTime);
   editOpen.value = true;
+}
+
+/**
+ * A20 duplicate: prefill the create form from the source announcement
+ * (same entity-link parsing as openEdit). The modal title switches to
+ * the duplicate title; saving still runs the create path, so no id is
+ * ever sent and the result is a new announcement.
+ */
+function openDuplicate(announcement: Announcement): void {
+  form.displayName = announcement.displayName ?? '';
+  form.description = announcement.description ?? '';
+  form.type = announcement.type ?? 'Notice';
+  const linkParts = (announcement.entityLink ?? '').replace(/^<#E::/, '').replace(/>$/, '').split('::');
+  form.entityType = linkParts[0] || 'table';
+  form.entityFqn = linkParts.slice(1).join('::');
+  form.startLocal = toLocalInput(announcement.startTime);
+  form.endLocal = toLocalInput(announcement.endTime);
+  duplicateMode.value = true;
+  createOpen.value = true;
+}
+
+function closeCreate(): void {
+  duplicateMode.value = false;
+  createOpen.value = false;
 }
 
 async function onDelete(announcement: Announcement): Promise<void> {
@@ -165,6 +196,18 @@ async function load(): Promise<void> {
     const page = await listAnnouncements({ limit: 50 });
     announcements.value = page.data;
     total.value = page.total;
+    // A20 route entry: /announcements/duplicate/:id opens the create
+    // form prefilled from the matching list row. A source outside the
+    // first page is reported honestly instead of opening a blank form.
+    const duplicateId = route.params.id;
+    if (typeof duplicateId === 'string' && duplicateId) {
+      const source = announcements.value.find((item) => item.id === duplicateId);
+      if (source) {
+        openDuplicate(source);
+      } else {
+        errorMessage.value = t('collaboration.announcements.duplicateNotFound', { id: duplicateId });
+      }
+    }
   } catch (error) {
     announcements.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('collaboration.announcements.loadFailed');
@@ -184,8 +227,15 @@ async function onCreate(): Promise<void> {
       type: form.type as (typeof ANNOUNCEMENT_TYPES)[number],
       entityLink: form.entityFqn.trim() ? toEntityLink(form.entityType, form.entityFqn) : undefined,
     });
-    createOpen.value = false;
+    const wasDuplicateRoute = typeof route.params.id === 'string' && Boolean(route.params.id);
+    closeCreate();
     message.success(t('collaboration.announcements.created'));
+    if (wasDuplicateRoute) {
+      // Back to the plain list so the post-save reload does not reopen
+      // the duplicate form for the same source id.
+      await router.push({ name: 'announcements' });
+      return;
+    }
     await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.announcements.createFailed'));
@@ -193,6 +243,13 @@ async function onCreate(): Promise<void> {
     creating.value = false;
   }
 }
+
+watch(
+  () => route.params.id,
+  () => {
+    void load();
+  },
+);
 
 onMounted(() => {
   void load();
@@ -204,7 +261,11 @@ onMounted(() => {
     <Space direction="vertical" size="middle" style="width: 100%">
       <div class="collab-head">
         <PageHeader :header="t('collaboration.announcements.title')" :sub-header="t('collaboration.announcements.lead')" />
-        <Button type="primary" data-testid="create-announcement" @click="createOpen = true">
+        <Button
+          type="primary"
+          data-testid="create-announcement"
+          @click="duplicateMode = false; createOpen = true"
+        >
           {{ t('collaboration.announcements.create') }}
         </Button>
       </div>
@@ -237,6 +298,13 @@ onMounted(() => {
               </Button>
               <Button
                 size="small"
+                :data-testid="`announcement-duplicate-${(record as Announcement).id}`"
+                @click="openDuplicate(record as Announcement)"
+              >
+                {{ t('collaboration.announcements.duplicate') }}
+              </Button>
+              <Button
+                size="small"
                 danger
                 :data-testid="`announcement-delete-${(record as Announcement).id}`"
                 @click="onDelete(record as Announcement)"
@@ -257,12 +325,16 @@ onMounted(() => {
     </Space>
     <FormModal
       :open="createOpen"
-      :title="t('collaboration.announcements.createTitle')"
+      :title="
+        duplicateMode
+          ? t('collaboration.announcements.duplicateTitle')
+          : t('collaboration.announcements.createTitle')
+      "
       :ok-text="t('crud.save')"
       :cancel-text="t('crud.cancel')"
       :confirm-loading="creating"
       @ok="onCreate"
-    @cancel="createOpen = false"
+      @cancel="closeCreate"
     >
       <Form layout="vertical">
         <Form.Item :label="t('collaboration.announcements.displayName')" :extra="t('collaboration.announcements.displayNameHelp')">

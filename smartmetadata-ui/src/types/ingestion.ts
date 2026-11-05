@@ -190,6 +190,10 @@ export interface ServiceConnectionConfig {
     azureClientId?: string;
     azureClientSecret?: string;
     azureTenantId?: string;
+    /** ElasticSearch / Ranger basic auth (elasticSearch/basicAuth, ranger/basicAuth). */
+    username?: string;
+    /** ElasticSearch api auth (elasticSearch/apiAuth). */
+    apiKey?: string;
   };
   password?: string;
   apiKey?: string;
@@ -319,6 +323,21 @@ export interface ServiceFormValues {
   dagsterTimeout?: number;
   stripAssetKeyPrefixLength?: number;
   storeConnectionSecrets?: boolean;
+  /** Mlflow (mlmodel): tracking + registry URIs (mlflowConnection, required). */
+  trackingUri?: string;
+  registryUri?: string;
+  /** Rest (api): OpenAPI schema URL (openAPISchemaURL, required). */
+  openApiSchemaUrl?: string;
+  /** GoogleDrive (drive): GCP service-account credentials JSON (required). */
+  credentialsJson?: string;
+  delegatedEmail?: string;
+  driveId?: string;
+  /** OpenAI (llm): organization id + custom base URL (openAIConnection). */
+  organization?: string;
+  baseUrl?: string;
+  /** Mcp: registry URL + timeouts (mcpConnection, all optional). */
+  registryUrl?: string;
+  connectionTimeout?: number;
 }
 
 export interface CreateDatabaseServiceRequest {
@@ -420,6 +439,8 @@ export interface CreateIngestionPipelineRequest {
   displayName?: string;
   description?: string;
   loggerLevel?: string;
+  /** Test-suite pipelines (createIngestionPipeline schema): fail fast on a test error. */
+  raiseOnError?: boolean;
 }
 
 export interface PipelineStatus {

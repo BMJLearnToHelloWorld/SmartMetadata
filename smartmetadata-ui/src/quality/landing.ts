@@ -341,6 +341,135 @@ export function governanceFiltersActive(filters: DqGovernanceFilters): boolean {
   return DQ_GOVERNANCE_FILTERS.some((key) => Boolean(filters[key]?.trim()));
 }
 
+/**
+ * ES `q` payloads for the dataQualityReport batch, mirroring the official
+ * dashboard builders (openmetadata-ui
+ * utils/DataQuality/DataQualityPureUtils.ts: buildDataQualityDashboardFilters
+ * for the testCase index, buildDataQualityTableFilters for the table index;
+ * rest/dataQualityDashboardAPI.ts: fetchTestCaseSummary* /
+ * fetchEntityCoveredWithDQ / fetchTotalEntityCount pass the built `must`
+ * array as `q: { query: { bool: { must } } }`).
+ *
+ * Mapping, single-valued product filters to the official multi-valued
+ * filter fields: owner -> ownerFqn, tag -> tags[tag], tier -> tier[tier],
+ * certification -> certification[cert], dataProduct -> dataProductFqns[dp].
+ * The testCase-index clauses are the dashboard builder's verbatim shapes
+ * (nested owners/tags, bool-should tier/certification/dataProducts);
+ * the table-index clauses are the table builder's shapes (flat bool-should
+ * term clauses — the table index carries no test-case-only fields, so the
+ * nested testCase forms must not leak into it). Both builders append
+ * `{ term: { deleted: false } }`.
+ *
+ * glossaryTerm has NO official dashboard-filter counterpart (neither
+ * builder mentions glossary terms), so it is deliberately left out of the
+ * aggregation query rather than invented as a field: it keeps affecting
+ * only the search-list path, and the dashboard cards say so via the
+ * existing filter residual when the search list is unavailable.
+ */
+export type DqEsClause = Record<string, unknown>;
+
+function dqMustForOwner(owner: string): DqEsClause {
+  return {
+    nested: {
+      path: 'owners',
+      query: { term: { 'owners.name': owner } },
+    },
+  };
+}
+
+function dqMustForTags(tag: string): DqEsClause {
+  return {
+    nested: {
+      path: 'tags',
+      query: {
+        bool: {
+          should: [{ match: { 'tags.tagFQN': tag } }],
+        },
+      },
+    },
+  };
+}
+
+function dqShouldTerm(field: string, value: string, minimumShouldMatch = true): DqEsClause {
+  return {
+    bool: {
+      should: [{ term: { [field]: value } }],
+      ...(minimumShouldMatch ? { minimum_should_match: 1 } : {}),
+    },
+  };
+}
+
+export function dqDashboardMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
+  const must: DqEsClause[] = [];
+  if (filters.owner?.trim()) {
+    must.push(dqMustForOwner(filters.owner));
+  }
+  if (filters.certification?.trim()) {
+    must.push(dqShouldTerm('certification.tagLabel.tagFQN', filters.certification, false));
+  }
+  if (filters.tag?.trim()) {
+    must.push(dqMustForTags(filters.tag));
+  }
+  if (filters.tier?.trim()) {
+    must.push(dqShouldTerm('tier.tagFQN', filters.tier));
+  }
+  if (filters.dataProduct?.trim()) {
+    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', filters.dataProduct));
+  }
+  must.push({ term: { deleted: false } });
+  return must;
+}
+
+export function dqTableMustFilters(filters: DqGovernanceFilters): DqEsClause[] {
+  const must: DqEsClause[] = [];
+  if (filters.owner?.trim()) {
+    must.push(dqMustForOwner(filters.owner));
+  }
+  if (filters.tag?.trim()) {
+    must.push({
+      bool: { should: [{ term: { 'tags.tagFQN': filters.tag } }] },
+    });
+  }
+  if (filters.tier?.trim()) {
+    must.push({
+      bool: { should: [{ term: { 'tier.tagFQN': filters.tier } }] },
+    });
+  }
+  if (filters.certification?.trim()) {
+    must.push(dqShouldTerm('certification.tagLabel.tagFQN', filters.certification, false));
+  }
+  if (filters.dataProduct?.trim()) {
+    must.push(dqShouldTerm('dataProducts.fullyQualifiedName', filters.dataProduct));
+  }
+  must.push({ term: { deleted: false } });
+  return must;
+}
+
+export function buildDqDashboardQuery(filters: DqGovernanceFilters): string {
+  return JSON.stringify({ query: { bool: { must: dqDashboardMustFilters(filters) } } });
+}
+
+export function buildDqTableQuery(filters: DqGovernanceFilters): string {
+  return JSON.stringify({ query: { bool: { must: dqTableMustFilters(filters) } } });
+}
+
+/**
+ * Official fetchTestCaseSummaryByNoDimension: every dashboard filter
+ * except dimension, plus `must_not exists` on the dimension index field,
+ * so dimension-less cases land on the No Dimension card instead of
+ * vanishing from the terms aggregation.
+ */
+export function buildDqNoDimensionQuery(filters: DqGovernanceFilters): string {
+  return JSON.stringify({
+    query: {
+      bool: {
+        must: dqDashboardMustFilters(filters),
+        must_not: [{ exists: { field: DQ_DIMENSION_FIELD } }],
+      },
+    },
+  });
+}
+
 function refMatches(ref: EntityRef, value: string): boolean {
   const needle = value.trim().toLowerCase();
   return [ref.name, ref.displayName, ref.fullyQualifiedName].some(

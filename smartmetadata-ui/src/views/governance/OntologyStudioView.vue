@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Card, Select, Space, Typography } from 'ant-design-vue';
+import { Card, Select, Space, Typography } from 'ant-design-vue';
 import { listOntologies } from '@/api/ontology';
 import { releaseOntologyEditLock } from '@/api/ontologyEdit';
 import type { Ontology } from '@/types/ontology';
@@ -15,6 +15,7 @@ import AiSuggestionsPanel from '@/features/ontology/AiSuggestionsPanel.vue';
 import BulkAuthoringPanel from '@/features/ontology/BulkAuthoringPanel.vue';
 import ChangeSetPanel from '@/features/ontology/ChangeSetPanel.vue';
 import ConceptEditorPanel from '@/features/ontology/ConceptEditorPanel.vue';
+import OntologyCanvasPanel from '@/features/ontology/OntologyCanvasPanel.vue';
 import EditLockBar from '@/features/ontology/EditLockBar.vue';
 import PackInstallPanel from '@/features/ontology/PackInstallPanel.vue';
 import PublicationPanel from '@/features/ontology/PublicationPanel.vue';
@@ -30,10 +31,13 @@ const permissionStore = usePermissionStore();
  * change sets with undo/redo/submit/apply, direct concept/property/axiom
  * writes, bulk authoring, AI suggestions, reasoning explanations, pack
  * install, release capture/activation and release reviews. The visual
- * graph canvas editor (official G6 canvas + useOntologyGraphEdit) is NOT
- * faked here — editing is form- and draft-based; the canvas is a
- * precisely scoped residual (it needs G6 canvas infrastructure first).
- * Writes are real and echoed back; gates are P1 both lines, fail-closed.
+ * graph canvas (official G6 canvas + useOntologyGraphEdit, ported as
+ * OntologyGraphCanvas + OntologyCanvasPanel) renders concepts with G6;
+ * confirmed canvas relations and canvas-added concepts are appended to
+ * the selected DRAFT change set as ADD_RELATIONSHIP / UPSERT_CONCEPT
+ * operations — never local-only graph mutations. Node dragging only
+ * repositions nodes on the canvas. Writes are real and echoed back;
+ * gates are P1 both lines, fail-closed.
  */
 const ontologies = ref<Ontology[]>([]);
 const selectedId = ref<string | undefined>(undefined);
@@ -134,7 +138,13 @@ onBeforeUnmount(() => {
             :can-edit="canEdit"
             :can-apply="canApply"
           />
-          <ConceptEditorPanel :ontology-fqn="ontology.fullyQualifiedName || ontology.name" :can-edit="canEdit" />
+          <OntologyCanvasPanel
+            :ontology-id="ontology.id"
+            :ontology-fqn="ontology.fullyQualifiedName || ontology.name"
+            :lease="lease"
+            :can-edit="canEdit"
+          />
+          <ConceptEditorPanel :ontology-fqn="ontology.fullyQualifiedName || ontology.name" :can-edit="canEdit" @term-deleted="loadOntologies" />
           <BulkAuthoringPanel :can-edit="canEdit" />
           <AiSuggestionsPanel :can-edit="canEdit" />
           <ReasoningPanel :can-edit="canEdit" />

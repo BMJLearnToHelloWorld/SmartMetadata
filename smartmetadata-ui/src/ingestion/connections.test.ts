@@ -57,6 +57,105 @@ describe('service connections', () => {
     expect(connection?.config?.authType).toBeUndefined();
   });
 
+  it('builds the eight previously form-less kinds via their default types (A9)', () => {
+    expect(
+      buildServiceConnection({
+        name: 'ml', kind: 'mlmodel', serviceType: 'Mlflow',
+        trackingUri: 'http://localhost:5000', registryUri: 'sqlite:///mlflow.db',
+      }),
+    ).toEqual({
+      config: { type: 'Mlflow', trackingUri: 'http://localhost:5000', registryUri: 'sqlite:///mlflow.db' },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'meta', kind: 'metadata', serviceType: 'OpenMetadata', hostPort: 'http://localhost:8585',
+      }),
+    ).toEqual({ config: { type: 'OpenMetadata', hostPort: 'http://localhost:8585' } });
+    expect(
+      buildServiceConnection({
+        name: 'rest', kind: 'api', serviceType: 'Rest',
+        openApiSchemaUrl: 'https://example.com/openapi.json', apiKey: '${REST_TOKEN}',
+        storeConnectionSecrets: false,
+      }),
+    ).toEqual({
+      config: {
+        type: 'Rest',
+        openAPISchemaConnection: { openAPISchemaURL: 'https://example.com/openapi.json' },
+        token: '${REST_TOKEN}',
+      },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'drive', kind: 'drive', serviceType: 'GoogleDrive',
+        credentialsJson: '{"type": "service_account"}', delegatedEmail: 'user@example.com',
+      }),
+    ).toEqual({
+      config: {
+        type: 'GoogleDrive',
+        credentials: { type: 'service_account' },
+        delegatedEmail: 'user@example.com',
+      },
+    });
+    expect(() =>
+      buildServiceConnection({ name: 'drive', kind: 'drive', serviceType: 'GoogleDrive', credentialsJson: 'not-json' }),
+    ).toThrow('valid JSON');
+    expect(
+      buildServiceConnection({
+        name: 'es', kind: 'search', serviceType: 'ElasticSearch',
+        hostPort: 'http://localhost:9200', username: 'elastic', password: '${ES_PASSWORD}',
+        storeConnectionSecrets: false,
+      }),
+    ).toEqual({
+      config: {
+        type: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        authType: { username: 'elastic', password: '${ES_PASSWORD}' },
+      },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'llm', kind: 'llm', serviceType: 'OpenAI',
+        apiKey: '${OPENAI_API_KEY}', organization: 'org-1', baseUrl: 'https://api.openai.com/v1',
+        storeConnectionSecrets: false,
+      }),
+    ).toEqual({
+      config: {
+        type: 'OpenAI',
+        apiKey: '${OPENAI_API_KEY}',
+        organization: 'org-1',
+        // Server schema field is baseURL, not the product form key baseUrl.
+        baseURL: 'https://api.openai.com/v1',
+      },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'mcp', kind: 'mcp', serviceType: 'Mcp', registryUrl: 'https://registry.example.com',
+        connectionTimeout: 30,
+      }),
+    ).toEqual({
+      config: { type: 'Mcp', registryUrl: 'https://registry.example.com', connectionTimeout: 30 },
+    });
+    expect(
+      buildServiceConnection({
+        name: 'ranger', kind: 'security', serviceType: 'Ranger',
+        hostPort: 'http://localhost:6080', username: 'admin', password: '${RANGER_PASSWORD}',
+        storeConnectionSecrets: false,
+      }),
+    ).toEqual({
+      config: {
+        type: 'Ranger',
+        hostPort: 'http://localhost:6080',
+        authType: { username: 'admin', password: '${RANGER_PASSWORD}' },
+      },
+    });
+  });
+
+  it('still returns undefined for a form-less type instead of inventing a connection', () => {
+    expect(
+      buildServiceConnection({ name: 'x', kind: 'llm', serviceType: 'Anthropic', apiKey: 'k' }),
+    ).toBeUndefined();
+  });
+
   it('keeps a masked password on edit so the server can unmask', () => {
     const connection = buildServiceConnection(postgresForm(), {
       config: { type: 'Postgres', authType: { password: '********' } },
