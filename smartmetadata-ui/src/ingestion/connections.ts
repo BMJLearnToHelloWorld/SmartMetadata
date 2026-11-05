@@ -491,6 +491,12 @@ export function buildServiceConnection(
     if (form.databaseSchema?.trim()) {
       config.databaseSchema = form.databaseSchema.trim();
     }
+    if (form.databaseSchema?.trim()) {
+      config.databaseSchema = form.databaseSchema.trim();
+    }
+    if (form.queryHistoryTable?.trim()) {
+      config.queryHistoryTable = form.queryHistoryTable.trim();
+    }
   } else if (type === 'Snowflake') {
     if (form.username?.trim()) {
       config.username = form.username.trim();
@@ -750,7 +756,10 @@ export function buildServiceConnection(
     if (form.databaseSchema?.trim()) {
       config.databaseSchema = form.databaseSchema.trim();
     }
-    if (form.queryHistoryTable?.trim()) {
+    // M-Next B3: queryHistoryTable is Databricks-only in this branch —
+    // official unityCatalogConnection.json has no such field (the UC form
+    // no longer offers it), so a stored UC value must not round-trip back.
+    if (type === 'Databricks' && form.queryHistoryTable?.trim()) {
       config.queryHistoryTable = form.queryHistoryTable.trim();
     }
     if (type === 'UnityCatalog' && typeof form.includeMetricViews === 'boolean') {

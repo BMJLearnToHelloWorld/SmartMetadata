@@ -97,4 +97,34 @@ describe('connectionFields', () => {
     expect(redshift?.placeholderByType).toMatchObject({ Redshift: 'localhost:5439', '*': 'localhost:5432' });
     expect(greenplum?.placeholderByType).toBe(redshift?.placeholderByType);
   });
+
+  it('rolls back the UnityCatalog queryHistoryTable invent and mirrors the official field sets', () => {
+    // M-Next B3: official unityCatalogConnection.json has no queryHistoryTable
+    // (it was copied in from Databricks); official mysqlConnection.json has it.
+    const ucKeys = connectionFieldsForType('UnityCatalog').map((field) => field.key);
+    expect(ucKeys).not.toContain('queryHistoryTable');
+    const mysqlKeys = connectionFieldsForType('Mysql').map((field) => field.key);
+    expect(mysqlKeys).toEqual([
+      'hostPort',
+      'username',
+      'databaseName',
+      'databaseSchema',
+      'queryHistoryTable',
+      'password',
+      'storeConnectionSecrets',
+    ]);
+    const databricksKeys = connectionFieldsForType('Databricks').map((field) => field.key);
+    expect(databricksKeys).toContain('queryHistoryTable');
+    // M-Next B6: official metabaseConnection.json lists password beside apiKey.
+    const metabaseKeys = connectionFieldsForType('Metabase').map((field) => field.key);
+    expect(metabaseKeys).toEqual(['hostPort', 'username', 'password', 'apiKey']);
+    // M-Next B7: Kafka gains the securityProtocol Redpanda already had.
+    const kafkaKeys = connectionFieldsForType('Kafka').map((field) => field.key);
+    expect(kafkaKeys).toEqual(['bootstrapServers', 'schemaRegistryURL', 'securityProtocol', '']);
+    const redpandaKeys = connectionFieldsForType('Redpanda').map((field) => field.key);
+    expect(redpandaKeys).toEqual(['bootstrapServers', 'schemaRegistryURL', 'securityProtocol', '']);
+    expect(connectionFieldsForType('Kafka').find((field) => field.key === 'securityProtocol')).toEqual(
+      connectionFieldsForType('Redpanda').find((field) => field.key === 'securityProtocol'),
+    );
+  });
 });

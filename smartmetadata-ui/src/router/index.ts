@@ -363,6 +363,16 @@ export const router = createRouter({
           props: true,
         },
         { path: 'governance/tags/:id', name: 'governance-tag', component: TagDetailView, props: true },
+        {
+          path: 'governance/tags/:id/versions/:version',
+          name: 'governance-tag-version',
+          component: GovernanceVersionView,
+          props: (route) => ({
+            kind: 'tag',
+            id: route.params.id as string,
+            version: route.params.version as string,
+          }),
+        },
         { path: 'governance/domains', name: 'governance-domains', component: DomainsListView },
         {
           path: 'governance/domains/:id',
@@ -814,6 +824,24 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
+  // N1 (M-Next): fresh-load admin race. On a fresh load the guard runs
+  // before AppShell mounts, so auth.user is still null even though the
+  // session is valid — the admin line would read "not admin" and an admin
+  // opening an unmapped /admin/* route directly would land on /forbidden.
+  // When the target is an admin path, a session exists, and the profile
+  // has not loaded yet, wait for one refreshUser() first. A failed profile
+  // fetch is NOT a grant (fail closed): user stays null and the dual line
+  // below decides exactly as before. Unmapped routes stay admin-only by
+  // design (see guards.ts); this only lets an actual admin be recognised
+  // as one on first load — it does not admit non-admins.
+  const session = loadSession(window.localStorage);
+  if (isAdminPath(to.fullPath) && session !== null && auth.user === null) {
+    try {
+      await auth.refreshUser();
+    } catch {
+      // Fail closed: user stays null; resolveGuard decides below.
+    }
+  }
   const isAdminUser = auth.user?.isAdmin === true;
   // Admin dual line, second line: for mapped admin routes, a
   // view-or-better grant on the route's resource admits entry even
@@ -835,7 +863,7 @@ router.beforeEach(async (to) => {
   }
   const decision = resolveGuard({
     isPublic: to.meta.public === true,
-    hasSession: loadSession(window.localStorage) !== null,
+    hasSession: session !== null,
     fullPath: to.fullPath,
     isAdminUser,
     hasPermission,

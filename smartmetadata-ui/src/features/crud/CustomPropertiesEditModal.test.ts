@@ -59,4 +59,43 @@ describe('CustomPropertiesEditModal', () => {
     expect('obsolete' in (saved ?? {})).toBe(false);
     wrapper.unmount();
   });
+
+  it('toggles booleans through a switch and leaves untouched booleans absent (M-Next A17)', async () => {
+    const wrapper = mount(CustomPropertiesEditModal, {
+      props: {
+        open: true,
+        defs: [
+          { name: 'reviewed', displayName: 'Reviewed', propertyType: 'boolean' },
+          { name: 'flagged', displayName: 'Flagged', propertyType: 'boolean' },
+          { name: 'score', displayName: 'Score', propertyType: 'number' },
+        ],
+        values: { reviewed: true, score: 4.5 },
+        saving: false,
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    const reviewed = document.querySelector(
+      '[data-testid="custom-prop-reviewed"]',
+    ) as HTMLElement | null;
+    expect(reviewed?.getAttribute('aria-checked')).toBe('true');
+    reviewed?.click();
+    await flushPromises();
+    expect(reviewed?.getAttribute('aria-checked')).toBe('false');
+    const score = document.querySelector(
+      '[data-testid="custom-prop-score"]',
+    ) as HTMLInputElement | null;
+    expect(score?.value).toBe('4.5');
+    const okButton = document.querySelector(
+      '.ant-modal-footer .ant-btn-primary',
+    ) as HTMLElement | null;
+    okButton?.click();
+    await flushPromises();
+    const saved = wrapper.emitted('save')?.[0]?.[0] as Record<string, unknown> | undefined;
+    expect(saved?.reviewed).toBe(false);
+    expect(saved?.score).toBe(4.5);
+    expect('flagged' in (saved ?? {})).toBe(false);
+    wrapper.unmount();
+  });
 });

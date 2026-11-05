@@ -185,4 +185,98 @@ describe('ContextCenterArticlesView', () => {
     expect(wrapper.find('[data-testid="article-detail-tabs"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Intro.');
   });
+
+  it('shows extension values on the custom properties tab and saves edits as one /extension patch (M-Next A17)', { timeout: 15000 }, async () => {
+    let savedExtension: Record<string, unknown> = { sensitivity: 'high', retentionDays: 30 };
+    let patchBody: unknown;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/contextCenter/pages/name/')) {
+          return jsonResponse({
+            id: 'p1',
+            name: 'getting-started',
+            fullyQualifiedName: 'getting-started',
+            displayName: 'Getting Started',
+            description: 'Intro.',
+            pageType: 'Article',
+            page: {},
+            updatedBy: 'admin',
+            extension: savedExtension,
+          });
+        }
+        if (url.includes('/api/v1/metadata/types/name/page/customProperties')) {
+          return jsonResponse([
+            { name: 'sensitivity', displayName: 'Sensitivity', propertyType: { name: 'string' } },
+            { name: 'retentionDays', displayName: 'Retention days', propertyType: { name: 'integer' } },
+          ]);
+        }
+        if (url.includes('/api/v1/contextCenter/pages/p1') && init?.method === 'PATCH') {
+          patchBody = JSON.parse(String(init?.body)) as unknown;
+          savedExtension = (patchBody as Array<{ value: Record<string, unknown> }>)?.[0]?.value ?? {};
+          return jsonResponse({
+            id: 'p1',
+            name: 'getting-started',
+            fullyQualifiedName: 'getting-started',
+            pageType: 'Article',
+            extension: savedExtension,
+          });
+        }
+        if (url.includes('/api/v1/activity/entity/page/name/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/contextCenter/pages')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = buildRouter();
+    await router.push('/context-center/articles/getting-started/custom_properties');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('high');
+    expect(wrapper.text()).toContain('30');
+    const editButton = wrapper.find('[data-testid="article-edit-custom-properties"]');
+    expect(editButton.exists()).toBe(true);
+    await editButton.trigger('click');
+    await flushPromises();
+    const sensitivity = document.querySelector(
+      '[data-testid="custom-prop-sensitivity"]',
+    ) as HTMLInputElement | null;
+    expect(sensitivity?.value).toBe('high');
+    if (sensitivity) {
+      sensitivity.value = 'low';
+      sensitivity.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const okButton = document.querySelector(
+      '.ant-modal-footer .ant-btn-primary',
+    ) as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton?.click();
+    for (let i = 0; i < 10 && patchBody === undefined; i++) {
+      await flushPromises();
+    }
+    // One whole-extension op: the page already has an extension, so the
+    // patch replaces it — never a per-field add /extension/<name>.
+    expect(patchBody).toEqual([
+      { op: 'replace', path: '/extension', value: { sensitivity: 'low', retentionDays: 30 } },
+    ]);
+    for (let i = 0; i < 10 && !wrapper.text().includes('low'); i++) {
+      await flushPromises();
+    }
+    expect(wrapper.text()).toContain('low');
+    wrapper.unmount();
+    document.body.innerHTML = '';
+  });
 });

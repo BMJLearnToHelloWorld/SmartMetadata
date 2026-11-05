@@ -32,6 +32,7 @@ export const GOVERNANCE_VERSION_COLLECTIONS: Record<GovernanceVersionKind, strin
   glossary: 'glossaries',
   term: 'glossaryTerms',
   classification: 'classifications',
+  tag: 'tags',
   testCase: 'testCases',
 };
 

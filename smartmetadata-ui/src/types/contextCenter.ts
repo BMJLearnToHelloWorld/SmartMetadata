@@ -29,6 +29,8 @@ export interface KnowledgePage {
   parent?: EntityRef;
   children?: EntityRef[];
   deleted?: boolean;
+  /** Custom-property values (official Page.extension, free-form object). */
+  extension?: Record<string, unknown>;
 }
 
 export interface CreateKnowledgePageRequest {

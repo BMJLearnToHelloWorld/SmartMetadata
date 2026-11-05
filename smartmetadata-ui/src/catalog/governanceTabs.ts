@@ -42,9 +42,10 @@ export const GOVERNANCE_ENTITY_TABS: Record<GovernanceEntity, GovernanceTab[]> =
     {
       key: 'relations',
       labelKey: 'governance.glossaries.relationsTab',
-      supported: false,
-      residualReason:
-        'Official relations is OntologyExplorer scope=glossary (G6 graph canvas, A5 stage); no glossary graph endpoint is wired and no graph is faked.',
+      // M-Next A3: wired — read-only G6 canvas over the glossary's own
+      // terms (parentOf + typed relatedTerms edges, via listGlossaryTerms
+      // + /v1/glossaryTerms/byIds); see features/ontology/glossaryGraph.ts.
+      supported: true,
     },
     {
       key: 'activity',

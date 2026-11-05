@@ -138,5 +138,26 @@ describe('pipeline sourceConfig', () => {
     ).toBe('TestSuite');
   });
 
+  it('maps pipeline-service metadata pipelines to bare PipelineMetadata', () => {
+    // M-Next B2: official pipelineMetadataConfigType enum is ["PipelineMetadata"].
+    // PipelineServiceMetadataPipeline is additionalProperties:false with no
+    // includeViews/includeTables/schemaFilterPattern, so the config is the
+    // bare type even when the form carries database-scope fields.
+    expect(
+      buildSourceConfig({
+        name: 'prefect-meta',
+        pipelineType: 'metadata',
+        serviceId: 'svc-p',
+        serviceKind: 'pipeline',
+        includeViews: true,
+        includeSchemas: 'public',
+      }),
+    ).toEqual({
+      config: {
+        type: 'PipelineMetadata',
+      },
+    });
+    expect(sourceConfigTypeForKind('pipeline')).toBe('PipelineMetadata');
+  });
 
 });

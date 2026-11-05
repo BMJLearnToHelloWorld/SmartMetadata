@@ -1015,7 +1015,7 @@ const zhCN = {
       customize: '自定义',
       customizeResidual: '列自定义尚未接入偏好设置 API，暂为残留能力。',
       relationsTab: '关系图',
-      relationsResidual: '关系图需要本体图谱画布（尚未建成），术语表尚无图谱接口。',
+      relationsEmpty: '该术语表暂无术语可绘图。',
       activityTab: '动态与任务（{count}）',
       tasksTitle: '任务',
       taskType: '类型',
@@ -1400,7 +1400,7 @@ const zhCN = {
       selectService: '选择一个服务',
       selectServicePlaceholder: '选择一个目录服务',
       pipelineType: '管道类型',
-      pipelineTypeHelp: '按连接器 OpenMetadata service_spec 声明的 Agent 种类（metadata / lineage / usage / profiler / TestSuite）。',
+      pipelineTypeHelp: '按连接器服务规范声明的 Agent 种类（metadata / lineage / usage / profiler / TestSuite）。',
       selectPipelineTypePlaceholder: '选择管道类型',
       types: {
         metadata: '元数据',
@@ -1695,11 +1695,11 @@ const zhCN = {
     },
     omUrl: {
       title: '品牌名称 URL',
-      lead: '邮件与链接中使用的 OpenMetadata 基础 URL。',
+      lead: '邮件与链接中使用的 iSmart 基础 URL。',
       loadFailed: '加载品牌 URL 失败',
       saved: '品牌 URL 已保存',
       saveFailed: '保存品牌 URL 失败',
-      url: 'OpenMetadata URL',
+      url: 'iSmart URL',
       save: '保存',
     },
     glossaryPrefs: {
@@ -1725,7 +1725,7 @@ const zhCN = {
     },
     appMode: {
       title: '应用模式',
-      lead: '租户默认应用模式（ai / classic）。Collate 侧边栏定制不在范围内。',
+      lead: '租户默认应用模式（ai / classic）。',
       loadFailed: '加载应用模式失败',
       saved: '应用模式已保存',
       saveFailed: '保存应用模式失败',
@@ -2058,23 +2058,6 @@ const zhCN = {
     versions: '版本',
     loadFailed: '加载指标失败',
     asyncDeleteSubmitted: '指标异步删除已提交，作业完成后指标即消失。',
-  },
-  shells: {
-    marketplaceOverview: {
-    },
-    ontologyExplorer: {
-    },
-
-    contextOverview: {
-    },
-    contextArticles: {
-    },
-    contextDocuments: {
-    },
-    contextMemories: {
-    },
-    contextArchive: {
-    },
   },
   connection: {
     hostPort: '主机和端口',
@@ -3051,7 +3034,7 @@ const zhCN = {
   },
   sparql: {
     title: 'SPARQL 试验场',
-    subtitle: '对 OpenMetadata 知识图谱运行只读 SPARQL 查询。支持 SELECT、ASK、CONSTRUCT 和 DESCRIBE；拒绝 UPDATE、DROP、INSERT 和 DELETE。',
+    subtitle: '对知识图谱运行只读 SPARQL 查询。支持 SELECT、ASK、CONSTRUCT 和 DESCRIBE；拒绝 UPDATE、DROP、INSERT 和 DELETE。',
     format: '格式',
     inference: '推理',
     formats: {

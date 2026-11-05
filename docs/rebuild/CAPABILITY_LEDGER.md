@@ -1,7 +1,12 @@
-# Capability ledger (stage 0) — after backend #49–#58 + connector P0s through #72
+# Capability ledger — after backend #49–#58 + connector P0s, UI parity batches, and main #142
 
 Factual inventory of Apache-facing capabilities vs product status on
-`main` tip **`ca7174ff8c95494d2e92935078e65405b9040966`** (PR [#72](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/72)).
+`main` tip **`f78fad5f2bc0d58f56217daa74009c64a4350032`** (PR [#142](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/142)).
+
+Rewritten 2026-11-06 (M-Next C6) against that tip: baseline head moved from
+#72 / `ca7174ff8c95` (≈70 PRs behind); the four conflict rows below were
+corrected against router/view code at f78fad5f. Rows not touched by this
+rewrite keep their original evidence pins.
 
 This file is an **inventory**, not a license to invent a batch. Status
 words only: **Missing | Partial | BehaviorMatched | IntegrationVerified |
@@ -104,9 +109,9 @@ Rebuild trees are product evidence, not a second authority.
 | Policies POST/PUT/DELETE | `/v1/policies` | Vue + api/policies | BehaviorMatched (unit/static) | #57 / #58 | — |
 | CP definition add/update | `PUT /v1/metadata/types/{id}` | Vue + customProperties | BehaviorMatched (unit/static) | #57 / #58 | asset values tab unchanged |
 | Apps list + detail | `GET /v1/apps` (+`/{id}`) | AppsList/Detail + hub route | BehaviorMatched (unit/static) | #57 / #58 | no marketplace invent |
-| Apps marketplace install/trigger | Collate Apps UX | — | OutOfScope | #57 | — |
-| SSO deep config / Persona / Appearance invent | official forms | residual hub text | OutOfScope / Gap | #57 / PARITY | not invent |
-| Inbox websocket / admins / online-users / audit invent | various | residual | OutOfScope / residual | #57 | — |
+| Apps marketplace install | Official /marketplace/apps/:fqn/install | AppInstallView + marketplace-app-install route (`router/index.ts:588`) | BehaviorMatched (unit) | P2 B4; AppInstallView.test.ts | Install wizard ends in POST /v1/apps via installApp (`api/marketplaceApps`); not ProductVerified |
+| SSO deep config / Persona / Appearance | Official settings forms | SsoSettingsView + AppearanceSettingsView + PersonaListView / PersonaCustomizeView | BehaviorMatched (unit) | `router/index.ts:277-282,317-326`; views + tests | SSO saves via JSON Patch /v1/system/security/config (patchSecurityConfiguration); Appearance saves/resets theme + logo; Persona customize is docStore-backed; not ProductVerified |
+| Inbox / admins / online-users / audit | Official inbox + admin + audit surfaces | InboxView + UsersListView (admins) + OnlineUsersView + AuditLogsView | BehaviorMatched (unit) | `router/index.ts:245,256,266,792`; views + tests | Routes + views + read APIs landed (listOnlineUsers, api/auditLogs); inbox websocket live-update not claimed; not ProductVerified |
 
 ## 10. Apache positive regression (backend-10 · #58)
 
@@ -119,10 +124,10 @@ Rebuild trees are product evidence, not a second authority.
 
 | Capability | Apache contract | Product | Status | Evidence | Notes |
 |---|---|---|---|---|---|
-| postgres | Official `database/postgres` DefaultDatabaseSpec (metadata+lineage+usage+profiler+sampler+DQ+data_diff+connection) | `postgres` + lineage/usage/profiler/sampler/DQ/data_diff (mssql_data_diff style; no collate-data-diff) | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_postgres.py` | Companions registered; extras add psycopg2/GeoAlchemy2/packaging per OM plugins["postgres"]; live Cursor* deferred |
+| postgres | Official `database/postgres` DefaultDatabaseSpec (metadata+lineage+usage+profiler+sampler+DQ+data_diff+connection) | `postgres` + lineage/usage/profiler/sampler/DQ/data_diff (mssql_data_diff style; no collate-data-diff) | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_postgres.py` | Companions (lineage/usage/profiler/sampler/DQ) registered; data_diff NOT registered — `postgres_data_diff.py` exists but `registry.py` / `workflow.py` / `postgres_common.py` carry no reference; only `tests/test_postgres.py:145` imports it (M-Next C2). Do not claim the full chain until registered; extras add psycopg2/GeoAlchemy2/packaging per OM plugins["postgres"]; live Cursor* deferred |
 | mysql | Official `database/mysql` DefaultDatabaseSpec full chain | `mysql` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_mysql.py` | No collate-data-diff (OM mysql ships it — SM OutOfScope); no cloud-sql invent |
 | snowflake | Official `database/snowflake` DefaultDatabaseSpec full chain | `snowflake` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_snowflake.py` | Uses `snowflake.connector` (extra pin); OM setup.py pins snowflake-sqlalchemy — documented residual, not thinner chain |
-| kafka | Official `messaging/kafka` BaseSpec (metadata+sampler+connection; schema supportsProfiler) | `kafka` metadata + `KafkaSampler` (RedpandaSampler mirror) + connection flags | BehaviorMatched (unit); live kafka-python fetch Partial | t228u/t229u A; `test_kafka.py` | Extra stays kafka-python (code path); OM confluent-kafka[schemaregistry] residual documented — not invent switch |
+| kafka | Official `messaging/kafka` BaseSpec (metadata+sampler+connection; schema supportsProfiler) | `kafka` metadata + `KafkaSampler` (RedpandaSampler mirror) + connection flags | BehaviorMatched (unit); live kafka-python fetch Partial | t228u/t229u A; `test_kafka.py` | Form was narrow by 1 field vs Redpanda at f78fad5f (securityProtocol missing; official Kafka 16 attrs vs Redpanda 14, product had it reversed); sampler/reader/backend passthrough at parity, only prepare() connection-test differs (M-Next B7). Form gap closed in the in-flight A-batch (`connectionFields.ts` adds securityProtocol, shared with Redpanda). Extra stays kafka-python (code path); OM confluent-kafka[schemaregistry] residual documented — not invent switch |
 | Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified |
 | Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
 | Doris (full chain) | OM `database/doris` service_spec (metadata+lineage+connection; schema supportsProfiler) | `doris` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | No invent Usage/DataDiff/sampler_class; OSS pydoris==1.2.0 + PyMySQL live; job execution Partial |
@@ -149,8 +154,9 @@ Rebuild trees are product evidence, not a second authority.
 | Profiler run UI | Gap | runner residual |
 | Ingestion `PIPELINE_TYPES` | BehaviorMatched (unit) | `PIPELINE_TYPES` = metadata/usage/lineage/profiler/TestSuite; `AGENT_KINDS_BY_SERVICE` from OM service_spec classes; PipelinesListView type select; sourceConfig/cliWorkflow lineage/usage mappings | t228u/t229u D; Vitest agentKinds/sourceConfig/cliWorkflow/PLV |
 | Agents UI (pipeline-type Agents UX) | BehaviorMatched (unit) | Create-pipeline modal pipelineType select filtered by `agentKindsForService` (OM service_spec); no AutoClassification/dbt invent | t228u/t229u D |
-| SSO / Persona / Appearance | Gap / OutOfScope invent | residual tiles |
-| Knowledge / Ontology / AI / Context Center | DROP / OutOfScope | Collate-only |
+| SSO / Persona / Appearance | BehaviorMatched (unit) | SsoSettingsView + AppearanceSettingsView + Persona views landed with save paths (see §9); not ProductVerified |
+| Knowledge / Context Center / Ontology | BehaviorMatched (unit) | context-center routes (`router/index.ts:447-450`) + 5 shells + articles/memories/documents/filter/integrations views; govern/ontology explorer + studio routes (`router/index.ts:534-543`); relations graph wired into GlossaryDetailView (A3); not ProductVerified |
+| Collate AI / RDF (NLQ, persona/user context, semantic search, SPARQL MCP tools) | OutOfScope | unchanged — the tools are not built; NLQ search routes to /v1/search/nlq/query (BE-Q1), not a Collate AI tool |
 
 ---
 
@@ -158,8 +164,6 @@ Rebuild trees are product evidence, not a second authority.
 
 - Collate AI / NLQ / persona context MCP tools
 - RDF / SPARQL / SHACL / ontology MCP tools
-- SSO deep config / Persona landing / Appearance invent save forms
-- Apps marketplace install/trigger UX
 - Connector sprawl (~102) as an unscoped “must finish next”
 - #18 purge branch as merged reality
 - Copying CCL React / `openmetadata-mcp` / CCL airflow-apis
@@ -199,4 +203,5 @@ Rebuild trees are product evidence, not a second authority.
 - (shipped 2026-11-01) Pipeline P0 Prefect+Dagster full chain after Bernie t225u; next leftovers other messaging/pipeline tiles
 - (cleanup 2026-11-01) Parity review: Greenplum anti-invent Usage scaffold; Dagster UI host||hostPort reload; ledger Partial honesty for postgres/mysql/snowflake/kafka
 - (docs tip sync 2026-11-01) Ledger header → #72 / `ca7174ff8c95.`; residual honesty: Redshift SystemProfile Partial, PIPELINE_TYPES metadata-only, Agents UI Gap
+- (rewrite 2026-11-06, M-Next C6) Ledger header → #142 / `f78fad5f2b`; corrections: Context Center DROP → landed routes + views; marketplace install OutOfScope → landed (POST /v1/apps); PARITY:79 residual list → all landed; postgres "Companions registered" → data_diff unregistered (C2); Kafka wording narrowed per M-Next B7 (form narrow 1 field, sampler at parity).
 - (in progress 2026-11-01) t228u/t229u A–D: Kafka Sampler; PG/MySQL/Snowflake full chain; Redshift SystemProfile; Agents/PIPELINE_TYPES — ledger rows updated BehaviorMatched (unit); tip/PR pending merge

@@ -13,11 +13,13 @@ import {
   createContextMemory,
   createKnowledgePage,
   deleteKnowledgePage,
+  getKnowledgePageByFqn,
   getKnowledgePageVersion,
   listArchivedContextFiles,
   listContextMemories,
   listKnowledgePageVersions,
   listKnowledgePages,
+  patchKnowledgePage,
   pinContextMemory,
   restoreKnowledgePage,
   updateKnowledgePage,
@@ -117,6 +119,52 @@ describe('contextCenter API', () => {
     );
     const updated = await updateKnowledgePage({ name: 'getting-started', pageType: 'Article' });
     expect(updated?.id).toBe('p1');
+  });
+
+  it('maps extension values on a fetched page (M-Next A17)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          id: 'p1',
+          name: 'getting-started',
+          fullyQualifiedName: 'getting-started',
+          pageType: 'Article',
+          page: {},
+          extension: { sensitivity: 'high', retentionDays: 30, reviewed: true },
+        }),
+      ),
+    );
+    const page = await getKnowledgePageByFqn('getting-started');
+    expect(page?.extension).toEqual({ sensitivity: 'high', retentionDays: 30, reviewed: true });
+  });
+
+  it('patches a page with JSON Patch and the json-patch content type (M-Next A17)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as unknown;
+        expect(body).toEqual([
+          { op: 'add', path: '/extension', value: { sensitivity: 'high' } },
+        ]);
+        expect(init?.method).toBe('PATCH');
+        expect((init?.headers as Record<string, string>)['Content-Type']).toBe(
+          'application/json-patch+json',
+        );
+        return jsonResponse({
+          id: 'p1',
+          name: 'getting-started',
+          pageType: 'Article',
+          extension: { sensitivity: 'high' },
+        });
+      }),
+    );
+    const patched = await patchKnowledgePage('p1', [
+      { op: 'add', path: '/extension', value: { sensitivity: 'high' } },
+    ]);
+    const { url } = lastFetch();
+    expect(url).toContain('/api/v1/contextCenter/pages/p1');
+    expect(patched.extension).toEqual({ sensitivity: 'high' });
   });
 
   it('restores a page with PUT /restore', async () => {

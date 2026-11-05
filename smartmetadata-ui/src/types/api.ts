@@ -44,6 +44,12 @@ export interface EntityRef {
   displayName?: string;
   type?: string;
   fullyQualifiedName?: string;
+  /**
+   * Typed relation of a glossary-term relatedTerms entry (official
+   * TermRelation.relationType, default 'relatedTo'). Carried only by
+   * glossaryTerms.mapRelatedTerms; other EntityRef producers leave it unset.
+   */
+  relationType?: string;
 }
 
 /** Official votes shape (openmetadata-spec type/votes.json). */

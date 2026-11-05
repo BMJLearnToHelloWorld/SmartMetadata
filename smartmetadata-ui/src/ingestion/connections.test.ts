@@ -461,6 +461,77 @@ it('builds Metabase connection with hostPort and apiKey', () => {
   });
 });
 
+it('builds Metabase password auth and Kafka securityProtocol (M-Next B6/B7)', () => {
+  // Official metabaseConnection.json lists password beside apiKey.
+  expect(
+    buildServiceConnection({
+      name: 'mb-pw',
+      kind: 'dashboard',
+      serviceType: 'Metabase',
+      hostPort: 'http://localhost:3000',
+      username: 'admin',
+      password: 'mb-secret',
+      storeConnectionSecrets: true,
+    }),
+  ).toEqual({
+    config: {
+      type: 'Metabase',
+      hostPort: 'http://localhost:3000',
+      username: 'admin',
+      password: 'mb-secret',
+    },
+  });
+  expect(
+    buildServiceConnection({
+      name: 'kafka-sec',
+      kind: 'messaging',
+      serviceType: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      schemaRegistryURL: 'http://localhost:8081',
+      securityProtocol: 'SASL_SSL',
+    }),
+  ).toEqual({
+    config: {
+      type: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      schemaRegistryURL: 'http://localhost:8081',
+      securityProtocol: 'SASL_SSL',
+    },
+  });
+});
+
+it('emits queryHistoryTable for MySQL and Databricks but never for UnityCatalog (M-Next B3)', () => {
+  expect(
+    buildServiceConnection({
+      name: 'mysql-qht',
+      kind: 'database',
+      serviceType: 'Mysql',
+      hostPort: 'localhost:3306',
+      username: 'root',
+      databaseName: 'app',
+      queryHistoryTable: 'sys.query_history',
+    })?.config,
+  ).toMatchObject({ type: 'Mysql', queryHistoryTable: 'sys.query_history' });
+  expect(
+    buildServiceConnection({
+      name: 'uc-qht',
+      kind: 'database',
+      serviceType: 'UnityCatalog',
+      hostPort: 'adb-xxxx.azuredatabricks.net',
+      queryHistoryTable: 'system.query.history',
+    })?.config,
+  ).not.toHaveProperty('queryHistoryTable');
+  expect(
+    buildServiceConnection({
+      name: 'dbx-qht',
+      kind: 'database',
+      serviceType: 'Databricks',
+      hostPort: 'adb-xxxx.azuredatabricks.net',
+      queryHistoryTable: 'system.query.history',
+    })?.config,
+  ).toMatchObject({ type: 'Databricks', queryHistoryTable: 'system.query.history' });
+});
+
 it('builds S3 connection with awsConfig + bucketNames 1:1', () => {
   const connection = buildServiceConnection({
     name: 'lake',

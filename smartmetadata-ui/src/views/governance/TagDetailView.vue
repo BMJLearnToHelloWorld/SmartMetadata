@@ -10,6 +10,8 @@ import {Alert, Button, Card, Descriptions, Form, Input, Space, Spin, Switch, mes
 import PageHeader from '@/components/shared/PageHeader.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
+import { latestGovernanceVersionPath } from '@/api/governanceVersions';
+import { getTagVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import type { ClassificationTag } from '@/types/governance';
@@ -41,6 +43,25 @@ async function load(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : t('tags.loadFailed');
   } finally {
     loading.value = false;
+  }
+}
+
+async function onOpenVersions(): Promise<void> {
+  // M-Next A4: official TAG_VERSION is the generic entity-version route;
+  // same pattern as ClassificationDetailView.onOpenVersions.
+  const targetId = tag.value?.id ?? props.id;
+  if (!targetId) {
+    return;
+  }
+  try {
+    const path = await latestGovernanceVersionPath('tag', targetId, (version) => getTagVersionPath(targetId, version));
+    if (!path) {
+      message.info(t('asset.versionsEmpty'));
+      return;
+    }
+    await router.push(path);
+  } catch {
+    message.error(t('asset.versionsFailed'));
   }
 }
 
@@ -143,6 +164,7 @@ onMounted(() => {
               {{ t('tags.back') }}
             </Button>
             <Button danger data-testid="delete-tag" :disabled="!tag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
+            <Button data-testid="tag-versions" :disabled="!tag" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
             <Button type="primary" data-testid="edit-tag" :disabled="!isEditable" @click="openEdit">
               {{ t('tags.edit') }}
             </Button>
