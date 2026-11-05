@@ -72,7 +72,7 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
     };
   }
   const includes = splitCsv(form.includeSchemas);
-  const configType = sourceConfigTypeForPipeline(pipelineType, 'database');
+  const configType = sourceConfigTypeForPipeline(pipelineType, form.serviceKind);
   if (pipelineType === 'lineage' || pipelineType === 'usage') {
     return {
       config: {
@@ -88,6 +88,14 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
         ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
       },
     };
+  }
+  // Pipeline services (Prefect/Dagster) only offer 'metadata' pipelines
+  // (AGENT_KINDS_BY_SERVICE), and PipelineServiceMetadataPipeline has
+  // additionalProperties: false with no includeViews / includeTables /
+  // schemaFilterPattern — so a pipeline-service metadata config is the
+  // bare type, never the database fallthrough below.
+  if (form.serviceKind === 'pipeline') {
+    return { config: { type: configType } };
   }
   return {
     config: {
@@ -136,6 +144,14 @@ export function sourceConfigTypeForKind(kind: ServiceKind): string {
   }
   if (kind === 'storage') {
     return 'StorageMetadata';
+  }
+  // M-Next B2: pipeline services (Prefect/Dagster) take PipelineMetadata —
+  // official pipelineServiceMetadataPipeline.json's pipelineMetadataConfigType
+  // enum is ["PipelineMetadata"] only. The fallthrough used to hard-code
+  // 'database' in buildSourceConfig, so every pipeline-service metadata
+  // pipeline was built as DatabaseMetadata.
+  if (kind === 'pipeline') {
+    return 'PipelineMetadata';
   }
   return 'DatabaseMetadata';
 }

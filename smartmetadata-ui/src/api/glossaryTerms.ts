@@ -40,7 +40,12 @@ function mapRelatedTerms(value: unknown): EntityRef[] {
       return [];
     }
     const nested = asRecord(rec.term);
-    return mapEntityRefs(nested ? [nested] : [rec]);
+    // TermRelation carries its typed relation on the outer object
+    // (relationType, default 'relatedTo'); the graph builder needs it.
+    const relationType = asString(rec.relationType) || undefined;
+    return mapEntityRefs(nested ? [nested] : [rec]).map((ref) =>
+      relationType ? { ...ref, relationType } : ref,
+    );
   });
 }
 
@@ -119,6 +124,30 @@ export function listGlossaryTerms(query: ListGlossaryTermsQuery = {}): Promise<P
       directChildrenOf: query.directChildrenOf,
     },
   }).then((payload) => parsePaged(payload, mapTerm));
+}
+
+/**
+ * Official getGlossaryTermsByIds (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms/byIds?ids=… — the server endpoint exists
+ * (GlossaryTermResource @Path("/byIds")) and returns a bare array. The
+ * relations graph uses it to hydrate cross-glossary relatedTerms, exactly
+ * as official useOntologyExplorer.resolveRelatedTerms does.
+ */
+export async function getGlossaryTermsByIds(ids: readonly string[]): Promise<GlossaryTerm[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+  const payload = await apiRequest<unknown>('/v1/glossaryTerms/byIds', {
+    query: { ids: ids.join(','), fields: GLOSSARY_TERM_FIELDS },
+  });
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload.flatMap((item) => {
+    const rec = asRecord(item);
+    const mapped = rec ? mapTerm(rec) : null;
+    return mapped ? [mapped] : [];
+  });
 }
 
 /**

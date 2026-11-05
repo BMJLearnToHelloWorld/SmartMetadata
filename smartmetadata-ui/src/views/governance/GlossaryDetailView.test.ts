@@ -15,6 +15,35 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import GlossaryDetailView from './GlossaryDetailView.vue';
 
+// The relations tab renders the real G6 canvas; stub the graph engine the
+// same way OntologyGraphCanvas.test.ts does so the test asserts on the data
+// handed to G6, not on the library's DOM output.
+const g6State = vi.hoisted(() => ({
+  instances: [] as Array<{ data: unknown }>,
+}));
+
+vi.mock('@antv/g6', () => ({
+  Graph: class {
+    data: unknown;
+    constructor(options: Record<string, unknown>) {
+      this.data = options.data;
+      g6State.instances.push(this);
+    }
+    on(): void {
+      return undefined;
+    }
+    setData(data: unknown): void {
+      this.data = data;
+    }
+    async render(): Promise<void> {
+      return undefined;
+    }
+    destroy(): void {
+      return undefined;
+    }
+  },
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -251,10 +280,24 @@ describe('GlossaryDetailView', () => {
     expect(wrapper.find('[data-testid="glossary-activity-residual"]').exists()).toBe(false);
   });
 
-  it('keeps relations as an honest residual, not a fake graph', async () => {
+  it('renders the real relations graph from the glossary terms, not a residual (M-Next A3)', async () => {
+    g6State.instances.length = 0;
     const { wrapper } = await mountView();
     await clickTab(wrapper, 'Relations Graph');
-    expect(wrapper.find('[data-testid="glossary-relations-residual"]').exists()).toBe(true);
+    // loadRelations is a multi-await chain (list terms -> resolve related ->
+    // build graph -> mount canvas -> dynamic G6 import), so wait for the
+    // graph engine instance instead of assuming one flush covers it.
+    for (let i = 0; i < 20 && g6State.instances.length === 0; i++) {
+      await flushPromises();
+    }
+    expect(wrapper.find('[data-testid="glossary-relations-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="ontology-graph-canvas"]').exists()).toBe(true);
+    // The stubbed term list carries one term (t1, no relations): the graph
+    // handed to G6 is built from that real data, not a fixture.
+    const data = g6State.instances[0]?.data as
+      | { nodes?: Array<{ id: string }> }
+      | undefined;
+    expect(data?.nodes?.map((node) => node.id)).toEqual(['t1']);
   });
 
   it('navigates to term detail from the terms table', async () => {

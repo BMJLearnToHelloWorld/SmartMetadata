@@ -15,6 +15,7 @@ import {
   getGlossaryVersionPath,
   getGovernanceDetailPath,
   getGovernanceVersionPath,
+  getTagVersionPath,
   getTestCaseVersionPath,
 } from './versionPaths';
 
@@ -29,6 +30,10 @@ describe('versionPaths', () => {
     expect(getClassificationVersionPath('c1', '0.1')).toBe(
       '/governance/classifications/c1/versions/0.1',
     );
+    // M-Next A4: official TAG_VERSION is the generic entity-version route.
+    expect(getTagVersionPath('t1', '0.1')).toBe('/governance/tags/t1/versions/0.1');
+    expect(getGovernanceVersionPath('tag', 't1', '0.1')).toBe('/governance/tags/t1/versions/0.1');
+    expect(getGovernanceDetailPath('tag', 't1')).toBe('/governance/tags/t1');
     expect(getTestCaseVersionPath('tc1', '0.2')).toBe('/quality/test-cases/tc1/versions/0.2');
     expect(getTestCaseVersionPath('tc1', '0.2', 'results')).toBe(
       '/quality/test-cases/tc1/versions/0.2/results',

@@ -118,6 +118,17 @@ const schemaRegistry: Field = text('schemaRegistryURL', 'connection.schemaRegist
   placeholder: 'http://localhost:8081',
 });
 
+// Shared by Kafka and Redpanda: official kafkaConnection.json (16 props) and
+// redpandaConnection.json (14 props) both carry securityProtocol, in the same
+// relative position (after the schema-registry fields in the lean form).
+const securityProtocolField: Field = {
+  key: 'securityProtocol',
+  control: 'select',
+  labelKey: 'connection.securityProtocol',
+  testId: 'service-security-protocol',
+  options: [{ value: 'PLAINTEXT' }, { value: 'SASL_PLAINTEXT' }, { value: 'SASL_SSL' }, { value: 'SSL' }],
+};
+
 const note = (textKey: string): Field => ({ key: '', control: 'note', labelKey: '', textKey });
 
 export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
@@ -133,7 +144,20 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   },
   {
     types: ['Mysql'],
-    fields: [hostPort('localhost:3306'), usernameRequired, databaseNameDefault, databaseSchema, passwordField, storeSecretsField],
+    fields: [
+      hostPort('localhost:3306'),
+      usernameRequired,
+      databaseNameDefault,
+      databaseSchema,
+      // M-Next B3 (reverse check): official mysqlConnection.json carries
+      // queryHistoryTable; the product MySQL group was missing it.
+      text('queryHistoryTable', 'connection.queryHistoryTable', {
+        testId: 'service-query-history',
+        placeholder: 'system.query.history',
+      }),
+      passwordField,
+      storeSecretsField,
+    ],
   },
   {
     types: ['Snowflake'],
@@ -206,20 +230,14 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   },
   {
     types: ['Kafka'],
-    fields: [bootstrapServers, schemaRegistry, note('connection.confluentNote')],
+    fields: [bootstrapServers, schemaRegistry, securityProtocolField, note('connection.confluentNote')],
   },
   {
     types: ['Redpanda'],
     fields: [
       bootstrapServers,
       schemaRegistry,
-      {
-        key: 'securityProtocol',
-        control: 'select',
-        labelKey: 'connection.securityProtocol',
-        testId: 'service-security-protocol',
-        options: [{ value: 'PLAINTEXT' }, { value: 'SASL_PLAINTEXT' }, { value: 'SASL_SSL' }, { value: 'SSL' }],
-      },
+      securityProtocolField,
       note('connection.redpandaNote'),
     ],
   },
@@ -364,6 +382,9 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     fields: [
       hostPort('http://localhost:3000'),
       usernameOptional,
+      // M-Next B6: official metabaseConnection.json lists password and apiKey
+      // as two parallel auth modes; the form only offered apiKey.
+      passwordField,
       {
         key: 'apiKey',
         control: 'password',
@@ -440,10 +461,9 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       text('httpPath', 'connection.httpPath', { testId: 'service-http-path', placeholder: '/sql/1.0/warehouses/...' }),
       text('catalog', 'connection.catalog', { testId: 'service-catalog', placeholder: 'hive_metastore' }),
       databaseSchema,
-      text('queryHistoryTable', 'connection.queryHistoryTable', {
-        testId: 'service-query-history',
-        placeholder: 'system.query.history',
-      }),
+      // M-Next B3: queryHistoryTable removed — official unityCatalogConnection.json
+      // (23 props) has no such field; it was copied in from the Databricks group.
+      // Databricks keeps its own (official databricksConnection.json has it).
       {
         key: 'includeMetricViews',
         control: 'checkbox',

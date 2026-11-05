@@ -6,7 +6,8 @@ reference-only**). **UI rows below were re-verified after Batch3.4** on
 `a235899df856ef9214067135729ad185be3c25bf` (PRs #32–#35). Holistic Alma
 gate: `UI_PARITY_BATCH3_HOLISTIC.md` (**READY_FOR_ALMA**). This is parity
 with official OpenMetadata **product surfaces**, not Collate-only AI/RDF
-scope.
+scope. Route/residual rows were re-checked against `f78fad5f` (#142) on
+2026-11-06 (M-Next C6); connector/MCP counts keep the pins above.
 
 Closed PR #18 drafted an earlier `PARITY.md` on a purge branch. Counts below
 were **re-verified on main**; do not treat #18 as merged. Do **not** purge
@@ -76,15 +77,15 @@ reference-only). Product console is `smartmetadata-ui/` (Vue 3).
 | Home / My Data | `MyDataPage` / `HomeLandingPage` | `views/home/MyDataView.vue` | **Shipped** — greeting, announcements rail, topic widgets on existing APIs. Residual: persona customize, Knowledge Center, curated-assets docStore, Needs you now, first-login welcome, invented DAU |
 | Search / catalog | Explore | `SearchView.vue` + `AssetDetailView.vue` | Shipped (P1); **shell/nav/i18n** in Phase A; **Explore facets/cards + asset tabs** in Phase B (`UI_PARITY_BATCH1.md`); **non-table shells + pipeline DAG** in batch 2 step 5 (`UI_PARITY_BATCH2_ASSETS_PIPELINE.md`); **chart / metric / dashboardDataModel / database / databaseSchema GETs** in batch 3.2 (`UI_PARITY_BATCH3_ASSETS.md`). Batch3 Alma gate: `UI_PARITY_BATCH3_HOLISTIC.md` |
 | Lineage graph | React lineage pages | Vue Flow + dagre `LineageView.vue` + shared `LineageCanvas` | Shipped (P3); **canvas thickening** in UI parity batch 2 (`UI_PARITY_BATCH2_LINEAGE.md`); **canvas entity-edge write** BehaviorMatched (unit) via Apache PUT (`PARTIAL_LINEAGE_CANVAS_REVIEW.md`) |
-| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); list+detail chrome in batch 2/3 CRUD. Settings hub in `UI_PARITY_BATCH2_CHROME.md`. Policies + CP defs read in `UI_PARITY_BATCH3_SETTINGS.md`; **backend-09** adds Policy POST/PUT/DELETE, CP definition PUT, Apps GET list+detail (`BACKEND_09_REVIEW.md`, BehaviorMatched unit). Admins / online-users / audit / appearance / SSO / Persona / Apps marketplace stay residual or OutOfScope |
+| Admin: users/teams/roles/bots/settings | Settings pages | `views/admin/*` | Shipped (P2); list+detail chrome in batch 2/3 CRUD. Settings hub in `UI_PARITY_BATCH2_CHROME.md`. Policies + CP defs read in `UI_PARITY_BATCH3_SETTINGS.md`; **backend-09** adds Policy POST/PUT/DELETE, CP definition PUT, Apps GET list+detail (`BACKEND_09_REVIEW.md`, BehaviorMatched unit). Admins (`admin/users/admins` → UsersListView), online-users (`insights/online-users` → OnlineUsersView + listOnlineUsers), audit (`admin/settings/audit-logs` → AuditLogsView + api/auditLogs), appearance (`admin/settings/preferences/appearance` → AppearanceSettingsView, save/reset), SSO (`admin/settings/sso` → SsoSettingsView, JSON Patch save via patchSecurityConfiguration), Persona (`admin/settings/persona*` → PersonaListView + PersonaCustomizeView, docStore-backed), and Apps marketplace install (`marketplace/apps/:fqn/install` → AppInstallView, POST /v1/apps) are all routed + view-backed at f78fad5f — the earlier "stay residual or OutOfScope" verdict is overturned (M-Next C6); live usability not re-verified in this pass |
 | Governance | Glossary / tags / domains | `views/governance/*` | Shipped (P4); **classifications / glossaries / domains / data products** on the same CRUD shells. GlossaryTerm / Tag child pages still one-off |
 | Quality + incidents/alerts | DataQuality, IncidentManager | `views/quality/*`, `views/observability/*` | Catalog CRUD shipped (P5); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **job execution residual** (`jobs.py` raises `WorkflowError`) |
 | Services / pipelines console | AddService / AddIngestion | `views/ingestion/*` | CRUD + CLI YAML shipped (P8); list+detail chrome in `UI_PARITY_BATCH3_CRUD.md`; **no Airflow `/trigger`** (ADR:2026-10-22-ingestion-console-runs-via-cli) |
 | Activity / tasks / announcements | Feed | `views/collaboration/*` | Shipped (P9); **persona landing skipped**; list chrome still Card+Table (not in Batch3 inventory) |
 | Data insights / KPI | `DataInsightPage`, `KPIPage` | `InsightsView.vue` + `features/charts/` + `api/kpi.ts` | **Partial** (charts/analytics) / **BehaviorMatched (unit)** (KPI CRUD client): batch 2 step 4 snapshots + `listChartData`; batch 3.3 list; Partial #3 (`PARTIAL_KPI_CRUD_REVIEW.md`) adds POST/PUT/PATCH/DELETE + kpiResult/latest helpers. App analytics / history **charts** / Add-Edit KPI pages residual or OutOfScope invent (deferred, not Alma must-fix) |
 | Profiler run UI | `ProfilerConfigurationPage` | Read of stored results only | **Gap** (runner residual; deferred) |
-| SSO deep config / persona customization | Appearance / Persona pages | Auth-provider-aware login only; Settings tiles residual text | **Gap** (P2/P9 residual; deferred) |
-| Knowledge / Context Center / Ontology Studio | Collate pages | — | **DROP** (Phase 10/11 Collate-only) |
+| SSO deep config / persona customization | Appearance / Persona pages | SsoSettingsView (JSON Patch save via patchSecurityConfiguration) + AppearanceSettingsView (save/reset) + PersonaListView / PersonaCustomizeView (docStore-backed) | **Landed (routes + views + save paths)** at f78fad5f; live usability not re-verified in this pass |
+| Knowledge / Context Center / Ontology Studio | Collate pages | context-center routes + 5 shells + articles/memories/documents/filter/integrations views; govern/ontology explorer + studio routes | **Landed (routes + views)** at f78fad5f — DROP verdict overturned (M-Next C6); live usability not re-verified in this pass. Collate AI pages stay OutOfScope |
 
 ## MCP
 

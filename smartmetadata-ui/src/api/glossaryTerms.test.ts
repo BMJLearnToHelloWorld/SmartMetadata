@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms } from './glossaryTerms';
+import { createGlossaryTerm, getGlossaryTerm, getGlossaryTermsByIds, listGlossaryTermAssets, listGlossaryTermChildrenLazy, listGlossaryTerms } from './glossaryTerms';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -205,5 +205,34 @@ describe('glossaryTerms API', () => {
     expect(url).toContain(`directChildrenOf=${encodeURIComponent('Business.Customer')}`);
     expect(url).toContain('after=c0');
     expect(url).toContain('limit=50');
+  });
+
+  it('hydrates terms by ids and keeps the TermRelation relationType (M-Next A3)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify([
+            {
+              id: 'x1',
+              name: 'External',
+              fullyQualifiedName: 'Other.External',
+              relatedTerms: [
+                { term: { id: 'a', name: 'A', type: 'glossaryTerm' }, relationType: 'broader' },
+              ],
+            },
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const terms = await getGlossaryTermsByIds(['x1']);
+    expect(terms).toHaveLength(1);
+    expect(lastFetch().url).toContain('/api/v1/glossaryTerms/byIds');
+    expect(lastFetch().url).toContain('ids=x1');
+    expect(terms[0]?.relatedTerms).toEqual([
+      { id: 'a', name: 'A', type: 'glossaryTerm', relationType: 'broader' },
+    ]);
+    await expect(getGlossaryTermsByIds([])).resolves.toEqual([]);
   });
 });

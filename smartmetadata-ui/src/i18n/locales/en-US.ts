@@ -1020,8 +1020,7 @@ const enUS = {
       customize: 'Customize',
       customizeResidual: 'Column customize is residual until a preferences API is wired.',
       relationsTab: 'Relations Graph',
-      relationsResidual:
-        'Relations graph needs the ontology graph canvas, which is not built yet; no glossary graph endpoint is wired.',
+      relationsEmpty: 'This glossary has no terms to graph yet.',
       activityTab: 'Activity Feeds & Tasks ({count})',
       tasksTitle: 'Tasks',
       taskType: 'Type',
@@ -1408,7 +1407,7 @@ const enUS = {
       selectService: 'Select a service',
       selectServicePlaceholder: 'Select a catalog service',
       pipelineType: 'Pipeline type',
-      pipelineTypeHelp: "Agent kinds from the connector's OpenMetadata service_spec (metadata / lineage / usage / profiler / TestSuite).",
+      pipelineTypeHelp: "Agent kinds from the connector's service spec (metadata / lineage / usage / profiler / TestSuite).",
       selectPipelineTypePlaceholder: 'Select a pipeline type',
       types: {
         metadata: 'Metadata',
@@ -1703,11 +1702,11 @@ const enUS = {
     },
     omUrl: {
       title: 'Brand name URL',
-      lead: 'OpenMetadata base URL used in emails and links.',
+      lead: 'iSmart base URL used in emails and links.',
       loadFailed: 'Failed to load brand URL',
       saved: 'Brand URL saved',
       saveFailed: 'Save brand URL failed',
-      url: 'OpenMetadata URL',
+      url: 'iSmart URL',
       save: 'Save',
     },
     glossaryPrefs: {
@@ -1733,7 +1732,7 @@ const enUS = {
     },
     appMode: {
       title: 'App mode',
-      lead: 'Tenant default app mode (ai / classic). Collate sidebar customization is out of scope.',
+      lead: 'Tenant default app mode (ai / classic).',
       loadFailed: 'Failed to load app mode',
       saved: 'App mode saved',
       saveFailed: 'Save app mode failed',
@@ -2069,23 +2068,6 @@ const enUS = {
     versions: 'Versions',
     loadFailed: 'Failed to load metric',
     asyncDeleteSubmitted: 'Async metric delete submitted; the metric disappears once the job completes.',
-  },
-  shells: {
-    marketplaceOverview: {
-    },
-    ontologyExplorer: {
-    },
-
-    contextOverview: {
-    },
-    contextArticles: {
-    },
-    contextDocuments: {
-    },
-    contextMemories: {
-    },
-    contextArchive: {
-    },
   },
   connection: {
     hostPort: 'Host and port',
@@ -3075,7 +3057,7 @@ const enUS = {
   sparql: {
     title: 'SPARQL Playground',
     subtitle:
-      'Run read-only SPARQL queries against the OpenMetadata knowledge graph. SELECT, ASK, CONSTRUCT, and DESCRIBE are accepted; UPDATE, DROP, INSERT, and DELETE are rejected.',
+      'Run read-only SPARQL queries against the knowledge graph. SELECT, ASK, CONSTRUCT, and DESCRIBE are accepted; UPDATE, DROP, INSERT, and DELETE are rejected.',
     format: 'Format',
     inference: 'Inference',
     formats: {

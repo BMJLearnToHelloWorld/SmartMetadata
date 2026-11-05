@@ -11,11 +11,10 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Button, Empty, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
+import { Button, Empty, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
-import SmTable from '@/components/shared/SmTable.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import type { EntityListColumn } from '@/features/crud/types';
 import {
@@ -23,11 +22,15 @@ import {
   deleteKnowledgePage,
   getKnowledgePageByFqn,
   listKnowledgePages,
+  patchKnowledgePage,
   updateKnowledgePage,
 } from '@/api/contextCenter';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
+import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
+import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
+import { extensionPatch } from '@/governance/assetPatch';
 import { toEntityLink } from '@/quality/entityLink';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { KnowledgePage, KnowledgePageType } from '@/types/contextCenter';
@@ -86,6 +89,8 @@ const detailCollabError = ref('');
 const detailCustomProps = ref<CustomPropertyDef[]>([]);
 const detailCustomPropsError = ref('');
 const detailExtrasFor = ref('');
+const propsOpen = ref(false);
+const propsSaving = ref(false);
 
 async function loadDetailExtras(): Promise<void> {
   const current = detail.value;
@@ -236,6 +241,27 @@ async function onEdit(value: {
   }
 }
 
+async function onSaveCustomProperties(next: Record<string, unknown>): Promise<void> {
+  if (!detail.value?.id) {
+    message.error(t('asset.patchNeedsId'));
+    return;
+  }
+  propsSaving.value = true;
+  try {
+    // One whole-extension op (add when absent, replace when present) —
+    // never per-field add /extension/<name>, which is illegal while the
+    // parent object is missing.
+    await patchKnowledgePage(detail.value.id, extensionPatch(detail.value.extension, next));
+    propsOpen.value = false;
+    message.success(t('asset.propsUpdated'));
+    await loadDetail();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
+  } finally {
+    propsSaving.value = false;
+  }
+}
+
 async function onDelete(page: KnowledgePage): Promise<void> {
   const confirmed = await confirmDelete({
     title: t('contextCenter.deleteArticle'),
@@ -369,22 +395,22 @@ onMounted(() => {
               />
             </Tabs.TabPane>
             <Tabs.TabPane key="custom_properties" :tab="t('contextCenter.detailTabs.customProperties')">
-              <!-- Definitions only: the product KnowledgePage type carries
-                   no extension/custom-property values, so value editing
-                   (official CustomPropertyTable's edit path) is not
-                   faked here; definitions come from the official
+              <!-- Values come from the page's extension (official
+                   CustomPropertyTable reads entityDetails.extension);
+                   definitions come from the official
                    /metadata/types/name/page/customProperties surface. -->
-              <Alert v-if="detailCustomPropsError" type="error" show-icon :message="detailCustomPropsError" />
-              <SmTable
-                row-key="name"
-                test-id="article-custom-properties-table"
-                :columns="[
-                  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-                  { title: t('crud.displayName'), dataIndex: 'displayName', key: 'displayName' },
-                  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
-                ]"
-                :data-source="detailCustomProps"
-                :pagination="false"
+              <Button
+                type="primary"
+                data-testid="article-edit-custom-properties"
+                @click="propsOpen = true"
+              >
+                {{ t('asset.editCustomProperties') }}
+              </Button>
+              <AssetCustomPropertiesPanel
+                :defs="detailCustomProps"
+                :values="detail?.extension ?? {}"
+                :error="detailCustomPropsError"
+                entity-type="page"
               />
               <Empty
                 v-if="!detailCustomProps.length && !detailCustomPropsError"
@@ -406,6 +432,14 @@ onMounted(() => {
         @ok="onEdit"
         @cancel="showEditModal = false"
         @update:open="showEditModal = $event"
+      />
+      <CustomPropertiesEditModal
+        :open="propsOpen"
+        :defs="detailCustomProps"
+        :values="detail?.extension ?? {}"
+        :saving="propsSaving"
+        @save="onSaveCustomProperties"
+        @cancel="propsOpen = false"
       />
     </div>
     <div v-else>

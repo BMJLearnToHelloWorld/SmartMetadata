@@ -97,4 +97,21 @@ describe('governanceVersions API', () => {
       latestGovernanceVersionPath('classification', 'c1', (version) => `/governance/classifications/c1/versions/${version}`),
     ).resolves.toBeNull();
   });
+
+  it('lists tag versions from the tags collection (M-Next A4)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ versions: [{ version: 0.1 }, { version: 0.2 }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const versions = await listGovernanceVersions('tag', 't1');
+    expect(versions).toHaveLength(2);
+    expect(lastFetch().url).toContain('/api/v1/tags/t1/versions');
+    const path = await latestGovernanceVersionPath('tag', 't1', (version) => `/governance/tags/t1/versions/${version}`);
+    expect(path).toBe('/governance/tags/t1/versions/0.2');
+  });
 });

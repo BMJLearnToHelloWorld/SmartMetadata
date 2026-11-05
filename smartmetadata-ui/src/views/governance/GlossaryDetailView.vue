@@ -23,6 +23,9 @@ import { toEntityLink } from '@/quality/entityLink';
 import type { ActivityEvent, CollaborationTask, Conversation } from '@/types/collaboration';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { createGlossaryTerm, listGlossaryTermChildrenLazy, listGlossaryTerms } from '@/api/glossaryTerms';
+import { fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
+import type { OntologyGraphData } from '@/features/ontology/ontologyGraph';
+import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
@@ -92,7 +95,38 @@ watch(activeTab, (tab) => {
   if (tab === 'activity') {
     void loadActivity();
   }
+  if (tab === 'relations') {
+    void loadRelations();
+  }
 });
+
+// Relations graph (M-Next A3, official OntologyExplorer scope=glossary):
+// a read-only G6 canvas over the glossary's own terms (parentOf edges +
+// typed relatedTerms edges), fetched lazily on first relations-tab
+// activation per glossary, never eagerly on the terms tab. canEdit is
+// false: the canvas never emits a relation here.
+const relationsGraph = ref<OntologyGraphData | null>(null);
+const relationsLoading = ref(false);
+const relationsError = ref('');
+const relationsLoadedFor = ref('');
+
+async function loadRelations(): Promise<void> {
+  const current = glossary.value;
+  if (!current?.id || relationsLoadedFor.value === current.id || relationsLoading.value) {
+    return;
+  }
+  relationsLoading.value = true;
+  relationsError.value = '';
+  try {
+    relationsGraph.value = await fetchGlossaryGraphData(current.id);
+    relationsLoadedFor.value = current.id;
+  } catch (error) {
+    relationsGraph.value = null;
+    relationsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+  } finally {
+    relationsLoading.value = false;
+  }
+}
 const termSearch = ref('');
 const statusFilter = ref<string | undefined>();
 const termPage = ref(1);
@@ -368,6 +402,9 @@ async function loadDetail(id: string): Promise<void> {
   activityTasks.value = [];
   activityError.value = '';
   activityLoadedFor.value = '';
+  relationsGraph.value = null;
+  relationsError.value = '';
+  relationsLoadedFor.value = '';
   loadingChildren.clear();
   enrichedChildren.clear();
   childPageAfter.clear();
@@ -387,6 +424,9 @@ async function loadDetail(id: string): Promise<void> {
     termPage.value = 1;
     if (activeTab.value === 'activity') {
       await loadActivity();
+    }
+    if (activeTab.value === 'relations') {
+      await loadRelations();
     }
   } catch (error) {
     glossary.value = null;
@@ -846,17 +886,19 @@ onMounted(() => {
               </div>
               </template>
               <template v-else-if="tab.key === 'relations'">
-                <!-- A3 relations stays residual, honestly: official
-                     relations is OntologyExplorer scope=glossary — a G6
-                     graph canvas (A5's stage, product has no @antv/g6)
-                     over ontology graph endpoints, not a list the
-                     product can render from its concept/property APIs
-                     without inventing a graph surface. No fake graph,
-                     no invented endpoint. -->
-                <Empty
-                  data-testid="glossary-relations-residual"
-                  :description="t('governance.glossaries.relationsResidual')"
-                />
+                <Spin :spinning="relationsLoading" data-testid="glossary-relations-loading">
+                  <Alert v-if="relationsError" type="error" show-icon :message="relationsError" />
+                  <OntologyGraphCanvas
+                    v-else-if="relationsGraph && relationsGraph.nodes.length > 0"
+                    :graph="relationsGraph"
+                    :can-edit="false"
+                  />
+                  <Empty
+                    v-else-if="!relationsLoading"
+                    :description="t('governance.glossaries.relationsEmpty')"
+                    data-testid="glossary-relations-empty"
+                  />
+                </Spin>
               </template>
               <template v-else-if="tab.key === 'activity'">
                 <Spin :spinning="activityLoading" data-testid="glossary-activity-loading">

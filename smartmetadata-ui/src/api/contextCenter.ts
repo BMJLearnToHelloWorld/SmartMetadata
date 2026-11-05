@@ -25,6 +25,7 @@ import { apiBaseUrl, apiRequest, ApiError } from './client';
 import type { ChangeDescription, EntityVersion } from './entities';
 import { mapChangeDescription, mapTags } from './entities';
 import { authorizationHeader, loadSession } from '@/auth/token';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 
 const PAGES_PATH = '/v1/contextCenter/pages';
 const MEMORIES_PATH = '/v1/contextCenter/memories';
@@ -56,6 +57,7 @@ function mapKnowledgePage(raw: Record<string, unknown>): KnowledgePage | null {
     parent: mapEntityRefs(raw.parent ? [raw.parent] : [])[0],
     children: mapEntityRefs(raw.children),
     deleted: asBoolean(raw.deleted) ?? undefined,
+    extension: asRecord(raw.extension) ?? undefined,
   };
 }
 
@@ -251,6 +253,30 @@ export async function updateKnowledgePage(
   });
   const rec = asRecord(payload);
   return rec ? mapKnowledgePage(rec) : null;
+}
+
+/**
+ * Official patch on KnowledgePage (generic EntityResource PATCH): JSON
+ * Patch, mirroring patchTag — the create-shaped PUT above must never
+ * carry extension values.
+ */
+export async function patchKnowledgePage(
+  id: string,
+  patch: JsonPatchOp[],
+): Promise<KnowledgePage> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `${PAGES_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  );
+  const mapped = mapKnowledgePage(raw);
+  if (!mapped) {
+    throw new Error('Patch page succeeded but the response had no page');
+  }
+  return mapped;
 }
 
 export async function deleteKnowledgePage(id: string, hardDelete = false): Promise<void> {

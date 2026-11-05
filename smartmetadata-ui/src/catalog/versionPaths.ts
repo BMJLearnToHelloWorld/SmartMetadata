@@ -28,10 +28,10 @@
  * merged by hand, not edited by this group):
  *  governance-domain-version, governance-glossary-version,
  *  governance-term-version, governance-term-version-tab,
- *  governance-classification-version, quality-test-case-version,
- *  quality-test-case-version-tab.
+ *  governance-classification-version, governance-tag-version,
+ *  quality-test-case-version, quality-test-case-version-tab.
  */
-export type GovernanceVersionKind = 'domain' | 'glossary' | 'term' | 'classification' | 'testCase';
+export type GovernanceVersionKind = 'domain' | 'glossary' | 'term' | 'classification' | 'tag' | 'testCase';
 
 export function getDomainVersionPath(id: string, version: string): string {
   return `/governance/domains/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
@@ -50,6 +50,13 @@ export function getClassificationVersionPath(id: string, version: string): strin
   return `/governance/classifications/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
 }
 
+// M-Next A4: official TAG_VERSION (/tags/:fqn/versions/:version,
+// constants.ts:201) is the generic entity-version route, not a tag-specific
+// page — the product wires it the same way as the classification one.
+export function getTagVersionPath(id: string, version: string): string {
+  return `/governance/tags/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
+}
+
 export function getTestCaseVersionPath(id: string, version: string, tab?: string): string {
   const base = `/quality/test-cases/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
   return tab ? `${base}/${encodeURIComponent(tab)}` : base;
@@ -65,6 +72,8 @@ export function getGovernanceVersionPath(kind: GovernanceVersionKind, id: string
       return getGlossaryTermVersionPath(id, version, tab);
     case 'classification':
       return getClassificationVersionPath(id, version);
+    case 'tag':
+      return getTagVersionPath(id, version);
     case 'testCase':
       return getTestCaseVersionPath(id, version, tab);
   }
@@ -80,6 +89,8 @@ export function getGovernanceDetailPath(kind: GovernanceVersionKind, id: string)
       return `/governance/terms/${encodeURIComponent(id)}`;
     case 'classification':
       return `/governance/classifications/${encodeURIComponent(id)}`;
+    case 'tag':
+      return `/governance/tags/${encodeURIComponent(id)}`;
     case 'testCase':
       return `/quality/test-cases/${encodeURIComponent(id)}`;
   }

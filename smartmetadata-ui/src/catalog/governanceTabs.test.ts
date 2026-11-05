@@ -32,14 +32,13 @@ describe('governanceTabs', () => {
     }
   });
 
-  it('keeps glossary terms and activity wired, relations residual', () => {
-    expect(supportedGovernanceTabs('glossary').map((tab) => tab.key)).toContain('terms');
-    expect(supportedGovernanceTabs('glossary').map((tab) => tab.key)).toContain('activity');
-    // Relations stays residual: the official tab is the OntologyExplorer
-    // G6 graph canvas, which is not built yet — no fake graph is wired.
-    expect(residualGovernanceTabs('glossary').map((tab) => tab.key).sort()).toEqual([
+  it('keeps glossary terms, activity and relations wired (M-Next A3)', () => {
+    expect(supportedGovernanceTabs('glossary').map((tab) => tab.key).sort()).toEqual([
+      'activity',
       'relations',
+      'terms',
     ]);
+    expect(residualGovernanceTabs('glossary')).toEqual([]);
   });
 
   it('keeps metric detail supported and version detail residual', () => {

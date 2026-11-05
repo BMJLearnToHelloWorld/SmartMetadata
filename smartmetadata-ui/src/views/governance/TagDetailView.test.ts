@@ -83,3 +83,49 @@ describe('TagDetailView edit gating (upstream revokeEditPermissions)', () => {
     expect(isDisabled(wrapper, 'delete-tag')).toBe(false);
   });
 });
+
+describe('TagDetailView versions entry (M-Next A4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the newest tag version snapshot from the versions button', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/t1/versions')) {
+          return jsonResponse({ versions: [{ version: 0.1 }, { version: 0.2 }] });
+        }
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({ id: 't1', name: 'pii', displayName: 'PII', disabled: false, owners: [] });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/tags/:id', name: 'governance-tag', component: { template: '<div>tag</div>' } },
+        {
+          path: '/governance/tags/:id/versions/:version',
+          name: 'governance-tag-version',
+          component: { template: '<div>version</div>' },
+        },
+      ],
+    });
+    await router.push('/governance/tags/t1');
+    await router.isReady();
+    const wrapper = mount(TagDetailView, {
+      props: { id: 't1' },
+      global: {
+        plugins: [router, Antd, createTestI18n()],
+      },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tag-versions"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="tag-versions"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe('/governance/tags/t1/versions/0.2');
+  });
+});
