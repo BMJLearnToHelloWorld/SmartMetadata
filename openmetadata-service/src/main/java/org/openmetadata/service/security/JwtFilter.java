@@ -202,7 +202,12 @@ public class JwtFilter implements ContainerRequestFilter {
           "v1/users/password/reset",
           "v1/users/login",
           "v1/users/refresh",
-          "v1/collate/apps/support/redeem-code");
+          "v1/collate/apps/support/redeem-code",
+          // Public OpenAPI document at UI ./swagger.json (OM AssetServlet parity).
+          // Jersey serves it under rootPath /api/*; rebuild nginx proxies
+          // /swagger.json here. RapiDoc does not send api-key on spec fetch.
+          "swagger.json",
+          "swagger.yaml");
 
   /**
    * Whether the request targets an endpoint that bypasses authentication (and, for the event
