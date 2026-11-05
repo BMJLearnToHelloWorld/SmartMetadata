@@ -90,3 +90,26 @@ def load_builtin_sources() -> None:
     from smartmetadata_ingestion.connectors import redpanda as _redpanda  # noqa: F401
     from smartmetadata_ingestion.connectors import prefect as _prefect  # noqa: F401
     from smartmetadata_ingestion.connectors import dagster as _dagster  # noqa: F401
+
+    from smartmetadata_ingestion.connectors import databricks_profiler as _databricks_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import databricks_quality as _databricks_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import doris_profiler as _doris_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import doris_quality as _doris_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import greenplum_profiler as _greenplum_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import greenplum_quality as _greenplum_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import mariadb_profiler as _mariadb_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import mariadb_quality as _mariadb_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import mssql_profiler as _mssql_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import mssql_quality as _mssql_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import mysql_profiler as _mysql_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import mysql_quality as _mysql_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import postgres_profiler as _postgres_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import postgres_quality as _postgres_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import redshift_profiler as _redshift_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import redshift_quality as _redshift_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import snowflake_profiler as _snowflake_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import snowflake_quality as _snowflake_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import timescale_profiler as _timescale_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import timescale_quality as _timescale_quality  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog_profiler as _unitycatalog_profiler  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog_quality as _unitycatalog_quality  # noqa: F401

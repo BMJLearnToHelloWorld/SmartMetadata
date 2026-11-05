@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.profile_sql import SqlProfileReader, quote_ansi
 from smartmetadata_ingestion.errors import WorkflowError
 
 DEFAULT_SCHEME = "snowflake"
@@ -427,3 +428,34 @@ class CursorCatalogReader:
                 return list(cursor.fetchall())
             finally:
                 cursor.close()
+
+
+class CursorProfileReader:
+    """Live profile reads through a DB-API cursor factory."""
+
+    def __init__(self, connect) -> None:
+        self._reader = SqlProfileReader(
+            connect,
+            quote=quote_ansi,
+            paramstyle="format",
+            columns_sql=(
+                "SELECT column_name, data_type FROM information_schema.columns "
+                "WHERE table_catalog = {ph} AND table_schema = {ph} AND table_name = {ph} "
+                "ORDER BY ordinal_position"
+            ),
+            columns_params=lambda database, schema, table: (database, schema, table),
+            sample_template="SELECT * FROM {ident} LIMIT {limit}",
+            ident_style="three",
+            stat_row=ProfileStatRow,
+            sample_row=SampleRow,
+        )
+
+    def profile_table(
+        self, database: str, schema: str, table: str
+    ) -> Sequence[ProfileStatRow]:
+        return self._reader.profile(database, schema, table)
+
+    def sample_table(
+        self, database: str, schema: str, table: str, *, limit: int = 50
+    ) -> Sequence[SampleRow]:
+        return self._reader.sample(database, schema, table, limit=limit)

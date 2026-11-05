@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.profile_sql import SqlProfileReader, quote_mysql
 from smartmetadata_ingestion.errors import WorkflowError
 
 DEFAULT_SCHEME = "mysql+pymysql"
@@ -361,3 +362,32 @@ def _blank_to_none(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+class CursorProfileReader:
+    """Live profile reads through a DB-API cursor factory."""
+
+    def __init__(self, connect) -> None:
+        self._reader = SqlProfileReader(
+            connect,
+            quote=quote_mysql,
+            paramstyle="format",
+            columns_sql=(
+                "SELECT column_name, data_type FROM information_schema.columns "
+                "WHERE table_schema = {ph} AND table_name = {ph} "
+                "ORDER BY ordinal_position"
+            ),
+            columns_params=lambda database, schema, table: (schema, table),
+            sample_template="SELECT * FROM {ident} LIMIT {limit}",
+            ident_style="two",
+            stat_row=ProfileStatRow,
+            sample_row=SampleRow,
+        )
+
+    def profile_table(self, schema: str, table: str) -> Sequence[ProfileStatRow]:
+        return self._reader.profile(None, schema, table)
+
+    def sample_table(
+        self, schema: str, table: str, *, limit: int = 50
+    ) -> Sequence[SampleRow]:
+        return self._reader.sample(None, schema, table, limit=limit)

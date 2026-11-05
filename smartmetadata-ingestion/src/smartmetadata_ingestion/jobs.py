@@ -6,30 +6,88 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Stubs for later profiler / data-quality runners. Phase 6 only runs metadata."""
+"""Runnable profiler / data-quality jobs.
+
+Each job holds its workflow config and runs it through the canonical
+``run_workflow`` dispatch (``profiler`` / ``TestSuite``), so the job is the
+same execution the CLI performs — not a stub.
+"""
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
-from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.client.rest import RestClient
+from smartmetadata_ingestion.config import WorkflowConfig
+from smartmetadata_ingestion.connectors.base import Source
+from smartmetadata_ingestion.progress import RunReport
+from smartmetadata_ingestion.runner import run_workflow
+from smartmetadata_ingestion.sinks.metadata_rest import Sink
 
 
 class JobRunner(Protocol):
     kind: str
 
-    def run(self) -> None: ...
+    def run(self) -> RunReport: ...
 
 
 class ProfilerJob:
     kind = "profiler"
 
-    def run(self) -> None:
-        raise WorkflowError("profiler jobs are out of scope for Phase 6")
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        profile_reader: Any | None = None,
+    ) -> None:
+        self._config = config
+        self._client = client
+        self._source = source
+        self._sink = sink
+        self._profile_reader = profile_reader
+
+    def run(self) -> RunReport:
+        config = self._config.model_copy(
+            update={"workflow": self._config.workflow.model_copy(update={"type": "profiler"})}
+        )
+        return run_workflow(
+            config,
+            client=self._client,
+            source=self._source,
+            sink=self._sink,
+            profile_reader=self._profile_reader,
+        )
 
 
 class QualityJob:
     kind = "quality"
 
-    def run(self) -> None:
-        raise WorkflowError("data-quality jobs are out of scope for Phase 6")
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        execute: Any | None = None,
+    ) -> None:
+        self._config = config
+        self._client = client
+        self._source = source
+        self._sink = sink
+        self._execute = execute
+
+    def run(self) -> RunReport:
+        config = self._config.model_copy(
+            update={"workflow": self._config.workflow.model_copy(update={"type": "TestSuite"})}
+        )
+        return run_workflow(
+            config,
+            client=self._client,
+            source=self._source,
+            sink=self._sink,
+            execute=self._execute,
+        )

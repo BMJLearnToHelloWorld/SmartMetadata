@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.profile_sql import SqlProfileReader
 from smartmetadata_ingestion.errors import WorkflowError
 
 _SYSTEM_CATALOGS = frozenset({"system", "samples"})
@@ -544,41 +545,34 @@ class CursorUsageReader:
 
 
 class CursorProfileReader:
+    """Live profile reads through a DB-API cursor factory."""
+
     def __init__(self, connect) -> None:
-        self._connect = connect
+        self._reader = SqlProfileReader(
+            connect,
+            quote=quote_ident,
+            paramstyle="qmark",
+            columns_sql=(
+                "SELECT column_name, full_data_type FROM system.information_schema.columns "
+                "WHERE table_catalog = {ph} AND table_schema = {ph} AND table_name = {ph} "
+                "ORDER BY ordinal_position"
+            ),
+            columns_params=lambda database, schema, table: (database, schema, table),
+            sample_template="SELECT * FROM {ident} LIMIT {limit}",
+            ident_style="three",
+            stat_row=ProfileStatRow,
+            sample_row=SampleRow,
+        )
 
     def profile_table(
         self, database: str, schema: str, table: str
     ) -> Sequence[ProfileStatRow]:
-        ident = ".".join(quote_ident(part) for part in (database, schema, table))
-        rows = self._fetch(f"SELECT COUNT(*) FROM {ident}")
-        row_count = int(rows[0][0]) if rows else 0
-        return [ProfileStatRow(column_name=None, row_count=row_count)]
+        return self._reader.profile(database, schema, table)
 
     def sample_table(
         self, database: str, schema: str, table: str, *, limit: int = 50
     ) -> Sequence[SampleRow]:
-        ident = ".".join(quote_ident(part) for part in (database, schema, table))
-        with self._connect() as connection:
-            cursor = connection.cursor()
-            try:
-                cursor.execute(f"SELECT * FROM {ident} LIMIT {int(limit)}")
-                names = [col[0] for col in (cursor.description or [])]
-                return [
-                    SampleRow(values={names[i]: row[i] for i in range(len(names))})
-                    for row in cursor.fetchall()
-                ]
-            finally:
-                cursor.close()
-
-    def _fetch(self, sql: str) -> list[tuple[Any, ...]]:
-        with self._connect() as connection:
-            cursor = connection.cursor()
-            try:
-                cursor.execute(sql)
-                return list(cursor.fetchall())
-            finally:
-                cursor.close()
+        return self._reader.sample(database, schema, table, limit=limit)
 
 
 def _split_fqn(value: Any) -> tuple[str, str, str] | None:
