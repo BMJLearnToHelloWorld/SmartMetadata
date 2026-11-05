@@ -12,6 +12,7 @@ import logging
 import traceback
 import uuid
 from collections.abc import Iterable, Iterator
+from typing import Any
 
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import (
@@ -26,6 +27,7 @@ from smartmetadata_ingestion.config import (
 )
 from smartmetadata_ingestion.connectors.base import Source, build_source
 from smartmetadata_ingestion.errors import (
+    WorkflowError,
     WorkflowExecutionError,
     WorkflowInitializationError,
     WorkflowTeardownError,
@@ -44,13 +46,17 @@ from smartmetadata_ingestion.progress import (
     RunReport,
     StepStatus,
 )
+from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
 from smartmetadata_ingestion.records import (
     ColumnLineage,
+    DatabaseRecord,
     EntityRef,
     LineageEndpoint,
     LineageRecord,
     UsageRecord,
     ProfileRecord,
+    SchemaRecord,
+    TableRecord,
     TestCaseResultRecord,
     ClassificationRecord,
     TagRecord,
@@ -424,6 +430,145 @@ class MetadataWorkflow:
         )
         status.failures.append(failure)
         return failure
+
+
+class ProfilerWorkflow(MetadataWorkflow):
+    """Runs the connector's profiler interface live against the source database.
+
+    Table enumeration reuses the metadata source's ``produce()``; only
+    ``TableRecord`` entries are profiled, nothing is re-ingested as metadata.
+    """
+
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        processors: list[Processor] | None = None,
+        hook: ProgressHook | None = None,
+        profile_reader: Any | None = None,
+    ) -> None:
+        self._injected_reader = profile_reader
+        super().__init__(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+        )
+
+    def prepare(self) -> None:
+        if self._prepared:
+            return
+        super().prepare()
+        self._profiler_binding = _require_binding(self.config, "profiler")
+        reader = self._injected_reader
+        if reader is None:
+            reader = self._profiler_binding.profile_reader(
+                self._profiler_binding.connect(self.config.source.connection or {})
+            )
+        self._profiler = self._profiler_binding.profiler(reader)
+
+    def _execute_records(self) -> None:
+        if self._source is None:
+            raise WorkflowInitializationError("workflow source is not prepared")
+        iterator = iter(self._source.produce())
+        tables: list[tuple[str, str, str]] = []
+        database: str | None = None
+        schema: str | None = None
+        try:
+            for record in iterator:
+                if isinstance(record, DatabaseRecord):
+                    database = record.name
+                elif isinstance(record, SchemaRecord):
+                    schema = record.name
+                elif isinstance(record, TableRecord):
+                    if database is None or schema is None:
+                        raise WorkflowExecutionError(
+                            f"table {record.name} arrived without a database/schema context"
+                        )
+                    tables.append((database, schema, record.name))
+        finally:
+            self._close_iterator(iterator)
+        timestamp = now_ms()
+        for database, schema, table in tables:
+            profile = self._profiler.profile(
+                service=self.config.source.service_name,
+                database=database,
+                schema=schema,
+                table=table,
+                timestamp=timestamp,
+            )
+            self._handle_record(profile)
+
+
+class TestSuiteWorkflow(MetadataWorkflow):
+    """Runs the configured test cases live against the source database."""
+
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        processors: list[Processor] | None = None,
+        hook: ProgressHook | None = None,
+        execute: Any | None = None,
+    ) -> None:
+        self._injected_execute = execute
+        super().__init__(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+        )
+
+    def prepare(self) -> None:
+        if self._prepared:
+            return
+        super().prepare()
+        self._quality_binding = _require_binding(self.config, "TestSuite")
+        execute = self._injected_execute or self._execute_scalar
+        self._quality = self._quality_binding.quality(execute)
+
+    def _execute_scalar(self, sql: str) -> Any:
+        connect = self._quality_binding.connect(self.config.source.connection or {})
+        with connect() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(sql)
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+        if row is None:
+            raise WorkflowError(f"test case query returned no rows: {sql}")
+        return row[0]
+
+    def _execute_records(self) -> None:
+        timestamp = now_ms()
+        for spec in self.config.test_cases:
+            result = self._quality.run_test_case(
+                test_case_fqn=spec.test_case_fqn,
+                timestamp=timestamp,
+                expression=spec.expression,
+                expected=spec.expected,
+            )
+            self._handle_record(result)
+
+
+def _require_binding(config: WorkflowConfig, kind: str) -> ProfilerBinding:
+    binding = profiler_binding(config.source.type)
+    if binding is None:
+        raise WorkflowInitializationError(
+            f"{kind} workflow has no binding for source type {config.source.type!r}"
+        )
+    return binding
 
 
 def _lineage_from_spec(spec: LineageSpec) -> LineageRecord:

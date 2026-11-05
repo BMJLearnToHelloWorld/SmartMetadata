@@ -37,3 +37,46 @@ def test_build_source_selects_registered_connectors(workflow_config: WorkflowCon
         workflow_config.source = SourceConfig(type=type_name, service_name="demo")
         source = build_source(workflow_config)
         assert isinstance(source, expected)
+
+
+def test_profiler_quality_modules_are_registered() -> None:
+    import importlib
+
+    from smartmetadata_ingestion.profiler import profiler_binding
+
+    load_builtin_sources()
+    stems = (
+        "databricks",
+        "doris",
+        "greenplum",
+        "mariadb",
+        "mssql",
+        "mysql",
+        "postgres",
+        "redshift",
+        "snowflake",
+        "timescale",
+        "unitycatalog",
+    )
+    for stem in stems:
+        profiler_module = importlib.import_module(
+            f"smartmetadata_ingestion.connectors.{stem}_profiler"
+        )
+        quality_module = importlib.import_module(
+            f"smartmetadata_ingestion.connectors.{stem}_quality"
+        )
+        assert any(
+            name.endswith("ProfilerInterface")
+            or name.endswith("Sampler")
+            or name.endswith("SampleHelper")
+            for name in dir(profiler_module)
+        )
+        assert any(name.endswith("TestSuiteInterface") for name in dir(quality_module))
+        binding = profiler_binding(stem)
+        assert binding is not None
+        assert binding.profiler is not None
+        assert binding.quality is not None
+        assert binding.profile_reader is not None
+        assert callable(binding.connect)
+    assert profiler_binding("kafka") is None
+    assert profiler_binding("static") is None

@@ -206,6 +206,19 @@ class TestCaseResultSpec(CamelModel):
     duration: float | None = None
 
 
+class TestCaseSpec(CamelModel):
+    """A data-quality case executed live by a TestSuite workflow.
+
+    ``expression`` is the SQL the case evaluates (the existing
+    ``*TestSuiteInterface.run_test_case`` contract); ``expected`` is the
+    scalar it is compared against.
+    """
+
+    test_case_fqn: str
+    expression: str
+    expected: Any = True
+
+
 class ClassificationSpec(CamelModel):
     name: str
     description: str
@@ -245,6 +258,7 @@ class WorkflowConfig(CamelModel):
     usage: list[UsageSpec] = Field(default_factory=list)
     profiles: list[ProfileSpec] = Field(default_factory=list)
     test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
+    test_cases: list[TestCaseSpec] = Field(default_factory=list)
     classifications: list[ClassificationSpec] = Field(default_factory=list)
     tags: list[TagSpec] = Field(default_factory=list)
     apps: list[AppSpec] = Field(default_factory=list)
