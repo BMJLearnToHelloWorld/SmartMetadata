@@ -6,6 +6,8 @@ declare module '*.vue' {
   export default component;
 }
 
+declare module 'rapidoc';
+
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_API_PROXY_TARGET?: string;

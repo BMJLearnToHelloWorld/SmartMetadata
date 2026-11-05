@@ -3090,9 +3090,10 @@ const zhCN = {
   },
   docs: {
     title: 'API 参考',
-    lead: '服务端 OpenAPI 文档，由服务端 Swagger UI 渲染。',
+    lead: '服务端 OpenAPI 文档，页内 RapiDoc 渲染（对齐官方 SwaggerPage）。',
     specDownload: '下载 OpenAPI 规范（swagger.json）',
-    authHint: '内嵌界面中试调接口需要 bearer 令牌：在内嵌界面中打开 Authorize 并粘贴你的令牌。',
+    authHint: '试调用会自动使用当前登录会话的 bearer token（Authorization 请求头）。',
+    loading: '正在加载 API 文档…',
   },
   inbox: {
     title: '收件箱',
