@@ -3,23 +3,34 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
+/**
+ * Official OM SwaggerPage equivalent (constants SWAGGER '/docs').
+ * Align with openmetadata-ui SwaggerPage: in-page RapiDoc against Jersey
+ * /api/swagger.json (server.rootPath is /api/*), with the logged-in JWT as
+ * Authorization bearer. Do not iframe /api/swagger-ui - that path is not
+ * under Jersey and #139 nginx rewrites for it were wrong.
+ */
+import 'rapidoc';
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
+import { authorizationHeader } from '@/auth/token';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import { useAuthStore } from '@/stores/auth';
+import { SM_COLOR_PRIMARY } from '@/theme/tokens';
 
-/**
- * Official SwaggerPage equivalent (constants.ts:195 SWAGGER '/docs').
- * The official page renders RapiDoc against ./swagger.json. This console
- * ships no RapiDoc dependency, so it embeds the server's own Swagger UI
- * (SwaggerBundle serves /swagger-ui, reachable through the existing /api
- * proxy) instead of adding a new renderer dependency. Try-it-out calls
- * need a bearer token pasted into the UI's Authorize dialog, because
- * product auth is JWT bearer, not cookies — the hint below says so
- * instead of pretending the embedded UI is already authenticated.
- */
 const { t } = useI18n();
-const swaggerUiUrl = '/api/swagger-ui';
+const auth = useAuthStore();
+const { session } = storeToRefs(auth);
+
+/** Jersey serves the generated OpenAPI spec at /api/swagger.json. */
 const specUrl = '/api/swagger.json';
+
+const apiKeyValue = computed(() => {
+  const token = session.value?.accessToken;
+  return token ? authorizationHeader(token) : '';
+});
 </script>
 
 <template>
@@ -31,12 +42,27 @@ const specUrl = '/api/swagger.json';
         {{ t('docs.specDownload') }}
       </a>
     </p>
-    <iframe
-      data-testid="docs-swagger-frame"
-      :title="t('docs.title')"
-      :src="swaggerUiUrl"
-      class="docs__frame"
+    <rapi-doc
+      v-if="apiKeyValue"
+      data-testid="docs-rapidoc"
+      class="docs__rapidoc"
+      :spec-url="specUrl"
+      render-style="focused"
+      theme="light"
+      font-size="large"
+      nav-item-spacing="compact"
+      show-method-in-nav-bar="as-colored-block"
+      api-key-name="Authorization"
+      api-key-location="header"
+      :api-key-value="apiKeyValue"
+      :primary-color="SM_COLOR_PRIMARY"
+      :show-header="false"
+      :load-fonts="false"
+      :allow-spec-file-download="true"
     />
+    <div v-else data-testid="docs-rapidoc-loading" class="docs__loading">
+      {{ t('docs.loading') }}
+    </div>
   </PageLayout>
 </template>
 
@@ -46,11 +72,17 @@ const specUrl = '/api/swagger.json';
   color: var(--sm-text-secondary);
 }
 
-.docs__frame {
+.docs__rapidoc {
+  display: block;
   width: 100%;
   height: calc(100vh - 220px);
   min-height: 480px;
   border: 1px solid var(--sm-border);
   border-radius: var(--sm-radius-card);
+}
+
+.docs__loading {
+  margin-block: 24px;
+  color: var(--sm-text-secondary);
 }
 </style>

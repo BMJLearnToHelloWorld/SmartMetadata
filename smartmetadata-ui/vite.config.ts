@@ -16,7 +16,16 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8585';
 
   return {
-    plugins: [vue()],
+    plugins: [
+      vue({
+        template: {
+          compilerOptions: {
+            // RapiDoc registers the <rapi-doc> custom element (official SwaggerPage).
+            isCustomElement: (tag) => tag === 'rapi-doc',
+          },
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

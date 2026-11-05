@@ -3114,10 +3114,11 @@ const enUS = {
   },
   docs: {
     title: 'API reference',
-    lead: 'The server OpenAPI documentation, rendered by the server Swagger UI.',
+    lead: 'The server OpenAPI documentation, rendered in-page with RapiDoc (official SwaggerPage mode).',
     specDownload: 'Download the OpenAPI spec (swagger.json)',
     authHint:
-      'Try-it-out calls from the embedded UI need a bearer token: open Authorize in the embedded UI and paste your token.',
+      'Try-it-out calls use your signed-in session bearer token automatically (Authorization header).',
+    loading: 'Loading API documentation…',
   },
   inbox: {
     title: 'Inbox',
