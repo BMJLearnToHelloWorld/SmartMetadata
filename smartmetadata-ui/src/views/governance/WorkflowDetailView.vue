@@ -70,10 +70,10 @@ const isForbidden = computed(
     logic.loadError.value.status === 403,
 );
 
-function onTabChange(tab: string): void {
+function onTabChange(tab: string | number): void {
   void router.replace({
     name: 'workflow-detail',
-    params: { fqn: fqn.value, tab },
+    params: { fqn: fqn.value, tab: String(tab) },
   });
 }
 

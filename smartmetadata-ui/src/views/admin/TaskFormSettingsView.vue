@@ -20,6 +20,7 @@ import {
   message,
 } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import { asRecord, mapEntityRefs } from '@/api/json';
 import {
   createTaskFormSchema,
   listTaskFormSchemas,
@@ -28,6 +29,8 @@ import {
   type TaskFormSchema,
 } from '@/api/taskFormSchemas';
 import {
+  asBackendEdges,
+  asBackendNodes,
   getWorkflowDefinitionByFqn,
   updateWorkflowDefinition,
 } from '@/api/workflows';
@@ -412,11 +415,16 @@ async function handleSave(): Promise<void> {
           typeof workflowRecord.description === 'string'
             ? workflowRecord.description
             : undefined,
-        owners: workflowRecord.owners,
-        config: workflowRecord.config,
+        owners: Array.isArray(workflowRecord.owners)
+          ? mapEntityRefs(workflowRecord.owners)
+          : undefined,
+        config: asRecord(workflowRecord.config) ?? undefined,
         trigger: workflowRecord.trigger,
-        nodes: workflowRecord.nodes,
-        edges: workflowRecord.edges,
+        // The record comes from JSON.parse: narrow the unknown node/edge
+        // arrays through the same shape validators the API response
+        // mapper uses, rather than casting them.
+        nodes: asBackendNodes(workflowRecord.nodes),
+        edges: asBackendEdges(workflowRecord.edges),
       });
       payload.workflowDefinitionRef = savedWorkflow.name;
       payload.workflowVersion = savedWorkflow.version;

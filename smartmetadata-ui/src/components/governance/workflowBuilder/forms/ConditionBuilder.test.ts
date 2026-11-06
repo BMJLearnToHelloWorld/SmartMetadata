@@ -9,11 +9,12 @@
  */
 import { defineComponent, h } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkflowCheckChangeDescConditionPayload } from '@/types/governance';
 import ConditionBuilder from './ConditionBuilder.vue';
 import { mountWithBuilder } from '../testHarness';
 
 async function mountBuilder(options: {
-  value?: { config: { condition: 'AND' | 'OR'; rules: Record<string, unknown> } } | null;
+  value?: WorkflowCheckChangeDescConditionPayload | null;
   showCondition?: boolean;
 } = {}) {
   const onChange = vi.fn();

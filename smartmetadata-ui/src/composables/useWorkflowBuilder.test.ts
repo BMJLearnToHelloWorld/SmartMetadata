@@ -40,6 +40,7 @@ describe('useWorkflowBuilder history wiring', () => {
       id: 'userApprovalTask_1',
       type: 'position',
       position: { x: 400, y: 50 },
+      from: original ?? { x: 0, y: 0 },
       dragging: true,
     };
     builder.logic.onNodesChange([firstChange]);
@@ -52,6 +53,7 @@ describe('useWorkflowBuilder history wiring', () => {
       id: 'userApprovalTask_1',
       type: 'position',
       position: { x: 500, y: 80 },
+      from: { x: 400, y: 50 },
       dragging: true,
     };
     builder.logic.onNodesChange([secondChange]);

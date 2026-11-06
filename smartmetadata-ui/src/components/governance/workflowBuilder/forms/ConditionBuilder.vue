@@ -4,7 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Button, Card, Input, Select } from 'ant-design-vue';
+import { Button, Card, Select } from 'ant-design-vue';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue';
 import { useI18n } from 'vue-i18n';
 import type {

@@ -13,6 +13,7 @@ import {
   deleteWorkflowByFqn,
   updateWorkflowDefinition,
 } from '@/api/workflows';
+import type { MouseTouchEvent } from '@vue-flow/core';
 import type {
   WorkflowDefinitionFull,
   WorkflowFlowNode,
@@ -53,7 +54,10 @@ export interface UseWorkflowActionsReturn {
   handleConfigSidebarClose: () => void;
   handleWorkflowFormDrawerClose: () => void;
   handleTestWorkflow: () => Promise<WorkflowDefinitionFull | undefined>;
-  handleNodeClick: (event: MouseEvent, node: WorkflowFlowNode) => void;
+  handleNodeClick: (
+    event: MouseEvent | MouseTouchEvent,
+    node: WorkflowFlowNode,
+  ) => void;
   handleSaveWorkflow: () => Promise<boolean>;
   performDeleteWorkflow: () => Promise<void>;
   handleWorkflowMetadataUpdate: (metadata: {
@@ -145,7 +149,10 @@ export function useWorkflowActions(
   };
 
   // Node click handler
-  const handleNodeClick = (event: MouseEvent, node: WorkflowFlowNode): void => {
+  const handleNodeClick = (
+    event: MouseEvent | MouseTouchEvent,
+    node: WorkflowFlowNode,
+  ): void => {
     event.stopPropagation();
     setSelectedNode(node);
     const nodeType = node.type || '';
@@ -186,7 +193,7 @@ export function useWorkflowActions(
         ...state.workflowMetadata,
         name: savedWorkflow.name,
         displayName: savedWorkflow.displayName || '',
-        description: savedWorkflow.description,
+        description: savedWorkflow.description || '',
         id: savedWorkflow.id,
         isNewWorkflow: false,
       });

@@ -98,16 +98,18 @@ function mergeWorkflowDefinitionUpdates(
   };
 }
 
-function hasStartNodeSavedConfig(startData: WorkflowFlowNode['data']): boolean {
+function hasStartNodeSavedConfig(
+  startData: WorkflowFlowNode['data'] | undefined,
+): boolean {
   return Boolean(
     startData?.lastSaved ||
       startData?.userModified ||
-      (startData?.name && startData?.dataAssets?.length > 0),
+      (startData?.name && (startData?.dataAssets?.length ?? 0) > 0),
   );
 }
 
 function hasStartNodeTriggerConfig(
-  startData: WorkflowFlowNode['data'],
+  startData: WorkflowFlowNode['data'] | undefined,
 ): boolean {
   return Boolean(
     startData?.triggerType || startData?.eventType || startData?.scheduleType,
@@ -115,7 +117,7 @@ function hasStartNodeTriggerConfig(
 }
 
 function hasStartNodeInputOutputConfig(
-  startData: WorkflowFlowNode['data'],
+  startData: WorkflowFlowNode['data'] | undefined,
 ): boolean {
   return Boolean(startData?.input || startData?.output);
 }

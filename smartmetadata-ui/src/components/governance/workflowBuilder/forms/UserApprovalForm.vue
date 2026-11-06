@@ -49,15 +49,23 @@ interface UserApprovalFormState {
 
 function buildInitialState(node: WorkflowFlowNode): UserApprovalFormState {
   const config = (node.data?.config ?? {}) as Record<string, unknown>;
+  // Official shape (UserApprovalForm.tsx:88-111, userApprovalTask.json:41):
+  // the approver settings live under config.assignees, never flat on config.
+  const assignees = (config.assignees ?? {}) as {
+    addReviewers?: boolean;
+    addOwners?: boolean;
+    emptyAssigneeStrategy?: string;
+    candidates?: EntityRef[];
+  };
   return {
     displayName: node.data?.displayName || node.data?.label || '',
     description: node.data?.description || '',
     approvalThreshold: (config.approvalThreshold as number) || 1,
     rejectionThreshold: (config.rejectionThreshold as number) || 1,
-    addReviewers: config.addReviewers !== false,
-    addOwners: (config.addOwners as boolean) ?? false,
-    emptyAssigneeStrategy: (config.emptyAssigneeStrategy as string) || 'none',
-    candidates: (config.candidates as EntityRef[]) || [],
+    addReviewers: assignees.addReviewers ?? true,
+    addOwners: assignees.addOwners ?? false,
+    emptyAssigneeStrategy: assignees.emptyAssigneeStrategy || 'none',
+    candidates: Array.isArray(assignees.candidates) ? assignees.candidates : [],
     allowPartialDecisions: Boolean(config.allowPartialDecisions),
   };
 }
@@ -70,32 +78,47 @@ function syncFromNode(): void {
 watch(() => props.node.id, syncFromNode, { immediate: true });
 
 function handleSave(): void {
-  const { displayName, description, candidates, ...config } = state.value;
   const savedConfig = (props.node.data?.config ?? {}) as Record<string, unknown>;
+  const savedAssignees = (savedConfig.assignees ?? {}) as Record<string, unknown>;
   const savedTransitionMetadata = savedConfig.transitionMetadata;
   const transitionMetadata =
     Array.isArray(savedTransitionMetadata) && savedTransitionMetadata.length > 0
       ? savedTransitionMetadata
       : DEFAULT_USER_APPROVAL_TRANSITIONS;
-  const candidatesPayload = candidates.map((candidate) => ({
+  const candidatesPayload = state.value.candidates.map((candidate) => ({
     id: candidate.id,
-    type: candidate.type,
+    type: candidate.type ?? 'user',
     fullyQualifiedName: candidate.fullyQualifiedName,
     name: candidate.name,
   }));
+  // Drop stale flat assignee keys a previous product save may have left at the
+  // top level: the canonical shape nests them under config.assignees
+  // (userApprovalTask.json, additionalProperties: false).
+  const cleanSavedConfig: Record<string, unknown> = { ...savedConfig };
+  delete cleanSavedConfig.addReviewers;
+  delete cleanSavedConfig.addOwners;
+  delete cleanSavedConfig.emptyAssigneeStrategy;
+  delete cleanSavedConfig.candidates;
   props.onSave(
     props.node.id,
     createNodeConfig({
-      displayName,
-      description,
+      displayName: state.value.displayName,
+      description: state.value.description,
       type: 'userTask',
       subType: 'userApprovalTask',
       config: {
-        ...savedConfig,
-        ...config,
+        ...cleanSavedConfig,
+        approvalThreshold: state.value.approvalThreshold,
+        rejectionThreshold: state.value.rejectionThreshold,
         allowPartialDecisions:
           props.isEnforceMode && state.value.allowPartialDecisions,
-        candidates: candidatesPayload,
+        assignees: {
+          ...savedAssignees,
+          addReviewers: state.value.addReviewers,
+          addOwners: state.value.addOwners,
+          emptyAssigneeStrategy: state.value.emptyAssigneeStrategy,
+          candidates: candidatesPayload,
+        },
         transitionMetadata,
       },
     }),

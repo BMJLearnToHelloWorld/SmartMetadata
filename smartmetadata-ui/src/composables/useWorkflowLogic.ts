@@ -108,7 +108,7 @@ function isStartNodeConfigured(startNode: WorkflowFlowNode): boolean {
   const hasNodeContent =
     startNode.data?.lastSaved ||
     startNode.data?.userModified ||
-    (startNode.data?.name && startNode.data?.dataAssets?.length > 0);
+    (startNode.data?.name && (startNode.data?.dataAssets?.length ?? 0) > 0);
   return Boolean(
     hasNodeContent ||
       startNode.data?.triggerType ||

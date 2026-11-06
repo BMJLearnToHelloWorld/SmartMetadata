@@ -9,7 +9,9 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { Handle, Position } from '@vue-flow/core';
+import type { NodeProps } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
+import type { WorkflowNodeData } from '@/types/governance';
 import { getWorkflowCanvasNodeIcon } from '@/utils/workflowNodeIcon';
 
 /**
@@ -19,6 +21,13 @@ import { getWorkflowCanvasNodeIcon } from '@/utils/workflowNodeIcon';
  */
 
 defineOptions({ inheritAttrs: false });
+
+/**
+ * Declares the Vue Flow node contract (NodeProps<WorkflowNodeData>) so the
+ * component is assignable to Vue Flow's NodeTypes; this static renderer
+ * reads nothing from the props (label comes from i18n).
+ */
+defineProps<NodeProps<WorkflowNodeData>>();
 
 const { t } = useI18n();
 const icon = getWorkflowCanvasNodeIcon('startEvent');

@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Select } from 'ant-design-vue';
+import type { SelectValue } from 'ant-design-vue/es/select';
 import { useI18n } from 'vue-i18n';
 import { ALL_DATA_ASSETS_OPTION_VALUE } from '@/constants/workflowBuilder';
 import { useWorkflowBuilderContext } from '@/composables/useWorkflowBuilder';
@@ -59,18 +60,29 @@ const options = computed(() =>
   })),
 );
 
-function handleChange(next: string[]): void {
+/**
+ * antd Select emits SelectValue (RawValue | LabeledValue, single or array);
+ * this multiple select only ever carries plain string values, so normalise
+ * to string[] here and keep the rest of the handler in string terms.
+ */
+function handleChange(next: SelectValue): void {
+  const values = (next === undefined ? [] : Array.isArray(next) ? next : [next]).map(
+    (value) =>
+      typeof value === 'object' && value !== null
+        ? String(value.value)
+        : String(value),
+  );
   const prev = displayValue.value;
-  if (next.includes(ALL_DATA_ASSETS_OPTION_VALUE) && !prev.includes(ALL_DATA_ASSETS_OPTION_VALUE)) {
+  if (values.includes(ALL_DATA_ASSETS_OPTION_VALUE) && !prev.includes(ALL_DATA_ASSETS_OPTION_VALUE)) {
     props.onDataAssetsChange([...props.availableDataAssets]);
     return;
   }
-  if (prev.includes(ALL_DATA_ASSETS_OPTION_VALUE) && !next.includes(ALL_DATA_ASSETS_OPTION_VALUE)) {
+  if (prev.includes(ALL_DATA_ASSETS_OPTION_VALUE) && !values.includes(ALL_DATA_ASSETS_OPTION_VALUE)) {
     props.onDataAssetsChange([]);
     return;
   }
   props.onDataAssetsChange(
-    next.filter((v) => v !== ALL_DATA_ASSETS_OPTION_VALUE),
+    values.filter((v) => v !== ALL_DATA_ASSETS_OPTION_VALUE),
   );
 }
 </script>

@@ -15,10 +15,15 @@ import type { WorkflowNodeSubType } from '@/types/governance';
  * schema. Official reads the generated UI JSONs
  * (`openmetadata-ui/.../jsons/governanceSchemas/{automatedTask,userTask}/*.json`);
  * those JSONs are generated from the spec schemas in
- * `openmetadata-spec/.../governance/workflows/elements/nodes/...`, which
- * the product carries in-tree. This map is the `properties.config`
- * surface of those schemas (verified against pin a3012259ca 2026-11-06):
- * property title + JSON type per subtype. `applyRecognizerFeedbackTask`
+ * `openmetadata-spec/.../governance/workflows/elements/nodes/...`.
+ * This map is a HAND-MAINTAINED SNAPSHOT of the `properties.config`
+ * surface of those JSONs, transcribed from pin a3012259ca and verified
+ * field-by-field against that pin on 2026-11-06 (see
+ * workflowNodeSchemas.test.ts, which pins the transcribed values). The
+ * product carries NEITHER tree in-repo — there is no openmetadata-spec
+ * checkout and no src/jsons/ in this worktree — so nothing here is
+ * read from disk at runtime; when the upstream pin moves, re-transcribe
+ * from the same files and update the test. `applyRecognizerFeedbackTask`
  * and `rejectRecognizerFeedbackTask` genuinely have no config properties
  * — the form renders only the (locked) name/description for them.
  * `setEntityCertificationTask.certification` has no `type` in its schema

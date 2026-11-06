@@ -131,7 +131,7 @@ function handleDeleteNode(nodeId: string): void {
     <TaskNodeFormRenderer
       :node="node"
       :entity-types="entityTypes"
-      :is-enforce-mode="builder.isEnforceMode"
+      :is-enforce-mode="builder.isEnforceMode.value"
       :on-close="onClose"
       :on-delete="handleDeleteNode"
       :on-save="builder.handleNodeConfigSave"

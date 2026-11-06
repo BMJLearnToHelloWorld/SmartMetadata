@@ -152,8 +152,16 @@ function handleManageMenuClick(key: string): void {
           :on-cancel-workflow="mode.showCancelButton.value ? mode.enterViewMode : undefined"
           :on-revert-and-cancel="mode.showCancelButton.value ? builder.handleRevertAndCancel : undefined"
           :on-run-workflow="builder.handleRunWorkflow"
-          :on-save-workflow="mode.showSaveButton.value ? builder.handleSaveWorkflowWithSnapshot : undefined"
-          :on-test-workflow="mode.showTestButton.value ? builder.actions.handleTestWorkflow : undefined"
+          :on-save-workflow="
+            mode.showSaveButton.value
+              ? () => void builder.handleSaveWorkflowWithSnapshot()
+              : undefined
+          "
+          :on-test-workflow="
+            mode.showTestButton.value
+              ? () => void builder.actions.handleTestWorkflow()
+              : undefined
+          "
         />
         <Button
           v-if="mode.showEditButton.value"

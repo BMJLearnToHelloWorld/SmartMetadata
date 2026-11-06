@@ -52,22 +52,6 @@ interface SinkTaskFormData {
   allowUnsignedFastPush: boolean;
 }
 
-interface SinkConnectionConfig {
-  repositoryUrl?: string;
-  branch?: string;
-  basePath?: string;
-  token?: string;
-  conflictResolution?: string;
-  commitMessageTemplate?: string;
-  authorName?: string;
-  authorEmail?: string;
-  signingPrivateKey?: string;
-  signingKeyPassphrase?: string;
-  allowUnsignedFastPush?: boolean;
-  sinkType?: string;
-  outputFormat?: string;
-}
-
 const CONFLICT_RESOLUTION_OPTIONS = [
   { value: 'overwriteExternal', label: 'workflows.builder.overwriteExternal' },
   { value: 'preserveExternal', label: 'workflows.builder.preserveExternal' },

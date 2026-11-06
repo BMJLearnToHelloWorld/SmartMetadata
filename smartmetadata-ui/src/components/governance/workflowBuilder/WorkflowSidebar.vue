@@ -50,7 +50,9 @@ function toPaletteItem(
   const mapping = NODE_TYPE_MAPPINGS[subType];
   return {
     icon: getWorkflowNodeIcon(subType),
-    label: mapping.label,
+    // The palette only iterates the map's own keys, so the lookup always
+    // hits; the fallback only satisfies the Partial index type.
+    label: mapping?.label ?? subType,
     type: subType,
     isBeta,
   };
@@ -60,7 +62,7 @@ const automatedTasks = computed<PaletteItem[]>(() =>
   (Object.entries(NODE_TYPE_MAPPINGS) as [WorkflowNodeSubType, (typeof NODE_TYPE_MAPPINGS)[WorkflowNodeSubType]][])
     .filter(
       ([, mapping]) =>
-        mapping.type === 'automatedTask' && !('category' in mapping),
+        mapping?.type === 'automatedTask' && !(mapping && 'category' in mapping),
     )
     .map(([subType]) => toPaletteItem(subType)),
 );
@@ -68,14 +70,14 @@ const automatedTasks = computed<PaletteItem[]>(() =>
 const sinkTasks = computed<PaletteItem[]>(() =>
   (Object.entries(NODE_TYPE_MAPPINGS) as [WorkflowNodeSubType, (typeof NODE_TYPE_MAPPINGS)[WorkflowNodeSubType]][])
     .filter(
-      ([, mapping]) => 'category' in mapping && mapping.category === 'sink',
+      ([, mapping]) => mapping && 'category' in mapping && mapping.category === 'sink',
     )
     .map(([subType]) => toPaletteItem(subType, subType === 'sinkTask')),
 );
 
 const userTasks = computed<PaletteItem[]>(() =>
   (Object.entries(NODE_TYPE_MAPPINGS) as [WorkflowNodeSubType, (typeof NODE_TYPE_MAPPINGS)[WorkflowNodeSubType]][])
-    .filter(([, mapping]) => mapping.type === 'userTask')
+    .filter(([, mapping]) => mapping?.type === 'userTask')
     .map(([subType]) => toPaletteItem(subType)),
 );
 

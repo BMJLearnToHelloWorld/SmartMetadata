@@ -59,7 +59,7 @@ export interface NodeTypeMapping {
   category?: string;
 }
 
-export const NODE_TYPE_MAPPINGS: Record<WorkflowNodeSubType, NodeTypeMapping> = {
+export const NODE_TYPE_MAPPINGS: Partial<Record<WorkflowNodeSubType, NodeTypeMapping>> = {
   checkEntityAttributesTask: {
     type: 'automatedTask',
     label: 'Check Condition',
@@ -201,7 +201,7 @@ export type WorkflowInstanceStatus =
   | 'RUNNING'
   | 'SUPERSEDED';
 
-export type WorkflowStatusTone = 'success' | 'running' | 'failed' | 'default';
+export type WorkflowStatusTone = 'success' | 'running' | 'failed' | 'warning';
 
 /**
  * Official getStatusMapping (WorkflowBuilder.constants): instance status to

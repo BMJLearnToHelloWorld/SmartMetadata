@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { ComputedRef } from 'vue';
+import type { MouseTouchEvent } from '@vue-flow/core';
 import type {
   WorkflowConnection,
   WorkflowConnectionCondition,
@@ -48,7 +49,10 @@ export interface UseWorkflowEdgeManagementReturn {
     conditions: WorkflowConnectionCondition[],
   ) => void;
   handleConnectionCancel: () => void;
-  handleEdgeClick: (event: MouseEvent, edge: WorkflowFlowEdge) => void;
+  handleEdgeClick: (
+    event: MouseEvent | MouseTouchEvent,
+    edge: WorkflowFlowEdge,
+  ) => void;
   handleEdgeDelete: (edgeId: string) => void;
 }
 
@@ -86,6 +90,10 @@ export function useWorkflowEdgeManagement(
         if (currentCondition && !validConditionValues.has(currentCondition)) {
           const firstBand = (newQualityBands as { name?: string }[])[0];
           const newCondition = firstBand.name?.toLowerCase() || firstBand.name;
+          // A band without a name carries no condition value to fix with.
+          if (!newCondition) {
+            return edge;
+          }
           const newLabel = firstBand.name;
           const { backgroundColor, labelColor } = getWorkflowConditionTheme(
             newCondition ?? '',
@@ -210,7 +218,16 @@ export function useWorkflowEdgeManagement(
         color: WORKFLOW_EDGE_THEME.edge,
       },
       data: {
-        conditions,
+        // The modal's connection conditions carry an optional field; the
+        // stored edge conditions require one (empty when unset).
+        conditions: conditions.map((condition) => ({
+          field: condition.field ?? '',
+          operator: condition.operator,
+          value: condition.value,
+          id: condition.id,
+          type: condition.type,
+          logicalOperator: condition.logicalOperator,
+        })),
         condition: conditionLabel,
       },
       style: {
@@ -259,7 +276,10 @@ export function useWorkflowEdgeManagement(
     state.editingEdge = null;
   };
 
-  const handleEdgeClick = (event: MouseEvent, edge: WorkflowFlowEdge): void => {
+  const handleEdgeClick = (
+    event: MouseEvent | MouseTouchEvent,
+    edge: WorkflowFlowEdge,
+  ): void => {
     event.stopPropagation();
     if (isViewMode.value) {
       return;

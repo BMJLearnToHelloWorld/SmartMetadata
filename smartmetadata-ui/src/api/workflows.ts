@@ -31,8 +31,8 @@ export interface ListWorkflowsQuery {
   limit?: number;
   after?: string;
   before?: string;
-  /** Official history pagination (getWorkflowInstancesByFQN): offset, not cursor. */
-  offset?: number;
+  /** Official history pagination (getWorkflowInstancesByFQN): offset is a String cursor. */
+  offset?: string;
   startTs?: number;
   endTs?: number;
 }
@@ -96,7 +96,7 @@ export interface WorkflowDefinitionDetail extends WorkflowDefinition {
   updatedAt?: number;
 }
 
-function asBackendNodes(raw: unknown): WorkflowBackendNode[] | undefined {
+export function asBackendNodes(raw: unknown): WorkflowBackendNode[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined;
   }
@@ -132,7 +132,7 @@ function asBackendNodes(raw: unknown): WorkflowBackendNode[] | undefined {
   });
 }
 
-function asBackendEdges(raw: unknown): WorkflowBackendEdge[] | undefined {
+export function asBackendEdges(raw: unknown): WorkflowBackendEdge[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined;
   }

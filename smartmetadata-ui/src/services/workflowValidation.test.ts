@@ -25,6 +25,18 @@ import {
  * narrowing, Enforce-only partial decisions, and the storeStageStatus rule.
  */
 
+/**
+ * The save payload's trigger is typed `WorkflowTriggerObject | unknown`
+ * (the union collapses to unknown); tests read its config through this
+ * narrow cast, mirroring how the production save path consumes it.
+ */
+function triggerConfig(saved: {
+  trigger?: unknown;
+}): Record<string, unknown> | undefined {
+  return (saved.trigger as { config?: Record<string, unknown> } | undefined)
+    ?.config;
+}
+
 function startNode(
   overrides: Record<string, unknown> = {},
 ): WorkflowFlowNode {
@@ -260,7 +272,7 @@ describe('buildWorkflowForSave', () => {
       }),
       metadata(),
     );
-    expect(saved.trigger?.config).toMatchObject({
+    expect(triggerConfig(saved)).toMatchObject({
       entityTypes: ['glossaryTerm'],
       events: ['Created'],
       exclude: ['description'],
@@ -293,7 +305,7 @@ describe('buildWorkflowForSave', () => {
       metadata(),
     );
     expect(saved.type).toBe('periodicBatchEntity');
-    expect(saved.trigger?.config).toEqual({
+    expect(triggerConfig(saved)).toEqual({
       entityTypes: ['table'],
       schedule: { scheduleTimeline: 'Custom', cronExpression: '0 0 * * *' },
       batchSize: 50,
@@ -330,7 +342,8 @@ describe('buildWorkflowForSave', () => {
       metadata(),
     );
     expect(
-      (saved.trigger?.config as { entityTypes?: string[] }).entityTypes,
+      (triggerConfig(saved) as { entityTypes?: string[] } | undefined)
+        ?.entityTypes,
     ).toEqual(['table']);
   });
 

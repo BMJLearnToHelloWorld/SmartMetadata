@@ -8,6 +8,10 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import type {
+  WorkflowCheckChangeDescConditionPayload,
+  WorkflowConditionRulesMap,
+} from '@/types/governance';
 import {
   buildConditionBuilderPayload,
   parseConditionBuilderPayload,
@@ -48,7 +52,7 @@ describe('rulesToRows', () => {
   it('returns no rows for null, arrays or empty objects', () => {
     expect(rulesToRows(null)).toEqual([]);
     expect(rulesToRows(undefined)).toEqual([]);
-    expect(rulesToRows([] as unknown as Record<string, unknown>)).toEqual([]);
+    expect(rulesToRows([] as unknown as WorkflowConditionRulesMap)).toEqual([]);
     expect(rulesToRows({})).toEqual([]);
   });
 });
@@ -56,7 +60,7 @@ describe('rulesToRows', () => {
 describe('parseConditionBuilderPayload', () => {
   it('defaults to OR with no rows for an empty payload', () => {
     expect(parseConditionBuilderPayload(null)).toEqual({ rows: [], condition: 'OR' });
-    expect(parseConditionBuilderPayload({})).toEqual({ rows: [], condition: 'OR' });
+    expect(parseConditionBuilderPayload({} as WorkflowCheckChangeDescConditionPayload)).toEqual({ rows: [], condition: 'OR' });
   });
 
   it('parses config.rules and keeps the stored condition', () => {

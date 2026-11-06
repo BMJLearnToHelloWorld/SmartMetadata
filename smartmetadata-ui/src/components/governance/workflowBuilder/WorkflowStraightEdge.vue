@@ -15,6 +15,7 @@ import {
   Position,
   useVueFlow,
 } from '@vue-flow/core';
+import type { EdgeProps } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
 import { CloseOutlined } from '@ant-design/icons-vue';
 import type { WorkflowFlowEdge } from '@/types/governance';
@@ -31,23 +32,12 @@ import { useWorkflowBuilderContext } from '@/composables/useWorkflowBuilder';
 
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<{
-  id: string;
-  source: string;
-  target: string;
-  sourceX: number;
-  sourceY: number;
-  targetX: number;
-  targetY: number;
-  sourcePosition: Position;
-  targetPosition: Position;
-  label?: string;
-  markerEnd?: Record<string, unknown>;
-  style?: Record<string, unknown>;
-  labelStyle?: Record<string, unknown>;
-  labelBgStyle?: Record<string, unknown>;
-  data?: WorkflowFlowEdge['data'];
-}>();
+/**
+ * Props are the Vue Flow edge contract (EdgeProps<WorkflowFlowEdge['data']>);
+ * the component reads `id`, `source`/`target`, the endpoint coordinates and
+ * positions, `label`, the label/style records and `data` from it.
+ */
+const props = defineProps<EdgeProps<WorkflowFlowEdge['data']>>();
 
 const { t } = useI18n();
 const builder = useWorkflowBuilderContext();
@@ -134,10 +124,15 @@ const stackedLabelY = computed(() => {
   return labelY.value + offset;
 });
 
+/**
+ * The rendered label text: Vue Flow labels in this app are always plain
+ * strings (built by the canvas render mapping), so a non-string label
+ * renders as an empty label rather than leaking an object into the DOM.
+ */
 const displayLabel = computed(() =>
   typeof props.label === 'string' && props.label.length > 0
     ? formatEdgeLabel(props.label)
-    : props.label,
+    : '',
 );
 
 const hasStyleOverrides = computed(
@@ -151,7 +146,7 @@ const labelStyleOverrides = computed(() =>
           : undefined,
         borderColor: props.labelBgStyle?.stroke as string | undefined,
         color: props.labelStyle?.color as string | undefined,
-        ...(props.labelStyle as Record<string, string> | undefined),
+        ...(props.labelStyle ?? {}),
       }
     : undefined,
 );

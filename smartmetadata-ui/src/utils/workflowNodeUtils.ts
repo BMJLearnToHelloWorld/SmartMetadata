@@ -55,7 +55,7 @@ export function getTypeFromSubType(subType: WorkflowNodeSubType): WorkflowNodeTy
 
 export function getSubTypeFromLabel(label: string): WorkflowNodeSubType {
   const mapping = Object.entries(NODE_TYPE_MAPPINGS).find(
-    ([, value]) => value.label === label,
+    ([, value]) => value?.label === label,
   );
   return (mapping?.[0] as WorkflowNodeSubType) || 'checkEntityAttributesTask';
 }
@@ -173,8 +173,10 @@ export function convertBackendToDisplayTriggerType(backendType: string): string 
 
 // --- getInitialNodeConfig: three branches ---------------------------------
 
-function orDefault<T, F>(value: T, fallback: F): T | F {
-  return value || fallback;
+function orDefault<T, F>(value: T, fallback: F): Exclude<T, undefined | null> | F {
+  // `||` only returns `value` when it is truthy, so the result can never be
+  // undefined/null; the cast records exactly that.
+  return (value || fallback) as Exclude<T, undefined | null> | F;
 }
 
 function asArray<T>(value: unknown): T[] {
@@ -619,6 +621,13 @@ function applyUserApprovalConfig(
   // Start from the step's stored config so settings this builder does not edit (partial
   // decisions, transition metadata, task status, domain-owner approvers) survive a save.
   config.config = { ...nodeData.config };
+  // The canonical shape nests the approver settings under config.assignees
+  // (userApprovalTask.json, additionalProperties: false): drop any stale flat
+  // keys so a legacy node never saves them back.
+  delete config.config.addReviewers;
+  delete config.config.addOwners;
+  delete config.config.emptyAssigneeStrategy;
+  delete config.config.candidates;
   config.config.assignees = {
     ...assigneesFromNode,
     addReviewers: assigneesFromNode?.addReviewers ?? true,

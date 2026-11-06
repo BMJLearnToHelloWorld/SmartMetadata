@@ -18,7 +18,6 @@ import type {
   WorkflowMetadata,
   WorkflowNodeConfig,
   WorkflowNodeConfiguration,
-  WorkflowNodeDataWithMetadata,
   WorkflowNodeSubType,
   WorkflowNodeType,
 } from '@/types/governance';

@@ -91,7 +91,7 @@ const config = computed<WorkflowNodeConfig>(() => {
   const currentNode = node.value;
   if (!currentNode) {
     return getInitialNodeConfig(
-      { id: '', type: 'startEvent', position: { x: 0, y: 0 }, data: {} },
+      { id: '', type: 'startEvent', position: { x: 0, y: 0 }, data: { name: '', label: '', subType: 'startEvent' } },
       workflowDefinition.value,
       workflowMetadata.value,
     );

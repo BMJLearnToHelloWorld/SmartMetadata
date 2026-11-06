@@ -9,16 +9,18 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { computed, markRaw, ref } from 'vue';
+import type { CSSProperties } from 'vue';
 import {
   VueFlow,
   type Connection,
   type Edge,
+  type EdgeMarker,
   type EdgeMouseEvent,
   type Node,
   type NodeMouseEvent,
 } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
-import { ConnectionLineType } from '@vue-flow/core';
+import { ConnectionLineType, MarkerType } from '@vue-flow/core';
 import type {
   WorkflowFlowEdge,
   WorkflowFlowNode,
@@ -168,7 +170,7 @@ const renderNodes = computed<Node[]>(() => {
       sourcePosition: node.sourcePosition,
       targetPosition: node.targetPosition,
       draggable: node.draggable,
-      selected: node.selected,
+      selected: node.selected ?? false,
       style: {
         opacity: getDimmedOpacity(
           getShouldDimNode(node),
@@ -181,6 +183,23 @@ const renderNodes = computed<Node[]>(() => {
   });
 });
 
+/**
+ * Convert the flow edge's loose markerEnd record into the Vue Flow
+ * EdgeMarker the renderer requires: only `arrow` / `arrowclosed` are
+ * produced by the edge creators, so anything else falls back to the
+ * closed arrow; width/height default to 16.
+ */
+function toEdgeMarker(
+  marker: Record<string, unknown> | undefined,
+): EdgeMarker {
+  const type =
+    marker?.type === 'arrow' ? MarkerType.Arrow : MarkerType.ArrowClosed;
+  const width = typeof marker?.width === 'number' ? marker.width : 16;
+  const height = typeof marker?.height === 'number' ? marker.height : 16;
+  const color = typeof marker?.color === 'string' ? marker.color : undefined;
+  return color ? { type, width, height, color } : { type, width, height };
+}
+
 const renderEdges = computed<Edge[]>(() => {
   return state.state.edges.map((edge) => ({
     id: edge.id,
@@ -190,11 +209,7 @@ const renderEdges = computed<Edge[]>(() => {
     targetHandle: edge.targetHandle ?? undefined,
     type: edge.type || 'straight',
     label: edge.label,
-    markerEnd: edge.markerEnd ?? {
-      type: 'arrowclosed',
-      width: 16,
-      height: 16,
-    },
+    markerEnd: toEdgeMarker(edge.markerEnd),
     style: {
       strokeWidth:
         (edge.style?.strokeWidth as number | undefined) || 2,
@@ -210,7 +225,7 @@ const renderEdges = computed<Edge[]>(() => {
       cursor:
         edge.data?.conditions && !isViewMode.value ? 'pointer' : 'default',
     },
-    labelBgStyle: edge.labelBgStyle as Record<string, unknown> | undefined,
+    labelBgStyle: edge.labelBgStyle as CSSProperties | undefined,
     labelBgPadding: edge.labelBgPadding,
     data: {
       ...edge.data,

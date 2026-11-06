@@ -10,6 +10,7 @@
  */
 import { computed } from 'vue';
 import { Handle, Position } from '@vue-flow/core';
+import type { NodeProps } from '@vue-flow/core';
 import type { WorkflowNodeData } from '@/types/governance';
 import { getWorkflowCanvasNodeIcon } from '@/utils/workflowNodeIcon';
 import { getDisplayLabelFromSubType } from '@/utils/workflowNodeUtils';
@@ -25,10 +26,11 @@ import { getWorkflowNodeTestId } from '@/utils/workflowNodeUtils';
 
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<{
-  data: WorkflowNodeData;
-  selected?: boolean;
-}>();
+/**
+ * Props are the Vue Flow node contract (NodeProps<WorkflowNodeData>);
+ * the component reads `data` and `selected` from it.
+ */
+const props = defineProps<NodeProps<WorkflowNodeData>>();
 
 const icon = computed(() => getWorkflowCanvasNodeIcon(props.data.subType));
 const displayLabel = computed(() =>

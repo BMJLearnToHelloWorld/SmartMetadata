@@ -68,7 +68,6 @@ function periodicOnDemandDefinition(): WorkflowDefinitionFull {
 }
 
 function mountMode(
-  path: string,
   definition: WorkflowDefinitionFull | null,
   fqn: string | undefined,
 ) {
@@ -94,7 +93,6 @@ function mountMode(
 describe('useWorkflowMode', () => {
   it('starts in view mode from ?mode=view and gates structural edits off', async () => {
     const { wrapper, router } = mountMode(
-      '/workflows/nightly/workflow?mode=view',
       periodicOnDemandDefinition(),
       'nightly',
     );
@@ -131,7 +129,6 @@ describe('useWorkflowMode', () => {
 
   it('starts in edit mode from ?mode=edit with save/test/cancel shown', async () => {
     const { wrapper, router } = mountMode(
-      '/workflows/nightly/workflow?mode=edit',
       periodicOnDemandDefinition(),
       'nightly',
     );
@@ -157,7 +154,6 @@ describe('useWorkflowMode', () => {
 
   it('defaults to view mode without ?mode= when a fqn exists', async () => {
     const { wrapper, router } = mountMode(
-      '/workflows/nightly/workflow',
       periodicOnDemandDefinition(),
       'nightly',
     );
@@ -174,7 +170,6 @@ describe('useWorkflowMode', () => {
 
   it('defaults to edit mode without ?mode= when there is no fqn', async () => {
     const { wrapper, router } = mountMode(
-      '/workflows/nightly/workflow',
       null,
       undefined,
     );
@@ -197,7 +192,6 @@ describe('useWorkflowMode', () => {
       trigger: { type: 'noOp', config: {} },
     };
     const { wrapper, router } = mountMode(
-      '/workflows/noop/workflow?mode=edit',
       noOp,
       'noop',
     );
@@ -222,7 +216,6 @@ describe('useWorkflowMode', () => {
       schedule: { scheduleTimeline: 'Custom', cronExpression: '0 0 * * *' },
     };
     const { wrapper, router } = mountMode(
-      '/workflows/nightly/workflow?mode=view',
       scheduled,
       'nightly',
     );

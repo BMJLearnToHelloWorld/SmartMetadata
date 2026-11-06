@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { Select, Typography } from 'ant-design-vue';
+import type { DefaultOptionType, SelectValue } from 'ant-design-vue/es/select';
 import { useI18n } from 'vue-i18n';
 import { listTeams } from '@/api/teams';
 import { listUsers, searchUsers } from '@/api/users';
@@ -69,11 +70,28 @@ const selected = ref<string[]>(
     .map((ref) => `${ref.type}:${ref.name}`),
 );
 
-function onSelectChange(values: string[]): void {
-  selected.value = values;
+function filterOption(input: string, option?: DefaultOptionType): boolean {
+  const haystack = `${String(option?.label ?? '')} ${String(option?.value ?? '')}`.toLowerCase();
+  return haystack.includes(input.toLowerCase());
+}
+
+/**
+ * antd Select emits SelectValue (RawValue | LabeledValue, single or array);
+ * this multiple select only ever carries plain string values, so normalise
+ * to string[] here and keep the rest of the handler in string terms.
+ */
+function onSelectChange(values: SelectValue): void {
+  const selectedValues = (
+    values === undefined ? [] : Array.isArray(values) ? values : [values]
+  ).map((value) =>
+    typeof value === 'object' && value !== null
+      ? String(value.value)
+      : String(value),
+  );
+  selected.value = selectedValues;
   emit(
     'update:modelValue',
-    values.flatMap((value) => {
+    selectedValues.flatMap((value) => {
       const ref = refByValue.get(value);
       return ref ? [ref] : [];
     }),
@@ -143,10 +161,7 @@ onMounted(async () => {
       :options="options"
       :data-testid="testId"
       style="width: 100%"
-      :filter-option="
-        (input: string, option?: { label?: string; value?: string }) =>
-          `${option?.label ?? ''} ${option?.value ?? ''}`.toLowerCase().includes(input.toLowerCase())
-      "
+      :filter-option="filterOption"
       @change="onSelectChange"
       @search="onSearch"
     />

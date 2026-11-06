@@ -14,7 +14,10 @@ import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
 import SmState from '@/components/shared/SmState.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { DEFAULT_PAGE_SIZE } from '@/features/crud/paging';
-import { getWorkflowStatusMapping } from '@/constants/workflowBuilder';
+import {
+  getWorkflowStatusMapping,
+  type WorkflowStatusTone,
+} from '@/constants/workflowBuilder';
 import { convertMillisecondsToHumanReadableFormat } from '@/utils/workflowDateTime';
 
 /**
@@ -84,8 +87,12 @@ async function fetchExecutionHistory(offsetCursor?: string): Promise<void> {
   try {
     loading.value = true;
     loadError.value = undefined;
+    // Official getWorkflowInstancesByFQN always sends the full time range
+    // (startTs 0, endTs now); the server declares both @NonNull.
     const response = await listWorkflowInstances(workflowFqn.value, {
       limit: DEFAULT_PAGE_SIZE,
+      startTs: 0,
+      endTs: Date.now(),
       ...(offsetCursor ? { offset: offsetCursor } : {}),
     });
     instances.value = response.data ?? [];
@@ -130,7 +137,7 @@ const statusMapping = computed(() => getWorkflowStatusMapping(t));
 
 function getStatusInfo(status?: string): {
   displayLabel: string;
-  tone: 'success' | 'running' | 'failed' | 'warning';
+  tone: WorkflowStatusTone;
 } {
   if (status && status in statusMapping.value) {
     return statusMapping.value[status];
