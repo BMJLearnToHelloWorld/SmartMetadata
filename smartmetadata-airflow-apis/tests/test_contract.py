@@ -285,22 +285,21 @@ def test_enable_disable_toggle(client) -> None:
         headers=_auth_headers(),
     )
     assert res.status_code == 200
-    assert res.get_json() == {"message": "DAG [my_pipeline] has been disabled"}
+    assert res.get_json() == {"message": "DAG my_pipeline has been disabled"}
     res = client.post(
         "/api/v2/openmetadata/enable",
         json={"dag_id": "my_pipeline"},
         headers=_auth_headers(),
     )
     assert res.status_code == 200
-    assert res.get_json() == {"message": "DAG [my_pipeline] has been enabled"}
-    assert (
-        client.post(
-            "/api/v2/openmetadata/enable",
-            json={"dag_id": "nope"},
-            headers=_auth_headers(),
-        ).status_code
-        == 404
+    assert res.get_json() == {"message": "DAG my_pipeline has been enabled"}
+    res = client.post(
+        "/api/v2/openmetadata/enable",
+        json={"dag_id": "nope"},
+        headers=_auth_headers(),
     )
+    assert res.status_code == 404
+    assert res.get_json() == {"error": "DAG nope not found."}
 
 
 def test_trigger_on_disabled_dag_still_succeeds(client) -> None:
@@ -323,15 +322,16 @@ def test_trigger_on_disabled_dag_still_succeeds(client) -> None:
 
 def test_kill_marks_runs_failed(client) -> None:
     client.post("/api/v2/openmetadata/deploy", json=_pipeline(), headers=_auth_headers())
-    # No runs yet -> 404.
-    assert (
-        client.post(
-            "/api/v2/openmetadata/kill",
-            json={"dag_id": "my_pipeline"},
-            headers=_auth_headers(),
-        ).status_code
-        == 404
+    # No runs yet -> 404 with the official no-runs message.
+    res = client.post(
+        "/api/v2/openmetadata/kill",
+        json={"dag_id": "my_pipeline"},
+        headers=_auth_headers(),
     )
+    assert res.status_code == 404
+    assert res.get_json() == {
+        "error": "Workflow [my_pipeline] has no running or pending runs nor tasks"
+    }
     client.post(
         "/api/v2/openmetadata/trigger",
         json={"dag_id": "my_pipeline"},

@@ -45,6 +45,7 @@ from smartmetadata_airflow_apis.logs import (
     split_log_chunks,
 )
 from smartmetadata_airflow_apis.run_id import clean_dag_id, resolve_run_id
+from smartmetadata_airflow_apis.store import resolve_host_ip
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,91 @@ def _wait_for_registration(dag_id: str, previous_parse: Any) -> None:
     raise DagOperationError(
         f"DAG {dag_id} was not registered within {_WAIT_TIMEOUT_SECONDS:.0f}s"
     )
+
+
+def _fail_unfinished_runs(dag_id: str, session: Any) -> bool:
+    """Mark the DAG's running/queued runs (and their unfinished tasks) failed.
+
+    Mirrors official ``operations/kill_all.py``; the caller commits.
+    Returns whether there was a run to stop.
+    """
+    from airflow.models.dagrun import DagRun
+    from airflow.utils.state import DagRunState
+
+    runs = (
+        session.query(DagRun)
+        .filter(
+            DagRun.dag_id == dag_id,
+            DagRun.state.in_((DagRunState.RUNNING, DagRunState.QUEUED)),
+        )
+        .all()
+    )
+    if not runs:
+        return False
+    for dag_run in runs:
+        dag_run.set_state(DagRunState.FAILED)
+    _fail_unfinished_task_instances(dag_id, session)
+    return True
+
+
+def _fail_unfinished_task_instances(dag_id: str, session: Any) -> None:
+    """Mark every unfinished task instance of the DAG as failed."""
+    from airflow.models.taskinstance import TaskInstance
+    from airflow.utils.state import TaskInstanceState
+
+    instances = (
+        session.query(TaskInstance)
+        .filter(
+            TaskInstance.dag_id == dag_id,
+            TaskInstance.state.notin_(
+                (TaskInstanceState.SUCCESS, TaskInstanceState.FAILED)
+            ),
+        )
+        .all()
+    )
+    for instance in instances:
+        instance.set_state(TaskInstanceState.FAILED, session=session)
+
+
+def _airflow_delete_dag(dag_id: str, *, session: Any) -> int:
+    """One seam to Airflow's own DAG delete (the gate patches this to
+    simulate Airflow refusing a delete)."""
+    from airflow.api.common.delete_dag import delete_dag
+
+    return delete_dag(dag_id, session=session)
+
+
+def _has_running_task_instances(dag_id: str, session: Any) -> bool:
+    from airflow.models.taskinstance import TaskInstance
+    from airflow.utils.state import TaskInstanceState
+
+    running = session.query(TaskInstance).filter(
+        TaskInstance.dag_id == dag_id,
+        TaskInstance.state == TaskInstanceState.RUNNING,
+    )
+    return bool(session.query(running.exists()).scalar())
+
+
+def _delete_dag_records(dag_id: str, session: Any) -> int:
+    """Delete the DAG's DB records; DagNotFound counts as zero records.
+
+    Airflow refuses while a task is running, so when the delete raises
+    and a task is running, stop the run the same way kill does and
+    delete again (official operations/delete.py).
+    """
+    from airflow.exceptions import AirflowException, DagNotFound
+
+    try:
+        return _airflow_delete_dag(dag_id, session=session)
+    except DagNotFound:
+        return 0
+    except AirflowException:
+        if not _has_running_task_instances(dag_id, session):
+            raise
+        logger.info("Stopping the active run of DAG %s before deleting it", dag_id)
+        if not _fail_unfinished_runs(dag_id, session):
+            _fail_unfinished_task_instances(dag_id, session)
+        return _airflow_delete_dag(dag_id, session=session)
 
 
 class AirflowBackend:
@@ -410,16 +496,81 @@ class AirflowBackend:
 
     # -- lifecycle (step 5) ----------------------------------------------
     def set_enabled(self, dag_id: str, enabled: bool) -> bool:
-        raise NotImplementedError("step 5")
+        """Pause/unpause the DAG; False when it is not registered."""
+        from airflow.utils.session import create_session
+
+        try:
+            with create_session() as session:
+                dag_model = _dag_model(session, dag_id)
+                if dag_model is None:
+                    return False
+                dag_model.is_paused = not enabled
+                session.commit()
+                return True
+        except Exception as exc:  # noqa: BLE001 - mapped to a server error
+            raise DagOperationError(
+                f"failed to set enabled={enabled} for DAG {dag_id}: {exc}"
+            ) from exc
 
     def delete(self, dag_id: str) -> bool:
-        raise NotImplementedError("step 5")
+        """DB first, files after; 200 only when all three legs succeed.
 
-    def kill(self, dag_id: str, run_id: str) -> bool:
-        raise NotImplementedError("step 5")
+        The DB delete runs first so Airflow's FK ordering is enforced
+        before the files go. If it raises, the files stay on disk and
+        the next parse can restore the DAG (official operations/delete.py).
+        """
+        from airflow.utils.session import create_session
+
+        safe_id = clean_dag_id(dag_id)
+        dag_path = self._dags_folder / f"{safe_id}.py"
+        config_path = self._configs_dir / f"{safe_id}.json"
+        try:
+            with create_session() as session:
+                deleted = _delete_dag_records(dag_id, session)
+                session.commit()
+        except (UnknownDagError, DagOperationError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - mapped to a server error
+            raise DagOperationError(
+                f"delete failed for DAG {dag_id}: {exc}"
+            ) from exc
+        deleted_file = False
+        if dag_path.is_file():
+            deleted_file = True
+            dag_path.unlink()
+        deleted_config = False
+        if config_path.is_file():
+            deleted_config = True
+            config_path.unlink()
+        if deleted <= 0 or not deleted_file or not deleted_config:
+            logger.error(
+                "Could not fully delete DAG %s. Deleted database records: %s; "
+                "DAG file: %s; config file: %s",
+                dag_id,
+                deleted,
+                deleted_file,
+                deleted_config,
+            )
+        return deleted > 0 and deleted_file and deleted_config
+
+    def kill(self, dag_id: str) -> bool:
+        """Fail every running/queued run; False when there is none to kill."""
+        from airflow.utils.session import create_session
+
+        try:
+            with create_session() as session:
+                if _dag_model(session, dag_id) is None:
+                    raise UnknownDagError(dag_id)
+                killed = _fail_unfinished_runs(dag_id, session)
+                session.commit()
+                return killed
+        except UnknownDagError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - mapped to a server error
+            raise DagOperationError(f"kill failed for DAG {dag_id}: {exc}") from exc
 
     def host_ip(self) -> str:
-        raise NotImplementedError("step 5")
+        return resolve_host_ip()
 
 
 __all__ = ["AirflowBackend"]

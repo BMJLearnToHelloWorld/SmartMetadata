@@ -23,6 +23,8 @@ would, then derives the converged UUID from it.
 from __future__ import annotations
 
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -40,6 +42,30 @@ from smartmetadata_airflow_apis.run_id import clean_dag_id, pipeline_run_id
 
 _LOG_CHUNK_BYTES = LOG_CHUNK_BYTES  # official last_dag_logs chunk size
 _STATUS_LIMIT = 10  # official status returns the 10 latest runs
+
+# Official ip services, in order (routes/ip.py IP_SERVICES). Each attempt
+# has a 5 s timeout — a documented deviation from official's timeout-less
+# requests.get (ruling §2.1 row 12): a black-holed service must not hang
+# the route; the success path behaves identically.
+IP_SERVICES = ("https://api.ipify.org", "https://api.my-ip.io/ip")
+_IP_TIMEOUT_SECONDS = 5.0
+
+
+def resolve_host_ip(services: tuple[str, ...] | None = None) -> str:
+    """First public IP from the ip services, else "unknown".
+
+    ``services`` defaults to the module-level ``IP_SERVICES`` at call
+    time (so tests and gates can point it at local servers).
+    """
+    for url in services if services is not None else IP_SERVICES:
+        try:
+            with urllib.request.urlopen(url, timeout=_IP_TIMEOUT_SECONDS) as resp:
+                text = resp.read().decode("utf-8", "replace").strip()
+        except (urllib.error.URLError, OSError, ValueError):
+            continue
+        if text:
+            return text
+    return "unknown"
 
 
 def _now_ms() -> int:
@@ -70,7 +96,7 @@ class DagStore(Protocol):
     ) -> list[dict[str, Any]]: ...
     def set_enabled(self, dag_id: str, enabled: bool) -> bool: ...
     def delete(self, dag_id: str) -> bool: ...
-    def kill(self, dag_id: str, run_id: str | None = None) -> bool: ...
+    def kill(self, dag_id: str) -> bool: ...
     def last_logs(
         self,
         dag_id: str,
@@ -166,16 +192,14 @@ class MemoryDagStore:
     def delete(self, dag_id: str) -> bool:
         return self._dags.pop(dag_id, None) is not None
 
-    def kill(self, dag_id: str, run_id: str | None = None) -> bool:
+    def kill(self, dag_id: str) -> bool:
+        """Fail every queued/running run; False when there is none to kill."""
         state = self._require(dag_id)
         targets = [
-            r
-            for r in state.runs
-            if r.get("pipelineState") in {"queued", "running"}
-            and (run_id is None or r["runId"] == run_id)
+            r for r in state.runs if r.get("pipelineState") in {"queued", "running"}
         ]
         if not targets:
-            raise NoRunsError(dag_id)
+            return False
         now = _now_ms()
         for run in targets:
             run["pipelineState"] = "failed"
@@ -215,4 +239,4 @@ class MemoryDagStore:
         return body
 
     def host_ip(self) -> str:
-        return "127.0.0.1"
+        return resolve_host_ip()

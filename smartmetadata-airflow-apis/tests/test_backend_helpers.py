@@ -15,7 +15,9 @@ covered by the step-3 gate against live Airflow 3.3.2.
 from __future__ import annotations
 
 import json
+import threading
 import uuid
+from http.server import BaseHTTPRequestHandler
 
 from smartmetadata_airflow_apis.contracts import LOG_CHUNK_BYTES
 from smartmetadata_airflow_apis.logs import (
@@ -25,6 +27,7 @@ from smartmetadata_airflow_apis.logs import (
     split_log_chunks,
 )
 from smartmetadata_airflow_apis.run_id import pipeline_run_id, resolve_run_id
+from smartmetadata_airflow_apis.store import resolve_host_ip
 
 SERVER_UUID = str(uuid.uuid4())
 
@@ -97,3 +100,51 @@ def test_get_log_file_info_counts_chunks(tmp_path) -> None:  # type: ignore[no-u
     size, total = get_log_file_info(str(path), int(path.stat().st_mtime))
     assert size == LOG_CHUNK_BYTES + 1
     assert total == 2
+
+
+class _IpHandler(BaseHTTPRequestHandler):
+    body = b"203.0.113.7"
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server naming
+        data = self.body
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+def _local_ip_server(body: bytes):
+    from http.server import ThreadingHTTPServer
+
+    handler = type("H", (_IpHandler,), {"body": body})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_resolve_host_ip_first_service_wins() -> None:
+    first = _local_ip_server(b"203.0.113.7")
+    second = _local_ip_server(b"198.51.100.9")
+    try:
+        url = lambda s: f"http://127.0.0.1:{s.server_address[1]}/"  # noqa: E731
+        assert resolve_host_ip((url(first), url(second))) == "203.0.113.7"
+    finally:
+        first.shutdown()
+        second.shutdown()
+
+
+def test_resolve_host_ip_falls_through_empty_and_dead() -> None:
+    empty = _local_ip_server(b"")
+    good = _local_ip_server(b"198.51.100.9")
+    try:
+        url = lambda s: f"http://127.0.0.1:{s.server_address[1]}/"  # noqa: E731
+        assert resolve_host_ip((url(empty), url(good))) == "198.51.100.9"
+        assert resolve_host_ip(("http://127.0.0.1:1/", url(good))) == "198.51.100.9"
+        assert resolve_host_ip(("http://127.0.0.1:1/",)) == "unknown"
+    finally:
+        empty.shutdown()
+        good.shutdown()

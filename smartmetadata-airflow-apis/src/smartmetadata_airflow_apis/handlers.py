@@ -56,7 +56,7 @@ def _server_error() -> HandlerResult:
 
 
 def _not_found(dag_id: str) -> HandlerResult:
-    return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
+    return HandlerResult(404, {"error": f"DAG {dag_id} not found."})
 
 
 def health(_: DagStore) -> HandlerResult:
@@ -116,7 +116,11 @@ def delete(store: DagStore, dag_id: str | None) -> HandlerResult:
         return HandlerResult(400, {"error": "delete requires dag_id"})
     try:
         deleted = store.delete(dag_id)
-    except DagOperationError:
+    except DagOperationError as exc:
+        logger.error("delete failed for DAG %s: %s", dag_id, exc, exc_info=True)
+        return _server_error()
+    except Exception as exc:  # noqa: BLE001 - official routes catch all
+        logger.error("delete failed for DAG %s: %s", dag_id, exc, exc_info=True)
         return _server_error()
     if not deleted:
         # Official delete only returns 200 when the DB records AND both
@@ -129,18 +133,29 @@ def enable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "enable requires dag_id"})
-    if not store.set_enabled(str(dag_id), True):
+    try:
+        enabled = store.set_enabled(str(dag_id), True)
+    except Exception as exc:  # noqa: BLE001 - official routes catch all
+        logger.error("enable failed for DAG %s: %s", dag_id, exc, exc_info=True)
+        return _server_error()
+    if not enabled:
         return _not_found(str(dag_id))
-    return HandlerResult(200, {"message": f"DAG [{dag_id}] has been enabled"})
+    # Official message has no brackets (operations/state.py).
+    return HandlerResult(200, {"message": f"DAG {dag_id} has been enabled"})
 
 
 def disable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "disable requires dag_id"})
-    if not store.set_enabled(str(dag_id), False):
+    try:
+        disabled = store.set_enabled(str(dag_id), False)
+    except Exception as exc:  # noqa: BLE001 - official routes catch all
+        logger.error("disable failed for DAG %s: %s", dag_id, exc, exc_info=True)
+        return _server_error()
+    if not disabled:
         return _not_found(str(dag_id))
-    return HandlerResult(200, {"message": f"DAG [{dag_id}] has been disabled"})
+    return HandlerResult(200, {"message": f"DAG {dag_id} has been disabled"})
 
 
 def status(
@@ -163,11 +178,18 @@ def kill(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "kill requires dag_id"})
-    run_id = payload.get("run_id") or payload.get("runId")
     try:
-        store.kill(str(dag_id), run_id=str(run_id) if run_id else None)
-    except (UnknownDagError, NoRunsError):
+        killed = store.kill(str(dag_id))
+    except UnknownDagError:
         return _not_found(str(dag_id))
+    except Exception as exc:  # noqa: BLE001 - official routes catch all
+        logger.error("kill failed for DAG %s: %s", dag_id, exc, exc_info=True)
+        return _server_error()
+    if not killed:
+        return HandlerResult(
+            404,
+            {"error": f"Workflow [{dag_id}] has no running or pending runs nor tasks"},
+        )
     return HandlerResult(200, {"message": f"Workflow [{dag_id}] has been killed"})
 
 
