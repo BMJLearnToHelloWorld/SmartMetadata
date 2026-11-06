@@ -315,10 +315,19 @@ def build_dag(
     pipeline: dict[str, Any],
     workflow_config: dict[str, Any],
     params: dict[str, Any] | None = None,
+    raise_on_error: bool | None = None,
 ) -> Any:
-    """Build the single-task DAG for one pipeline (no DAG context manager)."""
+    """Build the single-task DAG for one pipeline (no DAG context manager).
+
+    ``raise_on_error`` overrides the pipeline's own value when given: the
+    official profiler (and test_suite) builders omit raiseOnError, so their
+    builders pass False; metadata/usage/lineage leave it None and keep the
+    pipeline value.
+    """
     from airflow import DAG
 
+    if raise_on_error is None:
+        raise_on_error = bool(pipeline.get("raiseOnError", False))
     configs = build_dag_configs(pipeline)
     airflow_config = pipeline.get("airflowConfig") or {}
     dag = DAG(
@@ -331,7 +340,7 @@ def build_dag(
         task_id=task_name,
         workflow_config=workflow_config,
         pipeline=pipeline,
-        raise_on_error=bool(pipeline.get("raiseOnError", False)),
+        raise_on_error=raise_on_error,
         logger_level=pipeline.get("loggerLevel"),
         retries=int(airflow_config.get("retries") or 0),
         retry_delay=timedelta(seconds=int(airflow_config.get("retryDelay") or 300)),

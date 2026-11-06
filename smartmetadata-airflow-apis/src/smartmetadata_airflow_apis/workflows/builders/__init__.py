@@ -8,4 +8,7 @@
 
 """DAG builders, one per pipeline type. Importing this package registers them."""
 
+from smartmetadata_airflow_apis.workflows.builders import lineage as _lineage  # noqa: F401
 from smartmetadata_airflow_apis.workflows.builders import metadata as _metadata  # noqa: F401
+from smartmetadata_airflow_apis.workflows.builders import profiler as _profiler  # noqa: F401
+from smartmetadata_airflow_apis.workflows.builders import usage as _usage  # noqa: F401

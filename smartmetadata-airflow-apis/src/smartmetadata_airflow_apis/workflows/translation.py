@@ -183,13 +183,22 @@ def translate_pipeline(
     source_type: str,
     service_connection: dict[str, Any] | None = None,
     server_client: Any | None = None,
+    raise_on_error: bool | None = None,
 ) -> Any:
     """Build the product WorkflowConfig for one pipeline.
 
     ``service_connection`` overrides the live fetch (tests); otherwise the
     connection is fetched from the server at parse time.
+
+    ``raise_on_error`` overrides the pipeline's own value when given: the
+    official profiler (and test_suite) builders omit raiseOnError, so their
+    builders pass False; metadata/usage/lineage leave it None and keep the
+    pipeline value (official ``build_workflow_config_property``).
     """
     from smartmetadata_ingestion.config import WorkflowConfig
+
+    if raise_on_error is None:
+        raise_on_error = bool(pipeline.get("raiseOnError", False))
 
     source = pipeline.get("source") or {}
     source_config = source.get("sourceConfig") or {}
@@ -221,7 +230,7 @@ def translate_pipeline(
         "workflow": {
             "name": pipeline.get("name"),
             "type": workflow_type,
-            "failFast": bool(pipeline.get("raiseOnError", False)),
+            "failFast": raise_on_error,
             "ingestionPipelineFqn": pipeline.get("fullyQualifiedName"),
             "reconcileStale": bool(config_block.get("markDeletedTables", False)),
         },
