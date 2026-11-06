@@ -58,15 +58,14 @@ import org.openmetadata.schema.EntityInterface;
 import org.openmetadata.schema.FieldInterface;
 import org.openmetadata.schema.api.data.TermReference;
 import org.openmetadata.schema.entity.classification.Tag;
-import org.openmetadata.schema.entity.data.APIEndpoint;
 import org.openmetadata.schema.entity.data.GlossaryTerm;
-import org.openmetadata.schema.entity.data.SearchIndex;
 import org.openmetadata.schema.entity.data.Table;
-import org.openmetadata.schema.entity.data.Topic;
 import org.openmetadata.schema.entity.policies.accessControl.Rule;
 import org.openmetadata.schema.entity.type.CustomProperty;
 import org.openmetadata.schema.type.*;
+import org.openmetadata.schema.type.Column;
 import org.openmetadata.schema.type.EntityReference;
+import org.openmetadata.schema.type.Field;
 import org.openmetadata.schema.type.TagLabel.TagSource;
 import org.openmetadata.schema.utils.JsonUtils;
 import org.openmetadata.search.IndexMapping;
@@ -451,6 +450,22 @@ public final class EntityUtil {
   }
 
   /** Merge two sets of tags */
+  /** Merges the tags of {@code columns} and of every column nested under them. */
+  public static void mergeColumnTags(List<TagLabel> mergeTo, List<Column> columns) {
+    for (Column column : listOrEmpty(columns)) {
+      mergeTags(mergeTo, column.getTags());
+      mergeColumnTags(mergeTo, column.getChildren());
+    }
+  }
+
+  /** Merges the tags of schema {@code fields} and of every field nested under them. */
+  public static void mergeFieldTags(List<TagLabel> mergeTo, List<Field> fields) {
+    for (Field field : listOrEmpty(fields)) {
+      mergeTags(mergeTo, field.getTags());
+      mergeFieldTags(mergeTo, field.getChildren());
+    }
+  }
+
   public static void mergeTags(List<TagLabel> mergeTo, List<TagLabel> mergeFrom) {
     if (nullOrEmpty(mergeFrom)) {
       return;
@@ -727,47 +742,6 @@ public final class EntityUtil {
 
   public static String getFieldName(String... strings) {
     return String.join(Entity.SEPARATOR, strings);
-  }
-
-  /** Return column field name of format "columns".columnName.columnFieldName */
-  public static String getColumnField(Column column, String columnField) {
-    // Remove table FQN from column FQN to get the local name
-    String localColumnName = column.getName();
-    return columnField == null
-        ? FullyQualifiedName.build("columns", localColumnName)
-        : FullyQualifiedName.build("columns", localColumnName, columnField);
-  }
-
-  /** Return schema field name of format "schemaFields".fieldName.fieldName */
-  public static String getSchemaField(Topic topic, Field field, String fieldName) {
-    // Remove topic FQN from schemaField FQN to get the local name
-    String localFieldName =
-        EntityUtil.getLocalColumnName(topic.getFullyQualifiedName(), field.getFullyQualifiedName());
-    return fieldName == null
-        ? FullyQualifiedName.build("schemaFields", localFieldName)
-        : FullyQualifiedName.build("schemaFields", localFieldName, fieldName);
-  }
-
-  public static String getSchemaField(APIEndpoint apiEndpoint, Field field, String fieldName) {
-    // Remove APIEndpoint FQN from schemaField FQN to get the local name
-    String localFieldName =
-        EntityUtil.getLocalColumnName(
-            apiEndpoint.getFullyQualifiedName(), field.getFullyQualifiedName());
-    return fieldName == null
-        ? FullyQualifiedName.build("schemaFields", localFieldName)
-        : FullyQualifiedName.build("schemaFields", localFieldName, fieldName);
-  }
-
-  /** Return searchIndex field name of format "fields".fieldName.fieldName */
-  public static String getSearchIndexField(
-      SearchIndex searchIndex, SearchIndexField field, String fieldName) {
-    // Remove topic FQN from schemaField FQN to get the local name
-    String localFieldName =
-        EntityUtil.getLocalColumnName(
-            searchIndex.getFullyQualifiedName(), field.getFullyQualifiedName());
-    return fieldName == null
-        ? FullyQualifiedName.build("fields", localFieldName)
-        : FullyQualifiedName.build("fields", localFieldName, fieldName);
   }
 
   /** Return rule field name of format "rules".ruleName.ruleFieldName */
@@ -1150,6 +1124,34 @@ public final class EntityUtil {
             nullOrEmpty(selectedFqn)
                 ? DomainNavFilter.ParentScope.NONE
                 : parentScope(parent.get(), selectedFqn));
+  }
+
+  /**
+   * The caller's navbar domain and its sub-domains as a search query filter, or null with no pick;
+   * for reads that query search documents directly (e.g. Data Insights charts).
+   *
+   * <p>Prerequisite port from upstream e257c23f83 (P6 domain navbar): S1 (a5b30c6e376b) Data
+   * Insights chart access control calls it; all of its dependencies already exist here.
+   */
+  public static String navbarDomainSearchFilter(SecurityContext securityContext) {
+    if (getSubjectContext(securityContext).isBot()) {
+      return null;
+    }
+    EntityReference selected = resolveSelectedDomain(activeDomain(securityContext));
+    if (selected == null || nullOrEmpty(selected.getFullyQualifiedName())) {
+      return null;
+    }
+    String fqn = selected.getFullyQualifiedName();
+    Map<String, Object> inSubtree =
+        Map.of(
+            "bool",
+            Map.of(
+                "should",
+                List.of(
+                    Map.of("term", Map.of("domains.fullyQualifiedName", fqn)),
+                    Map.of(
+                        "prefix", Map.of("domains.fullyQualifiedName", fqn + Entity.SEPARATOR)))));
+    return JsonUtils.pojoToJson(Map.of("query", inSubtree));
   }
 
   // Resolved up front so list queries bind plain ids: planners estimate an id list well, but not a
