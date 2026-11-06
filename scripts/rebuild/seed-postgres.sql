@@ -2,8 +2,8 @@
 -- Creates the source data the postgres example ingests
 -- (smartmetadata-ingestion/examples/postgres-metadata.yaml).
 -- Must stay in sync with scripts/rebuild/validate_product_ingest.py
--- (EXPECTED_TABLES) and the job PG_* environment.
--- Runs once via the postgres container docker-entrypoint-initdb.d.
+-- (EXPECTED_TABLES) and the job's PG_* environment.
+-- Runs once via the postgres container's /docker-entrypoint-initdb.d.
 CREATE TABLE IF NOT EXISTS public.customers (
     id INTEGER PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
