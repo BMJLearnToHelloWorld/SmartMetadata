@@ -80,6 +80,7 @@ def _task(dag: Any, task_id: str) -> Any:
 
 
 def test_metadata_builder_keeps_pipeline_raise_on_error() -> None:
+    pytest.importorskip("airflow")
     builder = get_builder("metadata")
     assert builder is not None
     dag = builder(_pipeline(raiseOnError=True))
@@ -91,6 +92,7 @@ def test_metadata_builder_keeps_pipeline_raise_on_error() -> None:
 
 
 def test_profiler_builder_omits_raise_on_error() -> None:
+    pytest.importorskip("airflow")
     # Official profiler WorkflowConfig omits raiseOnError: even a pipeline
     # carrying raiseOnError=true must not fail the task (ruling §4.2).
     builder = get_builder("profiler")
@@ -105,6 +107,7 @@ def test_profiler_builder_omits_raise_on_error() -> None:
 
 
 def test_usage_builder_suffixes_source_type() -> None:
+    pytest.importorskip("airflow")
     builder = get_builder("usage")
     assert builder is not None
     dag = builder(_pipeline("usage_pipeline", "usage", raiseOnError=True))
@@ -116,6 +119,7 @@ def test_usage_builder_suffixes_source_type() -> None:
 
 
 def test_lineage_builder_suffixes_source_type() -> None:
+    pytest.importorskip("airflow")
     builder = get_builder("lineage")
     assert builder is not None
     dag = builder(_pipeline("lineage_pipeline", "lineage"))
@@ -160,6 +164,7 @@ def _fake_dag_run(run_id: str) -> Any:
 
 
 def _metadata_task() -> Any:
+    pytest.importorskip("airflow")
     builder = get_builder("metadata")
     assert builder is not None
     dag = builder(_pipeline("kill_demo", "metadata"))
@@ -301,6 +306,7 @@ def _scheduled_failure(
     """Run a scheduled run of a dotted-name pipeline, then fire the
     task-level failure callback; returns (worker run ids, writebacks,
     expected run id)."""
+    pytest.importorskip("airflow")
     builder = get_builder("metadata")
     assert builder is not None
     pipeline = _pipeline("my.pipe", "metadata")

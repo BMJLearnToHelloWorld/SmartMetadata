@@ -37,6 +37,7 @@ def _auth_headers() -> dict[str, str]:
 
 
 def test_entry_point_registered() -> None:
+    pytest.importorskip("airflow")
     dist = distribution("smartmetadata-airflow-apis")
     points = [
         ep for ep in dist.entry_points if ep.group == "airflow.plugins"
