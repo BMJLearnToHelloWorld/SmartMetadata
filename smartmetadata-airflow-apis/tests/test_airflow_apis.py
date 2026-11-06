@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+from typing import Any
 
 import pytest
 
@@ -36,9 +37,9 @@ class _RecordingStore(MemoryDagStore):
         return super().deploy(pipeline)
 
 
-def _deploy_body(source_config: dict | None = None) -> dict:
+def _deploy_body(source_config: dict | None = None, name: str = "scope_demo") -> dict:
     return {
-        "name": "scope_demo",
+        "name": name,
         "pipelineType": "metadata",
         "source": {
             "type": "mysql",
@@ -295,3 +296,189 @@ def test_deploy_accepts_expressible_scope(config: dict) -> None:
     )
     assert res.status_code == 200
     assert len(store.deploy_calls) == 1
+
+
+# --- Raw pipeline names at the dag_id boundary (ruling §1.5, fix-round B-5) ---
+# Official cleans every request dag_id at the API boundary
+# (get_request_dag_id / get_arg_dag_id -> clean_dag_id); the server sends
+# the raw pipeline name (AirflowRESTClient puts ingestionPipeline.getName()
+# as DAG_ID). A pipeline whose name needs cleaning must answer under its
+# raw name on every dag_id route.
+
+
+def test_dag_id_routes_accept_raw_pipeline_name() -> None:
+    store = MemoryDagStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    prefix = "/api/v1/openmetadata"
+
+    deploy = client.post(
+        f"{prefix}/deploy", json=_deploy_body(name="my.pipe"), headers=_auth_headers()
+    )
+    assert deploy.status_code == 200
+    assert "[my_pipe]" in deploy.get_json()["message"]
+
+    # Trigger under the raw name, as the server sends it.
+    trigger = client.post(
+        f"{prefix}/trigger", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+    )
+    assert trigger.status_code == 200
+    message = trigger.get_json()["message"]
+    assert message.startswith("Workflow [my_pipe] has been triggered")
+    triggered_run_id = message.rsplit(" ", 1)[-1]
+
+    # Status under the raw name sees the run the trigger created, with the
+    # run id derived from the cleaned dag id.
+    status = client.get(
+        f"{prefix}/status", query_string={"dag_id": "my.pipe"}, headers=_auth_headers()
+    )
+    assert status.status_code == 200
+    runs = status.get_json()
+    assert len(runs) == 1
+    assert runs[0]["runId"] == triggered_run_id
+
+    # Enable/disable under the raw name, too.
+    assert (
+        client.post(
+            f"{prefix}/disable", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"{prefix}/enable", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+        ).status_code
+        == 200
+    )
+
+
+def test_delete_accepts_raw_pipeline_name() -> None:
+    store = MemoryDagStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    prefix = "/api/v1/openmetadata"
+
+    deploy = client.post(
+        f"{prefix}/deploy", json=_deploy_body(name="my.pipe"), headers=_auth_headers()
+    )
+    assert deploy.status_code == 200
+    deleted = client.delete(
+        f"{prefix}/delete",
+        query_string={"dag_id": "my.pipe"},
+        headers=_auth_headers(),
+    )
+    assert deleted.status_code == 200
+    # The DAG is gone: status under the raw name is a 404 now.
+    status = client.get(
+        f"{prefix}/status", query_string={"dag_id": "my.pipe"}, headers=_auth_headers()
+    )
+    assert status.status_code == 404
+
+
+def test_kill_accepts_raw_pipeline_name() -> None:
+    store = MemoryDagStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    prefix = "/api/v1/openmetadata"
+
+    assert (
+        client.post(
+            f"{prefix}/deploy",
+            json=_deploy_body(name="my.pipe"),
+            headers=_auth_headers(),
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"{prefix}/trigger", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+        ).status_code
+        == 200
+    )
+    killed = client.post(
+        f"{prefix}/kill", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+    )
+    assert killed.status_code == 200
+    status = client.get(
+        f"{prefix}/status", query_string={"dag_id": "my.pipe"}, headers=_auth_headers()
+    )
+    assert status.status_code == 200
+    assert status.get_json()[0]["pipelineState"] == "failed"
+
+
+def test_last_dag_logs_accepts_raw_pipeline_name() -> None:
+    store = MemoryDagStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    prefix = "/api/v1/openmetadata"
+
+    assert (
+        client.post(
+            f"{prefix}/deploy",
+            json=_deploy_body(name="my.pipe"),
+            headers=_auth_headers(),
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"{prefix}/trigger", json={"dag_id": "my.pipe"}, headers=_auth_headers()
+        ).status_code
+        == 200
+    )
+    store.set_log("my_pipe", "ingestion_task", "hello logs")
+    logs = client.get(
+        f"{prefix}/last_dag_logs",
+        query_string={"dag_id": "my.pipe", "task_id": "ingestion_task"},
+        headers=_auth_headers(),
+    )
+    assert logs.status_code == 200
+    assert logs.get_json()["ingestion_task"] == "hello logs"
+
+
+# --- Malformed sourceConfig/config/includes shapes (fix-round N-11) --------
+# Same failure family as N-10, one level up: a malformed shape must be a
+# 400 naming only the field location, before any file is written — never
+# a 500 at DAG-parse time (sourceConfig), a 200 that writes a broken DAG
+# (config), or a silent wrong scope (string includes iterated per char).
+
+
+def _deploy_body_with_source_config(source_config: Any) -> dict:
+    body = _deploy_body()
+    body["source"]["sourceConfig"] = source_config
+    return body
+
+
+@pytest.mark.parametrize(
+    ("source_config", "field"),
+    [
+        ("oops", "source.sourceConfig"),
+        (["x"], "source.sourceConfig"),
+        ({"config": "oops"}, "source.sourceConfig.config"),
+        (
+            {"config": {"schemaFilterPattern": {"includes": "sales"}}},
+            "source.sourceConfig.config.schemaFilterPattern",
+        ),
+        (
+            {"config": {"databaseFilterPattern": {"excludes": "staging"}}},
+            "source.sourceConfig.config.databaseFilterPattern",
+        ),
+        (
+            {"config": {"schemaFilterPattern": {"includes": 123}}},
+            "source.sourceConfig.config.schemaFilterPattern",
+        ),
+    ],
+)
+def test_deploy_rejects_malformed_source_config_shapes(
+    source_config: Any, field: str
+) -> None:
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json=_deploy_body_with_source_config(source_config),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 400
+    error = res.get_json()["error"]
+    assert field in error
+    # Nothing was written: no DAG file exists to be parsed, so the
+    # malformed shape can no longer fail — or silently mis-scope, as a
+    # string includes would by iterating per character — at DAG-parse time.
+    assert store.deploy_calls == []

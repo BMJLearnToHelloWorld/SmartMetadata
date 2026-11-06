@@ -110,8 +110,20 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
     never a value (§2.3). Returns the offending field locations.
     """
     problems: list[str] = []
-    config = (source_config or {}).get("config")
+    if source_config is None:
+        return problems
+    if not isinstance(source_config, dict):
+        # N-11: a present-but-malformed sourceConfig (e.g. a string)
+        # raises AttributeError instead of a 400 naming the field.
+        problems.append("source.sourceConfig")
+        return problems
+    config = source_config.get("config")
+    if config is None:
+        return problems
     if not isinstance(config, dict):
+        # N-11: a present-but-malformed config (e.g. a string) passes
+        # validation, then fails at DAG-parse time after files are written.
+        problems.append("source.sourceConfig.config")
         return problems
     table_filter = config.get("tableFilterPattern")
     if table_filter is not None and not isinstance(table_filter, dict):
@@ -131,6 +143,15 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
             continue
         if not isinstance(pattern, dict):
             # N-10, same as tableFilterPattern above.
+            problems.append(f"source.sourceConfig.config.{key}")
+            continue
+        if any(
+            sub in pattern and not isinstance(pattern[sub], list)
+            for sub in ("includes", "excludes")
+        ):
+            # N-11: non-list includes/excludes iterate per character at
+            # parse time (a string "sales" becomes ["s", "a", "l", "e",
+            # "s"]) — a silent wrong scope with no error anywhere.
             problems.append(f"source.sourceConfig.config.{key}")
             continue
         untranslatable = any(

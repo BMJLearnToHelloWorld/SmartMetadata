@@ -32,6 +32,7 @@ from smartmetadata_airflow_apis.errors import (
     ValidationError,
 )
 from smartmetadata_airflow_apis.response import GENERIC_SERVER_ERROR
+from smartmetadata_airflow_apis.run_id import clean_dag_id
 from smartmetadata_airflow_apis.store import DagStore
 from smartmetadata_airflow_apis.validation import (
     validate_automation_workflow,
@@ -57,6 +58,17 @@ def _server_error() -> HandlerResult:
 
 def _not_found(dag_id: str) -> HandlerResult:
     return HandlerResult(404, {"error": f"DAG {dag_id} not found."})
+
+
+def _clean_dag_id(dag_id: str) -> str:
+    """Registered DAG id for a request dag_id (ruling §1.5).
+
+    Mirrors official's ``get_request_dag_id`` / ``get_arg_dag_id``: the
+    server sends the raw pipeline name, and the registered id is the
+    cleaned form (``[^0-9a-zA-Z-_]+`` -> ``_``). Cleaning belongs at the
+    API boundary — the store and the worker only ever see registered ids.
+    """
+    return clean_dag_id(dag_id)
 
 
 def health(_: DagStore) -> HandlerResult:
@@ -99,6 +111,7 @@ def trigger(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "trigger requires dag_id"})
+    dag_id = _clean_dag_id(str(dag_id))
     conf = payload.get("conf") if isinstance(payload.get("conf"), dict) else {}
     try:
         run = store.trigger(str(dag_id), conf)
@@ -114,6 +127,7 @@ def trigger(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
 def delete(store: DagStore, dag_id: str | None) -> HandlerResult:
     if not dag_id:
         return HandlerResult(400, {"error": "delete requires dag_id"})
+    dag_id = _clean_dag_id(dag_id)
     try:
         deleted = store.delete(dag_id)
     except DagOperationError as exc:
@@ -133,6 +147,7 @@ def enable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "enable requires dag_id"})
+    dag_id = _clean_dag_id(str(dag_id))
     try:
         enabled = store.set_enabled(str(dag_id), True)
     except Exception as exc:  # noqa: BLE001 - official routes catch all
@@ -148,6 +163,7 @@ def disable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "disable requires dag_id"})
+    dag_id = _clean_dag_id(str(dag_id))
     try:
         disabled = store.set_enabled(str(dag_id), False)
     except Exception as exc:  # noqa: BLE001 - official routes catch all
@@ -166,6 +182,7 @@ def status(
 ) -> HandlerResult:
     if not dag_id:
         return HandlerResult(400, {"error": "status requires dag_id"})
+    dag_id = _clean_dag_id(dag_id)
     try:
         runs = store.status(dag_id, run_id=run_id, only_queued=only_queued)
     except UnknownDagError:
@@ -178,6 +195,7 @@ def kill(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "kill requires dag_id"})
+    dag_id = _clean_dag_id(str(dag_id))
     try:
         killed = store.kill(str(dag_id))
     except UnknownDagError:
@@ -202,6 +220,7 @@ def last_dag_logs(
 ) -> HandlerResult:
     if not dag_id or not task_id:
         return HandlerResult(400, {"error": "last_dag_logs requires dag_id and task_id"})
+    dag_id = _clean_dag_id(dag_id)
     try:
         body = store.last_logs(dag_id, run_id, task_id, after=after)
     except UnknownDagError:
