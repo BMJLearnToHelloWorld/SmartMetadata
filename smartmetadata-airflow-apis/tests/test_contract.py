@@ -377,13 +377,16 @@ def test_delete_removes_dag(client) -> None:
         ).status_code
         == 404
     )
+    # Unknown dag -> 500: official delete only returns 200 when the DB
+    # records AND both files are deleted (ruling §0.3); DagNotFound yields
+    # 0 records, so the delete is incomplete -> server error.
     assert (
         client.delete(
             "/api/v2/openmetadata/delete",
             query_string={"dag_id": "nope"},
             headers=_auth_headers(),
         ).status_code
-        == 404
+        == 500
     )
 
 

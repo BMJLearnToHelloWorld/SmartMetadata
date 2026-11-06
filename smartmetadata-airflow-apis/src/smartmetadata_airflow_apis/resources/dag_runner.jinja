@@ -1,0 +1,12 @@
+"""Generated DAG for a SmartMetadata ingestion pipeline.
+
+Written by the plugin at deploy time. It only wires the stored pipeline
+config into the workflow factory; all behaviour lives in the factory and
+the builders.
+"""
+
+from smartmetadata_airflow_apis.workflows.factory import WorkflowFactory
+
+workflow = WorkflowFactory.create({{ config_path }})
+workflow.generate_dag(globals())
+dag = workflow.get_dag()

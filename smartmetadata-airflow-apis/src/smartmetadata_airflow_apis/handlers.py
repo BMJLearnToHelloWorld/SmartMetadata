@@ -6,14 +6,36 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Pure request handlers for AirflowRESTClient path names."""
+"""Pure request handlers for AirflowRESTClient path names.
+
+Success bodies and failure codes follow the official plugin (ruling §2.1
+and §0.3); the server only accepts HTTP 200 as success and echoes success
+bodies as ``reason`` without parsing them, so the message texts match the
+official ones exactly. Failure mapping is per route, not generic:
+``trigger`` on an unknown DAG is a 500 (the server treats a failed trigger
+as a server error) while ``status``/``enable``/``disable``/``kill``/
+``last_dag_logs`` on an unknown DAG are 404; ``delete`` on an unknown DAG
+is a 500 because the official delete only returns 200 when the DB records
+AND both files are deleted.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from smartmetadata_airflow_apis.contracts import PRODUCT_RELEASE_VERSION
-from smartmetadata_airflow_apis.store import MemoryDagStore
+from smartmetadata_airflow_apis.errors import (
+    DagOperationError,
+    NoRunsError,
+    UnknownDagError,
+    ValidationError,
+)
+from smartmetadata_airflow_apis.response import GENERIC_SERVER_ERROR
+from smartmetadata_airflow_apis.store import DagStore
+from smartmetadata_airflow_apis.validation import (
+    validate_automation_workflow,
+    validate_ingestion_pipeline,
+)
 
 
 class HandlerResult:
@@ -22,11 +44,19 @@ class HandlerResult:
         self.body = body
 
 
-def health(_: MemoryDagStore) -> HandlerResult:
+def _server_error() -> HandlerResult:
+    return HandlerResult(500, {"error": GENERIC_SERVER_ERROR})
+
+
+def _not_found(dag_id: str) -> HandlerResult:
+    return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
+
+
+def health(_: DagStore) -> HandlerResult:
     return HandlerResult(200, {"status": "healthy", "version": PRODUCT_RELEASE_VERSION})
 
 
-def health_auth(_: MemoryDagStore) -> HandlerResult:
+def health_auth(_: DagStore) -> HandlerResult:
     # Java AirflowRESTClient.readHealthResponse expects JSON with "version"
     return HandlerResult(200, {"version": PRODUCT_RELEASE_VERSION, "status": "healthy"})
 
@@ -46,92 +76,129 @@ def csrf_token(token: str | None) -> HandlerResult:
     )
 
 
-def deploy(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
-    dag_id = (
-        payload.get("name")
-        or payload.get("dag_id")
-        or (payload.get("airflowConfig") or {}).get("dagId")
-    )
-    if not dag_id:
-        return HandlerResult(400, {"error": "deploy requires name or dag_id"})
-    store.deploy(str(dag_id), payload)
-    return HandlerResult(200, {"message": f"DAG {dag_id} deployed", "dag_id": dag_id})
+def deploy(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
+    try:
+        pipeline = validate_ingestion_pipeline(payload)
+    except ValidationError as exc:
+        return HandlerResult(400, {"error": "; ".join(exc.problems)})
+    try:
+        dag_id = store.deploy(pipeline)
+    except DagOperationError:
+        return _server_error()
+    return HandlerResult(200, {"message": f"Workflow [{dag_id}] has been created"})
 
 
-def trigger(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
+def trigger(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "trigger requires dag_id"})
     conf = payload.get("conf") if isinstance(payload.get("conf"), dict) else {}
-    run = store.trigger(str(dag_id), conf)
-    if run is None:
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found or disabled"})
-    return HandlerResult(200, run)
+    try:
+        run = store.trigger(str(dag_id), conf)
+    except (UnknownDagError, DagOperationError):
+        # Official trigger on an unknown DAG is a server error, not 404.
+        return _server_error()
+    return HandlerResult(
+        200,
+        {"message": f"Workflow [{dag_id}] has been triggered {run['runId']}"},
+    )
 
 
-def delete(store: MemoryDagStore, dag_id: str | None) -> HandlerResult:
+def delete(store: DagStore, dag_id: str | None) -> HandlerResult:
     if not dag_id:
         return HandlerResult(400, {"error": "delete requires dag_id"})
-    if not store.delete(dag_id):
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
-    return HandlerResult(200, {"message": f"DAG {dag_id} deleted"})
+    try:
+        deleted = store.delete(dag_id)
+    except DagOperationError:
+        return _server_error()
+    if not deleted:
+        # Official delete only returns 200 when the DB records AND both
+        # files are deleted; an unknown DAG deletes 0 records -> 500.
+        return _server_error()
+    return HandlerResult(200, {"message": f"DAG [{dag_id}] has been deleted"})
 
 
-def enable(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
+def enable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "enable requires dag_id"})
-    if store.enable(str(dag_id), True) is None:
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
-    return HandlerResult(200, {"message": f"DAG {dag_id} enabled"})
+    if not store.set_enabled(str(dag_id), True):
+        return _not_found(str(dag_id))
+    return HandlerResult(200, {"message": f"DAG [{dag_id}] has been enabled"})
 
 
-def disable(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
+def disable(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "disable requires dag_id"})
-    if store.enable(str(dag_id), False) is None:
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
-    return HandlerResult(200, {"message": f"DAG {dag_id} disabled"})
+    if not store.set_enabled(str(dag_id), False):
+        return _not_found(str(dag_id))
+    return HandlerResult(200, {"message": f"DAG [{dag_id}] has been disabled"})
 
 
-def status(store: MemoryDagStore, dag_id: str | None) -> HandlerResult:
+def status(
+    store: DagStore,
+    dag_id: str | None,
+    run_id: str | None = None,
+    only_queued: bool = False,
+) -> HandlerResult:
     if not dag_id:
         return HandlerResult(400, {"error": "status requires dag_id"})
-    # Java reads a JSON array of PipelineStatus
-    return HandlerResult(200, store.status(dag_id))
+    try:
+        runs = store.status(dag_id, run_id=run_id, only_queued=only_queued)
+    except UnknownDagError:
+        return _not_found(dag_id)
+    # Java reads a JSON array of PipelineStatus.
+    return HandlerResult(200, runs)
 
 
-def kill(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
+def kill(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
     dag_id = payload.get("dag_id") or payload.get("dagId")
     if not dag_id:
         return HandlerResult(400, {"error": "kill requires dag_id"})
-    if not store.kill(str(dag_id)):
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
-    return HandlerResult(200, {"message": f"killed runs for {dag_id}"})
+    run_id = payload.get("run_id") or payload.get("runId")
+    try:
+        store.kill(str(dag_id), run_id=str(run_id) if run_id else None)
+    except (UnknownDagError, NoRunsError):
+        return _not_found(str(dag_id))
+    return HandlerResult(200, {"message": f"Workflow [{dag_id}] has been killed"})
 
 
 def last_dag_logs(
-    store: MemoryDagStore,
+    store: DagStore,
     dag_id: str | None,
     task_id: str | None,
+    run_id: str | None = None,
     after: int = 0,
 ) -> HandlerResult:
     if not dag_id or not task_id:
         return HandlerResult(400, {"error": "last_dag_logs requires dag_id and task_id"})
-    body = store.last_logs(dag_id, task_id, after=after)
-    if body is None:
-        return HandlerResult(404, {"error": f"DAG {dag_id} not found"})
+    try:
+        body = store.last_logs(dag_id, run_id, task_id, after=after)
+    except UnknownDagError:
+        return _not_found(dag_id)
+    except NoRunsError:
+        return HandlerResult(
+            404, {"error": f"Workflow [{dag_id}] has no runs to read logs from"}
+        )
+    except ValidationError as exc:
+        return HandlerResult(400, {"error": "; ".join(exc.problems)})
     return HandlerResult(200, body)
 
 
-def host_ip(_: MemoryDagStore) -> HandlerResult:
-    return HandlerResult(200, {"ip": "127.0.0.1"})
+def host_ip(store: DagStore) -> HandlerResult:
+    return HandlerResult(200, {"ip": store.host_ip()})
 
 
-def run_automation(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
-    name = payload.get("name") or "automation"
-    # Reuse deploy+trigger semantics without inventing a new product surface
-    store.deploy(str(name), payload)
-    run = store.trigger(str(name), {})
-    return HandlerResult(200, run or {"message": f"automation {name} accepted"})
+def run_automation(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
+    # Step 4 replaces this stand-in with the real executor (ruling §4.4).
+    # Until then: shape validation is real (malformed -> 400); a well-formed
+    # workflow is accepted without executing, so the "unexecutable -> 500"
+    # contract test stays red until step 4. Deliberately no store
+    # interaction here: a fake deploy would pollute the DAG registry.
+    try:
+        workflow = validate_automation_workflow(payload)
+    except ValidationError as exc:
+        return HandlerResult(400, {"error": "; ".join(exc.problems)})
+    name = str(workflow["name"])
+    return HandlerResult(200, {"message": f"Workflow [{name}] has been triggered."})

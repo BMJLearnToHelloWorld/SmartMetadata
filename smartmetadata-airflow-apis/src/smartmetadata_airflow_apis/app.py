@@ -33,11 +33,11 @@ from smartmetadata_airflow_apis.security import (
     build_authenticator,
     require_permission,
 )
-from smartmetadata_airflow_apis.store import MemoryDagStore
+from smartmetadata_airflow_apis.store import DagStore, MemoryDagStore
 
 
 def create_app(
-    store: MemoryDagStore | None = None,
+    store: DagStore | None = None,
     credentials: tuple[str, str] | None = None,
     authenticator: Authenticator | None = None,
 ) -> Flask:
@@ -67,7 +67,7 @@ def create_app(
 def _mount(
     app: Flask,
     prefix: str,
-    store: MemoryDagStore,
+    store: DagStore,
     json_body: Callable[[], dict[str, Any]],
     reply: Callable,
 ) -> None:
@@ -133,12 +133,20 @@ def _mount(
         ),
         methods=["POST"],
     )
+    def status_view():
+        return reply(
+            handlers.status(
+                store,
+                request.args.get("dag_id"),
+                run_id=request.args.get("run_id"),
+                only_queued=request.args.get("only_queued") == "true",
+            )
+        )
+
     app.add_url_rule(
         f"{prefix}/status",
         endpoint=f"status{tag}",
-        view_func=require_permission(READ)(
-            lambda: reply(handlers.status(store, request.args.get("dag_id")))
-        ),
+        view_func=require_permission(READ)(status_view),
         methods=["GET"],
     )
     app.add_url_rule(
@@ -161,6 +169,7 @@ def _mount(
                 store,
                 request.args.get("dag_id"),
                 request.args.get("task_id"),
+                run_id=request.args.get("run_id"),
                 after=after,
             )
         )

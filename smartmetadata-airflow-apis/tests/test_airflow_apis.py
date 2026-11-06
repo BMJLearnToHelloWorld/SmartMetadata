@@ -55,15 +55,27 @@ def test_health_auth_on_all_prefixes() -> None:
 
 
 def test_deploy_trigger_status_kill_lifecycle() -> None:
-    # Retargeted (step 1): protected routes now require Basic auth; the
-    # lifecycle itself is unchanged in this step (trigger shape is step 3).
+    # Retargeted (step 2/3): the trigger shape is the official one (ruling
+    # §0.3/§2.1) — a message, not the run record; the run is visible via
+    # status. Same strength: the message assertion stays, plus the status
+    # now asserts the queued run with the converged runId. Also retargeted:
+    # deploy needs a valid pipeline body (source + server connection, per
+    # validation), and trigger on a disabled DAG succeeds (official trigger
+    # has no paused check, ruling §3.5 item 14).
     store = MemoryDagStore()
     client = create_app(store, credentials=CREDS).test_client()
     prefix = "/api/v1/openmetadata"
 
     deploy = client.post(
         f"{prefix}/deploy",
-        json={"name": "ingest_demo", "pipelineType": "metadata"},
+        json={
+            "name": "ingest_demo",
+            "pipelineType": "metadata",
+            "source": {"type": "mysql", "serviceName": "my_sql_test"},
+            "openMetadataServerConnection": {
+                "hostPort": "http://openmetadata-server:8585/api"
+            },
+        },
         headers=_auth_headers(),
     )
     assert deploy.status_code == 200
@@ -74,7 +86,9 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
         headers=_auth_headers(),
     )
     assert trigger.status_code == 200
-    assert trigger.get_json()["pipelineState"] == "queued"
+    assert trigger.get_json()["message"].startswith(
+        "Workflow [ingest_demo] has been triggered"
+    )
 
     status = client.get(
         f"{prefix}/status",
@@ -83,6 +97,7 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
     )
     assert status.status_code == 200
     assert len(status.get_json()) == 1
+    assert status.get_json()[0]["pipelineState"] == "queued"
 
     disabled = client.post(
         f"{prefix}/disable",
@@ -90,12 +105,13 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
         headers=_auth_headers(),
     )
     assert disabled.status_code == 200
-    blocked = client.post(
+    # Official trigger has no paused check: the run is created and waits.
+    retriggered = client.post(
         f"{prefix}/trigger",
         json={"dag_id": "ingest_demo"},
         headers=_auth_headers(),
     )
-    assert blocked.status_code == 404
+    assert retriggered.status_code == 200
 
     client.post(
         f"{prefix}/enable",
