@@ -44,7 +44,6 @@ import jakarta.ws.rs.core.UriInfo;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.openmetadata.schema.api.data.CreateMetricGroup;
 import org.openmetadata.schema.api.data.RestoreEntity;
