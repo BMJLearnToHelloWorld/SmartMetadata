@@ -119,6 +119,7 @@ import org.openmetadata.service.security.AuthRequest;
 import org.openmetadata.service.security.AuthorizationException;
 import org.openmetadata.service.security.Authorizer;
 import org.openmetadata.service.security.ChangeActor;
+import org.openmetadata.service.security.ImpersonationContext;
 import org.openmetadata.service.security.PolicyDeniedException;
 import org.openmetadata.service.security.policyevaluator.CreateResourceContext;
 import org.openmetadata.service.security.policyevaluator.OperationContext;
@@ -310,6 +311,9 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
   /** Implement this method to a CSV record and turn it into an entity */
   protected abstract void createEntity(CSVPrinter resultsPrinter, List<CSVRecord> csvRecords)
       throws IOException;
+
+  /** Additional entity-specific checks before the shared row-target check and preparation. */
+  protected void authorizeRow(T original, T entity) {}
 
   public final String exportCsv(T entity) throws IOException {
     CsvFile csvFile = new CsvFile().withHeaders(csvHeaders);
@@ -798,11 +802,25 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
                 fieldNumber,
                 entityRefTypeAndValue.get(0),
                 entityRefTypeAndValue.get(1));
-        Optional.ofNullable(entityRef).ifPresent(entityReferences::add);
+        Optional.ofNullable(entityRef)
+            .map(EntityCsv::storedReference)
+            .ifPresent(entityReferences::add);
       }
     }
 
     return isList ? entityReferences : entityReferences.isEmpty() ? null : entityReferences.get(0);
+  }
+
+  /**
+   * The import resolves each reference on the server, so a value keeps only what identifies the
+   * target; the target's own fields (e.g. its description) are not copied into the holder.
+   */
+  private static EntityReference storedReference(EntityReference resolved) {
+    return new EntityReference()
+        .withId(resolved.getId())
+        .withType(resolved.getType())
+        .withName(resolved.getName())
+        .withFullyQualifiedName(resolved.getFullyQualifiedName());
   }
 
   protected String parseFormattedDateTimeField(
@@ -1159,6 +1177,7 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
       repository.setFullyQualifiedName(entity);
       // In case of updating entity, prepareInternal as update=True
       T original = repository.findMatchForImport(entity);
+      authorizeRow(original, entity);
       boolean isUpdate = original != null;
       authorizeRow(entityType, original, entity);
 
@@ -1259,6 +1278,7 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
       repository.setFullyQualifiedName(entity);
       // In case of updating entity, prepareInternal as update=True
       T original = (T) repository.findMatchForImport(entity);
+      authorizeRow(original, (T) entity);
       boolean isUpdate = original != null;
       authorizeRow(type, original, entity);
 
@@ -1510,6 +1530,11 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
     }
   }
 
+  /** Only successful preceding rows can supply an unpersisted authorization destination. */
+  protected final EntityInterface<?> getCreatedEntity(String fqn) {
+    return createdByImport.get(createdKey(fqn));
+  }
+
   // Column rows are written as one PATCH of their table, so they are checked as that PATCH. A table
   // this import created was authorized with its columns; another type with the same FQN was not.
   private void authorizeColumnPatch(TableUpdateContext context, Supplier<JsonPatch> patch) {
@@ -1521,8 +1546,12 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
     }
   }
 
-  private void authorize(OperationContext operation, ResourceContextInterface resource) {
-    importAuthorizer().authorizeActor(ChangeActor.recorded(importedBy, null), operation, resource);
+  protected final void authorize(OperationContext operation, ResourceContextInterface resource) {
+    importAuthorizer()
+        .authorizeActor(
+            ChangeActor.recorded(importedBy, ImpersonationContext.getImpersonatedBy()),
+            operation,
+            resource);
   }
 
   private Authorizer importAuthorizer() {
@@ -1798,6 +1827,14 @@ public abstract class EntityCsv<T extends EntityInterface<?>> {
 
     pendingEntityOperations.clear();
     pendingEntityFQNs.clear();
+  }
+
+  /** Entities of a type that earlier rows of this batch queued but have not written yet. */
+  protected final List<EntityInterface<?>> queuedEntities(String entityType) {
+    return pendingEntityOperations.stream()
+        .filter(op -> entityType.equals(op.entityType))
+        .<EntityInterface<?>>map(op -> op.entity)
+        .toList();
   }
 
   protected boolean hasPendingEntity(String entityType, String fqn) {

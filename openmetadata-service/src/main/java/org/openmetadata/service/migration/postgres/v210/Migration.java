@@ -27,6 +27,7 @@ import static org.openmetadata.service.migration.utils.v210.DottedServiceFqnMigr
 import static org.openmetadata.service.migration.utils.v210.IngestionPipelineMigrationUtil.backfillSourceConfigTypes;
 import static org.openmetadata.service.migration.utils.v210.LifeCycleCreatedSentinelMigration.removeCreatedSentinel;
 import static org.openmetadata.service.migration.utils.v210.MigrationUtil.addCreateConversationRuleToDataConsumerPolicy;
+import static org.openmetadata.service.migration.utils.v210.MigrationUtil.addDenyBotUsersRuleToBotNonAdminImpersonationPolicy;
 import static org.openmetadata.service.migration.utils.v210.MigrationUtil.alignHybridSearchWeightsWithDefaults;
 import static org.openmetadata.service.migration.utils.v210.MigrationUtil.exemptQueryFromMultiDomainRules;
 import static org.openmetadata.service.migration.utils.v210.MigrationUtil.refreshConversationNotificationTemplates;
@@ -51,6 +52,7 @@ import org.openmetadata.service.migration.utils.v210.FirstTimeUserMigration;
 import org.openmetadata.service.migration.utils.v210.GlossaryAutomationReviewMigration;
 import org.openmetadata.service.migration.utils.v210.LifeCycleCreatedSentinelMigration;
 import org.openmetadata.service.migration.utils.v210.MigrationUtil;
+import org.openmetadata.service.migration.utils.v210.TaskFieldPathMigration;
 
 public class Migration extends MigrationProcessImpl {
   public Migration(final MigrationFile migrationFile) {
@@ -66,6 +68,7 @@ public class Migration extends MigrationProcessImpl {
     ConversationReferenceMigration.migrate(handle, POSTGRES);
     refreshConversationNotificationTemplates();
     addCreateConversationRuleToDataConsumerPolicy(collectionDAO);
+    addDenyBotUsersRuleToBotNonAdminImpersonationPolicy(collectionDAO);
     alignHybridSearchWeightsWithDefaults();
     new MigrationUtil(handle, POSTGRES).archiveLegacyThreadStorage();
     migrateRelationshipTypes(handle, POSTGRES);
@@ -112,6 +115,13 @@ public class Migration extends MigrationProcessImpl {
         getVersion(),
         CreationAuditMigration.STEP_NAME,
         () -> backfillCreationAudit(handle, POSTGRES));
+    // Task field paths take one format from 2.1 on; every stored description, tag and suggestion
+    // task is rewritten into it, so readers never parse a legacy path. Idempotent.
+    runOnce(
+        migrationDAO,
+        getVersion(),
+        TaskFieldPathMigration.STEP_NAME,
+        () -> TaskFieldPathMigration.migrate(handle, POSTGRES));
     runOnce(
         migrationDAO,
         getVersion(),
