@@ -30,10 +30,10 @@ USER airflow
 # Airflow 3; the base image's provider set is not relied on for it.
 # The ingestion install carries no --constraint flag, matching the
 # official image (its ranges are satisfied by the installed versions).
-COPY smartmetadata-airflow-apis/pyproject.toml smartmetadata-airflow-apis/README.md ./smartmetadata-airflow-apis/
-COPY smartmetadata-airflow-apis/src ./smartmetadata-airflow-apis/src
-COPY smartmetadata-ingestion/pyproject.toml smartmetadata-ingestion/README.md smartmetadata-ingestion/LICENSE ./smartmetadata-ingestion/
-COPY smartmetadata-ingestion/src ./smartmetadata-ingestion/src
+COPY --chown=airflow:0 smartmetadata-airflow-apis/pyproject.toml smartmetadata-airflow-apis/README.md ./smartmetadata-airflow-apis/
+COPY --chown=airflow:0 smartmetadata-airflow-apis/src ./smartmetadata-airflow-apis/src
+COPY --chown=airflow:0 smartmetadata-ingestion/pyproject.toml smartmetadata-ingestion/README.md smartmetadata-ingestion/LICENSE ./smartmetadata-ingestion/
+COPY --chown=airflow:0 smartmetadata-ingestion/src ./smartmetadata-ingestion/src
 RUN pip install --no-cache-dir --constraint /opt/airflow/airflow-constraints-3.3.2.txt \
         "apache-airflow-providers-fab" \
         "./smartmetadata-airflow-apis" \
