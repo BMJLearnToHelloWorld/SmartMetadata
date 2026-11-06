@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from smartmetadata_airflow_apis.contracts import PACKAGE_VERSION
+from smartmetadata_airflow_apis.contracts import PRODUCT_RELEASE_VERSION
 from smartmetadata_airflow_apis.store import MemoryDagStore
 
 
@@ -23,12 +23,27 @@ class HandlerResult:
 
 
 def health(_: MemoryDagStore) -> HandlerResult:
-    return HandlerResult(200, {"status": "healthy", "version": PACKAGE_VERSION})
+    return HandlerResult(200, {"status": "healthy", "version": PRODUCT_RELEASE_VERSION})
 
 
 def health_auth(_: MemoryDagStore) -> HandlerResult:
     # Java AirflowRESTClient.readHealthResponse expects JSON with "version"
-    return HandlerResult(200, {"version": PACKAGE_VERSION, "status": "healthy"})
+    return HandlerResult(200, {"version": PRODUCT_RELEASE_VERSION, "status": "healthy"})
+
+
+def csrf_token(token: str | None) -> HandlerResult:
+    if token:
+        return HandlerResult(
+            200,
+            {
+                "csrf_token": token,
+                "message": "Include this token in X-CSRFToken header for POST/PUT/DELETE requests",
+            },
+        )
+    return HandlerResult(
+        200,
+        {"csrf_token": None, "message": "CSRF protection appears to be disabled"},
+    )
 
 
 def deploy(store: MemoryDagStore, payload: dict[str, Any]) -> HandlerResult:
