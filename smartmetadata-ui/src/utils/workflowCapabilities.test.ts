@@ -25,12 +25,15 @@ import {
 /**
  * The product mirror of official WorkflowOssRestrictions.test.tsx: the OSS
  * capability set is restrictive, and the mode derivations follow from it.
+ * One deliberate deviation: allowCreateWorkflow is true by product decision
+ * (Bai 2026-11-07, option B) — the product keeps list-page creation, so
+ * the capability set below is the OSS set with creation enabled.
  */
 
-describe('getWorkflowCapabilities (OSS defaults)', () => {
-  it('returns the restrictive OSS set', () => {
+describe('getWorkflowCapabilities (product capability set)', () => {
+  it('returns the OSS set with creation enabled by product decision', () => {
     expect(getWorkflowCapabilities()).toEqual({
-      allowCreateWorkflow: false,
+      allowCreateWorkflow: true,
       allowDeleteWorkflow: false,
       allowStructuralGraphEdits: false,
       showWorkflowNodePalette: false,
