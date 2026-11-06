@@ -2770,6 +2770,10 @@ const enUS = {
       visitDeveloperWebsite: 'Visit developer website',
       privacyPolicy: 'Privacy Policy',
       notFound: 'Application {app} was not found',
+      screenshots: 'App screenshots',
+      screenshotsPage: 'Page {index}',
+      pause: 'Pause',
+      play: 'Play',
     },
   },
   permissionDebugger: {

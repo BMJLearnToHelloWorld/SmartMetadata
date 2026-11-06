@@ -2756,6 +2756,10 @@ const zhCN = {
       visitDeveloperWebsite: '访问开发者网站',
       privacyPolicy: '隐私政策',
       notFound: '未找到应用 {app}',
+      screenshots: '应用截图',
+      screenshotsPage: '第 {index} 页',
+      pause: '暂停',
+      play: '播放',
     },
   },
   permissionDebugger: {
