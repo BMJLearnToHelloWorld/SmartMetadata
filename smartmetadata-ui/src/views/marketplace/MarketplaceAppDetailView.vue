@@ -35,9 +35,11 @@ const authStore = useAuthStore();
  * AdminProtectedRoute-gated without a permission prop, so the gate here
  * is the admin line alone, the same precedent as the install page.
  * The screenshots region renders the official carousel (D3): the names in
- * `appScreenshots` resolve against the 5 bundled PNGs ported byte-identical
- * from the official UI, and an unknown name degrades to an empty slot
- * instead of breaking the page.
+ * `appScreenshots` resolve against the PNGs bundled under
+ * `assets/appScreenshots/` (glob-scanned at build time, so the set follows
+ * whatever files are shipped — with zero PNGs every name degrades to an
+ * empty slot instead of breaking the page; the 5 official PNGs are
+ * uploaded to the branch separately and appear with no code change).
  * The description now renders through the shared SmMarkdown renderer
  * (A10, same renderer A4 rich-text diffs reuse); the disabled alert
  * carries the official please-contact-us line (without inventing a

@@ -12,6 +12,22 @@ import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
 import MarketplaceAppDetailView from './MarketplaceAppDetailView.vue';
 
+/**
+ * The carousel tests must not depend on which PNGs happen to be on disk:
+ * the images are left empty (Bai 2026-11-06), so the bundled set can be
+ * zero and the real resolver would return `undefined` for every name. The
+ * resolver is stubbed at the module boundary with the same contract (known
+ * names resolve, anything else degrades to `undefined`); the real
+ * resolver-to-files wiring is covered by `appScreenshots.test.ts`, which
+ * reads the same directory the resolver scans.
+ */
+vi.mock('./appScreenshots', () => ({
+  getAppScreenshotUrl: (name: string): string | undefined =>
+    name === 'DataInsightsPic1' || name === 'DataInsightsReportPic1'
+      ? `/assets/appScreenshots/${name}.png`
+      : undefined,
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
