@@ -308,7 +308,10 @@ def _psycopg_connect(connection: dict[str, Any]):
             host=host,
             port=port,
             user=connection.get("username"),
-            password=connection.get("password"),
+            # Same rule as postgres_common.password_of: the server returns
+            # authType-only configs, so a top-level-only read sends an empty
+            # password (same defect class as the MySQL source, fixed step 6).
+            password=postgres_common.password_of(connection),
             dbname=connection.get("database"),
         )
 

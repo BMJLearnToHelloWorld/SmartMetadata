@@ -15,9 +15,20 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+# The workflow builders (workflows/) run the product ingestion package;
+# the standalone Flask app does not need it.
+workflows = ["smartmetadata-ingestion"]
+
+[project.entry-points."airflow.plugins"]
+smartmetadata_airflow_apis = "smartmetadata_airflow_apis.plugin:SmartMetadataPlugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# The dag_runner template is data, not code: without this it is missing
+# from built wheels and deploy cannot render DAG files.
+[tool.setuptools.package-data]
+smartmetadata_airflow_apis = ["resources/*.jinja"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

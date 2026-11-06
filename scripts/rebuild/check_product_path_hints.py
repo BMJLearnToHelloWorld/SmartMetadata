@@ -47,6 +47,7 @@ REQUIRED_PRODUCT_PATH_MARKERS = (
     "smartmetadata-ui",
     "smartmetadata-ingestion",
     "smartmetadata-mcp",
+    "smartmetadata-airflow-apis",
     "slim-dist",
     "docker-up",
     "docker/rebuild",
@@ -83,15 +84,19 @@ REQUIRED_PRODUCT_SERVICES = frozenset(
         "ui",
         "ingest",
         "mcp",
+        "airflow",
     }
 )
+# "airflow" is the product Apache Airflow service (smartmetadata-airflow-apis
+# plugin). Forbidden names below stay CCL / historical counterparts only.
 FORBIDDEN_PRODUCT_SERVICES = frozenset(
-    {"ingestion", "airflow", "openmetadata-ui", "openmetadata-mcp", "fuseki"}
+    {"ingestion", "openmetadata-ui", "openmetadata-mcp", "fuseki"}
 )
 PRODUCT_IMAGE_DOCKERFILES = (
     Path("docker") / "rebuild" / "Dockerfile.ui",
     Path("docker") / "rebuild" / "Dockerfile.ingest",
     Path("docker") / "rebuild" / "Dockerfile.mcp",
+    Path("docker") / "rebuild" / "Dockerfile.airflow",
 )
 PRODUCT_COMPOSE_FORBIDDEN_NEEDLES = (
     "ingestion/Dockerfile",
@@ -336,9 +341,14 @@ def check_product_docker(repo: Path) -> list[str]:
             errors.append(f"{PRODUCT_COMPOSE} must use an official mysql:8 image")
         if "elasticsearch" not in compose:
             errors.append(f"{PRODUCT_COMPOSE} must use Elasticsearch")
-        for tree in ("smartmetadata-ui", "smartmetadata-ingestion", "smartmetadata-mcp"):
+        for tree in (
+            "smartmetadata-ui",
+            "smartmetadata-ingestion",
+            "smartmetadata-mcp",
+            "Dockerfile.airflow",
+        ):
             if tree not in compose:
-                errors.append(f"{PRODUCT_COMPOSE} must build {tree}")
+                errors.append(f"{PRODUCT_COMPOSE} must reference {tree}")
 
     dockerfile = read_text(repo / PRODUCT_DOCKERFILE)
     if dockerfile is None:
