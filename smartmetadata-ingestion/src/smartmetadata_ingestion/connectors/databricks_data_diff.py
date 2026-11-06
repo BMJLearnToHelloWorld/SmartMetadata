@@ -26,6 +26,7 @@ class DatabricksTableParameter:
         catalog: str,
         schema: str,
         table: str,
+        key_columns: list[str] | None = None,
     ) -> dict[str, Any]:
         dbx.run_connection_test(connection, require_http_path=True)
         auth = connection.get("authType")
@@ -39,6 +40,7 @@ class DatabricksTableParameter:
             "catalog": catalog,
             "schema": schema,
             "table": table,
+            "keyColumns": list(key_columns or []),
             "authKind": kind,
         }
         return payload
@@ -52,6 +54,7 @@ class UnityCatalogTableParameter:
         catalog: str,
         schema: str,
         table: str,
+        key_columns: list[str] | None = None,
     ) -> dict[str, Any]:
         dbx.run_connection_test(connection, require_http_path=False)
         auth = connection.get("authType")
@@ -65,5 +68,37 @@ class UnityCatalogTableParameter:
             "catalog": catalog,
             "schema": schema,
             "table": table,
+            "keyColumns": list(key_columns or []),
             "authKind": kind,
         }
+
+
+class DatabricksDataDiff:
+    """Compare two table key sets via injected row-key fetchers (unit-testable)."""
+
+    def __init__(self, *, fetch_keys=None) -> None:
+        self._fetch_keys = fetch_keys
+
+    def compare(
+        self,
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._fetch_keys is None:
+            raise RuntimeError("fetch_keys is required for live data diff")
+        # Local import: datadiff imports this module for the binding table,
+        # so a top-level import would be circular.
+        from smartmetadata_ingestion.datadiff import compare_key_sets
+
+        diff = compare_key_sets(self._fetch_keys(left), self._fetch_keys(right))
+        return {
+            "left": left,
+            "right": right,
+            "rowDiffCount": diff.total,
+            "extraLeft": diff.extra_left,
+            "extraRight": diff.extra_right,
+        }
+
+
+class UnityCatalogDataDiff(DatabricksDataDiff):
+    """Unity Catalog reuses the Databricks key-set compare."""

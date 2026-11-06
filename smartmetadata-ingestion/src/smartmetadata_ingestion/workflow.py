@@ -18,6 +18,8 @@ from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import (
     AppSpec,
     ClassificationSpec,
+    DataDiffSideSpec,
+    DataDiffSpec,
     LineageSpec,
     ProfileSpec,
     TagSpec,
@@ -45,6 +47,13 @@ from smartmetadata_ingestion.progress import (
     RecordFailure,
     RunReport,
     StepStatus,
+)
+from smartmetadata_ingestion.datadiff import (
+    DataDiffBinding,
+    SqlKeyFetcher,
+    build_side,
+    compare_key_sets,
+    datadiff_binding,
 )
 from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
 from smartmetadata_ingestion.records import (
@@ -560,6 +569,171 @@ class TestSuiteWorkflow(MetadataWorkflow):
                 expected=spec.expected,
             )
             self._handle_record(result)
+
+
+class DataDiffWorkflow(MetadataWorkflow):
+    """Runs configured key-set data diffs live against the source databases.
+
+    Tables come from ``config.data_diffs`` (never from the metadata source's
+    ``produce()``); each spec compares two table sides and writes one
+    :class:`TestCaseResultRecord` — the official tableDiff write-back shape.
+    Key-set comparison only: added / removed rows. Changed-row, schema-diff
+    and sampling comparisons are a later phase.
+    """
+
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        processors: list[Processor] | None = None,
+        hook: ProgressHook | None = None,
+        fetch_keys: Any | None = None,
+    ) -> None:
+        self._injected_fetch_keys = fetch_keys
+        super().__init__(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+        )
+
+    def prepare(self) -> None:
+        if self._prepared:
+            return
+        super().prepare()
+        bindings: list[tuple[DataDiffBinding, DataDiffBinding]] = []
+        for spec in self.config.data_diffs:
+            bindings.append(
+                (
+                    self._require_side_binding(spec.left, "left"),
+                    self._require_side_binding(spec.right, "right"),
+                )
+            )
+        self._spec_bindings = bindings
+
+    def _require_side_binding(self, side_spec: DataDiffSideSpec, side_name: str) -> DataDiffBinding:
+        source_type = side_spec.source_type or self.config.source.type
+        binding = datadiff_binding(source_type)
+        if binding is None:
+            raise WorkflowInitializationError(
+                f"data_diff workflow has no binding for source type "
+                f"{source_type!r} ({side_name} side)"
+            )
+        return binding
+
+    def _execute_records(self) -> None:
+        timestamp = now_ms()
+        for spec, (left_binding, right_binding) in zip(
+            self.config.data_diffs, self._spec_bindings, strict=True
+        ):
+            self._handle_record(self._run_spec(spec, left_binding, right_binding, timestamp))
+
+    def _run_spec(
+        self,
+        spec: DataDiffSpec,
+        left_binding: DataDiffBinding,
+        right_binding: DataDiffBinding,
+        timestamp: int,
+    ) -> TestCaseResultRecord:
+        left_side = build_side(
+            left_binding,
+            self._side_connection(spec.left),
+            database=spec.left.database,
+            schema=spec.left.schema,
+            table=spec.left.table,
+            key_columns=spec.left.key_columns,
+        )
+        right_side = build_side(
+            right_binding,
+            self._side_connection(spec.right),
+            database=spec.right.database,
+            schema=spec.right.schema,
+            table=spec.right.table,
+            key_columns=spec.right.key_columns,
+        )
+        left_keys = self._fetch_keys_for(spec, spec.left, left_binding, left_side)
+        duplicate_side = spec.left if _has_duplicate_keys(left_keys) else None
+        if duplicate_side is None:
+            right_keys = self._fetch_keys_for(spec, spec.right, right_binding, right_side)
+            duplicate_side = spec.right if _has_duplicate_keys(right_keys) else None
+        if duplicate_side is not None:
+            return self._aborted_result(spec, duplicate_side, timestamp)
+        diff = compare_key_sets(left_keys, right_keys)
+        total = diff.total
+        passed = (spec.threshold or total) == 0 or total < spec.threshold
+        return TestCaseResultRecord(
+            test_case_fqn=spec.test_case_fqn,
+            timestamp=timestamp,
+            test_case_status="Success" if passed else "Failed",
+            test_result_value=[
+                {"name": "removedRows", "value": str(diff.extra_left)},
+                {"name": "addedRows", "value": str(diff.extra_right)},
+                {"name": "diffCount", "value": str(total)},
+            ],
+            result=(
+                f"Found {total} different keys (key-set comparison only: "
+                f"{diff.extra_left} only in left table, {diff.extra_right} only in "
+                f"right table; row-value and schema differences are not compared)"
+            ),
+            passed_rows=diff.common,
+            failed_rows=total,
+        )
+
+    def _side_connection(self, side_spec: DataDiffSideSpec) -> dict[str, Any]:
+        if side_spec.connection:
+            return side_spec.connection
+        return self.config.source.connection or {}
+
+    def _fetch_keys_for(
+        self,
+        spec: DataDiffSpec,
+        side_spec: DataDiffSideSpec,
+        binding: DataDiffBinding,
+        side: dict[str, Any],
+    ) -> list[tuple[Any, ...]]:
+        if self._injected_fetch_keys is not None:
+            return [tuple(row) for row in self._injected_fetch_keys(side)]
+        fetcher = SqlKeyFetcher(
+            binding.connect(self._side_connection(side_spec)),
+            quote=binding.quote,
+            ident_style=binding.ident_style,
+        )
+        return fetcher.fetch_keys(
+            side_spec.database,
+            side_spec.schema,
+            side_spec.table,
+            side_spec.key_columns,
+            where_clause=spec.where_clause,
+        )
+
+    @staticmethod
+    def _aborted_result(
+        spec: DataDiffSpec, side_spec: DataDiffSideSpec, timestamp: int
+    ) -> TestCaseResultRecord:
+        key_columns = side_spec.key_columns
+        if len(key_columns) == 1:
+            subject = f"Key column '{key_columns[0]}' is"
+        else:
+            subject = f"Key columns ({', '.join(repr(column) for column in key_columns)}) are"
+        location = f"in {side_spec.database}.{side_spec.schema}.{side_spec.table}"
+        return TestCaseResultRecord(
+            test_case_fqn=spec.test_case_fqn,
+            timestamp=timestamp,
+            test_case_status="Aborted",
+            result=(
+                f"{subject} not unique {location}. A row-level diff needs a unique key: "
+                "pick a unique column, or add more columns to the key."
+            ),
+        )
+
+
+def _has_duplicate_keys(keys: list[tuple[Any, ...]]) -> bool:
+    return len(keys) != len(set(keys))
 
 
 def _require_binding(config: WorkflowConfig, kind: str) -> ProfilerBinding:

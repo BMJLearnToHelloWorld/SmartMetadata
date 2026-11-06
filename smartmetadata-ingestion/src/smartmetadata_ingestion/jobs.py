@@ -6,11 +6,11 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Runnable profiler / data-quality jobs.
+"""Runnable profiler / data-quality / data-diff jobs.
 
 Each job holds its workflow config and runs it through the canonical
-``run_workflow`` dispatch (``profiler`` / ``TestSuite``), so the job is the
-same execution the CLI performs — not a stub.
+``run_workflow`` dispatch (``profiler`` / ``TestSuite`` / ``data_diff``), so
+the job is the same execution the CLI performs — not a stub.
 """
 
 from __future__ import annotations
@@ -90,4 +90,35 @@ class QualityJob:
             source=self._source,
             sink=self._sink,
             execute=self._execute,
+        )
+
+
+class DataDiffJob:
+    kind = "data_diff"
+
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        fetch_keys: Any | None = None,
+    ) -> None:
+        self._config = config
+        self._client = client
+        self._source = source
+        self._sink = sink
+        self._fetch_keys = fetch_keys
+
+    def run(self) -> RunReport:
+        config = self._config.model_copy(
+            update={"workflow": self._config.workflow.model_copy(update={"type": "data_diff"})}
+        )
+        return run_workflow(
+            config,
+            client=self._client,
+            source=self._source,
+            sink=self._sink,
+            fetch_keys=self._fetch_keys,
         )

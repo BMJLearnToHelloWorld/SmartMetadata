@@ -80,7 +80,7 @@ class ServerConfig(CamelModel):
 
 class WorkflowSettings(CamelModel):
     name: str
-    type: Literal["metadata", "usage", "lineage", "profiler", "TestSuite"] = "metadata"
+    type: Literal["metadata", "usage", "lineage", "profiler", "TestSuite", "data_diff"] = "metadata"
     fail_fast: bool = False
     ingestion_pipeline_fqn: str | None = None
     reconcile_stale: bool = False
@@ -219,6 +219,64 @@ class TestCaseSpec(CamelModel):
     expected: Any = True
 
 
+class DataDiffSideSpec(CamelModel):
+    """One side of a data-diff comparison.
+
+    ``database`` is the catalog for Databricks / Unity Catalog (their
+    builders call the segment ``catalog``); ``source_type`` / ``connection``
+    default to the workflow's source when omitted, so same-service diffs
+    only name the tables while cross-service diffs can override per side.
+    """
+
+    __test__ = False
+
+    database: str
+    schema: str
+    table: str
+    key_columns: list[str]
+    source_type: str | None = None
+    connection: dict[str, Any] | None = None
+
+    @field_validator("key_columns")
+    @classmethod
+    def require_key_columns(cls, value: list[str]) -> list[str]:
+        if not value or any(not column or not str(column).strip() for column in value):
+            raise ValueError("key_columns must name at least one non-blank column")
+        return value
+
+    @field_validator("source_type")
+    @classmethod
+    def normalize_source_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip().lower()
+
+
+class DataDiffSpec(CamelModel):
+    """A key-set data diff executed live by a DataDiff workflow.
+
+    Mirrors the official ``TableDiffRuntimeParameters`` surface (two tables,
+    key columns, threshold, optional where clause). ``threshold`` follows the
+    official verdict rule: 0 means exactly zero differences are allowed,
+    otherwise the diff passes while the total is below the threshold.
+    """
+
+    __test__ = False
+
+    test_case_fqn: str
+    left: DataDiffSideSpec
+    right: DataDiffSideSpec
+    threshold: int = 0
+    where_clause: str | None = None
+
+    @field_validator("threshold")
+    @classmethod
+    def require_non_negative_threshold(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("threshold must be zero or positive")
+        return value
+
+
 class ClassificationSpec(CamelModel):
     name: str
     description: str
@@ -259,6 +317,7 @@ class WorkflowConfig(CamelModel):
     profiles: list[ProfileSpec] = Field(default_factory=list)
     test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
     test_cases: list[TestCaseSpec] = Field(default_factory=list)
+    data_diffs: list[DataDiffSpec] = Field(default_factory=list)
     classifications: list[ClassificationSpec] = Field(default_factory=list)
     tags: list[TagSpec] = Field(default_factory=list)
     apps: list[AppSpec] = Field(default_factory=list)
