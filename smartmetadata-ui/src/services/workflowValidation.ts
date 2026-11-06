@@ -25,6 +25,7 @@ import { getGitSinkTriggerConfig, isGitSinkNode } from '@/utils/workflowConfig';
 import {
   getNodeConfiguration,
   getNodeName,
+  isUserApprovalTaskSubType,
 } from '@/utils/workflowNodeUtils';
 import { deserializeEventBasedFilters } from '@/utils/workflowSerialization';
 
@@ -488,7 +489,14 @@ function mapNodeTypeAndSubtype(node: WorkflowFlowNode): {
     subType = resolveAutomatedTaskSubType(nodeData, subType);
   } else if (isUserTask) {
     nodeType = 'userTask';
-    subType = 'userApprovalTask';
+    // Preserve the stored specific subtype (e.g. the seeded
+    // createRecognizerFeedbackApprovalTask): the server validates the node
+    // against its specific schema, whose input/inputNamespaceMap allow the
+    // four trigger globals — coercing it to the generic userApprovalTask
+    // (input maxItems 1, namespace only relatedEntity) fails validation.
+    subType = isUserApprovalTaskSubType(nodeData.subType)
+      ? nodeData.subType
+      : 'userApprovalTask';
   }
   return { nodeType, subType };
 }
@@ -506,6 +514,9 @@ function buildWorkflowNodes(
         subType,
         name: 'start',
         displayName: 'start',
+        ...(nodeData.description
+          ? { description: nodeData.description }
+          : {}),
       };
     }
     if (nodeType === 'endEvent') {
@@ -519,6 +530,9 @@ function buildWorkflowNodes(
         subType,
         name: endNodeName,
         displayName: 'End',
+        ...(nodeData.description
+          ? { description: nodeData.description }
+          : {}),
       };
     }
     return getNodeConfiguration(
@@ -806,6 +820,20 @@ export async function buildWorkflowForSave(
   if (finalTriggerConfig.approvalMode !== 'Enforce') {
     workflowNodes = workflowNodes.map(withoutPartialDecisions);
   }
+  // Round-trip the stored trigger's outputs: the trigger provides the globals
+  // the nodes read (e.g. triggeringObjectId / recognizerFeedback for an
+  // event-based recognizer-feedback trigger). Rebuilding them from a hardcoded
+  // pair drops outputs the nodes expect and /validate rejects the save. Only
+  // when the trigger type is unchanged — a type change rebuilds the trigger,
+  // so the stored outputs no longer describe what it provides.
+  const storedTriggerOutput = validTrigger?.output;
+  const triggerOutput =
+    validTrigger?.type === triggerType &&
+    Array.isArray(storedTriggerOutput) &&
+    storedTriggerOutput.length > 0 &&
+    storedTriggerOutput.every((item) => typeof item === 'string')
+      ? (storedTriggerOutput as string[])
+      : ['relatedEntity', 'updatedBy'];
   const backendReadyJSON: WorkflowDefinitionFull = {
     name: workflowName,
     displayName: workflowDisplayName,
@@ -814,7 +842,7 @@ export async function buildWorkflowForSave(
     trigger: {
       type: triggerType,
       config: finalTriggerConfig,
-      output: ['relatedEntity', 'updatedBy'],
+      output: triggerOutput,
     },
     nodes: workflowNodes as unknown as WorkflowBackendNode[],
     edges: workflowEdges,
