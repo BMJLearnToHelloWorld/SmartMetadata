@@ -38,11 +38,16 @@ def run_workflow(
     profile_reader: Any | None = None,
     execute: Any | None = None,
     fetch_keys: Any | None = None,
+    run_id: str | None = None,
 ) -> RunReport:
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
 
     ``profiler``, ``TestSuite`` and ``data_diff`` dispatch to their own
     workflows; every other type keeps the metadata workflow.
+
+    ``run_id`` pins the id the workflow reports its status under (the
+    Airflow plugin passes the id the server already recorded for the run);
+    unset, the workflow mints a UUID as before.
     """
     workflow_type = config.workflow.type
     if workflow_type == "profiler":
@@ -54,6 +59,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             profile_reader=profile_reader,
+            run_id=run_id,
         )
     elif workflow_type == "TestSuite":
         workflow = TestSuiteWorkflow(
@@ -64,6 +70,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             execute=execute,
+            run_id=run_id,
         )
     elif workflow_type == "data_diff":
         workflow = DataDiffWorkflow(
@@ -74,6 +81,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             fetch_keys=fetch_keys,
+            run_id=run_id,
         )
     else:
         workflow = MetadataWorkflow(
@@ -83,6 +91,7 @@ def run_workflow(
             sink=sink,
             processors=processors,
             hook=hook,
+            run_id=run_id,
         )
     try:
         report = workflow.execute()

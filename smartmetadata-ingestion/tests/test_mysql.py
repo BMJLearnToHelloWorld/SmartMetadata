@@ -180,6 +180,28 @@ def test_mysql_live_connection_uses_database_name(monkeypatch) -> None:
     assert calls[0]["database"] == "shop"
 
 
+def test_mysql_live_connection_uses_auth_type_password(monkeypatch) -> None:
+    # The server returns authType-only connection configs; the source reader
+    # must read the password the same way mysql_common.password_of does.
+    # A top-level-only read sends an empty password and the catalog reads
+    # fail with Access denied (1045) — found by the step-6 profiler gate.
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = _pymysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "authType": {"password": "from-auth-type"},
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["password"] == "from-auth-type"
+
+
 def test_mysql_live_reader_requires_extra(monkeypatch) -> None:
     import builtins
 

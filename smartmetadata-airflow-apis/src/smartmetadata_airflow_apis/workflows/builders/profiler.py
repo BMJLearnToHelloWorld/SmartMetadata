@@ -1,0 +1,42 @@
+# Copyright 2026 SmartMetadata authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+"""Profiler pipeline builder: a single profiler_task DAG.
+
+Mirrors official ``build_profiler_dag``: task id ``profiler_task`` and no
+raiseOnError — the official profiler ``WorkflowConfig`` omits it, so a
+failing profiler run never fails the task. The official ``orm-profiler``
+processor has no product counterpart (``build_processors`` only knows
+identity/noop/dropKinds); the product ``ProfilerWorkflow`` profiles through
+the connector binding directly, so the translation keeps processors empty.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from smartmetadata_airflow_apis.workflows.common import build_dag
+from smartmetadata_airflow_apis.workflows.registry import register_builder
+from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
+
+
+@register_builder("profiler")
+def build_profiler_dag(pipeline: dict[str, Any]) -> Any:
+    source = pipeline.get("source") or {}
+    workflow_config = translate_pipeline(
+        pipeline,
+        workflow_type="profiler",
+        source_type=str(source.get("type")),
+        raise_on_error=False,
+    )
+    return build_dag(
+        "profiler_task",
+        pipeline,
+        workflow_config.model_dump(mode="json"),
+        raise_on_error=False,
+    )

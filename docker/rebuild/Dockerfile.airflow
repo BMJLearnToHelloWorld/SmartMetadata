@@ -1,0 +1,56 @@
+# Product DAG image: Airflow 3.3.2 + clean-room ingestion + rebuilt plugin.
+# Context is the repo root. Not the CCL ingestion image: no sample data,
+# no sample DAGs, no provider pruning, no Oracle/DB2 drivers, no prek/uv
+# tooling. The USER sequence mirrors the official image on the same base
+# image (root for apt, airflow for pip installs + migrate, root for the
+# purge, airflow at the end). No ENTRYPOINT / CMD / EXPOSE / WORKDIR /
+# HEALTHCHECK — compose provides entrypoint + command, as official does.
+ARG BASE_IMAGE=apache/airflow:3.3.2-python3.12
+FROM ${BASE_IMAGE}
+
+USER root
+# mysqlclient builds from source (no cp312 wheel on the mirror): the
+# MySQL client headers + compiler, purged after the install like the
+# official image does.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        default-libmysqlclient-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Constraints pin the plugin install to the combination proven with
+# Airflow 3.3.2 (see the file header); Airflow itself is fixed by the
+# base image and is never pinned here.
+COPY docker/rebuild/airflow-constraints-3.3.2.txt /opt/airflow/airflow-constraints-3.3.2.txt
+COPY --chown=airflow:0 --chmod=775 docker/rebuild/airflow-entrypoint.sh /opt/airflow/airflow-entrypoint.sh
+
+USER airflow
+# The FAB provider serves plugin Flask blueprints under /pluginsv2 in
+# Airflow 3; the base image's provider set is not relied on for it.
+# The ingestion install carries no --constraint flag, matching the
+# official image (its ranges are satisfied by the installed versions).
+COPY smartmetadata-airflow-apis/pyproject.toml smartmetadata-airflow-apis/README.md ./smartmetadata-airflow-apis/
+COPY smartmetadata-airflow-apis/src ./smartmetadata-airflow-apis/src
+COPY smartmetadata-ingestion/pyproject.toml smartmetadata-ingestion/README.md smartmetadata-ingestion/LICENSE ./smartmetadata-ingestion/
+COPY smartmetadata-ingestion/src ./smartmetadata-ingestion/src
+RUN pip install --no-cache-dir --constraint /opt/airflow/airflow-constraints-3.3.2.txt \
+        "apache-airflow-providers-fab" \
+        "./smartmetadata-airflow-apis" \
+    && pip install --no-cache-dir "mysqlclient==2.1.1" \
+    && pip install --no-cache-dir "./smartmetadata-ingestion[postgres,mysql,kafka,snowflake]" \
+    && python -c "import MySQLdb, psycopg"
+
+USER root
+# The built mysqlclient .so links the MariaDB client library at runtime;
+# apt cannot see that linkage, so mark the runtime libs manual before the
+# purge or --auto-remove would drop them and break the import above.
+RUN apt-mark manual libmariadb3 mariadb-common libgcc-s1 libstdc++6 \
+    && apt-get purge -y --auto-remove build-essential default-libmysqlclient-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+RUN mkdir -p /opt/airflow/dag_generated_configs
+# Build-time migrate generates airflow.cfg; the one-shot SQLite DB is
+# removed so the image ships configuration, not a database.
+RUN airflow db migrate && rm -f /opt/airflow/airflow.db

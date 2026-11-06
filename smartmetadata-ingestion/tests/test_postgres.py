@@ -166,6 +166,32 @@ def test_postgres_common_connection_test_requires_fields() -> None:
     assert pg_run_connection_test(_pg_conn()) == ["CheckHostPort", "CheckUsername", "CheckDatabase"]
 
 
+def test_postgres_live_connection_uses_auth_type_password(monkeypatch) -> None:
+    # Same defect class as the MySQL source (step 6): the server returns
+    # authType-only connection configs; a top-level-only read sends an
+    # empty password and the catalog reads fail with Access denied.
+    import sys
+    from types import SimpleNamespace
+
+    from smartmetadata_ingestion.connectors.postgres import _psycopg_connect
+
+    calls = []
+    fake_psycopg = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "psycopg", fake_psycopg)
+
+    connect = _psycopg_connect(
+        {
+            "hostPort": "localhost:5432",
+            "username": "ingest",
+            "authType": {"password": "from-auth-type"},
+            "database": "warehouse",
+        }
+    )
+    connect()
+
+    assert calls[0]["password"] == "from-auth-type"
+
+
 def test_postgres_lineage_source_injected_edges() -> None:
     source = PostgresLineageSource(
         SourceConfig(type="postgres-lineage", service_name="pg", connection=_pg_conn()),

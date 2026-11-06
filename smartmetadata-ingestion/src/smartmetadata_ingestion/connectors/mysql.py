@@ -332,7 +332,10 @@ def _pymysql_connect(connection: dict[str, Any]):
             host=host,
             port=port,
             user=connection.get("username"),
-            password=connection.get("password") or "",
+            # Same rule as mysql_common.password_of: the server returns
+            # authType-only configs, so a top-level-only read sends an empty
+            # password (step-6 gate: Access denied 1045 on catalog reads).
+            password=mysql_common.password_of(connection),
             database=database,
         )
 

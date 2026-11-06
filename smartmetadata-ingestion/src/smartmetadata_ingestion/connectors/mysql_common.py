@@ -197,6 +197,28 @@ def run_connection_test(connection: dict[str, Any]) -> list[str]:
     return steps
 
 
+def test_live_connection(connection: dict[str, Any], *, connect=None) -> None:
+    """Open the connection and run ``SELECT 1``; raises WorkflowError on failure.
+
+    This is the live half of a test connection (``run_connection_test``
+    above only checks the shape). ``connect`` is the injectable factory
+    used by tests; production uses :func:`mysql_connect`.
+    """
+    factory = connect or mysql_connect(connection)
+    try:
+        with factory() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            finally:
+                cursor.close()
+    except WorkflowError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surfaced as a workflow error
+        raise WorkflowError(f"mysql test connection failed: {exc}") from exc
+
+
 def build_service_connection_config(
     *,
     raw: dict[str, Any],

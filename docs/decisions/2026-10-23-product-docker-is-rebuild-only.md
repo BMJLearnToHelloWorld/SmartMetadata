@@ -1,7 +1,7 @@
 # Product Docker files and commands start the rebuilt stack only
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-10-23 (initial)
+- **Revisions:** v1 2026-10-23 (initial); v2 2026-11-06 (product Airflow service)
 - **Deciders:** SmartMetadata rebuild (Bernie Bai)
 - **Guard:** `scripts/rebuild/check_product_path_hints.py`; `scripts/rebuild/test_check_product_path_hints.py`; `scripts/rebuild/test_require_reference_stack.py`
 - **Related:** ADR:2026-10-22-ccl-trees-stay-reference-only; ADR:2026-10-22-product-make-is-rebuild-only; `docs/rebuild/PRODUCT_PATH.md`; `docs/rebuild/PARITY.md`
@@ -31,7 +31,9 @@ scope. Official 100+ connector parity is out of scope ([PARITY.md](../rebuild/PA
   Elasticsearch 9, slim `openmetadata-server` (tarball from `make slim-dist`),
   `smartmetadata-ui` (nginx, same-origin `/api`), `smartmetadata-ingestion`
   (static-smoke seed, image keeps the shipped connectors), and
-  `smartmetadata-mcp` (stdio). It does not define CCL ingestion, Airflow,
+  `smartmetadata-mcp` (stdio), and product `airflow` (official Apache
+  Airflow image + clean-room `smartmetadata-airflow-apis` plugin; not the
+  CCL ingestion/Airflow image). It does not define CCL ingestion,
   Collate quickstart, `openmetadata-ui`, or `openmetadata-mcp`.
 - The Vue SPA stays out of the Java dist (no second packaging ADR). The
   product start path still serves it.
