@@ -116,9 +116,9 @@ REQUIRED_STAGE_ORDER = {
 }
 
 REQUIRED_AIRFLOW_PREFIXES = (
-    "/api/v1",
-    "/api/v2",
-    "/pluginsv2/api/v2",
+    "/api/v1/openmetadata",
+    "/api/v2/openmetadata",
+    "/pluginsv2/api/v2/openmetadata",
 )
 
 REQUIRED_AIRFLOW_ENDPOINTS = (
