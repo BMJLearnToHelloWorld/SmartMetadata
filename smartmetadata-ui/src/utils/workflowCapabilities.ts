@@ -10,11 +10,12 @@
 import type { WorkflowDefinitionFull } from '@/types/governance';
 
 /**
- * Official WorkflowClassBase (pin a3012259ca), ported 1:1. The OSS build
- * ships the restrictive defaults and NO subclass exists in the OSS repo, so
- * this is the single source of builder capability flags. The Collate-only
- * surface (editor link, list tabs, card footer, page section, workflow path)
- * returns null / [] / undefined in OSS — ported as such.
+ * Official WorkflowClassBase (pin a3012259ca), ported 1:1 — except
+ * allowCreateWorkflow (see below). The OSS build ships the restrictive
+ * defaults and NO subclass exists in the OSS repo, so this is the single
+ * source of builder capability flags. The Collate-only surface (editor link,
+ * list tabs, card footer, page section, workflow path) returns null / [] /
+ * undefined in OSS — ported as such.
  */
 export interface WorkflowCapabilities {
   allowCreateWorkflow: boolean;
@@ -38,12 +39,19 @@ export interface WorkflowsPageTab {
   includes?: (workflow: WorkflowDefinitionFull) => boolean;
 }
 
-/** The OSS capability set, exactly as WorkflowClassBase.getCapabilities. */
+/**
+ * The capability set. Every flag matches WorkflowClassBase.getCapabilities
+ * (pin a3012259ca) EXCEPT allowCreateWorkflow, which is true by product
+ * decision (Bai 2026-11-07, option B): the product keeps the list-page
+ * create button and completes the create payload per official
+ * handleModalSubmit, instead of hiding creation as OSS does. Official OSS
+ * has this flag false (creation is Collate-only).
+ */
 export function getWorkflowCapabilities(
   _workflow?: WorkflowDefinitionFull | null,
 ): WorkflowCapabilities {
   return {
-    allowCreateWorkflow: false,
+    allowCreateWorkflow: true,
     allowDeleteWorkflow: false,
     allowStructuralGraphEdits: false,
     showWorkflowNodePalette: false,

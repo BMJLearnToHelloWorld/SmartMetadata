@@ -12,6 +12,7 @@ import PageHeader from '@/components/shared/PageHeader.vue';
 import { ApiError } from '@/api/client';
 import { createWorkflow, listWorkflows } from '@/api/workflows';
 import type { WorkflowDefinition } from '@/types/governance';
+import { getWorkflowCapabilities } from '@/utils/workflowCapabilities';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -26,6 +27,15 @@ import {
 
 const { t } = useI18n();
 const router = useRouter();
+
+/**
+ * The list-page create button is gated by the same capability the builder
+ * reads (useWorkflowLogic): creation is a product capability
+ * (allowCreateWorkflow true by product decision, Bai 2026-11-07 option B),
+ * not the OSS default. Official gates the button and the modal the same way
+ * (WorkflowsPage :284 / :434).
+ */
+const allowCreateWorkflow = getWorkflowCapabilities().allowCreateWorkflow;
 
 /**
  * Official click-through (WorkflowsPage onWorkflowClick): a card navigates
@@ -43,8 +53,12 @@ function goDetail(workflow: WorkflowDefinition): void {
  * description), cursor pagination with page sizes 15/25/50, a create modal
  * (name validated against ^[a-zA-Z0-9_-]+$, 3–50 chars, plus a required
  * description — both are required by the create schema), a three-feature
- * empty state, and a permission placeholder on 403. Card click-through to
- * the builder/detail route lands with that route, not here.
+ * empty state, and a permission placeholder on 403. The create modal sends
+ * the complete minimal definition per official handleModalSubmit (empty
+ * nodes/edges plus a default event-based trigger) and navigates into the
+ * builder edit mode after creation; the create action is gated by
+ * getWorkflowCapabilities(). Card click-through to the builder/detail route
+ * lands with that route, not here.
  */
 const WORKFLOW_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 const WORKFLOW_NAME_MIN_LENGTH = 3;
@@ -131,12 +145,30 @@ async function onCreate(): Promise<void> {
   formError.value = '';
   creating.value = true;
   try {
-    const created = await createWorkflow({ name, description });
+    // Official handleModalSubmit (WorkflowsPage): the create modal sends the
+    // complete minimal definition — empty nodes/edges plus a default
+    // event-based trigger — and navigates into the builder edit mode after
+    // creation. A bare {name, description} POST 500s server-side (the
+    // trigger is null), which is official behavior, not a product bug.
+    const created = await createWorkflow({
+      description: description || '',
+      displayName: name,
+      edges: [],
+      name,
+      nodes: [],
+      trigger: { config: {}, output: [], type: 'eventBasedEntity' },
+    });
     showCreateModal.value = false;
     createForm.value = { name: '', description: '' };
     message.success(t('workflows.created', { name: created.name }));
     cursor.value = resetCursor();
     await load();
+    const fqn = created.fullyQualifiedName || created.name;
+    void router.push({
+      name: 'workflow-detail',
+      params: { fqn, tab: 'workflow' },
+      query: { mode: 'edit' },
+    });
   } catch (error) {
     formError.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
@@ -153,7 +185,12 @@ onMounted(() => {
   <div data-testid="workflows">
     <PageHeader :header="t('workflows.title')" :sub-header="t('workflows.lead')" />
     <Space style="margin-bottom: 16px">
-      <Button type="primary" data-testid="workflows-create" @click="showCreateModal = true">
+      <Button
+        v-if="allowCreateWorkflow"
+        type="primary"
+        data-testid="workflows-create"
+        @click="showCreateModal = true"
+      >
         {{ t('workflows.create') }}
       </Button>
     </Space>
@@ -185,7 +222,12 @@ onMounted(() => {
           </Card>
         </Col>
       </Row>
-      <Button type="primary" data-testid="workflows-empty-create" @click="showCreateModal = true">
+      <Button
+        v-if="allowCreateWorkflow"
+        type="primary"
+        data-testid="workflows-empty-create"
+        @click="showCreateModal = true"
+      >
         {{ t('workflows.create') }}
       </Button>
     </div>
@@ -227,7 +269,7 @@ onMounted(() => {
     </div>
     <FormModal
       :get-container="false"
-      :open="showCreateModal"
+      :open="showCreateModal && allowCreateWorkflow"
       :title="t('workflows.create')"
       :ok-text="t('crud.create')"
       :cancel-text="t('crud.cancel')"
