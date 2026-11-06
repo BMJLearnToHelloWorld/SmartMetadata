@@ -21,6 +21,7 @@ AND both files are deleted.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from smartmetadata_airflow_apis.contracts import PRODUCT_RELEASE_VERSION
@@ -36,6 +37,12 @@ from smartmetadata_airflow_apis.validation import (
     validate_automation_workflow,
     validate_ingestion_pipeline,
 )
+
+logger = logging.getLogger(__name__)
+
+# Sentinel: run_automation should use the executor's production fetcher.
+# app.py imports this same object; a second sentinel would not compare equal.
+USE_DEFAULT_FETCHER = object()
 
 
 class HandlerResult:
@@ -190,15 +197,41 @@ def host_ip(store: DagStore) -> HandlerResult:
     return HandlerResult(200, {"ip": store.host_ip()})
 
 
-def run_automation(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
-    # Step 4 replaces this stand-in with the real executor (ruling §4.4).
-    # Until then: shape validation is real (malformed -> 400); a well-formed
-    # workflow is accepted without executing, so the "unexecutable -> 500"
-    # contract test stays red until step 4. Deliberately no store
-    # interaction here: a fake deploy would pollute the DAG registry.
+def run_automation(
+    store: DagStore,
+    payload: dict[str, Any],
+    *,
+    fetch_workflow: Any = USE_DEFAULT_FETCHER,
+) -> HandlerResult:
+    """Synchronously execute an automation workflow (ruling §4.4).
+
+    ``fetch_workflow`` is the workflow fetcher the executor uses to get
+    the decrypted workflow from the server; the default is the production
+    fetcher. ``None`` executes the posted body directly — a seam for
+    tests without a server, never used in production. Any execution
+    failure is a masked 500 (the server turns it into a
+    ``PipelineServiceClientException``); only a successful test is a 200.
+    """
     try:
         workflow = validate_automation_workflow(payload)
     except ValidationError as exc:
         return HandlerResult(400, {"error": "; ".join(exc.problems)})
+    try:
+        from smartmetadata_ingestion.automations.execute import (
+            execute_automation_workflow,
+        )
+
+        kwargs: dict[str, Any] = (
+            {} if fetch_workflow is USE_DEFAULT_FETCHER else {"fetch_workflow": fetch_workflow}
+        )
+        execute_automation_workflow(workflow, **kwargs)
+    except Exception as exc:  # noqa: BLE001 - mapped to the masked 500
+        logger.error(
+            "run_automation failed for workflow %s: %s",
+            workflow.get("name"),
+            exc,
+            exc_info=True,
+        )
+        return _server_error()
     name = str(workflow["name"])
     return HandlerResult(200, {"message": f"Workflow [{name}] has been triggered."})

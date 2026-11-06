@@ -431,6 +431,35 @@ def test_ip_returns_an_ip_or_unknown(client) -> None:
     assert "ip" in res.get_json()
 
 
+def _automation_workflow(
+    *,
+    name: str = "test_conn",
+    workflow_type: str = "TEST_CONNECTION",
+    service_type: str = "NoSuchService",
+) -> dict:
+    # Official Workflow shape (entity/automations/workflow.json): the
+    # connection lives under request.connection.config.
+    return {
+        "name": name,
+        "workflowType": workflow_type,
+        "request": {
+            "connection": {
+                "config": {
+                    "type": service_type,
+                    "hostPort": "localhost:3306",
+                }
+            },
+            "serviceType": "Database",
+            "connectionType": service_type,
+        },
+        "openMetadataServerConnection": {
+            "hostPort": "http://127.0.0.1:9/api",
+            "authProvider": "no-auth",
+            "securityConfig": {"jwtToken": "test-jwt"},
+        },
+    }
+
+
 def test_run_automation_validates_and_executes(client) -> None:
     # Malformed workflow -> 400.
     assert (
@@ -442,17 +471,31 @@ def test_run_automation_validates_and_executes(client) -> None:
         == 400
     )
     # Well-formed but unexecutable service type -> 500 (execution failure).
-    res = client.post(
+    # Body-direct fetcher (None): no server exists in this test, so the
+    # 500 must come from the executor's type dispatch, not a fetch failure.
+    direct_app = create_app(MemoryDagStore(), credentials=CREDS, automation_fetcher=None)
+    direct = direct_app.test_client()
+    res = direct.post(
         "/api/v2/openmetadata/run_automation",
-        json={
-            "name": "test_conn",
-            "serviceConnection": {
-                "config": {
-                    "type": "NoSuchService",
-                    "hostPort": "localhost:3306",
-                }
-            },
-        },
+        json=_automation_workflow(),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 500
+    assert res.get_json() == {"error": "An unexpected problem occurred"}
+    # Non-TEST_CONNECTION workflow type -> 500 (no executor for it).
+    res = direct.post(
+        "/api/v2/openmetadata/run_automation",
+        json=_automation_workflow(workflow_type="REVERSE_INGESTION"),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 500
+    assert res.get_json() == {"error": "An unexpected problem occurred"}
+    # Request without a connection -> 500 (well-formed, unexecutable).
+    body = _automation_workflow()
+    del body["request"]["connection"]
+    res = direct.post(
+        "/api/v2/openmetadata/run_automation",
+        json=body,
         headers=_auth_headers(),
     )
     assert res.status_code == 500

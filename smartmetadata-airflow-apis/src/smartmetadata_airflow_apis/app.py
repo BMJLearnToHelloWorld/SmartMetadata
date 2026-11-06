@@ -24,6 +24,7 @@ from flask import Flask, jsonify, request
 
 from smartmetadata_airflow_apis import handlers
 from smartmetadata_airflow_apis.contracts import API_PREFIXES
+from smartmetadata_airflow_apis.handlers import USE_DEFAULT_FETCHER
 from smartmetadata_airflow_apis.security import (
     CREATE,
     DELETE,
@@ -40,6 +41,7 @@ def create_app(
     store: DagStore | None = None,
     credentials: tuple[str, str] | None = None,
     authenticator: Authenticator | None = None,
+    automation_fetcher: Any = USE_DEFAULT_FETCHER,
 ) -> Flask:
     app = Flask("smartmetadata_airflow_apis")
     backend = store or MemoryDagStore()
@@ -47,6 +49,11 @@ def create_app(
     app.extensions["authenticator"] = (
         authenticator if authenticator is not None else build_authenticator(credentials)
     )
+    # The run_automation fetcher: the default is the executor's production
+    # fetcher (re-fetch the decrypted workflow from the server); None
+    # executes the posted body directly and exists only for tests without
+    # a server (ruling §4.4).
+    app.extensions["automation_fetcher"] = automation_fetcher
     # The standalone app always issues a CSRF token; the 11 other routes do
     # not validate it (they are exempt, matching the official plugin, where
     # CSRF is enforced by Airflow itself in production).
@@ -60,7 +67,7 @@ def create_app(
         return jsonify(result.body), result.status
 
     for prefix in API_PREFIXES:
-        _mount(app, prefix, backend, json_body, reply)
+        _mount(app, prefix, backend, json_body, reply, app.extensions["automation_fetcher"])
     return app
 
 
@@ -70,6 +77,7 @@ def _mount(
     store: DagStore,
     json_body: Callable[[], dict[str, Any]],
     reply: Callable,
+    automation_fetcher: Any,
 ) -> None:
     tag = prefix.replace("/", "_")
 
@@ -190,7 +198,11 @@ def _mount(
         f"{prefix}/run_automation",
         endpoint=f"automation{tag}",
         view_func=require_permission(READ)(
-            lambda: reply(handlers.run_automation(store, json_body()))
+            lambda: reply(
+                handlers.run_automation(
+                    store, json_body(), fetch_workflow=automation_fetcher
+                )
+            )
         ),
         methods=["POST"],
     )

@@ -78,25 +78,28 @@ def validate_ingestion_pipeline(payload: Any) -> dict[str, Any]:
 
 
 def validate_automation_workflow(payload: Any) -> dict[str, Any]:
-    """Validate a run_automation body; returns it unchanged when well-formed."""
+    """Validate a run_automation body; returns it unchanged when well-formed.
+
+    The official Workflow shape (``entity/automations/workflow.json``,
+    required: id, name, workflowType, request): the connection lives under
+    ``request.connection.config`` (TestServiceConnectionRequest), not at
+    the top level. ``openMetadataServerConnection`` is not schema-required
+    and is not validated here — a body without it fails at fetch time
+    (500), like the official route's ``execute()``. Whether the request
+    carries a connection is also the executor's call (a connection-less
+    request is a well-formed workflow the plugin cannot run → 500).
+    """
     body = _require_mapping(payload, "body")
     problems: list[str] = []
     if not body:
         raise ValidationError([_invalid("body")])
     _require_str(body, "name", problems)
-    service_conn = body.get("serviceConnection")
-    if service_conn is None:
-        problems.append(_missing("serviceConnection"))
-    elif not isinstance(service_conn, dict):
-        problems.append(_invalid("serviceConnection"))
-    else:
-        config = service_conn.get("config")
-        if config is None:
-            problems.append(_missing("serviceConnection.config"))
-        elif not isinstance(config, dict):
-            problems.append(_invalid("serviceConnection.config"))
-        else:
-            _require_str(config, "type", problems)
+    _require_str(body, "workflowType", problems)
+    request = body.get("request")
+    if request is None:
+        problems.append(_missing("request"))
+    elif not isinstance(request, dict):
+        problems.append(_invalid("request"))
     if problems:
         raise ValidationError(problems)
     return body
