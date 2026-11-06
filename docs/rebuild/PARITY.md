@@ -111,8 +111,8 @@ create_test_case.
 | `create_conversation` | Shipped (OSS Feed, not `/v1/feed`) |
 | get_test_definitions / create_lineage / ind_by_tag | Shipped (backend-08) |
 | create_entity / patch_entity / create_test_case | **BehaviorMatched (unit)** — POST Create* / PATCH json-patch by FQN / POST CreateTestCase; see `PARTIAL_MCP_WRITES_REVIEW.md` |
-| `semantic_search`, persona/user/company/concept context, NLQ | **DROP** (Phase 10 non-goal: Collate AI) |
-| `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis` | **DROP** (Phase 10: RDF / Collate) |
+| `semantic_search`, persona/user/company/concept context, NLQ | **DROP this milestone** (Collate AI; next-milestone to-do, not permanent) |
+| `sparql_query`, `entity_neighborhood`, `shacl_validate`, `ontology_describe`, `root_cause_analysis` | **DROP this milestone** (RDF / Collate; next-milestone to-do, not permanent) |
 | HTTP `/mcp` on the Java server | **Unregistered** (slim dist has no CCL jar) |
 
 ## Apache positive regression (backend-10)

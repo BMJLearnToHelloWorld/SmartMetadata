@@ -43,6 +43,8 @@ describe('service connections', () => {
         hostPort: 'localhost:5432',
         username: 'analyst',
         database: 'analytics',
+        // Wave 0 lean-forms: single default scheme is always emitted.
+        scheme: 'postgresql+psycopg2',
       },
     });
   });
@@ -181,6 +183,15 @@ describe('service connections', () => {
         account: 'xy12345',
         warehouse: 'COMPUTE_WH',
         database: 'ANALYTICS',
+        // Wave 0 lean-forms: single-option scheme is a builder fixed value;
+        // policyAgentConfig is always composed from the spec defaults.
+        scheme: 'snowflake',
+        policyAgentConfig: {
+          enabled: true,
+          supportsColumnAccess: false,
+          supportsFullAccess: true,
+          supportsMaskedAccess: true,
+        },
       },
     });
     expect(
@@ -307,6 +318,15 @@ describe('service connections', () => {
         httpPath: '/sql/1.0/warehouses/abc',
         catalog: 'main',
         authType: { token: '${DATABRICKS_TOKEN}' },
+        // Wave 0 lean-forms: single-option scheme is a builder fixed value;
+        // policyAgentConfig is always composed from the spec defaults.
+        scheme: 'databricks',
+        policyAgentConfig: {
+          enabled: true,
+          supportsColumnAccess: false,
+          supportsFullAccess: true,
+          supportsMaskedAccess: true,
+        },
       },
     });
     expect(
@@ -328,6 +348,13 @@ describe('service connections', () => {
         catalog: 'main',
         includeMetricViews: true,
         authType: { token: 'dapi-secret' },
+        scheme: 'databricks',
+        policyAgentConfig: {
+          enabled: true,
+          supportsColumnAccess: false,
+          supportsFullAccess: true,
+          supportsMaskedAccess: true,
+        },
       },
     });
   });
@@ -414,6 +441,257 @@ describe('service connections', () => {
       scheme: 'postgresql+psycopg2',
       database: 'ts',
       authType: { password: '${TIMESCALE_PASSWORD}' },
+    });
+  });
+
+  it('builds the full Postgres de-noised set (Wave 0 lean-forms)', () => {
+    const connection = buildServiceConnection(
+      postgresForm({
+        scheme: 'pgspider+psycopg2',
+        ingestAllDatabases: true,
+        sslMode: 'require',
+        sslCaCertificate: '---CA---',
+        sslCertificate: '---CERT---',
+        sslKey: '---KEY---',
+        classificationName: 'CustomTags',
+        queryStatementSource: 'my_schema.custom_pg_stat_statements',
+        connectionOptions: '{"connect_timeout": "10"}',
+        connectionArguments: '{"ssl": "true"}',
+        storeConnectionSecrets: true,
+      }),
+    );
+    expect(connection).toEqual({
+      config: {
+        type: 'Postgres',
+        hostPort: 'localhost:5432',
+        username: 'analyst',
+        database: 'analytics',
+        scheme: 'pgspider+psycopg2',
+        ingestAllDatabases: true,
+        sslMode: 'require',
+        sslConfig: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+        classificationName: 'CustomTags',
+        queryStatementSource: 'my_schema.custom_pg_stat_statements',
+        connectionOptions: { connect_timeout: '10' },
+        connectionArguments: { ssl: 'true' },
+      },
+    });
+  });
+
+  it('builds MySQL slow logs + ssl + JSON maps (Wave 0 lean-forms)', () => {
+    const connection = buildServiceConnection({
+      name: 'm',
+      kind: 'database',
+      serviceType: 'Mysql',
+      hostPort: 'localhost:3306',
+      username: 'root',
+      databaseName: 'app',
+      useSlowLogs: true,
+      sslCaCertificate: '---CA---',
+      connectionOptions: '{"charset": "utf8mb4"}',
+      storeConnectionSecrets: true,
+    });
+    expect(connection?.config).toMatchObject({
+      type: 'Mysql',
+      scheme: 'mysql+pymysql',
+      useSlowLogs: true,
+      sslConfig: { caCertificate: '---CA---' },
+      connectionOptions: { charset: 'utf8mb4' },
+    });
+  });
+
+  it('throws on invalid JSON connection options/arguments', () => {
+    expect(() => buildServiceConnection(postgresForm({ connectionOptions: '{bad json' }))).toThrow(
+      'Connection options must be a valid JSON object',
+    );
+    expect(() => buildServiceConnection(postgresForm({ connectionOptions: '[]' }))).toThrow(
+      'Connection options must be a JSON object',
+    );
+    expect(() =>
+      buildServiceConnection(postgresForm({ connectionArguments: '{"a": 1}' })),
+    ).toThrow('Connection arguments values must be strings');
+  });
+
+  it('keeps Snowflake private key and passphrase under the secret discipline', () => {
+    const base = {
+      name: 'sf',
+      kind: 'database',
+      serviceType: 'Snowflake',
+      username: 'svc',
+      account: 'xy',
+      warehouse: 'WH',
+    } as const;
+    // A typed literal without persist is dropped, like passwords.
+    expect(
+      buildServiceConnection({ ...base, privateKey: '---KEY---', snowflakePrivatekeyPassphrase: 'pw' })
+        ?.config,
+    ).not.toHaveProperty('privateKey');
+    expect(
+      buildServiceConnection({ ...base, privateKey: '---KEY---', snowflakePrivatekeyPassphrase: 'pw' })
+        ?.config,
+    ).not.toHaveProperty('snowflakePrivatekeyPassphrase');
+    // With persist it is sent.
+    const kept = buildServiceConnection({
+      ...base,
+      privateKey: '---KEY---',
+      snowflakePrivatekeyPassphrase: 'pw',
+      storeConnectionSecrets: true,
+    })?.config;
+    expect(kept?.privateKey).toBe('---KEY---');
+    expect(kept?.snowflakePrivatekeyPassphrase).toBe('pw');
+    // Blank + masked previous is preserved.
+    const prev = buildServiceConnection(
+      { ...base },
+      {
+        config: {
+          type: 'Snowflake',
+          privateKey: '********',
+          snowflakePrivatekeyPassphrase: '********',
+        },
+      },
+    )?.config;
+    expect(prev?.privateKey).toBe('********');
+    expect(prev?.snowflakePrivatekeyPassphrase).toBe('********');
+  });
+
+  it('builds Redshift identifiers and Timescale classification fields (Wave 0 lean-forms)', () => {
+    expect(
+      buildServiceConnection({
+        name: 'r',
+        kind: 'database',
+        serviceType: 'Redshift',
+        hostPort: 'cluster.xyz.us-east-1.redshift.amazonaws.com:5439',
+        username: 'awsuser',
+        database: 'dev',
+        clusterIdentifier: 'my-cluster',
+        workgroupName: 'my-workgroup',
+        sslMode: 'verify-full',
+        connectionOptions: '{"tcp_keepalive": "true"}',
+      })?.config,
+    ).toMatchObject({
+      type: 'Redshift',
+      scheme: 'redshift+psycopg2',
+      clusterIdentifier: 'my-cluster',
+      workgroupName: 'my-workgroup',
+      sslMode: 'verify-full',
+      connectionOptions: { tcp_keepalive: 'true' },
+    });
+    expect(
+      buildServiceConnection({
+        name: 't',
+        kind: 'database',
+        serviceType: 'Timescale',
+        hostPort: 'localhost:5432',
+        username: 'tsdb',
+        database: 'ts',
+        classificationName: 'CustomTags',
+        queryStatementSource: 'my_schema.custom_pg_stat_statements',
+      })?.config,
+    ).toMatchObject({
+      type: 'Timescale',
+      classificationName: 'CustomTags',
+      queryStatementSource: 'my_schema.custom_pg_stat_statements',
+    });
+    // Greenplum has neither the Redshift identifiers nor the Timescale fields.
+    expect(
+      buildServiceConnection({
+        name: 'g',
+        kind: 'database',
+        serviceType: 'Greenplum',
+        hostPort: 'localhost:5432',
+        username: 'gpadmin',
+        database: 'gpdb',
+      })?.config,
+    ).not.toHaveProperty('clusterIdentifier');
+  });
+
+  it('round-trips the new fields from a stored service', () => {
+    const service: CatalogService = {
+      id: 's1',
+      name: 'warehouse',
+      kind: 'database',
+      serviceType: 'Snowflake',
+      connection: {
+        config: {
+          type: 'Snowflake',
+          username: 'svc',
+          account: 'xy',
+          warehouse: 'WH',
+          queryTag: 'billing',
+          accountUsageSchema: 'CUSTOM.USAGE',
+          systemMetricsBatchSize: 25,
+          privateKey: '********',
+          snowflakePrivatekeyPassphrase: '********',
+          includeStreams: true,
+          useAccessHistory: false,
+          accessHistoryChunkSize: 7,
+          creditCost: 4.5,
+          snowflakeSourceHost: 'custom.snowflake.com',
+          policyAgentConfig: {
+            enabled: false,
+            supportsColumnAccess: true,
+            supportsFullAccess: false,
+            supportsMaskedAccess: false,
+          },
+          connectionOptions: { warehouse: 'WH' },
+          connectionArguments: { a: 'b' },
+        },
+      },
+    };
+    const form = formValuesFromService(service);
+    expect(form.queryTag).toBe('billing');
+    expect(form.accountUsageSchema).toBe('CUSTOM.USAGE');
+    expect(form.systemMetricsBatchSize).toBe(25);
+    // Secrets are never prefilled into the form.
+    expect(form.privateKey).toBe('');
+    expect(form.snowflakePrivatekeyPassphrase).toBe('');
+    expect(form.includeStreams).toBe(true);
+    expect(form.useAccessHistory).toBe(false);
+    expect(form.accessHistoryChunkSize).toBe(7);
+    expect(form.creditCost).toBe(4.5);
+    expect(form.snowflakeSourceHost).toBe('custom.snowflake.com');
+    expect(form.policyAgentEnabled).toBe(false);
+    expect(form.policyAgentSupportsColumnAccess).toBe(true);
+    expect(form.policyAgentSupportsFullAccess).toBe(false);
+    expect(form.policyAgentSupportsMaskedAccess).toBe(false);
+    expect(form.connectionOptions).toBe('{"warehouse":"WH"}');
+    expect(form.connectionArguments).toBe('{"a":"b"}');
+    // Spec defaults apply when the stored config omits the field.
+    const bare = formValuesFromService({
+      id: 's2',
+      name: 'wh2',
+      kind: 'database',
+      serviceType: 'Snowflake',
+      connection: { config: { type: 'Snowflake' } },
+    });
+    expect(bare.useAccessHistory).toBe(true);
+    expect(bare.systemMetricsBatchSize).toBe(50);
+    expect(bare.accessHistoryChunkSize).toBe(2);
+    expect(bare.creditCost).toBe(3.3);
+    expect(bare.accountUsageSchema).toBe('SNOWFLAKE.ACCOUNT_USAGE');
+    expect(bare.snowflakeSourceHost).toBe('app.snowflake.com');
+    expect(bare.policyAgentEnabled).toBe(true);
+    expect(bare.policyAgentSupportsFullAccess).toBe(true);
+    expect(bare.sslMode).toBe('disable');
+    expect(bare.classificationName).toBe('PostgresPolicyTags');
+    expect(bare.queryStatementSource).toBe('pg_stat_statements');
+  });
+
+  it('redacts the new secret leaves for display JSON', () => {
+    const redacted = redactConnectionForDisplay({
+      config: {
+        type: 'Snowflake',
+        privateKey: '---KEY---',
+        snowflakePrivatekeyPassphrase: 'pw',
+        sslConfig: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+      },
+    });
+    expect(redacted?.config?.privateKey).toBe('********');
+    expect(redacted?.config?.snowflakePrivatekeyPassphrase).toBe('********');
+    expect(redacted?.config?.sslConfig).toEqual({
+      caCertificate: '********',
+      sslCertificate: '********',
+      sslKey: '********',
     });
   });
 
@@ -697,5 +975,19 @@ describe('service kind tables', () => {
     expect(form.serviceType).toBe('Postgres');
     expect(form.includeMetricViews).toBe(true);
     expect(form.storeConnectionSecrets).toBe(false);
+    // Wave 0 lean-forms: spec defaults for the new fields (RULING.md §1.4).
+    expect(form.sslMode).toBe('disable');
+    expect(form.classificationName).toBe('PostgresPolicyTags');
+    expect(form.queryStatementSource).toBe('pg_stat_statements');
+    expect(form.useAccessHistory).toBe(true);
+    expect(form.systemMetricsBatchSize).toBe(50);
+    expect(form.accessHistoryChunkSize).toBe(2);
+    expect(form.creditCost).toBe(3.3);
+    expect(form.accountUsageSchema).toBe('SNOWFLAKE.ACCOUNT_USAGE');
+    expect(form.snowflakeSourceHost).toBe('app.snowflake.com');
+    expect(form.policyAgentEnabled).toBe(true);
+    expect(form.policyAgentSupportsColumnAccess).toBe(false);
+    expect(form.policyAgentSupportsFullAccess).toBe(true);
+    expect(form.policyAgentSupportsMaskedAccess).toBe(true);
   });
 });

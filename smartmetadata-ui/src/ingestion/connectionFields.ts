@@ -15,7 +15,7 @@ import type { ServiceFormValues } from '@/types/ingestion';
  * surface, so this table is the bridge: adding a service type means adding one
  * group entry below, never touching the renderer component.
  */
-export type ConnectionFieldControl = 'text' | 'password' | 'select' | 'checkbox' | 'number' | 'note';
+export type ConnectionFieldControl = 'text' | 'password' | 'select' | 'checkbox' | 'number' | 'note' | 'textarea';
 
 export interface ConnectionFieldOption {
   value: string;
@@ -131,6 +131,111 @@ const securityProtocolField: Field = {
 
 const note = (textKey: string): Field => ({ key: '', control: 'note', labelKey: '', textKey });
 
+// Wave 0 lean-forms database档: shared defs for the de-noised official
+// properties (see RULING.md R-T1). sslMode enum + defaults come from
+// openmetadata-spec .../security/ssl/verifySSLConfig.json#/definitions/sslMode.
+const sslModeField: Field = {
+  key: 'sslMode',
+  control: 'select',
+  labelKey: 'connection.sslMode',
+  testId: 'service-ssl-mode',
+  options: [
+    { value: 'disable' },
+    { value: 'allow' },
+    { value: 'prefer' },
+    { value: 'require' },
+    { value: 'verify-ca' },
+    { value: 'verify-full' },
+  ],
+};
+
+const SSL_MODE_GATE: ConnectionFieldShowWhen = {
+  field: 'sslMode',
+  notEquals: 'disable',
+  defaultValue: 'disable',
+};
+
+// validateSSLClientConfig leaves (openmetadata-spec
+// .../security/ssl/validateSSLClientConfig.json): caCertificate, sslCertificate,
+// sslKey — all PEM contents, so textarea, not single-line inputs. `gated` is
+// true for types that also carry sslMode (leaves hidden while mode is
+// disable); MySQL/Mssql/Doris have sslConfig but no sslMode, so theirs are
+// always visible.
+const sslConfigLeaves = (gated: boolean): Field[] => [
+  {
+    key: 'sslCaCertificate',
+    control: 'textarea',
+    labelKey: 'connection.sslCaCertificate',
+    testId: 'service-ssl-ca-certificate',
+    ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
+  },
+  {
+    key: 'sslCertificate',
+    control: 'textarea',
+    labelKey: 'connection.sslCertificate',
+    testId: 'service-ssl-certificate',
+    ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
+  },
+  {
+    key: 'sslKey',
+    control: 'textarea',
+    labelKey: 'connection.sslKey',
+    testId: 'service-ssl-key',
+    ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
+  },
+];
+
+// connectionOptions / connectionArguments are string maps
+// (connectionBasicType.json); entered as a JSON object and parsed in
+// buildServiceConnection (GoogleDrive credentialsJson precedent).
+const connectionOptionsField: Field = {
+  key: 'connectionOptions',
+  control: 'textarea',
+  labelKey: 'connection.connectionOptions',
+  testId: 'service-connection-options',
+  placeholder: '{"key": "value"}',
+  hintKey: 'connection.connectionOptionsHint',
+};
+
+const connectionArgumentsField: Field = {
+  key: 'connectionArguments',
+  control: 'textarea',
+  labelKey: 'connection.connectionArguments',
+  testId: 'service-connection-arguments',
+  placeholder: '{"key": "value"}',
+  hintKey: 'connection.connectionArgumentsHint',
+};
+
+// policyAgentConfig (connectionBasicType.json): four booleans; spec default
+// is { enabled: true, supportsColumnAccess: false, supportsFullAccess: true,
+// supportsMaskedAccess: true } (see createEmptyServiceForm).
+const policyAgentFields: readonly Field[] = [
+  {
+    key: 'policyAgentEnabled',
+    control: 'checkbox',
+    labelKey: 'connection.policyAgentEnabled',
+    testId: 'service-policy-agent-enabled',
+  },
+  {
+    key: 'policyAgentSupportsColumnAccess',
+    control: 'checkbox',
+    labelKey: 'connection.policyAgentSupportsColumnAccess',
+    testId: 'service-policy-agent-column-access',
+  },
+  {
+    key: 'policyAgentSupportsFullAccess',
+    control: 'checkbox',
+    labelKey: 'connection.policyAgentSupportsFullAccess',
+    testId: 'service-policy-agent-full-access',
+  },
+  {
+    key: 'policyAgentSupportsMaskedAccess',
+    control: 'checkbox',
+    labelKey: 'connection.policyAgentSupportsMaskedAccess',
+    testId: 'service-policy-agent-masked-access',
+  },
+];
+
 export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   {
     types: ['Postgres'],
@@ -139,6 +244,29 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       usernameRequired,
       requiredText('database', 'connection.database', { testId: 'service-database' }),
       passwordField,
+      // Wave 0 lean-forms: de-noised target 12 (RULING.md R-T1.1). scheme has
+      // two enum values (postgresql+psycopg2 / pgspider+psycopg2); password is
+      // the authType basicAuth rendering (see §0.3).
+      {
+        key: 'scheme',
+        control: 'select',
+        labelKey: 'connection.scheme',
+        testId: 'service-scheme',
+        options: [{ value: 'postgresql+psycopg2' }, { value: 'pgspider+psycopg2' }],
+      },
+      ingestAllDatabases,
+      sslModeField,
+      ...sslConfigLeaves(true),
+      text('classificationName', 'connection.classificationName', {
+        testId: 'service-classification-name',
+        placeholder: 'PostgresPolicyTags',
+      }),
+      text('queryStatementSource', 'connection.queryStatementSource', {
+        testId: 'service-query-statement-source',
+        placeholder: 'pg_stat_statements',
+      }),
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -156,6 +284,18 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         placeholder: 'system.query.history',
       }),
       passwordField,
+      // Wave 0 lean-forms: de-noised target 11 (R-T1.2). scheme is the
+      // single option mysql+pymysql — builder fixed value, no visible field.
+      // MySQL has sslConfig but no sslMode, so the leaves are always visible.
+      {
+        key: 'useSlowLogs',
+        control: 'checkbox',
+        labelKey: 'connection.useSlowLogs',
+        testId: 'service-use-slow-logs',
+      },
+      ...sslConfigLeaves(false),
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -168,12 +308,110 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       text('database', 'connection.database', { testId: 'service-database' }),
       text('role', 'connection.role', { testId: 'service-role' }),
       passwordField,
+      // Wave 0 lean-forms: de-noised target 24 (R-T1.5). scheme is the single
+      // option `snowflake` — builder fixed value, no visible field.
+      text('queryTag', 'connection.queryTag', { testId: 'service-query-tag' }),
+      text('accountUsageSchema', 'connection.accountUsageSchema', {
+        testId: 'service-account-usage-schema',
+        placeholder: 'SNOWFLAKE.ACCOUNT_USAGE',
+      }),
+      {
+        key: 'systemMetricsBatchSize',
+        control: 'number',
+        labelKey: 'connection.systemMetricsBatchSize',
+        testId: 'service-system-metrics-batch-size',
+        min: 1,
+        max: 500,
+      },
+      {
+        key: 'privateKey',
+        control: 'textarea',
+        labelKey: 'connection.privateKey',
+        testId: 'service-private-key',
+        hintKey: 'connection.privateKeyHint',
+      },
+      {
+        key: 'snowflakePrivatekeyPassphrase',
+        control: 'password',
+        labelKey: 'connection.snowflakePrivatekeyPassphrase',
+        testId: 'service-private-key-passphrase',
+        passwordPlaceholder: false,
+      },
+      {
+        key: 'includeTransientTables',
+        control: 'checkbox',
+        labelKey: 'connection.includeTransientTables',
+        testId: 'service-include-transient-tables',
+      },
+      {
+        key: 'includeStreams',
+        control: 'checkbox',
+        labelKey: 'connection.includeStreams',
+        testId: 'service-include-streams',
+      },
+      {
+        key: 'includeStages',
+        control: 'checkbox',
+        labelKey: 'connection.includeStages',
+        testId: 'service-include-stages',
+      },
+      {
+        key: 'includeSemanticViews',
+        control: 'checkbox',
+        labelKey: 'connection.includeSemanticViews',
+        testId: 'service-include-semantic-views',
+      },
+      {
+        key: 'clientSessionKeepAlive',
+        control: 'checkbox',
+        labelKey: 'connection.clientSessionKeepAlive',
+        testId: 'service-client-session-keep-alive',
+      },
+      {
+        key: 'useAccessHistory',
+        control: 'checkbox',
+        labelKey: 'connection.useAccessHistory',
+        testId: 'service-use-access-history',
+      },
+      {
+        key: 'accessHistoryChunkSize',
+        control: 'number',
+        labelKey: 'connection.accessHistoryChunkSize',
+        testId: 'service-access-history-chunk-size',
+        min: 1,
+      },
+      {
+        key: 'creditCost',
+        control: 'number',
+        labelKey: 'connection.creditCost',
+        testId: 'service-credit-cost',
+      },
+      text('snowflakeSourceHost', 'connection.snowflakeSourceHost', {
+        testId: 'service-snowflake-source-host',
+        placeholder: 'app.snowflake.com',
+      }),
+      ...policyAgentFields,
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
   {
     types: ['Doris'],
-    fields: [hostPort('localhost:9030'), usernameRequired, databaseNameDefault, databaseSchema, passwordField, storeSecretsField],
+    fields: [
+      hostPort('localhost:9030'),
+      usernameRequired,
+      databaseNameDefault,
+      databaseSchema,
+      passwordField,
+      // Wave 0 lean-forms: de-noised target 9 (R-T1.8). scheme is the single
+      // option `doris` — builder already sets it. Doris has sslConfig but no
+      // sslMode, so the leaves are always visible.
+      ...sslConfigLeaves(false),
+      connectionOptionsField,
+      connectionArgumentsField,
+      storeSecretsField,
+    ],
   },
   {
     types: ['Mssql'],
@@ -207,24 +445,100 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ingestAllDatabases,
       { key: 'includeSynonyms', control: 'checkbox', labelKey: 'connection.includeSynonyms', testId: 'service-include-synonyms' },
       passwordField,
+      // Wave 0 lean-forms: de-noised target 13 (R-T1.4). Mssql has sslConfig
+      // but no sslMode, so the leaves are always visible.
+      ...sslConfigLeaves(false),
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
   {
     types: ['MariaDB'],
-    fields: [hostPort('localhost:3306'), usernameRequired, databaseNameDefault, databaseSchema, passwordField, storeSecretsField],
+    fields: [
+      hostPort('localhost:3306'),
+      usernameRequired,
+      databaseNameDefault,
+      databaseSchema,
+      passwordField,
+      // Wave 0 lean-forms: de-noised target 8 (R-T1.3). scheme is the single
+      // option mysql+pymysql — builder already sets it.
+      connectionOptionsField,
+      connectionArgumentsField,
+      storeSecretsField,
+    ],
   },
+  // Wave 0 lean-forms: the shared Redshift/Greenplum/Timescale group is split
+  // — the three specs differ (R-T1.9/10/11). Each group carries only its own
+  // spec's fields; scheme is a single option per type and stays a builder
+  // fixed value (redshift+psycopg2 / postgresql+psycopg2).
   {
-    types: ['Redshift', 'Greenplum', 'Timescale'],
+    types: ['Redshift'],
     fields: [
       requiredText('hostPort', 'connection.hostPort', {
         testId: 'service-host-port',
-        placeholderByType: { Redshift: 'localhost:5439', '*': 'localhost:5432' },
+        placeholder: 'localhost:5439',
       }),
       usernameRequired,
       requiredText('database', 'connection.database', { testId: 'service-database' }),
       ingestAllDatabases,
       passwordField,
+      text('clusterIdentifier', 'connection.clusterIdentifier', {
+        testId: 'service-cluster-identifier',
+        hintKey: 'connection.clusterIdentifierHint',
+      }),
+      text('workgroupName', 'connection.workgroupName', {
+        testId: 'service-workgroup-name',
+        hintKey: 'connection.workgroupNameHint',
+      }),
+      sslModeField,
+      ...sslConfigLeaves(true),
+      connectionOptionsField,
+      connectionArgumentsField,
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['Greenplum'],
+    fields: [
+      requiredText('hostPort', 'connection.hostPort', {
+        testId: 'service-host-port',
+        placeholder: 'localhost:5432',
+      }),
+      usernameRequired,
+      requiredText('database', 'connection.database', { testId: 'service-database' }),
+      ingestAllDatabases,
+      passwordField,
+      sslModeField,
+      ...sslConfigLeaves(true),
+      connectionOptionsField,
+      connectionArgumentsField,
+      storeSecretsField,
+    ],
+  },
+  {
+    types: ['Timescale'],
+    fields: [
+      requiredText('hostPort', 'connection.hostPort', {
+        testId: 'service-host-port',
+        placeholder: 'localhost:5432',
+      }),
+      usernameRequired,
+      requiredText('database', 'connection.database', { testId: 'service-database' }),
+      ingestAllDatabases,
+      passwordField,
+      sslModeField,
+      ...sslConfigLeaves(true),
+      text('classificationName', 'connection.classificationName', {
+        testId: 'service-classification-name',
+        placeholder: 'PostgresPolicyTags',
+      }),
+      text('queryStatementSource', 'connection.queryStatementSource', {
+        testId: 'service-query-statement-source',
+        placeholder: 'pg_stat_statements',
+      }),
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -406,6 +720,14 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-query-history',
         placeholder: 'system.query.history',
       }),
+      // Wave 0 lean-forms: de-noised target 11 (R-T1.6). scheme is the single
+      // option `databricks` — builder fixed value, no visible field.
+      {
+        key: 'connectionTimeout',
+        control: 'number',
+        labelKey: 'connection.timeout',
+        testId: 'service-connection-timeout',
+      },
       {
         key: 'authMode',
         control: 'select',
@@ -451,6 +773,9 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         passwordPlaceholder: true,
         showWhen: { field: 'authMode', equals: 'azure' },
       },
+      ...policyAgentFields,
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -470,6 +795,14 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         labelKey: 'connection.includeMetricViews',
         testId: 'service-include-metric-views',
       },
+      // Wave 0 lean-forms: de-noised target 11 (R-T1.7). scheme is the single
+      // option `databricks` — builder fixed value, no visible field.
+      {
+        key: 'connectionTimeout',
+        control: 'number',
+        labelKey: 'connection.timeout',
+        testId: 'service-connection-timeout',
+      },
       {
         key: 'authMode',
         control: 'select',
@@ -515,6 +848,9 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         passwordPlaceholder: true,
         showWhen: { field: 'authMode', equals: 'azure' },
       },
+      ...policyAgentFields,
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },

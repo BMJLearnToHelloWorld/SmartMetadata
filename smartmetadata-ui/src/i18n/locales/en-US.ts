@@ -2095,7 +2095,7 @@ const enUS = {
     confluentNote:
       'Confluent REST Proxy URL is a CLI workflow key (restProxyUrl), not a catalog MessagingService field. It appears on the generated smartmetadata-ingest YAML.',
     redpandaNote:
-      'P0 wires official redpandaConnection fields (bootstrapServers required, schemaRegistryURL, securityProtocol). Live kafka-python consumer sampling stays Partial until IntegrationVerified.',
+      'P0 wires official redpandaConnection fields (bootstrapServers required, schemaRegistryURL, securityProtocol). Sampling here is metadata-only: schema and statistics, no live message fetch. Live sampling is a next-milestone item.',
     secretHint:
       "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.",
     httpPath: 'HTTP path',
@@ -2117,6 +2117,44 @@ const enUS = {
     trustServerCertificate: 'Trust server certificate',
     ingestAllDatabases: 'Ingest all databases',
     includeSynonyms: 'Include synonyms',
+    // Wave 0 lean-forms database档: labels for the de-noised official
+    // properties (RULING.md R-T1). Texts follow the spec titles verbatim.
+    sslMode: 'SSL mode',
+    sslCaCertificate: 'CA certificate',
+    sslCertificate: 'SSL certificate',
+    sslKey: 'SSL key',
+    classificationName: 'Classification name',
+    queryStatementSource: 'Query statement source',
+    connectionOptions: 'Connection options',
+    connectionOptionsHint: 'Extra connection options as a JSON object with string values.',
+    connectionArguments: 'Connection arguments',
+    connectionArgumentsHint: 'Extra connection arguments as a JSON object with string values.',
+    useSlowLogs: 'Use slow logs',
+    queryTag: 'Query tag',
+    accountUsageSchema: 'Account usage schema',
+    systemMetricsBatchSize: 'System metrics batch size',
+    privateKey: 'Private key',
+    privateKeyHint: 'PEM private key for key-pair authentication. Paste the full key, including line breaks.',
+    snowflakePrivatekeyPassphrase: 'Snowflake passphrase key',
+    includeTransientTables: 'Include transient tables',
+    includeStreams: 'Include streams',
+    includeStages: 'Include stages',
+    includeSemanticViews: 'Include semantic views',
+    clientSessionKeepAlive: 'Keep client session alive',
+    useAccessHistory: 'Use access history for lineage',
+    accessHistoryChunkSize: 'Access history chunk size (days)',
+    creditCost: 'Cost of credit',
+    snowflakeSourceHost: 'Snowflake source host',
+    clusterIdentifier: 'Cluster identifier',
+    clusterIdentifierHint:
+      'Leave empty for standard Redshift hostnames — it is derived automatically. Set only when using IAM authentication through a PrivateLink/VPC endpoint or a custom DNS name.',
+    workgroupName: 'Workgroup name',
+    workgroupNameHint:
+      'Leave empty for standard Redshift Serverless hostnames — it is derived automatically. Set only when using IAM authentication through a PrivateLink/VPC endpoint or a custom DNS name.',
+    policyAgentEnabled: 'Enable policy agent extraction',
+    policyAgentSupportsColumnAccess: 'Supports column access',
+    policyAgentSupportsFullAccess: 'Supports full access',
+    policyAgentSupportsMaskedAccess: 'Supports masked access',
     awsRegion: 'AWS region',
     awsAccessKeyId: 'AWS access key ID',
     awsSecretAccessKey: 'AWS secret access key',
@@ -2156,7 +2194,7 @@ const enUS = {
     dagsterNote:
       '1:1 with official dagsterConnection: host + token/timeout/stripAssetKeyPrefixLength.',
     s3Note:
-      'P0 wires official s3Connection fields (awsConfig required, bucketNames, consoleEndpointURL). Live boto3 sampling stays Partial until IntegrationVerified.',
+      'P0 wires official s3Connection fields (awsConfig required, bucketNames, consoleEndpointURL). Sampling here is metadata-only: schema and statistics, no live object fetch. Live sampling is a next-milestone item.',
   },
   contextCenter: {
     overview: 'Overview',
@@ -3151,7 +3189,7 @@ const enUS = {
       'custom-oidc': 'Custom OIDC',
       ldap: 'LDAP',
       saml: 'SAML',
-      openmetadata: 'OpenMetadata',
+      openmetadata: 'iSmart',
     },
   },
   tokens: {
