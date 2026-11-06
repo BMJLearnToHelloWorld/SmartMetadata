@@ -599,6 +599,23 @@ function configureAutomatedTaskIO(
   addNodeSpecificConfig(config, subType, nodeData);
 }
 
+/**
+ * User-approval task subtypes: the generic palette subtype and the stored
+ * specific subtype (e.g. the seeded recognizer-feedback approval). The save
+ * path must treat both as approval tasks — the generic name alone misses
+ * stored nodes, which the server validates against their specific schema
+ * (createRecognizerFeedbackApprovalTask.json, whose assignees reject
+ * `emptyAssigneeStrategy` and whose config requires `assignees`).
+ */
+export function isUserApprovalTaskSubType(
+  subType: string | undefined,
+): subType is 'userApprovalTask' | 'createRecognizerFeedbackApprovalTask' {
+  return (
+    subType === 'userApprovalTask' ||
+    subType === 'createRecognizerFeedbackApprovalTask'
+  );
+}
+
 function applyUserApprovalConfig(
   config: WorkflowNodeConfiguration,
   nodeData: WorkflowNodeDataWithMetadata,
@@ -632,7 +649,11 @@ function applyUserApprovalConfig(
     ...assigneesFromNode,
     addReviewers: assigneesFromNode?.addReviewers ?? true,
     addOwners: assigneesFromNode?.addOwners ?? false,
-    emptyAssigneeStrategy: assigneesFromNode?.emptyAssigneeStrategy ?? 'none',
+    // No default for emptyAssigneeStrategy: the spread above already carries
+    // it when the stored config has it, and the specific-subtype schema
+    // (createRecognizerFeedbackApprovalTask.json) rejects the property, so
+    // injecting 'none' makes the save fail validation. The generic schema
+    // defaults it server-side when absent.
     candidates: assigneesFromNode?.candidates ?? [],
   };
   config.config.approvalThreshold =
@@ -657,7 +678,7 @@ function configureUserTaskIO(
   config.input = ['relatedEntity'];
   config.output = ['updatedBy'];
   config.branches = ['true', 'false'];
-  if (subType === 'userApprovalTask') {
+  if (isUserApprovalTaskSubType(subType)) {
     applyUserApprovalConfig(config, nodeData);
   }
 }
@@ -777,6 +798,10 @@ export function getNodeConfiguration(
     subType,
     name: nodeName,
     displayName: nodeData.displayName || nodeData.label || nodeData.id,
+    // Carry a node description the form saved into node data through to the
+    // save payload; the node schemas declare `description`, so omitting it
+    // when blank keeps the stored shape (seed nodes carry no description).
+    ...(nodeData.description ? { description: nodeData.description } : {}),
   };
   // Configure input/output/config rules
   config = configureNodeInputOutput(config, nodeType, subType, nodeData);
