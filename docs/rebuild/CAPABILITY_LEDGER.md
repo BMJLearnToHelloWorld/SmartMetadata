@@ -98,8 +98,8 @@ Rebuild trees are product evidence, not a second authority.
 |---|---|---|---|---|---|
 | 14 Apache-backed tools | search / entity / lineage / tags / DQ defs / conversation / writes | `smartmetadata-mcp` | BehaviorMatched (unit/static) | #56 / #58 / Partial MCP writes | TOOL_NAMES locked |
 | `create_entity` / `patch_entity` / `create_test_case` | Apache write REST (POST/PATCH/CreateTestCase) | MCP | BehaviorMatched (unit) | Partial MCP writes | not ProductVerified |
-| Collate AI MCP tools | semantic_search, persona/context, NLQ | — | OutOfScope | #56 / PARITY DROP | not debt |
-| RDF / KG MCP tools | sparql / shacl / ontology / neighborhood / RCA | — | OutOfScope | #56 / PARITY DROP | not debt |
+| Collate AI MCP tools | semantic_search, persona/context, NLQ | — | OutOfScope | #56 / PARITY DROP | OutOfScope this milestone (deliberate) — 12-tool gap is a next-milestone to-do, not permanent; see Next |
+| RDF / KG MCP tools | sparql / shacl / ontology / neighborhood / RCA | — | OutOfScope | #56 / PARITY DROP | OutOfScope this milestone (deliberate) — 12-tool gap is a next-milestone to-do, not permanent; see Next |
 | Java `/mcp` on slim server | CCL jar registration | unregistered | OutOfScope (intentional) | #56 | slim stays jar-free |
 
 ## 9. Settings / UI (backend-09 · #57)
@@ -122,16 +122,18 @@ Rebuild trees are product evidence, not a second authority.
 
 ## 11. Connectors & sample data (PARITY; not a fused backend node)
 
+Sampler **Partial** means **metadata-only**: the sampler yields schema and statistics; it does not fetch live sample rows or messages. Live sampling is a next-milestone item (Wave 0 decision (b)).
+
 | Capability | Apache contract | Product | Status | Evidence | Notes |
 |---|---|---|---|---|---|
-| postgres | Official `database/postgres` DefaultDatabaseSpec (metadata+lineage+usage+profiler+sampler+DQ+data_diff+connection) | `postgres` + lineage/usage/profiler/sampler/DQ/data_diff (mssql_data_diff style; no collate-data-diff) | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_postgres.py` | Companions (lineage/usage/profiler/sampler/DQ) registered; data_diff registered: `DataDiffWorkflow` executes key-set diff (unit-proven, `test_data_diff_workflow.py` + `test_sql_key_fetcher.py`); live IntegrationVerified deferred; value/schema diff + sampling are Phase 2 (M-Next Track 1 closes C2); extras add psycopg2/GeoAlchemy2/packaging per OM plugins["postgres"]; live Cursor* deferred |
-| mysql | Official `database/mysql` DefaultDatabaseSpec full chain | `mysql` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_mysql.py` | No collate-data-diff (OM mysql ships it — SM OutOfScope); no cloud-sql invent; data_diff registered: key-set diff only (no changed-row / schema / sampling — Phase 2) |
-| snowflake | Official `database/snowflake` DefaultDatabaseSpec full chain | `snowflake` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_snowflake.py` | Uses `snowflake.connector` (extra pin); OM setup.py pins snowflake-sqlalchemy — documented residual, not thinner chain; data_diff registered: key-set diff only (no changed-row / schema / sampling — Phase 2) |
-| kafka | Official `messaging/kafka` BaseSpec (metadata+sampler+connection; schema supportsProfiler) | `kafka` metadata + `KafkaSampler` (RedpandaSampler mirror) + connection flags | BehaviorMatched (unit); live kafka-python fetch Partial | t228u/t229u A; `test_kafka.py` | Form was narrow by 1 field vs Redpanda at f78fad5f (securityProtocol missing; official Kafka 16 attrs vs Redpanda 14, product had it reversed); sampler/reader/backend passthrough at parity, only prepare() connection-test differs (M-Next B7). Form gap closed in the in-flight A-batch (`connectionFields.ts` adds securityProtocol, shared with Redpanda). Extra stays kafka-python (code path); OM confluent-kafka[schemaregistry] residual documented — not invent switch |
-| Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified; data_diff registered: key-set diff only (no changed-row / schema / sampling — Phase 2) |
-| Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS; data_diff registered: key-set diff only (no changed-row / schema / sampling — Phase 2) |
+| postgres | Official `database/postgres` DefaultDatabaseSpec (metadata+lineage+usage+profiler+sampler+DQ+data_diff+connection) | `postgres` + lineage/usage/profiler/sampler/DQ/data_diff (mssql_data_diff style; no collate-data-diff) | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_postgres.py` | Companions (lineage/usage/profiler/sampler/DQ) registered; data_diff NOT registered — `postgres_data_diff.py` exists but `registry.py` / `workflow.py` / `postgres_common.py` carry no reference; only `tests/test_postgres.py:145` imports it (M-Next C2). Do not claim the full chain until registered; extras add psycopg2/GeoAlchemy2/packaging per OM plugins["postgres"]; live Cursor* deferred |
+| mysql | Official `database/mysql` DefaultDatabaseSpec full chain | `mysql` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_mysql.py` | No collate-data-diff (OM mysql ships it — SM OutOfScope); no cloud-sql invent |
+| snowflake | Official `database/snowflake` DefaultDatabaseSpec full chain | `snowflake` + lineage/usage/profiler/sampler/DQ/data_diff | BehaviorMatched (unit); live Partial | t228u/t229u A–B; `test_snowflake.py` | Uses `snowflake.connector` (extra pin); OM setup.py pins snowflake-sqlalchemy — documented residual, not thinner chain |
+| kafka | Official `messaging/kafka` BaseSpec (metadata+sampler+connection; schema supportsProfiler) | `kafka` metadata + `KafkaSampler` (RedpandaSampler mirror) + connection flags | BehaviorMatched (unit); live kafka-python fetch Partial | t228u/t229u A; `test_kafka.py` | Form was narrow by 1 field vs Redpanda at f78fad5f (securityProtocol missing; official Kafka 16 attrs vs Redpanda 14, product had it reversed); sampler/reader/backend passthrough at parity, only prepare() connection-test differs (M-Next B7). Form gap closed in #143 (`connectionFields.ts` adds securityProtocol, shared with Redpanda). Extra stays kafka-python (code path); OM confluent-kafka[schemaregistry] residual documented — not invent switch |
+| Databricks (full chain) | OM `database/databricks` service_spec | `databricks` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABRICKS_UC_PLAN.md; tests | OSS locked Bernie t210u; live Usage aggregation Partial until CursorUsageReader IntegrationVerified |
+| Unity Catalog (full chain) | OM `database/unitycatalog` service_spec | `unitycatalog` + lineage/usage/profiler/DQ/data_diff + UI tile | BehaviorMatched (unit) | same plan + tests | Separate tile; includeMetricViews; same OSS |
 | Doris (full chain) | OM `database/doris` service_spec (metadata+lineage+connection; schema supportsProfiler) | `doris` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | No invent Usage/DataDiff/sampler_class; OSS pydoris==1.2.0 + PyMySQL live; job execution Partial |
-| MSSQL (full chain) | OM `database/mssql` service_spec (metadata+lineage+usage+sampler+data_diff+connection) | `mssql` + lineage/usage/profiler/sampler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | OSS sqlalchemy-pytds~=1.0 (+ optional pyodbc/pymssql); no collate-data-diff; live Cursor* IntegrationVerified deferred; data_diff registered: key-set diff only (no changed-row / schema / sampling — Phase 2) |
+| MSSQL (full chain) | OM `database/mssql` service_spec (metadata+lineage+usage+sampler+data_diff+connection) | `mssql` + lineage/usage/profiler/sampler/DQ/data_diff + UI tile | BehaviorMatched (unit) | CONNECTOR_DORIS_MSSQL_PLAN.md; tests | OSS sqlalchemy-pytds~=1.0 (+ optional pyodbc/pymssql); no collate-data-diff; live Cursor* IntegrationVerified deferred |
 | Redshift (full chain) | OM `database/redshift` service_spec (metadata+lineage+usage+profiler+connection; schema supportsSystemProfile) | `redshift` + lineage/usage/profiler/DQ + `RedshiftSystemMetricsComputer` + UI tile | BehaviorMatched (unit); live Partial | t228u/t229u C; CONNECTOR_DATABASE_P0_PLAN; `test_redshift.py` | OSS sqlalchemy-redshift~=1.0.0 + psycopg2-binary + GeoAlchemy2; no collate-data-diff; SystemProfile path wired (unit); live Cursor* deferred |
 | MariaDB (full chain) | OM `database/mariadb` service_spec (metadata+lineage+profiler+connection) | `mariadb` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests | OSS PyMySQL; no Usage invent; job execution Partial |
 | Greenplum (full chain) | OM `database/greenplum` service_spec (metadata+lineage+connection; schema supportsProfiler) | `greenplum` + lineage/profiler/DQ + UI tile | BehaviorMatched (unit) | CONNECTOR_DATABASE_P0_PLAN.md; tests; parity cleanup | OSS COMMONS postgres; **no Usage invent** — UsageEventRow/UsageReader scaffolding removed (OM has no Greenplum Usage; no `greenplum-usage` registration) |
@@ -156,14 +158,14 @@ Rebuild trees are product evidence, not a second authority.
 | Agents UI (pipeline-type Agents UX) | BehaviorMatched (unit) | Create-pipeline modal pipelineType select filtered by `agentKindsForService` (OM service_spec); no AutoClassification/dbt invent | t228u/t229u D |
 | SSO / Persona / Appearance | BehaviorMatched (unit) | SsoSettingsView + AppearanceSettingsView + Persona views landed with save paths (see §9); not ProductVerified |
 | Knowledge / Context Center / Ontology | BehaviorMatched (unit) | context-center routes (`router/index.ts:447-450`) + 5 shells + articles/memories/documents/filter/integrations views; govern/ontology explorer + studio routes (`router/index.ts:534-543`); relations graph wired into GlossaryDetailView (A3); not ProductVerified |
-| Collate AI / RDF (NLQ, persona/user context, semantic search, SPARQL MCP tools) | OutOfScope | unchanged — the tools are not built; NLQ search routes to /v1/search/nlq/query (BE-Q1), not a Collate AI tool |
+| Collate AI / RDF (NLQ, persona/user context, semantic search, SPARQL MCP tools) | OutOfScope | unchanged — the tools are not built; NLQ search routes to /v1/search/nlq/query (BE-Q1), not a Collate AI tool. MCP gap is a next-milestone to-do (Wave 0 decision (c)), not permanent OutOfScope |
 
 ---
 
 ## OutOfScope (not debt)
 
-- Collate AI / NLQ / persona context MCP tools
-- RDF / SPARQL / SHACL / ontology MCP tools
+- Collate AI / NLQ / persona context MCP tools (this milestone; next-milestone to-do, not permanent)
+- RDF / SPARQL / SHACL / ontology MCP tools (this milestone; next-milestone to-do, not permanent)
 - Connector sprawl (~102) as an unscoped “must finish next”
 - #18 purge branch as merged reality
 - Copying CCL React / `openmetadata-mcp` / CCL airflow-apis
@@ -185,6 +187,7 @@ Rebuild trees are product evidence, not a second authority.
 
 - (done) MCP write tools without inventing payloads — BehaviorMatched unit
 - (done) Insights KPI CRUD client — BehaviorMatched unit
+- MCP tool gap (12 tools with no product equivalent, §8) — clean-room self-built within CCL bounds, next milestone (Wave 0 decision (c))
 - Profiler/DQ execution ADR
 - (done 2026-10-30) Databricks + Unity Catalog full chain after Bernie t210u named type + OSS
 - Further connector families **only after Bernie names type + OSS client**
@@ -204,5 +207,5 @@ Rebuild trees are product evidence, not a second authority.
 - (cleanup 2026-11-01) Parity review: Greenplum anti-invent Usage scaffold; Dagster UI host||hostPort reload; ledger Partial honesty for postgres/mysql/snowflake/kafka
 - (docs tip sync 2026-11-01) Ledger header → #72 / `ca7174ff8c95.`; residual honesty: Redshift SystemProfile Partial, PIPELINE_TYPES metadata-only, Agents UI Gap
 - (rewrite 2026-11-06, M-Next C6) Ledger header → #142 / `f78fad5f2b`; corrections: Context Center DROP → landed routes + views; marketplace install OutOfScope → landed (POST /v1/apps); PARITY:79 residual list → all landed; postgres "Companions registered" → data_diff unregistered (C2); Kafka wording narrowed per M-Next B7 (form narrow 1 field, sampler at parity).
-- (M-Next Track 1, 2026-11-06) data_diff registered + `DataDiffWorkflow` executes key-set diff (unit-proven); C2 closed; key-set-only scope (no changed-row / schema / sampling — Phase 2); live IntegrationVerified deferred.
+- (Wave 0 Track 2, 2026-11-06) Sampler Partial defined (§11: metadata-only, no live row/message fetch); kafka row "in-flight A-batch" → #143 landed; MCP OutOfScope time-bound to this milestone, 12-tool gap to next milestone (§8/§12/OutOfScope/Next).
 - (in progress 2026-11-01) t228u/t229u A–D: Kafka Sampler; PG/MySQL/Snowflake full chain; Redshift SystemProfile; Agents/PIPELINE_TYPES — ledger rows updated BehaviorMatched (unit); tip/PR pending merge

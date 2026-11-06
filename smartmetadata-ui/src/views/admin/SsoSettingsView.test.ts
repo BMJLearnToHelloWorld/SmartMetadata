@@ -24,14 +24,14 @@ vi.mock('@/api/system', async () => {
   };
 });
 
-async function mountView() {
+async function mountView(locale: 'en-US' | 'zh-CN' = 'en-US') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/admin/settings/sso', name: 'admin-settings-sso', component: SsoSettingsView }],
   });
   await router.push({ name: 'admin-settings-sso' });
   await router.isReady();
-  const wrapper = mount(SsoSettingsView, { global: { plugins: [router, Antd, createTestI18n()] } });
+  const wrapper = mount(SsoSettingsView, { global: { plugins: [router, Antd, createTestI18n(locale)] } });
   await flushPromises();
   return wrapper;
 }
@@ -103,5 +103,17 @@ describe('SsoSettingsView', () => {
     const ops = patchSecurityConfiguration.mock.calls[0][0] as { path: string }[];
     expect(ops.some((op) => op.path === '/authenticationConfiguration/provider')).toBe(false);
     expect(ops.some((op) => op.path === '/authenticationConfiguration/clientId')).toBe(true);
+  });
+
+  it('labels the built-in provider iSmart in both locales while keeping the openmetadata key (Wave 0 (h))', async () => {
+    for (const locale of ['en-US', 'zh-CN'] as const) {
+      const wrapper = await mountView(locale);
+      await openConfigurationTab(wrapper);
+      const group = wrapper.find('[data-testid="sso-provider-group"]');
+      // Display label is the product name; the enum key is the API contract.
+      expect(group.text()).toContain('iSmart');
+      expect(group.text()).not.toContain('OpenMetadata');
+      expect(group.find('input[value="openmetadata"]').exists()).toBe(true);
+    }
   });
 });

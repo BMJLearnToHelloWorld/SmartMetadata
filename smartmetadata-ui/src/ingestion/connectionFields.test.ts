@@ -18,7 +18,206 @@ import {
 describe('connectionFields', () => {
   it('returns the Postgres field set in table order with shared trailing fields', () => {
     const keys = connectionFieldsForType('Postgres').map((field) => field.key);
-    expect(keys).toEqual(['hostPort', 'username', 'database', 'password', 'storeConnectionSecrets']);
+    expect(keys).toEqual([
+      'hostPort',
+      'username',
+      'database',
+      'password',
+      'scheme',
+      'ingestAllDatabases',
+      'sslMode',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'classificationName',
+      'queryStatementSource',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+  });
+
+  it('returns the de-noised database field sets in table order (Wave 0 lean-forms)', () => {
+    // Target counts (RULING.md R-T1): Postgres 12, MySQL 11, MariaDB 8,
+    // Mssql 13, Snowflake 24, Databricks 11, UnityCatalog 11, Doris 9,
+    // Redshift 12, Greenplum 10, Timescale 12 — counted as official
+    // de-noised properties covered; storeConnectionSecrets is product-only
+    // and excluded from the count, while password renders authType basicAuth.
+    expect(connectionFieldsForType('Mysql').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'databaseName',
+      'databaseSchema',
+      'queryHistoryTable',
+      'password',
+      'useSlowLogs',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('MariaDB').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'databaseName',
+      'databaseSchema',
+      'password',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Mssql').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'database',
+      'scheme',
+      'driver',
+      'encrypt',
+      'trustServerCertificate',
+      'ingestAllDatabases',
+      'includeSynonyms',
+      'password',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Snowflake').map((field) => field.key)).toEqual([
+      'account',
+      'username',
+      'warehouse',
+      'database',
+      'role',
+      'password',
+      'queryTag',
+      'accountUsageSchema',
+      'systemMetricsBatchSize',
+      'privateKey',
+      'snowflakePrivatekeyPassphrase',
+      'includeTransientTables',
+      'includeStreams',
+      'includeStages',
+      'includeSemanticViews',
+      'clientSessionKeepAlive',
+      'useAccessHistory',
+      'accessHistoryChunkSize',
+      'creditCost',
+      'snowflakeSourceHost',
+      'policyAgentEnabled',
+      'policyAgentSupportsColumnAccess',
+      'policyAgentSupportsFullAccess',
+      'policyAgentSupportsMaskedAccess',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Doris').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'databaseName',
+      'databaseSchema',
+      'password',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Redshift').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'database',
+      'ingestAllDatabases',
+      'password',
+      'clusterIdentifier',
+      'workgroupName',
+      'sslMode',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Greenplum').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'database',
+      'ingestAllDatabases',
+      'password',
+      'sslMode',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Timescale').map((field) => field.key)).toEqual([
+      'hostPort',
+      'username',
+      'database',
+      'ingestAllDatabases',
+      'password',
+      'sslMode',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'classificationName',
+      'queryStatementSource',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Databricks').map((field) => field.key)).toEqual([
+      'hostPort',
+      'httpPath',
+      'catalog',
+      'databaseSchema',
+      'queryHistoryTable',
+      'connectionTimeout',
+      'authMode',
+      'password',
+      'clientId',
+      'clientSecret',
+      'azureClientId',
+      'azureTenantId',
+      'azureClientSecret',
+      'policyAgentEnabled',
+      'policyAgentSupportsColumnAccess',
+      'policyAgentSupportsFullAccess',
+      'policyAgentSupportsMaskedAccess',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('UnityCatalog').map((field) => field.key)).toEqual([
+      'hostPort',
+      'httpPath',
+      'catalog',
+      'databaseSchema',
+      'includeMetricViews',
+      'connectionTimeout',
+      'authMode',
+      'password',
+      'clientId',
+      'clientSecret',
+      'azureClientId',
+      'azureTenantId',
+      'azureClientSecret',
+      'policyAgentEnabled',
+      'policyAgentSupportsColumnAccess',
+      'policyAgentSupportsFullAccess',
+      'policyAgentSupportsMaskedAccess',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
   });
 
   it('returns an empty table for an unknown service type instead of inventing fields', () => {
@@ -91,11 +290,35 @@ describe('connectionFields', () => {
     expect(isConnectionFieldVisible(authString!, { prefectAuthMode: 'cloud' })).toBe(false);
   });
 
-  it('keeps Redshift and Greenplum on different default ports via the table', () => {
+  it('keeps Redshift and Greenplum on different default ports via separate groups', () => {
+    // Wave 0 lean-forms: the shared group is split (R-T1.9/10/11) — each
+    // type carries only its own spec's fields, with its own placeholder.
     const redshift = connectionFieldsForType('Redshift').find((field) => field.key === 'hostPort');
     const greenplum = connectionFieldsForType('Greenplum').find((field) => field.key === 'hostPort');
-    expect(redshift?.placeholderByType).toMatchObject({ Redshift: 'localhost:5439', '*': 'localhost:5432' });
-    expect(greenplum?.placeholderByType).toBe(redshift?.placeholderByType);
+    const timescale = connectionFieldsForType('Timescale').find((field) => field.key === 'hostPort');
+    expect(redshift?.placeholder).toBe('localhost:5439');
+    expect(greenplum?.placeholder).toBe('localhost:5432');
+    expect(timescale?.placeholder).toBe('localhost:5432');
+    expect(redshift?.placeholderByType).toBeUndefined();
+    // The split is real: Redshift-only identifiers and Timescale-only
+    // classification fields do not leak into the sibling groups.
+    expect(connectionFieldsForType('Redshift').map((field) => field.key)).toContain('clusterIdentifier');
+    expect(connectionFieldsForType('Greenplum').map((field) => field.key)).not.toContain('clusterIdentifier');
+    expect(connectionFieldsForType('Timescale').map((field) => field.key)).toContain('classificationName');
+    expect(connectionFieldsForType('Greenplum').map((field) => field.key)).not.toContain('classificationName');
+  });
+
+  it('shows sslConfig leaves only when sslMode is not disable', () => {
+    const ca = connectionFieldsForType('Postgres').find((field) => field.key === 'sslCaCertificate');
+    expect(ca).toBeDefined();
+    expect(isConnectionFieldVisible(ca!, { sslMode: 'disable' })).toBe(false);
+    expect(isConnectionFieldVisible(ca!, {})).toBe(false);
+    expect(isConnectionFieldVisible(ca!, { sslMode: 'require' })).toBe(true);
+    expect(isConnectionFieldVisible(ca!, { sslMode: 'verify-full' })).toBe(true);
+    // MySQL has sslConfig but no sslMode: its leaves are always visible.
+    const mysqlCa = connectionFieldsForType('Mysql').find((field) => field.key === 'sslCaCertificate');
+    expect(mysqlCa).toBeDefined();
+    expect(isConnectionFieldVisible(mysqlCa!, {})).toBe(true);
   });
 
   it('rolls back the UnityCatalog queryHistoryTable invent and mirrors the official field sets', () => {
@@ -111,6 +334,12 @@ describe('connectionFields', () => {
       'databaseSchema',
       'queryHistoryTable',
       'password',
+      'useSlowLogs',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'connectionOptions',
+      'connectionArguments',
       'storeConnectionSecrets',
     ]);
     const databricksKeys = connectionFieldsForType('Databricks').map((field) => field.key);

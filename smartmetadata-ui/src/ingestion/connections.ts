@@ -188,6 +188,38 @@ export function createEmptyServiceForm(): ServiceFormValues {
     baseUrl: '',
     registryUrl: '',
     connectionTimeout: undefined,
+    // Wave 0 lean-forms database档: spec defaults (RULING.md §1.4). These are
+    // the official defaults for the new fields; the builder only emits them
+    // when set, so a blank form stays equivalent to the server default.
+    sslMode: 'disable',
+    sslCaCertificate: '',
+    sslCertificate: '',
+    sslKey: '',
+    classificationName: 'PostgresPolicyTags',
+    queryStatementSource: 'pg_stat_statements',
+    connectionOptions: '',
+    connectionArguments: '',
+    useSlowLogs: false,
+    queryTag: '',
+    accountUsageSchema: 'SNOWFLAKE.ACCOUNT_USAGE',
+    systemMetricsBatchSize: 50,
+    privateKey: '',
+    snowflakePrivatekeyPassphrase: '',
+    includeTransientTables: false,
+    includeStreams: false,
+    includeStages: false,
+    includeSemanticViews: false,
+    clientSessionKeepAlive: false,
+    useAccessHistory: true,
+    accessHistoryChunkSize: 2,
+    creditCost: 3.3,
+    snowflakeSourceHost: 'app.snowflake.com',
+    clusterIdentifier: '',
+    workgroupName: '',
+    policyAgentEnabled: true,
+    policyAgentSupportsColumnAccess: false,
+    policyAgentSupportsFullAccess: true,
+    policyAgentSupportsMaskedAccess: true,
   };
 }
 
@@ -321,6 +353,63 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
           : '',
     registryUrl: typeof config.registryUrl === 'string' ? config.registryUrl : '',
     connectionTimeout: typeof config.connectionTimeout === 'number' ? config.connectionTimeout : undefined,
+    // Wave 0 lean-forms database档: round-trip the new fields. Secrets are
+    // never prefilled (password fields stay blank; masked previous values are
+    // preserved at build time instead). Spec defaults apply when the stored
+    // config omits the field (RULING.md §1.4).
+    sslMode: typeof config.sslMode === 'string' ? config.sslMode : 'disable',
+    sslCaCertificate: '',
+    sslCertificate: '',
+    sslKey: '',
+    classificationName:
+      typeof config.classificationName === 'string' ? config.classificationName : 'PostgresPolicyTags',
+    queryStatementSource:
+      typeof config.queryStatementSource === 'string' ? config.queryStatementSource : 'pg_stat_statements',
+    connectionOptions: stringifyJsonMap(config.connectionOptions),
+    connectionArguments: stringifyJsonMap(config.connectionArguments),
+    useSlowLogs: typeof config.useSlowLogs === 'boolean' ? config.useSlowLogs : false,
+    queryTag: typeof config.queryTag === 'string' ? config.queryTag : '',
+    accountUsageSchema:
+      typeof config.accountUsageSchema === 'string' ? config.accountUsageSchema : 'SNOWFLAKE.ACCOUNT_USAGE',
+    systemMetricsBatchSize:
+      typeof config.systemMetricsBatchSize === 'number' ? config.systemMetricsBatchSize : 50,
+    privateKey: '',
+    snowflakePrivatekeyPassphrase: '',
+    includeTransientTables:
+      typeof config.includeTransientTables === 'boolean' ? config.includeTransientTables : false,
+    includeStreams: typeof config.includeStreams === 'boolean' ? config.includeStreams : false,
+    includeStages: typeof config.includeStages === 'boolean' ? config.includeStages : false,
+    includeSemanticViews:
+      typeof config.includeSemanticViews === 'boolean' ? config.includeSemanticViews : false,
+    clientSessionKeepAlive:
+      typeof config.clientSessionKeepAlive === 'boolean' ? config.clientSessionKeepAlive : false,
+    useAccessHistory: typeof config.useAccessHistory === 'boolean' ? config.useAccessHistory : true,
+    accessHistoryChunkSize:
+      typeof config.accessHistoryChunkSize === 'number' ? config.accessHistoryChunkSize : 2,
+    creditCost: typeof config.creditCost === 'number' ? config.creditCost : 3.3,
+    snowflakeSourceHost:
+      typeof config.snowflakeSourceHost === 'string' ? config.snowflakeSourceHost : 'app.snowflake.com',
+    clusterIdentifier: typeof config.clusterIdentifier === 'string' ? config.clusterIdentifier : '',
+    workgroupName: typeof config.workgroupName === 'string' ? config.workgroupName : '',
+    policyAgentEnabled:
+      typeof (config.policyAgentConfig as { enabled?: unknown } | undefined)?.enabled === 'boolean'
+        ? (config.policyAgentConfig as { enabled: boolean }).enabled
+        : true,
+    policyAgentSupportsColumnAccess:
+      typeof (config.policyAgentConfig as { supportsColumnAccess?: unknown } | undefined)
+        ?.supportsColumnAccess === 'boolean'
+        ? (config.policyAgentConfig as { supportsColumnAccess: boolean }).supportsColumnAccess
+        : false,
+    policyAgentSupportsFullAccess:
+      typeof (config.policyAgentConfig as { supportsFullAccess?: unknown } | undefined)
+        ?.supportsFullAccess === 'boolean'
+        ? (config.policyAgentConfig as { supportsFullAccess: boolean }).supportsFullAccess
+        : true,
+    policyAgentSupportsMaskedAccess:
+      typeof (config.policyAgentConfig as { supportsMaskedAccess?: unknown } | undefined)
+        ?.supportsMaskedAccess === 'boolean'
+        ? (config.policyAgentConfig as { supportsMaskedAccess: boolean }).supportsMaskedAccess
+        : true,
   };
 }
 
@@ -461,6 +550,113 @@ function applyDatabricksAuth(
 }
 
 
+/** JSON-object text (connectionOptions/connectionArguments) back to a form string. */
+function stringifyJsonMap(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return '';
+  }
+  if (!Object.keys(value as Record<string, unknown>).length) {
+    return '';
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Parse a JSON-object textarea (connectionOptions/connectionArguments) into a
+ * string map. Mirrors the GoogleDrive credentialsJson precedent: invalid JSON,
+ * a non-object, or a non-string value throws instead of sending a
+ * schema-invalid config (all 11 database schemas are additionalProperties:
+ * false with string map values).
+ */
+function parseJsonMap(raw: string | undefined, field: string): Record<string, string> | undefined {
+  const text = raw?.trim() ?? '';
+  if (!text) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${field} must be a valid JSON object`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${field} must be a JSON object`);
+  }
+  const out: Record<string, string> = {};
+  for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof val !== 'string') {
+      throw new Error(`${field} values must be strings`);
+    }
+    out[key] = val;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Secret-field discipline shared by the new secret leaves (Snowflake
+ * privateKey/passphrase, sslConfig leaves): same rules as applyPassword —
+ * a typed literal is sent only when it is an ${ENV} placeholder or
+ * storeConnectionSecrets is on; a blank field preserves a masked previous
+ * value; anything else is dropped, never sent.
+ */
+function secretFieldValue(
+  typed: string | undefined,
+  store: boolean,
+  previous: string | undefined,
+): string | undefined {
+  const value = typed?.trim() ?? '';
+  if (shouldPersistSecret(value, store)) {
+    return value;
+  }
+  if (!value && previous && isMaskedSecret(previous)) {
+    return previous;
+  }
+  return undefined;
+}
+
+function sslConfigFromForm(
+  form: ServiceFormValues,
+  existing?: ServiceConnectionConfig,
+): Record<string, string> | undefined {
+  const store = Boolean(form.storeConnectionSecrets);
+  const prev = existing?.sslConfig as Record<string, unknown> | undefined;
+  const sslConfig: Record<string, string> = {};
+  const ca = secretFieldValue(
+    form.sslCaCertificate,
+    store,
+    typeof prev?.caCertificate === 'string' ? prev.caCertificate : undefined,
+  );
+  if (ca) {
+    sslConfig.caCertificate = ca;
+  }
+  const cert = secretFieldValue(
+    form.sslCertificate,
+    store,
+    typeof prev?.sslCertificate === 'string' ? prev.sslCertificate : undefined,
+  );
+  if (cert) {
+    sslConfig.sslCertificate = cert;
+  }
+  const key = secretFieldValue(
+    form.sslKey,
+    store,
+    typeof prev?.sslKey === 'string' ? prev.sslKey : undefined,
+  );
+  if (key) {
+    sslConfig.sslKey = key;
+  }
+  return Object.keys(sslConfig).length ? sslConfig : undefined;
+}
+
+function policyAgentConfigFromForm(form: ServiceFormValues): Record<string, boolean> {
+  return {
+    enabled: form.policyAgentEnabled ?? true,
+    supportsColumnAccess: form.policyAgentSupportsColumnAccess ?? false,
+    supportsFullAccess: form.policyAgentSupportsFullAccess ?? true,
+    supportsMaskedAccess: form.policyAgentSupportsMaskedAccess ?? true,
+  };
+}
+
 export function buildServiceConnection(
   form: ServiceFormValues,
   existing?: ServiceConnection,
@@ -478,6 +674,34 @@ export function buildServiceConnection(
     if (form.database?.trim()) {
       config.database = form.database.trim();
     }
+    // Wave 0 lean-forms (R-T1.1): scheme always emitted (spec default
+    // postgresql+psycopg2); sslMode emitted when set (empty form pre-fills
+    // 'disable'); sslConfig leaves follow the secret discipline.
+    config.scheme = form.scheme?.trim() || 'postgresql+psycopg2';
+    if (typeof form.ingestAllDatabases === 'boolean') {
+      config.ingestAllDatabases = form.ingestAllDatabases;
+    }
+    if (form.sslMode?.trim()) {
+      config.sslMode = form.sslMode.trim();
+    }
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
+    if (form.classificationName?.trim()) {
+      config.classificationName = form.classificationName.trim();
+    }
+    if (form.queryStatementSource?.trim()) {
+      config.queryStatementSource = form.queryStatementSource.trim();
+    }
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'Mysql') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
@@ -491,11 +715,26 @@ export function buildServiceConnection(
     if (form.databaseSchema?.trim()) {
       config.databaseSchema = form.databaseSchema.trim();
     }
-    if (form.databaseSchema?.trim()) {
-      config.databaseSchema = form.databaseSchema.trim();
-    }
     if (form.queryHistoryTable?.trim()) {
       config.queryHistoryTable = form.queryHistoryTable.trim();
+    }
+    // Wave 0 lean-forms (R-T1.2): single-option scheme is a builder fixed
+    // value; useSlowLogs pairs with queryHistoryTable (mysql spec).
+    config.scheme = 'mysql+pymysql';
+    if (typeof form.useSlowLogs === 'boolean') {
+      config.useSlowLogs = form.useSlowLogs;
+    }
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
     }
   } else if (type === 'Snowflake') {
     if (form.username?.trim()) {
@@ -512,6 +751,75 @@ export function buildServiceConnection(
     }
     if (form.role?.trim()) {
       config.role = form.role.trim();
+    }
+    // Wave 0 lean-forms (R-T1.5): single-option scheme is a builder fixed
+    // value; privateKey/passphrase follow the secret discipline (typed
+    // literals only with storeConnectionSecrets, masked previous preserved).
+    config.scheme = 'snowflake';
+    if (form.queryTag?.trim()) {
+      config.queryTag = form.queryTag.trim();
+    }
+    if (form.accountUsageSchema?.trim()) {
+      config.accountUsageSchema = form.accountUsageSchema.trim();
+    }
+    if (typeof form.systemMetricsBatchSize === 'number') {
+      config.systemMetricsBatchSize = form.systemMetricsBatchSize;
+    }
+    const store = Boolean(form.storeConnectionSecrets);
+    const prevConfig = existing?.config;
+    const privateKey = secretFieldValue(
+      form.privateKey,
+      store,
+      typeof prevConfig?.privateKey === 'string' ? prevConfig.privateKey : undefined,
+    );
+    if (privateKey) {
+      config.privateKey = privateKey;
+    }
+    const passphrase = secretFieldValue(
+      form.snowflakePrivatekeyPassphrase,
+      store,
+      typeof prevConfig?.snowflakePrivatekeyPassphrase === 'string'
+        ? prevConfig.snowflakePrivatekeyPassphrase
+        : undefined,
+    );
+    if (passphrase) {
+      config.snowflakePrivatekeyPassphrase = passphrase;
+    }
+    if (typeof form.includeTransientTables === 'boolean') {
+      config.includeTransientTables = form.includeTransientTables;
+    }
+    if (typeof form.includeStreams === 'boolean') {
+      config.includeStreams = form.includeStreams;
+    }
+    if (typeof form.includeStages === 'boolean') {
+      config.includeStages = form.includeStages;
+    }
+    if (typeof form.includeSemanticViews === 'boolean') {
+      config.includeSemanticViews = form.includeSemanticViews;
+    }
+    if (typeof form.clientSessionKeepAlive === 'boolean') {
+      config.clientSessionKeepAlive = form.clientSessionKeepAlive;
+    }
+    if (typeof form.useAccessHistory === 'boolean') {
+      config.useAccessHistory = form.useAccessHistory;
+    }
+    if (typeof form.accessHistoryChunkSize === 'number') {
+      config.accessHistoryChunkSize = form.accessHistoryChunkSize;
+    }
+    if (typeof form.creditCost === 'number') {
+      config.creditCost = form.creditCost;
+    }
+    if (form.snowflakeSourceHost?.trim()) {
+      config.snowflakeSourceHost = form.snowflakeSourceHost.trim();
+    }
+    config.policyAgentConfig = policyAgentConfigFromForm(form);
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
     }
   } else if (type === 'Kafka' || type === 'Redpanda') {
     if (form.bootstrapServers?.trim()) {
@@ -537,6 +845,19 @@ export function buildServiceConnection(
       config.databaseSchema = form.databaseSchema.trim();
     }
     config.scheme = 'doris';
+    // Wave 0 lean-forms (R-T1.8).
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'Mssql') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
@@ -563,6 +884,19 @@ export function buildServiceConnection(
     if (typeof form.includeSynonyms === 'boolean') {
       config.includeSynonyms = form.includeSynonyms;
     }
+    // Wave 0 lean-forms (R-T1.4).
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'MariaDB') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
@@ -577,6 +911,15 @@ export function buildServiceConnection(
       config.databaseSchema = form.databaseSchema.trim();
     }
     config.scheme = form.scheme?.trim() || 'mysql+pymysql';
+    // Wave 0 lean-forms (R-T1.3).
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'Redshift' || type === 'Greenplum' || type === 'Timescale') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
@@ -594,6 +937,39 @@ export function buildServiceConnection(
       config.scheme = form.scheme?.trim() || 'redshift+psycopg2';
     } else {
       config.scheme = form.scheme?.trim() || 'postgresql+psycopg2';
+    }
+    // Wave 0 lean-forms (R-T1.9/10/11): clusterIdentifier/workgroupName are
+    // Redshift-only; classificationName/queryStatementSource are Timescale-only.
+    if (type === 'Redshift') {
+      if (form.clusterIdentifier?.trim()) {
+        config.clusterIdentifier = form.clusterIdentifier.trim();
+      }
+      if (form.workgroupName?.trim()) {
+        config.workgroupName = form.workgroupName.trim();
+      }
+    }
+    if (form.sslMode?.trim()) {
+      config.sslMode = form.sslMode.trim();
+    }
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
+    if (type === 'Timescale') {
+      if (form.classificationName?.trim()) {
+        config.classificationName = form.classificationName.trim();
+      }
+      if (form.queryStatementSource?.trim()) {
+        config.queryStatementSource = form.queryStatementSource.trim();
+      }
+    }
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
     }
   } else if (type === 'Superset') {
     if (form.hostPort?.trim()) {
@@ -765,6 +1141,21 @@ export function buildServiceConnection(
     if (type === 'UnityCatalog' && typeof form.includeMetricViews === 'boolean') {
       config.includeMetricViews = form.includeMetricViews;
     }
+    // Wave 0 lean-forms (R-T1.6/7): single-option scheme is a builder fixed
+    // value.
+    config.scheme = 'databricks';
+    if (typeof form.connectionTimeout === 'number') {
+      config.connectionTimeout = form.connectionTimeout;
+    }
+    config.policyAgentConfig = policyAgentConfigFromForm(form);
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'Mlflow') {
     if (form.trackingUri?.trim()) {
       config.trackingUri = form.trackingUri.trim();
@@ -904,6 +1295,23 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (typeof config.token === 'string') {
     config.token = '********';
+  }
+  // Wave 0 lean-forms: new secret leaves (Snowflake privateKey/passphrase,
+  // sslConfig PEM leaves) are never rendered back in plain text.
+  if (typeof config.privateKey === 'string') {
+    config.privateKey = '********';
+  }
+  if (typeof config.snowflakePrivatekeyPassphrase === 'string') {
+    config.snowflakePrivatekeyPassphrase = '********';
+  }
+  if (config.sslConfig && typeof config.sslConfig === 'object') {
+    const sslConfig = { ...(config.sslConfig as Record<string, unknown>) };
+    for (const key of ['caCertificate', 'sslCertificate', 'sslKey'] as const) {
+      if (typeof sslConfig[key] === 'string') {
+        sslConfig[key] = '********';
+      }
+    }
+    config.sslConfig = sslConfig;
   }
   if (config.connection && typeof config.connection === 'object') {
     const nested = { ...config.connection };

@@ -338,6 +338,41 @@ export interface ServiceFormValues {
   /** Mcp: registry URL + timeouts (mcpConnection, all optional). */
   registryUrl?: string;
   connectionTimeout?: number;
+  /** Wave 0 lean-forms database档 (official connection schemas, de-noised). */
+  /** SSL: sslMode select + validateSSLClientConfig leaves (postgres/redshift/greenplum/timescale/mysql/mssql/doris). */
+  sslMode?: string;
+  sslCaCertificate?: string;
+  sslCertificate?: string;
+  sslKey?: string;
+  classificationName?: string;
+  queryStatementSource?: string;
+  /** String maps, entered as a JSON object (connectionOptions/connectionArguments). */
+  connectionOptions?: string;
+  connectionArguments?: string;
+  useSlowLogs?: boolean;
+  /** Snowflake. */
+  queryTag?: string;
+  accountUsageSchema?: string;
+  systemMetricsBatchSize?: number;
+  privateKey?: string;
+  snowflakePrivatekeyPassphrase?: string;
+  includeTransientTables?: boolean;
+  includeStreams?: boolean;
+  includeStages?: boolean;
+  includeSemanticViews?: boolean;
+  clientSessionKeepAlive?: boolean;
+  useAccessHistory?: boolean;
+  accessHistoryChunkSize?: number;
+  creditCost?: number;
+  snowflakeSourceHost?: string;
+  /** Redshift (IAM/PrivateLink identifiers; plain spec strings). */
+  clusterIdentifier?: string;
+  workgroupName?: string;
+  /** Policy agent extraction config (snowflake/databricks/unitycatalog). */
+  policyAgentEnabled?: boolean;
+  policyAgentSupportsColumnAccess?: boolean;
+  policyAgentSupportsFullAccess?: boolean;
+  policyAgentSupportsMaskedAccess?: boolean;
 }
 
 export interface CreateDatabaseServiceRequest {

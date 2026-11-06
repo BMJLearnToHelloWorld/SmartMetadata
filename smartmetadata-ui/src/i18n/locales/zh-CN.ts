@@ -2085,7 +2085,7 @@ const zhCN = {
     confluentNote:
       'Confluent REST Proxy URL 是 CLI 工作流键（restProxyUrl），不是目录 MessagingService 字段。它会出现在生成的 smartmetadata-ingest YAML 中。',
     redpandaNote:
-      'P0 接入官方 redpandaConnection 字段（bootstrapServers 必填、schemaRegistryURL、securityProtocol）。实时 kafka-python 消费采样在 IntegrationVerified 前保持 Partial。',
+      'P0 接入官方 redpandaConnection 字段（bootstrapServers 必填、schemaRegistryURL、securityProtocol）。此处采样为 metadata-only：仅采 schema 与统计，不做实时消息拉取。实时采样为下一里程碑事项。',
     secretHint:
       "已存储密钥不会显示。留空以保留现有密码。{'${VAR}'} 占位符按原样存储。只有勾选持久化密钥时才会发送字面密码 — 默认关闭，与第 6–7 阶段一致。",
     httpPath: 'HTTP 路径',
@@ -2107,6 +2107,43 @@ const zhCN = {
     trustServerCertificate: '信任服务器证书',
     ingestAllDatabases: '摄取全部数据库',
     includeSynonyms: '包含同义词',
+    // Wave 0 lean-forms database档：去噪后官方字段的文案（RULING.md R-T1）。
+    sslMode: 'SSL 模式',
+    sslCaCertificate: 'CA 证书',
+    sslCertificate: 'SSL 证书',
+    sslKey: 'SSL 私钥',
+    classificationName: '分类名称',
+    queryStatementSource: '查询语句来源',
+    connectionOptions: '连接选项',
+    connectionOptionsHint: '以 JSON 对象填写额外连接选项，值为字符串。',
+    connectionArguments: '连接参数',
+    connectionArgumentsHint: '以 JSON 对象填写额外连接参数，值为字符串。',
+    useSlowLogs: '使用慢日志',
+    queryTag: '查询标签',
+    accountUsageSchema: '账户用量 Schema',
+    systemMetricsBatchSize: '系统指标批量大小',
+    privateKey: '私钥',
+    privateKeyHint: '密钥对认证用的 PEM 私钥，请粘贴完整内容（含换行）。',
+    snowflakePrivatekeyPassphrase: 'Snowflake 私钥口令',
+    includeTransientTables: '包含临时表',
+    includeStreams: '包含 Stream',
+    includeStages: '包含 Stage',
+    includeSemanticViews: '包含语义视图',
+    clientSessionKeepAlive: '保持客户端会话',
+    useAccessHistory: '使用 Access History 生成血缘',
+    accessHistoryChunkSize: 'Access History 分块天数',
+    creditCost: 'Credit 成本',
+    snowflakeSourceHost: 'Snowflake 源主机',
+    clusterIdentifier: '集群标识',
+    clusterIdentifierHint:
+      '标准 Redshift 主机名请留空（自动推导）。仅在使用 IAM 认证经 PrivateLink/VPC 端点或自定义 DNS 时填写。',
+    workgroupName: '工作组名称',
+    workgroupNameHint:
+      '标准 Redshift Serverless 主机名请留空（自动推导）。仅在使用 IAM 认证经 PrivateLink/VPC 端点或自定义 DNS 时填写。',
+    policyAgentEnabled: '启用策略代理抽取',
+    policyAgentSupportsColumnAccess: '支持列级访问',
+    policyAgentSupportsFullAccess: '支持完整访问',
+    policyAgentSupportsMaskedAccess: '支持脱敏访问',
     awsRegion: 'AWS 区域',
     awsAccessKeyId: 'AWS Access Key ID',
     awsSecretAccessKey: 'AWS Secret Access Key',
@@ -2146,7 +2183,7 @@ const zhCN = {
     dagsterNote:
       '1:1 with official dagsterConnection: host + token/timeout/stripAssetKeyPrefixLength.',
     s3Note:
-      'P0 接入官方 s3Connection 字段（awsConfig 必填、bucketNames、consoleEndpointURL）。实时 boto3 采样在 IntegrationVerified 前保持 Partial。',
+      'P0 接入官方 s3Connection 字段（awsConfig 必填、bucketNames、consoleEndpointURL）。此处采样为 metadata-only：仅采 schema 与统计，不做实时对象拉取。实时采样为下一里程碑事项。',
   },
   contextCenter: {
     overview: '概览',
@@ -3127,7 +3164,7 @@ const zhCN = {
       'custom-oidc': '自定义 OIDC',
       ldap: 'LDAP',
       saml: 'SAML',
-      openmetadata: 'OpenMetadata',
+      openmetadata: 'iSmart',
     },
   },
   tokens: {

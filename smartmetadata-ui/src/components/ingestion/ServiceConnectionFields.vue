@@ -113,6 +113,15 @@ function optionLabel(option: { value: string; labelKey?: string }): string {
         style="width: 100%"
         @update:value="(value) => setField(field, value)"
       />
+      <Input.TextArea
+        v-else-if="field.control === 'textarea'"
+        :value="stringValue(field)"
+        :data-testid="field.testId"
+        :placeholder="placeholder(field)"
+        :rows="3"
+        autocomplete="off"
+        @update:value="(value) => setField(field, value)"
+      />
       <Typography.Paragraph v-if="field.hintKey" type="secondary" class="svc-hint">
         {{ t(field.hintKey) }}
       </Typography.Paragraph>
