@@ -26,7 +26,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from smartmetadata_airflow_apis.contracts import DEFAULT_TASK_KEY, TYPE_TO_TASK
+from smartmetadata_airflow_apis.contracts import (
+    DEFAULT_TASK_KEY,
+    LOG_CHUNK_BYTES,
+    TYPE_TO_TASK,
+)
 from smartmetadata_airflow_apis.errors import (
     NoRunsError,
     UnknownDagError,
@@ -34,7 +38,7 @@ from smartmetadata_airflow_apis.errors import (
 )
 from smartmetadata_airflow_apis.run_id import clean_dag_id, pipeline_run_id
 
-_LOG_CHUNK_BYTES = 2 * 1024 * 1024  # official last_dag_logs chunk size
+_LOG_CHUNK_BYTES = LOG_CHUNK_BYTES  # official last_dag_logs chunk size
 _STATUS_LIMIT = 10  # official status returns the 10 latest runs
 
 
@@ -199,7 +203,9 @@ class MemoryDagStore:
         if task_id not in state.task_ids:
             raise ValidationError([f"Invalid: task_id {task_id}"])
         text = state.logs.get(task_id, "")
-        total = max(1, (len(text) + _LOG_CHUNK_BYTES - 1) // _LOG_CHUNK_BYTES)
+        # Empty logs have zero chunks, like the official operation: asking
+        # for chunk 0 of an empty log is out of bounds (400), not an empty 200.
+        total = (len(text) + _LOG_CHUNK_BYTES - 1) // _LOG_CHUNK_BYTES
         if after < 0 or after >= total:
             raise ValidationError([f"Invalid: after {after}"])
         chunk = text[after * _LOG_CHUNK_BYTES : (after + 1) * _LOG_CHUNK_BYTES]

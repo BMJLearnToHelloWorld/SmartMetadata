@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import Any
 
-from smartmetadata_airflow_apis.run_id import clean_dag_id, pipeline_run_id
+from smartmetadata_airflow_apis.run_id import clean_dag_id, resolve_run_id
 from smartmetadata_airflow_apis.workflows.translation import (
     TranslationError,
     translate_filter_pattern,
@@ -108,17 +108,14 @@ def _is_uuid(value: Any) -> bool:
 
 
 def _resolve_run_id(dag_id: str, dag_run: Any) -> str | None:
-    conf = {}
-    run_id = None
-    if dag_run is not None:
-        conf = getattr(dag_run, "conf", None) or {}
-        run_id = getattr(dag_run, "run_id", None)
-    candidate = conf.get("pipelineRunId") if isinstance(conf, dict) else None
-    if _is_uuid(candidate):
-        return str(candidate)
-    if run_id:
-        return str(pipeline_run_id(dag_id, str(run_id)))
-    return None
+    # One rule for every side (run_id.resolve_run_id): the server-minted
+    # pipelineRunId from the trigger conf when it is a valid UUID, else
+    # the derivation from the Airflow run id.
+    if dag_run is None:
+        return None
+    conf = getattr(dag_run, "conf", None) or {}
+    run_id = getattr(dag_run, "run_id", None)
+    return resolve_run_id(dag_id, run_id, conf if isinstance(conf, dict) else {})
 
 
 def _apply_source_config_override(

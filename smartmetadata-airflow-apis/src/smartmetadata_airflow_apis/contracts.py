@@ -70,3 +70,8 @@ TYPE_TO_TASK: dict[str, str] = {
     "reverseMetadata": "ingestion_task",
 }
 DEFAULT_TASK_KEY = "ingestion_task"
+
+# Official last_dag_logs chunk size (operations/last_dag_logs.py CHUNK_SIZE):
+# 2,000,000 bytes, not 2 MiB. The in-memory store and the real backend share
+# this constant so one log yields the same chunk count from either backend.
+LOG_CHUNK_BYTES = 2_000_000

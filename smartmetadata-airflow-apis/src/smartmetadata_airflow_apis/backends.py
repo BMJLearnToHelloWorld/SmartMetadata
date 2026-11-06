@@ -28,9 +28,23 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from smartmetadata_airflow_apis.config import dag_generated_configs_dir, dags_folder
-from smartmetadata_airflow_apis.errors import DagOperationError
-from smartmetadata_airflow_apis.run_id import clean_dag_id
+from smartmetadata_airflow_apis.config import (
+    base_log_folder,
+    dag_generated_configs_dir,
+    dags_folder,
+)
+from smartmetadata_airflow_apis.errors import (
+    DagOperationError,
+    NoRunsError,
+    UnknownDagError,
+    ValidationError,
+)
+from smartmetadata_airflow_apis.logs import (
+    get_log_file_info,
+    read_log_chunk_from_file,
+    split_log_chunks,
+)
+from smartmetadata_airflow_apis.run_id import clean_dag_id, resolve_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +94,55 @@ def _run_scan_once() -> None:
     manager.run()
 
 
-def _last_parsed_time(dag_id: str) -> Any:
+def _ms(value: Any) -> int | None:
+    """A datetime as epoch milliseconds; None stays None."""
+    if value is None:
+        return None
+    try:
+        return int(value.timestamp() * 1000)
+    except (AttributeError, OverflowError, OSError, ValueError):
+        return None
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _state_value(state: Any) -> str:
+    value = getattr(state, "value", state)
+    return str(value) if value is not None else "queued"
+
+
+def _format_run(dag_id: str, dag_run: Any) -> dict[str, Any]:
+    """One DagRun as the server's PipelineStatus (ruling §2.1).
+
+    The run id resolves conf-first (run_id.resolve_run_id): the server
+    recorded the queued run under the conf pipelineRunId, and the worker
+    reports under it, so status must return the same id.
+    """
+    logical_date = getattr(dag_run, "logical_date", None) or getattr(
+        dag_run, "execution_date", None
+    )
+    return {
+        "runId": resolve_run_id(dag_id, dag_run.run_id, dag_run.conf or {}),
+        "pipelineState": _state_value(dag_run.get_state()),
+        "startDate": _ms(dag_run.start_date),
+        "endDate": _ms(dag_run.end_date),
+        "timestamp": _ms(logical_date),
+    }
+
+
+def _dag_model(session: Any, dag_id: str) -> Any:
     from airflow.models.dag import DagModel
+
+    return session.query(DagModel).filter(DagModel.dag_id == dag_id).one_or_none()
+
+
+def _last_parsed_time(dag_id: str) -> Any:
     from airflow.utils.session import create_session
 
     with create_session() as session:
-        row = session.query(DagModel).filter(DagModel.dag_id == dag_id).one_or_none()
+        row = _dag_model(session, dag_id)
         return row.last_parsed_time if row is not None else None
 
 
@@ -167,16 +224,189 @@ class AirflowBackend:
         return found
 
     # -- trigger / status / logs (step 3) --------------------------------
-    def trigger(self, dag_id: str, conf: dict[str, Any]) -> str:
-        raise NotImplementedError("step 3")
+    def trigger(self, dag_id: str, conf: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Create a DagRun; the run record carries the converged run id.
 
-    def status(self, dag_id: str, run_id: str | None = None) -> dict[str, Any]:
-        raise NotImplementedError("step 3")
+        ``replace_microseconds=False`` keeps two triggers inside one
+        second from colliding on the (dag_id, logical_date) uniqueness.
+        The server never sends a run id, so Airflow mints ``manual__...``
+        and the converged id comes from the trigger conf (see _format_run).
+        """
+        from airflow.api.common.trigger_dag import trigger_dag
+        from airflow.models.dagrun import DagRunTriggeredByType
+        from airflow.utils import timezone
+        from airflow.utils.session import create_session
+
+        conf = dict(conf or {})
+        with create_session() as session:
+            if _dag_model(session, dag_id) is None:
+                raise UnknownDagError(dag_id)
+        try:
+            dag_run = trigger_dag(
+                dag_id,
+                run_id=None,
+                conf=conf,
+                logical_date=timezone.utcnow(),
+                replace_microseconds=False,
+                triggered_by=DagRunTriggeredByType.REST_API,
+            )
+        except Exception as exc:  # noqa: BLE001 - mapped to a server error
+            raise DagOperationError(f"trigger failed for DAG {dag_id}: {exc}") from exc
+        if dag_run is None:
+            raise DagOperationError(f"trigger failed for DAG {dag_id}: no run created")
+        start_ms = _ms(dag_run.start_date) or _now_ms()
+        return {
+            "runId": resolve_run_id(dag_id, dag_run.run_id, conf),
+            "pipelineState": "queued",
+            "startDate": start_ms,
+            "endDate": None,
+            "timestamp": _ms(dag_run.logical_date) or start_ms,
+        }
+
+    def status(
+        self,
+        dag_id: str,
+        run_id: str | None = None,
+        only_queued: bool = False,
+    ) -> list[dict[str, Any]]:
+        """The 10 latest DagRuns, newest first (official operations/status)."""
+        from airflow.models.dagrun import DagRun
+        from airflow.utils.session import create_session
+        from airflow.utils.state import DagRunState
+
+        with create_session() as session:
+            if _dag_model(session, dag_id) is None:
+                raise UnknownDagError(dag_id)
+            query = (
+                session.query(DagRun)
+                .filter(DagRun.dag_id == dag_id)
+                .order_by(DagRun.start_date.desc())
+            )
+            if only_queued:
+                query = query.filter(DagRun.state == DagRunState.QUEUED)
+            runs = query.limit(10).all()
+            formatted = [_format_run(dag_id, run) for run in runs]
+        if run_id is not None:
+            formatted = [r for r in formatted if r["runId"] == run_id]
+        return formatted
 
     def last_logs(
-        self, dag_id: str, run_id: str, task_id: str, after: str | None
+        self,
+        dag_id: str,
+        run_id: str | None,
+        task_id: str,
+        after: int = 0,
     ) -> dict[str, Any]:
-        raise NotImplementedError("step 3")
+        """Logs of the latest run's task: file streaming, TaskLogReader fallback.
+
+        ``run_id`` is accepted for the protocol but ignored, like the
+        official operation and the in-memory store: logs always come from
+        the latest run.
+        """
+        from airflow.utils.log.log_reader import TaskLogReader
+        from airflow.utils.session import create_session
+
+        with create_session() as session:
+            dag_model = _dag_model(session, dag_id)
+            if dag_model is None:
+                raise UnknownDagError(dag_id)
+            last_run = dag_model.get_last_dagrun(
+                session=session, include_manually_triggered=True
+            )
+            if last_run is None:
+                raise NoRunsError(dag_id)
+            task_instances = last_run.get_task_instances(session=session)
+            target = next(
+                (ti for ti in task_instances if ti.task_id == task_id), None
+            )
+            if target is None:
+                raise ValidationError([f"Invalid: task_id {task_id}"])
+            try_number = (
+                getattr(target, "try_number", None)
+                or getattr(target, "_try_number", None)
+                or 1
+            )
+            task_log_reader = TaskLogReader()
+            if not task_log_reader.supports_read:
+                raise DagOperationError("task log reader does not support reading logs")
+            streamed = self._read_logs_from_file(
+                dag_id, last_run.run_id, task_id, try_number, after
+            )
+            if streamed is not None:
+                return streamed
+            return self._read_logs_via_reader(
+                dag_id, task_id, target, task_log_reader, try_number, after
+            )
+
+    def _read_logs_from_file(
+        self,
+        dag_id: str,
+        airflow_run_id: str,
+        task_id: str,
+        try_number: int,
+        after: int,
+    ) -> dict[str, Any] | None:
+        """One chunk from the task log file; None when the file is unusable."""
+        import os
+
+        base = base_log_folder()
+        dag_safe = dag_id.replace(".", "_DOT_")
+        task_safe = task_id.replace(".", "_DOT_")
+        relative = (
+            f"dag_id={dag_safe}/run_id={airflow_run_id}/"
+            f"task_id={task_safe}/attempt={try_number}.log"
+        )
+        log_path = base / relative
+        try:
+            real_path = os.path.realpath(log_path)
+            real_base = os.path.realpath(base)
+        except Exception:  # noqa: BLE001 - fall back to the reader
+            return None
+        if not real_path.startswith(real_base + os.sep):
+            logger.warning("log path %s is outside %s", real_path, real_base)
+            raise ValidationError([f"Invalid: log path for DAG {dag_id}"])
+        if not os.path.exists(real_path):
+            return None
+        file_mtime = int(os.stat(real_path).st_mtime)
+        _, total_chunks = get_log_file_info(real_path, file_mtime)
+        if after < 0 or after >= total_chunks:
+            raise ValidationError([f"Invalid: after {after}"])
+        chunk = read_log_chunk_from_file(real_path, after)
+        if chunk is None:
+            return None
+        body: dict[str, Any] = {task_id: chunk, "total": total_chunks}
+        if after + 1 < total_chunks:
+            body["after"] = after + 1
+        return body
+
+    @staticmethod
+    def _read_logs_via_reader(
+        dag_id: str,
+        task_id: str,
+        task_instance: Any,
+        task_log_reader: Any,
+        try_number: int,
+        after: int,
+    ) -> dict[str, Any]:
+        raw = "".join(
+            task_log_reader.read_log_stream(
+                ti=task_instance,
+                try_number=try_number,
+                metadata={"download_logs": False},
+            )
+        )
+        if not raw:
+            raise ValidationError(
+                [f"Invalid: no logs for DAG {dag_id} and task {task_id}"]
+            )
+        chunks = split_log_chunks(raw)
+        total = len(chunks)
+        if after < 0 or after >= total:
+            raise ValidationError([f"Invalid: after {after}"])
+        body: dict[str, Any] = {task_id: chunks[after], "total": total}
+        if after + 1 < total:
+            body["after"] = after + 1
+        return body
 
     # -- lifecycle (step 5) ----------------------------------------------
     def set_enabled(self, dag_id: str, enabled: bool) -> bool:
