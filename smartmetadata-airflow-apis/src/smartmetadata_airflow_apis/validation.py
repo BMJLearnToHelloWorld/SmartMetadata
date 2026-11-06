@@ -18,6 +18,7 @@ from typing import Any
 
 from smartmetadata_airflow_apis.contracts import TYPE_TO_TASK
 from smartmetadata_airflow_apis.errors import ValidationError
+from smartmetadata_airflow_apis.workflows.translation import deploy_scope_problems
 
 PIPELINE_TYPES = frozenset(TYPE_TO_TASK)
 
@@ -74,6 +75,14 @@ def validate_ingestion_pipeline(payload: Any) -> dict[str, Any]:
         _require_str(server_conn, "hostPort", problems)
     if problems:
         raise ValidationError(problems)
+    # Deploy-time scope (ruling §4.2 T-1/T-2 + literal-pattern rule):
+    # checked here, before any file is written, so a violation is a 400
+    # naming only the field location — never a 500 after partial writes
+    # that would leave a broken DAG file behind for the dag-processor.
+    source = body.get("source") or {}
+    scope_problems = deploy_scope_problems(source.get("sourceConfig"))
+    if scope_problems:
+        raise ValidationError([_invalid(field) for field in scope_problems])
     return body
 
 

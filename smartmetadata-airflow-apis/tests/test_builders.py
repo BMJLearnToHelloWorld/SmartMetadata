@@ -23,12 +23,16 @@ this file.
 
 from __future__ import annotations
 
+import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+import smartmetadata_airflow_apis.workflows.common as common_module
 from smartmetadata_airflow_apis.workflows import builders  # noqa: F401  (registers builders)
 from smartmetadata_airflow_apis.workflows.registry import get_builder, registered_types
+from smartmetadata_airflow_apis.workflows.translation import TranslationError
 
 CONNECTION = {"hostPort": "127.0.0.1:3306", "username": "stub", "password": "stub"}
 
@@ -139,3 +143,143 @@ def test_no_builder_for_unmapped_types() -> None:
 
 def test_registered_types() -> None:
     assert registered_types() == ("lineage", "metadata", "profiler", "usage")
+
+
+# --- on_kill writeback (ruling §1.5.3, fix-round B-2) --------------------
+# Airflow calls on_kill with no context, so the run id must come from the
+# instance state _run stored. The official operator writes the id back
+# into the shared workflow_config.pipelineRunId for the same reason.
+
+
+def _fake_dag_run(run_id: str) -> Any:
+    return SimpleNamespace(
+        conf={"pipelineRunId": run_id},
+        run_id="manual__2026-11-06T00:00:00+00:00",
+    )
+
+
+def _metadata_task() -> Any:
+    builder = get_builder("metadata")
+    assert builder is not None
+    dag = builder(_pipeline("kill_demo", "metadata"))
+    return _task(dag, "ingestion_task")
+
+
+def test_on_kill_writes_back_failed_under_resolved_run_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _metadata_task()
+    run_id = str(uuid.uuid4())
+    writebacks: list[tuple[str, dict]] = []
+    runner_calls: list[dict] = []
+
+    def fake_run(config: dict, rid: str, raise_on_error: bool) -> None:
+        runner_calls.append(config)
+
+    class FakeRestClient:
+        def __init__(self, server: Any) -> None:
+            pass
+
+        def add_pipeline_status(self, fqn: str, payload: dict) -> None:
+            writebacks.append((fqn, payload))
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(common_module, "run_pipeline_workflow", fake_run)
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.client.rest.RestClient", FakeRestClient
+    )
+    task._run(dag_run=_fake_dag_run(run_id))
+    assert len(runner_calls) == 1
+    task.on_kill()
+
+    assert len(writebacks) == 1
+    fqn, payload = writebacks[0]
+    assert fqn == "svc.kill_demo"
+    assert payload["runId"] == run_id
+    assert payload["pipelineState"] == "failed"
+
+
+def test_on_kill_before_run_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _metadata_task()
+    writebacks: list[tuple[str, dict]] = []
+
+    class FakeRestClient:
+        def __init__(self, server: Any) -> None:
+            pass
+
+        def add_pipeline_status(self, fqn: str, payload: dict) -> None:
+            writebacks.append((fqn, payload))
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.client.rest.RestClient", FakeRestClient
+    )
+    task.on_kill()
+    assert writebacks == []
+
+
+# --- sourceConfigOverride (fix-round N-4) ---------------------------------
+# An untranslatable override fails the task loudly, like deploy-time
+# scope validation (ruling §4.2 T-1/T-2): the override is only known at
+# trigger time, and ignoring a narrowing override would run the deployed
+# (broader) scope. This matches the official apply_source_config_override,
+# whose model_validate raises.
+
+
+def test_untranslatable_source_config_override_fails_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _metadata_task()
+    run_id = str(uuid.uuid4())
+    runner_calls: list[dict] = []
+
+    def fake_run(config: dict, rid: str, raise_on_error: bool) -> None:
+        runner_calls.append(config)
+
+    monkeypatch.setattr(common_module, "run_pipeline_workflow", fake_run)
+    with pytest.raises(TranslationError):
+        task._run(
+            dag_run=SimpleNamespace(
+                conf={
+                    "pipelineRunId": run_id,
+                    "sourceConfigOverride": {
+                        "schemaFilterPattern": {"includes": ["prod.*"]}
+                    },
+                },
+                run_id="manual__2026-11-06T00:00:00+00:00",
+            )
+        )
+    # The task failed before the runner ever ran.
+    assert runner_calls == []
+
+
+def test_translatable_source_config_override_narrows_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _metadata_task()
+    run_id = str(uuid.uuid4())
+    runner_calls: list[dict] = []
+
+    def fake_run(config: dict, rid: str, raise_on_error: bool) -> None:
+        runner_calls.append(config)
+
+    monkeypatch.setattr(common_module, "run_pipeline_workflow", fake_run)
+    task._run(
+        dag_run=SimpleNamespace(
+            conf={
+                "pipelineRunId": run_id,
+                "sourceConfigOverride": {
+                    "schemaFilterPattern": {"includes": ["sales"]}
+                },
+            },
+            run_id="manual__2026-11-06T00:00:00+00:00",
+        )
+    )
+    assert len(runner_calls) == 1
+    assert runner_calls[0]["source"]["includeSchemas"] == ["sales"]

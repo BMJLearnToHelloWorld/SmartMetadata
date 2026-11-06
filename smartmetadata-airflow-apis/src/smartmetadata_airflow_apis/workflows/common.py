@@ -135,8 +135,14 @@ def _apply_source_config_override(
         try:
             includes, excludes = translate_filter_pattern(override.get(key))
         except TranslationError:
-            logger.warning("ignoring untranslatable override for %s", key)
-            continue
+            # Fail loudly, like deploy-time scope validation (ruling §4.2
+            # T-1/T-2, fix-round N-4): the override is only known at
+            # trigger time, so deploy validation cannot catch it — but
+            # ignoring a narrowing override would run the deployed
+            # (broader) scope. The task fails here; the failure callback
+            # writes the run back as failed. This matches the official
+            # apply_source_config_override, whose model_validate raises.
+            raise
         if key == "schemaFilterPattern":
             source["includeSchemas"] = includes
             source["excludeSchemas"] = excludes
@@ -205,12 +211,25 @@ def workflow_operator_class():  # type: ignore[no-untyped-def]
             self._pipeline = pipeline
             self._raise_on_error = raise_on_error
             self._logger_level = logger_level
+            # The run this task is executing (ruling §1.5.3, fix-round
+            # B-2): stored when _run resolves it, so on_kill can write
+            # the run back as failed even though Airflow calls it with
+            # no context. The official operator writes the id back into
+            # the shared workflow_config.pipelineRunId for the same
+            # reason; the product config is a plain dict, so the
+            # operator instance itself is the shared state.
+            self._current_run_id: str | None = None
+            self._current_start_ms: int | None = None
 
         def _run(self, **context: Any) -> Any:
+            from smartmetadata_ingestion.pipeline_status import now_ms
+
             dag_run = context.get("dag_run")
             run_id = _resolve_run_id(self.dag_id, dag_run)
             if run_id is None:
                 run_id = str(uuid.uuid4())
+            self._current_run_id = run_id
+            self._current_start_ms = now_ms()
             config = dict(self._workflow_config)
             conf = (getattr(dag_run, "conf", None) or {}) if dag_run else {}
             override = (
@@ -225,7 +244,16 @@ def workflow_operator_class():  # type: ignore[no-untyped-def]
             try:
                 super().on_kill()
             finally:
-                _send_failed(self._workflow_config, self._pipeline, None)
+                # No context here, so the run id must come from the
+                # instance state _run stored (B-2); passing None made
+                # this a permanent no-op. Before _run starts there is
+                # no run id and the writeback is skipped, as before.
+                _write_failed_status(
+                    self._workflow_config,
+                    self._pipeline,
+                    self._current_run_id,
+                    self._current_start_ms,
+                )
 
     return WorkflowPythonOperator
 
@@ -246,7 +274,14 @@ def _write_failed_status(
 
     try:
         workflow = workflow_config.get("workflow") or {}
-        fqn = workflow.get("ingestionPipelineFqn")
+        # The builders dump WorkflowConfig with model_dump(mode="json"),
+        # whose keys are snake_case — the camelCase spelling this read
+        # used never matches, so the writeback silently skipped every
+        # run. Accept both spellings (the raw dict translate_pipeline
+        # builds uses camelCase).
+        fqn = workflow.get("ingestionPipelineFqn") or workflow.get(
+            "ingestion_pipeline_fqn"
+        )
         if not fqn or not run_id:
             logger.debug("skipping failed status writeback: no fqn or run id")
             return

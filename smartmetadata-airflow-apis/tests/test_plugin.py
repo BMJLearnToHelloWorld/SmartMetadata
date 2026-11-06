@@ -113,10 +113,11 @@ def test_default_store_falls_back_without_airflow(monkeypatch, tmp_path) -> None
     assert isinstance(_default_store(), MemoryDagStore)
 
 
-def test_csrf_exemption_matches_official_eleven(monkeypatch) -> None:
-    # Ruling §2.0: every route except csrf-token and status carries
-    # @csrf.exempt in the official plugin. The fake records what the
-    # blueprint asks the FAB CSRFProtect instance to exempt.
+def test_csrf_exemption_matches_official_twelve(monkeypatch) -> None:
+    # Ruling §2.0 (fix-round B-3): every route except csrf-token carries
+    # @csrf.exempt in the official plugin — 12 routes, status included
+    # (api/routes/status.py). The fake records what the blueprint asks
+    # the FAB CSRFProtect instance to exempt.
     import smartmetadata_airflow_apis.app as app_module
 
     seen: list[str] = []
@@ -138,6 +139,7 @@ def test_csrf_exemption_matches_official_eleven(monkeypatch) -> None:
         "delete_view",
         "enable_view",
         "disable_view",
+        "status_view",
         "kill_view",
         "logs_view",
         "ip_view",

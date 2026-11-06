@@ -80,12 +80,70 @@ def translate_filter_pattern(
     return includes, excludes
 
 
-def check_source_config_scope(source_config: dict[str, Any] | None) -> None:
-    """Reject scope restrictions the product runner cannot honor (deploy 400).
+def _is_translatable_include(pattern: str) -> bool:
+    """Whether ``_translate_pattern`` accepts this include pattern.
 
-    Called at deploy validation; the translation enforces the same rules at
-    parse time. Additive extras (sample data, profiler flags) are only
-    logged, never rejected: skipping them ingests less, never more.
+    Mirrors ``_translate_pattern`` exactly: ``.*`` (include-all), a
+    ``^literal$`` anchor, or a bare literal name. Anything else is a
+    real regex the product's exact matcher cannot honor.
+    """
+    if pattern == ".*":
+        return True
+    anchored = re.fullmatch(r"\^([^\^$]+)\$", pattern)
+    if anchored is not None:
+        return _is_literal(anchored.group(1))
+    return _is_literal(pattern)
+
+
+def _is_translatable_exclude(pattern: str) -> bool:
+    # ".*" cannot exclude everything in the product runner.
+    return pattern != ".*" and _is_translatable_include(pattern)
+
+
+def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
+    """Deploy-time scope problems, as field locations only (ruling §4.2).
+
+    T-1 (non-empty ``tableFilterPattern``), T-2 (``includeViews`` false)
+    and non-literal schema/database filter patterns are all rejected
+    here, before deploy writes any file, so a violation is a 400 naming
+    only the field location — never a 500 after partial writes, and
+    never a value (§2.3). Returns the offending field locations.
+    """
+    problems: list[str] = []
+    config = (source_config or {}).get("config")
+    if not isinstance(config, dict):
+        return problems
+    table_filter = config.get("tableFilterPattern")
+    if isinstance(table_filter, dict) and (
+        table_filter.get("includes") or table_filter.get("excludes")
+    ):
+        problems.append("source.sourceConfig.config.tableFilterPattern")
+    if config.get("includeViews") is False:
+        problems.append("source.sourceConfig.config.includeViews")
+    for key in ("schemaFilterPattern", "databaseFilterPattern"):
+        pattern = config.get(key)
+        if not isinstance(pattern, dict):
+            continue
+        untranslatable = any(
+            not _is_translatable_include(str(entry))
+            for entry in pattern.get("includes") or []
+        ) or any(
+            not _is_translatable_exclude(str(entry))
+            for entry in pattern.get("excludes") or []
+        )
+        if untranslatable:
+            problems.append(f"source.sourceConfig.config.{key}")
+    return problems
+
+
+def check_source_config_scope(source_config: dict[str, Any] | None) -> None:
+    """Reject scope restrictions the product runner cannot honor (parse time).
+
+    The parse-time second line of defence behind deploy validation
+    (``deploy_scope_problems``); the translation enforces the same
+    rules here again. Additive extras (sample data, profiler flags)
+    are only logged, never rejected: skipping them ingests less, never
+    more.
     """
     config = (source_config or {}).get("config")
     if not isinstance(config, dict):

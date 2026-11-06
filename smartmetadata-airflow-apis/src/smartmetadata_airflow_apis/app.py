@@ -122,7 +122,7 @@ def create_app(
     # executes the posted body directly and exists only for tests without
     # a server (ruling §4.4).
     app.extensions["automation_fetcher"] = automation_fetcher
-    # The standalone app always issues a CSRF token; the 11 exempt routes
+    # The standalone app always issues a CSRF token; the 12 exempt routes
     # do not validate it (in production the exemption is the FAB app's
     # CSRFProtect @csrf.exempt, matching the official plugin; here there
     # is no CSRFProtect at all, so the token only satisfies the client's
@@ -194,11 +194,11 @@ def _mount(
 ) -> None:
     # Named view functions (not lambdas): Flask-WTF exemption is keyed on
     # ``__module__.__name__``, so every exempt route needs a distinct name.
-    # The 11 exempt routes match the official plugin exactly (ruling §2.0):
-    # every route except csrf-token and status carries @csrf.exempt there.
-    # GET-only routes are never CSRF-validated, so exempting status or
-    # csrf-token as well would be unobservable — the split is kept anyway
-    # so the exemption list stays auditable against the official one.
+    # The 12 exempt routes match the official plugin exactly (ruling §2.0):
+    # every route except csrf-token carries @csrf.exempt there.
+    # GET-only routes are never CSRF-validated, so exempting csrf-token as
+    # well would be unobservable — the split is kept anyway so the
+    # exemption list stays auditable against the official one.
     def health_view():
         return reply(handlers.health(store))
 
@@ -284,7 +284,7 @@ def _mount(
     rule("/delete", "delete", delete_view, ["DELETE"], DELETE, exempt=True)
     rule("/enable", "enable", enable_view, ["POST"], EDIT, exempt=True)
     rule("/disable", "disable", disable_view, ["POST"], EDIT, exempt=True)
-    rule("/status", "status", status_view, ["GET"], READ, exempt=False)
+    rule("/status", "status", status_view, ["GET"], READ, exempt=True)
     rule("/kill", "kill", kill_view, ["POST"], EDIT, exempt=True)
     rule("/last_dag_logs", "logs", logs_view, ["GET"], READ, exempt=True)
     rule("/ip", "ip", ip_view, ["GET"], EDIT, exempt=True)
