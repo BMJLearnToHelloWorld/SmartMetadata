@@ -9,7 +9,8 @@
 """Unity Catalog data-diff parameter — re-export."""
 
 from smartmetadata_ingestion.connectors.databricks_data_diff import (
+    UnityCatalogDataDiff,
     UnityCatalogTableParameter,
 )
 
-__all__ = ["UnityCatalogTableParameter"]
+__all__ = ["UnityCatalogDataDiff", "UnityCatalogTableParameter"]

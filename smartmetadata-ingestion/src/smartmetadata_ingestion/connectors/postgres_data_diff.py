@@ -59,14 +59,15 @@ class PostgresDataDiff:
     ) -> dict[str, Any]:
         if self._fetch_keys is None:
             raise RuntimeError("fetch_keys is required for live data diff")
-        left_keys = set(self._fetch_keys(left))
-        right_keys = set(self._fetch_keys(right))
-        only_left = left_keys - right_keys
-        only_right = right_keys - left_keys
+        # Local import: datadiff imports this module for the binding table,
+        # so a top-level import would be circular.
+        from smartmetadata_ingestion.datadiff import compare_key_sets
+
+        diff = compare_key_sets(self._fetch_keys(left), self._fetch_keys(right))
         return {
             "left": left,
             "right": right,
-            "rowDiffCount": len(only_left) + len(only_right),
-            "extraLeft": len(only_left),
-            "extraRight": len(only_right),
+            "rowDiffCount": diff.total,
+            "extraLeft": diff.extra_left,
+            "extraRight": diff.extra_right,
         }

@@ -39,6 +39,35 @@ def test_build_source_selects_registered_connectors(workflow_config: WorkflowCon
         assert isinstance(source, expected)
 
 
+def test_data_diff_modules_are_registered() -> None:
+    import importlib
+
+    from smartmetadata_ingestion.datadiff import datadiff_binding
+
+    load_builtin_sources()
+    stems = (
+        "databricks",
+        "mssql",
+        "mysql",
+        "postgres",
+        "snowflake",
+        "unitycatalog",
+    )
+    for stem in stems:
+        module = importlib.import_module(f"smartmetadata_ingestion.connectors.{stem}_data_diff")
+        assert any(name.endswith("TableParameter") for name in dir(module))
+        assert any(name.endswith("DataDiff") for name in dir(module))
+        binding = datadiff_binding(stem)
+        assert binding is not None
+        assert binding.parameter is not None
+        assert binding.differ is not None
+        assert callable(binding.connect)
+        assert callable(binding.quote)
+    assert datadiff_binding("kafka") is None
+    assert datadiff_binding("redshift") is None
+    assert datadiff_binding("static") is None
+
+
 def test_profiler_quality_modules_are_registered() -> None:
     import importlib
 

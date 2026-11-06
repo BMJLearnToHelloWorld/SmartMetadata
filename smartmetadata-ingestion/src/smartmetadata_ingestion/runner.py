@@ -18,6 +18,7 @@ from smartmetadata_ingestion.processors.identity import Processor
 from smartmetadata_ingestion.progress import ProgressHook, RunReport
 from smartmetadata_ingestion.sinks.metadata_rest import Sink
 from smartmetadata_ingestion.workflow import (
+    DataDiffWorkflow,
     MetadataWorkflow,
     ProfilerWorkflow,
     TestSuiteWorkflow,
@@ -36,11 +37,12 @@ def run_workflow(
     hook: ProgressHook | None = None,
     profile_reader: Any | None = None,
     execute: Any | None = None,
+    fetch_keys: Any | None = None,
 ) -> RunReport:
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
 
-    ``profiler`` and ``TestSuite`` dispatch to their own workflows; every other
-    type keeps the metadata workflow.
+    ``profiler``, ``TestSuite`` and ``data_diff`` dispatch to their own
+    workflows; every other type keeps the metadata workflow.
     """
     workflow_type = config.workflow.type
     if workflow_type == "profiler":
@@ -62,6 +64,16 @@ def run_workflow(
             processors=processors,
             hook=hook,
             execute=execute,
+        )
+    elif workflow_type == "data_diff":
+        workflow = DataDiffWorkflow(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+            fetch_keys=fetch_keys,
         )
     else:
         workflow = MetadataWorkflow(

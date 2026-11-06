@@ -113,3 +113,10 @@ def load_builtin_sources() -> None:
     from smartmetadata_ingestion.connectors import timescale_quality as _timescale_quality  # noqa: F401
     from smartmetadata_ingestion.connectors import unitycatalog_profiler as _unitycatalog_profiler  # noqa: F401
     from smartmetadata_ingestion.connectors import unitycatalog_quality as _unitycatalog_quality  # noqa: F401
+
+    from smartmetadata_ingestion.connectors import databricks_data_diff as _databricks_data_diff  # noqa: F401
+    from smartmetadata_ingestion.connectors import mssql_data_diff as _mssql_data_diff  # noqa: F401
+    from smartmetadata_ingestion.connectors import mysql_data_diff as _mysql_data_diff  # noqa: F401
+    from smartmetadata_ingestion.connectors import postgres_data_diff as _postgres_data_diff  # noqa: F401
+    from smartmetadata_ingestion.connectors import snowflake_data_diff as _snowflake_data_diff  # noqa: F401
+    from smartmetadata_ingestion.connectors import unitycatalog_data_diff as _unitycatalog_data_diff  # noqa: F401
