@@ -143,15 +143,33 @@ def build_authenticator(
     return Authenticator(stores)
 
 
+# Fallback authenticator for routes mounted on a host Flask app that
+# carries no authenticator of its own — the Airflow api-server's FAB app
+# serving plugin blueprints under /pluginsv2. Installed by
+# ``app.get_blueprint``; a standalone app always sets its own
+# authenticator in ``extensions`` and never consults this.
+_fallback_authenticator: Authenticator | None = None
+
+
+def set_fallback_authenticator(authenticator: Authenticator) -> None:
+    global _fallback_authenticator
+    _fallback_authenticator = authenticator
+
+
+def _resolve_authenticator() -> Authenticator | None:
+    authenticator: Authenticator | None = current_app.extensions.get("authenticator")
+    if authenticator is not None:
+        return authenticator
+    return _fallback_authenticator
+
+
 def require_permission(action: str) -> Callable:
     """Fail-closed guard: 401 without valid Basic auth, 403 without the action."""
 
     def decorator(view: Callable) -> Callable:
         @wraps(view)
         def guarded(*args, **kwargs):  # type: ignore[no-untyped-def]
-            authenticator: Authenticator | None = current_app.extensions.get(
-                "authenticator"
-            )
+            authenticator = _resolve_authenticator()
             user = (
                 authenticator.authenticate(request.headers.get("Authorization"))
                 if authenticator is not None

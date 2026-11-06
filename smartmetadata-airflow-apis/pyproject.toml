@@ -19,6 +19,9 @@ test = ["pytest>=7.0"]
 # the standalone Flask app does not need it.
 workflows = ["smartmetadata-ingestion"]
 
+[project.entry-points."airflow.plugins"]
+smartmetadata_airflow_apis = "smartmetadata_airflow_apis.plugin:SmartMetadataPlugin"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
