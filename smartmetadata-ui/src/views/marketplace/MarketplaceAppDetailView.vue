@@ -15,6 +15,8 @@ import {
   getMarketplaceAppByFqn,
   type MarketplaceApp,
 } from '@/api/marketplaceApps';
+import AppScreenshots, { type AppScreenshotItem } from './AppScreenshots.vue';
+import { getAppScreenshotUrl } from './appScreenshots';
 import { useAuthStore } from '@/stores/auth';
 
 const props = defineProps<{ fqn?: string }>();
@@ -32,9 +34,12 @@ const authStore = useAuthStore();
  * links; main column with the title and the description. The route is
  * AdminProtectedRoute-gated without a permission prop, so the gate here
  * is the admin line alone, the same precedent as the install page.
- * One deliberate adaptation, recorded, not silent: the screenshot
- * names are bundled per-app artwork the product does not ship, so no
- * screenshots region renders (D3美术资源未决：不造假图、不留占位轮播).
+ * The screenshots region renders the official carousel (D3): the names in
+ * `appScreenshots` resolve against the PNGs bundled under
+ * `assets/appScreenshots/` (glob-scanned at build time, so the set follows
+ * whatever files are shipped — with zero PNGs every name degrades to an
+ * empty slot instead of breaking the page; the 5 official PNGs are
+ * uploaded to the branch separately and appear with no code change).
  * The description now renders through the shared SmMarkdown renderer
  * (A10, same renderer A4 rich-text diffs reuse); the disabled alert
  * carries the official please-contact-us line (without inventing a
@@ -51,6 +56,13 @@ const isInstalled = ref(false);
 
 const appName = computed(() => appData.value?.displayName || appData.value?.name || '');
 const appInitial = computed(() => appName.value.charAt(0).toUpperCase() || '?');
+const screenshotItems = computed<AppScreenshotItem[]>(() =>
+  (appData.value?.appScreenshots ?? []).map((name) => ({
+    key: name,
+    name,
+    src: getAppScreenshotUrl(name),
+  })),
+);
 const isAppDisabled = computed(() => appData.value?.enabled === false);
 const isCacheWarmupDisabled = computed(
   () =>
@@ -204,6 +216,11 @@ onMounted(() => {
             </div>
           </div>
           <div style="flex: 1; min-width: 0">
+            <AppScreenshots
+              v-if="screenshotItems.length > 0"
+              :key="fqn"
+              :screenshots="screenshotItems"
+            />
             <SmMarkdown
               :markdown="appData.description ?? ''"
               test-id="marketplace-app-detail-description"

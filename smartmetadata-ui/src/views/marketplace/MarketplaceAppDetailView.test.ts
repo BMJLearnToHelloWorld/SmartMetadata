@@ -5,11 +5,28 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
+import { nextTick } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
 import MarketplaceAppDetailView from './MarketplaceAppDetailView.vue';
+
+/**
+ * The carousel tests must not depend on which PNGs happen to be on disk:
+ * the images are left empty (Bai 2026-11-06), so the bundled set can be
+ * zero and the real resolver would return `undefined` for every name. The
+ * resolver is stubbed at the module boundary with the same contract (known
+ * names resolve, anything else degrades to `undefined`); the real
+ * resolver-to-files wiring is covered by `appScreenshots.test.ts`, which
+ * reads the same directory the resolver scans.
+ */
+vi.mock('./appScreenshots', () => ({
+  getAppScreenshotUrl: (name: string): string | undefined =>
+    name === 'DataInsightsPic1' || name === 'DataInsightsReportPic1'
+      ? `/assets/appScreenshots/${name}.png`
+      : undefined,
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -152,6 +169,66 @@ describe('MarketplaceAppDetailView', () => {
     await wrapper.find('[data-testid="marketplace-app-detail-browse"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('marketplace-app-catalog');
+  });
+
+  it('renders the screenshots carousel for known screenshot names', async () => {
+    const { wrapper } = await mountDetail({
+      appScreenshots: ['DataInsightsPic1', 'DataInsightsReportPic1'],
+    });
+    expect(wrapper.find('[data-testid="app-screenshots"]').exists()).toBe(true);
+    const slides = wrapper.findAll('[data-testid="app-screenshots-slide"]');
+    expect(slides).toHaveLength(2);
+    expect(slides[0].attributes('aria-hidden')).toBe('false');
+    expect(slides[1].attributes('aria-hidden')).toBe('true');
+    const images = wrapper.findAll('[data-testid="app-screenshots-slide"] img');
+    expect(images).toHaveLength(2);
+    expect(images[0].attributes('src')).toContain('DataInsightsPic1.png');
+    expect(images[1].attributes('src')).toContain('DataInsightsReportPic1.png');
+    expect(wrapper.findAll('[data-testid="app-screenshots-dot"]')).toHaveLength(2);
+    expect(wrapper.find('[data-testid="app-screenshots-play-pause"]').text()).toBe('Pause');
+  });
+
+  it('advances to the next screenshot after 3s and pauses on toggle', async () => {
+    const { wrapper } = await mountDetail({
+      appScreenshots: ['DataInsightsPic1', 'DataInsightsReportPic1'],
+    });
+    vi.advanceTimersByTime(3000);
+    await nextTick();
+    const slides = wrapper.findAll('[data-testid="app-screenshots-slide"]');
+    expect(slides[0].attributes('aria-hidden')).toBe('true');
+    expect(slides[1].attributes('aria-hidden')).toBe('false');
+    await wrapper.find('[data-testid="app-screenshots-play-pause"]').trigger('click');
+    expect(wrapper.find('[data-testid="app-screenshots-play-pause"]').text()).toBe('Play');
+    vi.advanceTimersByTime(6000);
+    await nextTick();
+    const held = wrapper.findAll('[data-testid="app-screenshots-slide"]');
+    expect(held[1].attributes('aria-hidden')).toBe('false');
+  });
+
+  it('jumps to the selected screenshot on dot click', async () => {
+    const { wrapper } = await mountDetail({
+      appScreenshots: ['DataInsightsPic1', 'DataInsightsReportPic1'],
+    });
+    const dots = wrapper.findAll('[data-testid="app-screenshots-dot"]');
+    await dots[1].trigger('click');
+    await nextTick();
+    const slides = wrapper.findAll('[data-testid="app-screenshots-slide"]');
+    expect(slides[0].attributes('aria-hidden')).toBe('true');
+    expect(slides[1].attributes('aria-hidden')).toBe('false');
+  });
+
+  it('renders an empty slot for an unknown screenshot name without breaking the page', async () => {
+    const { wrapper } = await mountDetail({ appScreenshots: ['NoSuchScreenshot'] });
+    expect(wrapper.find('[data-testid="app-screenshots"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="app-screenshots-slide"]')).toHaveLength(1);
+    expect(wrapper.find('[data-testid="app-screenshots-slide"] img').exists()).toBe(false);
+    expect(wrapper.findAll('[data-testid="app-screenshots-dot"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="marketplace-app-detail-body"]').exists()).toBe(true);
+  });
+
+  it('renders no screenshots region when the app has no screenshots', async () => {
+    const { wrapper } = await mountDetail();
+    expect(wrapper.find('[data-testid="app-screenshots"]').exists()).toBe(false);
   });
 
   it('renders the description as markdown through the shared renderer', async () => {
