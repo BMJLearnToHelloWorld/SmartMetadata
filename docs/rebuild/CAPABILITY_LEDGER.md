@@ -1,7 +1,7 @@
-# Capability ledger — after backend #49–#58 + connector P0s, UI parity batches, and main #142
+# Capability ledger — after backend #49–#58 + connector P0s, UI parity batches, and main #147
 
 Factual inventory of Apache-facing capabilities vs product status on
-`main` tip **`f78fad5f2bc0d58f56217daa74009c64a4350032`** (PR [#142](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/142)).
+`main` tip **`2c1b46261ccdbbe9851338888ef8ee64de5bcd97`** (PR [#147](https://github.com/BMJLearnToHelloWorld/SmartMetadata/pull/147)).
 
 Rewritten 2026-11-06 (M-Next C6) against that tip: baseline head moved from
 #72 / `ca7174ff8c95` (≈70 PRs behind); the four conflict rows below were
@@ -208,4 +208,5 @@ Sampler **Partial** means **metadata-only**: the sampler yields schema and stati
 - (docs tip sync 2026-11-01) Ledger header → #72 / `ca7174ff8c95.`; residual honesty: Redshift SystemProfile Partial, PIPELINE_TYPES metadata-only, Agents UI Gap
 - (rewrite 2026-11-06, M-Next C6) Ledger header → #142 / `f78fad5f2b`; corrections: Context Center DROP → landed routes + views; marketplace install OutOfScope → landed (POST /v1/apps); PARITY:79 residual list → all landed; postgres "Companions registered" → data_diff unregistered (C2); Kafka wording narrowed per M-Next B7 (form narrow 1 field, sampler at parity).
 - (Wave 0 Track 2, 2026-11-06) Sampler Partial defined (§11: metadata-only, no live row/message fetch); kafka row "in-flight A-batch" → #143 landed; MCP OutOfScope time-bound to this milestone, 12-tool gap to next milestone (§8/§12/OutOfScope/Next).
+- (header sync 2026-11-06, Wave 0) Ledger header → #147 / `2c1b46261ccd`; Wave 0 landed: T1 Data Diff #145, T2 lean-forms database tier + SSO iSmart #146, T3 upstream P0+P1 ports incl. S4 whole #147 (body rows already updated by those tracks).
 - (in progress 2026-11-01) t228u/t229u A–D: Kafka Sampler; PG/MySQL/Snowflake full chain; Redshift SystemProfile; Agents/PIPELINE_TYPES — ledger rows updated BehaviorMatched (unit); tip/PR pending merge
