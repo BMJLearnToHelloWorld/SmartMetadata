@@ -212,6 +212,21 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
             "source.sourceConfig.config.schemaFilterPattern",
             ".*",
         ),
+        (
+            {"schemaFilterPattern": "sales"},
+            "source.sourceConfig.config.schemaFilterPattern",
+            "sales",
+        ),
+        (
+            {"databaseFilterPattern": "analytics"},
+            "source.sourceConfig.config.databaseFilterPattern",
+            "analytics",
+        ),
+        (
+            {"tableFilterPattern": "orders"},
+            "source.sourceConfig.config.tableFilterPattern",
+            "orders",
+        ),
     ],
 )
 def test_deploy_rejects_out_of_scope_config_before_writing(

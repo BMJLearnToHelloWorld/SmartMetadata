@@ -114,7 +114,12 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
     if not isinstance(config, dict):
         return problems
     table_filter = config.get("tableFilterPattern")
-    if isinstance(table_filter, dict) and (
+    if table_filter is not None and not isinstance(table_filter, dict):
+        # N-10: a present-but-malformed pattern value (e.g. a string)
+        # slips past validation and fails at DAG-parse time with a 500
+        # after files are written; reject it here as Invalid.
+        problems.append("source.sourceConfig.config.tableFilterPattern")
+    elif isinstance(table_filter, dict) and (
         table_filter.get("includes") or table_filter.get("excludes")
     ):
         problems.append("source.sourceConfig.config.tableFilterPattern")
@@ -122,7 +127,11 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
         problems.append("source.sourceConfig.config.includeViews")
     for key in ("schemaFilterPattern", "databaseFilterPattern"):
         pattern = config.get(key)
+        if pattern is None:
+            continue
         if not isinstance(pattern, dict):
+            # N-10, same as tableFilterPattern above.
+            problems.append(f"source.sourceConfig.config.{key}")
             continue
         untranslatable = any(
             not _is_translatable_include(str(entry))

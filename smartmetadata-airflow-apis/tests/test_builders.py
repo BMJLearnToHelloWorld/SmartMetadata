@@ -30,6 +30,7 @@ from typing import Any
 import pytest
 
 import smartmetadata_airflow_apis.workflows.common as common_module
+from smartmetadata_airflow_apis.run_id import clean_dag_id, pipeline_run_id
 from smartmetadata_airflow_apis.workflows import builders  # noqa: F401  (registers builders)
 from smartmetadata_airflow_apis.workflows.registry import get_builder, registered_types
 from smartmetadata_airflow_apis.workflows.translation import TranslationError
@@ -283,3 +284,85 @@ def test_translatable_source_config_override_narrows_run(
     )
     assert len(runner_calls) == 1
     assert runner_calls[0]["source"]["includeSchemas"] == ["sales"]
+
+
+# --- failure-callback run id (ruling §1.5.3, fix-round B-4) --------------
+# The failure callbacks must derive the run id from the REGISTERED dag id,
+# not the raw pipeline name: for a name needing cleaning ("my.pipe" ->
+# "my_pipe") the raw name produces a different uuid5, so the failed
+# writeback would land on a run the server never saw.
+
+_SCHEDULED_RUN_ID = "scheduled__2026-11-06T00:00:00+00:00"
+
+
+def _scheduled_failure(
+    monkeypatch: pytest.MonkeyPatch, with_dag_id: bool
+) -> tuple[list[str], list[tuple[str, dict]], str]:
+    """Run a scheduled run of a dotted-name pipeline, then fire the
+    task-level failure callback; returns (worker run ids, writebacks,
+    expected run id)."""
+    builder = get_builder("metadata")
+    assert builder is not None
+    pipeline = _pipeline("my.pipe", "metadata")
+    dag = builder(pipeline)
+    assert dag.dag_id == "my_pipe"
+    task = _task(dag, "ingestion_task")
+    fake_run = SimpleNamespace(conf={}, run_id=_SCHEDULED_RUN_ID)
+    if with_dag_id:
+        fake_run.dag_id = dag.dag_id
+    worker_ids: list[str] = []
+    writebacks: list[tuple[str, dict]] = []
+
+    def fake_runner(config: dict, rid: str, raise_on_error: bool) -> None:
+        worker_ids.append(rid)
+
+    class FakeRestClient:
+        def __init__(self, server: Any) -> None:
+            pass
+
+        def add_pipeline_status(self, fqn: str, payload: dict) -> None:
+            writebacks.append((fqn, payload))
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(common_module, "run_pipeline_workflow", fake_runner)
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.client.rest.RestClient", FakeRestClient
+    )
+    task._run(dag_run=fake_run)
+    common_module.send_failed_status_callback(
+        task._workflow_config,
+        pipeline,
+        {"dag_run": fake_run, "task_instance": None},
+    )
+    expected = str(pipeline_run_id(clean_dag_id("my.pipe"), _SCHEDULED_RUN_ID))
+    return worker_ids, writebacks, expected
+
+
+def test_failed_callback_writeback_uses_registered_dag_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_ids, writebacks, expected = _scheduled_failure(monkeypatch, True)
+    assert len(worker_ids) == 1
+    assert worker_ids[0] == expected
+    assert len(writebacks) == 1
+    fqn, payload = writebacks[0]
+    assert fqn == "svc.my.pipe"
+    assert payload["runId"] == expected
+    assert payload["pipelineState"] == "failed"
+
+
+def test_failed_callback_writeback_falls_back_to_cleaned_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No dag_id attribute on the dag_run (as in the re-review repro):
+    # _send_failed falls back to clean_dag_id(name) and still converges.
+    worker_ids, writebacks, expected = _scheduled_failure(monkeypatch, False)
+    assert len(worker_ids) == 1
+    assert worker_ids[0] == expected
+    assert len(writebacks) == 1
+    fqn, payload = writebacks[0]
+    assert fqn == "svc.my.pipe"
+    assert payload["runId"] == expected
+    assert payload["pipelineState"] == "failed"

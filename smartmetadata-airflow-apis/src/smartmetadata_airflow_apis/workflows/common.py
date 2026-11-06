@@ -310,7 +310,17 @@ def _send_failed(
     context: Any,
 ) -> None:
     dag_run = context.get("dag_run") if isinstance(context, dict) else None
-    run_id = _resolve_run_id(pipeline.get("name", ""), dag_run)
+    # B-4: derive the run id from the REGISTERED dag id, not the raw
+    # pipeline name. The worker resolves with self.dag_id
+    # (clean_dag_id(name)); the raw name here produced a different uuid5
+    # for names needing cleaning ("my.pipe" -> "my_pipe"), so the failed
+    # writeback landed on a run the server never saw. dag_run.dag_id is
+    # the registered id (the official worker uses it too); fall back to
+    # the cleaned name when there is no dag_run.
+    dag_id = getattr(dag_run, "dag_id", None) or clean_dag_id(
+        pipeline.get("name", "")
+    )
+    run_id = _resolve_run_id(dag_id, dag_run)
     start_ms = None
     if isinstance(context, dict):
         task_instance = context.get("task_instance")
