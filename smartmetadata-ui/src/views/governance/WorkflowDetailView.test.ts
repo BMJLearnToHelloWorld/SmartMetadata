@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { approvalFixture } from '@/components/governance/workflowBuilder/testHarness';
 import WorkflowDetailView from './WorkflowDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -22,41 +23,43 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function stubFetch(): void {
+function stubFetch(definitionStatus = 200): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes('/v1/governance/workflowDefinitions/name/')) {
+        if (definitionStatus !== 200) {
+          return jsonResponse({ message: 'error' }, definitionStatus);
+        }
+        return jsonResponse(approvalFixture());
+      }
       if (url.includes('/v1/governance/workflowInstances')) {
         return jsonResponse({
           data: [
             {
-              id: 'i1',
-              status: 'SUCCESS',
-              startedAt: 1700000000000,
-              variables: { relatedEntity: '<#E::table::svc.db.schema.tbl>' },
+              id: 'run-1',
+              status: 'FINISHED',
+              startedAt: 1_700_000_000_000,
+              endedAt: 1_700_000_090_000,
+              variables: {
+                global_relatedEntity: '<#E::table::svc.db.schema.orders>',
+              },
             },
           ],
           paging: { total: 1 },
         });
       }
-      return jsonResponse({
-        id: 'w1',
-        name: 'nightly-dq',
-        fullyQualifiedName: 'nightly-dq',
-        displayName: 'Nightly DQ',
-        description: 'Runs nightly checks',
-        version: 3,
-        trigger: { type: 'schedule', schedule: '0 0 * * *' },
-        nodes: [{ name: 'notify', type: 'action' }],
-        edges: [{ from: 'start', to: 'notify' }],
-        config: { retries: 2 },
-      });
+      if (url.includes('/v1/metadata/types/fields/workflowTriggerFields')) {
+        return jsonResponse({ common: [], entitySpecific: {} });
+      }
+      return jsonResponse({ data: [], paging: { total: 0 } });
     }),
   );
 }
 
-async function mountDetail(path: string) {
+async function mountDetail(path: string, definitionStatus = 200) {
+  stubFetch(definitionStatus);
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -67,6 +70,11 @@ async function mountDetail(path: string) {
         path: '/govern/workflows/:fqn/:tab',
         name: 'workflow-detail',
         component: WorkflowDetailView,
+      },
+      {
+        path: '/assets/:entityType/:fqn',
+        name: 'asset',
+        component: { template: '<div />' },
       },
     ],
   });
@@ -86,30 +94,79 @@ describe('WorkflowDetailView', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    document.body.innerHTML = '';
     localStorage.clear();
   });
 
-  it('renders the definition trigger, nodes, edges and configuration', { timeout: 15000 }, async () => {
-    stubFetch();
-    const { wrapper } = await mountDetail('/govern/workflows/nightly-dq/workflow');
+  it('renders the builder header, tabs and canvas nodes', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
     expect(wrapper.find('[data-testid="workflow-detail"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="workflow-detail-trigger"]').text()).toContain('schedule');
-    expect(wrapper.find('[data-testid="workflow-detail-nodes"]').text()).toContain('notify');
-    expect(wrapper.find('[data-testid="workflow-detail-edges"]').text()).toContain('1');
-    expect(wrapper.find('[data-testid="workflow-detail-configuration"]').text()).toContain('retries');
+    expect(wrapper.find('[data-testid="workflow-title"]').text()).toBe(
+      'Approve Glossary Term',
+    );
+    expect(wrapper.find('[data-testid="workflow-builder-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="workflow-builder-tab"]').text()).toContain(
+      'Workflow Builder',
+    );
+    expect(wrapper.text()).toContain('Execution History');
+    expect(wrapper.findAll('.vue-flow__node')).toHaveLength(4);
+    // View mode: the Edit button is offered, the edit controls are not.
+    expect(wrapper.find('[data-testid="edit-workflow-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="save-workflow-button"]').exists()).toBe(false);
+  });
+
+  it('shows the edit controls in edit mode', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail(
+      '/govern/workflows/approve-glossary-term/workflow?mode=edit',
+    );
+    expect(wrapper.find('[data-testid="edit-workflow-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="cancel-workflow-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="test-workflow-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="save-workflow-button"]').exists()).toBe(true);
   });
 
   it('loads execution history on the history tab', { timeout: 15000 }, async () => {
-    stubFetch();
-    const { wrapper } = await mountDetail('/govern/workflows/nightly-dq/execution-history');
-    expect(wrapper.find('[data-testid="workflow-history-table"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('SUCCESS');
-    expect(wrapper.text()).toContain('svc.db.schema.tbl');
+    const { wrapper } = await mountDetail(
+      '/govern/workflows/approve-glossary-term/execution-history',
+    );
+    expect(wrapper.find('[data-testid="workflow-status-badge-run-1"]').text()).toBe(
+      'Success',
+    );
+    expect(wrapper.find('[data-testid="related-entity-link"]').text()).toBe('orders');
+  });
+
+  it('opens the start-node configuration when a canvas node is clicked', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow?mode=edit');
+    const nodes = wrapper.findAll('.vue-flow__node');
+    expect(nodes.length).toBe(4);
+    await nodes[0].trigger('click');
+    await flushPromises();
+    // The sidebar is an antd Drawer teleported to document.body.
+    expect(document.body.querySelector('[data-testid="node-config-title"]')).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-testid="node-config-title"]')?.textContent,
+    ).toBe('Start Node Configuration');
   });
 
   it('falls back to the workflow tab for an unknown tab', { timeout: 15000 }, async () => {
-    stubFetch();
-    const { router } = await mountDetail('/govern/workflows/nightly-dq/bogus');
+    const { router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
     expect(router.currentRoute.value.params.tab).toBe('workflow');
+  });
+
+  it('renders the forbidden card when the definition load is forbidden', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail(
+      '/govern/workflows/approve-glossary-term/workflow',
+      403,
+    );
+    expect(wrapper.find('[data-testid="workflow-detail-forbidden"]').exists()).toBe(true);
+  });
+
+  it('renders an error card with a retry when the definition load fails', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail(
+      '/govern/workflows/approve-glossary-term/workflow',
+      500,
+    );
+    expect(wrapper.find('[data-testid="workflow-detail-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="workflow-detail-reload"]').exists()).toBe(true);
   });
 });
