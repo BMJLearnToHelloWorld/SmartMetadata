@@ -26,6 +26,7 @@ import {
   getTypeFromSubType,
   getWorkflowNodeTestId,
   isStartNode,
+  isUserApprovalTaskSubType,
   resetNodeIdCounter,
   shouldShowConnectionModal,
 } from './workflowNodeUtils';
@@ -276,5 +277,116 @@ describe('getNodeConfiguration', () => {
     expect(config.output).toEqual(['result']);
     expect(config.branches).toEqual(['true', 'false']);
     expect(config.config).toEqual({ rules: '{"and":[]}' });
+  });
+
+  it('applies the approval config to a stored specific-subtype task without injecting emptyAssigneeStrategy', () => {
+    const approval = {
+      ...flowNode('ReviewFeedback', 'userTask', {
+        subType: 'createRecognizerFeedbackApprovalTask',
+        displayName: 'Review Recognizer Feedback',
+        config: {
+          approvalThreshold: 1,
+          rejectionThreshold: 1,
+          assignees: { addReviewers: true, addOwners: false },
+        },
+      }).data,
+      id: 'ReviewFeedback',
+    };
+    const config = getNodeConfiguration(
+      'userTask',
+      'createRecognizerFeedbackApprovalTask',
+      approval,
+      [approval],
+      [],
+    );
+    expect(config.input).toEqual(['relatedEntity']);
+    expect(config.output).toEqual(['updatedBy']);
+    expect(config.branches).toEqual(['true', 'false']);
+    expect(config.config?.approvalThreshold).toBe(1);
+    expect(config.config?.rejectionThreshold).toBe(1);
+    const assignees = config.config?.assignees as Record<string, unknown>;
+    expect(assignees.addReviewers).toBe(true);
+    expect(assignees.addOwners).toBe(false);
+    expect(assignees.candidates).toEqual([]);
+    // The specific-subtype schema rejects this property, so it must only
+    // appear when the stored config already carries it.
+    expect(assignees).not.toHaveProperty('emptyAssigneeStrategy');
+  });
+
+  it('carries a stored emptyAssigneeStrategy through for the generic approval task', () => {
+    const approval = {
+      ...flowNode('userApprovalTask_1', 'userTask', {
+        subType: 'userApprovalTask',
+        displayName: 'Approve',
+        config: {
+          approvalThreshold: 1,
+          assignees: {
+            addReviewers: true,
+            emptyAssigneeStrategy: 'assignAdmins',
+            candidates: [],
+          },
+        },
+      }).data,
+      id: 'userApprovalTask_1',
+    };
+    const config = getNodeConfiguration(
+      'userTask',
+      'userApprovalTask',
+      approval,
+      [approval],
+      [],
+    );
+    expect(
+      (config.config?.assignees as Record<string, unknown>)
+        .emptyAssigneeStrategy,
+    ).toBe('assignAdmins');
+  });
+
+  it('carries a node description through, and omits it when blank', () => {
+    const withDescription = {
+      ...flowNode('checkEntityAttributesTask_1', 'automatedTask', {
+        subType: 'checkEntityAttributesTask',
+        displayName: 'Check',
+        description: 'Verify the change description',
+        config: { rules: '{"and":[]}' },
+      }).data,
+      id: 'checkEntityAttributesTask_1',
+    };
+    const config = getNodeConfiguration(
+      'automatedTask',
+      'checkEntityAttributesTask',
+      withDescription,
+      [withDescription],
+      [],
+    );
+    expect(config.description).toBe('Verify the change description');
+
+    const withoutDescription = {
+      ...flowNode('checkEntityAttributesTask_1', 'automatedTask', {
+        subType: 'checkEntityAttributesTask',
+        displayName: 'Check',
+        config: { rules: '{"and":[]}' },
+      }).data,
+      id: 'checkEntityAttributesTask_1',
+    };
+    const plain = getNodeConfiguration(
+      'automatedTask',
+      'checkEntityAttributesTask',
+      withoutDescription,
+      [withoutDescription],
+      [],
+    );
+    expect(plain).not.toHaveProperty('description');
+  });
+});
+
+describe('isUserApprovalTaskSubType', () => {
+  it('matches the generic and the stored specific approval subtypes', () => {
+    expect(isUserApprovalTaskSubType('userApprovalTask')).toBe(true);
+    expect(
+      isUserApprovalTaskSubType('createRecognizerFeedbackApprovalTask'),
+    ).toBe(true);
+    expect(isUserApprovalTaskSubType('setEntityAttributeTask')).toBe(false);
+    expect(isUserApprovalTaskSubType(undefined)).toBe(false);
   });
 });

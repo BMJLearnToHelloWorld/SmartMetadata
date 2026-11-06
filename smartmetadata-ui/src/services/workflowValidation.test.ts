@@ -85,6 +85,46 @@ function approvalNode(id = 'userApprovalTask_1'): WorkflowFlowNode {
   };
 }
 
+/** Stored recognizer-feedback approval node, as seeded on the server. */
+function recognizerApprovalNode(): WorkflowFlowNode {
+  return {
+    id: 'ReviewFeedback',
+    type: 'userTask',
+    position: { x: 350, y: 0 },
+    data: {
+      name: 'ReviewFeedback',
+      label: 'Review Recognizer Feedback',
+      displayName: 'Review Recognizer Feedback',
+      subType: 'createRecognizerFeedbackApprovalTask',
+      config: {
+        approvalThreshold: 1,
+        rejectionThreshold: 1,
+        assignees: { addReviewers: true, addOwners: false },
+      },
+    },
+  };
+}
+
+/** Stored trigger of the seeded recognizer-feedback workflow. */
+function recognizerTrigger(): Record<string, unknown> {
+  return {
+    type: 'eventBasedEntity',
+    config: {
+      entityTypes: ['recognizerFeedback'],
+      events: ['Created', 'Updated'],
+      exclude: ['reviewers'],
+      include: [],
+      filter: {},
+    },
+    output: [
+      'relatedEntity',
+      'updatedBy',
+      'triggeringObjectId',
+      'recognizerFeedback',
+    ],
+  };
+}
+
 function setNode(id = 'setEntityAttributeTask_1'): WorkflowFlowNode {
   return {
     id,
@@ -463,6 +503,116 @@ describe('buildWorkflowForSave', () => {
     );
     expect(saved.edges).toHaveLength(1);
     expect(saved.edges?.[0]).toEqual({ from: 'start', to: 'endEvent_1' });
+  });
+
+  it('preserves a stored specific user-task subtype and its approval config', async () => {
+    const nodes = [
+      startNode({ lastSaved: undefined, userModified: undefined }),
+      recognizerApprovalNode(),
+      endNode(),
+    ];
+    const saved = await buildWorkflowForSave(
+      nodes,
+      [
+        { id: 'e1', source: 'start', target: 'ReviewFeedback' },
+        { id: 'e2', source: 'ReviewFeedback', target: 'endEvent_1' },
+      ],
+      definition({ trigger: recognizerTrigger() }),
+      metadata(),
+    );
+    const approval = saved.nodes?.find((n) => n.name === 'ReviewFeedback');
+    expect(approval?.type).toBe('userTask');
+    expect(approval?.subType).toBe('createRecognizerFeedbackApprovalTask');
+    const assignees = (
+      approval?.config as Record<string, unknown> | undefined
+    )?.assignees as Record<string, unknown>;
+    expect(assignees.addReviewers).toBe(true);
+    expect(assignees.addOwners).toBe(false);
+    expect(assignees).not.toHaveProperty('emptyAssigneeStrategy');
+    expect(
+      (approval?.config as Record<string, unknown> | undefined)
+        ?.approvalThreshold,
+    ).toBe(1);
+    expect(
+      (approval?.config as Record<string, unknown> | undefined)
+        ?.rejectionThreshold,
+    ).toBe(1);
+  });
+
+  it('round-trips the stored trigger outputs', async () => {
+    const nodes = [
+      startNode({ lastSaved: undefined, userModified: undefined }),
+      recognizerApprovalNode(),
+      endNode(),
+    ];
+    const saved = await buildWorkflowForSave(
+      nodes,
+      [
+        { id: 'e1', source: 'start', target: 'ReviewFeedback' },
+        { id: 'e2', source: 'ReviewFeedback', target: 'endEvent_1' },
+      ],
+      definition({ trigger: recognizerTrigger() }),
+      metadata(),
+    );
+    expect(
+      (saved.trigger as { output?: string[] } | undefined)?.output,
+    ).toEqual([
+      'relatedEntity',
+      'updatedBy',
+      'triggeringObjectId',
+      'recognizerFeedback',
+    ]);
+  });
+
+  it('falls back to the default trigger outputs when the trigger type changed', async () => {
+    const nodes = [
+      startNode({
+        triggerType: 'Periodic Batch',
+        scheduleType: 'Scheduled',
+        cronExpression: '0 0 * * *',
+        batchSize: 50,
+      }),
+      recognizerApprovalNode(),
+      endNode(),
+    ];
+    const saved = await buildWorkflowForSave(
+      nodes,
+      [
+        { id: 'e1', source: 'start', target: 'ReviewFeedback' },
+        { id: 'e2', source: 'ReviewFeedback', target: 'endEvent_1' },
+      ],
+      definition({ trigger: recognizerTrigger() }),
+      metadata(),
+    );
+    expect(saved.type).toBe('periodicBatchEntity');
+    expect(
+      (saved.trigger as { output?: string[] } | undefined)?.output,
+    ).toEqual(['relatedEntity', 'updatedBy']);
+  });
+
+  it('carries node descriptions through to the save payload', async () => {
+    const approval = approvalNode();
+    approval.data = { ...approval.data, description: 'Approve the change' };
+    const end = endNode();
+    end.data = { ...end.data, description: 'Workflow finished' };
+    const nodes = [startNode(), approval, end];
+    const saved = await buildWorkflowForSave(
+      nodes,
+      [
+        { id: 'e1', source: 'start', target: 'userApprovalTask_1' },
+        { id: 'e2', source: 'userApprovalTask_1', target: 'endEvent_1' },
+      ],
+      definition(),
+      metadata(),
+    );
+    const savedApproval = saved.nodes?.find(
+      (n) => n.name === 'userApprovalTask_1',
+    );
+    expect(savedApproval?.description).toBe('Approve the change');
+    const savedEnd = saved.nodes?.find((n) => n.name === 'endEvent_1');
+    expect(savedEnd?.description).toBe('Workflow finished');
+    const start = saved.nodes?.find((n) => n.name === 'start');
+    expect(start).not.toHaveProperty('description');
   });
 });
 

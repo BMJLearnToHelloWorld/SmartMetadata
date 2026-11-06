@@ -422,6 +422,7 @@ export interface WorkflowNodeConfiguration {
   subType: string;
   name: string;
   displayName?: string;
+  description?: string;
   input?: string[];
   inputNamespaceMap?: Record<string, string>;
   output?: string[];

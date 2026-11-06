@@ -315,11 +315,23 @@ function handleDrop(event: DragEvent): void {
 <style scoped>
 .workflow-canvas {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   width: 100%;
   overflow: hidden;
   background: var(--sm-content-bg);
+}
+
+/* The flow surface is a flex item, not a percentage height: the wrapper's
+ * height can sit on its min-height floor (not a definite height), so the
+ * library's `.vue-flow { height: 100% }` resolves to 0px and the canvas
+ * paints blank. Same treatment as LineageGraph's `.lineage-graph
+ * :deep(.vue-flow)` — a flex item gets its size from flex layout. */
+.workflow-canvas :deep(.vue-flow) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .workflow-canvas__focus-overlay {
