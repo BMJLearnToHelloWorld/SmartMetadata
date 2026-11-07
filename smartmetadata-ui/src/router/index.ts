@@ -217,7 +217,9 @@ export const router = createRouter({
         // redirect (entry-only; later visits resolve to Home).
         { path: '', component: PersonaLandingRedirect },
         { path: 'my-data', name: 'home', component: MyDataView, meta: { flush: true } },
-        { path: 'search', name: 'search', component: SearchView },
+        // G-01 (visual comparison): official EXPLORE '/explore'
+        // (constants.ts:155); the product search lives at /search.
+        { path: 'search', name: 'search', component: SearchView, alias: 'explore' },
         {
           path: 'assets/:entityType/:fqn',
           name: 'asset',
@@ -231,7 +233,10 @@ export const router = createRouter({
           props: true,
         },
         { path: 'insights', name: 'insights', component: InsightsView },
-        { path: 'insights/data-assets', name: 'insights-data-assets', component: DataAssetsView },
+        // G-10 (visual comparison): official DATA_INSIGHT_WITH_TAB
+        // '/data-insights/:tab' with tab 'data-assets'
+        // (DataInsightTabs.DATA_ASSETS='data-assets').
+        { path: 'insights/data-assets', name: 'insights-data-assets', component: DataAssetsView, alias: 'data-insights/data-assets' },
         { path: 'insights/app-analytics', name: 'insights-app-analytics', component: AppAnalyticsView },
         { path: 'insights/kpis', name: 'insights-kpis', component: KpiListView },
         { path: 'insights/kpis/add', name: 'insights-kpis-add', component: KpiFormView },
@@ -261,7 +266,12 @@ export const router = createRouter({
         { path: 'admin/roles/:id', name: 'admin-role', component: RoleDetailView, props: true },
         { path: 'admin/bots', name: 'admin-bots', component: BotsListView },
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
-        { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView },
+        // G-09 (visual comparison): official SETTINGS '/settings'
+        // (SettingsRouter at '/settings/*'). The alias is admin-gated
+        // by the '/settings' entry in ADMIN_ROUTE_PREFIXES (guards.ts);
+        // without it the path-based guard would not recognise the
+        // alias URL as an admin path.
+        { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView, alias: 'settings' },
         { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
         { path: 'admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
         // P2 B R-5: official Settings/Users/AdminPermissionDebugger
@@ -338,7 +348,9 @@ export const router = createRouter({
           component: CustomPropertyTypeDetailView,
           props: true,
         },
-        { path: 'governance/glossaries', name: 'governance-glossaries', component: GlossariesListView },
+        // G-07 (visual comparison): official GLOSSARY '/glossary'
+        // (GlossaryRouter at '/glossary/*').
+        { path: 'governance/glossaries', name: 'governance-glossaries', component: GlossariesListView, alias: 'glossary' },
         {
           path: 'governance/glossaries/:id',
           name: 'governance-glossary',
@@ -351,10 +363,12 @@ export const router = createRouter({
           component: GlossaryTermDetailView,
           props: true,
         },
+        // G-08 (visual comparison): official TAGS '/tags'.
         {
           path: 'governance/classifications',
           name: 'governance-classifications',
           component: ClassificationsListView,
+          alias: 'tags',
         },
         {
           path: 'governance/classifications/:id',
@@ -373,7 +387,10 @@ export const router = createRouter({
             version: route.params.version as string,
           }),
         },
-        { path: 'governance/domains', name: 'governance-domains', component: DomainsListView },
+        // G-05 (visual comparison): official DOMAIN '/domain'
+        // (singular; DomainRouter at '/domain/*'). The plural
+        // '/domains' does not exist in the official framework.
+        { path: 'governance/domains', name: 'governance-domains', component: DomainsListView, alias: 'domain' },
         {
           path: 'governance/domains/:id',
           name: 'governance-domain',
@@ -431,10 +448,14 @@ export const router = createRouter({
             version: route.params.version as string,
           }),
         },
+        // G-06 (visual comparison): official DATA_PRODUCT
+        // '/dataProduct' (camelCase; DataProductListPage). The
+        // '/data-products/products' path does not exist officially.
         {
           path: 'governance/data-products',
           name: 'governance-data-products',
           component: DataProductsListView,
+          alias: 'dataProduct',
         },
         {
           path: 'governance/data-products/:id',
@@ -680,7 +701,9 @@ export const router = createRouter({
           component: TestDefinitionDetailView,
           props: true,
         },
-        { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView },
+        // G-02 (visual comparison): official DATA_QUALITY
+        // '/data-quality'.
+        { path: 'quality/test-cases', name: 'quality-test-cases', component: DataQualityLandingView, alias: 'data-quality' },
         {
           path: 'quality/test-cases/:id',
           name: 'quality-test-case',
@@ -708,18 +731,27 @@ export const router = createRouter({
             tab: route.params.tab as string,
           }),
         },
+        // G-03 (visual comparison), tab half: official
+        // DATA_QUALITY_WITH_TAB '/data-quality/:tab' with tab
+        // 'test-suites' (DataQualityPageTabs.TEST_SUITES). The
+        // redirect keeps the product's ?tab=test-suites behaviour.
         {
           path: 'quality/test-suites',
           name: 'quality-test-suites',
+          alias: 'data-quality/test-suites',
           redirect: (to) => ({
             name: 'quality-test-cases',
             query: { ...to.query, tab: 'test-suites' },
           }),
         },
+        // G-03 (visual comparison), detail half: official
+        // TEST_SUITES_WITH_FQN '/test-suites/:fqn' is a top-level
+        // route (AuthenticatedAppRouter), not a /data-quality child.
         {
           path: 'quality/test-suites/:id',
           name: 'quality-test-suite',
           component: TestSuiteDetailView,
+          alias: 'test-suites/:id',
           props: true,
         },
         {
