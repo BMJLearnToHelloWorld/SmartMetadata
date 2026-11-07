@@ -28,11 +28,9 @@ from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
 
 @register_builder("usage")
 def build_usage_dag(pipeline: dict[str, Any]) -> Any:
-    source = pipeline.get("source") or {}
     workflow_config = translate_pipeline(
         pipeline,
         workflow_type="usage",
-        source_type=f"{source.get('type')}-usage",
     )
     return build_dag(
         "usage_task",

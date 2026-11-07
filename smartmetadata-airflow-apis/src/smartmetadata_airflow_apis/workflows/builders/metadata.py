@@ -24,11 +24,9 @@ from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
 
 @register_builder("metadata")
 def build_metadata_dag(pipeline: dict[str, Any]) -> Any:
-    source = pipeline.get("source") or {}
     workflow_config = translate_pipeline(
         pipeline,
         workflow_type="metadata",
-        source_type=str(source.get("type")),
     )
     return build_dag(
         "ingestion_task",

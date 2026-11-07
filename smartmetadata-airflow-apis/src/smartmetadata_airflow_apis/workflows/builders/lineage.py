@@ -25,11 +25,9 @@ from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
 
 @register_builder("lineage")
 def build_lineage_dag(pipeline: dict[str, Any]) -> Any:
-    source = pipeline.get("source") or {}
     workflow_config = translate_pipeline(
         pipeline,
         workflow_type="lineage",
-        source_type=f"{source.get('type')}-lineage",
     )
     return build_dag(
         "lineage_task",

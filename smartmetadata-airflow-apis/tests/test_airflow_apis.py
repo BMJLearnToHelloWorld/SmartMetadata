@@ -38,17 +38,20 @@ class _RecordingStore(MemoryDagStore):
 
 
 def _deploy_body(source_config: dict | None = None, name: str = "scope_demo") -> dict:
+    # Entity form (ruling §3.1, fix-round): top-level sourceConfig +
+    # service reference; the deploy validation requires the entity
+    # fields (sourceConfig, service, airflowConfig, jwtToken), so the
+    # scope tests below only ever fail on the scope itself.
     return {
         "name": name,
         "pipelineType": "metadata",
-        "source": {
-            "type": "mysql",
-            "serviceName": "my_sql_test",
-            "sourceConfig": {"config": source_config or {}},
-        },
+        "service": {"type": "databaseService", "name": "my_sql_test"},
+        "sourceConfig": {"config": source_config or {}},
         "openMetadataServerConnection": {
-            "hostPort": "http://openmetadata-server:8585/api"
+            "hostPort": "http://openmetadata-server:8585/api",
+            "securityConfig": {"jwtToken": "test-jwt"},
         },
+        "airflowConfig": {},
     }
 
 
@@ -101,10 +104,13 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
         json={
             "name": "ingest_demo",
             "pipelineType": "metadata",
-            "source": {"type": "mysql", "serviceName": "my_sql_test"},
+            "service": {"type": "databaseService", "name": "my_sql_test"},
+            "sourceConfig": {"config": {}},
             "openMetadataServerConnection": {
-                "hostPort": "http://openmetadata-server:8585/api"
+                "hostPort": "http://openmetadata-server:8585/api",
+                "securityConfig": {"jwtToken": "test-jwt"},
             },
+            "airflowConfig": {},
         },
         headers=_auth_headers(),
     )
@@ -180,52 +186,52 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
     [
         (
             {"tableFilterPattern": {"includes": ["orders"]}},
-            "source.sourceConfig.config.tableFilterPattern",
+            "sourceConfig.config.tableFilterPattern",
             "orders",
         ),
         (
             {"tableFilterPattern": {"excludes": ["tmp_*"]}},
-            "source.sourceConfig.config.tableFilterPattern",
+            "sourceConfig.config.tableFilterPattern",
             "tmp_*",
         ),
         (
             {"includeViews": False},
-            "source.sourceConfig.config.includeViews",
+            "sourceConfig.config.includeViews",
             "False",
         ),
         (
             {"schemaFilterPattern": {"includes": ["prod.*"]}},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
             "prod.*",
         ),
         (
             {"schemaFilterPattern": {"includes": ["^my.db$"]}},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
             "my.db",
         ),
         (
             {"databaseFilterPattern": {"includes": ["db|other"]}},
-            "source.sourceConfig.config.databaseFilterPattern",
+            "sourceConfig.config.databaseFilterPattern",
             "db|other",
         ),
         (
             {"schemaFilterPattern": {"excludes": [".*"]}},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
             ".*",
         ),
         (
             {"schemaFilterPattern": "sales"},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
             "sales",
         ),
         (
             {"databaseFilterPattern": "analytics"},
-            "source.sourceConfig.config.databaseFilterPattern",
+            "sourceConfig.config.databaseFilterPattern",
             "analytics",
         ),
         (
             {"tableFilterPattern": "orders"},
-            "source.sourceConfig.config.tableFilterPattern",
+            "sourceConfig.config.tableFilterPattern",
             "orders",
         ),
     ],
@@ -265,9 +271,9 @@ def test_deploy_scope_reports_all_violations() -> None:
     )
     assert res.status_code == 400
     error = res.get_json()["error"]
-    assert "source.sourceConfig.config.tableFilterPattern" in error
-    assert "source.sourceConfig.config.includeViews" in error
-    assert "source.sourceConfig.config.schemaFilterPattern" in error
+    assert "sourceConfig.config.tableFilterPattern" in error
+    assert "sourceConfig.config.includeViews" in error
+    assert "sourceConfig.config.schemaFilterPattern" in error
     assert store.deploy_calls == []
 
 
@@ -296,6 +302,92 @@ def test_deploy_accepts_expressible_scope(config: dict) -> None:
     )
     assert res.status_code == 200
     assert len(store.deploy_calls) == 1
+
+
+# --- Entity-form deploy (ruling §3.1, fix-round) ---------------------------
+# The deploy body is the IngestionPipeline entity the server sends
+# (top-level sourceConfig + service). The stored config is the entity
+# as sent; the old workflow-config form (top-level "source", no
+# sourceConfig/service) is rejected, and so is an entity missing a
+# required field — all before any file is written.
+
+
+def test_deploy_accepts_entity_form_and_stores_it_verbatim() -> None:
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json=_deploy_body(),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 200
+    assert len(store.deploy_calls) == 1
+    stored = store.deploy_calls[0]
+    assert stored["sourceConfig"] == {"config": {}}
+    assert stored["service"] == {"type": "databaseService", "name": "my_sql_test"}
+    assert "source" not in stored
+
+
+def test_deploy_rejects_workflow_config_form() -> None:
+    # The old shape: top-level "source", no top-level sourceConfig or
+    # service. The official deploy route parses the payload as the
+    # entity, so this form is rejected — not silently accepted.
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json={
+            "name": "scope_demo",
+            "pipelineType": "metadata",
+            "source": {
+                "type": "mysql",
+                "serviceName": "my_sql_test",
+                "sourceConfig": {"config": {}},
+            },
+            "openMetadataServerConnection": {
+                "hostPort": "http://openmetadata-server:8585/api",
+                "securityConfig": {"jwtToken": "test-jwt"},
+            },
+            "airflowConfig": {},
+        },
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 400
+    assert "Missing: sourceConfig" in res.get_json()["error"]
+    assert store.deploy_calls == []
+
+
+@pytest.mark.parametrize(
+    ("mutate", "field"),
+    [
+        (lambda b: b.pop("service"), "Missing: service"),
+        (lambda b: b.pop("sourceConfig"), "Missing: sourceConfig"),
+        (
+            lambda b: b["openMetadataServerConnection"].pop("securityConfig"),
+            "Missing: openMetadataServerConnection.securityConfig",
+        ),
+        (
+            lambda b: b["openMetadataServerConnection"].__setitem__(
+                "securityConfig", {}
+            ),
+            "Missing: openMetadataServerConnection.securityConfig.jwtToken",
+        ),
+        (lambda b: b.pop("airflowConfig"), "Missing: airflowConfig"),
+    ],
+)
+def test_deploy_rejects_entity_missing_required_field(mutate: Any, field: str) -> None:
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    body = _deploy_body()
+    mutate(body)
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json=body,
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 400
+    assert field in res.get_json()["error"]
+    assert store.deploy_calls == []
 
 
 # --- Raw pipeline names at the dag_id boundary (ruling §1.5, fix-round B-5) ---
@@ -441,27 +533,27 @@ def test_last_dag_logs_accepts_raw_pipeline_name() -> None:
 
 def _deploy_body_with_source_config(source_config: Any) -> dict:
     body = _deploy_body()
-    body["source"]["sourceConfig"] = source_config
+    body["sourceConfig"] = source_config
     return body
 
 
 @pytest.mark.parametrize(
     ("source_config", "field"),
     [
-        ("oops", "source.sourceConfig"),
-        (["x"], "source.sourceConfig"),
-        ({"config": "oops"}, "source.sourceConfig.config"),
+        ("oops", "sourceConfig"),
+        (["x"], "sourceConfig"),
+        ({"config": "oops"}, "sourceConfig.config"),
         (
             {"config": {"schemaFilterPattern": {"includes": "sales"}}},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
         ),
         (
             {"config": {"databaseFilterPattern": {"excludes": "staging"}}},
-            "source.sourceConfig.config.databaseFilterPattern",
+            "sourceConfig.config.databaseFilterPattern",
         ),
         (
             {"config": {"schemaFilterPattern": {"includes": 123}}},
-            "source.sourceConfig.config.schemaFilterPattern",
+            "sourceConfig.config.schemaFilterPattern",
         ),
     ],
 )

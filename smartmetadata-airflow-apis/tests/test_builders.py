@@ -35,7 +35,12 @@ from smartmetadata_airflow_apis.workflows import builders  # noqa: F401  (regist
 from smartmetadata_airflow_apis.workflows.registry import get_builder, registered_types
 from smartmetadata_airflow_apis.workflows.translation import TranslationError
 
-CONNECTION = {"hostPort": "127.0.0.1:3306", "username": "stub", "password": "stub"}
+CONNECTION = {
+    "type": "MySQL",
+    "hostPort": "127.0.0.1:3306",
+    "username": "stub",
+    "password": "stub",
+}
 
 
 def _pipeline(
@@ -43,17 +48,17 @@ def _pipeline(
     pipeline_type: str = "metadata",
     **overrides: Any,
 ) -> dict[str, Any]:
+    # Entity form (ruling §3.1, fix-round): sourceConfig lives at the
+    # top level and the service is an entity reference; there is no
+    # top-level "source" — the official deploy route parses the payload
+    # as the IngestionPipeline entity.
     pipeline: dict[str, Any] = {
         "name": name,
         "fullyQualifiedName": f"svc.{name}",
         "pipelineType": pipeline_type,
         "description": "",
         "service": {"type": "databaseService", "name": "svc"},
-        "source": {
-            "type": "mysql",
-            "serviceName": "svc",
-            "sourceConfig": {"config": {}},
-        },
+        "sourceConfig": {"config": {}},
         "openMetadataServerConnection": {
             "hostPort": "http://127.0.0.1:8585/api",
             "securityConfig": {"jwtToken": "test-jwt"},
@@ -68,10 +73,12 @@ def _pipeline(
 def _stub_service_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     import smartmetadata_airflow_apis.workflows.translation as translation
 
+    # The stub returns what the live fetch returns: the connection
+    # config plus the service entity's serviceType (ruling §3.3).
     monkeypatch.setattr(
         translation,
         "fetch_service_connection",
-        lambda pipeline, client=None: dict(CONNECTION),
+        lambda pipeline, client=None: (dict(CONNECTION), "Mysql"),
     )
 
 
@@ -127,6 +134,51 @@ def test_lineage_builder_suffixes_source_type() -> None:
     assert task._raise_on_error is False
     assert task._workflow_config["workflow"]["type"] == "lineage"
     assert task._workflow_config["source"]["type"] == "mysql-lineage"
+
+
+def test_source_type_falls_back_to_connection_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ruling §3.3: the source type comes from the live service entity's
+    # serviceType first; when the entity carries none, the connection
+    # config's type is the fallback ("MySQL" -> "mysql").
+    pytest.importorskip("airflow")
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    monkeypatch.setattr(
+        translation,
+        "fetch_service_connection",
+        lambda pipeline, client=None: (dict(CONNECTION), None),
+    )
+    builder = get_builder("metadata")
+    assert builder is not None
+    dag = builder(_pipeline("fallback_demo", "metadata"))
+    assert _task(dag, "ingestion_task")._workflow_config["source"]["type"] == "mysql"
+
+
+def test_source_type_missing_everywhere_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ruling §3.3: neither a serviceType nor a connection type means the
+    # pipeline cannot be expressed — fail loudly instead of silently
+    # building a "None" source (the old workflow-config bug).
+    pytest.importorskip("airflow")
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    typeless = {
+        "hostPort": "127.0.0.1:3306",
+        "username": "stub",
+        "password": "stub",
+    }
+    monkeypatch.setattr(
+        translation,
+        "fetch_service_connection",
+        lambda pipeline, client=None: (dict(typeless), None),
+    )
+    builder = get_builder("metadata")
+    assert builder is not None
+    with pytest.raises(TranslationError):
+        builder(_pipeline("typeless_demo", "metadata"))
 
 
 def test_no_builder_for_unmapped_types() -> None:

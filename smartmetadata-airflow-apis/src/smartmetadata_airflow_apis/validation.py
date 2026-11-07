@@ -37,19 +37,58 @@ def _require_mapping(payload: Any, where: str) -> dict[str, Any]:
     return payload
 
 
-def _require_str(mapping: dict[str, Any], field: str, problems: list[str]) -> str | None:
+def _require_str(
+    mapping: dict[str, Any],
+    field: str,
+    problems: list[str],
+    location: str | None = None,
+) -> str | None:
+    """Require a non-empty string at ``field``; report it as ``location``.
+
+    ``location`` defaults to ``field``; nested fields pass the dotted
+    path (e.g. ``service.type``) so the error names the full location,
+    never just the leaf key.
+    """
     value = mapping.get(field)
+    where = location if location is not None else field
     if value is None:
-        problems.append(_missing(field))
+        problems.append(_missing(where))
         return None
     if not isinstance(value, str) or not value.strip():
-        problems.append(_invalid(field))
+        problems.append(_invalid(where))
+        return None
+    return value
+
+
+def _require_dict(
+    mapping: dict[str, Any],
+    field: str,
+    problems: list[str],
+    location: str | None = None,
+) -> dict[str, Any] | None:
+    """Require a mapping at ``field``; report it as ``location``."""
+    value = mapping.get(field)
+    where = location if location is not None else field
+    if value is None:
+        problems.append(_missing(where))
+        return None
+    if not isinstance(value, dict):
+        problems.append(_invalid(where))
         return None
     return value
 
 
 def validate_ingestion_pipeline(payload: Any) -> dict[str, Any]:
-    """Validate a deploy body; returns it unchanged when it is well-formed."""
+    """Validate a deploy body; returns it unchanged when it is well-formed.
+
+    The deploy body is the IngestionPipeline **entity** the server sends
+    (ruling §3.1, fix-round): top-level ``sourceConfig`` + ``service``,
+    never the workflow-config form's top-level ``source`` — the official
+    deploy route parses the payload as the entity
+    (``parse_ingestion_pipeline_config_gracefully``) and the entity
+    schema has no ``source`` property. A stray top-level ``source`` is
+    ignored, not rejected (ruling §3.2, U-F1).
+    """
     body = _require_mapping(payload, "body")
     problems: list[str] = []
     if not body:
@@ -58,29 +97,37 @@ def validate_ingestion_pipeline(payload: Any) -> dict[str, Any]:
     pipeline_type = _require_str(body, "pipelineType", problems)
     if pipeline_type is not None and pipeline_type not in PIPELINE_TYPES:
         problems.append(_invalid("pipelineType"))
-    source = body.get("source")
-    if source is None:
-        problems.append(_missing("source"))
-    elif not isinstance(source, dict):
-        problems.append(_invalid("source"))
-    else:
-        _require_str(source, "type", problems)
-        _require_str(source, "serviceName", problems)
-    server_conn = body.get("openMetadataServerConnection")
-    if server_conn is None:
-        problems.append(_missing("openMetadataServerConnection"))
-    elif not isinstance(server_conn, dict):
-        problems.append(_invalid("openMetadataServerConnection"))
-    else:
+    # Entity fields (schema-required): sourceConfig + airflowConfig.
+    _require_dict(body, "sourceConfig", problems)
+    service = _require_dict(body, "service", problems)
+    if service is not None:
+        _require_str(service, "type", problems, location="service.type")
+        _require_str(service, "name", problems, location="service.name")
+    _require_dict(body, "airflowConfig", problems)
+    server_conn = _require_dict(body, "openMetadataServerConnection", problems)
+    if server_conn is not None:
         _require_str(server_conn, "hostPort", problems)
+        security = _require_dict(
+            server_conn,
+            "securityConfig",
+            problems,
+            location="openMetadataServerConnection.securityConfig",
+        )
+        if security is not None:
+            _require_str(
+                security,
+                "jwtToken",
+                problems,
+                location="openMetadataServerConnection.securityConfig.jwtToken",
+            )
     if problems:
         raise ValidationError(problems)
     # Deploy-time scope (ruling §4.2 T-1/T-2 + literal-pattern rule):
     # checked here, before any file is written, so a violation is a 400
     # naming only the field location — never a 500 after partial writes
     # that would leave a broken DAG file behind for the dag-processor.
-    source = body.get("source") or {}
-    scope_problems = deploy_scope_problems(source.get("sourceConfig"))
+    # The scope input is the top-level sourceConfig (entity form).
+    scope_problems = deploy_scope_problems(body.get("sourceConfig"))
     if scope_problems:
         raise ValidationError([_invalid(field) for field in scope_problems])
     return body

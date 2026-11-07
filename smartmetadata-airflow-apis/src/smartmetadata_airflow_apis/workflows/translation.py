@@ -115,7 +115,7 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
     if not isinstance(source_config, dict):
         # N-11: a present-but-malformed sourceConfig (e.g. a string)
         # raises AttributeError instead of a 400 naming the field.
-        problems.append("source.sourceConfig")
+        problems.append("sourceConfig")
         return problems
     config = source_config.get("config")
     if config is None:
@@ -123,27 +123,27 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
     if not isinstance(config, dict):
         # N-11: a present-but-malformed config (e.g. a string) passes
         # validation, then fails at DAG-parse time after files are written.
-        problems.append("source.sourceConfig.config")
+        problems.append("sourceConfig.config")
         return problems
     table_filter = config.get("tableFilterPattern")
     if table_filter is not None and not isinstance(table_filter, dict):
         # N-10: a present-but-malformed pattern value (e.g. a string)
         # slips past validation and fails at DAG-parse time with a 500
         # after files are written; reject it here as Invalid.
-        problems.append("source.sourceConfig.config.tableFilterPattern")
+        problems.append("sourceConfig.config.tableFilterPattern")
     elif isinstance(table_filter, dict) and (
         table_filter.get("includes") or table_filter.get("excludes")
     ):
-        problems.append("source.sourceConfig.config.tableFilterPattern")
+        problems.append("sourceConfig.config.tableFilterPattern")
     if config.get("includeViews") is False:
-        problems.append("source.sourceConfig.config.includeViews")
+        problems.append("sourceConfig.config.includeViews")
     for key in ("schemaFilterPattern", "databaseFilterPattern"):
         pattern = config.get(key)
         if pattern is None:
             continue
         if not isinstance(pattern, dict):
             # N-10, same as tableFilterPattern above.
-            problems.append(f"source.sourceConfig.config.{key}")
+            problems.append(f"sourceConfig.config.{key}")
             continue
         if any(
             sub in pattern and not isinstance(pattern[sub], list)
@@ -152,7 +152,7 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
             # N-11: non-list includes/excludes iterate per character at
             # parse time (a string "sales" becomes ["s", "a", "l", "e",
             # "s"]) — a silent wrong scope with no error anywhere.
-            problems.append(f"source.sourceConfig.config.{key}")
+            problems.append(f"sourceConfig.config.{key}")
             continue
         untranslatable = any(
             not _is_translatable_include(str(entry))
@@ -162,7 +162,7 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
             for entry in pattern.get("excludes") or []
         )
         if untranslatable:
-            problems.append(f"source.sourceConfig.config.{key}")
+            problems.append(f"sourceConfig.config.{key}")
     return problems
 
 
@@ -224,12 +224,19 @@ def fetch_service_connection(
     pipeline: dict[str, Any],
     *,
     client: Any | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str | None]:
     """Fetch the service's live connection from the server (parse time).
 
     The stored pipeline JSON is never trusted for the connection: the
     server is the source of truth, so a rotated secret or changed
     connection takes effect on the next DAG parse without a re-deploy.
+
+    Returns ``(connection config, service type)``: the service type is
+    the live service entity's ``serviceType`` (e.g. ``"Mysql"``), or
+    ``None`` when the entity carries none — the caller falls back to
+    the connection config's ``type``. The service name comes from the
+    entity reference (``pipeline["service"]["name"]``), like the
+    official ``build_source``.
     """
     from smartmetadata_ingestion.client.rest import RestClient
     from smartmetadata_ingestion.config import ServerConfig
@@ -242,8 +249,7 @@ def fetch_service_connection(
         path = _SERVICE_PATHS.get(service_type)
         if path is None:
             raise TranslationError(f"unknown service type {service_type!r}")
-        source = pipeline.get("source") or {}
-        service_name = source.get("serviceName")
+        service_name = service.get("name")
         from urllib.parse import quote
 
         entity = rest.request(
@@ -255,7 +261,7 @@ def fetch_service_connection(
             raise TranslationError(
                 f"service {service_name!r} has no connection config on the server"
             )
-        return config
+        return config, (entity or {}).get("serviceType")
     finally:
         if client is None:
             try:
@@ -268,15 +274,23 @@ def translate_pipeline(
     pipeline: dict[str, Any],
     *,
     workflow_type: str,
-    source_type: str,
-    service_connection: dict[str, Any] | None = None,
+    service_connection: tuple[dict[str, Any], str | None] | None = None,
     server_client: Any | None = None,
     raise_on_error: bool | None = None,
 ) -> Any:
     """Build the product WorkflowConfig for one pipeline.
 
-    ``service_connection`` overrides the live fetch (tests); otherwise the
-    connection is fetched from the server at parse time.
+    ``service_connection`` overrides the live fetch (tests): a
+    ``(config, service type)`` pair, as ``fetch_service_connection``
+    returns; otherwise the connection and the service type are fetched
+    live from the server at parse time.
+
+    The source type is derived from the live service — the service
+    entity's ``serviceType`` when present, else the connection config's
+    ``type`` — lowercased, with the usage/lineage suffix per
+    ``workflow_type`` (official ``build_source`` + usage/lineage
+    builders). Neither source means the pipeline cannot be expressed:
+    fail loudly instead of silently building a ``"None"`` source.
 
     ``raise_on_error`` overrides the pipeline's own value when given: the
     official profiler (and test_suite) builders omit raiseOnError, so their
@@ -288,8 +302,7 @@ def translate_pipeline(
     if raise_on_error is None:
         raise_on_error = bool(pipeline.get("raiseOnError", False))
 
-    source = pipeline.get("source") or {}
-    source_config = source.get("sourceConfig") or {}
+    source_config = pipeline.get("sourceConfig") or {}
     config_block = source_config.get("config") or {}
     check_source_config_scope(source_config)
     schema_includes, schema_excludes = translate_filter_pattern(
@@ -311,9 +324,27 @@ def translate_pipeline(
             pipeline.get("name"),
         )
     if service_connection is None:
-        service_connection = fetch_service_connection(
+        service_connection, service_type = fetch_service_connection(
             pipeline, client=server_client
         )
+    else:
+        service_connection, service_type = service_connection
+    base_type = (service_type or service_connection.get("type") or "").strip()
+    if not base_type:
+        raise TranslationError(
+            "cannot derive the source type: the service has neither "
+            "a serviceType nor a connection type"
+        )
+    base_type = base_type.lower()
+    if workflow_type == "usage":
+        source_type = f"{base_type}-usage"
+    elif workflow_type == "lineage":
+        source_type = f"{base_type}-lineage"
+    else:
+        source_type = base_type
+    service = pipeline.get("service") or {}
+    service_name = service.get("name")
+    service_display_name = service.get("displayName") or service_name
     raw = {
         "workflow": {
             "name": pipeline.get("name"),
@@ -325,8 +356,8 @@ def translate_pipeline(
         "server": _server_config(pipeline),
         "source": {
             "type": source_type,
-            "serviceName": source.get("serviceName"),
-            "serviceDisplayName": source.get("serviceDisplayName"),
+            "serviceName": service_name,
+            "serviceDisplayName": service_display_name,
             "connection": service_connection,
             "includeSchemas": schema_includes,
             "excludeSchemas": schema_excludes,
