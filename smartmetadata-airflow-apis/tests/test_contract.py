@@ -42,6 +42,9 @@ def _bad_auth_headers() -> dict[str, str]:
 
 
 def _pipeline(name: str = "my_pipeline", pipeline_type: str = "metadata") -> dict:
+    # Entity form (ruling §3.1, fix-round): top-level sourceConfig +
+    # service reference, as the server sends it. The connection is
+    # fetched live at parse time, never embedded in the deploy body.
     return {
         "id": None,
         "name": name,
@@ -49,30 +52,17 @@ def _pipeline(name: str = "my_pipeline", pipeline_type: str = "metadata") -> dic
         "description": "My Description",
         "pipelineType": pipeline_type,
         "fullyQualifiedName": f"service.{name}",
-        "source": {
-            "type": "mysql",
-            "serviceName": "my_sql_test",
-            "serviceConnection": {
-                "config": {
-                    "type": "MySQL",
-                    "scheme": "mysql+pymysql",
-                    "username": "openmetadata_user",
-                    "authType": {"password": "openmetadata_password"},
-                    "hostPort": "localhost:3306",
-                }
-            },
-            "sourceConfig": {
-                "config": {
-                    "markDeletedTables": True,
-                    "includeViews": True,
-                    "generateSampleData": True,
-                }
-            },
+        "sourceConfig": {
+            "config": {
+                "markDeletedTables": True,
+                "includeViews": True,
+                "generateSampleData": True,
+            }
         },
         "openMetadataServerConnection": {
             "hostPort": "http://openmetadata-server:8585/api",
             "authProvider": "no-auth",
-            "securityConfig": None,
+            "securityConfig": {"jwtToken": "test-jwt"},
         },
         "airflowConfig": {
             "forceDeploy": True,

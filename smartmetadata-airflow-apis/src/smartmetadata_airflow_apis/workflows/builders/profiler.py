@@ -27,11 +27,9 @@ from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
 
 @register_builder("profiler")
 def build_profiler_dag(pipeline: dict[str, Any]) -> Any:
-    source = pipeline.get("source") or {}
     workflow_config = translate_pipeline(
         pipeline,
         workflow_type="profiler",
-        source_type=str(source.get("type")),
         raise_on_error=False,
     )
     return build_dag(
