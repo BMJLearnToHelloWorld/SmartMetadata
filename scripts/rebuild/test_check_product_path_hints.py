@@ -40,7 +40,7 @@ def complete_tree(root: Path) -> None:
         "\n".join(
             [
                 "# Product path",
-                "Product: make slim-dist + smartmetadata-ui + smartmetadata-ingestion + smartmetadata-mcp.",
+                "Product: make slim-dist + smartmetadata-ui + smartmetadata-ingestion + smartmetadata-mcp + smartmetadata-airflow-apis.",
                 "Historical trees stay **reference-only**; do not delete them in this change.",
                 "Product Docker is `make docker-up` / `./docker/rebuild/up.sh`.",
                 "Do not demo with `./docker/run_local_docker.sh` or Collate quickstart images.",
@@ -146,7 +146,8 @@ def complete_tree(root: Path) -> None:
         "  ui:\n    build:\n      context: ../../smartmetadata-ui\n"
         "    ports:\n      - \"8089:80\"\n"
         "  ingest:\n    build:\n      context: ../../smartmetadata-ingestion\n"
-        "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n",
+        "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n"
+        "  airflow:\n    build:\n      dockerfile: docker/rebuild/Dockerfile.airflow\n",
     )
     write(
         root / "docker" / "rebuild" / "docker-compose.cn.yml",
@@ -207,6 +208,10 @@ def complete_tree(root: Path) -> None:
     write(
         root / "docker" / "rebuild" / "Dockerfile.mcp",
         "FROM node:22-bookworm-slim\nCOPY dist ./dist\n",
+    )
+    write(
+        root / "docker" / "rebuild" / "Dockerfile.airflow",
+        "FROM apache/airflow:3.3.2-python3.12\nCOPY smartmetadata-airflow-apis /opt/plugin\n",
     )
     write(
         root / "docker" / "rebuild" / "down.sh",
@@ -316,6 +321,17 @@ class ProductPathHintsContract(unittest.TestCase):
             errors = hints.check_repo(root)
         self.assertTrue(any("docker/rebuild" in item for item in errors), errors)
 
+    def test_product_compose_with_airflow_passes(self) -> None:
+        """Product Apache Airflow service is allowed; CCL service names are not."""
+        hints = load_hints()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            complete_tree(root)
+            errors = hints.check_repo(root)
+        self.assertEqual(errors, [], errors)
+        self.assertIn("airflow", hints.REQUIRED_PRODUCT_SERVICES)
+        self.assertNotIn("airflow", hints.FORBIDDEN_PRODUCT_SERVICES)
+
     def test_product_compose_with_ingestion_fails(self) -> None:
         hints = load_hints()
         with tempfile.TemporaryDirectory() as tmp:
@@ -330,6 +346,7 @@ class ProductPathHintsContract(unittest.TestCase):
                 "  ui:\n    build:\n      context: ../../smartmetadata-ui\n"
                 "  ingest:\n    build:\n      context: ../../smartmetadata-ingestion\n"
                 "  mcp:\n    build:\n      context: ../../smartmetadata-mcp\n"
+                "  airflow:\n    build:\n      dockerfile: docker/rebuild/Dockerfile.airflow\n"
                 "  ingestion:\n    build:\n      dockerfile: ingestion/Dockerfile.ci\n",
                 encoding="utf-8",
             )

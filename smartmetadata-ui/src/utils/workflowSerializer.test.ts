@@ -14,6 +14,7 @@ import type {
   WorkflowDefinitionFull,
 } from '@/types/governance';
 import { buildWorkflowForSave } from '@/services/workflowValidation';
+import { isUserApprovalTaskSubType } from './workflowNodeUtils';
 import { deserializeWorkflow } from './workflowSerializer';
 import { liveWorkflowDefinitions } from './workflowLiveDefinitions';
 
@@ -312,7 +313,10 @@ const SINGLE_INPUT_SUBTYPES = [
  * userApprovalTask (applyUserApprovalConfig): the only subtypes whose config
  * the save path carries forward. Every other subtype's config is rebuilt
  * from scratch and dropped — official drops it too, so the test asserts
- * the drop instead of the keys.
+ * the drop instead of the keys. The stored specific approval subtype
+ * (createRecognizerFeedbackApprovalTask) is carried forward as well: the
+ * save path applies the same approval config to it (live walkthrough,
+ * 2026-11-07).
  */
 const CONFIG_PRESERVING_SUBTYPES = new Set([
   'setEntityAttributeTask',
@@ -323,6 +327,7 @@ const CONFIG_PRESERVING_SUBTYPES = new Set([
   'sinkTask',
   'collectMetadataTask',
   'userApprovalTask',
+  'createRecognizerFeedbackApprovalTask',
 ]);
 
 describe('serializeWorkflow round-trip on the live 21 definitions', () => {
@@ -391,7 +396,13 @@ describe('serializeWorkflow round-trip on the live 21 definitions', () => {
       expect(saved.description).toBe(original.description);
       expect(saved.type).toBe(originalTrigger.type);
       expect(savedTrigger.type).toBe(originalTrigger.type);
-      expect(savedTrigger.output).toEqual(['relatedEntity', 'updatedBy']);
+      // The save round-trips the stored trigger outputs: AutoPilotWorkflow
+      // stores a single output, RecognizerFeedbackReviewWorkflow four —
+      // rebuilding them from a hardcoded pair drops globals the nodes
+      // expect and /validate rejects the save (live walkthrough, 2026-11-07).
+      expect(savedTrigger.output).toEqual(
+        originalTrigger.output ?? ['relatedEntity', 'updatedBy'],
+      );
       expect(
         (saved.config as Record<string, unknown> | undefined)
           ?.storeStageStatus,
@@ -408,8 +419,11 @@ describe('serializeWorkflow round-trip on the live 21 definitions', () => {
       );
 
       // Nodes: same count; the start node is renamed to 'start' (official);
-      // every other node survives by name, user tasks collapse to
-      // userApprovalTask (official), all other subtypes are preserved.
+      // every other node survives by name with its stored subtype — user
+      // tasks keep their specific subtype (e.g. the seeded
+      // createRecognizerFeedbackApprovalTask): the server validates the node
+      // against its specific schema, so collapsing it to the generic
+      // userApprovalTask fails validation (live walkthrough, 2026-11-07).
       expect(savedNodes).toHaveLength(originalNodes.length);
       const savedByName = new Map(savedNodes.map((n) => [n.name, n]));
       const savedStart = savedByName.get('start');
@@ -428,11 +442,7 @@ describe('serializeWorkflow round-trip on the live 21 definitions', () => {
           expect(savedNode?.displayName).toBe('End');
           continue;
         }
-        expect(savedNode?.subType).toBe(
-          originalNode.type === 'userTask'
-            ? 'userApprovalTask'
-            : originalNode.subType,
-        );
+        expect(savedNode?.subType).toBe(originalNode.subType);
       }
 
       // Edges: same multiset after the start rename and the official
@@ -495,7 +505,17 @@ describe('serializeWorkflow round-trip on the live 21 definitions', () => {
             ...assignees,
             addReviewers: assignees.addReviewers ?? true,
             addOwners: assignees.addOwners ?? false,
-            emptyAssigneeStrategy: assignees.emptyAssigneeStrategy ?? 'none',
+            // The specific-subtype schema rejects emptyAssigneeStrategy,
+            // so the save only carries it when the stored config already
+            // has it; the generic schema defaults it to 'none' server-side
+            // (live walkthrough, 2026-11-07).
+            ...(originalNode.subType ===
+            'createRecognizerFeedbackApprovalTask'
+              ? {}
+              : {
+                  emptyAssigneeStrategy:
+                    assignees.emptyAssigneeStrategy ?? 'none',
+                }),
             candidates: assignees.candidates ?? [],
           };
           expected.approvalThreshold = expected.approvalThreshold ?? 1;
@@ -518,7 +538,7 @@ describe('serializeWorkflow round-trip on the live 21 definitions', () => {
           continue;
         }
         const savedNode = savedByName.get(originalNode.name)!;
-        if (savedNode.subType === 'userApprovalTask') {
+        if (isUserApprovalTaskSubType(savedNode.subType)) {
           expect(savedNode.input).toEqual(['relatedEntity']);
           expect(savedNode.output).toEqual(['updatedBy']);
         } else if (SINGLE_INPUT_SUBTYPES.includes(savedNode.subType)) {

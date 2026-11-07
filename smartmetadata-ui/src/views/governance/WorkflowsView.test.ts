@@ -27,7 +27,14 @@ function mountPage() {
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/govern/workflows', name: 'workflows', component: WorkflowsView }],
+    routes: [
+      { path: '/govern/workflows', name: 'workflows', component: WorkflowsView },
+      {
+        path: '/govern/workflows/:fqn/:tab',
+        name: 'workflow-detail',
+        component: { template: '<div>detail stub</div>' },
+      },
+    ],
   });
   return { pinia, router };
 }
@@ -179,5 +186,54 @@ describe('WorkflowsView', () => {
     expect(posts.length).toBe(1);
     expect(posts[0].url).toContain('/api/v1/governance/workflowDefinitions');
     expect(posts[0].body).toMatchObject({ name: 'weekly-sync', description: 'Desc' });
+  });
+
+  it('creates a workflow with the official minimal definition and opens the builder in edit mode', { timeout: 15000 }, async () => {
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          posts.push({ url, body });
+          return jsonResponse({
+            id: 'w2',
+            name: body.name,
+            fullyQualifiedName: body.name,
+            description: body.description,
+          });
+        }
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }),
+    );
+    const { pinia, router } = mountPage();
+    await router.push('/govern/workflows');
+    await router.isReady();
+    const wrapper = mount(WorkflowsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="workflows-create"]').trigger('click');
+    await wrapper.find('[data-testid="workflows-create-name"]').setValue('weekly-sync');
+    await wrapper.find('[data-testid="workflows-create-description"]').setValue('Desc');
+    await wrapper.find('.ant-modal-footer .ant-btn-primary').trigger('click');
+    await flushPromises();
+    expect(posts.length).toBe(1);
+    expect(posts[0].url).toContain('/api/v1/governance/workflowDefinitions');
+    // Official handleModalSubmit (WorkflowsPage): the complete minimal
+    // definition — empty nodes/edges plus a default event-based trigger.
+    expect(posts[0].body).toEqual({
+      description: 'Desc',
+      displayName: 'weekly-sync',
+      edges: [],
+      name: 'weekly-sync',
+      nodes: [],
+      trigger: { config: {}, output: [], type: 'eventBasedEntity' },
+    });
+    expect(router.currentRoute.value.name).toBe('workflow-detail');
+    expect(router.currentRoute.value.params.fqn).toBe('weekly-sync');
+    expect(router.currentRoute.value.params.tab).toBe('workflow');
+    expect(router.currentRoute.value.query.mode).toBe('edit');
   });
 });

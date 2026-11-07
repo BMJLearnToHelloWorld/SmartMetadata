@@ -205,6 +205,16 @@ export interface CreateWorkflowDefinitionRequest {
   name: string;
   description: string;
   displayName?: string;
+  /**
+   * Official handleModalSubmit (WorkflowsPage) sends the complete minimal
+   * definition — empty nodes/edges plus a default event-based trigger — so
+   * the request carries those optional fields. A bare {name, description}
+   * POST 500s server-side (the trigger is null), which is official behavior,
+   * not a product bug.
+   */
+  trigger?: WorkflowTriggerObject;
+  nodes?: WorkflowBackendNode[];
+  edges?: WorkflowBackendEdge[];
 }
 
 // ---------------------------------------------------------------------------
@@ -422,6 +432,7 @@ export interface WorkflowNodeConfiguration {
   subType: string;
   name: string;
   displayName?: string;
+  description?: string;
   input?: string[];
   inputNamespaceMap?: Record<string, string>;
   output?: string[];

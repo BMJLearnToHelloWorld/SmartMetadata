@@ -16,6 +16,7 @@ services:
         ALPINE_IMAGE: alpine:3
         TEMURIN_IMAGE: eclipse-temurin:21-jdk
         DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot
+        DISTROLESS_BASE_IMAGE: gcr.io/distroless/base-debian13:debug-nonroot
 
   openmetadata-server:
     build:
@@ -23,6 +24,7 @@ services:
         ALPINE_IMAGE: alpine:3
         TEMURIN_IMAGE: eclipse-temurin:21-jdk
         DISTROLESS_IMAGE: gcr.io/distroless/cc-debian13:debug-nonroot
+        DISTROLESS_BASE_IMAGE: gcr.io/distroless/base-debian13:debug-nonroot
 
   ui:
     build:

@@ -20,6 +20,7 @@ ADR:2026-10-23-product-docker-is-rebuild-only.
 | Console | `smartmetadata-ui/` | product compose `ui` (nginx) or `make ui_dev` |
 | Ingest | `smartmetadata-ingestion/` | product compose `ingest` (static-smoke seed) |
 | MCP | `smartmetadata-mcp/` | product compose `mcp` (stdio) |
+| Airflow | `smartmetadata-airflow-apis/` (Apache Airflow image + clean-room plugin) | product compose `airflow` (UI :8080; server pipeline client stays off until deploy) |
 | Offline matrix | rebuilt packages + gates | `make verify-rebuild` |
 | Live HTTP smoke | already-running catalog | `make live-smoke` |
 | Local Docker | `docker/rebuild/` (China compose default) | `make docker-up` |
@@ -30,7 +31,7 @@ runbook: [PHASE0.md](PHASE0.md). Gap matrix vs official surfaces:
 ADR:2026-10-23-product-docker-is-rebuild-only.
 
 Local Docker — one command starts the **already-rebuilt** surfaces (server,
-Vue console, clean-room ingest seed, stdio MCP). This is not official 100+
+Vue console, clean-room ingest seed, stdio MCP, clean-room Airflow). This is not official 100+
 connector parity; see [PARITY.md](PARITY.md).
 
 AlmaLinux 9 (or any host with Java 21, Maven 3.8+, and Docker Compose v2).
@@ -52,8 +53,10 @@ curl -sf http://127.0.0.1:8089/
 
 `make docker-up` never sets `I_UNDERSTAND_CCL_INGESTION`. It builds
 `smartmetadata-ui` into nginx (same-origin `/api`), runs
-`smartmetadata-ingest` against `scripts/rebuild/static-smoke.yaml`, and
-starts `smartmetadata-mcp` on stdio. Host leftovers (`make ui_dev`,
+`smartmetadata-ingest` against `scripts/rebuild/static-smoke.yaml`,
+starts `smartmetadata-mcp` on stdio, and starts product `airflow`
+(Apache image + `smartmetadata-airflow-apis`; server
+`PIPELINE_SERVICE_CLIENT_ENABLED` stays false until deploy). Host leftovers (`make ui_dev`,
 `make ingest_install`) are optional for source-level work, not the product
 start path.
 
@@ -75,7 +78,7 @@ Do **not** delete them in this hygiene pass (purge is a separate counsel ADR).
 | `openmetadata-ui/` | Still a root-reactor Maven module; `make yarn_start_dev_ui` used to start it | `make ui_dev` |
 | `openmetadata-mcp/` | ITs may pull it on the *test* classpath | `smartmetadata-mcp/` |
 | `ingestion/` | `make install` used to `pip install ingestion/` | `make ingest_install` |
-| `openmetadata-airflow-apis/` | VERIFY leftover (below) | not a product package |
+| `openmetadata-airflow-apis/` | VERIFY leftover (below); CCL headers conflict | `smartmetadata-airflow-apis/` + compose `airflow` |
 | `openmetadata-ui-core-components` | VERIFY leftover (below); already out of dist | do not import into `smartmetadata-ui` |
 
 Root `Makefile` does **not** `include ingestion/Makefile` on the product path.
@@ -137,6 +140,7 @@ and never invokes the reference trees.
 
 - **`openmetadata-airflow-apis/`** — directory `LICENSE` is Apache 2.0; many
   `.py` headers say Collate Community License and point at `ingestion/LICENSE`.
+  Product substitute is `smartmetadata-airflow-apis/` (compose service `airflow`).
 - **`openmetadata-ui-core-components`** — no module `LICENSE`; `package.json`
   claims Apache-2.0. It is **not** in the shippable dist.
 

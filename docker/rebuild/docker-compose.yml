@@ -3,8 +3,8 @@
 # (DaoCloud proxies, UI host 8089). Official registries: SM_DOCKER_VARIANT=intl
 # (this file plus docker-compose.intl.yml).
 # Services: MySQL 8, Elasticsearch 9, migrate, slim server, Vue console,
-# clean-room ingest seed, stdio MCP.
-# Does not define CCL ingest/Airflow/quickstart/console/MCP services.
+# clean-room ingest seed, stdio MCP, clean-room Airflow (rebuilt plugin).
+# Does not define CCL ingest/quickstart/console services.
 # Entry: make docker-up / ./docker/rebuild/up.sh
 # ADR:2026-10-23-product-docker-is-rebuild-only
 # ADR:2026-10-25-product-docker-defaults-to-china-mirrors
@@ -14,6 +14,9 @@ name: smartmetadata-rebuild
 volumes:
   mysql-data:
   es-data:
+  airflow-dag-configs:
+  airflow-dags:
+  airflow-tmp:
 
 x-slim-server-environment: &slim-server-environment
   DB_DRIVER_CLASS: com.mysql.cj.jdbc.Driver
@@ -41,8 +44,9 @@ x-catalog-auth: &catalog-auth
 services:
   mysql:
     image: mysql:8.0
+    command: "--sort_buffer_size=10M"
     container_name: smartmetadata_mysql
-    restart: unless-stopped
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: openmetadata_db
@@ -64,7 +68,14 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms1024m -Xmx1024m}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "9200:9200"
     volumes:
@@ -95,6 +106,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile
     container_name: smartmetadata_server
+    restart: always
     environment:
       <<: *slim-server-environment
     ports:
@@ -119,6 +131,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.ui
     container_name: smartmetadata_ui
+    restart: always
     ports:
       - "8089:80"
     depends_on:
@@ -136,6 +149,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.ingest
     container_name: smartmetadata_ingest
+    restart: always
     entrypoint: ["/bin/sh", "/ingest-entrypoint.sh"]
     environment:
       <<: *catalog-auth
@@ -160,6 +174,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.mcp
     container_name: smartmetadata_mcp
+    restart: always
     stdin_open: true
     environment:
       <<: *catalog-auth
@@ -172,3 +187,46 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
+
+  airflow:
+    # smartmetadata-airflow-apis DAG image (clean-room plugin). Not the CCL
+    # ingestion/Airflow image. UI published 8080:8080, no resource limits,
+    # admin/admin default — all per Bai 2026-11-06 17:18 (official exactly).
+    # The server switch (PIPELINE_SERVICE_CLIENT_ENABLED) stays "false"
+    # until deploy time; this service alone does not enable the client.
+    build:
+      context: ../..
+      dockerfile: docker/rebuild/Dockerfile.airflow
+    container_name: smartmetadata_airflow
+    restart: always
+    entrypoint: ["/bin/bash"]
+    command: ["/opt/airflow/airflow-entrypoint.sh"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__OPENMETADATA_AIRFLOW_APIS__DAG_GENERATED_CONFIGS: "/opt/airflow/dag_generated_configs"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      AIRFLOW_DB: airflow_db
+      DB_SCHEME: mysql+mysqldb
+      DB_USER: airflow_user
+      DB_PASSWORD: airflow_pass
+      DB_PROPERTIES: ""
+    ports:
+      - "8080:8080"
+    expose:
+      - "8080"
+    volumes:
+      - airflow-dag-configs:/opt/airflow/dag_generated_configs
+      - airflow-dags:/opt/airflow/dags
+      - airflow-tmp:/tmp
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      # The plugin /health is public (no auth) and proves the api-server
+      # is up AND the plugin blueprint is mounted.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/pluginsv2/api/v2/openmetadata/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s

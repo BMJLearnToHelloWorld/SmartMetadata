@@ -26,7 +26,10 @@ import { approvalFixture, mountWithBuilder } from './testHarness';
  * entry. The product renders the delete affordance inside the header
  * manage menu (official renders it as a header button), so the header
  * assertions open that menu; the capability assertions stay hook-level,
- * exactly like official's mode-state describe.
+ * exactly like official's mode-state describe. One deliberate deviation:
+ * allowCreateWorkflow is true by product decision (Bai 2026-11-07,
+ * option B) — creation is offered on the list page, never on the builder
+ * surface, so the "no create entry" assertions below still hold.
  */
 
 function bodyEl(testid: string): HTMLElement | null {
@@ -184,12 +187,15 @@ describe('OSS workflow restrictions', () => {
     );
 
     it(
-      'never exposes workflow deletion or creation',
+      'never exposes workflow deletion; creation is offered on the list page, not the builder',
       { timeout: 15000 },
       async () => {
         const definition = approvalFixture();
+        // Product decision (Bai 2026-11-07, option B): creation is allowed
+        // and lives on the list page; the builder surface still offers no
+        // create entry (asserted below).
         expect(getWorkflowCapabilities(definition).allowCreateWorkflow).toBe(
-          false,
+          true,
         );
         expect(getWorkflowCapabilities(definition).allowDeleteWorkflow).toBe(
           false,

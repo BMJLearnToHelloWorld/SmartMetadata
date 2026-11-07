@@ -12,6 +12,7 @@
 ARG ALPINE_IMAGE=alpine:3
 ARG TEMURIN_IMAGE=eclipse-temurin:21-jdk
 ARG DISTROLESS_IMAGE=gcr.io/distroless/cc-debian13:debug-nonroot
+ARG DISTROLESS_BASE_IMAGE=gcr.io/distroless/base-debian13:debug-nonroot
 FROM ${ALPINE_IMAGE} AS dist
 
 COPY openmetadata-dist/target/openmetadata-*.tar.gz /
@@ -43,11 +44,32 @@ RUN find /javaruntime/bin -type f \
       ! -name jinfo ! -name jps ! -name jstat ! -name jfr ! -name keytool \
       -delete
 
-FROM ${DISTROLESS_IMAGE}
+# cxx-runtime: official form (pin a3012259ca). distroless `cc` is `base`
+# plus four packages (gcc-14-base, libgcc-s1, libstdc++6, libgomp1); nothing
+# loads the system libgomp.so.1, so the runtime is `base` plus the other
+# three packages, copied out of `cc` by each package's own dpkg file list.
+# Their status.d entries come along, so scanners list exactly what is
+# installed. dpkg only lists regular files, so the libstdc++.so.6 symlink
+# is copied on its own.
+FROM ${DISTROLESS_IMAGE} AS cxx-runtime
+
+USER 0
+SHELL ["/busybox/sh", "-c"]
+RUN set -eu; \
+    for pkg in gcc-14-base libgcc-s1 libstdc++6; do \
+      for f in var/lib/dpkg/status.d/$pkg var/lib/dpkg/status.d/$pkg.md5sums usr/share/doc/$pkg \
+               $(awk '{print $2}' /var/lib/dpkg/status.d/$pkg.md5sums); do \
+        mkdir -p "/out/$(dirname "$f")"; cp -a "/$f" "/out/$f"; \
+      done; \
+    done; \
+    for f in /usr/lib/*-linux-gnu/libstdc++.so.6; do cp -a "$f" "/out$f"; done
+
+FROM ${DISTROLESS_BASE_IMAGE}
 
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="/bin:${PATH}"
 
+COPY --from=cxx-runtime /out /
 COPY --from=jre-builder /javaruntime ${JAVA_HOME}
 COPY --from=dist /shim/bin /bin
 COPY --from=dist /opt/openmetadata /opt/openmetadata

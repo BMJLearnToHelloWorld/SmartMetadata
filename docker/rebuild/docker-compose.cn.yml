@@ -18,6 +18,7 @@ services:
         ALPINE_IMAGE: m.daocloud.io/docker.io/library/alpine:3
         TEMURIN_IMAGE: m.daocloud.io/docker.io/library/eclipse-temurin:21-jdk
         DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot
+        DISTROLESS_BASE_IMAGE: m.daocloud.io/gcr.io/distroless/base-debian13:debug-nonroot
 
   openmetadata-server:
     build:
@@ -25,6 +26,7 @@ services:
         ALPINE_IMAGE: m.daocloud.io/docker.io/library/alpine:3
         TEMURIN_IMAGE: m.daocloud.io/docker.io/library/eclipse-temurin:21-jdk
         DISTROLESS_IMAGE: m.daocloud.io/gcr.io/distroless/cc-debian13:debug-nonroot
+        DISTROLESS_BASE_IMAGE: m.daocloud.io/gcr.io/distroless/base-debian13:debug-nonroot
 
   ui:
     build:

@@ -91,6 +91,7 @@ class MetadataWorkflow:
         sink: Sink | None = None,
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
+        run_id: str | None = None,
     ) -> None:
         self.config = config
         self._owns_client = client is None
@@ -98,6 +99,10 @@ class MetadataWorkflow:
         self._provided_source = source
         self._provided_sink = sink
         self._provided_processors = processors
+        # A caller (e.g. the Airflow plugin) may pin the run id so the
+        # workflow's own status writeback converges with the id the server
+        # already recorded for this run. Unset, execute() mints a UUID.
+        self._requested_run_id = run_id
         self._source: Source | None = None
         self._sink: Sink | None = None
         self._processors: list[Processor] = []
@@ -152,7 +157,7 @@ class MetadataWorkflow:
             raise WorkflowExecutionError("metadata workflow has already executed")
         self._executed = True
         self.prepare()
-        self.run_id = str(uuid.uuid4())
+        self.run_id = self._requested_run_id or str(uuid.uuid4())
         self._run_start_ms = now_ms()
         logger.info(
             "metadata workflow %s starting runId=%s",
@@ -458,6 +463,7 @@ class ProfilerWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         profile_reader: Any | None = None,
+        run_id: str | None = None,
     ) -> None:
         self._injected_reader = profile_reader
         super().__init__(
@@ -467,6 +473,7 @@ class ProfilerWorkflow(MetadataWorkflow):
             sink=sink,
             processors=processors,
             hook=hook,
+            run_id=run_id,
         )
 
     def prepare(self) -> None:
@@ -527,6 +534,7 @@ class TestSuiteWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         execute: Any | None = None,
+        run_id: str | None = None,
     ) -> None:
         self._injected_execute = execute
         super().__init__(
@@ -536,6 +544,7 @@ class TestSuiteWorkflow(MetadataWorkflow):
             sink=sink,
             processors=processors,
             hook=hook,
+            run_id=run_id,
         )
 
     def prepare(self) -> None:
@@ -591,6 +600,7 @@ class DataDiffWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         fetch_keys: Any | None = None,
+        run_id: str | None = None,
     ) -> None:
         self._injected_fetch_keys = fetch_keys
         super().__init__(
@@ -600,6 +610,7 @@ class DataDiffWorkflow(MetadataWorkflow):
             sink=sink,
             processors=processors,
             hook=hook,
+            run_id=run_id,
         )
 
     def prepare(self) -> None:
