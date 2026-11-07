@@ -179,10 +179,16 @@ describe('UsersListView', () => {
     const { wrapper, router } = await mountUsers();
     await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
     await flushPromises();
-    const view = document.querySelector('[data-testid="row-overflow-view"]');
+    // Last-match, not first-match: the beforeEach opens+closes a dropdown on
+    // a different router whose portal stays in the document, so a first-match
+    // query can return the stale overlay's item (the Edit test below guards
+    // the same way).
+    const views = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-view"]');
+    const view = views[views.length - 1];
     expect(view?.textContent).toContain('View');
-    expect(document.querySelector('[data-testid="row-overflow-edit"]')?.textContent).toContain('Edit');
-    (view as HTMLElement | null)?.click();
+    const edits = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]');
+    expect(edits[edits.length - 1]?.textContent).toContain('Edit');
+    view?.click();
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-user');
     expect(router.currentRoute.value.params.id).toBe('u1');
