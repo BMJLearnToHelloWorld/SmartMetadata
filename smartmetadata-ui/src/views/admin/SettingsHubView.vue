@@ -25,10 +25,24 @@ const { t } = useI18n();
             <li v-for="item in category.items" :key="item.key">
               <RouterLink
                 v-if="item.kind === 'route' && item.routeName"
-                :to="{ name: item.routeName }"
+                :to="{ name: item.routeName, params: item.routeParams }"
                 :data-testid="`settings-link-${item.key}`"
+                class="settings-hub__link"
               >
-                {{ t(item.titleKey) }}
+                <component :is="item.icon" v-if="item.icon" class="settings-hub__icon" />
+                <span class="settings-hub__link-text">
+                  <span>{{ t(item.titleKey) }}</span>
+                  <span
+                    v-if="item.descriptionKey"
+                    class="settings-hub__item-description"
+                  >
+                    {{
+                      item.descriptionEntityKey
+                        ? t(item.descriptionKey, { entity: t(item.descriptionEntityKey) })
+                        : t(item.descriptionKey)
+                    }}
+                  </span>
+                </span>
               </RouterLink>
               <span
                 v-else
@@ -57,6 +71,27 @@ const { t } = useI18n();
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.settings-hub__link {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--sm-color-primary);
+}
+.settings-hub__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 14px;
+}
+.settings-hub__link-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.settings-hub__item-description {
+  color: var(--sm-text-tertiary);
+  font-size: 12px;
 }
 .settings-hub__residual {
   color: var(--sm-text-tertiary);

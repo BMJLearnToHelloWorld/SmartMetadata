@@ -55,7 +55,32 @@ describe('settings hub catalog', () => {
         'classifications',
         'services',
         'policies',
-        'custom-properties',
+        'custom-properties-apiCollection',
+        'custom-properties-apiEndpoint',
+        'custom-properties-page',
+        'custom-properties-chart',
+        'custom-properties-tableColumn',
+        'custom-properties-container',
+        'custom-properties-dashboardDataModel',
+        'custom-properties-dashboard',
+        'custom-properties-dataProduct',
+        'custom-properties-databaseSchema',
+        'custom-properties-database',
+        'custom-properties-directory',
+        'custom-properties-domain',
+        'custom-properties-file',
+        'custom-properties-glossaryTerm',
+        'custom-properties-metric',
+        'custom-properties-mlmodel',
+        'custom-properties-pipeline',
+        'custom-properties-searchIndex',
+        'custom-properties-spreadsheet',
+        'custom-properties-storedProcedure',
+        'custom-properties-table',
+        'custom-properties-team',
+        'custom-properties-topic',
+        'custom-properties-user',
+        'custom-properties-worksheet',
         'apps',
         'appearance',
         'email',
@@ -64,6 +89,25 @@ describe('settings hub catalog', () => {
         'search-settings',
       ]),
     );
+  });
+
+  it('expands custom-properties into 26 rows to the detail route, one per official type', () => {
+    const category = SETTINGS_CATEGORIES.find((c) => c.key === 'custom-properties');
+    expect(category).toBeTruthy();
+    const items = category?.items ?? [];
+    expect(items).toHaveLength(26);
+    const types = new Set<string>();
+    for (const item of items) {
+      expect(item.kind).toBe('route');
+      expect(item.routeName).toBe('admin-settings-custom-property-type');
+      const entityType = item.routeParams?.entityType;
+      expect(entityType, item.key).toBeTruthy();
+      expect(types.has(entityType ?? ''), entityType).toBe(false);
+      types.add(entityType ?? '');
+      expect(item.icon, item.key).toBeTruthy();
+      expect(item.descriptionKey, item.key).toBeTruthy();
+    }
+    expect(types.size).toBe(26);
   });
 
   it('wires Apache Preferences children as live routes (not residual)', () => {

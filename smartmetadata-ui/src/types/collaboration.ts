@@ -223,11 +223,22 @@ export interface CreateAnnouncementRequest {
   entityLink?: string;
 }
 
+/**
+ * Read-side shape of CustomProperty.customPropertyConfig (official
+ * generated/type/customProperty.ts). Stage 2 (Wave 1 W1-2) only parses it so
+ * the Configuration column can render server-side config; the write-side
+ * form fields belong to stage 3. ADR:2026-11-07-custom-properties-s12.
+ */
+export interface CustomPropertyConfig {
+  config?: string | string[] | { values?: string[]; columns?: string[]; multiSelect?: boolean };
+}
+
 export interface CustomPropertyDef {
   name: string;
   displayName?: string;
   description?: string;
   propertyType?: string;
+  customPropertyConfig?: CustomPropertyConfig;
 }
 
 export interface MetadataType {
@@ -237,6 +248,8 @@ export interface MetadataType {
   description?: string;
   category?: string;
   nameSpace?: string;
+  /** JSON-encoded JSON Schema string, as returned by fields=schema. */
+  schema?: string;
   customProperties: CustomPropertyDef[];
 }
 

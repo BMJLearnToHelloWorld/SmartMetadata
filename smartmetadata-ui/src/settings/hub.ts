@@ -20,6 +20,9 @@
  * Collate CustomizeAppModeSidebar stays residual / out of scope;
  * Persona and SSO flipped residual → route with P2 B5.
  */
+import type { Component } from 'vue';
+import { CUSTOM_PROPERTY_TYPE_ENTRIES } from './customProperties';
+
 export type SettingsItemKind = 'route' | 'residual';
 
 export interface SettingsItem {
@@ -28,6 +31,14 @@ export interface SettingsItem {
   kind: SettingsItemKind;
   routeName?: string;
   residualKey?: string;
+  /** Ant-design icon component rendered beside the link (Hub 26 custom-property rows). */
+  icon?: Component;
+  /** Per-item description; rendered under the link when present. */
+  descriptionKey?: string;
+  /** Singular entity label key interpolated as {entity} into descriptionKey. */
+  descriptionEntityKey?: string;
+  /** Route params for the link, e.g. { entityType: 'table' }. */
+  routeParams?: Record<string, string>;
 }
 
 export interface SettingsCategory {
@@ -48,6 +59,7 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'admin-settings-permission-debugger',
   'admin-policies',
   'admin-settings-custom-properties',
+  'admin-settings-custom-property-type',
   'admin-apps',
   'governance-glossaries',
   'governance-classifications',
@@ -309,14 +321,23 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     key: 'custom-properties',
     titleKey: 'settings.categories.customProperties.title',
     descriptionKey: 'settings.categories.customProperties.description',
-    items: [
-      {
-        key: 'custom-properties',
-        titleKey: 'settings.items.customProperties',
-        kind: 'route',
-        routeName: 'admin-settings-custom-properties',
-      },
-    ],
+    // G-D1 (a): the 26 official entity types, one row each inside this
+    // category card (icon + description), in rendered label order. The rows
+    // link to the existing detail route with the type name as the
+    // `entityType` param (G-D2 (a)); no second-level category page and no
+    // 26 standalone category cards. ADR:2026-11-07-custom-properties-s12.
+    items: CUSTOM_PROPERTY_TYPE_ENTRIES.map((item) => ({
+      key: `custom-properties-${item.type}`,
+      titleKey: item.titleKey,
+      kind: 'route' as const,
+      routeName: 'admin-settings-custom-property-type',
+      routeParams: { entityType: item.type },
+      icon: item.icon,
+      descriptionKey: item.entityKey
+        ? 'settings.customProperties.defineForEntity'
+        : 'settings.customProperties.defineForColumn',
+      descriptionEntityKey: item.entityKey,
+    })),
   },
 ];
 
