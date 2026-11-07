@@ -42,9 +42,9 @@ describe('insightsTabs', () => {
     ]);
   });
 
-  it('defaults the date preset to 30 days and the online window to 24 hours', () => {
-    expect(insightsDatePresetFromKey(undefined).days).toBe(30);
-    expect(insightsDatePresetFromKey('last7').days).toBe(7);
+  it('defaults the date preset to 7 days (official default) and the online window to 24 hours', () => {
+    expect(insightsDatePresetFromKey(undefined).days).toBe(7);
+    expect(insightsDatePresetFromKey('last30').days).toBe(30);
     expect(onlineUsersWindowFromKey(undefined).minutes).toBe(1440);
     expect(ONLINE_USERS_TIME_WINDOWS.map((window) => window.minutes)).toEqual([5, 60, 1440, 10080, 43200, 0]);
   });
