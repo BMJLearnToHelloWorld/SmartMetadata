@@ -511,6 +511,7 @@ const enUS = {
     title: 'Insights',
     lead: 'Track catalog coverage, quality, and Data Insights charts.',
     loadFailed: 'Failed to load Insights',
+    noPermission: 'You do not have permission to view Data Insights.',
     catalogTotal: 'Catalog assets in this search snapshot: {total}',
     tabs: {
       dataAssets: 'Data Assets',
@@ -538,8 +539,20 @@ const enUS = {
       serviceDescription: 'Services with description',
       serviceOwner: 'Services with owner',
     },
-    serviceChartsEmpty:
-      'Residual: the Data Insights system charts do not include a service description or service owner percentage, and search facets cannot yield one. No percentage is shown instead of a fabricated value.',
+    serviceChartsEmpty: 'No service coverage data in the selected window.',
+    serviceLoadFailed: 'Service coverage charts failed to load',
+    filters: {
+      team: 'Team',
+      tier: 'Tier',
+      teamPlaceholder: 'Select teams',
+      tierPlaceholder: 'Select tiers',
+    },
+    service: {
+      change: '{value} pp over the last {days} days',
+      target: 'Target: {value}%',
+      searchPlaceholder: 'Search services',
+      clear: 'Clear',
+    },
     datePresets: {
       last7: 'Last 7 days',
       last30: 'Last 30 days',

@@ -89,7 +89,8 @@ export const APP_ANALYTICS_BLOCKS: InsightsResidualBlock[] = [
   { key: 'top-active-users', titleKey: 'insights.appAnalytics.topActiveUsers', reasonKey: 'insights.appAnalyticsEmpty' },
 ] as const;
 
-/** DataInsight date presets. Default 30 matches the pre-split seriesWindow. */
+/** DataInsight date presets. Default 7 matches the official default window
+ * (openmetadata-ui constants/profiler.constant.ts DEFAULT_SELECTED_RANGE). */
 export interface InsightsDatePreset {
   key: string;
   days: number;
@@ -103,7 +104,7 @@ export const INSIGHT_DATE_PRESETS: InsightsDatePreset[] = [
 ] as const;
 
 export function insightsDatePresetFromKey(key: string | undefined): InsightsDatePreset {
-  return INSIGHT_DATE_PRESETS.find((preset) => preset.key === key) ?? INSIGHT_DATE_PRESETS[1];
+  return INSIGHT_DATE_PRESETS.find((preset) => preset.key === key) ?? INSIGHT_DATE_PRESETS[0];
 }
 
 /** Official OnlineUsers time windows in minutes; 0 means all time. */

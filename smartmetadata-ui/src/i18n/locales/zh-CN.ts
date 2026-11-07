@@ -509,6 +509,7 @@ const zhCN = {
     title: '洞察',
     lead: '跟踪目录覆盖率、质量和 Data Insights 图表。',
     loadFailed: '加载洞察失败',
+    noPermission: '你没有查看数据洞察的权限。',
     catalogTotal: '本次搜索快照中的目录资产：{total}',
     tabs: {
       dataAssets: '数据资产',
@@ -536,8 +537,20 @@ const zhCN = {
       serviceDescription: '有描述的服务',
       serviceOwner: '有所有者的服务',
     },
-    serviceChartsEmpty:
-      '残留：Data Insights 系统图表不含服务描述/服务所有者百分比，搜索分面也无法得出该百分比，因此不展示编造的数值。',
+    serviceChartsEmpty: '所选窗口内没有服务覆盖率数据。',
+    serviceLoadFailed: '服务覆盖率图表加载失败',
+    filters: {
+      team: '团队',
+      tier: '层级',
+      teamPlaceholder: '选择团队',
+      tierPlaceholder: '选择层级',
+    },
+    service: {
+      change: '最近 {days} 天变化 {value} 个百分点',
+      target: '目标：{value}%',
+      searchPlaceholder: '搜索服务',
+      clear: '清除',
+    },
     datePresets: {
       last7: '最近 7 天',
       last30: '最近 30 天',

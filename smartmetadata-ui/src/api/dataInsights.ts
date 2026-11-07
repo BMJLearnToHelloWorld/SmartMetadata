@@ -16,9 +16,69 @@ export const SYSTEM_CHART_NAMES = [
   'percentage_of_data_asset_with_description',
   'percentage_of_data_asset_with_owner',
   'total_data_assets_by_tier',
+  'percentage_of_service_with_description',
+  'percentage_of_service_with_owner',
 ] as const;
 
 export type SystemChartName = (typeof SYSTEM_CHART_NAMES)[number];
+
+/**
+ * The four charts rendered in the pipeline section. The two service charts
+ * are members of SYSTEM_CHART_NAMES but have their own cards (with a
+ * headline, change value and per-service column) and are fetched with the
+ * summary/absolute-value charts, not rendered again as pipeline lines.
+ * (ADR:2026-11-07-data-insights-service-cards)
+ */
+export const PIPELINE_CHART_NAMES = [
+  'total_data_assets',
+  'percentage_of_data_asset_with_description',
+  'percentage_of_data_asset_with_owner',
+  'total_data_assets_by_tier',
+] as const;
+
+/** Official SystemChartType.PercentageOfServiceWithDescription/Owner. */
+export const SERVICE_CHART_NAMES = [
+  'percentage_of_service_with_description',
+  'percentage_of_service_with_owner',
+] as const;
+
+/**
+ * Official DataInsightSummary.tsx getMultiChartsPreviewByName: the four
+ * summary cards the headline % values come from.
+ */
+export const SUMMARY_CARD_CHART_NAMES = [
+  'total_data_assets_summary_card',
+  'data_assets_with_description_summary_card',
+  'data_assets_with_owner_summary_card',
+  'total_data_assets_with_tier_summary_card',
+] as const;
+
+/**
+ * Official DataInsightChartCard.tsx ABSOLUTE_VALUES_CHART: the absolute
+ * counts the change-in-value formula divides by the daily total assets.
+ */
+export const ABSOLUTE_VALUE_CHART_NAMES = [
+  'number_of_data_asset_with_description_kpi',
+  'number_of_data_asset_with_owner_kpi',
+] as const;
+
+/** KPI chart names keyed by which service card they feed. */
+export const SERVICE_ABSOLUTE_VALUE_CHART: Record<
+  (typeof SERVICE_CHART_NAMES)[number],
+  (typeof ABSOLUTE_VALUE_CHART_NAMES)[number]
+> = {
+  percentage_of_service_with_description: 'number_of_data_asset_with_description_kpi',
+  percentage_of_service_with_owner: 'number_of_data_asset_with_owner_kpi',
+};
+
+/** Summary card keyed by which service card's headline it feeds. */
+export const SERVICE_SUMMARY_CARD_CHART: Record<
+  (typeof SERVICE_CHART_NAMES)[number],
+  (typeof SUMMARY_CARD_CHART_NAMES)[number]
+> = {
+  percentage_of_service_with_description: 'data_assets_with_description_summary_card',
+  percentage_of_service_with_owner: 'data_assets_with_owner_summary_card',
+};
 
 export interface InsightResultPoint {
   count?: number;
@@ -63,10 +123,28 @@ export function mapSystemChartData(payload: unknown): SystemChartData {
   return mapped;
 }
 
+export interface ListSystemChartDataOptions {
+  /**
+   * Serialized DataInsight filter, built by
+   * getQueryFilterForDataInsightChart. Sent with every chart request when
+   * a team/tier filter is active, mirroring official DataInsightChartCard
+   * fetchData params `{start, end, filter}`.
+   */
+  filter?: string;
+  /**
+   * When true a 4xx surfaces to the caller instead of the legacy silent
+   * `{}`. New cards must fail loudly (review condition 3,
+   * ADR:2026-11-07-data-insights-service-cards); the legacy pipeline keeps
+   * the silent residual so a missing chart name cannot blank the page.
+   */
+  strict?: boolean;
+}
+
 export async function listSystemChartData(
   chartNames: readonly string[],
   start: number,
   end: number,
+  options: ListSystemChartDataOptions = {},
 ): Promise<SystemChartData> {
   try {
     const raw = await apiRequest<unknown>('/v1/analytics/dataInsights/system/charts/listChartData', {
@@ -74,15 +152,141 @@ export async function listSystemChartData(
         chartNames: chartNames.join(','),
         start,
         end,
+        ...(options.filter !== undefined ? { filter: options.filter } : {}),
       },
     });
     return mapSystemChartData(raw);
   } catch (error) {
-    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    if (!options.strict && error instanceof ApiError && error.status >= 400 && error.status < 500) {
       return {};
     }
     throw error;
   }
+}
+
+/**
+ * Official `getQueryFilterForDataInsightChart` (openmetadata-ui
+ * utils/DataInsightPureUtils.ts:226-269), ported field for field:
+ * tier values become `term` queries on `tier.keyword`, team values become
+ * `term` queries on `owners.name.keyword` inside a `nested` query on the
+ * `owners` path, all under `query.bool.must`. Returns `undefined` when
+ * neither filter has a value, so no `filter` parameter is sent at all.
+ * (An empty array is treated like an absent filter; the official callers
+ * pass `undefined` for an empty selection, which is the same state.)
+ */
+export function getQueryFilterForDataInsightChart(
+  teamFilter?: string[],
+  tierFilter?: string[],
+): string | undefined {
+  if (!teamFilter?.length && !tierFilter?.length) {
+    return undefined;
+  }
+
+  return JSON.stringify({
+    query: {
+      bool: {
+        must: [
+          ...(tierFilter?.length
+            ? [
+                {
+                  bool: {
+                    should: tierFilter.map((tier) => ({
+                      term: { 'tier.keyword': tier },
+                    })),
+                  },
+                },
+              ]
+            : []),
+          ...(teamFilter?.length
+            ? [
+                {
+                  nested: {
+                    path: 'owners',
+                    query: {
+                      bool: {
+                        should: teamFilter.map((team) => ({
+                          term: { 'owners.name.keyword': team },
+                        })),
+                      },
+                    },
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+    },
+  });
+}
+
+/**
+ * Latest summary-card value: the `count` of the row with the greatest
+ * `day`, never the first row — the server returns rows in no guaranteed
+ * order, while the official UI reads the first row only because its
+ * summary aggregator returns a single row. `undefined` when there is no
+ * row with a count, so callers show no value instead of a fabricated 0.
+ */
+export function latestSummaryCount(
+  points: readonly InsightResultPoint[],
+): number | undefined {
+  let best: InsightResultPoint | undefined;
+  for (const point of points) {
+    if (point.count === undefined) {
+      continue;
+    }
+    if (!best || (point.day ?? 0) > (best.day ?? 0)) {
+      best = point;
+    }
+  }
+  return best?.count;
+}
+
+/**
+ * Official `computeDefaultChange` (openmetadata-ui
+ * components/DataInsight/DataInsightChartCard.tsx:182-240): the change in
+ * global percentage points between the first and last day of the window,
+ * `(last-day absolute / last-day total − first-day absolute / first-day
+ * total) × 100`. Totals are summed across groups per day; the first and
+ * last days are taken from the totals series and the absolute values are
+ * read on those same days, so the two fractions are never taken from
+ * different days (review condition 2). A day with no absolute row counts
+ * as 0; a day with a 0 total counts as 0%. Returns 0 when the totals
+ * series has no day at all — callers hide the change line in that case
+ * instead of showing a computed 0.
+ */
+export function computeChangeInPercentagePoints(
+  totalAssets: readonly InsightResultPoint[],
+  absoluteValues: readonly InsightResultPoint[],
+): number {
+  const totalByDay = new Map<number, number>();
+  for (const point of totalAssets) {
+    if (point.day === undefined || point.count === undefined) {
+      continue;
+    }
+    totalByDay.set(point.day, (totalByDay.get(point.day) ?? 0) + point.count);
+  }
+  const days = [...totalByDay.keys()].sort((a, b) => a - b);
+  if (!days.length) {
+    return 0;
+  }
+  const firstDay = days[0] as number;
+  const lastDay = days[days.length - 1] as number;
+  const firstTotal = totalByDay.get(firstDay) ?? 0;
+  const lastTotal = totalByDay.get(lastDay) ?? 0;
+
+  const absoluteByDay = new Map<number, number>();
+  for (const point of absoluteValues) {
+    if (point.day === undefined || point.count === undefined) {
+      continue;
+    }
+    absoluteByDay.set(point.day, (absoluteByDay.get(point.day) ?? 0) + point.count);
+  }
+  const firstAbsolute = absoluteByDay.get(firstDay) ?? 0;
+  const lastAbsolute = absoluteByDay.get(lastDay) ?? 0;
+
+  const firstPercent = firstTotal ? (firstAbsolute / firstTotal) * 100 : 0;
+  const lastPercent = lastTotal ? (lastAbsolute / lastTotal) * 100 : 0;
+  return lastPercent - firstPercent;
 }
 
 /**
