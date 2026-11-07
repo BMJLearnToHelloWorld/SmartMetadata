@@ -44,8 +44,9 @@ x-catalog-auth: &catalog-auth
 services:
   mysql:
     image: mysql:8.0
+    command: "--sort_buffer_size=10M"
     container_name: smartmetadata_mysql
-    restart: unless-stopped
+    restart: always
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: openmetadata_db
@@ -67,7 +68,14 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+      - ES_JAVA_OPTS=${ES_JAVA_OPTS:--Xms1024m -Xmx1024m}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "9200:9200"
     volumes:
@@ -98,6 +106,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile
     container_name: smartmetadata_server
+    restart: always
     environment:
       <<: *slim-server-environment
     ports:
@@ -122,6 +131,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.ui
     container_name: smartmetadata_ui
+    restart: always
     ports:
       - "8089:80"
     depends_on:
@@ -139,6 +149,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.ingest
     container_name: smartmetadata_ingest
+    restart: always
     entrypoint: ["/bin/sh", "/ingest-entrypoint.sh"]
     environment:
       <<: *catalog-auth
@@ -163,6 +174,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.mcp
     container_name: smartmetadata_mcp
+    restart: always
     stdin_open: true
     environment:
       <<: *catalog-auth
@@ -186,6 +198,7 @@ services:
       context: ../..
       dockerfile: docker/rebuild/Dockerfile.airflow
     container_name: smartmetadata_airflow
+    restart: always
     entrypoint: ["/bin/bash"]
     command: ["/opt/airflow/airflow-entrypoint.sh"]
     environment:
