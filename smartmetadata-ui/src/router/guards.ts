@@ -37,7 +37,18 @@
  * here.
  */
 import type { OperationPermissions } from '@/api/permissions';
-export const ADMIN_ROUTE_PREFIXES = ['/admin'] as const;
+// The guard judges admin-ness from the URL path, but official's
+// AdminProtectedRoute wraps the route component, so any URL that
+// renders an admin page must be recognised here — including the
+// official-path aliases of admin routes. '/settings' is the alias
+// of admin/settings (G-09); without this entry a non-admin opening
+// /settings would bypass the admin entry check, because the path
+// does not start with /admin/. The same entry also covers the three
+// pre-existing /settings/governance/* aliases (intake-forms,
+// task-forms, glossary-term-relations), which resolve to admin
+// routes as well. Every /settings/* URL in the product currently
+// resolves to an admin route, so no non-admin route is affected.
+export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings'] as const;
 
 /**
  * Admin route name -> permission resource for the guard's second
