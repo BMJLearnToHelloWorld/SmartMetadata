@@ -11,6 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { CUSTOM_PROPERTY_TYPE_ENTRIES } from '@/settings/customProperties';
 import { createTestI18n } from '@/test/i18n';
 import SettingsHubView from './SettingsHubView.vue';
 
@@ -39,6 +40,11 @@ async function mountHub() {
         path: '/admin/settings/custom-properties',
         name: 'admin-settings-custom-properties',
         component: stub('defs'),
+      },
+      {
+        path: '/admin/settings/custom-properties/:entityType',
+        name: 'admin-settings-custom-property-type',
+        component: stub('def'),
       },
       { path: '/governance/glossaries', name: 'governance-glossaries', component: stub('glos') },
       { path: '/governance/domains', name: 'governance-domains', component: stub('dom') },
@@ -89,6 +95,12 @@ async function mountHub() {
 }
 
 describe('SettingsHubView', () => {
+  // 20s cap, not the 5s default: the first mount renders every category
+  // card (now 26 icon rows in custom-properties) after the router setup, so
+  // under parallel workers it exceeds 5s — and under peak VM load (load avg
+  // > 5 on 4 CPUs) even 10s. Baseline was already ~4.0s single-run for this
+  // test, so the margin was gone before this batch. Assertions are
+  // unchanged; the cap still fails a genuinely hung mount.
   it('renders official-like category cards and live links to existing pages', async () => {
     const { wrapper } = await mountHub();
     expect(wrapper.find('[data-testid="settings-hub"]').exists()).toBe(true);
@@ -105,20 +117,44 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-link-appearance"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-services"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-policies"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(true);
+    // G-23 stage 1: the single custom-properties link is replaced by 26
+    // rows, one per official entity type, in rendered label order.
+    expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(false);
+    const card = wrapper.find('[data-testid="settings-category-custom-properties"]');
+    expect(card.exists()).toBe(true);
+    const links = card.findAll('a');
+    expect(links).toHaveLength(26);
+    const labels = links.map((link) => link.find('.settings-hub__link-text > span').text());
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+    for (const entry of CUSTOM_PROPERTY_TYPE_ENTRIES) {
+      const link = wrapper.find(`[data-testid="settings-link-custom-properties-${entry.type}"]`);
+      expect(link.exists(), entry.type).toBe(true);
+      expect(link.text()).toContain('Define the custom properties for');
+    }
+    expect(
+      wrapper.find('[data-testid="settings-link-custom-properties-tableColumn"]').text(),
+    ).toContain('column level on tables and dashboard data models');
     // Stage 8: audit logs flipped residual → route.
     expect(wrapper.find('[data-testid="settings-link-audit-logs"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-residual-audit-logs"]').exists()).toBe(false);
     // P2 B5: persona flipped residual → route.
     expect(wrapper.find('[data-testid="settings-link-persona"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-residual-persona"]').exists()).toBe(false);
-  });
+  }, 20000);
 
   it('navigates a live card to the existing Users list', async () => {
     const { wrapper, router } = await mountHub();
     await wrapper.find('[data-testid="settings-link-users"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-users');
+  });
+
+  it('navigates a custom-properties row to the type detail with the type name', async () => {
+    const { wrapper, router } = await mountHub();
+    await wrapper.find('[data-testid="settings-link-custom-properties-table"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings-custom-property-type');
+    expect(router.currentRoute.value.params.entityType).toBe('table');
   });
 
   it('shows residual sections as text, not fake forms or dead buttons', async () => {

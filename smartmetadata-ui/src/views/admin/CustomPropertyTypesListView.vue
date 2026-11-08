@@ -8,17 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { listMetadataTypes } from '@/api/customProperties';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
-import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  entityLabel,
-  goNext,
-  goPrev,
-  resetCursor,
-  type CursorPager,
-} from '@/features/crud/paging';
+import { entityLabel } from '@/features/crud/paging';
+import { CUSTOM_PROPERTY_ENTITY_TYPE_SET } from '@/settings/customProperties';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { MetadataType } from '@/types/collaboration';
 
@@ -28,8 +19,17 @@ const loading = ref(false);
 const errorMessage = ref('');
 const types = ref<MetadataType[]>([]);
 const total = ref<number | undefined>();
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
+
+/**
+ * G-D1 (a) pagination semantics (ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch):
+ * the server enumerates every entity type, but this page only ever shows
+ * the official 26. One fetch with a limit that covers the whole allowlist,
+ * paging on only if the server still returns a cursor, then filter
+ * client-side; the shown total is the filtered count, never the server
+ * total. Cursor paging per page would under-fill the page and misstate
+ * the total.
+ */
+const LIST_FETCH_LIMIT = 100;
 
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
@@ -37,40 +37,29 @@ const columns = computed<EntityListColumn[]>(() => [
   { title: t('settings.customProperties.definitions'), key: 'definitions', width: 140 },
 ]);
 
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
-
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listMetadataTypes({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
-    types.value = page.data;
-    total.value = page.total;
-    pageAfter.value = page.after;
+    const all: MetadataType[] = [];
+    let after: string | undefined;
+    do {
+      const page = await listMetadataTypes({ limit: LIST_FETCH_LIMIT, after });
+      all.push(...page.data);
+      after = page.after;
+    } while (after);
+    types.value = all.filter((row) => CUSTOM_PROPERTY_ENTITY_TYPE_SET.has(row.name));
+    total.value = types.value.length;
   } catch (error) {
     types.value = [];
+    total.value = undefined;
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
 }
 
-function onNext(): void {
-  if (!pageAfter.value) {
-    return;
-  }
-  cursor.value = goNext(cursor.value, pageAfter.value);
-  void load();
-}
-
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
-}
-
 function onRefresh(): void {
-  cursor.value = resetCursor();
   void load();
 }
 
@@ -91,11 +80,7 @@ onMounted(() => {
     table-test-id="admin-custom-property-types-table"
     show-row-actions
     :total="total"
-    :has-next="hasNext"
-    :has-prev="hasPrev"
     @refresh="onRefresh"
-    @next="onNext"
-    @prev="onPrev"
     @view="(record) => router.push({ name: 'admin-settings-custom-property-type', params: { entityType: (record as MetadataType).name } })"
   >
     <template #bodyCell="{ column, record }">
