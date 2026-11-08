@@ -170,6 +170,14 @@ export function mapSearchResponse(payload: unknown): SearchPage {
           typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
             ? source.updatedAt
             : undefined,
+        entityStatus: asString(source.entityStatus) || undefined,
+        parent: mapOwners(source.parent ? [source.parent] : [])[0],
+        metricType: asString(source.metricType) || undefined,
+        granularity: asString(source.granularity) || undefined,
+        childrenCount:
+          typeof source.childrenCount === 'number' && Number.isFinite(source.childrenCount)
+            ? source.childrenCount
+            : undefined,
       },
     ];
   });

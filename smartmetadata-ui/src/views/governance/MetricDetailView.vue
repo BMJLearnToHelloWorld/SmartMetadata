@@ -51,7 +51,7 @@ async function onDeleteMetric(): Promise<void> {
   }
   const confirmed = await confirmDelete({
     title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: entityLabel(metric.value) }),
+    content: t('metrics.deleteConfirmWithVariants', { name: entityLabel(metric.value) }),
     okText: t('crud.delete'),
     cancelText: t('crud.cancel'),
   });
@@ -59,7 +59,10 @@ async function onDeleteMetric(): Promise<void> {
     return;
   }
   try {
-    await deleteMetricAsync(metric.value.id);
+    // A-D5: detail single delete is the same recursive async soft
+    // delete as the list bulk delete — recursive=true is passed
+    // explicitly, never left to the default.
+    await deleteMetricAsync(metric.value.id, true);
     message.success(t('metrics.asyncDeleteSubmitted'));
     await router.push({ name: 'governance-metrics' });
   } catch (error) {

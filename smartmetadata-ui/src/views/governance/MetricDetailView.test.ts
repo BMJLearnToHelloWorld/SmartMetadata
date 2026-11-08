@@ -10,6 +10,12 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import MetricDetailView from './MetricDetailView.vue';
 
+const confirmDelete = vi.fn();
+
+vi.mock('@/features/crud/confirmDelete', () => ({
+  confirmDelete: (...args: unknown[]) => confirmDelete(...args),
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -38,6 +44,9 @@ async function mountView() {
           domains: [],
         });
       }
+      if (url.includes('/api/v1/metrics/async/')) {
+        return jsonResponse({ jobId: 'job-1' });
+      }
       return new Response('not found', { status: 404 });
     }),
   );
@@ -62,6 +71,7 @@ async function mountView() {
 describe('MetricDetailView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    confirmDelete.mockReset();
   });
 
   it('renders metric definition fields from the entity endpoint', async () => {
@@ -79,5 +89,33 @@ describe('MetricDetailView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset-version');
     expect(router.currentRoute.value.params).toMatchObject({ entityType: 'metric', fqn: 'kpi.mau' });
+  });
+
+  it('deletes recursively and warns that variants go with the metric (A-D5)', async () => {
+    confirmDelete.mockResolvedValue(true);
+    const { wrapper, router } = await mountView();
+    await wrapper.get('[data-testid="metric-delete"]').trigger('click');
+    await flushPromises();
+    expect(confirmDelete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('variants will be deleted as well'),
+      }),
+    );
+    const deleteCall = vi
+      .mocked(fetch)
+      .mock.calls.find((call) => String(call[0]).includes('/api/v1/metrics/async/'));
+    expect(deleteCall).toBeDefined();
+    expect(String(deleteCall?.[0])).toContain('recursive=true');
+    expect(router.currentRoute.value.name).toBe('governance-metrics');
+  });
+
+  it('does not delete when the confirmation is dismissed', async () => {
+    confirmDelete.mockResolvedValue(false);
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="metric-delete"]').trigger('click');
+    await flushPromises();
+    expect(
+      vi.mocked(fetch).mock.calls.some((call) => String(call[0]).includes('/api/v1/metrics/async/')),
+    ).toBe(false);
   });
 });

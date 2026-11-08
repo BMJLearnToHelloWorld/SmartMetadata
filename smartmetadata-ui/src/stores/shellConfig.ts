@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
+import { getLimitConfig, type LimitConfig } from '@/api/limits';
 import { fetchServerVersion, getTypedSetting, settingAsLineage } from '@/api/system';
 import type { LineageSettings } from '@/types/admin';
 import { defineStore } from 'pinia';
@@ -19,13 +20,14 @@ import { computed, ref } from 'vue';
  * API reaches.
  *
  * Wired: GET /v1/system/version (the `-SNAPSHOT` suffix is stripped,
- * matching the official getVersion handling) with a 1-hour cache, and
- * GET /v1/system/settings/lineageSettings for lineage configuration.
- * Residual: the official limit configuration has no product endpoint
- * located, so `limit` stays null and no LimitBanner is rendered — the
- * absence is recorded, not papered over. The official version-mismatch
- * alert is also residual: this console has no client version constant
- * to compare the server version against.
+ * matching the official getVersion handling) with a 1-hour cache, GET
+ * /v1/system/settings/lineageSettings for lineage configuration, and
+ * GET /v1/limits/config for the limit configuration that LimitWrapper
+ * gates creation entries on (LimitsResource @Path /v1/limits).
+ * Residual: the official version-mismatch alert is not wired — this
+ * console has no client version constant to compare the server version
+ * against. A failed limit fetch leaves `limit` null, which LimitWrapper
+ * treats as fail-open (ungated), never as a startup failure.
  */
 export const VERSION_CACHE_KEY = 'sm.version.v1';
 export const VERSION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -42,8 +44,10 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
   const lineageSettings = ref<LineageSettings | null>(null);
   const lineageLoading = ref(false);
   const lineageError = ref('');
-  /** No product limit endpoint located; kept null by design. */
-  const limit = ref<null>(null);
+  /** Limit configuration from GET /v1/limits/config; null until loaded or when the fetch fails. */
+  const limit = ref<LimitConfig | null>(null);
+  const limitLoading = ref(false);
+  const limitError = ref('');
 
   const displayVersion = computed(() =>
     serverVersion.value ? stripSnapshot(serverVersion.value) : undefined,
@@ -104,9 +108,27 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     }
   }
 
+  async function loadLimitConfig(): Promise<void> {
+    if (limitLoading.value || limit.value) {
+      return;
+    }
+    limitLoading.value = true;
+    limitError.value = '';
+    try {
+      limit.value = await getLimitConfig();
+    } catch (error) {
+      // Fail-open by design: LimitWrapper renders its children when
+      // `limit` is null, so a failed config fetch must not break shell
+      // startup or any gated entry.
+      limitError.value = error instanceof Error ? error.message : 'Failed to load limit config';
+    } finally {
+      limitLoading.value = false;
+    }
+  }
+
   async function loadShellConfig(): Promise<void> {
     hydrateVersionCache();
-    await Promise.all([loadVersion(), loadLineageSettings()]);
+    await Promise.all([loadVersion(), loadLineageSettings(), loadLimitConfig()]);
   }
 
   return {
@@ -118,9 +140,12 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     lineageLoading,
     lineageError,
     limit,
+    limitLoading,
+    limitError,
     hydrateVersionCache,
     loadVersion,
     loadLineageSettings,
+    loadLimitConfig,
     loadShellConfig,
   };
 });
