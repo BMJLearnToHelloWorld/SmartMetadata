@@ -91,6 +91,20 @@ export interface SearchHit {
   tableFqn?: string;
   constraint?: string;
   updatedAt?: number;
+  /**
+   * Metric lifecycle status (official EntityStatus value, e.g. "In
+   * Review") and direct parent reference, read from the ES `_source`.
+   * The metrics list's flat mode renders its status column from here;
+   * the tree search reads parent links through the metrics API's
+   * `_source` helper instead. Absent for entity types that carry
+   * neither field.
+   */
+  entityStatus?: string;
+  parent?: EntityRef;
+  /** Metric type / granularity / variant count, for the metrics list name column. */
+  metricType?: string;
+  granularity?: string;
+  childrenCount?: number;
 }
 
 export interface SearchPage {

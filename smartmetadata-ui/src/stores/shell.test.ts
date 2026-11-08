@@ -88,7 +88,7 @@ describe('shell stores (Stage 1)', () => {
     expect(prefs.explorePageSize).toBe(50);
   });
 
-  it('persists sidebar collapse locally and reports no limit endpoint', () => {
+  it('persists sidebar collapse locally and starts with no limit config loaded', () => {
     const prefs = useShellPreferencesStore();
     prefs.setSidebarCollapsed(true);
     expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('1');
@@ -96,6 +96,30 @@ describe('shell stores (Stage 1)', () => {
     expect(prefs.sidebarCollapsed).toBe(true);
     const config = useShellConfigStore();
     expect(config.limit).toBeNull();
+  });
+
+  it('loads the limit config from /v1/limits/config', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ enable: true, limits: { config: { featureLimits: [] } } })),
+    );
+    const config = useShellConfigStore();
+    await config.loadLimitConfig();
+    expect(config.limit?.enable).toBe(true);
+    expect(config.limitError).toBe('');
+  });
+
+  it('keeps limit null (fail-open) when the limit config fetch fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('down');
+      }),
+    );
+    const config = useShellConfigStore();
+    await config.loadLimitConfig();
+    expect(config.limit).toBeNull();
+    expect(config.limitError).toBe('down');
   });
 
   it('caches the server version for an hour and reloads after expiry', async () => {

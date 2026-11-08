@@ -463,7 +463,7 @@ export const router = createRouter({
           component: DataProductDetailView,
           props: true,
         },
-        { path: 'governance/metrics', name: 'governance-metrics', component: MetricsListView },
+        { path: 'governance/metrics', name: 'governance-metrics', component: MetricsListView, alias: 'metrics' },
         {
           path: 'governance/metrics/:fqn',
           name: 'governance-metric',

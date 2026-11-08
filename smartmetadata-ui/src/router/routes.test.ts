@@ -48,6 +48,7 @@ describe('official-path aliases (G-01…G-10)', () => {
     ['/tags', 'governance-classifications'],
     ['/settings', 'admin-settings'],
     ['/data-insights/data-assets', 'insights-data-assets'],
+    ['/metrics', 'governance-metrics'],
   ];
   it.each(cases)('resolves %s to %s', (alias, name) => {
     expect(router.resolve(alias).name).toBe(name);

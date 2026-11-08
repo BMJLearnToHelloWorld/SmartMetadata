@@ -170,4 +170,38 @@ describe('mapSearchResponse', () => {
     });
     expect(mapped.hits[0]?.tableFqn).toBeUndefined();
   });
+
+  it('maps metric status, parent, type, granularity, and childrenCount for the metrics list', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 1 },
+        hits: [
+          {
+            _id: 'm1',
+            _index: 'metric_search_index',
+            _source: {
+              id: 'm1',
+              name: 'mau',
+              fullyQualifiedName: 'kpi.mau',
+              entityType: 'metric',
+              entityStatus: 'In Review',
+              parent: { id: 'm0', name: 'mau-root', fullyQualifiedName: 'kpi.mau-root', type: 'metric' },
+              metricType: 'NUMBER',
+              granularity: 'MONTHLY',
+              childrenCount: 2,
+              owners: [],
+              tags: [],
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]).toMatchObject({
+      entityStatus: 'In Review',
+      metricType: 'NUMBER',
+      granularity: 'MONTHLY',
+      childrenCount: 2,
+    });
+    expect(mapped.hits[0]?.parent).toMatchObject({ fullyQualifiedName: 'kpi.mau-root' });
+  });
 });

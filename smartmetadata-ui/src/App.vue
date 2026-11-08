@@ -11,6 +11,7 @@ import enUS from 'ant-design-vue/es/locale/en_US';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { SESSION_EXPIRED_EVENT } from '@/auth/sessionEvents';
 import CsvJobsTray from '@/components/shared/CsvJobsTray.vue';
+import { useShellConfigStore } from '@/stores/shellConfig';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import { smAntdTheme } from '@/theme/tokens';
 
@@ -18,6 +19,7 @@ const { locale, t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const shellPreferences = useShellPreferencesStore();
+const shellConfig = useShellConfigStore();
 
 const antdLocale = computed(() => (locale.value === 'zh-CN' ? zhCN : enUS));
 const formValidateMessages = computed(() => ({
@@ -49,6 +51,10 @@ function onSessionExpired(): void {
 
 onMounted(() => {
   shellPreferences.hydrate();
+  // Shell startup fetch, mirroring the official AppContainer parallel
+  // fetch (version + lineage settings + limit config). A failed limit
+  // fetch is fail-open inside the store and must not break startup.
+  void shellConfig.loadShellConfig();
   window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
 });
 
