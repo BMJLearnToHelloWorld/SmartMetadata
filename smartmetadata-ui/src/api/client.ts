@@ -30,7 +30,7 @@ export function apiBaseUrl(): string {
   return '/api';
 }
 
-function readErrorMessage(body: string, status: number): string {
+export function readErrorMessage(body: string, status: number): string {
   try {
     const parsed = JSON.parse(body) as { message?: string; error?: string; code?: string };
     return parsed.message || parsed.error || `Request failed (${status})`;

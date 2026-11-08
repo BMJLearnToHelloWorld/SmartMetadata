@@ -28,6 +28,10 @@ import {
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
+import { permissionFlags } from '@/api/permissions';
+import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
+import { recordRecentlyViewed } from '@/stores/contextCenterRecent';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import { extensionPatch } from '@/governance/assetPatch';
@@ -41,6 +45,30 @@ import { formatEpoch } from './time';
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
+const permissionStore = usePermissionStore();
+
+/**
+ * ADR:2026-11-07-context-center-permission-gates — create/edit/delete
+ * entries are hidden without the matching page grant (Create / EditAll /
+ * Delete); a failed permission request leaves all three false.
+ */
+const canCreate = ref(false);
+const canEditAll = ref(false);
+const canDelete = ref(false);
+
+async function loadPermissions(): Promise<void> {
+  try {
+    const flags = permissionFlags(await permissionStore.getResourcePermission('page'));
+    canCreate.value = flags.canCreate;
+    canEditAll.value = flags.canEditAll;
+    canDelete.value = flags.canDelete;
+  } catch {
+    canCreate.value = false;
+    canEditAll.value = false;
+    canDelete.value = false;
+  }
+}
 
 const fqn = computed(() => {
   const param = route.params.fqn;
@@ -185,8 +213,19 @@ async function loadDetail(): Promise<void> {
     detail.value = await getKnowledgePageByFqn(fqn.value);
     if (!detail.value) {
       detailError.value = t('crud.loadFailed');
-    } else if (detailTab.value !== 'overview') {
-      await loadDetailExtras();
+    } else {
+      // ADR:2026-11-07-context-center-recently-viewed-local-per-user —
+      // opening the detail counts as a view; re-recording is idempotent.
+      recordRecentlyViewed(auth.user?.name, {
+        id: detail.value.id,
+        title: detail.value.displayName || detail.value.name,
+        pageType: detail.value.pageType,
+        pageUrl: detail.value.pageUrl,
+        fullyQualifiedName: detail.value.fullyQualifiedName,
+      });
+      if (detailTab.value !== 'overview') {
+        await loadDetailExtras();
+      }
     }
   } catch (error) {
     detailError.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -196,6 +235,17 @@ async function loadDetail(): Promise<void> {
 }
 
 function openPage(page: KnowledgePage): void {
+  recordRecentlyViewed(auth.user?.name, {
+    id: page.id,
+    title: page.displayName || page.name,
+    pageType: page.pageType,
+    pageUrl: page.pageUrl,
+    fullyQualifiedName: page.fullyQualifiedName,
+  });
+  if (page.pageType === 'QuickLink' && page.pageUrl) {
+    window.open(page.pageUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
   void router.push({ name: 'context-center-article', params: { fqn: page.fullyQualifiedName } });
 }
 
@@ -306,6 +356,7 @@ onMounted(() => {
   detailTab.value = tabFromRoute();
   void load();
   void loadDetail();
+  void loadPermissions();
 });
 </script>
 
@@ -328,11 +379,16 @@ onMounted(() => {
               v-if="detail?.pageType === 'QuickLink' && detail?.pageUrl"
               :href="detail.pageUrl"
               target="_blank"
+              rel="noopener noreferrer"
               data-testid="article-open-link"
             >
               {{ t('contextCenter.openLink') }}
             </Button>
-            <Button data-testid="article-edit" @click="showEditModal = true">
+            <Button
+              v-if="canEditAll"
+              data-testid="article-edit"
+              @click="showEditModal = true"
+            >
               {{ t('crud.edit') }}
             </Button>
             <Button
@@ -347,7 +403,12 @@ onMounted(() => {
             >
               {{ t('contextCenter.versions') }}
             </Button>
-            <Button danger data-testid="article-delete" @click="detail && onDelete(detail)">
+            <Button
+              v-if="canDelete"
+              danger
+              data-testid="article-delete"
+              @click="detail && onDelete(detail)"
+            >
               {{ t('crud.delete') }}
             </Button>
             <Button @click="router.push({ name: 'context-center-articles' })">
@@ -400,6 +461,7 @@ onMounted(() => {
                    definitions come from the official
                    /metadata/types/name/page/customProperties surface. -->
               <Button
+                v-if="canEditAll"
                 type="primary"
                 data-testid="article-edit-custom-properties"
                 @click="propsOpen = true"
@@ -462,7 +524,7 @@ onMounted(() => {
         :has-prev="!!before"
         :empty-text="t('contextCenter.emptyArticles')"
         show-row-actions
-        show-delete-action
+        :show-delete-action="canDelete"
         @refresh="load()"
         @next="load({ after: after })"
         @prev="load({ before: before })"
@@ -470,7 +532,12 @@ onMounted(() => {
         @delete="onDelete($event as KnowledgePage)"
       >
         <template #actions>
-          <Button type="primary" data-testid="articles-create" @click="showCreateModal = true">
+          <Button
+            v-if="canCreate"
+            type="primary"
+            data-testid="articles-create"
+            @click="showCreateModal = true"
+          >
             {{ t('contextCenter.createArticle') }}
           </Button>
         </template>

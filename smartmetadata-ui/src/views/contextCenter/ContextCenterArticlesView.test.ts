@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { useAuthStore } from '@/stores/auth';
 import { createTestI18n } from '@/test/i18n';
 import ContextCenterArticlesView from './ContextCenterArticlesView.vue';
 
@@ -42,6 +43,17 @@ function buildRouter() {
   });
 }
 
+function allowPermissions(resource: string): Response {
+  return jsonResponse({
+    resource,
+    permissions: [
+      { operation: 'Create', access: 'allow' },
+      { operation: 'EditAll', access: 'allow' },
+      { operation: 'Delete', access: 'allow' },
+    ],
+  });
+}
+
 describe('ContextCenterArticlesView', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -49,6 +61,9 @@ describe('ContextCenterArticlesView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('page');
+        }
         if (url.includes('/contextCenter/pages/name/')) {
           return jsonResponse({
             id: 'p1',
@@ -112,6 +127,9 @@ describe('ContextCenterArticlesView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('page');
+        }
         if (url.includes('/contextCenter/pages/name/')) {
           return jsonResponse({
             id: 'p1',
@@ -193,6 +211,9 @@ describe('ContextCenterArticlesView', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('page');
+        }
         if (url.includes('/contextCenter/pages/name/')) {
           return jsonResponse({
             id: 'p1',
@@ -278,5 +299,81 @@ describe('ContextCenterArticlesView', () => {
     expect(wrapper.text()).toContain('low');
     wrapper.unmount();
     document.body.innerHTML = '';
+  });
+
+  it('records an article view when opening it from the list', { timeout: 15000 }, async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const auth = useAuthStore();
+    auth.user = { id: 'u-alice', name: 'alice' };
+    const router = buildRouter();
+    await router.push('/context-center/articles');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const openButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Getting Started'));
+    expect(openButton?.exists()).toBe(true);
+    await openButton?.trigger('click');
+    await flushPromises();
+    const stored = JSON.parse(
+      localStorage.getItem('sm.contextCenter.recentlyViewed.v1:alice') ?? '[]',
+    ) as Array<{ id: string; title: string }>;
+    expect(stored.map((item) => item.id)).toEqual(['p1']);
+    expect(stored[0]?.title).toBe('Getting Started');
+    expect(router.currentRoute.value.name).toBe('context-center-article');
+  });
+
+  it('records a quick-link view and opens its URL in a new tab', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('page');
+        }
+        if (url.includes('/contextCenter/pages')) {
+          return jsonResponse({
+            data: [
+              { id: 'q1', name: 'handbook-link', fullyQualifiedName: 'handbook-link', displayName: 'Handbook', pageType: 'QuickLink', page: { url: 'https://example.com/handbook' }, updatedBy: 'admin' },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const auth = useAuthStore();
+    auth.user = { id: 'u-alice', name: 'alice' };
+    const router = buildRouter();
+    await router.push('/context-center/articles');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const openButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Handbook'));
+    await openButton?.trigger('click');
+    await flushPromises();
+    const stored = JSON.parse(
+      localStorage.getItem('sm.contextCenter.recentlyViewed.v1:alice') ?? '[]',
+    ) as Array<{ id: string; pageType: string }>;
+    expect(stored.map((item) => item.id)).toEqual(['q1']);
+    expect(stored[0]?.pageType).toBe('QuickLink');
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://example.com/handbook',
+      '_blank',
+      'noopener,noreferrer',
+    );
+    expect(router.currentRoute.value.name).toBe('context-center-articles');
+    openSpy.mockRestore();
   });
 });

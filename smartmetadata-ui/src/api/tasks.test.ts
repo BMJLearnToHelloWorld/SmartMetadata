@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { addTaskComment, createTask, deleteTask, getTask, listDataAccessRequests, listTasks, patchTask, resolveTask } from './tasks';
+import { addTaskComment, createTask, deleteTask, getTask, listDataAccessRequests, listMyAssignedTasks, listTasks, patchTask, resolveTask } from './tasks';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -49,6 +49,31 @@ describe('tasks API', () => {
     expect(page.data[0]?.status).toBe('Open');
     expect(lastFetch().url).toContain('/api/v1/tasks');
     expect(lastFetch().url).toContain('statusGroup=open');
+  });
+
+  it('lists my assigned tasks from GET /v1/tasks/assigned with cursor paging, not offset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: 't9', name: 'review-memory', type: 'MemoryConflictReview', status: 'Open' }],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listMyAssignedTasks({ after: 'cursor-1' });
+    expect(page.data[0]?.type).toBe('MemoryConflictReview');
+    const url = new URL(lastFetch().url);
+    expect(url.pathname).toBe('/api/v1/tasks/assigned');
+    expect(url.searchParams.get('type')).toBe('MemoryConflictReview');
+    expect(url.searchParams.get('status')).toBe('Open');
+    expect(url.searchParams.get('fields')).toBe('about,createdBy,payload');
+    expect(url.searchParams.get('limit')).toBe('20');
+    expect(url.searchParams.get('after')).toBe('cursor-1');
+    expect(url.searchParams.has('offset')).toBe(false);
   });
 
   it('creates a CustomTask with schema-required category and type', async () => {

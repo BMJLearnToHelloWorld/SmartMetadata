@@ -21,7 +21,7 @@ import type {
   PersonaAiContextRule,
   PersonaAiContextStatus,
 } from '@/types/contextCenter';
-import { apiBaseUrl, apiRequest, ApiError } from './client';
+import { apiBaseUrl, apiRequest, ApiError, readErrorMessage } from './client';
 import type { ChangeDescription, EntityVersion } from './entities';
 import { mapChangeDescription, mapTags } from './entities';
 import { authorizationHeader, loadSession } from '@/auth/token';
@@ -75,6 +75,13 @@ function mapContextMemory(raw: Record<string, unknown>): ContextMemory | null {
     answer: asString(raw.answer) || undefined,
     entityStatus: asString(raw.entityStatus) as ContextMemoryStatus | undefined,
     pinned: asBoolean(raw.pinned) ?? undefined,
+    /**
+     * ADR:2026-11-07-context-center-most-cited-memories — the most-cited
+     * card sorts by appliedCount (official getListContextMemories
+     * sortBy='appliedCount'); usageCount is a different counter and must
+     * never stand in for citation counts.
+     */
+    appliedCount: asNumber(raw.appliedCount),
     owners: mapEntityRefs(raw.owners),
     primaryEntity: mapEntityRefs(raw.primaryEntity ? [raw.primaryEntity] : [])[0],
     updatedAt: asNumber(raw.updatedAt),
@@ -186,10 +193,16 @@ function mapPersonaStatus(raw: Record<string, unknown>): PersonaAiContextStatus 
 export interface ListKnowledgePagesQuery {
   limit?: number;
   after?: string;
+  before?: string;
+  q?: string;
   pageType?: KnowledgePageType;
   entityType?: string;
   entityId?: string;
   tagFQN?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  offset?: number;
+  fields?: string;
 }
 
 export async function listKnowledgePages(
@@ -346,11 +359,16 @@ export async function getKnowledgePageVersion(
 export interface ListContextMemoriesQuery {
   limit?: number;
   after?: string;
+  before?: string;
   q?: string;
   pinned?: boolean;
   statuses?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  author?: string;
+  assets?: string;
+  offset?: number;
+  fields?: string;
 }
 
 export async function listContextMemories(
@@ -381,8 +399,12 @@ export async function pinContextMemory(id: string): Promise<void> {
   await apiRequest(`${MEMORIES_PATH}/${id}/pin`, { method: 'PUT' });
 }
 
+/**
+ * Official unpin (rest/contextMemoryAPI.ts): DELETE /{id}/pin. The server
+ * exposes no PUT .../unpin route, so the old call 404'd; pin stays PUT /pin.
+ */
 export async function unpinContextMemory(id: string): Promise<void> {
-  await apiRequest(`${MEMORIES_PATH}/${id}/unpin`, { method: 'PUT' });
+  await apiRequest(`${MEMORIES_PATH}/${id}/pin`, { method: 'DELETE' });
 }
 
 export interface ListContextFilesQuery {
@@ -430,6 +452,173 @@ export async function deleteDriveFile(id: string, hardDelete = false): Promise<v
     method: 'DELETE',
     query: hardDelete ? { hardDelete: true } : {},
   });
+}
+
+/**
+ * Official BulkOperationResult (ContextFileResource.buildBulkOperationResult):
+ * row counts plus the per-id success/failure lists. `request` carries the
+ * file id as a string on both lists.
+ */
+export interface BulkOperationResult {
+  numberOfRowsProcessed?: number;
+  numberOfRowsPassed?: number;
+  numberOfRowsFailed?: number;
+  successRequest?: Array<{ request?: string; status?: number; message?: string }>;
+  failedRequest?: Array<{ request?: string; status?: number; message?: string }>;
+  status?: string;
+}
+
+function mapBulkRequests(value: unknown): Array<{ request?: string; status?: number; message?: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    return [
+      {
+        request: asString(rec.request) || undefined,
+        status: asNumber(rec.status),
+        message: asString(rec.message) || undefined,
+      },
+    ];
+  });
+}
+
+function mapBulkOperationResult(raw: unknown): BulkOperationResult {
+  const rec = asRecord(raw) ?? {};
+  return {
+    numberOfRowsProcessed: asNumber(rec.numberOfRowsProcessed),
+    numberOfRowsPassed: asNumber(rec.numberOfRowsPassed),
+    numberOfRowsFailed: asNumber(rec.numberOfRowsFailed),
+    successRequest: mapBulkRequests(rec.successRequest),
+    failedRequest: mapBulkRequests(rec.failedRequest),
+    status: asString(rec.status) || undefined,
+  };
+}
+
+/** Official getSuccessfulIds: the successRequest[].request string set. */
+export function getBulkSuccessfulIds(result: BulkOperationResult): Set<string> {
+  return new Set(
+    (result.successRequest ?? [])
+      .map((item) => item.request)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+}
+
+/**
+ * Official bulkDeleteDriveFiles (rest/assetAPI.ts): POST …/bulk/delete
+ * with { ids, hardDelete }. Soft delete by default; partial success is
+ * reported per id in the result, never as an exception.
+ */
+export async function bulkDeleteDriveFiles(
+  ids: string[],
+  hardDelete = false,
+): Promise<BulkOperationResult> {
+  const payload = await apiRequest<unknown>(`${FILES_PATH}/bulk/delete`, {
+    json: { ids, hardDelete },
+  });
+  return mapBulkOperationResult(payload);
+}
+
+/**
+ * Official bulkMoveFilesToFolder (rest/assetAPI.ts): PUT …/bulk/move
+ * with { ids, folder: { id, type: 'folder' } }.
+ */
+export async function bulkMoveFilesToFolder(
+  ids: string[],
+  folderId: string,
+): Promise<BulkOperationResult> {
+  const payload = await apiRequest<unknown>(`${FILES_PATH}/bulk/move`, {
+    method: 'PUT',
+    json: { ids, folder: { id: folderId, type: 'folder' } },
+  });
+  return mapBulkOperationResult(payload);
+}
+
+/**
+ * Official downloadDriveFiles (rest/assetAPI.ts): POST …/bulk/download,
+ * returning a zip blob.
+ *
+ * ADR:2026-11-07-context-center-bulk-download-blob-path — apiRequest has
+ * no blob mode, so this uses a raw authed fetch like uploadDriveFile.
+ * The endpoint answers failures as JSON (503 with no object storage,
+ * 404 with no file content, 400 with a BulkOperationResult), so a JSON
+ * body is always an error and is never saved as a .zip.
+ */
+export async function downloadDriveFiles(ids: string[]): Promise<Blob> {
+  if (ids.length === 0) {
+    throw new Error('No files selected for download');
+  }
+  const session = loadSession(window.localStorage);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (session?.accessToken) {
+    headers.Authorization = authorizationHeader(session.accessToken);
+  }
+  const response = await fetch(`${apiBaseUrl()}${FILES_PATH}/bulk/download`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ids }),
+  });
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiError(response.status, text, readErrorMessage(text, response.status));
+  }
+  if (contentType.includes('application/json')) {
+    const text = await response.text();
+    throw new ApiError(response.status, text, readErrorMessage(text, response.status));
+  }
+  return response.blob();
+}
+
+/**
+ * G-20 document search.
+ *
+ * ADR:2026-11-07-context-center-g20-search-size-100 — a dedicated call,
+ * not searchAssets: SearchHit drops the columns the document table
+ * renders, so hits are read from _source and mapped through the existing
+ * mapContextFile, with the total from hits.total.value. Size defaults to
+ * 100 (the REST page size; the search view replaces the list and has no
+ * search-state paging). The folder term filter follows the official
+ * shape and is attached only when a folder is selected.
+ */
+export async function searchContextFiles(
+  query: string,
+  options: { folderId?: string; size?: number } = {},
+): Promise<{ data: ContextFile[]; total: number }> {
+  const q = query.trim();
+  const queryFilter = options.folderId
+    ? JSON.stringify({
+        query: { bool: { filter: { term: { 'folder.id': options.folderId } } } },
+      })
+    : undefined;
+  const payload = await apiRequest<unknown>('/v1/search/query', {
+    query: {
+      q: q.length > 0 ? q : '*',
+      index: 'contextFile',
+      from: 0,
+      size: options.size ?? 100,
+      sort_field: 'updatedAt',
+      sort_order: 'desc',
+      query_filter: queryFilter,
+    },
+  });
+  const root = asRecord(payload) ?? {};
+  const hits = asRecord(root.hits) ?? {};
+  const total = asRecord(hits.total);
+  const rows = Array.isArray(hits.hits) ? hits.hits : [];
+  const data = rows.flatMap((item) => {
+    const source = asRecord(asRecord(item)?._source);
+    if (!source) {
+      return [];
+    }
+    const mapped = mapContextFile(source);
+    return mapped ? [mapped] : [];
+  });
+  return { data, total: asNumber(total?.value) ?? data.length };
 }
 
 export async function listDriveFolders(

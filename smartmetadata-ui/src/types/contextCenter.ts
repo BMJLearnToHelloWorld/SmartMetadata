@@ -61,6 +61,12 @@ export interface ContextMemory {
   answer?: string;
   entityStatus?: ContextMemoryStatus;
   pinned?: boolean;
+  /**
+   * Times this memory was applied/cited (official appliedCount). Mapped in
+   * mapContextMemory; the most-cited card sorts on it. Never substitute
+   * usageCount — see ADR:2026-11-07-context-center-most-cited-memories.
+   */
+  appliedCount?: number;
   owners?: EntityRef[];
   primaryEntity?: EntityRef;
   updatedAt?: number;

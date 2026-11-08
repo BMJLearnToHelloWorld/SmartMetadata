@@ -164,4 +164,52 @@ describe('EntityListShell', () => {
     expect(wrapper.emitted('delete')?.[0]?.[0]).toEqual({ id: 'u1', name: 'alice' });
     expect(wrapper.emitted('view')).toBeUndefined();
   });
+
+  it('shows Load more instead of the pager in infinite-scroll mode', async () => {
+    const wrapper = await mountShell({
+      showLoadMore: true,
+      hasMore: true,
+      hasNext: true,
+      dataSource: [{ id: '1', name: 'a' }],
+      total: 3,
+    });
+    expect(wrapper.find('[data-testid="entity-list-load-more"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-list-next"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-prev"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="entity-list-load-more"]').trigger('click');
+    expect(wrapper.emitted('loadMore')).toHaveLength(1);
+  });
+
+  it('hides Load more on the last page', async () => {
+    const wrapper = await mountShell({
+      showLoadMore: true,
+      hasMore: false,
+      dataSource: [{ id: '1', name: 'a' }],
+    });
+    expect(wrapper.find('[data-testid="entity-list-load-more"]').exists()).toBe(false);
+  });
+
+  it('hides a row delete entry when rowCanDelete refuses that row', async () => {
+    // Earlier tests leave their (open) dropdown overlays in the document;
+    // drop them so the absence assertion below reads this test's menu only.
+    document
+      .querySelectorAll('[data-testid="row-overflow-delete"]')
+      .forEach((el) => el.remove());
+    const wrapper = await mountShell({
+      showRowActions: true,
+      showDeleteAction: true,
+      dataSource: [
+        { id: 'u1', name: 'alice' },
+        { id: 'u2', name: 'bob' },
+      ],
+      rowCanDelete: (record: unknown) => (record as { id: string }).id === 'u1',
+    });
+    await wrapper.get('[data-testid="row-overflow-u2"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')).toBeNull();
+    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
+    await flushPromises();
+    const del = [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-delete"]')].at(-1);
+    expect(del?.textContent).toContain('Delete');
+  });
 });
