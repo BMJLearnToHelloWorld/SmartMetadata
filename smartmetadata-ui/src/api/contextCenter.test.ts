@@ -405,11 +405,11 @@ describe('contextCenter API', () => {
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         expect(init?.method).toBe('POST');
         expect(JSON.parse(String(init?.body))).toEqual({ ids: ['f1'] });
-        // String body, not a Blob body: Node 22's Response constructor calls
+        // Uint8Array body, not a Blob body: Node 22's Response constructor calls
         // blob.stream(), which jsdom's Blob lacks (CI failure on Node 22,
         // while Node 24 tolerates it); .blob() still yields type
         // 'application/zip' from the Content-Type header.
-        return new Response('PK\x03\x04', { status: 200, headers: { 'Content-Type': 'application/zip' } });
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), { status: 200, headers: { 'Content-Type': 'application/zip' } });
       }),
     );
     const out = await downloadDriveFiles(['f1']);
