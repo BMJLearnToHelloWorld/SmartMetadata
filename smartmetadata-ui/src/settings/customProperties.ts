@@ -43,7 +43,7 @@ import {
  * label order (`localeCompare`, as official sorts at :986). This module is
  * the single definition of the list: the Settings Hub and the custom
  * property types list both import it, so the two surfaces cannot drift
- * apart. ADR:2026-11-07-custom-properties-s12.
+ * apart. ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
  *
  * Icons are mapped onto the product's existing ant-design icon set; no
  * official icon asset is introduced. Description copy follows official:

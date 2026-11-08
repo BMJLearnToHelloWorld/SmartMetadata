@@ -227,7 +227,7 @@ export interface CreateAnnouncementRequest {
  * Read-side shape of CustomProperty.customPropertyConfig (official
  * generated/type/customProperty.ts). Stage 2 (Wave 1 W1-2) only parses it so
  * the Configuration column can render server-side config; the write-side
- * form fields belong to stage 3. ADR:2026-11-07-custom-properties-s12.
+ * form fields belong to stage 3. ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
  */
 export interface CustomPropertyConfig {
   config?: string | string[] | { values?: string[]; columns?: string[]; multiSelect?: boolean };

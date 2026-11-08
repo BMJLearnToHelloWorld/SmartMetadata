@@ -325,7 +325,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     // category card (icon + description), in rendered label order. The rows
     // link to the existing detail route with the type name as the
     // `entityType` param (G-D2 (a)); no second-level category page and no
-    // 26 standalone category cards. ADR:2026-11-07-custom-properties-s12.
+    // 26 standalone category cards. ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
     items: CUSTOM_PROPERTY_TYPE_ENTRIES.map((item) => ({
       key: `custom-properties-${item.type}`,
       titleKey: item.titleKey,

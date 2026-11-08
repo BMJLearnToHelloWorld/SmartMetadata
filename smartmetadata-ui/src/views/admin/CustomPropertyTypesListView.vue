@@ -21,7 +21,7 @@ const types = ref<MetadataType[]>([]);
 const total = ref<number | undefined>();
 
 /**
- * G-D1 (a) pagination semantics (ADR:2026-11-07-custom-properties-s12):
+ * G-D1 (a) pagination semantics (ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch):
  * the server enumerates every entity type, but this page only ever shows
  * the official 26. One fetch with a limit that covers the whole allowlist,
  * paging on only if the server still returns a cursor, then filter

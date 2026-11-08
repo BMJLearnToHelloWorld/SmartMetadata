@@ -292,7 +292,7 @@ interface JsonPatchOperation {
  * error is thrown as-is. Resolves to `undefined` when the property is
  * already gone (treated as deleted, not a failure). A PATCH response
  * without a usable type body is followed by a re-GET.
- * ADR:2026-11-07-custom-properties-s12.
+ * ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
  */
 export async function deleteCustomPropertyByName(
   entityType: string,
