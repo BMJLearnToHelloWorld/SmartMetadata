@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlossaryTerm } from '@/types/governance';
-import { buildGlossaryGraphData, fetchGlossaryGraphData } from './glossaryGraph';
+import { buildGlossaryGraphData, fetchAllGlossariesGraphData, fetchGlossaryGraphData } from './glossaryGraph';
 
 function term(partial: Partial<GlossaryTerm> & { id: string; name: string }): GlossaryTerm {
   return {
@@ -68,6 +68,51 @@ describe('buildGlossaryGraphData', () => {
     expect(graph.nodes.map((node) => node.id)).toEqual(['a', 'b']);
     expect(graph.edges).toHaveLength(1);
   });
+
+  it('carries glossary ownership, FQN, description, and the isolated flag on nodes', () => {
+    const graph = buildGlossaryGraphData([
+      term({
+        id: 'a',
+        name: 'A',
+        displayName: 'Term A',
+        description: 'The first term.',
+        fullyQualifiedName: 'Sales.A',
+        glossary: { id: 'g1', name: 'Sales', displayName: 'Sales Glossary' },
+        relatedTerms: [{ name: 'B', id: 'b', type: 'glossaryTerm' }],
+      }),
+      term({ id: 'b', name: 'B', glossary: { id: 'g1', name: 'Sales' } }),
+      term({ id: 'lonely', name: 'Lonely', glossary: { id: 'g1', name: 'Sales' } }),
+    ]);
+    expect(graph.nodes).toEqual([
+      {
+        description: 'The first term.',
+        fullyQualifiedName: 'Sales.A',
+        glossaryId: 'g1',
+        group: 'Sales Glossary',
+        id: 'a',
+        isolated: false,
+        label: 'Term A',
+      },
+      {
+        description: undefined,
+        fullyQualifiedName: 'B',
+        glossaryId: 'g1',
+        group: 'Sales',
+        id: 'b',
+        isolated: false,
+        label: 'B',
+      },
+      {
+        description: undefined,
+        fullyQualifiedName: 'Lonely',
+        glossaryId: 'g1',
+        group: 'Sales',
+        id: 'lonely',
+        isolated: true,
+        label: 'Lonely',
+      },
+    ]);
+  });
 });
 
 describe('fetchGlossaryGraphData', () => {
@@ -121,5 +166,47 @@ describe('fetchGlossaryGraphData', () => {
     expect(graph.edges).toEqual([
       { id: 'a|x1|narrower', source: 'a', target: 'x1', relationType: 'narrower' },
     ]);
+  });
+});
+
+describe('fetchAllGlossariesGraphData', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('merges glossaries and tolerates one failing glossary', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const body = (data: unknown, status = 200): Response =>
+          new Response(JSON.stringify(data), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        if (url.includes('glossary=g2')) {
+          return body({ message: 'boom' }, 500);
+        }
+        if (url.includes('glossary=g1')) {
+          return body({ data: [{ id: 'a', name: 'A', fullyQualifiedName: 'G1.A', relatedTerms: [] }], paging: {} });
+        }
+        if (url.includes('glossary=g3')) {
+          return body({ data: [{ id: 'b', name: 'B', fullyQualifiedName: 'G3.B', relatedTerms: [] }], paging: {} });
+        }
+        return body({}, 404);
+      }),
+    );
+    const graph = await fetchAllGlossariesGraphData([
+      { id: 'g1', name: 'G1' },
+      { id: 'g2', name: 'G2' },
+      { id: 'g3', name: 'G3' },
+    ] as never);
+    expect(graph.nodes.map((node) => node.id)).toEqual(['a', 'b']);
+    expect(graph.edges).toEqual([]);
   });
 });

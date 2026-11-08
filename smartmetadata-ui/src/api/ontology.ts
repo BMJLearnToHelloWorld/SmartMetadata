@@ -15,6 +15,7 @@ import type {
   OntologyAxiom,
   OntologyConcept,
   OntologyConceptBinding,
+  OntologyExpression,
   OntologyPack,
   OntologyProperty,
   OntologyRelease,
@@ -129,10 +130,59 @@ function mapOntologyProperty(raw: Record<string, unknown>): OntologyProperty | n
     kind: asString(raw.kind) || undefined,
     domain: refName(raw.domain),
     range: refName(raw.range),
+    domainIris: iriList(raw.domain),
+    rangeIris: iriList(raw.range),
     enumValues,
     unit: asString(raw.unit) || undefined,
     isIdentifier: asBoolean(raw.isIdentifier) ?? undefined,
     owners: mapEntityRefs(raw.owners),
+  };
+}
+
+/** Domain/range arrive as IRI arrays per the spec; tolerate a lone string. */
+function iriList(value: unknown): string[] | undefined {
+  if (typeof value === 'string') {
+    return value ? [value] : undefined;
+  }
+  if (Array.isArray(value)) {
+    const iris = value.flatMap((item) => {
+      if (typeof item === 'string') {
+        return item ? [item] : [];
+      }
+      const name = refName(item);
+      return name ? [name] : [];
+    });
+    return iris.length ? iris : undefined;
+  }
+  return undefined;
+}
+
+/** Structured OWL class expression (type/ontologyExpression.json), recursive. */
+function mapOntologyExpression(value: unknown): OntologyExpression | null {
+  const rec = asRecord(value);
+  if (!rec || !asString(rec.kind)) {
+    return null;
+  }
+  const filler = rec.filler === undefined ? undefined : mapOntologyExpression(rec.filler);
+  const operands = Array.isArray(rec.operands)
+    ? rec.operands.flatMap((item) => {
+        const mapped = mapOntologyExpression(item);
+        return mapped ? [mapped] : [];
+      })
+    : undefined;
+  const individualIris = Array.isArray(rec.individualIris)
+    ? rec.individualIris.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  return {
+    kind: asString(rec.kind),
+    classIri: asString(rec.classIri) || undefined,
+    propertyIri: asString(rec.propertyIri) || undefined,
+    restrictionKind: asString(rec.restrictionKind) || undefined,
+    filler: filler ?? undefined,
+    cardinality: asNumber(rec.cardinality),
+    individualIri: asString(rec.individualIri) || undefined,
+    operands: operands?.length ? operands : undefined,
+    individualIris: individualIris?.length ? individualIris : undefined,
   };
 }
 
@@ -217,6 +267,12 @@ function mapOntologyAxiom(raw: Record<string, unknown>): OntologyAxiom | null {
   const expressions = Array.isArray(raw.expressions)
     ? raw.expressions.filter((item): item is string => typeof item === 'string')
     : undefined;
+  const structuredExpressions = Array.isArray(raw.expressions)
+    ? raw.expressions.flatMap((item) => {
+        const mapped = mapOntologyExpression(item);
+        return mapped ? [mapped] : [];
+      })
+    : undefined;
   const ontologyRefs = mapEntityRefs(raw.ontology ? [raw.ontology] : []);
   return {
     id,
@@ -228,9 +284,11 @@ function mapOntologyAxiom(raw: Record<string, unknown>): OntologyAxiom | null {
     axiomType: asString(raw.axiomType) || undefined,
     subjectIri: asString(raw.subjectIri) || undefined,
     expressions,
+    structuredExpressions: structuredExpressions?.length ? structuredExpressions : undefined,
     propertyIri: asString(raw.propertyIri) || undefined,
     targetIri: asString(raw.targetIri) || undefined,
     literal: asString(raw.literal) || undefined,
+    deleted: asBoolean(raw.deleted) ?? undefined,
     owners: mapEntityRefs(raw.owners),
   };
 }

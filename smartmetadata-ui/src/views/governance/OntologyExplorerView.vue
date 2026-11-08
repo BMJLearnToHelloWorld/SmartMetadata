@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Card, Empty, Form, Input, Select, Space, Typography, message } from 'ant-design-vue';
+import { Button, Card, Empty, Form, Input, Radio, Select, Space, Typography, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -16,7 +16,6 @@ import {
   getOntologyConcept,
   getOntologyConceptBindings,
   getOntologyPackSample,
-  listOntologies,
   listOntologyAxioms,
   listOntologyConcepts,
   listOntologyProperties,
@@ -33,29 +32,106 @@ import type {
   OntologyProperty,
   OntologyRelease,
 } from '@/types/ontology';
+import type { Glossary } from '@/types/governance';
+import { usePermissionStore } from '@/stores/permissions';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef } from '@/types/api';
+import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
+import OntologyTreeView from '@/features/ontology/OntologyTreeView.vue';
+import {
+  AggregateCapacityError,
+  buildAggregateGraph,
+  listAllGlossaries,
+  listAllOntologies,
+  loadAggregateModels,
+  loadOntologyModel,
+} from '@/features/ontology/ontologyAggregate';
+import { buildOntologyModelGraph, type OntologyGraphData, type OntologyGraphEdge } from '@/features/ontology/ontologyGraph';
+import { fetchAllGlossariesGraphData, fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
+import { computeOntologySearchHighlight } from '@/features/ontology/ontologySearchHighlight';
+import { buildOntologyTreeIndex } from '@/features/ontology/ontologyTree';
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 
 /**
- * Official page shape (pages/OntologyExplorerPage): the studio is selected
- * by the ?ontology= query param and loads the ontology with owners,reviewers
- * plus its concepts and properties (studio model: concepts/properties listed
- * by ontology fqn). This page lands the studio's view-mode data surfaces
- * plus create: concept detail with hierarchy navigation and bindings,
- * concept/property search and paging, axioms, sealed releases, and the
- * library-pack catalogue with sample previews. The graph canvas, edit
- * mode with locks, drafts/changesets, publication, reviews, AI assistant,
- * import and pack install are separate subsystems and are not faked here.
+ * Ontology browser (official pages/OntologyExplorerPage, view mode):
+ * read-only aggregate graph + graph/tree toggle + scope menu. The page
+ * defaults to the all-ontologies scope with the graph surface
+ * (official getStudioScope default + viewSurface 'graph'); the studio
+ * stays a separate route (E-D2) and editing stays there.
+ *
+ * Scope is URL-owned (official OntologyStudioScope.utils.ts):
+ * no params -> all ontologies; ?ontology=<id> -> single ontology;
+ * ?scope=glossary:<id> / glossary:all -> glossary scope. The scope menu
+ * writes both scope and ontology params for single-ontology scopes.
  */
-const loading = ref(false);
+type OntologyBrowserScope =
+  | { kind: 'allOntologies' }
+  | { kind: 'ontology'; ontologyId: string }
+  | { kind: 'glossaries'; glossaryId?: string };
+
+function scopeKeyOf(scope: OntologyBrowserScope): string {
+  if (scope.kind === 'allOntologies') {
+    return 'ontology:all';
+  }
+  if (scope.kind === 'ontology') {
+    return `ontology:${scope.ontologyId}`;
+  }
+  return scope.glossaryId ? `glossary:${scope.glossaryId}` : 'glossary:all';
+}
+
+function parseScopeKey(key: string): OntologyBrowserScope | undefined {
+  if (key === 'ontology:all') {
+    return { kind: 'allOntologies' };
+  }
+  if (key === 'glossary:all') {
+    return { kind: 'glossaries' };
+  }
+  if (key.startsWith('glossary:')) {
+    const id = key.slice('glossary:'.length);
+    return id ? { kind: 'glossaries', glossaryId: id } : { kind: 'glossaries' };
+  }
+  if (key.startsWith('ontology:') && key !== 'ontology:new') {
+    return { kind: 'ontology', ontologyId: key.slice('ontology:'.length) };
+  }
+  return undefined;
+}
+
+/** Official getStudioScope: ?ontology= wins; scope= only selects glossaries. */
+function parseScopeFromRoute(): OntologyBrowserScope {
+  const ontologyId = typeof route.query.ontology === 'string' ? route.query.ontology : undefined;
+  if (ontologyId) {
+    return { kind: 'ontology', ontologyId };
+  }
+  const scopeParam = typeof route.query.scope === 'string' ? route.query.scope : '';
+  const explicit = parseScopeKey(scopeParam);
+  if (explicit?.kind === 'glossaries') {
+    return explicit;
+  }
+  if (scopeParam.startsWith('glossary:')) {
+    return { kind: 'glossaries' };
+  }
+  return { kind: 'allOntologies' };
+}
+
+const scopesLoading = ref(false);
+const graphLoading = ref(false);
 const detailLoading = ref(false);
 const errorMessage = ref('');
+const graphError = ref('');
+const capacityExceeded = ref(false);
 const ontologies = ref<Ontology[]>([]);
-const selectedId = ref<string | undefined>(undefined);
+const glossaries = ref<Glossary[]>([]);
+const scope = ref<OntologyBrowserScope>({ kind: 'allOntologies' });
+const scopeKey = computed(() => scopeKeyOf(scope.value));
+const surface = ref<'graph' | 'tree'>('graph');
+const searchQuery = ref('');
+const graphData = ref<OntologyGraphData | null>(null);
+const selectedNodeId = ref<string | null>(null);
+const selectedEdge = ref<OntologyGraphEdge | null>(null);
 const ontology = ref<Ontology | null>(null);
 const concepts = ref<OntologyConcept[]>([]);
 const properties = ref<OntologyProperty[]>([]);
@@ -74,6 +150,89 @@ const packs = ref<OntologyPack[]>([]);
 const packsError = ref('');
 const sampleByPack = ref<Record<string, OntologyPackSample>>({});
 const samplingPack = ref<string | null>(null);
+
+/**
+ * E-D6 gate (ADR:2026-11-08-ontology-browser-studio-gate): the official
+ * computeCanEditOntology four-item resource formula, fail-closed. The
+ * studio's three-item entity formula must not be copied here.
+ */
+const canOpenStudio = ref(false);
+
+async function loadStudioGate(): Promise<void> {
+  try {
+    const [glossaryOps, glossaryTermOps] = await Promise.all([
+      permissionStore.getResourcePermission('glossary').catch(() => null),
+      permissionStore.getResourcePermission('glossaryTerm').catch(() => null),
+    ]);
+    canOpenStudio.value =
+      permissionStore.isAdminUser ||
+      glossaryOps?.EditAll === true ||
+      glossaryOps?.EditGlossaryTerms === true ||
+      glossaryTermOps?.EditEntityRelationship === true;
+  } catch {
+    canOpenStudio.value = false;
+  }
+}
+
+const treeIndex = computed(() => buildOntologyTreeIndex(graphData.value));
+
+const highlightGroups = computed(() => {
+  if (scope.value.kind === 'glossaries') {
+    return glossaries.value.map((item) => ({
+      description: item.description,
+      displayName: item.displayName,
+      fullyQualifiedName: item.fullyQualifiedName,
+      id: item.id,
+      name: item.name,
+    }));
+  }
+  if (scope.value.kind === 'ontology') {
+    const current = ontology.value;
+    return current
+      ? [
+          {
+            description: current.description,
+            displayName: current.displayName,
+            fullyQualifiedName: current.fullyQualifiedName,
+            id: current.id,
+            name: current.name,
+          },
+        ]
+      : [];
+  }
+  return ontologies.value.map((item) => ({
+    description: item.description,
+    displayName: item.displayName,
+    fullyQualifiedName: item.fullyQualifiedName,
+    id: item.id,
+    name: item.name,
+  }));
+});
+
+const highlight = computed(() =>
+  graphData.value
+    ? computeOntologySearchHighlight(graphData.value.nodes, graphData.value.edges, searchQuery.value, highlightGroups.value)
+    : null,
+);
+
+const searchNoHit = computed(
+  () =>
+    searchQuery.value.trim().length > 0 &&
+    highlight.value !== null &&
+    highlight.value.highlightedNodeIds.length === 0,
+);
+
+/** Official getStudioStatsLabel: counts come from the aggregate graph itself. */
+const statsLabel = computed(() => {
+  if (!graphData.value) {
+    return '';
+  }
+  const relations = graphData.value.edges.length;
+  if (scope.value.kind === 'glossaries') {
+    return t('ontology.browser.statsTermsRelations', { relations, terms: graphData.value.nodes.length });
+  }
+  return t('ontology.browser.statsConceptsRelations', { concepts: graphData.value.nodes.length, relations });
+});
 
 const filteredConcepts = computed(() => {
   const q = conceptFilter.value.trim().toLowerCase();
@@ -120,7 +279,7 @@ const propertyColumns = computed(() => [
   { title: t('ontology.properties.description'), dataIndex: 'description', key: 'description' },
 ]);
 
-async function loadDetail(id: string): Promise<void> {
+async function loadDetail(id: string): Promise<Ontology | null> {
   detailLoading.value = true;
   errorMessage.value = '';
   selectedConcept.value = null;
@@ -141,6 +300,7 @@ async function loadDetail(id: string): Promise<void> {
     propertyAfter.value = propertyPage.after;
     axioms.value = axiomPage.data;
     releases.value = releasePage.data;
+    return detail;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
     ontology.value = null;
@@ -148,6 +308,7 @@ async function loadDetail(id: string): Promise<void> {
     properties.value = [];
     axioms.value = [];
     releases.value = [];
+    return null;
   } finally {
     detailLoading.value = false;
   }
@@ -239,36 +400,150 @@ async function onSamplePack(pack: OntologyPack): Promise<void> {
   }
 }
 
-async function loadCatalog(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
+let graphLoadToken = 0;
+
+async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: boolean } = {}): Promise<void> {
+  const token = ++graphLoadToken;
+  scope.value = next;
+  selectedNodeId.value = null;
+  selectedEdge.value = null;
+  graphData.value = null;
+  graphError.value = '';
+  capacityExceeded.value = false;
+  if (options.updateRoute !== false) {
+    const query: Record<string, string | undefined> = { ...route.query, scope: scopeKeyOf(next) };
+    if (next.kind === 'ontology') {
+      query.ontology = next.ontologyId;
+    } else {
+      delete query.ontology;
+    }
+    void router.replace({ query });
+  }
+  graphLoading.value = true;
   try {
-    const page = await listOntologies({ limit: 100 });
-    ontologies.value = page.data;
-    const requested = typeof route.query.ontology === 'string' ? route.query.ontology : undefined;
-    const target = page.data.find((item) => item.id === requested) ?? page.data[0];
-    if (target) {
-      selectedId.value = target.id;
-      if (requested !== target.id) {
-        void router.replace({ query: { ...route.query, ontology: target.id } });
+    if (next.kind === 'allOntologies') {
+      ontology.value = null;
+      concepts.value = [];
+      properties.value = [];
+      axioms.value = [];
+      releases.value = [];
+      const models = await loadAggregateModels(ontologies.value);
+      if (token !== graphLoadToken) {
+        return;
       }
-      await loadDetail(target.id);
+      graphData.value = buildAggregateGraph(models);
+    } else if (next.kind === 'ontology') {
+      const detail = await loadDetail(next.ontologyId);
+      if (token !== graphLoadToken) {
+        return;
+      }
+      if (!detail) {
+        graphError.value = t('crud.loadFailed');
+        return;
+      }
+      const model = await loadOntologyModel(detail);
+      if (token !== graphLoadToken) {
+        return;
+      }
+      if (!model) {
+        graphError.value = t('crud.loadFailed');
+        return;
+      }
+      graphData.value = buildOntologyModelGraph(model);
+    } else if (next.kind === 'glossaries' && next.glossaryId) {
+      ontology.value = null;
+      concepts.value = [];
+      properties.value = [];
+      axioms.value = [];
+      releases.value = [];
+      const data = await fetchGlossaryGraphData(next.glossaryId);
+      if (token !== graphLoadToken) {
+        return;
+      }
+      graphData.value = data;
+    } else {
+      ontology.value = null;
+      concepts.value = [];
+      properties.value = [];
+      axioms.value = [];
+      releases.value = [];
+      const data = await fetchAllGlossariesGraphData(glossaries.value);
+      if (token !== graphLoadToken) {
+        return;
+      }
+      graphData.value = data;
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    if (token !== graphLoadToken) {
+      return;
+    }
+    if (error instanceof AggregateCapacityError) {
+      capacityExceeded.value = true;
+    } else {
+      graphError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    }
+    graphData.value = null;
   } finally {
-    loading.value = false;
+    if (token === graphLoadToken) {
+      graphLoading.value = false;
+    }
   }
 }
 
-function onSelect(value: string | number | undefined): void {
+function onScopeChange(value: string | number | undefined): void {
   if (value === undefined) {
     return;
   }
-  const id = String(value);
-  selectedId.value = id;
-  void router.replace({ query: { ...route.query, ontology: id } });
-  void loadDetail(id);
+  const next = parseScopeKey(String(value));
+  if (next) {
+    void applyScope(next);
+  }
+}
+
+function onSelectNode(nodeId: string | null): void {
+  selectedNodeId.value = nodeId;
+  if (nodeId !== null) {
+    selectedEdge.value = null;
+  }
+}
+
+function onSelectEdge(edge: OntologyGraphEdge | null): void {
+  selectedEdge.value = edge;
+  if (edge !== null) {
+    selectedNodeId.value = null;
+  }
+}
+
+function onGraphNodeDblClick(nodeId: string): void {
+  const node = graphData.value?.nodes.find((item) => item.id === nodeId);
+  if (node?.ontologyId) {
+    void openConceptDetail(nodeId);
+  }
+}
+
+function nodeLabel(id: string | undefined): string {
+  if (!id) {
+    return '';
+  }
+  return graphData.value?.nodes.find((item) => item.id === id)?.label ?? id;
+}
+
+async function loadScopes(): Promise<void> {
+  scopesLoading.value = true;
+  errorMessage.value = '';
+  try {
+    ontologies.value = await listAllOntologies();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    ontologies.value = [];
+  } finally {
+    scopesLoading.value = false;
+  }
+  try {
+    glossaries.value = await listAllGlossaries();
+  } catch {
+    glossaries.value = [];
+  }
 }
 
 async function onCreate(): Promise<void> {
@@ -291,9 +566,9 @@ async function onCreate(): Promise<void> {
     });
     showCreateModal.value = false;
     message.success(t('ontology.created', { name: created.name }));
-    await loadCatalog();
+    ontologies.value = await listAllOntologies();
     if (created.id) {
-      onSelect(created.id);
+      await applyScope({ kind: 'ontology', ontologyId: created.id });
     }
   } catch (error) {
     formError.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -303,18 +578,22 @@ async function onCreate(): Promise<void> {
 }
 
 watch(
-  () => route.query.ontology,
-  (value) => {
-    if (typeof value === 'string' && value && value !== selectedId.value) {
-      selectedId.value = value;
-      void loadDetail(value);
+  () => [route.query.scope, route.query.ontology] as const,
+  () => {
+    const parsed = parseScopeFromRoute();
+    if (scopeKeyOf(parsed) !== scopeKey.value) {
+      void applyScope(parsed, { updateRoute: false });
     }
   },
 );
 
 onMounted(() => {
-  void loadCatalog();
+  void (async () => {
+    await loadScopes();
+    await applyScope(parseScopeFromRoute(), { updateRoute: false });
+  })();
   void loadPacks();
+  void loadStudioGate();
 });
 </script>
 
@@ -326,26 +605,50 @@ onMounted(() => {
     </Typography.Text>
     <Space style="margin-bottom: 16px" data-testid="ontology-controls">
       <Select
-        v-model:value="selectedId"
-        data-testid="ontology-select"
+        :value="scopeKey"
+        data-testid="ontology-scope-select"
         :placeholder="t('ontology.selectPlaceholder')"
         style="min-width: 260px"
-        :loading="loading"
-        @change="onSelect"
+        :loading="scopesLoading"
+        @change="onScopeChange"
       >
-        <Select.Option v-for="item in ontologies" :key="item.id" :value="item.id">
-          {{ entityLabel(item) }}
-        </Select.Option>
+        <Select.OptGroup :label="t('ontology.browser.scopeOntologies')">
+          <Select.Option value="ontology:all">{{ t('ontology.browser.scopeAllOntologies') }}</Select.Option>
+          <Select.Option v-for="item in ontologies" :key="item.id" :value="`ontology:${item.id}`">
+            {{ entityLabel(item) }}
+          </Select.Option>
+        </Select.OptGroup>
+        <Select.OptGroup :label="t('ontology.browser.scopeGlossaries')">
+          <Select.Option value="glossary:all">{{ t('ontology.browser.scopeAllGlossaries') }}</Select.Option>
+          <Select.Option v-for="item in glossaries" :key="item.id" :value="`glossary:${item.id}`">
+            {{ entityLabel(item) }}
+          </Select.Option>
+        </Select.OptGroup>
       </Select>
+      <Radio.Group v-model:value="surface" data-testid="ontology-surface" button-style="solid">
+        <Radio.Button value="graph">{{ t('ontology.browser.surfaceGraph') }}</Radio.Button>
+        <Radio.Button value="tree">{{ t('ontology.browser.surfaceTree') }}</Radio.Button>
+      </Radio.Group>
+      <Input
+        v-model:value="searchQuery"
+        allow-clear
+        data-testid="ontology-graph-search"
+        :placeholder="t('ontology.browser.searchPlaceholder')"
+        style="width: 240px"
+      />
       <Button type="primary" data-testid="ontology-create" @click="showCreateModal = true">
         {{ t('ontology.create') }}
       </Button>
-      <Button data-testid="ontology-open-studio" @click="router.push({ name: 'ontology-studio' })">
+      <Button v-if="canOpenStudio" data-testid="ontology-open-studio" @click="router.push({ name: 'ontology-studio' })">
         {{ t('ontology.edit.openStudio') }}
       </Button>
     </Space>
+    <Typography.Text v-if="statsLabel" type="secondary" data-testid="ontology-stats" style="display: block; margin-bottom: 12px">
+      {{ statsLabel }}
+    </Typography.Text>
+    <Card v-if="graphLoading" :loading="true" data-testid="ontology-graph-loading" style="margin-bottom: 16px" />
     <Empty
-      v-if="!loading && ontologies.length === 0 && !errorMessage"
+      v-if="!scopesLoading && !graphLoading && ontologies.length === 0 && !errorMessage && !graphError && !capacityExceeded"
       :description="t('ontology.empty')"
       data-testid="ontology-empty"
     >
@@ -353,7 +656,74 @@ onMounted(() => {
         {{ t('ontology.create') }}
       </Button>
     </Empty>
-    <div v-if="ontology" data-testid="ontology-detail">
+    <Card v-if="graphError" data-testid="ontology-graph-error" style="margin-bottom: 16px">
+      <Typography.Text type="danger">{{ graphError }}</Typography.Text>
+      <div style="margin-top: 12px">
+        <Button type="primary" data-testid="ontology-graph-retry" @click="applyScope(scope, { updateRoute: false })">
+          {{ t('crud.refresh') }}
+        </Button>
+        <span v-if="ontologies.length" style="margin-left: 12px">
+          <Button
+            v-for="item in ontologies"
+            :key="item.id"
+            style="margin-right: 8px; margin-bottom: 8px"
+            :data-testid="`ontology-error-open-${item.id}`"
+            @click="applyScope({ kind: 'ontology', ontologyId: item.id })"
+          >
+            {{ entityLabel(item) }}
+          </Button>
+        </span>
+      </div>
+    </Card>
+    <Card v-if="capacityExceeded" data-testid="ontology-capacity" style="margin-bottom: 16px">
+      <Typography.Text strong>{{ t('ontology.browser.capacityTitle') }}</Typography.Text>
+      <Typography.Paragraph type="secondary">
+        {{ t('ontology.browser.capacityBody') }}
+      </Typography.Paragraph>
+      <span v-if="ontologies.length">
+        <Button
+          v-for="item in ontologies"
+          :key="item.id"
+          style="margin-right: 8px; margin-bottom: 8px"
+          :data-testid="`ontology-capacity-open-${item.id}`"
+          @click="applyScope({ kind: 'ontology', ontologyId: item.id })"
+        >
+          {{ entityLabel(item) }}
+        </Button>
+      </span>
+    </Card>
+    <div v-if="searchNoHit" data-testid="ontology-search-empty" style="margin-bottom: 16px">
+      <Empty :description="t('ontology.browser.searchEmpty')" />
+    </div>
+    <div v-if="graphData && !graphLoading && !graphError && !capacityExceeded && !searchNoHit">
+      <OntologyGraphCanvas
+        v-if="surface === 'graph'"
+        :graph="graphData"
+        :can-edit="false"
+        :highlight="highlight"
+        :scope-key="scopeKey"
+        :selected-node-id="selectedNodeId"
+        :selected-edge-id="selectedEdge?.id ?? null"
+        @select-node="onSelectNode"
+        @node-dblclick="onGraphNodeDblClick"
+        @select-edge="onSelectEdge"
+        @canvas-click="onSelectNode(null)"
+      />
+      <OntologyTreeView
+        v-if="surface === 'tree'"
+        :index="treeIndex"
+        :selected-node-id="selectedNodeId"
+        :search-query="searchQuery"
+        @select-node="onSelectNode"
+      />
+      <Card v-if="selectedEdge" data-testid="ontology-edge-detail" style="margin-bottom: 16px">
+        <Typography.Text strong>{{ selectedEdge.label ?? selectedEdge.relationType }}</Typography.Text>
+        <Typography.Paragraph type="secondary">
+          {{ nodeLabel(selectedEdge.source) }} → {{ nodeLabel(selectedEdge.target) }} · {{ selectedEdge.relationType }}
+        </Typography.Paragraph>
+      </Card>
+    </div>
+    <div v-if="scope.kind === 'ontology' && ontology" data-testid="ontology-detail">
       <Card :loading="detailLoading" :title="entityLabel(ontology)" style="margin-bottom: 16px">
         <Typography.Paragraph v-if="ontology.description" type="secondary">
           {{ ontology.description }}

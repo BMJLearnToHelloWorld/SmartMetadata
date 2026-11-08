@@ -187,6 +187,75 @@ describe('ontology API', () => {
     expect(page.data[0]?.axiomType).toBe('SubClassOf');
   });
 
+  it('keeps structured axiom expressions and the deleted flag for the model graph', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'ax1',
+              name: 'CustomerSubClassOfParty',
+              axiomType: 'SUBCLASS_OF',
+              subjectIri: 'https://example.com/sales#Customer',
+              expressions: [
+                'plain-string',
+                { kind: 'NAMED_CLASS', classIri: 'https://example.com/sales#Party' },
+                {
+                  kind: 'RESTRICTION',
+                  propertyIri: 'https://example.com/sales#hasOrder',
+                  restrictionKind: 'SOME',
+                  filler: { kind: 'NAMED_CLASS', classIri: 'https://example.com/sales#Order' },
+                },
+              ],
+              deleted: true,
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listOntologyAxioms({ ontologyId: 'o1' });
+    const axiom = page.data[0];
+    expect(axiom?.expressions).toEqual(['plain-string']);
+    expect(axiom?.structuredExpressions).toEqual([
+      { kind: 'NAMED_CLASS', classIri: 'https://example.com/sales#Party' },
+      {
+        kind: 'RESTRICTION',
+        propertyIri: 'https://example.com/sales#hasOrder',
+        restrictionKind: 'SOME',
+        filler: { kind: 'NAMED_CLASS', classIri: 'https://example.com/sales#Order' },
+      },
+    ]);
+    expect(axiom?.deleted).toBe(true);
+  });
+
+  it('maps property domain/range IRI arrays and lone strings alike', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'p1',
+              name: 'hasOrder',
+              kind: 'OBJECT',
+              domain: ['https://example.com/sales#Customer'],
+              range: ['https://example.com/sales#Order'],
+            },
+            { id: 'p2', name: 'age', kind: 'DATA', domain: 'https://example.com/sales#Customer' },
+          ],
+          paging: { total: 2 },
+        }),
+      ),
+    );
+    const page = await listOntologyProperties({ ontology: 'sales-ontology', limit: 50 });
+    expect(page.data[0]?.domainIris).toEqual(['https://example.com/sales#Customer']);
+    expect(page.data[0]?.rangeIris).toEqual(['https://example.com/sales#Order']);
+    expect(page.data[1]?.domainIris).toEqual(['https://example.com/sales#Customer']);
+    expect(page.data[1]?.rangeIris).toBeUndefined();
+  });
+
   it('lists sealed releases by ontology id from GET /v1/ontologyReleases', async () => {
     vi.stubGlobal(
       'fetch',
