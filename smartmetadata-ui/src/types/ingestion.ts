@@ -194,6 +194,12 @@ export interface ServiceConnectionConfig {
     username?: string;
     /** ElasticSearch api auth (elasticSearch/apiAuth). */
     apiKey?: string;
+    /** Prefect Cloud auth (prefect/cloudAuth.json). */
+    accountId?: string;
+    /** Prefect Cloud auth (prefect/cloudAuth.json). */
+    workspaceId?: string;
+    /** Prefect Server auth (prefect/serverAuth.json). */
+    authString?: string;
   };
   password?: string;
   apiKey?: string;
@@ -202,6 +208,10 @@ export interface ServiceConnectionConfig {
     provider?: string;
     username?: string;
     password?: string;
+    /** Superset API connection (supersetApiConnection.json): verifySSL enum. */
+    verifySSL?: string;
+    /** Superset API connection sslConfig (validateSSLClientConfig). */
+    sslConfig?: SslClientConfig;
   };
   awsConfig?: {
     enabled?: boolean;
@@ -222,7 +232,36 @@ export interface ServiceConnectionConfig {
   timeout?: number;
   stripAssetKeyPrefixLength?: number;
   numberOfStatus?: number;
+  /** Prefect top level (prefectConnection.json): verifySSL enum, default no-ssl. */
+  verifySSL?: string;
+  /** Prefect top level sslConfig (validateSSLClientConfig). */
+  sslConfig?: SslClientConfig;
+  /** Kafka/Redpanda (kafkaConnection.json / redpandaConnection.json). */
+  saslUsername?: string;
+  saslPassword?: string;
+  saslMechanism?: string;
+  basicAuthUserInfo?: string;
+  /** Arbitrary JSON objects (additionalProperties: true), not string maps. */
+  consumerConfig?: Record<string, unknown>;
+  schemaRegistryConfig?: Record<string, unknown>;
+  schemaRegistryTopicSuffixName?: string;
+  /** Kafka's two sslConfig groups (validateSSLClientConfig each). */
+  consumerConfigSSL?: SslClientConfig;
+  schemaRegistrySSL?: SslClientConfig;
   [key: string]: unknown;
+}
+
+/**
+ * validateSSLClientConfig (openmetadata-spec
+ * .../security/ssl/validateSSLClientConfig.json): the three PEM leaves of one
+ * sslConfig group. Every sslConfig group in a connection (top level,
+ * Kafka's consumerConfigSSL/schemaRegistrySSL, Superset's nested one) has
+ * this shape; each group gets its own form-key triplet (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups).
+ */
+export interface SslClientConfig {
+  caCertificate?: string;
+  sslCertificate?: string;
+  sslKey?: string;
 }
 
 export interface ServiceConnection {
@@ -373,6 +412,33 @@ export interface ServiceFormValues {
   policyAgentSupportsColumnAccess?: boolean;
   policyAgentSupportsFullAccess?: boolean;
   policyAgentSupportsMaskedAccess?: boolean;
+  /** Wave 2 lean-forms tier 2 (Kafka/Redpanda messaging, official
+   * kafkaConnection.json / redpandaConnection.json, de-noised). */
+  saslUsername?: string;
+  saslPassword?: string;
+  saslMechanism?: string;
+  basicAuthUserInfo?: string;
+  /** Arbitrary JSON objects (additionalProperties: true), entered as JSON text. */
+  consumerConfig?: string;
+  schemaRegistryConfig?: string;
+  schemaRegistryTopicSuffixName?: string;
+  /** Kafka's two sslConfig groups: independent key triplets, never shared
+   * with each other or with the single-group leaves
+   * (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups). */
+  consumerConfigSSLCaCertificate?: string;
+  consumerConfigSSLCertificate?: string;
+  consumerConfigSSLKey?: string;
+  schemaRegistrySSLCaCertificate?: string;
+  schemaRegistrySSLCertificate?: string;
+  schemaRegistrySSLKey?: string;
+  /** verifySSL (verifySSLConfig, default no-ssl) — one shared form key for
+   * Superset (nested in connection) and Prefect (top level). */
+  verifySSL?: string;
+  /** Superset's nested sslConfig leaves — independent triplet, never the
+   * top-level keys (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups). */
+  supersetSSLCaCertificate?: string;
+  supersetSSLCertificate?: string;
+  supersetSSLKey?: string;
 }
 
 export interface CreateDatabaseServiceRequest {

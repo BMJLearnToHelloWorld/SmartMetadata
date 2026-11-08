@@ -131,6 +131,80 @@ const securityProtocolField: Field = {
 
 const note = (textKey: string): Field => ({ key: '', control: 'note', labelKey: '', textKey });
 
+// W2-5 lean-forms tier 2 (Kafka/Redpanda): SASL + schema-registry fields
+// (kafkaConnection.json / redpandaConnection.json). No showWhen linkage:
+// the specs do not gate these on securityProtocol.
+const saslUsernameField: Field = text('saslUsername', 'connection.saslUsername', {
+  testId: 'service-sasl-username',
+});
+
+const saslPasswordField: Field = {
+  key: 'saslPassword',
+  control: 'password',
+  labelKey: 'connection.saslPassword',
+  testId: 'service-sasl-password',
+  passwordPlaceholder: true,
+  hintKey: 'connection.secretHint',
+};
+
+const saslMechanismField: Field = {
+  key: 'saslMechanism',
+  control: 'select',
+  labelKey: 'connection.saslMechanism',
+  testId: 'service-sasl-mechanism',
+  options: [
+    { value: 'PLAIN' },
+    { value: 'GSSAPI' },
+    { value: 'SCRAM-SHA-256' },
+    { value: 'SCRAM-SHA-512' },
+    { value: 'OAUTHBEARER' },
+  ],
+};
+
+const basicAuthUserInfoField: Field = {
+  key: 'basicAuthUserInfo',
+  control: 'password',
+  labelKey: 'connection.basicAuthUserInfo',
+  testId: 'service-basic-auth-user-info',
+  passwordPlaceholder: true,
+  hintKey: 'connection.secretHint',
+};
+
+const consumerConfigField: Field = {
+  key: 'consumerConfig',
+  control: 'textarea',
+  labelKey: 'connection.consumerConfig',
+  testId: 'service-consumer-config',
+  placeholder: '{"key": "value"}',
+  hintKey: 'connection.consumerConfigHint',
+};
+
+const schemaRegistryConfigField: Field = {
+  key: 'schemaRegistryConfig',
+  control: 'textarea',
+  labelKey: 'connection.schemaRegistryConfig',
+  testId: 'service-schema-registry-config',
+  placeholder: '{"key": "value"}',
+  hintKey: 'connection.schemaRegistryConfigHint',
+};
+
+const schemaRegistryTopicSuffixNameField: Field = text(
+  'schemaRegistryTopicSuffixName',
+  'connection.schemaRegistryTopicSuffixName',
+  { testId: 'service-schema-registry-topic-suffix', placeholder: '-value' },
+);
+
+// verifySSL (verifySSLConfig, default no-ssl): one shared form key for
+// Superset (nested in connection) and Prefect (top level). Always visible,
+// no showWhen linkage (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible).
+const verifySSLField: Field = {
+  key: 'verifySSL',
+  control: 'select',
+  labelKey: 'connection.verifySSL',
+  testId: 'service-verify-ssl',
+  options: [{ value: 'no-ssl' }, { value: 'ignore' }, { value: 'validate' }],
+};
+
 // Wave 0 lean-forms database档: shared defs for the de-noised official
 // properties (see RULING.md R-T1). sslMode enum + defaults come from
 // openmetadata-spec .../security/ssl/verifySSLConfig.json#/definitions/sslMode.
@@ -160,30 +234,30 @@ const SSL_MODE_GATE: ConnectionFieldShowWhen = {
 // sslKey — all PEM contents, so textarea, not single-line inputs. `gated` is
 // true for types that also carry sslMode (leaves hidden while mode is
 // disable); MySQL/Mssql/Doris have sslConfig but no sslMode, so theirs are
-// always visible.
-const sslConfigLeaves = (gated: boolean): Field[] => [
-  {
-    key: 'sslCaCertificate',
+// always visible. Tier 2 groups pass their own key triplet: each sslConfig
+// group in one form gets independent keys, or one group's PEM would be
+// written into the other (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups).
+const sslConfigLeavesFor = (
+  leaves: readonly [key: Field['key'], labelKey: string, testId: string][],
+  gated = false,
+): Field[] =>
+  leaves.map(([key, labelKey, testId]): Field => ({
+    key,
     control: 'textarea',
-    labelKey: 'connection.sslCaCertificate',
-    testId: 'service-ssl-ca-certificate',
+    labelKey,
+    testId,
     ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
-  },
-  {
-    key: 'sslCertificate',
-    control: 'textarea',
-    labelKey: 'connection.sslCertificate',
-    testId: 'service-ssl-certificate',
-    ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
-  },
-  {
-    key: 'sslKey',
-    control: 'textarea',
-    labelKey: 'connection.sslKey',
-    testId: 'service-ssl-key',
-    ...(gated ? { showWhen: SSL_MODE_GATE } : {}),
-  },
-];
+  }));
+
+const sslConfigLeaves = (gated: boolean): Field[] =>
+  sslConfigLeavesFor(
+    [
+      ['sslCaCertificate', 'connection.sslCaCertificate', 'service-ssl-ca-certificate'],
+      ['sslCertificate', 'connection.sslCertificate', 'service-ssl-certificate'],
+      ['sslKey', 'connection.sslKey', 'service-ssl-key'],
+    ],
+    gated,
+  );
 
 // connectionOptions / connectionArguments are string maps
 // (connectionBasicType.json); entered as a JSON object and parsed in
@@ -544,14 +618,60 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   },
   {
     types: ['Kafka'],
-    fields: [bootstrapServers, schemaRegistry, securityProtocolField, note('connection.confluentNote')],
-  },
-  {
-    types: ['Redpanda'],
+    // W2-5 lean-forms tier 2: field order follows kafkaConnection.json
+    // (sasl* / consumerConfig / schemaRegistryConfig / suffix / the two SSL
+    // groups). The two SSL groups use independent key triplets, never the
+    // single-group keys (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups).
     fields: [
       bootstrapServers,
       schemaRegistry,
+      saslUsernameField,
+      saslPasswordField,
       securityProtocolField,
+      saslMechanismField,
+      basicAuthUserInfoField,
+      consumerConfigField,
+      schemaRegistryConfigField,
+      schemaRegistryTopicSuffixNameField,
+      ...sslConfigLeavesFor([
+        ['consumerConfigSSLCaCertificate', 'connection.consumerConfigSSLCaCertificate', 'service-consumer-config-ssl-ca-certificate'],
+        ['consumerConfigSSLCertificate', 'connection.consumerConfigSSLCertificate', 'service-consumer-config-ssl-certificate'],
+        ['consumerConfigSSLKey', 'connection.consumerConfigSSLKey', 'service-consumer-config-ssl-key'],
+      ]),
+      ...sslConfigLeavesFor([
+        ['schemaRegistrySSLCaCertificate', 'connection.schemaRegistrySSLCaCertificate', 'service-schema-registry-ssl-ca-certificate'],
+        ['schemaRegistrySSLCertificate', 'connection.schemaRegistrySSLCertificate', 'service-schema-registry-ssl-certificate'],
+        ['schemaRegistrySSLKey', 'connection.schemaRegistrySSLKey', 'service-schema-registry-ssl-key'],
+      ]),
+      // W2-5 follow-up (persist-secrets checkbox): Kafka carries secret
+      // fields (saslPassword, basicAuthUserInfo, 6 SSL leaves) but had no
+      // storeConnectionSecrets checkbox, so literals could never be saved
+      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
+      storeSecretsField,
+      note('connection.confluentNote'),
+    ],
+  },
+  {
+    types: ['Redpanda'],
+    // W2-5 lean-forms tier 2: field order follows redpandaConnection.json —
+    // the suffix sits before securityProtocol here (unlike Kafka), and there
+    // are no SSL groups.
+    fields: [
+      bootstrapServers,
+      schemaRegistry,
+      saslUsernameField,
+      saslPasswordField,
+      schemaRegistryTopicSuffixNameField,
+      securityProtocolField,
+      saslMechanismField,
+      basicAuthUserInfoField,
+      consumerConfigField,
+      schemaRegistryConfigField,
+      // W2-5 follow-up (persist-secrets checkbox): Redpanda carries secret
+      // fields (saslPassword, basicAuthUserInfo) but had no
+      // storeConnectionSecrets checkbox, so literals could never be saved
+      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
+      storeSecretsField,
       note('connection.redpandaNote'),
     ],
   },
@@ -573,6 +693,16 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       usernameRequired,
       note('connection.supersetApiNote'),
       passwordField,
+      // W2-5 lean-forms tier 2 (supersetApiConnection.json): verifySSL +
+      // sslConfig live nested in connection. Always visible, no showWhen
+      // linkage; the leaves use the Superset triplet, never the top-level
+      // keys (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible).
+      verifySSLField,
+      ...sslConfigLeavesFor([
+        ['supersetSSLCaCertificate', 'connection.supersetSSLCaCertificate', 'service-superset-ssl-ca-certificate'],
+        ['supersetSSLCertificate', 'connection.supersetSSLCertificate', 'service-superset-ssl-certificate'],
+        ['supersetSSLKey', 'connection.supersetSSLKey', 'service-superset-ssl-key'],
+      ]),
       storeSecretsField,
     ],
   },
@@ -609,6 +739,10 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         placeholder: 'analytics, raw',
         extraKey: 'connection.bucketNamesHelp',
       }),
+      // W2-5 lean-forms tier 2 (s3Connection.json): string maps, spec order
+      // (after bucketNames, before consoleEndpointURL).
+      connectionOptionsField,
+      connectionArgumentsField,
       text('consoleEndpointURL', 'connection.consoleEndpointURL', {
         testId: 'service-console-endpoint',
         placeholder: 'https://s3.console.aws.amazon.com',
@@ -666,6 +800,17 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         min: 1,
         max: 100,
       },
+      // W2-5 lean-forms tier 2 (prefectConnection.json): verifySSL + sslConfig
+      // live top level. Always visible, no showWhen linkage
+      // (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible).
+      // Prefect has a single sslConfig, so it uses the single-group keys.
+      verifySSLField,
+      ...sslConfigLeaves(false),
+      // W2-5 follow-up (persist-secrets checkbox): Prefect carries secret
+      // fields (apiKey, authString, 3 SSL leaves) but had no
+      // storeConnectionSecrets checkbox, so literals could never be saved
+      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
+      storeSecretsField,
       note('connection.prefectNote'),
     ],
   },

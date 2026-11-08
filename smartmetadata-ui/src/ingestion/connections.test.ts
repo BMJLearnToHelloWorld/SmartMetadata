@@ -940,6 +940,451 @@ it('prefers config.host over config.hostPort when both present', () => {
   expect(formValuesFromService(service).hostPort).toBe('http://dagster:3000');
 });
 
+it('builds the full Kafka de-noised set (W2-5 lean-forms tier 2)', () => {
+  const connection = buildServiceConnection({
+    name: 'events',
+    kind: 'messaging',
+    serviceType: 'Kafka',
+    bootstrapServers: 'localhost:9092',
+    schemaRegistryURL: 'http://localhost:8081',
+    saslUsername: 'kafka-user',
+    saslPassword: 'kafka-secret',
+    securityProtocol: 'SASL_SSL',
+    saslMechanism: 'SCRAM-SHA-512',
+    basicAuthUserInfo: 'registry-user:registry-secret',
+    consumerConfig: '{"retries": 3, "enable.auto.commit": false, "headers": {"a": 1}}',
+    schemaRegistryConfig: '{"timeout": 30}',
+    schemaRegistryTopicSuffixName: '-key',
+    consumerConfigSSLCaCertificate: '---CONSUMER-CA---',
+    consumerConfigSSLCertificate: '---CONSUMER-CERT---',
+    consumerConfigSSLKey: '---CONSUMER-KEY---',
+    schemaRegistrySSLCaCertificate: '---REGISTRY-CA---',
+    schemaRegistrySSLCertificate: '---REGISTRY-CERT---',
+    schemaRegistrySSLKey: '---REGISTRY-KEY---',
+    storeConnectionSecrets: true,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      schemaRegistryURL: 'http://localhost:8081',
+      saslUsername: 'kafka-user',
+      saslPassword: 'kafka-secret',
+      securityProtocol: 'SASL_SSL',
+      saslMechanism: 'SCRAM-SHA-512',
+      basicAuthUserInfo: 'registry-user:registry-secret',
+      consumerConfig: { retries: 3, 'enable.auto.commit': false, headers: { a: 1 } },
+      schemaRegistryConfig: { timeout: 30 },
+      schemaRegistryTopicSuffixName: '-key',
+      consumerConfigSSL: {
+        caCertificate: '---CONSUMER-CA---',
+        sslCertificate: '---CONSUMER-CERT---',
+        sslKey: '---CONSUMER-KEY---',
+      },
+      schemaRegistrySSL: {
+        caCertificate: '---REGISTRY-CA---',
+        sslCertificate: '---REGISTRY-CERT---',
+        sslKey: '---REGISTRY-KEY---',
+      },
+    },
+  });
+  // Full payload: only spec attributes, no extra keys
+  // (additionalProperties: false).
+  expect(Object.keys(connection?.config ?? {}).sort()).toEqual([
+    'basicAuthUserInfo',
+    'bootstrapServers',
+    'consumerConfig',
+    'consumerConfigSSL',
+    'saslMechanism',
+    'saslPassword',
+    'saslUsername',
+    'schemaRegistryConfig',
+    'schemaRegistrySSL',
+    'schemaRegistryTopicSuffixName',
+    'schemaRegistryURL',
+    'securityProtocol',
+    'type',
+  ]);
+});
+
+it('throws on invalid Kafka consumer/schema-registry config JSON (W2-5)', () => {
+  expect(() =>
+    buildServiceConnection({
+      name: 'events',
+      kind: 'messaging',
+      serviceType: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      consumerConfig: '{bad json',
+    }),
+  ).toThrow('Consumer config must be a valid JSON object');
+  expect(() =>
+    buildServiceConnection({
+      name: 'events',
+      kind: 'messaging',
+      serviceType: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      consumerConfig: '[]',
+    }),
+  ).toThrow('Consumer config must be a JSON object');
+  expect(() =>
+    buildServiceConnection({
+      name: 'events',
+      kind: 'messaging',
+      serviceType: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      schemaRegistryConfig: '{"a": 1',
+    }),
+  ).toThrow('Schema Registry config must be a valid JSON object');
+});
+
+it('keeps masked Kafka SASL secrets and SSL leaves on edit (W2-5)', () => {
+  const connection = buildServiceConnection(
+    {
+      name: 'events',
+      kind: 'messaging',
+      serviceType: 'Kafka',
+      bootstrapServers: 'localhost:9092',
+      saslPassword: '',
+      basicAuthUserInfo: '',
+      consumerConfigSSLCaCertificate: '',
+      schemaRegistrySSLKey: '',
+    },
+    {
+      config: {
+        type: 'Kafka',
+        bootstrapServers: 'localhost:9092',
+        saslPassword: '********',
+        basicAuthUserInfo: '********',
+        consumerConfigSSL: { caCertificate: '********' },
+        schemaRegistrySSL: { sslKey: '********' },
+      },
+    },
+  );
+  expect(connection?.config).toMatchObject({
+    saslPassword: '********',
+    basicAuthUserInfo: '********',
+    consumerConfigSSL: { caCertificate: '********' },
+    schemaRegistrySSL: { sslKey: '********' },
+  });
+});
+
+it('builds the full Redpanda de-noised set without SSL groups (W2-5)', () => {
+  const connection = buildServiceConnection({
+    name: 'rp',
+    kind: 'messaging',
+    serviceType: 'Redpanda',
+    bootstrapServers: 'localhost:9092',
+    schemaRegistryURL: 'http://localhost:8081',
+    saslUsername: 'rp-user',
+    saslPassword: 'rp-secret',
+    schemaRegistryTopicSuffixName: '-value',
+    securityProtocol: 'SASL_PLAINTEXT',
+    saslMechanism: 'PLAIN',
+    basicAuthUserInfo: 'reg:secret',
+    consumerConfig: '{"group.id": "console"}',
+    schemaRegistryConfig: '{"timeout": 5}',
+    storeConnectionSecrets: true,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Redpanda',
+      bootstrapServers: 'localhost:9092',
+      schemaRegistryURL: 'http://localhost:8081',
+      saslUsername: 'rp-user',
+      saslPassword: 'rp-secret',
+      schemaRegistryTopicSuffixName: '-value',
+      securityProtocol: 'SASL_PLAINTEXT',
+      saslMechanism: 'PLAIN',
+      basicAuthUserInfo: 'reg:secret',
+      consumerConfig: { 'group.id': 'console' },
+      schemaRegistryConfig: { timeout: 5 },
+    },
+  });
+  expect(connection?.config).not.toHaveProperty('consumerConfigSSL');
+  expect(connection?.config).not.toHaveProperty('schemaRegistrySSL');
+});
+
+it('keeps a masked Superset password on edit without retyping (W2-5 condition 6)', () => {
+  const connection = buildServiceConnection(
+    {
+      name: 'bi',
+      kind: 'dashboard',
+      serviceType: 'Superset',
+      hostPort: 'http://localhost:8088',
+      username: 'admin',
+      provider: 'db',
+      password: '',
+    },
+    {
+      config: {
+        type: 'Superset',
+        hostPort: 'http://localhost:8088',
+        connection: { provider: 'db', username: 'admin', password: '********' },
+      },
+    },
+  );
+  expect(connection?.config?.connection).toEqual({
+    provider: 'db',
+    username: 'admin',
+    password: '********',
+  });
+});
+
+it('emits a retyped Superset password on edit (W2-5 condition 6)', () => {
+  const connection = buildServiceConnection(
+    {
+      name: 'bi',
+      kind: 'dashboard',
+      serviceType: 'Superset',
+      hostPort: 'http://localhost:8088',
+      username: 'admin',
+      provider: 'db',
+      password: 'new-secret',
+      storeConnectionSecrets: true,
+    },
+    {
+      config: {
+        type: 'Superset',
+        hostPort: 'http://localhost:8088',
+        connection: { provider: 'db', username: 'admin', password: '********' },
+      },
+    },
+  );
+  expect(connection?.config?.connection?.password).toBe('new-secret');
+});
+
+it('builds Superset verifySSL + nested sslConfig (W2-5)', () => {
+  const connection = buildServiceConnection({
+    name: 'bi',
+    kind: 'dashboard',
+    serviceType: 'Superset',
+    hostPort: 'http://localhost:8088',
+    username: 'admin',
+    provider: 'db',
+    password: '${SUPERSET_PASSWORD}',
+    verifySSL: 'validate',
+    supersetSSLCaCertificate: '---SUPERSET-CA---',
+    supersetSSLCertificate: '---SUPERSET-CERT---',
+    supersetSSLKey: '---SUPERSET-KEY---',
+    storeConnectionSecrets: true,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Superset',
+      hostPort: 'http://localhost:8088',
+      connection: {
+        provider: 'db',
+        username: 'admin',
+        password: '${SUPERSET_PASSWORD}',
+        verifySSL: 'validate',
+        sslConfig: {
+          caCertificate: '---SUPERSET-CA---',
+          sslCertificate: '---SUPERSET-CERT---',
+          sslKey: '---SUPERSET-KEY---',
+        },
+      },
+    },
+  });
+});
+
+it('builds Prefect server auth + top-level verifySSL/sslConfig (W2-5)', () => {
+  const connection = buildServiceConnection({
+    name: 'pf',
+    kind: 'pipeline',
+    serviceType: 'Prefect',
+    hostPort: 'http://localhost:4200',
+    prefectAuthMode: 'server',
+    prefectAuthString: 'user:secret',
+    numberOfStatus: 5,
+    verifySSL: 'ignore',
+    sslCaCertificate: '---PREFECT-CA---',
+    storeConnectionSecrets: true,
+  });
+  expect(connection).toEqual({
+    config: {
+      type: 'Prefect',
+      hostPort: 'http://localhost:4200',
+      authType: { authString: 'user:secret' },
+      numberOfStatus: 5,
+      verifySSL: 'ignore',
+      sslConfig: { caCertificate: '---PREFECT-CA---' },
+    },
+  });
+});
+
+it('keeps a masked Prefect cloud apiKey on edit (W2-5)', () => {
+  const connection = buildServiceConnection(
+    {
+      name: 'pf',
+      kind: 'pipeline',
+      serviceType: 'Prefect',
+      hostPort: 'https://api.prefect.cloud',
+      prefectAuthMode: 'cloud',
+      prefectAccountId: 'acct',
+      prefectWorkspaceId: 'ws',
+      apiKey: '',
+      numberOfStatus: 10,
+    },
+    {
+      config: {
+        type: 'Prefect',
+        authType: { accountId: 'acct', workspaceId: 'ws', apiKey: '********' },
+      },
+    },
+  );
+  expect(connection?.config?.authType).toEqual({
+    accountId: 'acct',
+    workspaceId: 'ws',
+    apiKey: '********',
+  });
+});
+
+it('builds S3 connectionOptions/connectionArguments as string maps (W2-5)', () => {
+  const connection = buildServiceConnection({
+    name: 'lake',
+    kind: 'storage',
+    serviceType: 'S3',
+    awsRegion: 'us-east-1',
+    bucketNames: 'analytics',
+    connectionOptions: '{"endpoint": "https://s3.example.com"}',
+    connectionArguments: '{"retries": "3"}',
+  });
+  expect(connection?.config).toMatchObject({
+    type: 'S3',
+    connectionOptions: { endpoint: 'https://s3.example.com' },
+    connectionArguments: { retries: '3' },
+  });
+  expect(() =>
+    buildServiceConnection({
+      name: 'lake',
+      kind: 'storage',
+      serviceType: 'S3',
+      connectionOptions: '{"retries": 3}',
+    }),
+  ).toThrow('Connection options values must be strings');
+  expect(() =>
+    buildServiceConnection({
+      name: 'lake',
+      kind: 'storage',
+      serviceType: 'S3',
+      connectionArguments: '{bad json',
+    }),
+  ).toThrow('Connection arguments must be a valid JSON object');
+});
+
+it('redacts the tier 2 SSL groups and nested Superset sslConfig for display (W2-5)', () => {
+  const kafka = redactConnectionForDisplay({
+    config: {
+      type: 'Kafka',
+      consumerConfigSSL: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+      schemaRegistrySSL: { caCertificate: '---CA2---' },
+    },
+  });
+  expect(kafka?.config?.consumerConfigSSL).toEqual({
+    caCertificate: '********',
+    sslCertificate: '********',
+    sslKey: '********',
+  });
+  expect(kafka?.config?.schemaRegistrySSL).toEqual({ caCertificate: '********' });
+  const superset = redactConnectionForDisplay({
+    config: {
+      type: 'Superset',
+      connection: {
+        provider: 'db',
+        username: 'admin',
+        password: 'secret',
+        verifySSL: 'validate',
+        sslConfig: { caCertificate: '---CA---', sslKey: '---KEY---' },
+      },
+    },
+  });
+  expect(superset?.config?.connection).toEqual({
+    provider: 'db',
+    username: 'admin',
+    password: '********',
+    verifySSL: 'validate',
+    sslConfig: { caCertificate: '********', sslKey: '********' },
+  });
+  const prefect = redactConnectionForDisplay({
+    config: { type: 'Prefect', verifySSL: 'validate', sslConfig: { caCertificate: '---CA---' } },
+  });
+  expect(prefect?.config?.sslConfig).toEqual({ caCertificate: '********' });
+  expect(prefect?.config?.verifySSL).toBe('validate');
+});
+
+it('round-trips the tier 2 fields from a stored service (W2-5)', () => {
+  const kafka: CatalogService = {
+    id: 'k1',
+    name: 'events',
+    kind: 'messaging',
+    serviceType: 'Kafka',
+    connection: {
+      config: {
+        type: 'Kafka',
+        bootstrapServers: 'localhost:9092',
+        saslUsername: 'kafka-user',
+        saslPassword: '********',
+        saslMechanism: 'SCRAM-SHA-512',
+        basicAuthUserInfo: '********',
+        consumerConfig: { retries: 3, 'enable.auto.commit': false },
+        schemaRegistryTopicSuffixName: '-key',
+        consumerConfigSSL: { caCertificate: '********' },
+      },
+    },
+  };
+  const form = formValuesFromService(kafka);
+  expect(form.saslUsername).toBe('kafka-user');
+  // Secrets are never prefilled into the form.
+  expect(form.saslPassword).toBe('');
+  expect(form.basicAuthUserInfo).toBe('');
+  expect(form.saslMechanism).toBe('SCRAM-SHA-512');
+  expect(form.consumerConfig).toBe('{"retries":3,"enable.auto.commit":false}');
+  expect(form.schemaRegistryTopicSuffixName).toBe('-key');
+  expect(form.consumerConfigSSLCaCertificate).toBe('');
+  // Spec defaults apply when the stored config omits the field.
+  const bare = formValuesFromService({
+    id: 'k2',
+    name: 'events2',
+    kind: 'messaging',
+    serviceType: 'Kafka',
+    connection: { config: { type: 'Kafka' } },
+  });
+  expect(bare.saslMechanism).toBe('PLAIN');
+  expect(bare.schemaRegistryTopicSuffixName).toBe('-value');
+  expect(bare.verifySSL).toBe('no-ssl');
+  // Superset verifySSL round-trips from the nested connection.
+  const superset = formValuesFromService({
+    id: 's1',
+    name: 'bi',
+    kind: 'dashboard',
+    serviceType: 'Superset',
+    connection: { config: { type: 'Superset', connection: { provider: 'db', verifySSL: 'validate' } } },
+  });
+  expect(superset.verifySSL).toBe('validate');
+  expect(superset.supersetSSLCaCertificate).toBe('');
+  const prefect = formValuesFromService({
+    id: 'p1',
+    name: 'pf',
+    kind: 'pipeline',
+    serviceType: 'Prefect',
+    connection: { config: { type: 'Prefect', verifySSL: 'ignore' } },
+  });
+  expect(prefect.verifySSL).toBe('ignore');
+});
+
+it('ignores a stray Dagster form.password instead of sending it as the token (W2-5 condition 10)', () => {
+  const connection = buildServiceConnection({
+    name: 'dg',
+    kind: 'pipeline',
+    serviceType: 'Dagster',
+    hostPort: 'http://localhost:3000',
+    password: 'should-be-ignored',
+    dagsterTimeout: 1000,
+    storeConnectionSecrets: true,
+  });
+  expect(connection?.config).not.toHaveProperty('token');
+});
+
 describe('service kind tables', () => {
   it('maps every kind to its default type and back from its entity type', () => {
     expect(SERVICE_KIND_DEFAULT_TYPE).toEqual({
@@ -989,5 +1434,10 @@ describe('service kind tables', () => {
     expect(form.policyAgentSupportsColumnAccess).toBe(false);
     expect(form.policyAgentSupportsFullAccess).toBe(true);
     expect(form.policyAgentSupportsMaskedAccess).toBe(true);
+    // W2-5 lean-forms tier 2: spec defaults
+    // (ADR:2026-11-08-leanforms-tier2-form-defaults).
+    expect(form.saslMechanism).toBe('PLAIN');
+    expect(form.verifySSL).toBe('no-ssl');
+    expect(form.schemaRegistryTopicSuffixName).toBe('-value');
   });
 });

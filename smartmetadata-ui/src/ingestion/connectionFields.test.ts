@@ -348,12 +348,109 @@ describe('connectionFields', () => {
     const metabaseKeys = connectionFieldsForType('Metabase').map((field) => field.key);
     expect(metabaseKeys).toEqual(['hostPort', 'username', 'password', 'apiKey']);
     // M-Next B7: Kafka gains the securityProtocol Redpanda already had.
+    // W2-5 lean-forms tier 2: new keys in each type's own spec order —
+    // Kafka follows kafkaConnection.json, Redpanda redpandaConnection.json
+    // (the suffix sits before securityProtocol there; Kafka has two SSL groups).
     const kafkaKeys = connectionFieldsForType('Kafka').map((field) => field.key);
-    expect(kafkaKeys).toEqual(['bootstrapServers', 'schemaRegistryURL', 'securityProtocol', '']);
+    expect(kafkaKeys).toEqual([
+      'bootstrapServers',
+      'schemaRegistryURL',
+      'saslUsername',
+      'saslPassword',
+      'securityProtocol',
+      'saslMechanism',
+      'basicAuthUserInfo',
+      'consumerConfig',
+      'schemaRegistryConfig',
+      'schemaRegistryTopicSuffixName',
+      'consumerConfigSSLCaCertificate',
+      'consumerConfigSSLCertificate',
+      'consumerConfigSSLKey',
+      'schemaRegistrySSLCaCertificate',
+      'schemaRegistrySSLCertificate',
+      'schemaRegistrySSLKey',
+      'storeConnectionSecrets',
+      '',
+    ]);
     const redpandaKeys = connectionFieldsForType('Redpanda').map((field) => field.key);
-    expect(redpandaKeys).toEqual(['bootstrapServers', 'schemaRegistryURL', 'securityProtocol', '']);
+    expect(redpandaKeys).toEqual([
+      'bootstrapServers',
+      'schemaRegistryURL',
+      'saslUsername',
+      'saslPassword',
+      'schemaRegistryTopicSuffixName',
+      'securityProtocol',
+      'saslMechanism',
+      'basicAuthUserInfo',
+      'consumerConfig',
+      'schemaRegistryConfig',
+      'storeConnectionSecrets',
+      '',
+    ]);
     expect(connectionFieldsForType('Kafka').find((field) => field.key === 'securityProtocol')).toEqual(
       connectionFieldsForType('Redpanda').find((field) => field.key === 'securityProtocol'),
     );
+  });
+
+  it('returns the tier 2 Superset/S3/Prefect field sets in spec order (W2-5 lean-forms)', () => {
+    expect(connectionFieldsForType('Superset').map((field) => field.key)).toEqual([
+      'hostPort',
+      'provider',
+      'username',
+      '',
+      'password',
+      'verifySSL',
+      'supersetSSLCaCertificate',
+      'supersetSSLCertificate',
+      'supersetSSLKey',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('S3').map((field) => field.key)).toEqual([
+      'awsRegion',
+      'awsAccessKeyId',
+      'awsSecretAccessKey',
+      'awsSessionToken',
+      'awsEndPointURL',
+      'awsProfileName',
+      'assumeRoleArn',
+      'assumeRoleSessionName',
+      'assumeRoleSourceIdentity',
+      'awsIamEnabled',
+      'bucketNames',
+      'connectionOptions',
+      'connectionArguments',
+      'consoleEndpointURL',
+      'storeConnectionSecrets',
+      '',
+    ]);
+    expect(connectionFieldsForType('Prefect').map((field) => field.key)).toEqual([
+      'hostPort',
+      'prefectAuthMode',
+      'prefectAccountId',
+      'prefectWorkspaceId',
+      'apiKey',
+      'prefectAuthString',
+      'numberOfStatus',
+      'verifySSL',
+      'sslCaCertificate',
+      'sslCertificate',
+      'sslKey',
+      'storeConnectionSecrets',
+      '',
+    ]);
+    // W2-5: no showWhen linkage — the SASL / verifySSL / SSL-leaf fields
+    // are always visible (the specs state no visibility rule for them).
+    const saslMechanism = connectionFieldsForType('Kafka').find((field) => field.key === 'saslMechanism');
+    expect(saslMechanism).toBeDefined();
+    expect(isConnectionFieldVisible(saslMechanism!, {})).toBe(true);
+    const supersetCa = connectionFieldsForType('Superset').find(
+      (field) => field.key === 'supersetSSLCaCertificate',
+    );
+    expect(supersetCa).toBeDefined();
+    expect(isConnectionFieldVisible(supersetCa!, {})).toBe(true);
+    expect(isConnectionFieldVisible(supersetCa!, { verifySSL: 'no-ssl' })).toBe(true);
+    const prefectCa = connectionFieldsForType('Prefect').find((field) => field.key === 'sslCaCertificate');
+    expect(prefectCa).toBeDefined();
+    expect(isConnectionFieldVisible(prefectCa!, { verifySSL: 'no-ssl' })).toBe(true);
   });
 });
