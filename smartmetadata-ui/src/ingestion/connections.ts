@@ -14,6 +14,7 @@ import type {
   ServiceConnectionConfig,
   ServiceFormValues,
   ServiceKind,
+  SslClientConfig,
 } from '@/types/ingestion';
 import {
   API_SERVICE_TYPES,
@@ -145,6 +146,22 @@ export function createEmptyServiceForm(): ServiceFormValues {
     bootstrapServers: '',
     securityProtocol: '',
     schemaRegistryURL: '',
+    // W2-5 lean-forms tier 2: spec defaults, prefilled like provider: 'db'
+    // (ADR:2026-11-08-leanforms-tier2-form-defaults). securityProtocol stays
+    // '' (builder omits it; the server defaults to PLAINTEXT).
+    saslUsername: '',
+    saslPassword: '',
+    saslMechanism: 'PLAIN',
+    basicAuthUserInfo: '',
+    consumerConfig: '',
+    schemaRegistryConfig: '',
+    schemaRegistryTopicSuffixName: '-value',
+    consumerConfigSSLCaCertificate: '',
+    consumerConfigSSLCertificate: '',
+    consumerConfigSSLKey: '',
+    schemaRegistrySSLCaCertificate: '',
+    schemaRegistrySSLCertificate: '',
+    schemaRegistrySSLKey: '',
     httpPath: '',
     catalog: '',
     queryHistoryTable: '',
@@ -158,6 +175,12 @@ export function createEmptyServiceForm(): ServiceFormValues {
     password: '',
     apiKey: '',
     provider: 'db',
+    // W2-5 lean-forms tier 2: verifySSL default no-ssl (verifySSLConfig);
+    // the same form key serves Superset (nested) and Prefect (top level).
+    verifySSL: 'no-ssl',
+    supersetSSLCaCertificate: '',
+    supersetSSLCertificate: '',
+    supersetSSLKey: '',
     awsRegion: '',
     awsAccessKeyId: '',
     awsSecretAccessKey: '',
@@ -239,6 +262,12 @@ function pickPassword(config: ServiceConnectionConfig | undefined): string | und
   if (typeof config.password === 'string') {
     return config.password;
   }
+  // W2-5 (condition 6): Superset keeps its password nested in
+  // config.connection.password (supersetApiConnection.json) — without this
+  // read, an edit-save silently drops a masked Superset password.
+  if (typeof config.connection?.password === 'string') {
+    return config.connection.password;
+  }
   return undefined;
 }
 
@@ -272,6 +301,25 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     bootstrapServers: typeof config.bootstrapServers === 'string' ? config.bootstrapServers : '',
     schemaRegistryURL: typeof config.schemaRegistryURL === 'string' ? config.schemaRegistryURL : '',
     securityProtocol: typeof config.securityProtocol === 'string' ? config.securityProtocol : '',
+    // W2-5 lean-forms tier 2: round-trip the new fields. Secrets are never
+    // prefilled (blank; masked previous values are preserved at build time).
+    // Spec defaults apply when the stored config omits the field.
+    saslUsername: typeof config.saslUsername === 'string' ? config.saslUsername : '',
+    saslPassword: '',
+    saslMechanism: typeof config.saslMechanism === 'string' ? config.saslMechanism : 'PLAIN',
+    basicAuthUserInfo: '',
+    consumerConfig: stringifyJsonMap(config.consumerConfig),
+    schemaRegistryConfig: stringifyJsonMap(config.schemaRegistryConfig),
+    schemaRegistryTopicSuffixName:
+      typeof config.schemaRegistryTopicSuffixName === 'string'
+        ? config.schemaRegistryTopicSuffixName
+        : '-value',
+    consumerConfigSSLCaCertificate: '',
+    consumerConfigSSLCertificate: '',
+    consumerConfigSSLKey: '',
+    schemaRegistrySSLCaCertificate: '',
+    schemaRegistrySSLCertificate: '',
+    schemaRegistrySSLKey: '',
     httpPath: typeof config.httpPath === 'string' ? config.httpPath : '',
     catalog: typeof config.catalog === 'string' ? config.catalog : '',
     queryHistoryTable: typeof config.queryHistoryTable === 'string' ? config.queryHistoryTable : '',
@@ -295,6 +343,17 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
       : typeof config.provider === 'string'
         ? config.provider
         : 'db',
+    // W2-5 lean-forms tier 2: verifySSL lives nested (Superset connection)
+    // or top level (Prefect); neither type carries both, so top level wins.
+    verifySSL:
+      typeof config.verifySSL === 'string'
+        ? config.verifySSL
+        : typeof config.connection?.verifySSL === 'string'
+          ? config.connection.verifySSL
+          : 'no-ssl',
+    supersetSSLCaCertificate: '',
+    supersetSSLCertificate: '',
+    supersetSSLKey: '',
     awsRegion: typeof config.awsConfig?.awsRegion === 'string' ? config.awsConfig.awsRegion : '',
     awsAccessKeyId:
       typeof config.awsConfig?.awsAccessKeyId === 'string' ? config.awsConfig.awsAccessKeyId : '',
@@ -593,6 +652,30 @@ function parseJsonMap(raw: string | undefined, field: string): Record<string, st
 }
 
 /**
+ * Parse a JSON-object textarea whose values may be any JSON type (Kafka
+ * consumerConfig / schemaRegistryConfig: additionalProperties: true).
+ * Unlike parseJsonMap it must NOT reject numbers, booleans, or nested
+ * objects (ADR:2026-11-08-leanforms-tier2-kafka-config-parser).
+ */
+function parseJsonObject(raw: string | undefined, field: string): Record<string, unknown> | undefined {
+  const text = raw?.trim() ?? '';
+  if (!text) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${field} must be a valid JSON object`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${field} must be a JSON object`);
+  }
+  const out = parsed as Record<string, unknown>;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
  * Secret-field discipline shared by the new secret leaves (Snowflake
  * privateKey/passphrase, sslConfig leaves): same rules as applyPassword —
  * a typed literal is sent only when it is an ${ENV} placeholder or
@@ -614,38 +697,55 @@ function secretFieldValue(
   return undefined;
 }
 
+/**
+ * One sslConfig group (validateSSLClientConfig) from the form: the three PEM
+ * leaves under the secret discipline, read from the caller's key triplet and
+ * preserved against the caller's previously stored group. Each sslConfig
+ * group gets its own triplet — sharing keys across groups in one form would
+ * write one group's PEM into the other
+ * (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups). The triplet is spelled
+ * out as literal unions (not keyof ServiceFormValues) so the reads stay
+ * string-typed with no cast.
+ */
+interface SslLeafFormKeys {
+  caCertificate:
+    | 'sslCaCertificate'
+    | 'consumerConfigSSLCaCertificate'
+    | 'schemaRegistrySSLCaCertificate'
+    | 'supersetSSLCaCertificate';
+  sslCertificate:
+    | 'sslCertificate'
+    | 'consumerConfigSSLCertificate'
+    | 'schemaRegistrySSLCertificate'
+    | 'supersetSSLCertificate';
+  sslKey: 'sslKey' | 'consumerConfigSSLKey' | 'schemaRegistrySSLKey' | 'supersetSSLKey';
+}
+
+function sslConfigFromFormKeys(
+  form: ServiceFormValues,
+  keys: SslLeafFormKeys,
+  previous?: SslClientConfig,
+): Record<string, string> | undefined {
+  const store = Boolean(form.storeConnectionSecrets);
+  const sslConfig: Record<string, string> = {};
+  for (const outKey of ['caCertificate', 'sslCertificate', 'sslKey'] as const) {
+    const value = secretFieldValue(form[keys[outKey]], store, previous?.[outKey]);
+    if (value) {
+      sslConfig[outKey] = value;
+    }
+  }
+  return Object.keys(sslConfig).length ? sslConfig : undefined;
+}
+
 function sslConfigFromForm(
   form: ServiceFormValues,
   existing?: ServiceConnectionConfig,
 ): Record<string, string> | undefined {
-  const store = Boolean(form.storeConnectionSecrets);
-  const prev = existing?.sslConfig as Record<string, unknown> | undefined;
-  const sslConfig: Record<string, string> = {};
-  const ca = secretFieldValue(
-    form.sslCaCertificate,
-    store,
-    typeof prev?.caCertificate === 'string' ? prev.caCertificate : undefined,
+  return sslConfigFromFormKeys(
+    form,
+    { caCertificate: 'sslCaCertificate', sslCertificate: 'sslCertificate', sslKey: 'sslKey' },
+    existing?.sslConfig,
   );
-  if (ca) {
-    sslConfig.caCertificate = ca;
-  }
-  const cert = secretFieldValue(
-    form.sslCertificate,
-    store,
-    typeof prev?.sslCertificate === 'string' ? prev.sslCertificate : undefined,
-  );
-  if (cert) {
-    sslConfig.sslCertificate = cert;
-  }
-  const key = secretFieldValue(
-    form.sslKey,
-    store,
-    typeof prev?.sslKey === 'string' ? prev.sslKey : undefined,
-  );
-  if (key) {
-    sslConfig.sslKey = key;
-  }
-  return Object.keys(sslConfig).length ? sslConfig : undefined;
 }
 
 function policyAgentConfigFromForm(form: ServiceFormValues): Record<string, boolean> {
@@ -822,14 +922,79 @@ export function buildServiceConnection(
       config.connectionArguments = connectionArguments;
     }
   } else if (type === 'Kafka' || type === 'Redpanda') {
+    // W2-5 lean-forms tier 2 (R-T1 Kafka/Redpanda, de-noised): no showWhen
+    // linkage — the specs do not gate the SASL fields on securityProtocol.
     if (form.bootstrapServers?.trim()) {
       config.bootstrapServers = form.bootstrapServers.trim();
     }
     if (form.schemaRegistryURL?.trim()) {
       config.schemaRegistryURL = form.schemaRegistryURL.trim();
     }
+    if (form.saslUsername?.trim()) {
+      config.saslUsername = form.saslUsername.trim();
+    }
+    const store = Boolean(form.storeConnectionSecrets);
+    const prevConfig = existing?.config;
+    const saslPassword = secretFieldValue(
+      form.saslPassword,
+      store,
+      typeof prevConfig?.saslPassword === 'string' ? prevConfig.saslPassword : undefined,
+    );
+    if (saslPassword) {
+      config.saslPassword = saslPassword;
+    }
     if (form.securityProtocol?.trim()) {
       config.securityProtocol = form.securityProtocol.trim();
+    }
+    if (form.saslMechanism?.trim()) {
+      config.saslMechanism = form.saslMechanism.trim();
+    }
+    const basicAuthUserInfo = secretFieldValue(
+      form.basicAuthUserInfo,
+      store,
+      typeof prevConfig?.basicAuthUserInfo === 'string' ? prevConfig.basicAuthUserInfo : undefined,
+    );
+    if (basicAuthUserInfo) {
+      config.basicAuthUserInfo = basicAuthUserInfo;
+    }
+    const consumerConfig = parseJsonObject(form.consumerConfig, 'Consumer config');
+    if (consumerConfig) {
+      config.consumerConfig = consumerConfig;
+    }
+    const schemaRegistryConfig = parseJsonObject(form.schemaRegistryConfig, 'Schema Registry config');
+    if (schemaRegistryConfig) {
+      config.schemaRegistryConfig = schemaRegistryConfig;
+    }
+    if (form.schemaRegistryTopicSuffixName?.trim()) {
+      config.schemaRegistryTopicSuffixName = form.schemaRegistryTopicSuffixName.trim();
+    }
+    if (type === 'Kafka') {
+      // Two independent sslConfig groups: each its own key triplet and its
+      // own previously stored object (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups).
+      const consumerConfigSSL = sslConfigFromFormKeys(
+        form,
+        {
+          caCertificate: 'consumerConfigSSLCaCertificate',
+          sslCertificate: 'consumerConfigSSLCertificate',
+          sslKey: 'consumerConfigSSLKey',
+        },
+        prevConfig?.consumerConfigSSL,
+      );
+      if (consumerConfigSSL) {
+        config.consumerConfigSSL = consumerConfigSSL;
+      }
+      const schemaRegistrySSL = sslConfigFromFormKeys(
+        form,
+        {
+          caCertificate: 'schemaRegistrySSLCaCertificate',
+          sslCertificate: 'schemaRegistrySSLCertificate',
+          sslKey: 'schemaRegistrySSLKey',
+        },
+        prevConfig?.schemaRegistrySSL,
+      );
+      if (schemaRegistrySSL) {
+        config.schemaRegistrySSL = schemaRegistrySSL;
+      }
     }
   } else if (type === 'Doris') {
     if (form.hostPort?.trim()) {
@@ -981,6 +1146,25 @@ export function buildServiceConnection(
     if (form.username?.trim()) {
       nested.username = form.username.trim();
     }
+    // W2-5 lean-forms tier 2 (supersetApiConnection.json): verifySSL and
+    // sslConfig live nested in connection. Always visible, no showWhen
+    // linkage (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible);
+    // the leaves use the Superset triplet, never the top-level keys.
+    if (form.verifySSL?.trim()) {
+      nested.verifySSL = form.verifySSL.trim();
+    }
+    const supersetSSL = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'supersetSSLCaCertificate',
+        sslCertificate: 'supersetSSLCertificate',
+        sslKey: 'supersetSSLKey',
+      },
+      existing?.config?.connection?.sslConfig,
+    );
+    if (supersetSSL) {
+      nested.sslConfig = supersetSSL;
+    }
     config.connection = nested;
   } else if (type === 'Metabase') {
     if (form.hostPort?.trim()) {
@@ -1053,13 +1237,23 @@ export function buildServiceConnection(
     if (form.consoleEndpointURL?.trim()) {
       config.consoleEndpointURL = form.consoleEndpointURL.trim();
     }
+    // W2-5 lean-forms tier 2 (s3Connection.json): both are string maps
+    // (connectionBasicType.json), so parseJsonMap still applies.
+    const connectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (connectionOptions) {
+      config.connectionOptions = connectionOptions;
+    }
+    const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (connectionArguments) {
+      config.connectionArguments = connectionArguments;
+    }
   } else if (type === 'Prefect') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
     }
     const mode = form.prefectAuthMode === 'cloud' ? 'cloud' : 'server';
     if (mode === 'cloud') {
-      const auth: Record<string, string> = {};
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
       if (form.prefectAccountId?.trim()) {
         auth.accountId = form.prefectAccountId.trim();
       }
@@ -1070,27 +1264,21 @@ export function buildServiceConnection(
       if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
         auth.apiKey = apiKey;
       } else if (!apiKey) {
-        const prev = existing?.config?.authType;
-        if (prev && typeof prev === 'object' && typeof (prev as { apiKey?: string }).apiKey === 'string') {
-          const prevKey = (prev as { apiKey?: string }).apiKey!;
-          if (isMaskedSecret(prevKey)) {
-            auth.apiKey = prevKey;
-          }
+        const prev = existing?.config?.authType?.apiKey;
+        if (prev && isMaskedSecret(prev)) {
+          auth.apiKey = prev;
         }
       }
       config.authType = auth;
     } else {
-      const auth: Record<string, string> = {};
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
       const authString = form.prefectAuthString?.trim() ?? '';
       if (shouldPersistSecret(authString, Boolean(form.storeConnectionSecrets))) {
         auth.authString = authString;
       } else if (!authString) {
-        const prev = existing?.config?.authType;
-        if (prev && typeof prev === 'object' && typeof (prev as { authString?: string }).authString === 'string') {
-          const prevAuth = (prev as { authString?: string }).authString!;
-          if (isMaskedSecret(prevAuth)) {
-            auth.authString = prevAuth;
-          }
+        const prev = existing?.config?.authType?.authString;
+        if (prev && isMaskedSecret(prev)) {
+          auth.authString = prev;
         }
       }
       config.authType = auth;
@@ -1098,12 +1286,25 @@ export function buildServiceConnection(
     if (typeof form.numberOfStatus === 'number') {
       config.numberOfStatus = form.numberOfStatus;
     }
+    // W2-5 lean-forms tier 2 (prefectConnection.json): verifySSL and
+    // sslConfig live top level. Always visible, no showWhen linkage
+    // (ADR:2026-11-08-leanforms-tier2-superset-verify-ssl-always-visible).
+    if (form.verifySSL?.trim()) {
+      config.verifySSL = form.verifySSL.trim();
+    }
+    const sslConfig = sslConfigFromForm(form, existing?.config);
+    if (sslConfig) {
+      config.sslConfig = sslConfig;
+    }
   } else if (type === 'Dagster') {
     const host = form.hostPort?.trim() || '';
     if (host) {
       config.host = host;
     }
-    const token = form.apiKey?.trim() || form.password?.trim() || '';
+    // W2-5 (condition 10): the form.password fallback is dead code — the
+    // Dagster group has no password field and formValuesFromService always
+    // sets password: '', so it could never fire.
+    const token = form.apiKey?.trim() ?? '';
     if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
       config.token = token;
     } else if (!token) {
@@ -1273,6 +1474,9 @@ export function buildServiceConnection(
   return { config };
 }
 
+/** The three validateSSLClientConfig PEM leaves, shared by every sslConfig object. */
+const SSL_CONFIG_LEAF_KEYS = ['caCertificate', 'sslCertificate', 'sslKey'] as const;
+
 export function redactConnectionForDisplay(connection?: ServiceConnection): ServiceConnection | undefined {
   if (!connection?.config) {
     return connection;
@@ -1305,18 +1509,48 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
     config.snowflakePrivatekeyPassphrase = '********';
   }
   if (config.sslConfig && typeof config.sslConfig === 'object') {
-    const sslConfig = { ...(config.sslConfig as Record<string, unknown>) };
-    for (const key of ['caCertificate', 'sslCertificate', 'sslKey'] as const) {
+    const sslConfig = { ...config.sslConfig };
+    for (const key of SSL_CONFIG_LEAF_KEYS) {
       if (typeof sslConfig[key] === 'string') {
         sslConfig[key] = '********';
       }
     }
     config.sslConfig = sslConfig;
   }
+  // W2-5 (condition 4): Kafka's two sslConfig groups live in their own
+  // objects — the config.sslConfig branch above does not cover them.
+  if (config.consumerConfigSSL && typeof config.consumerConfigSSL === 'object') {
+    const sslConfig = { ...config.consumerConfigSSL };
+    for (const key of SSL_CONFIG_LEAF_KEYS) {
+      if (typeof sslConfig[key] === 'string') {
+        sslConfig[key] = '********';
+      }
+    }
+    config.consumerConfigSSL = sslConfig;
+  }
+  if (config.schemaRegistrySSL && typeof config.schemaRegistrySSL === 'object') {
+    const sslConfig = { ...config.schemaRegistrySSL };
+    for (const key of SSL_CONFIG_LEAF_KEYS) {
+      if (typeof sslConfig[key] === 'string') {
+        sslConfig[key] = '********';
+      }
+    }
+    config.schemaRegistrySSL = sslConfig;
+  }
   if (config.connection && typeof config.connection === 'object') {
     const nested = { ...config.connection };
     if (typeof nested.password === 'string') {
       nested.password = '********';
+    }
+    // W2-5 (condition 4): Superset's sslConfig lives nested in connection.
+    if (nested.sslConfig && typeof nested.sslConfig === 'object') {
+      const sslConfig = { ...nested.sslConfig };
+      for (const key of SSL_CONFIG_LEAF_KEYS) {
+        if (typeof sslConfig[key] === 'string') {
+          sslConfig[key] = '********';
+        }
+      }
+      nested.sslConfig = sslConfig;
     }
     config.connection = nested;
   }

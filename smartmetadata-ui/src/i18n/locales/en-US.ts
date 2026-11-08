@@ -1397,7 +1397,7 @@ const enUS = {
         noConnectionForm:
           'This service type has no connection form yet. Creation is blocked for this type; the stored connection cannot be invented.',
         testConnectionResidual:
-          'Connection testing is not offered here: no test-connection endpoint is wired. Save the service and verify it with smartmetadata-ingest.',
+          'No connection test in the wizard — save the service, then test the connection from its detail page.',
         filterResidual:
           'Scope entered here is carried into a metadata pipeline created with the service (paused, not deployed). With no scope entered, only the service record is created.',
       },
@@ -2246,6 +2246,29 @@ const enUS = {
     sslCaCertificate: 'CA certificate',
     sslCertificate: 'SSL certificate',
     sslKey: 'SSL key',
+    // Wave 2 lean-forms tier 2: labels take the spec titles verbatim
+    // (kafkaConnection / redpandaConnection / supersetApiConnection /
+    // prefectConnection). Per-group SSL leaves prefix the group title so
+    // two same-titled leaf sets stay distinguishable in one form.
+    saslUsername: 'SASL Username',
+    saslPassword: 'SASL Password',
+    saslMechanism: 'SASL Mechanism',
+    basicAuthUserInfo: 'Schema Registry Basic Auth User Info',
+    consumerConfig: 'Consumer Config',
+    consumerConfigHint: 'Consumer config as a JSON object; values may be any JSON type.',
+    schemaRegistryConfig: 'Schema Registry Config',
+    schemaRegistryConfigHint: 'Schema Registry config as a JSON object; values may be any JSON type.',
+    schemaRegistryTopicSuffixName: 'Schema Registry Topic Suffix Name',
+    consumerConfigSSLCaCertificate: 'Consumer Config SSL CA Certificate',
+    consumerConfigSSLCertificate: 'Consumer Config SSL Certificate',
+    consumerConfigSSLKey: 'Consumer Config SSL Key',
+    schemaRegistrySSLCaCertificate: 'Schema Registry SSL CA Certificate',
+    schemaRegistrySSLCertificate: 'Schema Registry SSL Certificate',
+    schemaRegistrySSLKey: 'Schema Registry SSL Key',
+    verifySSL: 'Verify SSL',
+    supersetSSLCaCertificate: 'Superset SSL CA Certificate',
+    supersetSSLCertificate: 'Superset SSL Certificate',
+    supersetSSLKey: 'Superset SSL Key',
     classificationName: 'Classification name',
     queryStatementSource: 'Query statement source',
     connectionOptions: 'Connection options',
