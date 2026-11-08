@@ -59,10 +59,39 @@ export interface OntologyProperty {
   kind?: string;
   domain?: string;
   range?: string;
+  /**
+   * Full domain/range IRI arrays (openmetadata-spec
+   * entity/data/ontologyProperty.json: domain/range are arrays of semantic
+   * IRIs). The single-string `domain`/`range` above stay as the table's
+   * display values; the arrays feed the graph edge builder, which must
+   * resolve domain/range by IRI, not by display name.
+   */
+  domainIris?: string[];
+  rangeIris?: string[];
   enumValues?: string[];
   unit?: string;
   isIdentifier?: boolean;
   owners: EntityRef[];
+}
+
+/**
+ * OWL class expression (openmetadata-spec type/ontologyExpression.json):
+ * kind NAMED_CLASS carries classIri; RESTRICTION carries propertyIri,
+ * restrictionKind and a filler expression; INTERSECTION/UNION carry
+ * operands; ONE_OF carries individualIris. The graph edge builder reads
+ * the structured form; the legacy string `expressions` on the axiom keeps
+ * only string items for display.
+ */
+export interface OntologyExpression {
+  kind?: string;
+  classIri?: string;
+  propertyIri?: string;
+  restrictionKind?: string;
+  filler?: OntologyExpression;
+  cardinality?: number;
+  individualIri?: string;
+  operands?: OntologyExpression[];
+  individualIris?: string[];
 }
 
 /**
@@ -79,9 +108,13 @@ export interface OntologyAxiom {
   axiomType?: string;
   subjectIri?: string;
   expressions?: string[];
+  /** Structured class expressions, kept for the graph edge builder. */
+  structuredExpressions?: OntologyExpression[];
   propertyIri?: string;
   targetIri?: string;
   literal?: string;
+  /** Deleted axioms assert no relation (official getModelRelations skips them). */
+  deleted?: boolean;
   owners: EntityRef[];
 }
 
