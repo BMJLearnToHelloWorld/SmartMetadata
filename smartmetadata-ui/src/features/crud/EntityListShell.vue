@@ -29,10 +29,26 @@ const props = withDefaults(
     total?: number;
     hasNext?: boolean;
     hasPrev?: boolean;
+    /**
+     * Infinite-scroll mode (G-20): when true, the footer shows a
+     * "Load more" button instead of the prev/next pager. Additive only —
+     * callers that do not opt in keep cursor paging.
+     */
+    showLoadMore?: boolean;
+    hasMore?: boolean;
+    loadingMore?: boolean;
     emptyText?: string;
     showRowActions?: boolean;
     showEditAction?: boolean;
     showDeleteAction?: boolean;
+    /**
+     * ADR:2026-11-07-context-center-permission-gates — per-row delete
+     * predicate (e.g. memory delete needs owner-or-admin on top of the
+     * resource Delete grant). When provided and false for a row, that
+     * row's delete entry is hidden, matching official's conditional
+     * render; without it, showDeleteAction alone decides.
+     */
+    rowCanDelete?: (record: unknown) => boolean;
     hideHeading?: boolean;
     isBeta?: boolean;
     learningPageId?: string;
@@ -51,10 +67,14 @@ const props = withDefaults(
     total: undefined,
     hasNext: false,
     hasPrev: false,
+    showLoadMore: false,
+    hasMore: false,
+    loadingMore: false,
     emptyText: '',
     showRowActions: false,
     showEditAction: false,
     showDeleteAction: false,
+    rowCanDelete: undefined,
     hideHeading: false,
     rowSelection: undefined,
   },
@@ -66,6 +86,7 @@ const emit = defineEmits<{
   refresh: [];
   next: [];
   prev: [];
+  loadMore: [];
   view: [record: unknown];
   edit: [record: unknown];
   delete: [record: unknown];
@@ -177,7 +198,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
                     {{ t('crud.edit') }}
                   </Menu.Item>
                   <Menu.Item
-                    v-if="showDeleteAction"
+                    v-if="showDeleteAction && (!rowCanDelete || rowCanDelete(slotProps.record))"
                     key="delete"
                     danger
                     data-testid="row-overflow-delete"
@@ -195,7 +216,16 @@ const tableColumns = computed<EntityListColumn[]>(() => {
       </SmTable>
       <div class="entity-list__footer">
         <Typography.Text type="secondary" data-testid="entity-list-count">{{ shownLabel }}</Typography.Text>
-        <Space v-if="showPaging">
+        <Space v-if="showLoadMore && hasMore">
+          <Button
+            data-testid="entity-list-load-more"
+            :loading="loadingMore"
+            @click="emit('loadMore')"
+          >
+            {{ t('crud.loadMore') }}
+          </Button>
+        </Space>
+        <Space v-else-if="showPaging">
           <Button data-testid="entity-list-prev" :disabled="!hasPrev" @click="emit('prev')">
             {{ t('crud.previous') }}
           </Button>

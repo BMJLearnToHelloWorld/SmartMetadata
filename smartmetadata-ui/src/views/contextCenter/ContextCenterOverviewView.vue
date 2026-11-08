@@ -22,6 +22,8 @@ import {
   listKnowledgePages,
   uploadDriveFile,
 } from '@/api/contextCenter';
+import { permissionFlags } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import type {
   ContextFile,
   ContextMemory,
@@ -33,9 +35,34 @@ import ContextCenterNav from './ContextCenterNav.vue';
 import FolderFormModal from './FolderFormModal.vue';
 import UploadDocumentModal from './UploadDocumentModal.vue';
 import { formatEpoch } from './time';
+import { useAuthStore } from '@/stores/auth';
+import {
+  listRecentlyViewed,
+  recordRecentlyViewed,
+  type RecentlyViewedPage,
+} from '@/stores/contextCenterRecent';
 
 const { t } = useI18n();
 const router = useRouter();
+const auth = useAuthStore();
+const permissionStore = usePermissionStore();
+
+/**
+ * ADR:2026-11-07-context-center-permission-gates — the three creation
+ * entries are hidden without page Create. A failed permission request
+ * leaves canCreate false (fail-closed), so no entry renders unguarded.
+ */
+const canCreate = ref(false);
+
+async function loadPermissions(): Promise<void> {
+  try {
+    canCreate.value = permissionFlags(
+      await permissionStore.getResourcePermission('page'),
+    ).canCreate;
+  } catch {
+    canCreate.value = false;
+  }
+}
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -46,6 +73,8 @@ const documentsTotal = ref(0);
 const folders = ref<DriveFolder[]>([]);
 const memories = ref<ContextMemory[]>([]);
 const memoriesTotal = ref(0);
+const recentPages = ref<RecentlyViewedPage[]>([]);
+const mostCited = ref<ContextMemory[]>([]);
 
 const showArticleModal = ref(false);
 const showFolderModal = ref(false);
@@ -76,11 +105,12 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [articlePage, documentPage, folderPage, memoryPage] = await Promise.all([
+    const [articlePage, documentPage, folderPage, memoryPage, mostCitedPage] = await Promise.all([
       listKnowledgePages({ limit: 3 }),
       listContextFiles({ limit: 3 }),
       listDriveFolders({ limit: 25 }),
       listContextMemories({ limit: 3, statuses: 'Approved,Unprocessed' }),
+      listContextMemories({ limit: 10, sortBy: 'appliedCount', sortOrder: 'desc' }),
     ]);
     articles.value = articlePage.data;
     articlesTotal.value = articlePage.total ?? articlePage.data.length;
@@ -89,6 +119,8 @@ async function load(): Promise<void> {
     folders.value = folderPage.data;
     memories.value = memoryPage.data;
     memoriesTotal.value = memoryPage.total ?? memoryPage.data.length;
+    mostCited.value = mostCitedPage.data;
+    recentPages.value = listRecentlyViewed(auth.user?.name);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
@@ -140,14 +172,46 @@ async function onUpload(value: { file: File; folderFqn?: string }): Promise<void
 }
 
 function openArticle(article: KnowledgePage): void {
+  recordRecentlyViewed(auth.user?.name, {
+    id: article.id,
+    title: article.displayName || article.name,
+    pageType: article.pageType,
+    pageUrl: article.pageUrl,
+    fullyQualifiedName: article.fullyQualifiedName,
+  });
+  if (article.pageType === 'QuickLink' && article.pageUrl) {
+    window.open(article.pageUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
   void router.push({
     name: 'context-center-article',
     params: { fqn: article.fullyQualifiedName },
   });
 }
 
+function openRecent(item: RecentlyViewedPage): void {
+  recordRecentlyViewed(auth.user?.name, {
+    id: item.id,
+    title: item.title,
+    pageType: item.pageType,
+    pageUrl: item.pageUrl,
+    fullyQualifiedName: item.fullyQualifiedName,
+  });
+  if (item.pageType === 'QuickLink' && item.pageUrl) {
+    window.open(item.pageUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (item.fullyQualifiedName) {
+    void router.push({
+      name: 'context-center-article',
+      params: { fqn: item.fullyQualifiedName },
+    });
+  }
+}
+
 onMounted(() => {
   void load();
+  void loadPermissions();
 });
 </script>
 
@@ -156,13 +220,26 @@ onMounted(() => {
     <PageHeader :header="t('contextCenter.overview')" :sub-header="t('contextCenter.overviewLead')" />
     <ContextCenterNav />
     <Space wrap style="margin-bottom: 16px">
-      <Button type="primary" data-testid="overview-create-article" @click="showArticleModal = true">
+      <Button
+        v-if="canCreate"
+        type="primary"
+        data-testid="overview-create-article"
+        @click="showArticleModal = true"
+      >
         {{ t('contextCenter.createArticle') }}
       </Button>
-      <Button data-testid="overview-upload-document" @click="showUploadModal = true">
+      <Button
+        v-if="canCreate"
+        data-testid="overview-upload-document"
+        @click="showUploadModal = true"
+      >
         {{ t('contextCenter.uploadDocument') }}
       </Button>
-      <Button data-testid="overview-create-folder" @click="showFolderModal = true">
+      <Button
+        v-if="canCreate"
+        data-testid="overview-create-folder"
+        @click="showFolderModal = true"
+      >
         {{ t('contextCenter.createFolder') }}
       </Button>
     </Space>
@@ -242,6 +319,56 @@ onMounted(() => {
             <template #renderItem="{ item }">
               <List.Item>
                 {{ (item as ContextMemory).question || (item as ContextMemory).displayName }}
+              </List.Item>
+            </template>
+          </List>
+        </Card>
+      </Col>
+    </Row>
+    <Row :gutter="16" style="margin-top: 16px">
+      <Col :span="12">
+        <Card
+          :title="t('contextCenter.recentlyViewed')"
+          :loading="loading"
+          data-testid="recently-viewed-card"
+        >
+          <List
+            :data-source="recentPages"
+            :locale="{ emptyText: t('contextCenter.emptyRecentlyViewed') }"
+          >
+            <template #renderItem="{ item }">
+              <List.Item>
+                <Button type="link" @click="openRecent(item as RecentlyViewedPage)">
+                  {{ (item as RecentlyViewedPage).title }}
+                </Button>
+                <Typography.Text type="secondary">
+                  {{ formatEpoch((item as RecentlyViewedPage).timestamp) }}
+                </Typography.Text>
+              </List.Item>
+            </template>
+          </List>
+        </Card>
+      </Col>
+      <Col :span="12">
+        <Card
+          :title="t('contextCenter.mostCitedMemories')"
+          :loading="loading"
+          data-testid="most-cited-memories-card"
+        >
+          <List
+            :data-source="mostCited"
+            :locale="{ emptyText: t('contextCenter.emptyMostCited') }"
+          >
+            <template #renderItem="{ item }">
+              <List.Item>
+                {{ (item as ContextMemory).question || (item as ContextMemory).displayName }}
+                <Typography.Text type="secondary">
+                  {{
+                    t('contextCenter.citedNTimes', {
+                      count: (item as ContextMemory).appliedCount ?? 0,
+                    })
+                  }}
+                </Typography.Text>
               </List.Item>
             </template>
           </List>

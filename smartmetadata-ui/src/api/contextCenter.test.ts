@@ -10,9 +10,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
+  bulkDeleteDriveFiles,
+  bulkMoveFilesToFolder,
   createContextMemory,
   createKnowledgePage,
   deleteKnowledgePage,
+  downloadDriveFiles,
+  getBulkSuccessfulIds,
   getKnowledgePageByFqn,
   getKnowledgePageVersion,
   listArchivedContextFiles,
@@ -22,6 +26,8 @@ import {
   patchKnowledgePage,
   pinContextMemory,
   restoreKnowledgePage,
+  searchContextFiles,
+  unpinContextMemory,
   updateKnowledgePage,
   uploadDriveFile,
 } from './contextCenter';
@@ -235,6 +241,200 @@ describe('contextCenter API', () => {
     const { url, init } = lastFetch();
     expect(url).toContain('/api/v1/contextCenter/memories/m1/pin');
     expect(init?.method).toBe('PUT');
+  });
+
+  it('unpins a memory with DELETE /pin (no PUT /unpin route exists server-side)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    await unpinContextMemory('m1');
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/contextCenter/memories/m1/pin');
+    expect(url).not.toContain('/unpin');
+    expect(init?.method).toBe('DELETE');
+  });
+
+  it('passes the new list parameters through for memories and pages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/contextCenter/memories')) {
+          expect(url).toContain('author=alice');
+          expect(url).toContain('assets=a1');
+          expect(url).toContain('offset=25');
+          expect(url).toContain('fields=appliedCount');
+          expect(url).toContain('before=cursor-b');
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/contextCenter/pages')) {
+          expect(url).toContain('q=guide');
+          expect(url).toContain('sortBy=updatedAt');
+          expect(url).toContain('sortOrder=desc');
+          expect(url).toContain('offset=10');
+          expect(url).toContain('fields=owners');
+          expect(url).toContain('before=cursor-b');
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return jsonResponse({});
+      }),
+    );
+    await listContextMemories({ author: 'alice', assets: 'a1', offset: 25, fields: 'appliedCount', before: 'cursor-b' });
+    await listKnowledgePages({ q: 'guide', sortBy: 'updatedAt', sortOrder: 'desc', offset: 10, fields: 'owners', before: 'cursor-b' });
+  });
+
+  it('maps appliedCount on a fetched memory', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ id: 'm1', question: 'What is churn?', appliedCount: 7 }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listContextMemories({ limit: 10, sortBy: 'appliedCount', sortOrder: 'desc' });
+    expect(page.data[0]?.appliedCount).toBe(7);
+  });
+
+  it('searches context files from _source with size 100 and a folder term filter', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe('/api/v1/search/query');
+        expect(url.searchParams.get('q')).toBe('guide');
+        expect(url.searchParams.get('index')).toBe('contextFile');
+        expect(url.searchParams.get('size')).toBe('100');
+        expect(url.searchParams.get('sort_field')).toBe('updatedAt');
+        expect(url.searchParams.get('sort_order')).toBe('desc');
+        expect(JSON.parse(url.searchParams.get('query_filter') ?? '')).toEqual({
+          query: { bool: { filter: { term: { 'folder.id': 'd1' } } } },
+        });
+        return jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _source: {
+                  id: 'f1',
+                  name: 'guide.pdf',
+                  fileExtension: 'pdf',
+                  fileSize: 42,
+                  folder: { id: 'd1', name: 'handbook' },
+                  memoryCount: 2,
+                  processingStatus: 'COMPLETED',
+                  updatedBy: 'alice',
+                },
+              },
+            ],
+          },
+        });
+      }),
+    );
+    const { data, total } = await searchContextFiles('guide', { folderId: 'd1' });
+    expect(total).toBe(1);
+    expect(data[0]?.fileExtension).toBe('pdf');
+    expect(data[0]?.fileSize).toBe(42);
+    expect(data[0]?.folder?.id).toBe('d1');
+    expect(data[0]?.memoryCount).toBe(2);
+    expect(data[0]?.processingStatus).toBe('COMPLETED');
+    expect(data[0]?.updatedBy).toBe('alice');
+  });
+
+  it('omits the folder term filter when no folder is selected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input));
+        expect(url.searchParams.has('query_filter')).toBe(false);
+        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
+      }),
+    );
+    const { data, total } = await searchContextFiles('guide');
+    expect(data).toEqual([]);
+    expect(total).toBe(0);
+  });
+
+  it('bulk-deletes with soft delete by default and reports successful ids', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual({ ids: ['f1', 'f2'], hardDelete: false });
+        return jsonResponse({
+          numberOfRowsProcessed: 2,
+          numberOfRowsPassed: 1,
+          numberOfRowsFailed: 1,
+          successRequest: [{ request: 'f1', status: 200 }],
+          failedRequest: [{ request: 'f2', status: 404, message: 'not found' }],
+          status: 'PARTIAL_SUCCESS',
+        });
+      }),
+    );
+    const result = await bulkDeleteDriveFiles(['f1', 'f2']);
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/drive/files/bulk/delete');
+    expect(result.numberOfRowsFailed).toBe(1);
+    expect(getBulkSuccessfulIds(result)).toEqual(new Set(['f1']));
+  });
+
+  it('bulk-moves with the official folder body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('PUT');
+        expect(JSON.parse(String(init?.body))).toEqual({
+          ids: ['f1'],
+          folder: { id: 'd2', type: 'folder' },
+        });
+        return jsonResponse({
+          numberOfRowsProcessed: 1,
+          numberOfRowsPassed: 1,
+          numberOfRowsFailed: 0,
+          successRequest: [{ request: 'f1', status: 200 }],
+          status: 'SUCCESS',
+        });
+      }),
+    );
+    const result = await bulkMoveFilesToFolder(['f1'], 'd2');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/drive/files/bulk/move');
+    expect(getBulkSuccessfulIds(result)).toEqual(new Set(['f1']));
+  });
+
+  it('bulk-downloads a zip blob', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual({ ids: ['f1'] });
+        // Uint8Array body, not a Blob body: Node 22's Response constructor calls
+        // blob.stream(), which jsdom's Blob lacks (CI failure on Node 22,
+        // while Node 24 tolerates it); .blob() still yields type
+        // 'application/zip' from the Content-Type header.
+        return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), { status: 200, headers: { 'Content-Type': 'application/zip' } });
+      }),
+    );
+    const out = await downloadDriveFiles(['f1']);
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/drive/files/bulk/download');
+    expect(out.type).toBe('application/zip');
+  });
+
+  it('refuses to save an error JSON body as a zip', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ message: 'Object storage is not configured' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await expect(downloadDriveFiles(['f1'])).rejects.toThrow('Object storage is not configured');
+  });
+
+  it('refuses to download with no selection', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(downloadDriveFiles([])).rejects.toThrow('No files selected');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('lists archived files with include=deleted', async () => {

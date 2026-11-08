@@ -22,6 +22,14 @@ export interface SearchAssetsOptions {
    * do not opt in are byte-identical to before.
    */
   deleted?: boolean;
+  /**
+   * ADR:2026-11-07-context-center-search-query-filter-is-a-json-string —
+   * the server's `query_filter` is a String, and apiRequest only carries
+   * string | number | boolean query values, so callers pass the already
+   * serialized JSON string (JSON.stringify of the filter object). An
+   * object passed here would arrive as "[object Object]".
+   */
+  query_filter?: string;
 }
 
 export interface NlqSearchOptions {
@@ -35,8 +43,8 @@ export interface NlqSearchOptions {
  * Natural-language search. The official UI calls /hybrid/nlq/search, but
  * this snapshot's server exposes no /hybrid route; the verified equivalent
  * is GET /v1/search/nlq/query, whose parameters match the UI call one to
- * one (q, index, size, from, deleted, sort_field, sort_order,
- * query_filter) and whose response is the same SearchResponse shape, so
+ * one (q, index, size, from, deleted, sort_field, sort_order)
+ * and whose response is the same SearchResponse shape, so
  * the keyword mapper is reused. A live /hybrid probe may one day justify
  * a one-line switch; it does not block this wiring.
  */
@@ -83,6 +91,7 @@ export async function searchAssets(
       sort_field: options.sortField,
       sort_order: options.sortOrder,
       deleted: options.deleted === true ? true : undefined,
+      query_filter: options.query_filter,
     },
   });
   return mapSearchResponse(payload);

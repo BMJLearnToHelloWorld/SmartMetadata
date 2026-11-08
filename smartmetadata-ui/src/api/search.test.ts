@@ -97,4 +97,18 @@ describe('searchAssets', () => {
     expect(url).toContain('include_aggregations=false');
     expect(url).toContain('size=5');
   });
+
+  it('sends query_filter as a JSON string that parses back to the filter object', async () => {
+    const filter = { query: { bool: { filter: { term: { 'folder.id': 'd1' } } } } };
+    await searchAssets('guide', 0, 20, { index: 'contextFile', query_filter: JSON.stringify(filter) });
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.searchParams.get('index')).toBe('contextFile');
+    expect(JSON.parse(url.searchParams.get('query_filter') ?? '')).toEqual(filter);
+  });
+
+  it('omits query_filter when no filter is passed', async () => {
+    await searchAssets('orders', 0, 20);
+    const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
+    expect(url.searchParams.has('query_filter')).toBe(false);
+  });
 });

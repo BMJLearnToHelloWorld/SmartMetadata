@@ -22,12 +22,63 @@ import {
   pinContextMemory,
   unpinContextMemory,
 } from '@/api/contextCenter';
+import { permissionFlags } from '@/api/permissions';
+import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
 import type { ContextMemory } from '@/types/contextCenter';
 import ContextCenterNav from './ContextCenterNav.vue';
 import MemoryFormModal from './MemoryFormModal.vue';
 import { formatEpoch } from './time';
 
 const { t } = useI18n();
+const auth = useAuthStore();
+const permissionStore = usePermissionStore();
+
+/**
+ * ADR:2026-11-07-context-center-permission-gates — create is hidden
+ * without contextMemory Create; pin/unpin (an edit-class mutation; the
+ * official pin has no rendered entry to copy a gate from) is hidden
+ * without EditAll; row delete additionally needs owner-or-admin. A
+ * failed permission request leaves all three false (fail-closed).
+ */
+const canCreate = ref(false);
+const canEditAll = ref(false);
+const canDelete = ref(false);
+
+async function loadPermissions(): Promise<void> {
+  try {
+    const flags = permissionFlags(
+      await permissionStore.getResourcePermission('contextMemory'),
+    );
+    canCreate.value = flags.canCreate;
+    canEditAll.value = flags.canEditAll;
+    canDelete.value = flags.canDelete;
+  } catch {
+    canCreate.value = false;
+    canEditAll.value = false;
+    canDelete.value = false;
+  }
+}
+
+function isMemoryOwner(memory: ContextMemory): boolean {
+  const user = auth.user;
+  if (!user) {
+    return false;
+  }
+  return (memory.owners ?? []).some(
+    (owner) =>
+      (owner.name !== undefined && owner.name !== '' && owner.name === user.name) ||
+      (owner.id !== undefined && owner.id !== '' && owner.id === user.id),
+  );
+}
+
+function canDeleteMemory(memory: ContextMemory): boolean {
+  return canDelete.value && (isMemoryOwner(memory) || permissionStore.isAdminUser);
+}
+
+function rowCanDeleteMemory(record: unknown): boolean {
+  return canDeleteMemory(record as ContextMemory);
+}
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -137,6 +188,7 @@ async function onDelete(memory: ContextMemory): Promise<void> {
 
 onMounted(() => {
   void load();
+  void loadPermissions();
 });
 </script>
 
@@ -164,7 +216,8 @@ onMounted(() => {
       :has-prev="!!before"
       :empty-text="t('contextCenter.emptyMemories')"
       show-row-actions
-      show-delete-action
+      :show-delete-action="canDelete"
+      :row-can-delete="rowCanDeleteMemory"
       @refresh="load()"
       @next="load({ after: after })"
       @prev="load({ before: before })"
@@ -172,7 +225,12 @@ onMounted(() => {
       @delete="onDelete($event as ContextMemory)"
     >
       <template #actions>
-        <Button type="primary" data-testid="memories-create" @click="showCreateModal = true">
+        <Button
+          v-if="canCreate"
+          type="primary"
+          data-testid="memories-create"
+          @click="showCreateModal = true"
+        >
           {{ t('contextCenter.createMemory') }}
         </Button>
       </template>
@@ -207,6 +265,7 @@ onMounted(() => {
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'pinnedLabel'">
           <Button
+            v-if="canEditAll"
             type="link"
             :data-testid="`memory-pin-${(record as ContextMemory).id}`"
             @click="onTogglePin(record as ContextMemory)"
@@ -247,6 +306,7 @@ onMounted(() => {
           {{ formatEpoch(previewMemory.updatedAt) }}
         </p>
         <Button
+          v-if="canEditAll"
           data-testid="memory-preview-pin"
           @click="onTogglePin(previewMemory)"
         >

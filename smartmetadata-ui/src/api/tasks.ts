@@ -159,6 +159,40 @@ export function listTasks(query: ListTasksQuery = {}): Promise<Paged<Collaborati
   }).then((payload) => parsePaged(payload, mapTask));
 }
 
+/**
+ * Official listMyAssignedTasks (rest/tasksAPI.ts): GET /v1/tasks/assigned,
+ * filtered by the current user and their teams server-side, cursor-paged
+ * (before/after via listInternal) — never the offset mode of
+ * listDataAccessRequests. Thin wrapper only: no UI calls it in this batch
+ * (G-21, Wave 2). Known limit, recorded not fixed here (R-W13-2): mapTask
+ * only passes payload through for DataAccessRequest, so a
+ * MemoryConflictReview task's payload.disputes[] is not yet mapped;
+ * G-21 must extend the mapping before reading review payloads.
+ */
+export interface ListMyAssignedTasksQuery {
+  limit?: number;
+  after?: string;
+  before?: string;
+  type?: string;
+  status?: string;
+  fields?: string;
+}
+
+export function listMyAssignedTasks(
+  query: ListMyAssignedTasksQuery = {},
+): Promise<Paged<CollaborationTask>> {
+  return apiRequest<unknown>('/v1/tasks/assigned', {
+    query: {
+      fields: query.fields ?? 'about,createdBy,payload',
+      limit: query.limit ?? 20,
+      after: query.after,
+      before: query.before,
+      type: query.type ?? 'MemoryConflictReview',
+      status: query.status ?? 'Open',
+    },
+  }).then((payload) => parsePaged(payload, mapTask));
+}
+
 export async function getTask(id: string): Promise<CollaborationTask> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/tasks/${encodeURIComponent(id)}`, {
     query: { fields: TASK_DETAIL_FIELDS },
