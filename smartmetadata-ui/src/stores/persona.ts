@@ -9,6 +9,7 @@
  */
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { ApiError } from '@/api/client';
 import { getDocumentByFqn, personaDocFqn } from '@/api/docStore';
 import { listPersonas } from '@/api/persona';
 import { normalizePersonaDocument } from '@/views/admin/personaPage';
@@ -106,10 +107,15 @@ export const usePersonaStore = defineStore('persona', () => {
     documentLoading.value = true;
     try {
       document.value = normalizePersonaDocument(await getDocumentByFqn(fqn));
-    } catch {
+    } catch (error) {
       // A missing document is not an error: the persona simply has no
       // customizations yet, as official treats the 404 as empty. Other
-      // failures also leave no document rather than a stale one.
+      // failures also leave no document rather than a stale one — but
+      // unlike a 404 they are logged, so a failing DocStore read is
+      // visible instead of silently looking like "no customizations".
+      if (!(error instanceof ApiError && error.status === 404)) {
+        console.error('Failed to load persona document', error);
+      }
       document.value = null;
     } finally {
       documentLoading.value = false;

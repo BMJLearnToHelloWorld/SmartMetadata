@@ -6,7 +6,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Empty, Select, Spin, Typography } from 'ant-design-vue';
+import { Spin } from 'ant-design-vue';
 import { listActivityEvents } from '@/api/activity';
 import { listSystemChartData } from '@/api/dataInsights';
 import { listDomains } from '@/api/domains';
@@ -15,42 +15,68 @@ import { searchAssets } from '@/api/search';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { searchRouteQuery, type SearchFilters } from '@/catalog/searchQuery';
 import HomeHero from '@/features/home/HomeHero.vue';
-import HomeWidgetCard from '@/features/home/HomeWidgetCard.vue';
+import { insightResultsToSeries } from '@/features/charts/series';
+import { seriesWindow } from '@/features/charts/types';
 import {
-  activityLabel,
+  EXCLUDED_WIDGET_FQNS,
+  LANDING_PAGE_MAX_GRID_SIZE,
+  LANDING_PAGE_WIDGET_HEIGHT_PX,
+  LANDING_PAGE_WIDGET_KEYS,
+  MY_DATA_WIDGET_KEYS,
+  DEFAULT_LANDING_PAGE_LAYOUT,
+  extractSavedLandingLayout,
+  normalizeLandingPageLayout,
+} from '@/features/home/landingPageLayout';
+import {
+  MY_DATA_WIDGET_PLACEHOLDER_META,
+  myDataWidgetSlug,
+  resolveMyDataWidget,
+  resolveMyDataWidgetBaseKey,
+} from '@/features/home/landingPageWidgets';
+import {
   domainFilters,
   followedAssetsQuery,
-  hitLabel,
   ownedAssetsQuery,
   scopedSearchQuery,
   sortCountBuckets,
-  sortHits,
   type ActivityFilter,
   type AssetSort,
   type CountSort,
   type TotalRangeDays,
 } from '@/features/home/homeQueries';
-import { serviceTypeIcon } from '@/features/home/serviceTypeIcon';
-import SmChart from '@/features/charts/SmChart.vue';
-import { insightResultsToSeries } from '@/features/charts/series';
-import { seriesWindow } from '@/features/charts/types';
 import { useAuthStore } from '@/stores/auth';
+import { usePersonaStore } from '@/stores/persona';
 import type { ActivityEvent } from '@/types/collaboration';
 import type { FacetBucket } from '@/catalog/searchFacets';
 import type { SearchHit } from '@/types/api';
 import type { Kpi } from '@/types/kpi';
 import type { Domain } from '@/types/governance';
 
+/**
+ * The landing page, stage A (REVIEW-W1-5-G11): the official 13-item
+ * grid over the persona document's saved layout, normalized by
+ * `normalizeLandingPageLayout`, rendered through the widget registry.
+ * Five cells carry existing product capability; eight are honest
+ * empty placeholders until stage B builds their components.
+ *
+ * ADR:2026-11-07-my-data-layout-normalization-five-params
+ * ADR:2026-11-07-my-data-row-height-non-subdivided
+ * ADR:2026-11-07-my-data-right-rail-keeps-home-hero
+ *
+ * No customize entry lives here (B-1 is stage D), no greeting header
+ * is built (the single welcome copy is HomeHero, in the right rail),
+ * and no per-user layout is read or written (B-6: per-persona only).
+ */
 const router = useRouter();
 const auth = useAuthStore();
+const persona = usePersonaStore();
 const { t, locale } = useI18n();
 
 const loading = ref(false);
 const selectedDomain = ref('');
 const activityFilter = ref<ActivityFilter>('all');
 const dataAssetSort = ref<CountSort>('high');
-const ownedSort = ref<AssetSort>('latest');
-const followedSort = ref<AssetSort>('latest');
+const trackedSort = ref<AssetSort>('latest');
 const totalRange = ref<TotalRangeDays>(7);
 
 const activity = ref<ActivityEvent[]>([]);
@@ -60,11 +86,37 @@ const entityBuckets = ref<FacetBucket[]>([]);
 const catalogTotal = ref(0);
 const owned = ref<SearchHit[]>([]);
 const followed = ref<SearchHit[]>([]);
+const ownedTotal = ref(0);
+const followedTotal = ref(0);
 const kpis = ref<Kpi[]>([]);
 const domains = ref<Domain[]>([]);
 const domainsUnavailable = ref(false);
 const totalSeries = ref<ReturnType<typeof insightResultsToSeries>>([]);
 const kpiTried = ref(false);
+
+/**
+ * The layout gate (condition 3): until the persona document has been
+ * read and the auth user is resolved, only the skeleton renders — no
+ * default grid, no widget queries. Officially this avoids mounting
+ * the whole grid only to tear it down once the saved layout arrives.
+ */
+const layoutReady = computed(() => persona.documentLoaded && auth.user !== null);
+
+/** The normalized layout: saved persona layout, or the 13-item default. */
+const layout = computed(() =>
+  normalizeLandingPageLayout(
+    extractSavedLandingLayout(persona.document),
+    DEFAULT_LANDING_PAGE_LAYOUT,
+    EXCLUDED_WIDGET_FQNS,
+    LANDING_PAGE_MAX_GRID_SIZE,
+    MY_DATA_WIDGET_KEYS,
+  ),
+);
+
+/** Cells the registry can actually render; an unknown key renders nothing and leaves no empty cell. */
+const renderableLayout = computed(() =>
+  layout.value.filter((item) => resolveMyDataWidget(item.i) !== null),
+);
 
 const userName = computed(() => auth.displayName || auth.user?.name || '');
 const domainOptions = computed(() =>
@@ -73,21 +125,7 @@ const domainOptions = computed(() =>
     label: domain.displayName || domain.name,
   })),
 );
-const visibleActivity = computed(() =>
-  activityFilter.value === 'all'
-    ? activity.value
-    : activity.value.filter((event) => event.eventType === activityFilter.value),
-);
-const activityOptions = computed(() => [
-  { value: 'all', label: t('home.allActivity') },
-  ...[...new Set(activity.value.map((event) => event.eventType))].map((value) => ({
-    value,
-    label: value,
-  })),
-]);
 const sortedServices = computed(() => sortCountBuckets(serviceBuckets.value, dataAssetSort.value));
-const sortedOwned = computed(() => sortHits(owned.value, ownedSort.value));
-const sortedFollowed = computed(() => sortHits(followed.value, followedSort.value));
 const countSortOptions = computed(() => [
   { value: 'high', label: t('home.sortHighLow') },
   { value: 'low', label: t('home.sortLowHigh') },
@@ -166,14 +204,6 @@ function openActivity(event: ActivityEvent): void {
   }
 }
 
-function kpiLabel(kpi: Kpi): string {
-  return kpi.displayName || kpi.name;
-}
-
-function kpiCurrent(kpi: Kpi): string {
-  return kpi.kpiResult?.targetResult[0]?.value || '—';
-}
-
 function onActivityFilter(value: unknown): void {
   activityFilter.value = typeof value === 'string' ? value : 'all';
 }
@@ -184,15 +214,9 @@ function onDataAssetSort(value: unknown): void {
   }
 }
 
-function onOwnedSort(value: unknown): void {
+function onTrackedSort(value: unknown): void {
   if (value === 'latest' || value === 'name') {
-    ownedSort.value = value;
-  }
-}
-
-function onFollowedSort(value: unknown): void {
-  if (value === 'latest' || value === 'name') {
-    followedSort.value = value;
+    trackedSort.value = value;
   }
 }
 
@@ -200,39 +224,6 @@ function onTotalRange(value: unknown): void {
   if (value === 7 || value === 30) {
     totalRange.value = value;
   }
-}
-
-function actorName(event: ActivityEvent): string {
-  return event.actor?.displayName || event.actor?.name || '';
-}
-
-function actorInitial(event: ActivityEvent): string {
-  return (actorName(event) || event.eventType || '?').slice(0, 1).toUpperCase();
-}
-
-function relativeTime(timestamp?: number): string {
-  if (!timestamp) {
-    return '';
-  }
-  const rtf = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' });
-  const delta = timestamp - Date.now();
-  const days = Math.round(delta / 86_400_000);
-  if (Math.abs(days) >= 1) {
-    return rtf.format(days, 'day');
-  }
-  const hours = Math.round(delta / 3_600_000);
-  if (Math.abs(hours) >= 1) {
-    return rtf.format(hours, 'hour');
-  }
-  return rtf.format(Math.round(delta / 60_000), 'minute');
-}
-
-function formatAxisLabel(value: string): string {
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) {
-    return value;
-  }
-  return new Date(parsed).toLocaleDateString(locale.value, { day: 'numeric', month: 'short' });
 }
 
 async function loadCharts(days: TotalRangeDays): Promise<void> {
@@ -278,7 +269,9 @@ async function loadLanding(): Promise<void> {
     serviceChips.value = (estate.facets.find((facet) => facet.id === 'service')?.buckets ?? []).slice(0, 6);
     entityBuckets.value = estate.facets.find((facet) => facet.id === 'entityType')?.buckets ?? [];
     owned.value = ownedPage.hits;
+    ownedTotal.value = ownedPage.total;
     followed.value = followedPage.hits;
+    followedTotal.value = followedPage.total;
     kpis.value = kpiPage.data;
   } finally {
     kpiTried.value = true;
@@ -297,9 +290,14 @@ async function loadDomains(): Promise<void> {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (auth.isAuthenticated) {
-    void auth.refreshUser().catch(() => undefined);
+    await auth.refreshUser().catch(() => undefined);
+  }
+  await persona.ensureLoaded();
+  await persona.loadDocument();
+  if (!layoutReady.value) {
+    return;
   }
   void loadDomains();
   void loadLanding();
@@ -307,208 +305,131 @@ onMounted(() => {
 });
 
 watch(selectedDomain, () => {
-  void loadLanding();
+  if (layoutReady.value) {
+    void loadLanding();
+  }
 });
 
 watch(totalRange, (days) => {
   void loadCharts(days);
 });
+
+/** Props for the widget in a grid cell, by registry base key. */
+function widgetProps(baseKey: string): Record<string, unknown> {
+  switch (baseKey) {
+    case LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED:
+      return { events: activity.value, filter: activityFilter.value };
+    case LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE:
+      return { services: sortedServices.value, sort: dataAssetSort.value, sortOptions: countSortOptions.value };
+    case LANDING_PAGE_WIDGET_KEYS.TOTAL_DATA_ASSETS:
+      return {
+        total: formattedTotal.value,
+        series: donutSeries.value,
+        axisLabels: totalAxisLabels.value,
+        range: totalRange.value,
+        rangeOptions: rangeOptions.value,
+      };
+    case LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED:
+      return {
+        owned: owned.value,
+        followed: followed.value,
+        ownedTotal: ownedTotal.value,
+        followedTotal: followedTotal.value,
+        sort: trackedSort.value,
+        sortOptions: assetSortOptions.value,
+      };
+    case LANDING_PAGE_WIDGET_KEYS.KPI:
+      return { kpis: kpis.value, tried: kpiTried.value };
+    default: {
+      const meta = MY_DATA_WIDGET_PLACEHOLDER_META[baseKey];
+      return { title: meta ? t(meta.titleKey) : baseKey, slug: myDataWidgetSlug(baseKey) };
+    }
+  }
+}
+
+type WidgetListener = (payload?: unknown) => void;
+
+/** Event listeners for the widget in a grid cell, by registry base key. */
+function widgetListeners(baseKey: string): Record<string, WidgetListener> {
+  switch (baseKey) {
+    case LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED:
+      return {
+        'change-filter': (value) => onActivityFilter(value),
+        'open-activity': (value) => openActivity(value as ActivityEvent),
+        explore: () => goExplore(),
+      };
+    case LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE:
+      return {
+        'change-sort': (value) => onDataAssetSort(value),
+        'select-service-type': (value) => onSelectServiceType(String(value)),
+      };
+    case LANDING_PAGE_WIDGET_KEYS.TOTAL_DATA_ASSETS:
+      return { 'change-range': (value) => onTotalRange(value) };
+    case LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED:
+      return {
+        'change-sort': (value) => onTrackedSort(value),
+        'open-hit': (value) => openHit(value as SearchHit),
+        'open-owned-more': () => openOwnedMore(),
+        'open-followed-more': () => openFollowedMore(),
+        explore: () => goExplore(),
+      };
+    case LANDING_PAGE_WIDGET_KEYS.KPI:
+      return { 'setup-kpi': () => openKpiSetup() };
+    default:
+      return {};
+  }
+}
+
+function cellStyle(item: { x: number; y: number }): Record<string, string> {
+  return { gridColumn: String(item.x + 1), gridRow: String(item.y + 1) };
+}
 </script>
 
 <template>
   <!-- P2 B5 tour: no topics section exists on this page, so the tour
        step falls back to the page content per TOUR_PAGE_SELECTOR. -->
   <div class="my-data" data-testid="my-data-page" data-tour-page>
-    <Spin :spinning="loading">
+    <div v-if="!layoutReady" class="my-data__skeleton" data-testid="home-landing-skeleton">
+      <div class="my-data__skeleton-bar" />
+      <div class="my-data__skeleton-bar" />
+      <div class="my-data__skeleton-bar" />
+    </div>
+    <Spin v-else :spinning="loading">
       <div class="my-data__scroll">
-      <div class="my-data__grid">
-        <HomeWidgetCard class="home-area home-area--activity" :title="t('home.activity')" test-id="home-widget-activity">
-          <template #extra>
-            <Select
-              data-testid="home-activity-filter"
-              size="small"
-              :value="activityFilter"
-              :options="activityOptions"
-              :bordered="false"
-              @change="onActivityFilter"
-            />
-          </template>
-          <Empty
-            v-if="!visibleActivity.length"
-            data-testid="home-activity-empty"
-            :description="t('home.activityEmptyTitle')"
+        <div class="my-data__grid">
+          <div
+            class="my-data__widgets"
+            data-testid="home-landing-grid"
+            :style="{ gridAutoRows: `${LANDING_PAGE_WIDGET_HEIGHT_PX}px` }"
           >
-            <template #description>
-              <Typography.Title :level="5">{{ t('home.activityEmptyTitle') }}</Typography.Title>
-              <Typography.Paragraph type="secondary">{{ t('home.activityEmpty') }}</Typography.Paragraph>
-            </template>
-            <Button data-testid="home-explore-assets" @click="goExplore()">{{ t('home.exploreAssets') }}</Button>
-          </Empty>
-          <ul v-else class="home-list" data-testid="home-activity-list">
-            <li v-for="event in visibleActivity" :key="event.id">
-              <button
-                type="button"
-                class="feed"
-                :data-testid="`home-activity-row-${event.id}`"
-                @click="openActivity(event)"
-              >
-                <span class="feed__top">
-                  <span class="feed__avatar">{{ actorInitial(event) }}</span>
-                  <span class="feed__name">{{ actorName(event) }}</span>
-                  <span class="feed__time">{{ relativeTime(event.timestamp) }}</span>
-                </span>
-                <span class="feed__tag">{{ event.eventType }}</span>
-                <span class="feed__body">{{ activityLabel(event) }}</span>
-              </button>
-            </li>
-          </ul>
-        </HomeWidgetCard>
-
-        <HomeWidgetCard class="home-area home-area--assets" :title="t('home.dataAssets')" test-id="home-widget-data-assets">
-          <template #extra>
-            <Select
-              data-testid="home-data-assets-sort"
-              size="small"
-              :value="dataAssetSort"
-              :options="countSortOptions"
-              :bordered="false"
-              @change="onDataAssetSort"
-            />
-          </template>
-          <div v-if="sortedServices.length" class="home-services" data-testid="home-data-assets-grid">
-            <button
-              v-for="bucket in sortedServices"
-              :key="bucket.key"
-              type="button"
-              class="home-services__tile"
-              :data-testid="`home-service-${bucket.key}`"
-              @click="onSelectServiceType(bucket.key)"
+            <div
+              v-for="item in renderableLayout"
+              :key="`${item.i}-${item.x}-${item.y}`"
+              class="my-data__cell"
+              data-testid="home-widget-cell"
+              :style="cellStyle(item)"
             >
-              <component :is="serviceTypeIcon(bucket.key)" class="home-services__icon" />
-              <span class="home-services__name">{{ bucket.key }}</span>
-              <span class="home-services__count">{{ formatCount(bucket.count) }}</span>
-            </button>
-          </div>
-          <Empty v-else data-testid="home-data-assets-empty" :description="t('home.dataAssetsEmpty')" />
-        </HomeWidgetCard>
-
-        <HomeWidgetCard class="home-area home-area--context" :title="t('home.contextCenter')" test-id="home-widget-context">
-          <Empty data-testid="home-context-empty" :description="t('home.contextEmptyTitle')">
-            <template #description>
-              <Typography.Title :level="5">{{ t('home.contextEmptyTitle') }}</Typography.Title>
-              <Typography.Paragraph type="secondary">{{ t('home.contextEmpty') }}</Typography.Paragraph>
-            </template>
-          </Empty>
-        </HomeWidgetCard>
-
-        <HomeWidgetCard class="home-area home-area--mine" :title="t('home.myData')" test-id="home-widget-my-data">
-          <template #extra>
-            <Select
-              data-testid="home-owned-sort"
-              size="small"
-              :value="ownedSort"
-              :options="assetSortOptions"
-              :bordered="false"
-              @change="onOwnedSort"
-            />
-            <Button type="link" data-testid="home-owned-more" @click="openOwnedMore">{{ t('home.viewMore') }}</Button>
-          </template>
-          <ul v-if="sortedOwned.length" class="home-list" data-testid="home-owned-list">
-            <li v-for="hit in sortedOwned" :key="hit.fullyQualifiedName || hit.name">
-              <button type="button" class="home-list__row" :data-testid="`home-owned-${hit.name}`" @click="openHit(hit)">
-                {{ hitLabel(hit) }}
-              </button>
-            </li>
-          </ul>
-          <Empty v-else data-testid="home-owned-empty" :description="t('home.myDataEmpty')" />
-        </HomeWidgetCard>
-
-        <HomeWidgetCard class="home-area home-area--kpi" :title="t('home.kpi')" test-id="home-widget-kpi">
-          <ul v-if="kpis.length" class="home-list" data-testid="home-kpi-list">
-            <li v-for="kpi in kpis" :key="kpi.name">
-              <div class="home-list__row home-list__row--static" :data-testid="`home-kpi-${kpi.name}`">
-                <span>{{ kpiLabel(kpi) }}</span>
-                <span>{{ kpiCurrent(kpi) }}</span>
-              </div>
-            </li>
-          </ul>
-          <Empty v-else-if="kpiTried" data-testid="home-kpi-empty" :description="t('home.kpiEmptyTitle')">
-            <template #description>
-              <Typography.Title :level="5">{{ t('home.kpiEmptyTitle') }}</Typography.Title>
-              <Typography.Paragraph type="secondary">{{ t('home.kpiEmpty') }}</Typography.Paragraph>
-            </template>
-            <Button data-testid="home-setup-kpi" @click="openKpiSetup">{{ t('home.setupKpi') }}</Button>
-          </Empty>
-        </HomeWidgetCard>
-
-        <div class="my-data__rail">
-        <HomeWidgetCard class="home-area home-area--total" :title="t('home.totalAssets')" test-id="home-widget-total">
-          <template #extra>
-            <Select
-              data-testid="home-total-range"
-              size="small"
-              :value="totalRange"
-              :options="rangeOptions"
-              :bordered="false"
-              @change="onTotalRange"
-            />
-          </template>
-          <div class="home-total" data-testid="home-total-body">
-            <div class="home-total__count" data-testid="home-total-count">{{ formattedTotal }}</div>
-            <SmChart
-              kind="donut"
-              test-id="home-total-chart"
-              :series="donutSeries"
-              :empty="t('home.chartEmpty')"
-              :height="180"
-            />
-            <div v-if="totalAxisLabels.length" class="home-total__axis" data-testid="home-total-axis">
-              <span v-for="label in totalAxisLabels" :key="label">{{ formatAxisLabel(label) }}</span>
+              <component
+                :is="resolveMyDataWidget(item.i)"
+                v-bind="widgetProps(resolveMyDataWidgetBaseKey(item.i))"
+                v-on="widgetListeners(resolveMyDataWidgetBaseKey(item.i))"
+              />
             </div>
           </div>
-        </HomeWidgetCard>
-
-        <HomeHero
-          class="home-area home-area--welcome"
-          :user-name="userName"
-          :domains="domainOptions"
-          :selected-domain="selectedDomain"
-          :service-chips="serviceChips"
-          :domains-unavailable="domainsUnavailable"
-          @search="onHeroSearch"
-          @update:selected-domain="selectedDomain = $event"
-          @select-service="onSelectServiceName"
-        />
-
-        <HomeWidgetCard class="home-area home-area--follow" :title="t('home.following')" test-id="home-widget-following">
-          <template #extra>
-            <Select
-              data-testid="home-followed-sort"
-              size="small"
-              :value="followedSort"
-              :options="assetSortOptions"
-              :bordered="false"
-              @change="onFollowedSort"
+          <div class="my-data__rail">
+            <HomeHero
+              class="home-area home-area--welcome"
+              :user-name="userName"
+              :domains="domainOptions"
+              :selected-domain="selectedDomain"
+              :service-chips="serviceChips"
+              :domains-unavailable="domainsUnavailable"
+              @search="onHeroSearch"
+              @update:selected-domain="selectedDomain = $event"
+              @select-service="onSelectServiceName"
             />
-            <Button type="link" data-testid="home-followed-more" @click="openFollowedMore">{{ t('home.viewMore') }}</Button>
-          </template>
-          <ul v-if="sortedFollowed.length" class="home-list" data-testid="home-followed-list">
-            <li v-for="hit in sortedFollowed" :key="hit.fullyQualifiedName || hit.name">
-              <button type="button" class="home-list__row" :data-testid="`home-followed-${hit.name}`" @click="openHit(hit)">
-                {{ hitLabel(hit) }}
-              </button>
-            </li>
-          </ul>
-          <Empty v-else data-testid="home-following-empty" :description="t('home.followingEmptyTitle')">
-            <template #description>
-              <Typography.Title :level="5">{{ t('home.followingEmptyTitle') }}</Typography.Title>
-              <Typography.Paragraph type="secondary">{{ t('home.followingEmpty') }}</Typography.Paragraph>
-            </template>
-            <Button data-testid="home-following-explore" @click="goExplore()">{{ t('home.exploreAssets') }}</Button>
-          </Empty>
-        </HomeWidgetCard>
+          </div>
         </div>
-      </div>
       </div>
     </Spin>
   </div>
@@ -530,177 +451,64 @@ watch(totalRange, (days) => {
   flex-direction: column;
   min-height: 0;
 }
+.my-data__skeleton {
+  flex: 1;
+  min-height: 0;
+  margin: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.my-data__skeleton-bar {
+  height: 132px;
+  border-radius: var(--sm-radius-card);
+  background: var(--sm-bg-elevated);
+}
 .my-data__scroll {
   flex: 1;
   min-height: 0;
   margin: 14px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .my-data__grid {
   display: grid;
-  height: 100%;
   min-height: 0;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 1fr);
-  align-items: stretch;
+  align-items: start;
   gap: 14px;
 }
-.home-area--activity { grid-column: 1; grid-row: 1 / span 2; }
-.home-area--assets { grid-column: 2; grid-row: 1; }
-.home-area--kpi { grid-column: 2; grid-row: 2; }
-.home-area--context { grid-column: 1; grid-row: 3; }
-.home-area--mine { grid-column: 2; grid-row: 3; }
+.my-data__widgets {
+  grid-column: 1 / span 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
+}
+.my-data__cell {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.my-data__cell > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
 .my-data__rail {
   grid-column: 3;
-  grid-row: 1 / span 3;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  min-height: 0;
-  height: 100%;
-}
-.my-data__rail > .home-area--total,
-.my-data__rail > .home-area--follow {
-  flex: 1 1 0;
-  height: auto;
-  min-height: 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
 }
 .my-data__rail > .home-area--welcome {
   flex: 0 0 auto;
   height: auto;
-}
-.home-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.home-list__row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  padding: 8px 4px;
-  border-radius: var(--sm-radius-card);
-  cursor: pointer;
-  color: var(--sm-text-primary);
-}
-.home-list__row:hover {
-  background: var(--sm-row-hover-bg);
-  color: var(--sm-color-primary);
-}
-.home-list__row--static {
-  cursor: default;
-}
-.home-services {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 16px 8px;
-}
-.home-services__tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  color: var(--sm-text-primary);
-}
-.home-services__icon {
-  font-size: 28px;
-  color: var(--sm-text-secondary);
-}
-.home-services__name {
-  font-size: 12px;
-  text-align: center;
-  color: var(--sm-text-secondary);
-}
-.home-services__count {
-  min-width: 28px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--sm-count-pill-bg);
-  color: var(--sm-count-pill-text);
-  font-size: 12px;
-  font-weight: 600;
-}
-.feed {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  padding: 4px 0 12px;
-  cursor: pointer;
-  color: var(--sm-text-primary);
-}
-.feed__top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.feed__avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--sm-color-success-bg);
-  color: var(--sm-color-success-text);
-  font-size: 12px;
-  font-weight: 700;
-}
-.feed__name {
-  font-weight: 600;
-}
-.feed__time {
-  margin-left: auto;
-  color: var(--sm-text-tertiary);
-  font-size: 12px;
-}
-.feed__tag {
-  align-self: flex-start;
-  margin: 8px 0 8px 36px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--sm-bg-elevated);
-  color: var(--sm-text-secondary);
-  font-size: 12px;
-}
-.feed__body {
-  margin-left: 36px;
-  padding: 10px 12px;
-  border: 1px solid var(--sm-home-card-border);
-  border-radius: var(--sm-radius-card);
-}
-.home-total {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-.home-total__count {
-  font-size: 32px;
-  font-weight: 650;
-  color: var(--sm-text-primary);
-}
-.home-total__axis {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  color: var(--sm-text-tertiary);
-  font-size: 12px;
 }
 @media (max-width: 1100px) {
   .my-data {
@@ -712,27 +520,20 @@ watch(totalRange, (days) => {
     overflow: visible;
   }
   .my-data__grid {
-    height: auto;
     grid-template-columns: 1fr;
-    grid-template-rows: none;
+  }
+  .my-data__widgets {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto !important;
+  }
+  .my-data__cell {
+    grid-column: auto !important;
+    grid-row: auto !important;
   }
   .my-data__rail {
     display: contents;
     height: auto;
-  }
-  .home-area--activity,
-  .home-area--assets,
-  .home-area--total,
-  .home-area--follow,
-  .home-area--kpi,
-  .home-area--context,
-  .home-area--mine {
-    grid-column: auto;
-    grid-row: auto;
-    height: auto;
-  }
-  .home-area--activity :deep(.ant-card-body) {
-    max-height: 480px;
   }
   .home-area--welcome {
     order: -1;

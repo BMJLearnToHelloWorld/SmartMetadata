@@ -115,20 +115,50 @@ describe('persona store', () => {
   });
 
   it('treats a missing document as no customizations, not an error', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/v1/personas')) {
-        return jsonResponse({
-          data: [{ id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' }],
-          paging: { total: 1 },
-        });
-      }
-      return new Response('Not found', { status: 404 });
-    }));
-    const store = usePersonaStore();
-    await store.ensureLoaded();
-    await store.selectPersona('p1');
-    expect(store.document).toBeNull();
-    expect(store.documentLoaded).toBe(true);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({
+            data: [{ id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      }));
+      const store = usePersonaStore();
+      await store.ensureLoaded();
+      await store.selectPersona('p1');
+      expect(store.document).toBeNull();
+      expect(store.documentLoaded).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('logs a non-404 document read failure instead of swallowing it silently', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({
+            data: [{ id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('Server error', { status: 500 });
+      }));
+      const store = usePersonaStore();
+      await store.ensureLoaded();
+      await store.selectPersona('p1');
+      expect(store.document).toBeNull();
+      expect(store.documentLoaded).toBe(true);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
