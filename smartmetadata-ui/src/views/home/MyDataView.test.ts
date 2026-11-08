@@ -1,9 +1,9 @@
 /**
  * Copyright 2026 SmartMetadata authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may
+ * not use this file except in compliance with the License. You may obtain
+ * a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
@@ -13,7 +13,9 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { ApiError } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
+import { PERSONA_STORAGE_KEY } from '@/stores/persona';
 import MyDataView from './MyDataView.vue';
 
 const searchAssets = vi.fn();
@@ -21,6 +23,8 @@ const listActivityEvents = vi.fn();
 const listKpis = vi.fn();
 const listDomains = vi.fn();
 const listSystemChartData = vi.fn();
+const listPersonas = vi.fn();
+const getDocumentByFqn = vi.fn();
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
@@ -37,6 +41,13 @@ vi.mock('@/api/domains', () => ({
 vi.mock('@/api/dataInsights', () => ({
   listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
 }));
+vi.mock('@/api/persona', () => ({
+  listPersonas: (...args: unknown[]) => listPersonas(...args),
+}));
+vi.mock('@/api/docStore', () => ({
+  getDocumentByFqn: (...args: unknown[]) => getDocumentByFqn(...args),
+  personaDocFqn: (fqn?: string | null) => (fqn ? `persona.${fqn}` : null),
+}));
 
 const emptySearch = { total: 0, hits: [], facets: [] };
 
@@ -52,7 +63,7 @@ function hit(name: string, extra: Record<string, unknown> = {}) {
   };
 }
 
-async function mountPage() {
+async function mountPage(options: { flush?: boolean } = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const auth = useAuthStore();
@@ -71,27 +82,94 @@ async function mountPage() {
   const wrapper = mount(MyDataView, {
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
-  await flushPromises();
+  if (options.flush !== false) {
+    // Settle the persona read and the data queries, then wait for the
+    // registry's lazy widget components to land in every cell — a
+    // fixed number of flushes is timing-dependent (cold dynamic
+    // imports on the first run, an extra async hop for saved layouts).
+    await flushPromises();
+    await flushPromises();
+    await vi.waitFor(
+      () => {
+        const cells = wrapper.findAll('[data-testid="home-widget-cell"]');
+        expect(cells.length).toBeGreaterThan(0);
+        for (const cell of cells) {
+          expect(cell.find('[data-testid^="home-widget-"]').exists()).toBe(true);
+        }
+      },
+      { timeout: 10000, interval: 50 },
+    );
+  }
   return { wrapper, router };
 }
 
 function setSelect(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], testId: string, value: unknown) {
   const select = wrapper.findComponent(`[data-testid="${testId}"]`);
-  select.vm.$emit('change', value);
-  select.vm.$emit('update:value', value);
+  const vm = (select as unknown as { vm?: { $emit: (event: string, ...args: unknown[]) => void } }).vm;
+  if (!vm) {
+    throw new Error(`No component found for ${testId}`);
+  }
+  vm.$emit('change', value);
+  vm.$emit('update:value', value);
+}
+
+/** The 13 default-layout cells, in layout order, with their titles. */
+const DEFAULT_CELLS: Array<[string, string]> = [
+  ['home-widget-platform-health', 'Platform Health'],
+  ['home-widget-data-estate', 'Data Assets'],
+  ['home-widget-total-data-assets', 'Total Data Assets'],
+  ['home-widget-my-task', 'My Tasks'],
+  ['home-widget-pipeline-status', 'Pipeline Status'],
+  ['home-widget-activity-feed', 'Activity Feed'],
+  ['home-widget-yours-and-followed', 'Yours and Followed'],
+  ['home-widget-knowledge-center', 'Context Center'],
+  ['home-widget-curated-assets', 'Curated Assets'],
+  ['home-widget-data-quality', 'Data Quality'],
+  ['home-widget-domains', 'Domains'],
+  ['home-widget-data-products', 'Data Products'],
+  ['home-widget-kpi', 'KPI'],
+];
+
+const PLACEHOLDER_SLUGS = [
+  'platform-health',
+  'my-task',
+  'pipeline-status',
+  'knowledge-center',
+  'curated-assets',
+  'data-quality',
+  'domains',
+  'data-products',
+];
+
+function personaRow() {
+  return { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' };
+}
+
+function personaDocumentWithLayout(layout: unknown[]) {
+  return {
+    name: 'Analyst-Analyst',
+    fullyQualifiedName: 'persona.Analyst',
+    entityType: 'Page',
+    data: { pages: [{ pageType: 'LandingPage', layout }] },
+  };
 }
 
 describe('MyDataView', () => {
   beforeEach(() => {
+    localStorage.clear();
     searchAssets.mockReset();
     listActivityEvents.mockReset();
     listKpis.mockReset();
     listDomains.mockReset();
     listSystemChartData.mockReset();
+    listPersonas.mockReset();
+    getDocumentByFqn.mockReset();
     listActivityEvents.mockResolvedValue({ data: [] });
     listKpis.mockResolvedValue({ data: [] });
     listDomains.mockResolvedValue({ data: [{ name: 'finance', displayName: 'Finance' }] });
     listSystemChartData.mockResolvedValue({});
+    listPersonas.mockResolvedValue({ data: [], paging: { total: 0 } });
+    getDocumentByFqn.mockRejectedValue(new ApiError(404, '', 'Not Found'));
     searchAssets.mockImplementation((query: string) => {
       if (String(query).includes('owners.id')) {
         return Promise.resolve({
@@ -130,22 +208,131 @@ describe('MyDataView', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the OM landing hero and widget grid without topics chrome', async () => {
+  // The first mount in this file pays the one-time cost of
+  // transforming the registry's six lazily imported widget chunks in
+  // a fresh worker (single-run 1634ms; 5832ms under parallel load,
+  // over the 5000ms default). Same precedent as AssetDetailView's
+  // per-test 20000ms timeouts for heavy mounts.
+  it('renders the 13-cell default grid: 5 real widgets, 8 honest placeholders', async () => {
     const { wrapper } = await mountPage();
     expect(wrapper.get('[data-testid="home-hero-welcome"]').text()).toBe('Welcome, admin!');
-    expect(wrapper.get('[data-testid="home-widget-activity"]').text()).toContain('Activity Feed');
-    expect(wrapper.get('[data-testid="home-widget-data-assets"]').text()).toContain('Data Assets');
-    expect(wrapper.get('[data-testid="home-widget-context"]').text()).toContain('Context Center');
-    expect(wrapper.get('[data-testid="home-widget-my-data"]').text()).toContain('My Data');
-    expect(wrapper.get('[data-testid="home-widget-kpi"]').text()).toContain('KPI');
-    expect(wrapper.get('[data-testid="home-widget-total"]').text()).toContain('Total Data Assets');
-    expect(wrapper.get('[data-testid="home-widget-following"]').text()).toContain('Following Assets');
+    for (const [testId, title] of DEFAULT_CELLS) {
+      expect(wrapper.get(`[data-testid="${testId}"]`).text()).toContain(title);
+    }
+    const cells = wrapper.findAll('[data-testid="home-widget-cell"]');
+    expect(cells).toHaveLength(13);
+    expect(
+      cells.map((cell) =>
+        cell.find('[data-testid^="home-widget-"]').attributes('data-testid'),
+      ),
+    ).toEqual(DEFAULT_CELLS.map(([testId]) => testId));
+    for (const slug of PLACEHOLDER_SLUGS) {
+      expect(wrapper.find(`[data-testid="home-widget-${slug}-empty"]`).exists()).toBe(true);
+    }
+    // The retired two-card shape is gone: no My Data / Following cards,
+    // no old Data Assets / Activity / Total / Context card ids.
+    for (const retired of [
+      'home-widget-my-data',
+      'home-widget-following',
+      'home-widget-data-assets',
+      'home-widget-activity',
+      'home-widget-total',
+      'home-widget-context',
+      'home-context-empty',
+    ]) {
+      expect(wrapper.find(`[data-testid="${retired}"]`).exists()).toBe(false);
+    }
     expect(wrapper.text()).not.toContain('Topics to catch up');
-    expect(wrapper.find('[data-testid="home-context-empty"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="home-total-count"]').text()).toContain('22,686');
+  }, 20000);
+
+  it('renders the default layout when there is no persona and never reads a document', async () => {
+    const { wrapper } = await mountPage();
+    expect(getDocumentByFqn).not.toHaveBeenCalled();
+    expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(13);
   });
 
-  it('shows empty-state CTAs when activity, KPI, and following have no rows', async () => {
+  it('renders the default layout when the persona document 404s, without logging', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+      listPersonas.mockResolvedValue({ data: [personaRow()], paging: { total: 1 } });
+      const { wrapper } = await mountPage();
+      expect(getDocumentByFqn).toHaveBeenCalledWith('persona.Analyst');
+      expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(13);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('renders a saved layout normalized: retired filtered, w/h forced, overflow reflowed', async () => {
+    localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+    listPersonas.mockResolvedValue({ data: [personaRow()], paging: { total: 1 } });
+    getDocumentByFqn.mockResolvedValue(
+      personaDocumentWithLayout([
+        { i: 'KnowledgePanel.KPI', x: 1, y: 0, w: 2, h: 6, static: false },
+        { i: 'KnowledgePanel.MyData', x: 0, y: 0, w: 1, h: 3, static: false },
+        { i: 'KnowledgePanel.ActivityFeed', x: 2, y: 0, w: 1, h: 3, static: false },
+      ]),
+    );
+    const { wrapper } = await mountPage();
+    expect(getDocumentByFqn).toHaveBeenCalledWith('persona.Analyst');
+    const cells = wrapper.findAll('[data-testid="home-widget-cell"]');
+    // Retired MyData is filtered; the overflowing ActivityFeed is
+    // reflowed next to KPI, both forced to w:1 h:3.
+    expect(cells).toHaveLength(2);
+    expect(cells[0]?.attributes('style')).toContain('grid-column: 1');
+    expect(cells[0]?.attributes('style')).toContain('grid-row: 1');
+    expect(cells[0]?.find('[data-testid^="home-widget-"]').attributes('data-testid')).toBe(
+      'home-widget-kpi',
+    );
+    expect(cells[1]?.attributes('style')).toContain('grid-column: 2');
+    expect(cells[1]?.attributes('style')).toContain('grid-row: 1');
+    expect(cells[1]?.find('[data-testid^="home-widget-"]').attributes('data-testid')).toBe(
+      'home-widget-activity-feed',
+    );
+  });
+
+  it('renders only the skeleton while the persona document is unresolved and issues no widget queries', async () => {
+    let releasePersonas!: (value: unknown) => void;
+    listPersonas.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePersonas = resolve;
+        }),
+    );
+    const { wrapper } = await mountPage({ flush: false });
+    expect(wrapper.find('[data-testid="home-landing-skeleton"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="home-landing-grid"]').exists()).toBe(false);
+    expect(searchAssets).not.toHaveBeenCalled();
+    expect(listActivityEvents).not.toHaveBeenCalled();
+    expect(listKpis).not.toHaveBeenCalled();
+    expect(listDomains).not.toHaveBeenCalled();
+    expect(listSystemChartData).not.toHaveBeenCalled();
+    releasePersonas({ data: [], paging: { total: 0 } });
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="home-landing-skeleton"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="home-landing-grid"]').exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(13);
+  });
+
+  it('falls back to the default layout and logs a non-404 document read failure', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+      listPersonas.mockResolvedValue({ data: [personaRow()], paging: { total: 1 } });
+      getDocumentByFqn.mockRejectedValue(new Error('DocStore is down'));
+      const { wrapper } = await mountPage();
+      expect(errorSpy).toHaveBeenCalled();
+      expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(13);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('shows empty-state CTAs when activity, KPI, and tracked lists have no rows', async () => {
     searchAssets.mockImplementation((query: string) => {
       if (String(query).includes('followers:')) {
         return Promise.resolve(emptySearch);
@@ -162,10 +349,37 @@ describe('MyDataView', () => {
     const { wrapper } = await mountPage();
     expect(wrapper.get('[data-testid="home-activity-empty"]').text()).toContain('No Recent Activity');
     expect(wrapper.get('[data-testid="home-kpi-empty"]').text()).toContain('Start Tracking What Matters');
-    expect(wrapper.get('[data-testid="home-following-empty"]').text()).toContain('Find Assets to Follow');
+    // Both lists empty: the merged card opens on Owned.
+    expect(wrapper.get('[data-testid="home-owned-empty"]').text()).toContain(
+      'No owned assets returned for this user.',
+    );
+    setSelect(wrapper, 'home-tracked-filter', 'followed');
+    await flushPromises();
+    expect(wrapper.get('[data-testid="home-followed-empty"]').text()).toContain('Find Assets to Follow');
+    expect(wrapper.find('[data-testid="home-owned-empty"]').exists()).toBe(false);
   });
 
-  it('submits hero search and domain scope to Explore', async () => {
+  it('opens the merged card on Followed when only followed assets exist', async () => {
+    searchAssets.mockImplementation((query: string) => {
+      if (String(query).includes('owners.id')) {
+        return Promise.resolve(emptySearch);
+      }
+      if (String(query).includes('followers:')) {
+        return Promise.resolve({
+          total: 1,
+          hits: [hit('watched')],
+          facets: [],
+        });
+      }
+      return Promise.resolve(emptySearch);
+    });
+    const { wrapper } = await mountPage();
+    expect(wrapper.find('[data-testid="home-followed-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="home-owned-list"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="home-followed-watched"]').text()).toContain('watched');
+  });
+
+  it('submits hero search and domain scope to Explore, scoping both tracked queries', async () => {
     const { wrapper, router } = await mountPage();
     setSelect(wrapper, 'home-hero-domain', 'Finance');
     await flushPromises();
@@ -175,6 +389,20 @@ describe('MyDataView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('search');
     expect(router.currentRoute.value.query).toMatchObject({ q: 'orders', domain: 'Finance' });
+    // The domain scope combines with the in-card filter: both the owned
+    // and the followed query carry it.
+    const ownedScoped = searchAssets.mock.calls.filter(
+      ([query]) =>
+        String(query).includes('owners.id') &&
+        String(query).includes('domains.displayName.keyword'),
+    );
+    const followedScoped = searchAssets.mock.calls.filter(
+      ([query]) =>
+        String(query).includes('followers:') &&
+        String(query).includes('domains.displayName.keyword'),
+    );
+    expect(ownedScoped).toHaveLength(1);
+    expect(followedScoped).toHaveLength(1);
   });
 
   it('navigates Explore Assets, service tiles, owned rows, and KPI setup', async () => {
@@ -218,10 +446,10 @@ describe('MyDataView', () => {
     const ownedNames = () =>
       wrapper.findAll('[data-testid="home-owned-list"] [data-testid^="home-owned-"]').map((node) => node.text());
     expect(ownedNames()[0]).toContain('zeta');
-    setSelect(wrapper, 'home-owned-sort', 'name');
+    setSelect(wrapper, 'home-tracked-sort', 'name');
     await flushPromises();
     expect(ownedNames()[0]).toContain('alpha');
-    setSelect(wrapper, 'home-owned-sort', 'latest');
+    setSelect(wrapper, 'home-tracked-sort', 'latest');
     await flushPromises();
     expect(ownedNames()[0]).toContain('zeta');
 
@@ -236,6 +464,8 @@ describe('MyDataView', () => {
     expect(router.currentRoute.value.query.q).toBe('owners.id:"u-1"');
 
     await router.push({ name: 'home' });
+    await flushPromises();
+    setSelect(wrapper, 'home-tracked-filter', 'followed');
     await flushPromises();
     await wrapper.get('[data-testid="home-followed-more"]').trigger('click');
     await flushPromises();
