@@ -400,13 +400,16 @@ describe('contextCenter API', () => {
   });
 
   it('bulk-downloads a zip blob', async () => {
-    const blob = new Blob(['PK\x03\x04'], { type: 'application/zip' });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         expect(init?.method).toBe('POST');
         expect(JSON.parse(String(init?.body))).toEqual({ ids: ['f1'] });
-        return new Response(blob, { status: 200, headers: { 'Content-Type': 'application/zip' } });
+        // String body, not a Blob body: Node 22's Response constructor calls
+        // blob.stream(), which jsdom's Blob lacks (CI failure on Node 22,
+        // while Node 24 tolerates it); .blob() still yields type
+        // 'application/zip' from the Content-Type header.
+        return new Response('PK\x03\x04', { status: 200, headers: { 'Content-Type': 'application/zip' } });
       }),
     );
     const out = await downloadDriveFiles(['f1']);

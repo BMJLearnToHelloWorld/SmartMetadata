@@ -516,7 +516,10 @@ describe('ContextCenterDocumentsView', () => {
         }
         if (url.includes('/bulk/download')) {
           expect(JSON.parse(String(init?.body))).toEqual({ ids: ['f1'] });
-          return new Response(new Blob(['PK\x03\x04'], { type: 'application/zip' }), {
+          // String body, not a Blob body: Node 22's Response constructor calls
+          // blob.stream(), which jsdom's Blob lacks (CI failure on Node 22,
+          // while Node 24 tolerates it).
+          return new Response('PK\x03\x04', {
             status: 200,
             headers: { 'Content-Type': 'application/zip' },
           });
