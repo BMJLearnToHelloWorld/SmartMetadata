@@ -10035,7 +10035,14 @@
                         "schemaFilterPattern": {
                           "title": "Default Schema Filter Pattern",
                           "description": "Regex to only include/exclude schemas that matches the pattern.",
-                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern"
+                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern",
+                          "default": {
+                            "includes": [],
+                            "excludes": [
+                              "^information_schema$",
+                              "^performance_schema$"
+                            ]
+                          }
                         },
                         "tableFilterPattern": {
                           "title": "Default Table Filter Pattern",
@@ -13308,7 +13315,14 @@
                         "schemaFilterPattern": {
                           "title": "Default Schema Filter Pattern",
                           "description": "Regex to only include/exclude schemas that matches the pattern.",
-                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern"
+                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern",
+                          "default": {
+                            "includes": [],
+                            "excludes": [
+                              "^information_schema$",
+                              "^gp_toolkit$"
+                            ]
+                          }
                         },
                         "tableFilterPattern": {
                           "title": "Default Table Filter Pattern",
@@ -13318,7 +13332,14 @@
                         "databaseFilterPattern": {
                           "title": "Default Database Filter Pattern",
                           "description": "Regex to only include/exclude databases that matches the pattern.",
-                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern"
+                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern",
+                          "default": {
+                            "includes": [],
+                            "excludes": [
+                              "^template1$",
+                              "^template0$"
+                            ]
+                          }
                         },
                         "supportsMetadataExtraction": {
                           "title": "Supports Metadata Extraction",
@@ -13432,7 +13453,15 @@
                         "schemaFilterPattern": {
                           "title": "Default Schema Filter Pattern",
                           "description": "Regex to only include/exclude schemas that matches the pattern.",
-                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern"
+                          "$ref": "#/definitions/workflowConfig/properties/openMetadataServerConfig/properties/tableFilterPattern",
+                          "default": {
+                            "includes": [],
+                            "excludes": [
+                              "^information_schema$",
+                              "^performance_schema$",
+                              "^__internal_schema$"
+                            ]
+                          }
                         },
                         "tableFilterPattern": {
                           "title": "Default Table Filter Pattern",
@@ -17250,11 +17279,14 @@
                           "$ref": "#/definitions/source/properties/sourceConfig/properties/config/oneOf/14/definitions/serviceConnections/properties/serviceConnection/oneOf/2/properties/config/oneOf/15"
                         },
                         "packageConnection": {
-                          "title": "SSIS Projects Location (Local Path or S3 Bucket)",
+                          "title": "SSIS Projects Location (Local Path, S3 Bucket or Azure Blob Container)",
                           "description": "Underlying storage connection",
                           "oneOf": [
                             {
                               "$ref": "#/definitions/source/properties/sourceConfig/properties/config/oneOf/14/definitions/serviceConnections/properties/serviceConnection/oneOf/7/properties/config/oneOf/0"
+                            },
+                            {
+                              "$ref": "#/definitions/source/properties/sourceConfig/properties/config/oneOf/14/definitions/serviceConnections/properties/serviceConnection/oneOf/7/properties/config/oneOf/1"
                             },
                             {
                               "$ref": "#/definitions/source/properties/sourceConfig/properties/config/oneOf/14/definitions/serviceConnections/properties/serviceConnection/oneOf/5/properties/config/oneOf/2/definitions/localProjectsPath"
