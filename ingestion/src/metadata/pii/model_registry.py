@@ -10,6 +10,7 @@
 #  limitations under the License.
 """Release-pinned spaCy model selection for auto classification."""
 
+import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -26,6 +27,32 @@ class ClassificationLanguageSelectionError(ValueError):
     """The requested language selection is not valid for provisioning."""
 
 
+# Default GitHub Releases host. Override with OM_SPACY_MODEL_BASE_URL when
+# that host 504s (CI has seen Gateway Timeouts on explosion/spacy-models).
+# Example mirror base: https://ghproxy.net/https://github.com/explosion/spacy-models/releases/download
+# The base must already include the ".../releases/download" prefix; wheel_url
+# appends "/{release}/{release}-py3-none-any.whl".
+DEFAULT_SPACY_MODEL_BASE_URL = (
+    "https://github.com/explosion/spacy-models/releases/download"
+)
+
+
+def spacy_model_base_urls() -> list[str]:
+    """Ordered wheel bases: OM_SPACY_MODEL_BASE_URL first, then the default."""
+    bases: list[str] = []
+    override = os.environ.get("OM_SPACY_MODEL_BASE_URL", "").strip().rstrip("/")
+    if override:
+        bases.append(override)
+    if DEFAULT_SPACY_MODEL_BASE_URL not in bases:
+        bases.append(DEFAULT_SPACY_MODEL_BASE_URL)
+    # Optional comma-separated extra mirrors (CI / air-gapped fallbacks).
+    for item in os.environ.get("OM_SPACY_MODEL_MIRRORS", "").split(","):
+        mirror = item.strip().rstrip("/")
+        if mirror and mirror not in bases:
+            bases.append(mirror)
+    return bases
+
+
 @dataclass(frozen=True)
 class ModelSpecification:
     """A release-pinned spaCy model artifact."""
@@ -35,9 +62,19 @@ class ModelSpecification:
     spacy_version: str
 
     @property
+    def wheel_filename(self) -> str:
+        release = f"{self.name}-{self.version}"
+        return f"{release}-py3-none-any.whl"
+
+    @property
     def wheel_url(self) -> str:
         release = f"{self.name}-{self.version}"
-        return f"https://github.com/explosion/spacy-models/releases/download/{release}/{release}-py3-none-any.whl"
+        return f"{spacy_model_base_urls()[0]}/{release}/{self.wheel_filename}"
+
+    def wheel_urls(self) -> list[str]:
+        """All candidate wheel URLs (primary + mirrors) for retry/fallback."""
+        release = f"{self.name}-{self.version}"
+        return [f"{base}/{release}/{self.wheel_filename}" for base in spacy_model_base_urls()]
 
 
 MODEL_SPECS = {

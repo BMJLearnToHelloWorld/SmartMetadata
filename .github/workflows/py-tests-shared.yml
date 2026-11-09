@@ -44,8 +44,14 @@ on:
 env:
   # matrix can't use 'env'. When updating it, update it for both jobs.
   MAIN_PYTHON_VERSION: "3.10"
-  # Pin the model release and verify its content before installation.
+  # Pin spaCy model releases and verify content before installation.
+  # SHA256s match the GitHub Releases wheels (same as former pyproject URL deps).
   SPACY_MODEL_VERSION: "3.8.0"
+  SPACY_MODEL_SHA256_EN: "5e6329fe3fecedb1d1a02c3ea2172ee0fede6cea6e4aefb6a02d832dba78a310"
+  SPACY_MODEL_SHA256_ES: "478b8bb3f3e8eb149192f7d80e7cd64f990b7e9bccbc5329df41a57e86326be2"
+  SPACY_MODEL_SHA256_IT: "a731d2d8e7c5a7093ac42f88774ea2a2ad3d5809959eedee65632b3533f804ec"
+  SPACY_MODEL_SHA256_PL: "4f433a556880c0b7ef01970e7c612c0e30103b893e6d26ed54672d8e056ad9b1"
+  # Kept for any step still referencing the old single-model key (en).
   SPACY_MODEL_SHA256: "5e6329fe3fecedb1d1a02c3ea2172ee0fede6cea6e4aefb6a02d832dba78a310"
   SONAR_OPTS: >-
     -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
@@ -179,25 +185,40 @@ jobs:
       group: spacy-model-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: false
     steps:
-      - name: Restore spaCy model wheel
+      - name: Restore spaCy model wheels
         id: spacy-model-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .cache/spacy-model
-          key: spacy-model-${{ env.SPACY_MODEL_VERSION }}-${{ env.SPACY_MODEL_SHA256 }}
+          key: spacy-models-${{ env.SPACY_MODEL_VERSION }}-${{ env.SPACY_MODEL_SHA256_EN }}-${{ env.SPACY_MODEL_SHA256_ES }}-${{ env.SPACY_MODEL_SHA256_IT }}-${{ env.SPACY_MODEL_SHA256_PL }}
 
-      - name: Download spaCy model wheel
+      - name: Download spaCy model wheels
         if: steps.spacy-model-cache.outputs.cache-hit != 'true'
+        env:
+          # Prefer a mirror when set (repo/org variable); else GitHub Releases.
+          OM_SPACY_MODEL_BASE_URL: ${{ vars.OM_SPACY_MODEL_BASE_URL }}
         run: |
+          set -euo pipefail
           mkdir -p .cache/spacy-model
-          wheel_path=".cache/spacy-model/en_core_web_md-${SPACY_MODEL_VERSION}-py3-none-any.whl"
-          curl --fail --location --retry 10 --retry-all-errors --connect-timeout 20 --max-time 600 \
-            --output "${wheel_path}" \
-            "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-${SPACY_MODEL_VERSION}/en_core_web_md-${SPACY_MODEL_VERSION}-py3-none-any.whl"
-          echo "${SPACY_MODEL_SHA256}  ${wheel_path}" | sha256sum --check --strict
+          base="${OM_SPACY_MODEL_BASE_URL:-https://github.com/explosion/spacy-models/releases/download}"
+          base="${base%/}"
+          download_one() {
+            local name="$1" sha="$2"
+            local wheel_path=".cache/spacy-model/${name}-${SPACY_MODEL_VERSION}-py3-none-any.whl"
+            local url="${base}/${name}-${SPACY_MODEL_VERSION}/${name}-${SPACY_MODEL_VERSION}-py3-none-any.whl"
+            echo "Fetching ${url}"
+            curl --fail --location --retry 10 --retry-all-errors --connect-timeout 20 --max-time 600 \
+              --output "${wheel_path}" \
+              "${url}"
+            echo "${sha}  ${wheel_path}" | sha256sum --check --strict
+          }
+          download_one en_core_web_md "${SPACY_MODEL_SHA256_EN}"
+          download_one es_core_news_md "${SPACY_MODEL_SHA256_ES}"
+          download_one it_core_news_md "${SPACY_MODEL_SHA256_IT}"
+          download_one pl_core_news_md "${SPACY_MODEL_SHA256_PL}"
         shell: bash
 
-      - name: Upload spaCy model wheel
+      - name: Upload spaCy model wheels
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: spacy-en-model
@@ -246,11 +267,15 @@ jobs:
             python -m pytest tests/cli_e2e_v2/meta -q
         shell: bash
 
-      - name: Install and verify spaCy model
+      - name: Install and verify spaCy models
+        env:
+          OM_SPACY_MODEL_WHEEL_DIR: /tmp/spacy-model
         run: |
           source env/bin/activate
           uv pip install --no-deps /tmp/spacy-model/*.whl
           python -c 'import spacy; spacy.load("en_core_web_md")'
+          # Export for any later install-classification-models call in this job.
+          echo "OM_SPACY_MODEL_WHEEL_DIR=/tmp/spacy-model" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Run Static Checks
@@ -413,11 +438,15 @@ jobs:
           name: spacy-en-model
           path: /tmp/spacy-model
 
-      - name: Install and verify spaCy model
+      - name: Install and verify spaCy models
+        env:
+          OM_SPACY_MODEL_WHEEL_DIR: /tmp/spacy-model
         run: |
           source env/bin/activate
           uv pip install --no-deps /tmp/spacy-model/*.whl
           python -c 'import spacy; spacy.load("en_core_web_md")'
+          # Export for any later install-classification-models call in this job.
+          echo "OM_SPACY_MODEL_WHEEL_DIR=/tmp/spacy-model" >> "$GITHUB_ENV"
         shell: bash
 
       - name: Reclaim unused disk for the Exasol shard

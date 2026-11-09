@@ -11,6 +11,7 @@
 """Install and verify the spaCy models used by auto classification."""
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -237,31 +238,52 @@ def _verify_installed_model_version(specification: ModelSpecification) -> None:
 
 
 def _install_model(specification: ModelSpecification, spacy_version: str) -> None:
+    """Install one model wheel, trying OM_SPACY_MODEL_* mirrors on transient failures.
+
+    Prefer a pre-downloaded wheel when OM_SPACY_MODEL_WHEEL_DIR points at a
+    directory that already contains `{name}-{version}-py3-none-any.whl` (CI
+    prepare-spacy-model cache / artifact). Otherwise walk specification.wheel_urls().
+    """
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", prefix="openmetadata-spacy-", suffix=".txt", delete=False
     ) as constraints:
         constraints.write(f"spacy=={spacy_version}\n")
         constraints_path = Path(constraints.name)
+    candidates: list[str] = []
+    wheel_dir = Path(os.environ["OM_SPACY_MODEL_WHEEL_DIR"]) if os.environ.get("OM_SPACY_MODEL_WHEEL_DIR") else None
+    if wheel_dir is not None:
+        local = wheel_dir / specification.wheel_filename
+        if local.is_file():
+            candidates.append(str(local))
+    candidates.extend(specification.wheel_urls())
+    errors: list[str] = []
     try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--constraint",
-                str(constraints_path),
-                specification.wheel_url,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        for target in candidates:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--constraint",
+                    str(constraints_path),
+                    target,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                return
+            details = (result.stderr or result.stdout).strip()[-500:]
+            errors.append(f"{target}: exit {result.returncode}: {details}")
     finally:
         constraints_path.unlink(missing_ok=True)
-    if result.returncode:
-        details = (result.stderr or result.stdout).strip()[-2000:]
-        raise RuntimeError(f"pip failed with exit code {result.returncode}: {details}")
+    raise RuntimeError(
+        "pip failed to install {name} from {n} candidate(s): {errs}".format(
+            name=specification.name, n=len(candidates), errs=" | ".join(errors)[-2000:]
+        )
+    )
 
 
 def _verify_model_load(specification: ModelSpecification) -> None:
