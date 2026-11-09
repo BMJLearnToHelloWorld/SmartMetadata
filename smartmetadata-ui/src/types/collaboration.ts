@@ -79,6 +79,15 @@ export const CREATABLE_TASK_TYPES = [
   'TierUpdate',
   'DomainUpdate',
   'CustomTask',
+  /**
+   * Official reopenResolvedIncident (utils/DataQuality/
+   * IncidentManagerUtils.ts): reopening a resolved incident to New
+   * creates a task of this type. The server schema
+   * (entity/tasks/task.json#/definitions/taskType) lists it; the
+   * product list previously only carried the types its own wizards
+   * create.
+   */
+  'TestCaseResolution',
 ] as const;
 
 export const TASK_RESOLUTIONS = ['Approved', 'Rejected', 'Completed', 'Cancelled'] as const;

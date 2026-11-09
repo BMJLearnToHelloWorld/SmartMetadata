@@ -708,7 +708,14 @@ export const router = createRouter({
           path: 'quality/test-cases/:id',
           name: 'quality-test-case',
           component: TestCaseDetailView,
-          props: true,
+          // F-D-4: official /test-case/:fqn(/:tab) aliases. The alias
+          // params are fqn/tab, not the record's :id, so props map them.
+          // ADR:2026-11-08-incident-detail-redirects-to-test-case
+          alias: ['test-case/:fqn', 'test-case/:fqn/:tab'],
+          props: (route) => ({
+            id: (route.params.fqn as string | undefined) ?? (route.params.id as string),
+            tab: route.params.tab as string | undefined,
+          }),
         },
         {
           path: 'quality/test-cases/:id/versions/:version',
@@ -782,6 +789,8 @@ export const router = createRouter({
           path: 'observability/incidents',
           name: 'observability-incidents',
           component: IncidentsListView,
+          // Official /incident-manager path (F-D-1 classic list).
+          alias: 'incident-manager',
         },
         {
           path: 'observability/incidents/:id',

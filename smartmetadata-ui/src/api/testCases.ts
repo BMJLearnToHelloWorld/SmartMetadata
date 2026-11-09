@@ -188,6 +188,25 @@ export async function getTestCase(id: string): Promise<TestCase> {
   return mapped;
 }
 
+/**
+ * Official getTestCaseByName (rest/testAPI.ts): GET
+ * /v1/dataQuality/testCases/name/{fqn}. The {id} slot takes a UUID
+ * only, so the /test-case/:fqn alias (F-D-4) loads through this
+ * endpoint; the product path keeps loading by id.
+ * ADR:2026-11-08-incident-detail-redirects-to-test-case
+ */
+export async function getTestCaseByName(fqn: string): Promise<TestCase> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/testCases/name/${encodeURIComponent(fqn)}`,
+    { query: { fields: TEST_CASE_FIELDS } },
+  );
+  const mapped = mapTestCase(raw);
+  if (!mapped) {
+    throw new Error('Test case response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function createTestCase(body: CreateTestCaseRequest): Promise<TestCase> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/dataQuality/testCases', {
     method: 'POST',

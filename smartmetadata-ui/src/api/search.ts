@@ -32,6 +32,109 @@ export interface SearchAssetsOptions {
   query_filter?: string;
 }
 
+/**
+ * Official AGGREGATE_PAGE_SIZE_LARGE (constants.ts): a terms
+ * aggregation cannot page, so the whole candidate set is read up to
+ * this cap. Named, never a magic number at the call site.
+ */
+export const AGGREGATE_PAGE_SIZE_LARGE = 1000;
+
+/**
+ * Official AggregationRequest (generated/search/aggregationRequest.ts):
+ * the body for POST /v1/search/aggregate, with an optional top_hits
+ * sub-aggregation. `deleted` is nullable on purpose: incident
+ * documents carry no top-level `deleted`, so the server default
+ * (`deleted: false`) would match zero rows — the incident assignee
+ * call passes `deleted: null`.
+ */
+export interface AggregationTopHits {
+  size?: number;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc' | 'Asc' | 'Desc';
+}
+
+export interface AggregationRequest {
+  deleted?: boolean | null;
+  fieldName: string;
+  fieldValue?: string;
+  index?: string;
+  query?: string;
+  queryText?: string;
+  size?: number;
+  sourceFields?: string[];
+  topHits?: AggregationTopHits;
+}
+
+/** One terms bucket; the top_hits sub-aggregation carries the latest document per bucket. */
+export interface AggregationBucket {
+  key?: string | number;
+  doc_count?: number;
+  'top_hits#top'?: {
+    hits?: {
+      hits?: Array<{ _source?: Record<string, unknown> }>;
+    };
+  };
+}
+
+export interface AggregateResponse {
+  aggregations?: Record<string, { buckets?: AggregationBucket[] }>;
+}
+
+/**
+ * Official escapeESReservedCharacters (utils/StringUtils.ts), verbatim:
+ * backslash-escapes every Elasticsearch reserved character so a
+ * field value can be wrapped in a `.*...*` include pattern.
+ */
+export const ES_RESERVED_CHARACTERS: Record<string, string> = {
+  '+': String.raw`\+`,
+  '-': String.raw`\-`,
+  '=': String.raw`\=`,
+  '&': String.raw`\&`,
+  '|': String.raw`\|`,
+  '>': String.raw`\>`,
+  '<': String.raw`\<`,
+  '!': String.raw`\!`,
+  '(': String.raw`\(`,
+  ')': String.raw`\)`,
+  '{': String.raw`\{`,
+  '}': String.raw`\}`,
+  '[': String.raw`\[`,
+  ']': String.raw`\]`,
+  '^': String.raw`\^`,
+  '"': String.raw`\"`,
+  '~': String.raw`\~`,
+  '*': String.raw`\*`,
+  '?': String.raw`\?`,
+  ':': String.raw`\:`,
+  '\\': String.raw`\\`,
+  '/': String.raw`\/`,
+};
+
+export const escapeESReservedCharacters = (text?: string): string => {
+  const reUnescapedHtml = /[\\[\]#+=&|><!(){}^"~*?:/-]/g;
+  const reHasUnescapedHtml = new RegExp(reUnescapedHtml.source);
+  const getReplacedChar = (char: string): string => ES_RESERVED_CHARACTERS[char] ?? char;
+  return text && reHasUnescapedHtml.test(text)
+    ? text.replaceAll(reUnescapedHtml, getReplacedChar)
+    : (text ?? '');
+};
+
+/**
+ * Official postAggregateFieldOptions (rest/miscAPI.ts), verbatim: wraps
+ * the filter value as `.*<escaped>.*` (or `.*` when empty) and POSTs
+ * the body as given otherwise. No exact-match variant is needed in
+ * this batch.
+ * ADR:2026-11-08-incident-assignee-aggregate-candidates
+ */
+export async function postAggregateFieldOptions(body: AggregationRequest): Promise<AggregateResponse> {
+  const { fieldValue, ...rest } = body;
+  const withWildCardValue = fieldValue ? `.*${escapeESReservedCharacters(fieldValue)}.*` : '.*';
+  return apiRequest<AggregateResponse>('/v1/search/aggregate', {
+    method: 'POST',
+    json: { fieldValue: withWildCardValue, ...rest },
+  });
+}
+
 export interface NlqSearchOptions {
   index?: string;
   sortField?: string;

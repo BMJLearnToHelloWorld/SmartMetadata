@@ -212,4 +212,25 @@ describe('EntityListShell', () => {
     const del = [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-delete"]')].at(-1);
     expect(del?.textContent).toContain('Delete');
   });
+
+  it('renders numeric pagination instead of prev/next when numericPaging is on', async () => {
+    const wrapper = await mountShell({
+      numericPaging: true,
+      total: 25,
+      currentPage: 1,
+      pageSize: 10,
+      dataSource: [{ id: '1', name: 'a' }],
+    });
+    expect(wrapper.find('[data-testid="entity-list-pagination"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="entity-list-next"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-list-prev"]').exists()).toBe(false);
+    await wrapper.find('.ant-pagination-item-2').trigger('click');
+    await flushPromises();
+    expect(wrapper.emitted('pageChange')).toEqual([[2]]);
+  });
+
+  it('hides numeric pagination when the total is zero', async () => {
+    const wrapper = await mountShell({ numericPaging: true, total: 0, currentPage: 1, pageSize: 10 });
+    expect(wrapper.find('[data-testid="entity-list-pagination"]').exists()).toBe(false);
+  });
 });

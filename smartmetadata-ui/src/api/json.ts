@@ -54,6 +54,10 @@ export function mapEntityRefs(value: unknown): EntityRef[] {
   });
 }
 
+export function mapEntityRef(value: unknown): EntityRef | undefined {
+  return mapEntityRefs([value])[0];
+}
+
 export function parsePaged<T>(
   payload: unknown,
   mapItem: (raw: Record<string, unknown>) => T | null,

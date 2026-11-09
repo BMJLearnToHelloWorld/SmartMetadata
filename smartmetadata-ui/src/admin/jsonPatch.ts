@@ -22,6 +22,16 @@ export function setFieldPatch(path: string, current: unknown, value: unknown): J
   return [{ op: 'replace', path, value }];
 }
 
+/**
+ * RFC 6902 remove op. fast-json-patch's compare() emits `remove` when a
+ * field present in the old document is absent in the new one (e.g.
+ * clearing a severity); setFieldPatch cannot express that, so the
+ * removal has its own op instead of a `replace` with null.
+ */
+export function removeFieldPatch(path: string): JsonPatchOp {
+  return { op: 'remove', path };
+}
+
 export function entityRefValue(id: string, type: string): { id: string; type: string } {
   return { id, type };
 }
