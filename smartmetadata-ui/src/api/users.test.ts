@@ -15,6 +15,7 @@ import {
   createUser,
   deactivateUser,
   generateUserToken,
+  getUserFollows,
   listOnlineUsers,
   listPersonalTokens,
   listUsers,
@@ -248,5 +249,29 @@ describe('users personal access tokens (P2 B5)', () => {
     expect(lastFetch().url).toContain('/api/v1/users/generateToken/u1');
     expect(lastFetch().init?.method).toBe('PUT');
     expect(created?.secret).toBe('secret-abc');
+  });
+
+  it('reads bookmarks from the user follows field, keeping only pages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'u1',
+            name: 'alice',
+            follows: [
+              { id: 'p1', type: 'page', name: 'getting-started' },
+              { id: 't1', type: 'table', name: 'orders' },
+              { id: 'p2', type: 'page', name: 'guide', displayName: 'Guide' },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const follows = await getUserFollows('u1');
+    expect(lastFetch().url).toContain('/api/v1/users/u1');
+    expect(lastFetch().url).toContain('fields=follows');
+    expect(follows.map((ref) => ref.name)).toEqual(['getting-started', 'guide']);
   });
 });

@@ -10,6 +10,7 @@
 import { entityRefValue, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
 import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { AdminUser, CreateUserRequest, IncludeFilter, Paged } from '@/types/admin';
+import type { EntityRef } from '@/types/api';
 import { apiRequest } from './client';
 
 export const USER_FIELDS = 'profile,roles,teams';
@@ -129,10 +130,23 @@ function mapUser(raw: Record<string, unknown>): AdminUser | null {
     lastActivityTime: typeof raw.lastActivityTime === 'number' ? raw.lastActivityTime : undefined,
     teams: mapEntityRefs(raw.teams),
     roles: mapEntityRefs(raw.roles),
+    follows: mapEntityRefs(raw.follows),
   };
 }
 
 /** Official OnlineUsers query: timeWindow in minutes, 0 means all time. */
+export async function getUserFollows(id: string): Promise<EntityRef[]> {
+  // ADR:2026-11-08-context-center-bookmarks-follows — official
+  // BookMarkWidget reads getUserById(id, {fields: 'follows'}) and keeps
+  // the entries whose type is 'page' (EntityType.KNOWLEDGE_PAGE). No
+  // separate bookmark endpoint exists.
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/users/${encodeURIComponent(id)}`,
+    { query: { fields: 'follows' } },
+  );
+  const user = mapUser(raw);
+  return (user?.follows ?? []).filter((ref) => ref.type === 'page');
+}
 export const ONLINE_USER_FIELDS = 'profile,teams,roles,lastLoginTime,lastActivityTime';
 
 export interface ListOnlineUsersQuery {

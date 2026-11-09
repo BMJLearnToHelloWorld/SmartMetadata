@@ -14,6 +14,7 @@ import type {
   CollaborationTask,
   CreateTaskRequest,
   DataAccessRequestPayload,
+  MemoryConflictReviewPayload,
   ResolveTaskRequest,
   TaskAvailableTransition,
   TaskComment,
@@ -32,6 +33,8 @@ export interface ListTasksQuery {
   category?: string;
   type?: string;
   aboutEntity?: string;
+  /** Field list override; defaults to TASK_LIST_FIELDS. Review lists need payload. */
+  fields?: string;
 }
 
 function mapComments(value: unknown): TaskComment[] {
@@ -111,12 +114,30 @@ function mapAvailableTransitions(value: unknown): TaskAvailableTransition[] {
   });
 }
 
+function mapReviewPayload(value: unknown): MemoryConflictReviewPayload | undefined {
+  const rec = asRecord(value);
+  if (!rec || !Array.isArray(rec.disputes)) {
+    return undefined;
+  }
+  const disputes = rec.disputes.flatMap((item) => {
+    const dispute = asRecord(item);
+    const memory = dispute ? mapEntityRefs(dispute.memory ? [dispute.memory] : [])[0] : undefined;
+    if (!memory?.id) {
+      return [];
+    }
+    const detectedAt = dispute ? asNumber(dispute.detectedAt) : undefined;
+    return [{ memory, ...(detectedAt !== undefined ? { detectedAt } : {}) }];
+  });
+  return { disputes };
+}
+
 function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
   const id = asString(raw.id);
   if (!id) {
     return null;
   }
   const isDar = asString(raw.type) === 'DataAccessRequest';
+  const isReview = asString(raw.type) === 'MemoryConflictReview';
   return {
     id,
     name: asString(raw.name) || undefined,
@@ -132,6 +153,7 @@ function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
     comments: mapComments(raw.comments),
     payload: isDar ? mapDataAccessPayload(raw.payload) : undefined,
     suggestionPayload: isDar ? undefined : parseTaskSuggestionPayload(raw.payload),
+    reviewPayload: isReview ? mapReviewPayload(raw.payload) : undefined,
     availableTransitions: mapAvailableTransitions(raw.availableTransitions),
   };
 }
@@ -147,7 +169,7 @@ function requireTask(raw: Record<string, unknown>, action: string): Collaboratio
 export function listTasks(query: ListTasksQuery = {}): Promise<Paged<CollaborationTask>> {
   return apiRequest<unknown>('/v1/tasks', {
     query: {
-      fields: TASK_LIST_FIELDS,
+      fields: query.fields ?? TASK_LIST_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
       status: query.status,
@@ -163,11 +185,8 @@ export function listTasks(query: ListTasksQuery = {}): Promise<Paged<Collaborati
  * Official listMyAssignedTasks (rest/tasksAPI.ts): GET /v1/tasks/assigned,
  * filtered by the current user and their teams server-side, cursor-paged
  * (before/after via listInternal) — never the offset mode of
- * listDataAccessRequests. Thin wrapper only: no UI calls it in this batch
- * (G-21, Wave 2). Known limit, recorded not fixed here (R-W13-2): mapTask
- * only passes payload through for DataAccessRequest, so a
- * MemoryConflictReview task's payload.disputes[] is not yet mapped;
- * G-21 must extend the mapping before reading review payloads.
+ * listDataAccessRequests. The review payload mapping (R-W13-2) is done:
+ * mapTask fills reviewPayload for MemoryConflictReview tasks.
  */
 export interface ListMyAssignedTasksQuery {
   limit?: number;

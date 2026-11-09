@@ -34,18 +34,22 @@ function allowPermissions(resource: string): Response {
   });
 }
 
-function memoryPayload(owners: Array<{ id: string; name: string }> = []): unknown {
+function memoryPayload(
+  owners: Array<{ id: string; name: string }> = [],
+  total = 1,
+): unknown {
   return {
     data: [
       {
         id: 'm1',
+        name: 'churn-rate',
         question: 'What is churn?',
         entityStatus: 'Approved',
         pinned: true,
         owners,
       },
     ],
-    paging: { total: 1 },
+    paging: { total },
   };
 }
 
@@ -76,6 +80,27 @@ async function mountMemories() {
   });
   await flushPromises();
   return { wrapper, pinia };
+}
+
+function setInputValue(selector: string, value: string): void {
+  const el = document.querySelector(selector) as HTMLTextAreaElement | HTMLInputElement | null;
+  if (!el) {
+    throw new Error(`missing element ${selector}`);
+  }
+  const setter = Object.getOwnPropertyDescriptor(
+    el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+    'value',
+  )?.set;
+  setter?.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function click(selector: string): void {
+  const el = document.querySelector(selector) as HTMLElement | null;
+  if (!el) {
+    throw new Error(`missing element ${selector}`);
+  }
+  el.click();
 }
 
 describe('ContextCenterMemoriesView', () => {
@@ -182,5 +207,156 @@ describe('ContextCenterMemoriesView', () => {
     await flushPromises();
     const del = [...document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-delete"]')].at(-1);
     expect(del).not.toBeUndefined();
+  });
+
+  it('pages by offset: page 2 requests offset=25 and never a cursor (R-W13-1)', { timeout: 15000 }, async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('contextMemory');
+        }
+        return jsonResponse(memoryPayload([], 27));
+      }),
+    );
+    const { wrapper } = await mountMemories();
+    const listUrls = () => urls.filter((url) => url.includes('/v1/contextCenter/memories') && url.includes('limit=25'));
+    expect(listUrls().length).toBeGreaterThanOrEqual(1);
+    expect(listUrls()[0]).toContain('offset=0');
+    await wrapper.get('[data-testid="entity-list-next"]').trigger('click');
+    await flushPromises();
+    expect(listUrls().length).toBeGreaterThanOrEqual(2);
+    expect(listUrls().at(-1)).toContain('offset=25');
+    for (const url of listUrls()) {
+      expect(url).not.toContain('after=');
+      expect(url).not.toContain('before=');
+    }
+  });
+
+  it('shows the three tab counts', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountMemories();
+    expect(wrapper.text()).toContain('All (1)');
+    expect(wrapper.text()).toContain('Created by me (0)');
+    expect(wrapper.text()).toContain('Needs review (1)');
+  });
+
+  it('renders the conflict review list on the needs-review tab and hides the shell', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('contextMemory');
+        }
+        if (url.includes('/v1/tasks')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return jsonResponse(memoryPayload());
+      }),
+    );
+    const { wrapper } = await mountMemories();
+    const tab = wrapper
+      .findAll('.ant-tabs-tab')
+      .find((node) => node.text().includes('Needs review'));
+    expect(tab).not.toBeUndefined();
+    await tab!.trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="memory-reviews"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="memories-table"]').exists()).toBe(false);
+  });
+
+  it('creates a memory with a slug name and question equal to answer', { timeout: 15000 }, async () => {
+    const calls: Array<{ url: string; method: string; body: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, method: init?.method ?? 'GET', body: typeof init?.body === 'string' ? init.body : '' });
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('contextMemory');
+        }
+        if (init?.method === 'POST' && url.includes('/v1/contextCenter/memories')) {
+          return jsonResponse({ id: 'm-new', name: 'churn', question: 'What is churn rate?' }, 201);
+        }
+        return jsonResponse(memoryPayload());
+      }),
+    );
+    const { wrapper } = await mountMemories();
+    await wrapper.get('[data-testid="memories-create"]').trigger('click');
+    await flushPromises();
+    // The FormModal test-id does not land on a DOM node (antd Modal drops
+    // it); the form fields inside the teleported modal do carry testids.
+    expect(document.querySelector('[data-testid="memory-form-memory"]')).not.toBeNull();
+    setInputValue('[data-testid="memory-form-title"]', 'Churn');
+    setInputValue('[data-testid="memory-form-memory"]', 'What is churn rate?');
+    await flushPromises();
+    click('.ant-modal-footer .ant-btn-primary');
+    await flushPromises();
+    const post = calls.find(
+      (call) => call.method === 'POST' && call.url.includes('/v1/contextCenter/memories'),
+    );
+    expect(post).not.toBeUndefined();
+    const body = JSON.parse(post!.body) as Record<string, unknown>;
+    expect(body.name).toBe('churn');
+    expect(body.question).toBe('What is churn rate?');
+    expect(body.answer).toBe('What is churn rate?');
+  });
+
+  it('deletes soft from the edit modal (no hardDelete), unlike the list row', { timeout: 15000 }, async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, method: init?.method ?? 'GET' });
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('contextMemory');
+        }
+        if (init?.method === 'DELETE' && url.includes('/v1/contextCenter/memories/')) {
+          return new Response(null, { status: 200 });
+        }
+        return jsonResponse(memoryPayload([{ id: 'u-alice', name: 'alice' }]));
+      }),
+    );
+    const { wrapper } = await mountMemories();
+    const auth = useAuthStore();
+    auth.user = { id: 'u-alice', name: 'alice' };
+    await wrapper.get('[data-testid="row-overflow-m1"]').trigger('click');
+    await flushPromises();
+    const edit = [...document.querySelectorAll<HTMLElement>('[data-testid="memory-edit-m1"]')].at(-1);
+    expect(edit).not.toBeUndefined();
+    edit!.click();
+    await flushPromises();
+    expect(document.querySelector('[data-testid="memory-form-memory"]')).not.toBeNull();
+    click('[data-testid="memory-form-delete"]');
+    await flushPromises();
+    expect(document.querySelector('.ant-modal-confirm-btns .ant-btn-primary')).not.toBeNull();
+    click('.ant-modal-confirm-btns .ant-btn-primary');
+    await flushPromises();
+    const del = calls.find(
+      (call) => call.method === 'DELETE' && call.url.includes('/v1/contextCenter/memories/m1'),
+    );
+    expect(del).not.toBeUndefined();
+    expect(del!.url).not.toContain('hardDelete');
+  });
+
+  it('copies the ?memory= deep link to the clipboard', { timeout: 15000 }, async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const { wrapper } = await mountMemories();
+    await wrapper.get('[data-testid="row-overflow-m1"]').trigger('click');
+    await flushPromises();
+    const copy = [...document.querySelectorAll<HTMLElement>('[data-testid="memory-copy-link-m1"]')].at(-1);
+    expect(copy).not.toBeUndefined();
+    copy!.click();
+    await flushPromises();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(String(writeText.mock.calls[0][0])).toContain('?memory=churn-rate');
   });
 });

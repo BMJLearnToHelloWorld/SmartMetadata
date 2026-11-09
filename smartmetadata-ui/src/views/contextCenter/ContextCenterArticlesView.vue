@@ -11,7 +11,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Empty, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
+import { Button, Empty, Menu, Select, Space, Tabs, Tag, Typography, message } from 'ant-design-vue';
+import type { SelectValue } from 'ant-design-vue/es/select';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
@@ -20,15 +21,31 @@ import type { EntityListColumn } from '@/features/crud/types';
 import {
   createKnowledgePage,
   deleteKnowledgePage,
+  followKnowledgePage,
   getKnowledgePageByFqn,
   listKnowledgePages,
   patchKnowledgePage,
+  searchKnowledgePages,
+  unFollowKnowledgePage,
   updateKnowledgePage,
 } from '@/api/contextCenter';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { permissionFlags } from '@/api/permissions';
+import {
+  ARTICLE_PAGE_SIZE,
+  ARTICLE_QUICK_FILTER_FACET_IDS,
+  ARTICLE_SORT_OPTIONS,
+  appendUniquePages,
+  buildArticleQueryFilter,
+  getArticleSortConfig,
+  getKnowledgePageFields,
+  useArticleSearchPath,
+} from '@/catalog/contextCenterArticles';
+import type { SearchFacet } from '@/catalog/searchFacets';
+import type { SearchFilters } from '@/catalog/searchQuery';
+import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 import { recordRecentlyViewed } from '@/stores/contextCenterRecent';
@@ -39,8 +56,9 @@ import { toEntityLink } from '@/quality/entityLink';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { KnowledgePage, KnowledgePageType } from '@/types/contextCenter';
 import ArticleFormModal from './ArticleFormModal.vue';
+import ArticlesRightPanel from './ArticlesRightPanel.vue';
 import ContextCenterNav from './ContextCenterNav.vue';
-import { formatEpoch } from './time';
+import { formatDateString, formatEpoch } from './time';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -76,14 +94,40 @@ const fqn = computed(() => {
 });
 
 const loading = ref(false);
+const loadingMore = ref(false);
 const errorMessage = ref('');
 const pages = ref<KnowledgePage[]>([]);
 const total = ref<number | undefined>();
-const after = ref<string | undefined>();
-const before = ref<string | undefined>();
+const facets = ref<SearchFacet[]>([]);
+const filters = ref<SearchFilters>({});
+const searchText = ref('');
+const debouncedSearch = ref('');
+const sortId = ref('updatedAt');
 const pageType = ref<KnowledgePageType | 'All'>('All');
 const showCreateModal = ref(false);
+const createPageType = ref<KnowledgePageType>('Article');
 const showEditModal = ref(false);
+/** Bumped after create/delete/follow and on return to the list. */
+const rightPanelSignal = ref(0);
+
+let listGeneration = 0;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+const hasMore = computed(
+  () => total.value !== undefined && pages.value.length < total.value,
+);
+const SORT_LABEL_KEYS: Record<string, string> = {
+  updatedAt: 'contextCenter.sortRecentlyUpdated',
+  name: 'contextCenter.sortAlphabetical',
+  publicationDate: 'contextCenter.sortPublicationDate',
+  popularity: 'contextCenter.sortPopularity',
+};
+const sortOptions = computed(() =>
+  ARTICLE_SORT_OPTIONS.map((option) => ({
+    value: option.id,
+    label: t(SORT_LABEL_KEYS[option.id] ?? 'contextCenter.sortRecentlyUpdated'),
+  })),
+);
 
 const detail = ref<KnowledgePage | null>(null);
 const detailLoading = ref(false);
@@ -174,31 +218,193 @@ function onDetailTabChange(key: string | number): void {
 const columns = computed<EntityListColumn[]>(() => [
   { title: t('contextCenter.name'), dataIndex: 'name', key: 'name' },
   { title: t('contextCenter.pageType'), dataIndex: 'pageType', key: 'pageType' },
+  { title: t('contextCenter.publicationDate'), dataIndex: 'publicationDate', key: 'publicationDate' },
+  { title: t('contextCenter.totalVotes'), dataIndex: 'totalVotes', key: 'totalVotes' },
   { title: t('contextCenter.updatedBy'), dataIndex: 'updatedBy', key: 'updatedBy' },
   { title: t('contextCenter.updatedAt'), dataIndex: 'updatedAt', key: 'updatedAt' },
 ]);
 
-async function load(cursor?: { after?: string; before?: string }): Promise<void> {
-  loading.value = true;
+/**
+ * ADR:2026-11-08-context-center-articles-search-mapping
+ * ADR:2026-11-08-context-center-articles-offset-load-more — official
+ * dual path (KnowledgePageListComponent): ES when filtered or when the
+ * sort has no REST equivalent, else REST; both offset-paged 25 at a
+ * time and appended with uniqBy(id). Only the latest request commits.
+ */
+async function load(offset = 0): Promise<void> {
+  const request = ++listGeneration;
+  if (offset > 0) {
+    loadingMore.value = true;
+  } else {
+    loading.value = true;
+  }
   errorMessage.value = '';
   try {
-    const result = await listKnowledgePages({
-      limit: 25,
-      pageType: pageType.value === 'All' ? undefined : pageType.value,
-      after: cursor?.after,
-      before: cursor?.before,
-    });
-    pages.value = result.data;
-    total.value = result.total;
-    after.value = result.after;
-    before.value = result.before;
+    const sort = getArticleSortConfig(sortId.value);
+    if (useArticleSearchPath(debouncedSearch.value, filters.value, sort)) {
+      const result = await searchKnowledgePages({
+        q: debouncedSearch.value,
+        offset,
+        sortField: sort.esSortField,
+        sortOrder: sort.sortOrder,
+        queryFilter: buildArticleQueryFilter(filters.value, pageType.value),
+      });
+      if (request !== listGeneration) {
+        return;
+      }
+      pages.value = offset > 0 ? appendUniquePages(pages.value, result.data) : result.data;
+      total.value = result.total;
+      facets.value = result.facets;
+    } else {
+      const result = await listKnowledgePages({
+        fields: getKnowledgePageFields(),
+        limit: ARTICLE_PAGE_SIZE,
+        offset,
+        sortBy: sort.restSortBy ?? 'updatedAt',
+        sortOrder: sort.sortOrder,
+        pageType: pageType.value === 'All' ? undefined : pageType.value,
+      });
+      if (request !== listGeneration) {
+        return;
+      }
+      pages.value = offset > 0 ? appendUniquePages(pages.value, result.data) : result.data;
+      total.value = result.total;
+    }
   } catch (error) {
+    if (request !== listGeneration) {
+      return;
+    }
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-    pages.value = [];
-    total.value = undefined;
+    if (offset === 0) {
+      pages.value = [];
+      total.value = undefined;
+    }
   } finally {
-    loading.value = false;
+    if (request === listGeneration) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
   }
+}
+
+function loadMore(): void {
+  if (!hasMore.value || loadingMore.value) {
+    return;
+  }
+  void load(pages.value.length);
+}
+
+function resetToFirstPage(): void {
+  void load(0);
+}
+
+function applySearch(): void {
+  resetToFirstPage();
+}
+
+function onSearchInput(value: string): void {
+  searchText.value = value;
+  if (searchTimer !== undefined) {
+    clearTimeout(searchTimer);
+  }
+  searchTimer = setTimeout(() => {
+    debouncedSearch.value = value;
+    applySearch();
+  }, 300);
+}
+
+function onSearchEnter(): void {
+  if (searchTimer !== undefined) {
+    clearTimeout(searchTimer);
+  }
+  debouncedSearch.value = searchText.value;
+  applySearch();
+}
+
+function onFilterChange(id: string, values: string[]): void {
+  filters.value = { ...filters.value, [id]: values };
+  resetToFirstPage();
+}
+
+/**
+ * antd Select emits SelectValue (RawValue | LabeledValue, single or array);
+ * this single select only ever carries a plain string value, so normalise
+ * to string here and keep the rest of the handler in string terms.
+ */
+function onSortChange(value: SelectValue): void {
+  if (typeof value !== 'string') {
+    return;
+  }
+  sortId.value = value;
+  resetToFirstPage();
+}
+
+function onPageTypeChange(key: string | number): void {
+  pageType.value = key as KnowledgePageType | 'All';
+  resetToFirstPage();
+}
+
+function isFollowing(page: KnowledgePage): boolean {
+  const userId = auth.user?.id;
+  if (!userId) {
+    return false;
+  }
+  return (page.followers ?? []).some((follower) => follower.id === userId);
+}
+
+async function onFollowToggle(page: KnowledgePage): Promise<void> {
+  const userId = auth.user?.id;
+  if (!userId) {
+    return;
+  }
+  try {
+    if (isFollowing(page)) {
+      const removed = await unFollowKnowledgePage(page.id, userId);
+      const removedIds = new Set(removed.map((follower) => follower.id));
+      const nextFollowers = (page.followers ?? []).filter(
+        (follower) => !removedIds.has(follower.id) && follower.id !== userId,
+      );
+      applyFollowers(page, nextFollowers);
+    } else {
+      const added = await followKnowledgePage(page.id, userId);
+      const nextFollowers = [...(page.followers ?? []), ...added];
+      if (!nextFollowers.some((follower) => follower.id === userId)) {
+        nextFollowers.push({ id: userId, type: 'user', name: auth.user?.name ?? userId });
+      }
+      applyFollowers(page, nextFollowers);
+    }
+    rightPanelSignal.value += 1;
+  } catch {
+    message.error(t('contextCenter.followFailed'));
+  }
+}
+
+function applyFollowers(page: KnowledgePage, followers: KnowledgePage['followers']): void {
+  pages.value = pages.value.map((item) =>
+    item.id === page.id ? { ...item, followers } : item,
+  );
+  if (detail.value?.id === page.id) {
+    detail.value = { ...detail.value, followers };
+  }
+}
+
+function onOpenPanelPage(page: {
+  fullyQualifiedName?: string;
+  pageType?: KnowledgePageType;
+  pageUrl?: string;
+}): void {
+  if (page.pageType === 'QuickLink' && page.pageUrl) {
+    window.open(page.pageUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (page.fullyQualifiedName) {
+    void router.push({ name: 'context-center-article', params: { fqn: page.fullyQualifiedName } });
+  }
+}
+
+function onAddQuickLink(): void {
+  createPageType.value = 'QuickLink';
+  showCreateModal.value = true;
 }
 
 async function loadDetail(): Promise<void> {
@@ -249,11 +455,6 @@ function openPage(page: KnowledgePage): void {
   void router.push({ name: 'context-center-article', params: { fqn: page.fullyQualifiedName } });
 }
 
-function onPageTypeChange(key: string | number): void {
-  pageType.value = key as KnowledgePageType | 'All';
-  void load();
-}
-
 async function onCreate(value: {
   name: string;
   displayName?: string;
@@ -265,6 +466,7 @@ async function onCreate(value: {
     await createKnowledgePage(value);
     showCreateModal.value = false;
     message.success(t('contextCenter.created'));
+    rightPanelSignal.value += 1;
     void load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
@@ -325,6 +527,7 @@ async function onDelete(page: KnowledgePage): Promise<void> {
   try {
     await deleteKnowledgePage(page.id);
     message.success(t('contextCenter.deleted'));
+    rightPanelSignal.value += 1;
     if (fqn.value) {
       void router.push({ name: 'context-center-articles' });
       return;
@@ -337,7 +540,10 @@ async function onDelete(page: KnowledgePage): Promise<void> {
 
 watch(
   () => route.params.fqn,
-  () => {
+  (nextFqn, prevFqn) => {
+    if (!nextFqn && prevFqn) {
+      rightPanelSignal.value += 1;
+    }
     void loadDetail();
   },
 );
@@ -383,6 +589,13 @@ onMounted(() => {
               data-testid="article-open-link"
             >
               {{ t('contextCenter.openLink') }}
+            </Button>
+            <Button
+              v-if="detail"
+              data-testid="article-follow"
+              @click="detail && onFollowToggle(detail)"
+            >
+              {{ isFollowing(detail) ? t('contextCenter.unfollow') : t('contextCenter.follow') }}
             </Button>
             <Button
               v-if="canEditAll"
@@ -504,8 +717,9 @@ onMounted(() => {
         @cancel="propsOpen = false"
       />
     </div>
-    <div v-else>
+    <div v-else style="display: flex; gap: 16px; align-items: flex-start">
       <EntityListShell
+        style="flex: 1; min-width: 0"
         :title="t('contextCenter.articles')"
         :lead="t('contextCenter.articlesLead')"
         :loading="loading"
@@ -520,14 +734,19 @@ onMounted(() => {
         row-key="id"
         table-test-id="articles-table"
         :total="total"
-        :has-next="!!after"
-        :has-prev="!!before"
         :empty-text="t('contextCenter.emptyArticles')"
         show-row-actions
         :show-delete-action="canDelete"
+        show-search
+        :search-value="searchText"
+        :search-placeholder="t('contextCenter.searchArticlesPlaceholder')"
+        show-load-more
+        :has-more="hasMore"
+        :loading-more="loadingMore"
         @refresh="load()"
-        @next="load({ after: after })"
-        @prev="load({ before: before })"
+        @update:search-value="onSearchInput($event)"
+        @search="onSearchEnter"
+        @load-more="loadMore"
         @view="openPage($event as KnowledgePage)"
         @delete="onDelete($event as KnowledgePage)"
       >
@@ -551,6 +770,32 @@ onMounted(() => {
             <Tabs.TabPane key="Article" :tab="t('contextCenter.articleType')" />
             <Tabs.TabPane key="QuickLink" :tab="t('contextCenter.quickLinkType')" />
           </Tabs>
+          <ExploreFilterChips
+            :facets="facets"
+            :filters="filters"
+            :facet-ids="ARTICLE_QUICK_FILTER_FACET_IDS"
+            @change="onFilterChange"
+          />
+          <Select
+            :value="sortId"
+            :options="sortOptions"
+            style="width: 180px"
+            data-testid="articles-sort"
+            @change="onSortChange"
+          />
+        </template>
+        <template #rowActions="{ record }">
+          <Menu.Item
+            :key="`follow-${(record as KnowledgePage).id}`"
+            :data-testid="`article-row-follow-${(record as KnowledgePage).id}`"
+            @click="onFollowToggle(record as KnowledgePage)"
+          >
+            {{
+              isFollowing(record as KnowledgePage)
+                ? t('contextCenter.unfollow')
+                : t('contextCenter.follow')
+            }}
+          </Menu.Item>
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
@@ -558,13 +803,24 @@ onMounted(() => {
               {{ (record as KnowledgePage).displayName || (record as KnowledgePage).name }}
             </Button>
           </template>
+          <template v-else-if="column.key === 'publicationDate'">
+            {{ formatDateString((record as KnowledgePage).publicationDate) }}
+          </template>
           <template v-else>
             {{ (record as Record<string, unknown>)[String(column.dataIndex ?? '')] }}
           </template>
         </template>
       </EntityListShell>
+      <ArticlesRightPanel
+        :refresh-signal="rightPanelSignal"
+        :can-create="canCreate"
+        style="width: 320px; flex-shrink: 0"
+        @open-page="onOpenPanelPage"
+        @add-quick-link="onAddQuickLink"
+      />
       <ArticleFormModal
         :open="showCreateModal"
+        :initial-page-type="createPageType"
         @ok="onCreate"
         @cancel="showCreateModal = false"
         @update:open="showCreateModal = $event"

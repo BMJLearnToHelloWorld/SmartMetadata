@@ -26,6 +26,11 @@ export interface KnowledgePage {
   pageType: KnowledgePageType;
   /** QuickLink target URL; absent for articles. */
   pageUrl?: string;
+  /** ISO publication date string (official page.publicationDate). */
+  publicationDate?: string;
+  /** ES totalVotes counter; 0 when the page has no votes. */
+  totalVotes?: number;
+  followers?: EntityRef[];
   parent?: EntityRef;
   children?: EntityRef[];
   deleted?: boolean;
@@ -52,23 +57,64 @@ export type ContextMemoryStatus =
   | 'Rejected'
   | 'Deprecated';
 
+/** Official MemoryType; `Learning` is agent-assigned, never offered in the form. */
+export type ContextMemoryType = 'FAQ' | 'Note' | 'Preference' | 'Runbook' | 'UseCase' | 'Learning';
+
+/** Official ShareVisibility. */
+export type ShareVisibility = 'Public' | 'Shared' | 'Entity' | 'Private';
+
+export interface ContextMemoryOutcomes {
+  countedAt?: number;
+  appliedCount?: number;
+  lastAppliedAt?: number;
+  positiveCount?: number;
+  negativeCount?: number;
+  correctedCount?: number;
+}
+
+export interface ContextMemoryDispute {
+  memory: EntityRef;
+  reason?: string;
+}
+
 export interface ContextMemory {
   id: string;
   name?: string;
   displayName?: string;
   description?: string;
+  title?: string;
+  summary?: string;
   question?: string;
   answer?: string;
   entityStatus?: ContextMemoryStatus;
+  statusReason?: string;
   pinned?: boolean;
+  memoryType?: ContextMemoryType;
+  /** Read form of shareConfig.visibility; writes send shareConfig itself. */
+  visibility?: ShareVisibility;
+  shareConfig?: { visibility?: ShareVisibility };
   /**
    * Times this memory was applied/cited (official appliedCount). Mapped in
    * mapContextMemory; the most-cited card sorts on it. Never substitute
    * usageCount — see ADR:2026-11-07-context-center-most-cited-memories.
    */
   appliedCount?: number;
+  /** Retrieval usage before outcomes existed; only a citation fallback. */
+  usageCount?: number;
+  lastUsedAt?: number;
+  /** When the claim last changed; falls back to updatedAt for comparisons. */
+  lastContentUpdatedAt?: number;
   owners?: EntityRef[];
+  tags?: TagRef[];
+  domains?: EntityRef[];
   primaryEntity?: EntityRef;
+  relatedEntities?: EntityRef[];
+  derivedEntities?: EntityRef[];
+  sourceEntity?: EntityRef;
+  sourceType?: string;
+  /** Only Draft memories record disputes. */
+  disputes?: ContextMemoryDispute[];
+  outcomes?: ContextMemoryOutcomes;
   updatedAt?: number;
   updatedBy?: string;
 }

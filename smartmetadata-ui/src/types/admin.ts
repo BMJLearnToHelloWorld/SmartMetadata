@@ -30,6 +30,8 @@ export interface AdminUser {
   /** Official OnlineUsers fields; absent for users from other endpoints. */
   lastLoginTime?: number;
   lastActivityTime?: number;
+  /** Pages the user follows (only read with fields=follows). */
+  follows?: EntityRef[];
   teams: EntityRef[];
   roles: EntityRef[];
 }
