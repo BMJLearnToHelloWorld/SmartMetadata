@@ -15,6 +15,8 @@ const config: RuntimeConfig = {
   apiUrl: 'http://localhost:8585/api',
   jwt: 'bot-token',
   timeoutMs: 5_000,
+  readOnly: false,
+  disabledTools: [],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {

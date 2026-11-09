@@ -19,6 +19,18 @@ export interface RuntimeConfig {
   apiUrl: string;
   jwt: string;
   timeoutMs: number;
+  /**
+   * Access mode for this server process. Read from OM_MCP_READ_ONLY
+   * (`true`/`1` = on, default off) and OM_MCP_DISABLED_TOOLS
+   * (comma-separated tool names, default empty). Unlike the Java server,
+   * whose config is read at startup and a read-only flip hides write tools
+   * from tools/list only after a restart, this side applies both the list
+   * filtering and the per-call refusal at registration time — a call is
+   * rejected from the moment the server starts in this mode.
+   * (ADR:2026-11-08-mcp-batch-a-read-tools)
+   */
+  readOnly: boolean;
+  disabledTools: string[];
 }
 
 const DEFAULT_ORIGIN = 'http://localhost:8585';
@@ -61,6 +73,24 @@ function parseTimeout(raw: string | undefined): number {
   return Math.min(MAX_TIMEOUT_MS, Math.max(1, Math.trunc(numeric)));
 }
 
+function parseReadOnly(raw: string | undefined): boolean {
+  if (raw === undefined) {
+    return false;
+  }
+  const value = raw.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
+function parseDisabledTools(raw: string | undefined): string[] {
+  if (raw === undefined || raw.trim() === '') {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+}
+
 export function loadConfig(env: NodeJS.Dict<string> = process.env): RuntimeConfig {
   const jwt = readEnv(env, 'OM_JWT')?.trim() ?? '';
   if (!jwt) {
@@ -71,5 +101,7 @@ export function loadConfig(env: NodeJS.Dict<string> = process.env): RuntimeConfi
     apiUrl: normalizeApiUrl(rawUrl),
     jwt,
     timeoutMs: parseTimeout(readEnv(env, 'OM_TIMEOUT_MS')),
+    readOnly: parseReadOnly(readEnv(env, 'OM_MCP_READ_ONLY')),
+    disabledTools: parseDisabledTools(readEnv(env, 'OM_MCP_DISABLED_TOOLS')),
   };
 }
