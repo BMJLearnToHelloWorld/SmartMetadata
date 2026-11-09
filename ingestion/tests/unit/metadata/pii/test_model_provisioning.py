@@ -308,11 +308,13 @@ class TestPipInstallation:
         _install_model(english_and_spanish[0], "3.8.16")
 
         assert mock_run.call_count == 2
-        assert str(wheel) == mock_run.call_args_list[0].args[0][5]
-        assert english_and_spanish[0].wheel_url in mock_run.call_args_list[1].args[0][5]
+        assert str(wheel) == mock_run.call_args_list[0].args[0][6]
+        assert english_and_spanish[0].wheel_url in mock_run.call_args_list[1].args[0][6]
 
     @patch("metadata.pii.model_provisioning.subprocess.run")
-    def test_reports_combined_pip_errors_from_all_candidates(self, mock_run, english_and_spanish, tmp_path, monkeypatch):
+    def test_reports_combined_pip_errors_from_all_candidates(
+        self, mock_run, english_and_spanish, tmp_path, monkeypatch
+    ):
         wheel = tmp_path / english_and_spanish[0].wheel_filename
         wheel.write_bytes(b"fake")
         monkeypatch.setenv("OM_SPACY_MODEL_WHEEL_DIR", str(tmp_path))
