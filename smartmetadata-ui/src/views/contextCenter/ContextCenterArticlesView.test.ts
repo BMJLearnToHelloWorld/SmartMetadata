@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -280,6 +280,10 @@ describe('ContextCenterArticlesView', () => {
       sensitivity.value = 'low';
       sensitivity.dispatchEvent(new Event('input', { bubbles: true }));
     }
+    // Let the controlled input's v-model settle before closing the
+    // modal: antd's Input reads its ref in a nextTick after an input
+    // event, and closing the modal first leaves it null.
+    await flushPromises();
     const okButton = document.querySelector(
       '.ant-modal-footer .ant-btn-primary',
     ) as HTMLElement | null;
@@ -375,5 +379,261 @@ describe('ContextCenterArticlesView', () => {
     );
     expect(router.currentRoute.value.name).toBe('context-center-articles');
     openSpy.mockRestore();
+  });
+});
+
+describe('ContextCenterArticlesView G-19', () => {
+  function recordedUrls(): string[] {
+    return vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+  }
+
+  function stubBase(
+    handle: (input: RequestInfo | URL, init?: RequestInit) => Response | undefined,
+  ): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/v1/permissions/')) {
+          return allowPermissions('page');
+        }
+        if (url.includes('/v1/users/') && url.includes('fields=follows')) {
+          return jsonResponse({ id: 'u-alice', name: 'alice', follows: [] });
+        }
+        if (url.includes('/v1/metadata/tags')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return handle(input, init) ?? new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function mountList() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const auth = useAuthStore();
+    auth.user = { id: 'u-alice', name: 'alice' };
+    const router = buildRouter();
+    await router.push('/context-center/articles');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    return { wrapper, router };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('loads the REST default path with the official field list and load-more appends page 2', { timeout: 15000 }, async () => {
+    stubBase((input) => {
+      const url = String(input);
+      if (url.includes('/contextCenter/pages')) {
+        const offset = Number(new URL(url).searchParams.get('offset') ?? 0);
+        const count = offset === 0 ? 25 : 5;
+        const data = Array.from({ length: count }, (_, index) => {
+          const n = offset + index;
+          return {
+            id: `p${n}`,
+            name: `page-${n}`,
+            fullyQualifiedName: `page-${n}`,
+            displayName: `Page ${n}`,
+            pageType: 'Article',
+            page: {},
+            updatedBy: 'admin',
+          };
+        });
+        return jsonResponse({ data, paging: { total: 30 } });
+      }
+      return undefined;
+    });
+    const { wrapper } = await mountList();
+    const listUrl = recordedUrls().find((url) => url.includes('/contextCenter/pages?'));
+    expect(listUrl).toContain('fields=owners%2Cvotes%2Cfollowers%2Ctags%2Cdomains%2CrelatedEntities%2CdataProducts%2Creviewers');
+    expect(listUrl).toContain('sortBy=updatedAt');
+    expect(listUrl).toContain('limit=25');
+    expect(listUrl).toContain('offset=0');
+    expect(wrapper.find('[data-testid="entity-list-load-more"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="entity-list-load-more"]').trigger('click');
+    await flushPromises();
+    expect(recordedUrls().some((url) => url.includes('offset=25'))).toBe(true);
+    expect(wrapper.text()).toContain('Page 29');
+    expect(wrapper.text()).toContain('30');
+  });
+
+  it('switches to the ES path on search with index=page and the page-type term', { timeout: 15000 }, async () => {
+    stubBase((input) => {
+      const url = String(input);
+      if (url.includes('/v1/search/query')) {
+        return jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _source: {
+                  id: 'p1',
+                  name: 'getting-started',
+                  fullyQualifiedName: 'getting-started',
+                  displayName: 'Getting Started',
+                  pageType: 'Article',
+                  page: { publicationDate: '2026-09-01' },
+                  totalVotes: 3,
+                },
+              },
+            ],
+          },
+          aggregations: {
+            'tags.tagFQN': { buckets: [{ key: 'KnowledgeCenter.Guides', doc_count: 1 }] },
+          },
+        });
+      }
+      if (url.includes('/contextCenter/pages')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      return undefined;
+    });
+    const { wrapper } = await mountList();
+    const searchInput = wrapper.find('[data-testid="entity-list-search"]');
+    await searchInput.setValue('guide');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await flushPromises();
+    const searchUrl = recordedUrls().find((url) => url.includes('/v1/search/query'));
+    expect(searchUrl).toBeDefined();
+    expect(searchUrl).toContain('index=page');
+    expect(searchUrl).toContain('q=guide');
+    expect(searchUrl).toContain('sort_field=updatedAt');
+    expect(searchUrl).toContain('include_aggregations=true');
+    expect(wrapper.text()).toContain('Getting Started');
+    expect(wrapper.find('[data-testid="explore-chip-tagFqn"]').exists()).toBe(true);
+  });
+
+  it('forces the ES path for the popularity sort', { timeout: 15000 }, async () => {
+    stubBase((input) => {
+      const url = String(input);
+      if (url.includes('/v1/search/query')) {
+        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
+      }
+      if (url.includes('/contextCenter/pages')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      return undefined;
+    });
+    const { wrapper } = await mountList();
+    const sort = wrapper
+      .findAllComponents(Select)
+      .find((component) => component.attributes('data-testid') === 'articles-sort');
+    expect(sort?.exists()).toBe(true);
+    await sort?.vm.$emit('change', 'popularity');
+    await flushPromises();
+    const searchUrl = recordedUrls().find((url) => url.includes('/v1/search/query'));
+    expect(searchUrl).toContain('sort_field=totalVotes');
+    expect(searchUrl).toContain('sort_order=desc');
+  });
+
+  it('toggles follow on the article detail with PUT then DELETE', { timeout: 15000 }, async () => {
+    let followed = false;
+    stubBase((input, init) => {
+      const url = String(input);
+      if (url.includes('/contextCenter/pages/p1/followers')) {
+        followed = init?.method === 'PUT';
+        return jsonResponse({
+          changeDescription: {
+            fieldsAdded: [{ newValue: [{ id: 'u-alice', type: 'user', name: 'alice' }] }],
+            fieldsDeleted: [{ oldValue: [{ id: 'u-alice', type: 'user', name: 'alice' }] }],
+          },
+        });
+      }
+      if (url.includes('/contextCenter/pages/name/')) {
+        return jsonResponse({
+          id: 'p1',
+          name: 'getting-started',
+          fullyQualifiedName: 'getting-started',
+          displayName: 'Getting Started',
+          description: 'Intro.',
+          pageType: 'Article',
+          page: {},
+          updatedBy: 'admin',
+          followers: followed ? [{ id: 'u-alice', type: 'user', name: 'alice' }] : [],
+        });
+      }
+      if (url.includes('/contextCenter/pages')) {
+        return jsonResponse({ data: [], paging: { total: 0 } });
+      }
+      return undefined;
+    });
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const auth = useAuthStore();
+    auth.user = { id: 'u-alice', name: 'alice' };
+    const router = buildRouter();
+    await router.push('/context-center/articles/getting-started');
+    await router.isReady();
+    const wrapper = mount(ContextCenterArticlesView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const followButton = wrapper.find('[data-testid="article-follow"]');
+    expect(followButton.exists()).toBe(true);
+    expect(followButton.text()).toBe('Follow');
+    await followButton.trigger('click');
+    await flushPromises();
+    expect(recordedUrls().some((url) => url.includes('/contextCenter/pages/p1/followers'))).toBe(true);
+    expect(wrapper.find('[data-testid="article-follow"]').text()).toBe('Unfollow');
+    await wrapper.find('[data-testid="article-follow"]').trigger('click');
+    await flushPromises();
+    expect(
+      recordedUrls().filter((url) => url.includes('/contextCenter/pages/p1/followers')).length,
+    ).toBe(2);
+    expect(wrapper.find('[data-testid="article-follow"]').text()).toBe('Follow');
+  });
+
+  it('toggles follow from the list row overflow menu', { timeout: 15000 }, async () => {
+    stubBase((input, init) => {
+      const url = String(input);
+      if (url.includes('/contextCenter/pages/p1/followers')) {
+        expect(init?.method).toBe('PUT');
+        return jsonResponse({
+          changeDescription: {
+            fieldsAdded: [{ newValue: [{ id: 'u-alice', type: 'user', name: 'alice' }] }],
+          },
+        });
+      }
+      if (url.includes('/contextCenter/pages')) {
+        return jsonResponse({
+          data: [
+            {
+              id: 'p1',
+              name: 'getting-started',
+              fullyQualifiedName: 'getting-started',
+              displayName: 'Getting Started',
+              pageType: 'Article',
+              page: {},
+              updatedBy: 'admin',
+              followers: [],
+            },
+          ],
+          paging: { total: 1 },
+        });
+      }
+      return undefined;
+    });
+    const { wrapper } = await mountList();
+    const overflow = wrapper.find('[data-testid="row-overflow-p1"]');
+    expect(overflow.exists()).toBe(true);
+    await overflow.trigger('click');
+    await flushPromises();
+    const followItem = document.querySelector(
+      '[data-testid="article-row-follow-p1"]',
+    ) as HTMLElement | null;
+    expect(followItem).not.toBeNull();
+    followItem?.click();
+    await flushPromises();
+    expect(
+      recordedUrls().some((url) => url.includes('/contextCenter/pages/p1/followers')),
+    ).toBe(true);
   });
 });

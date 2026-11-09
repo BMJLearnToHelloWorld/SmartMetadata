@@ -16,7 +16,10 @@ import {
   createKnowledgePage,
   deleteKnowledgePage,
   downloadDriveFiles,
+  followKnowledgePage,
   getBulkSuccessfulIds,
+  getContextMemoryById,
+  getContextMemoryByName,
   getKnowledgePageByFqn,
   getKnowledgePageVersion,
   listArchivedContextFiles,
@@ -27,7 +30,10 @@ import {
   pinContextMemory,
   restoreKnowledgePage,
   searchContextFiles,
+  searchKnowledgePages,
+  unFollowKnowledgePage,
   unpinContextMemory,
+  updateContextMemory,
   updateKnowledgePage,
   uploadDriveFile,
 } from './contextCenter';
@@ -223,16 +229,62 @@ describe('contextCenter API', () => {
     expect(page.data[0]?.pinned).toBe(true);
   });
 
-  it('creates a memory from question and answer', async () => {
+  // Retargeted 2026-11-08 (W2-1 G-21): the create signature changed from
+  // the old {question, answer} shape to MemoryCreateInput, which carries
+  // the slug name; same assertion strength, now on the new shape.
+  it('creates a memory with the slug name and question equal to answer', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ question: 'Q?' });
-        return jsonResponse({ id: 'm2', question: 'Q?' });
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          name: 'churn',
+          question: 'Q?',
+          answer: 'Q?',
+          shareConfig: { visibility: 'Private' },
+        });
+        return jsonResponse({ id: 'm2', name: 'churn', question: 'Q?' });
       }),
     );
-    const created = await createContextMemory({ question: 'Q?', answer: 'A.' });
+    const created = await createContextMemory({
+      memory: 'Q?',
+      title: 'Churn',
+      visibility: 'Private',
+    });
     expect(created?.id).toBe('m2');
+  });
+
+  it('gets a memory by id with fields', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'm1', question: 'Q?' })));
+    const memory = await getContextMemoryById('m1', 'owners,tags');
+    expect(memory?.id).toBe('m1');
+    const { url } = lastFetch();
+    expect(url).toContain('/api/v1/contextCenter/memories/m1');
+    expect(url).toContain('fields=owners%2Ctags');
+  });
+
+  it('gets a memory by name without FQN quoting (names are slugs)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'm1', name: 'churn' })));
+    const memory = await getContextMemoryByName('churn');
+    expect(memory?.name).toBe('churn');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/memories/name/churn');
+  });
+
+  it('updates a memory with a JSON Patch body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('PATCH');
+        expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
+        expect(JSON.parse(String(init?.body))).toEqual([
+          { op: 'replace', path: '/title', value: 'Churn' },
+        ]);
+        return jsonResponse({ id: 'm1', title: 'Churn' });
+      }),
+    );
+    const updated = await updateContextMemory('m1', [
+      { op: 'replace', path: '/title', value: 'Churn' },
+    ]);
+    expect(updated?.title).toBe('Churn');
   });
 
   it('pins a memory with PUT /pin', async () => {
@@ -518,5 +570,175 @@ describe('contextCenter API', () => {
     expect(lastFetch().url).toContain('/api/v1/contextCenter/pages/p1/versions/0.1');
     expect(snapshot?.version).toBe(0.1);
     expect(snapshot?.changeDescription?.fieldsAdded?.[0]?.field).toBe('tags');
+  });
+});
+
+describe('knowledge page search (G-19)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('maps publicationDate, totalVotes and followers on the REST list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'p1',
+              name: 'getting-started',
+              fullyQualifiedName: 'getting-started',
+              pageType: 'Article',
+              page: { publicationDate: '2026-09-01' },
+              totalVotes: 7,
+              followers: [{ id: 'u1', type: 'user', name: 'alice' }],
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listKnowledgePages({ limit: 25 });
+    expect(page.data[0]?.publicationDate).toBe('2026-09-01');
+    expect(page.data[0]?.totalVotes).toBe(7);
+    expect(page.data[0]?.followers?.[0]?.name).toBe('alice');
+  });
+
+  it('searches the page index with ES params and maps _source hits', async () => {
+    const filter = JSON.stringify({
+      query: { bool: { must: [{ term: { pageType: 'Article' } }] } },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 2 },
+            hits: [
+              {
+                _source: {
+                  id: 'p1',
+                  name: 'getting-started',
+                  fullyQualifiedName: 'getting-started',
+                  pageType: 'Article',
+                  page: { publicationDate: '2026-09-01' },
+                  totalVotes: 3,
+                },
+              },
+              {
+                _source: {
+                  id: 'p2',
+                  name: 'guide',
+                  fullyQualifiedName: 'guide',
+                  pageType: 'Article',
+                  page: {},
+                  totalVotes: 0,
+                },
+              },
+            ],
+          },
+          aggregations: {
+            'tags.tagFQN': { buckets: [{ key: 'KnowledgeCenter.Guides', doc_count: 2 }] },
+          },
+        }),
+      ),
+    );
+    const result = await searchKnowledgePages({
+      q: 'guide',
+      offset: 25,
+      sortField: 'totalVotes',
+      sortOrder: 'desc',
+      queryFilter: filter,
+    });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/search/query');
+    expect(url).toContain('index=page');
+    expect(url).toContain('from=25');
+    expect(url).toContain('size=25');
+    expect(url).toContain('sort_field=totalVotes');
+    expect(url).toContain('sort_order=desc');
+    expect(url).toContain('include_aggregations=true');
+    expect(url).toContain(`query_filter=${encodeURIComponent(filter)}`);
+    expect(result.total).toBe(2);
+    expect(result.data[0]?.publicationDate).toBe('2026-09-01');
+    expect(result.data[0]?.totalVotes).toBe(3);
+    expect(result.data[1]?.totalVotes).toBe(0);
+    expect(result.facets.find((facet) => facet.id === 'tagFqn')?.buckets[0]?.key).toBe(
+      'KnowledgeCenter.Guides',
+    );
+  });
+
+  it('defaults the ES query to an empty string and zero offset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ hits: { total: { value: 0 }, hits: [] } })),
+    );
+    const result = await searchKnowledgePages();
+    expect(lastFetch().url).toContain('q=');
+    expect(lastFetch().url).toContain('from=0');
+    expect(result).toEqual({ data: [], total: 0, facets: [] });
+  });
+});
+
+describe('knowledge page follows (G-19)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('follows with a PUT of the raw user id and parses the added followers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('PUT');
+        expect(init?.body).toBe('u1');
+        return jsonResponse({
+          changeDescription: {
+            fieldsAdded: [
+              { newValue: [{ id: 'u1', type: 'user', name: 'alice' }] },
+            ],
+          },
+        });
+      }),
+    );
+    const added = await followKnowledgePage('p1', 'u1');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/pages/p1/followers');
+    expect(added[0]?.name).toBe('alice');
+  });
+
+  it('unfollows with a DELETE and parses the removed followers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.method).toBe('DELETE');
+        return jsonResponse({
+          changeDescription: {
+            fieldsDeleted: [
+              { oldValue: [{ id: 'u1', type: 'user', name: 'alice' }] },
+            ],
+          },
+        });
+      }),
+    );
+    const removed = await unFollowKnowledgePage('p1', 'u1');
+    expect(lastFetch().url).toContain('/api/v1/contextCenter/pages/p1/followers/u1');
+    expect(removed[0]?.id).toBe('u1');
+  });
+
+  it('returns an empty list when the changeDescription is absent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    await expect(followKnowledgePage('p1', 'u1')).resolves.toEqual([]);
+    await expect(unFollowKnowledgePage('p1', 'u1')).resolves.toEqual([]);
   });
 });

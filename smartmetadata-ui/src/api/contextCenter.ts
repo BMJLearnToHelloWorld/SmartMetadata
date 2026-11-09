@@ -13,6 +13,7 @@ import type {
   ContextFile,
   ContextMemory,
   ContextMemoryStatus,
+  ContextMemoryType,
   CreateKnowledgePageRequest,
   DriveFolder,
   KnowledgePage,
@@ -20,12 +21,20 @@ import type {
   PersonaAiContext,
   PersonaAiContextRule,
   PersonaAiContextStatus,
+  ShareVisibility,
 } from '@/types/contextCenter';
+import type { EntityRef } from '@/types/api';
 import { apiBaseUrl, apiRequest, ApiError, readErrorMessage } from './client';
 import type { ChangeDescription, EntityVersion } from './entities';
 import { mapChangeDescription, mapTags } from './entities';
 import { authorizationHeader, loadSession } from '@/auth/token';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import { ARTICLE_PAGE_SIZE } from '@/catalog/contextCenterArticles';
+import { mapSearchAggregations, type SearchFacet } from '@/catalog/searchFacets';
+import {
+  buildMemoryCreatePayload,
+  type MemoryCreateInput,
+} from '@/catalog/contextCenterMemories';
 
 const PAGES_PATH = '/v1/contextCenter/pages';
 const MEMORIES_PATH = '/v1/contextCenter/memories';
@@ -54,6 +63,9 @@ function mapKnowledgePage(raw: Record<string, unknown>): KnowledgePage | null {
     tags: mapTags(raw.tags),
     pageType: pageType === 'QuickLink' ? 'QuickLink' : 'Article',
     pageUrl: page ? asString(page.url) || undefined : undefined,
+    publicationDate: page ? asString(page.publicationDate) || undefined : undefined,
+    totalVotes: asNumber(raw.totalVotes),
+    followers: mapEntityRefs(raw.followers),
     parent: mapEntityRefs(raw.parent ? [raw.parent] : [])[0],
     children: mapEntityRefs(raw.children),
     deleted: asBoolean(raw.deleted) ?? undefined,
@@ -66,15 +78,37 @@ function mapContextMemory(raw: Record<string, unknown>): ContextMemory | null {
   if (!id) {
     return null;
   }
+  const shareConfig = asRecord(raw.shareConfig);
+  const outcomes = asRecord(raw.outcomes);
+  const disputes = Array.isArray(raw.disputes)
+    ? raw.disputes.flatMap((item) => {
+        const rec = asRecord(item);
+        const memory = rec ? mapEntityRefs(rec.memory ? [rec.memory] : [])[0] : undefined;
+        if (!memory) {
+          return [];
+        }
+        return [{ memory, reason: asString(rec?.reason) || undefined }];
+      })
+    : [];
   return {
     id,
     name: asString(raw.name) || undefined,
     displayName: asString(raw.displayName) || undefined,
     description: asString(raw.description) || undefined,
+    title: asString(raw.title) || undefined,
+    summary: asString(raw.summary) || undefined,
     question: asString(raw.question) || undefined,
     answer: asString(raw.answer) || undefined,
     entityStatus: asString(raw.entityStatus) as ContextMemoryStatus | undefined,
+    statusReason: asString(raw.statusReason) || undefined,
     pinned: asBoolean(raw.pinned) ?? undefined,
+    memoryType: asString(raw.memoryType) as ContextMemoryType | undefined,
+    visibility: shareConfig
+      ? (asString(shareConfig.visibility) as ShareVisibility | undefined)
+      : undefined,
+    shareConfig: shareConfig
+      ? { visibility: asString(shareConfig.visibility) as ShareVisibility | undefined }
+      : undefined,
     /**
      * ADR:2026-11-07-context-center-most-cited-memories — the most-cited
      * card sorts by appliedCount (official getListContextMemories
@@ -82,8 +116,28 @@ function mapContextMemory(raw: Record<string, unknown>): ContextMemory | null {
      * never stand in for citation counts.
      */
     appliedCount: asNumber(raw.appliedCount),
+    usageCount: asNumber(raw.usageCount),
+    lastUsedAt: asNumber(raw.lastUsedAt),
+    lastContentUpdatedAt: asNumber(raw.lastContentUpdatedAt),
     owners: mapEntityRefs(raw.owners),
+    tags: mapTags(raw.tags),
+    domains: mapEntityRefs(raw.domains),
     primaryEntity: mapEntityRefs(raw.primaryEntity ? [raw.primaryEntity] : [])[0],
+    relatedEntities: mapEntityRefs(raw.relatedEntities),
+    derivedEntities: mapEntityRefs(raw.derivedEntities),
+    sourceEntity: mapEntityRefs(raw.sourceEntity ? [raw.sourceEntity] : [])[0],
+    sourceType: asString(raw.sourceType) || undefined,
+    disputes: disputes.length ? disputes : undefined,
+    outcomes: outcomes
+      ? {
+          countedAt: asNumber(outcomes.countedAt),
+          appliedCount: asNumber(outcomes.appliedCount),
+          lastAppliedAt: asNumber(outcomes.lastAppliedAt),
+          positiveCount: asNumber(outcomes.positiveCount),
+          negativeCount: asNumber(outcomes.negativeCount),
+          correctedCount: asNumber(outcomes.correctedCount),
+        }
+      : undefined,
     updatedAt: asNumber(raw.updatedAt),
     updatedBy: asString(raw.updatedBy) || undefined,
   };
@@ -218,6 +272,96 @@ export async function getKnowledgePageByFqn(fqn: string): Promise<KnowledgePage 
   );
   const rec = asRecord(payload);
   return rec ? mapKnowledgePage(rec) : null;
+}
+
+export interface SearchKnowledgePagesQuery {
+  q?: string;
+  offset?: number;
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+  /** Already-serialized JSON query_filter (see buildArticleQueryFilter). */
+  queryFilter?: string;
+}
+
+export interface SearchKnowledgePagesResult {
+  data: KnowledgePage[];
+  total: number;
+  facets: SearchFacet[];
+}
+
+/**
+ * ADR:2026-11-08-context-center-articles-search-mapping — the ES path
+ * reads GET /v1/search/query directly (index 'page'), mapping hits from
+ * _source through the same mapKnowledgePage as the REST list (never the
+ * SearchHit shape, which drops pageType / pageUrl / publicationDate);
+ * total from hits.total.value; facets from the same response's
+ * aggregations. include_aggregations is explicit: the quick-filter chips
+ * have no other aggregation source. q follows official rawSearchQuery:
+ * the empty string when there is no search text.
+ */
+export async function searchKnowledgePages(
+  query: SearchKnowledgePagesQuery = {},
+): Promise<SearchKnowledgePagesResult> {
+  const payload = await apiRequest<unknown>('/v1/search/query', {
+    query: {
+      q: query.q ?? '',
+      index: 'page',
+      from: query.offset ?? 0,
+      size: ARTICLE_PAGE_SIZE,
+      include_aggregations: true,
+      sort_field: query.sortField,
+      sort_order: query.sortOrder,
+      query_filter: query.queryFilter,
+    },
+  });
+  const root = asRecord(payload);
+  const hitsNode = asRecord(root?.hits);
+  const hits = Array.isArray(hitsNode?.hits) ? hitsNode.hits : [];
+  const data = hits.flatMap((hit) => {
+    const source = asRecord(asRecord(hit)?._source);
+    const mapped = source ? mapKnowledgePage(source) : null;
+    return mapped ? [mapped] : [];
+  });
+  const total = asNumber(asRecord(hitsNode?.total)?.value) ?? 0;
+  return { data, total, facets: mapSearchAggregations(payload) };
+}
+
+function changeFollowers(
+  payload: unknown,
+  key: 'fieldsAdded' | 'fieldsDeleted',
+  valueKey: 'newValue' | 'oldValue',
+): EntityRef[] {
+  const change = asRecord(asRecord(payload)?.changeDescription);
+  const fields = Array.isArray(change?.[key]) ? (change[key] as unknown[]) : [];
+  return mapEntityRefs(asRecord(fields[0])?.[valueKey]);
+}
+
+/**
+ * ADR:2026-11-08-context-center-bookmarks-follows — official
+ * followKnowledgePage: PUT /contextCenter/pages/{id}/followers with the
+ * raw user id as the body; the server answers with a changeDescription
+ * whose fieldsAdded[0].newValue carries the added followers.
+ */
+export async function followKnowledgePage(id: string, userId: string): Promise<EntityRef[]> {
+  const payload = await apiRequest<unknown>(
+    `${PAGES_PATH}/${encodeURIComponent(id)}/followers`,
+    { method: 'PUT', text: userId, contentType: 'application/json' },
+  );
+  return changeFollowers(payload, 'fieldsAdded', 'newValue');
+}
+
+/**
+ * ADR:2026-11-08-context-center-bookmarks-follows — official
+ * unFollowKnowledgePage: DELETE .../followers/{userId}; the
+ * changeDescription's fieldsDeleted[0].oldValue carries the removed
+ * followers.
+ */
+export async function unFollowKnowledgePage(id: string, userId: string): Promise<EntityRef[]> {
+  const payload = await apiRequest<unknown>(
+    `${PAGES_PATH}/${encodeURIComponent(id)}/followers/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
+  return changeFollowers(payload, 'fieldsDeleted', 'oldValue');
 }
 
 export async function createKnowledgePage(
@@ -378,14 +522,76 @@ export async function listContextMemories(
   return parsePaged(payload, mapContextMemory);
 }
 
-export async function createContextMemory(request: {
-  question: string;
-  answer?: string;
-  description?: string;
-}): Promise<ContextMemory | null> {
-  const payload = await apiRequest<unknown>(MEMORIES_PATH, { json: request });
+/**
+ * Official submitMemoryCreate (CreateMemoryModal.utils): name is the title
+ * or memory text slugified, question = answer = the memory text, optional
+ * fields only when valued, shareConfig always present.
+ *
+ * ADR:2026-11-08-context-center-memory-create-edit-payload — the old
+ * { question, answer?, description? } shape is replaced: the server's
+ * create schema carries no description, and question/answer are the
+ * single memory text.
+ */
+export async function createContextMemory(
+  input: MemoryCreateInput,
+): Promise<ContextMemory | null> {
+  const payload = await apiRequest<unknown>(MEMORIES_PATH, {
+    json: buildMemoryCreatePayload(input),
+  });
   const rec = asRecord(payload);
   return rec ? mapContextMemory(rec) : null;
+}
+
+/** Official getContextMemoryById: GET /{id} with the memory list fields. */
+export async function getContextMemoryById(
+  id: string,
+  fields?: string,
+): Promise<ContextMemory | null> {
+  const payload = await apiRequest<unknown>(`${MEMORIES_PATH}/${encodeURIComponent(id)}`, {
+    query: fields ? { fields } : {},
+  });
+  const rec = asRecord(payload);
+  return rec ? mapContextMemory(rec) : null;
+}
+
+/**
+ * Official getContextMemoryByName: GET /name/{name}. Memory names are
+ * slugs without dots, so no Fqn quoting is needed.
+ */
+export async function getContextMemoryByName(
+  name: string,
+  fields?: string,
+): Promise<ContextMemory | null> {
+  const payload = await apiRequest<unknown>(
+    `${MEMORIES_PATH}/name/${encodeURIComponent(name)}`,
+    { query: fields ? { fields } : {} },
+  );
+  const rec = asRecord(payload);
+  return rec ? mapContextMemory(rec) : null;
+}
+
+/**
+ * Official updateContextMemory: PATCH with a JSON Patch body and the
+ * json-patch content type. Callers build the patch with
+ * buildMemoryUpdatePatch so only changed fields are sent.
+ */
+export async function updateContextMemory(
+  id: string,
+  patch: JsonPatchOp[],
+): Promise<ContextMemory> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `${MEMORIES_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  );
+  const mapped = mapContextMemory(raw);
+  if (!mapped) {
+    throw new Error('Patch memory succeeded but the response had no memory');
+  }
+  return mapped;
 }
 
 export async function deleteContextMemory(id: string, hardDelete = false): Promise<void> {

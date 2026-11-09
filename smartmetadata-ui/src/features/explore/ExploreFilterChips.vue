@@ -9,10 +9,15 @@ import { Select } from 'ant-design-vue';
 import { CHIP_FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import type { SearchFilters } from '@/catalog/searchQuery';
 
-const props = defineProps<{
-  facets: SearchFacet[];
-  filters: SearchFilters;
-}>();
+const props = withDefaults(
+  defineProps<{
+    facets: SearchFacet[];
+    filters: SearchFilters;
+    /** Facet ids to render; defaults to every top-bar chip id. */
+    facetIds?: FacetId[];
+  }>(),
+  { facetIds: () => [...CHIP_FACET_IDS] },
+);
 
 const emit = defineEmits<{
   change: [id: FacetId, values: string[]];
@@ -30,7 +35,7 @@ function facetTitle(id: FacetId): string {
 }
 
 const chips = computed(() =>
-  CHIP_FACET_IDS.map((id) => {
+  props.facetIds.map((id) => {
     const facet = props.facets.find((item) => item.id === id);
     return {
       id,

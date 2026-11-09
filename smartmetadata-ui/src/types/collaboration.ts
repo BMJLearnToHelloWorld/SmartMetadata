@@ -177,7 +177,22 @@ export interface CollaborationTask {
   comments: TaskComment[];
   payload?: DataAccessRequestPayload;
   suggestionPayload?: TaskSuggestionPayload;
+  /**
+   * Memory conflict review payload, mirroring openmetadata-spec
+   * type/memoryConflictReviewPayload.json: the disputed memories as
+   * references only — the payload never carries memory content.
+   * Mapped only when type is MemoryConflictReview; never reuse
+   * suggestionPayload for it (its parser drops disputes).
+   *
+   * ADR:2026-11-08-context-center-memory-conflict-review-payload
+   */
+  reviewPayload?: MemoryConflictReviewPayload;
   availableTransitions?: TaskAvailableTransition[];
+}
+
+/** Official MemoryConflictReviewPayload (generated/type/memoryConflictReviewPayload.ts). */
+export interface MemoryConflictReviewPayload {
+  disputes: Array<{ memory: EntityRef; detectedAt?: number }>;
 }
 
 export interface CreateTaskRequest {

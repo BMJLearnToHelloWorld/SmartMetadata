@@ -32,6 +32,80 @@ describe('tasks API', () => {
     localStorage.clear();
   });
 
+  it('maps a MemoryConflictReview payload to reviewPayload disputes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 't1',
+                type: 'MemoryConflictReview',
+                status: 'Open',
+                payload: {
+                  disputes: [
+                    {
+                      memory: { id: 'm2', type: 'contextMemory', name: 'churn-rate' },
+                      detectedAt: 1761955200000,
+                    },
+                    { memory: { id: 'm3', type: 'contextMemory', name: 'churn-faq' } },
+                  ],
+                },
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTasks({ type: 'MemoryConflictReview', status: 'Open', limit: 1 });
+    expect(page.data[0]?.reviewPayload?.disputes).toHaveLength(2);
+    expect(page.data[0]?.reviewPayload?.disputes[0]?.memory.id).toBe('m2');
+    expect(page.data[0]?.reviewPayload?.disputes[0]?.detectedAt).toBe(1761955200000);
+    expect(page.data[0]?.reviewPayload?.disputes[1]?.memory.name).toBe('churn-faq');
+  });
+
+  it('skips malformed dispute entries and leaves reviewPayload undefined for non-review tasks', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 't1',
+                type: 'MemoryConflictReview',
+                status: 'Open',
+                payload: {
+                  disputes: [
+                    { memory: { id: 'm2', type: 'contextMemory', name: 'churn-rate' } },
+                    { detectedAt: '2026-11-01T00:00:00.000Z' },
+                    'junk',
+                    null,
+                  ],
+                },
+              },
+              {
+                id: 't2',
+                type: 'CustomTask',
+                status: 'Open',
+                payload: { disputes: [{ memory: { id: 'm9', type: 'contextMemory' } }] },
+              },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTasks({ status: 'Open' });
+    expect(page.data[0]?.reviewPayload?.disputes).toHaveLength(1);
+    expect(page.data[0]?.reviewPayload?.disputes[0]?.memory.id).toBe('m2');
+    expect(page.data[1]?.reviewPayload).toBeUndefined();
+  });
+
   it('lists tasks from GET /v1/tasks', async () => {
     vi.stubGlobal(
       'fetch',
