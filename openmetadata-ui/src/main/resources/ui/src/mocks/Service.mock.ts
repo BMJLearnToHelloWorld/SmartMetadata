@@ -39,9 +39,9 @@ import {
   MlModelServiceType,
 } from '../generated/entity/services/mlmodelService';
 import {
+  ConnectionType,
   PipelineService,
   PipelineServiceType,
-  ConnectionType,
 } from '../generated/entity/services/pipelineService';
 import {
   SearchService,
