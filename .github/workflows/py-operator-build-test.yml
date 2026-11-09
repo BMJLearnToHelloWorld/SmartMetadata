@@ -73,8 +73,9 @@ jobs:
         env:
           # Reference-only hatch: Setup runs make generate via the shared
           # action (Generate Models). Product Make gates that target behind
-          # I_UNDERSTAND_REFERENCE_STACK (#20 / ADR:2026-10-22). Scoped to
-          # this step only.
+          # I_UNDERSTAND_REFERENCE_STACK (#20 /
+          # ADR:2026-10-22-product-make-is-rebuild-only). Scoped to this
+          # step only.
           I_UNDERSTAND_REFERENCE_STACK: "1"
         with:
           python-version: "3.10"

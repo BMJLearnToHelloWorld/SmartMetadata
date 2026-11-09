@@ -225,6 +225,13 @@ jobs:
           persist-credentials: false
       - name: Setup Openmetadata Test Environment
         uses: ./.github/actions/setup-openmetadata-test-environment
+        env:
+          # Reference-only hatch: Setup runs make generate via the shared
+          # action (Generate Models). Product Make gates that target behind
+          # I_UNDERSTAND_REFERENCE_STACK (#20 /
+          # ADR:2026-10-22-product-make-is-rebuild-only). Scoped to this
+          # step only.
+          I_UNDERSTAND_REFERENCE_STACK: "1"
         with:
           python-version: ${{ matrix.py-version }}
           install-server: 'false'
@@ -403,6 +410,13 @@ jobs:
 
       - name: Setup Openmetadata Test Environment
         uses: ./.github/actions/setup-openmetadata-test-environment
+        env:
+          # Reference-only hatch: Setup runs make generate via the shared
+          # action (Generate Models). Product Make gates that target behind
+          # I_UNDERSTAND_REFERENCE_STACK (#20 /
+          # ADR:2026-10-22-product-make-is-rebuild-only). Scoped to this
+          # step only.
+          I_UNDERSTAND_REFERENCE_STACK: "1"
         with:
           python-version: ${{ matrix.py-version}}
           args: ${{ inputs.compose-args }}
