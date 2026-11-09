@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -58,15 +59,37 @@ class ApachePositiveRegressionContract(unittest.TestCase):
             checker.REQUIRED_STAGE_ORDER = original
         self.assertTrue(any("STAGE_ORDER" in item for item in errors), errors)
 
-    def test_forbidden_mcp_tool_fails(self) -> None:
+    def test_tool_names_drift_fails(self) -> None:
         checker = load_checker()
         original = checker.REQUIRED_MCP_TOOLS
-        checker.REQUIRED_MCP_TOOLS = original + ("semantic_search",)
+        checker.REQUIRED_MCP_TOOLS = original + ("sparql_query",)
         try:
             errors = checker.run_checks()
         finally:
             checker.REQUIRED_MCP_TOOLS = original
-        self.assertTrue(any("TOOL_NAMES" in item or "AI/RDF" in item for item in errors), errors)
+        self.assertTrue(any("TOOL_NAMES" in item for item in errors), errors)
+
+    def test_forbidden_mcp_tool_fails(self) -> None:
+        # The forbidden checks read tools.ts, not REQUIRED_MCP_TOOLS, so
+        # this test points MCP_TOOLS at a temp tools.ts that contains a
+        # still-forbidden tool (sparql_query, a Batch B tool) and asserts
+        # the forbidden-path error -- not the drift error.
+        checker = load_checker()
+        original = checker.MCP_TOOLS
+        names = list(checker.REQUIRED_MCP_TOOLS) + ["sparql_query"]
+        lines = ["export const TOOL_NAMES = ["] + [f'  "{name}",' for name in names] + ["];"]
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "tools.ts"
+            fake.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            checker.MCP_TOOLS = fake
+            try:
+                errors = checker.run_checks()
+            finally:
+                checker.MCP_TOOLS = original
+        self.assertTrue(
+            any("must not include" in item and "sparql_query" in item for item in errors),
+            errors,
+        )
 
     def test_entry_point_passes_on_repo(self) -> None:
         completed = subprocess.run(
