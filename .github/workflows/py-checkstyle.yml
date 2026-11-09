@@ -96,6 +96,12 @@ jobs:
         id: style
         if: ${{ steps.scope.outputs.python == 'true' }}
         continue-on-error: true
+        env:
+          # Reference-only hatch: py_format_check is a REFERENCE_STACK_TARGETS
+          # stub unless set. Product Make gate (#20 /
+          # ADR:2026-10-22-product-make-is-rebuild-only). Scoped to this
+          # step only.
+          I_UNDERSTAND_REFERENCE_STACK: "1"
         run: |
           source env/bin/activate
           make py_format_check
