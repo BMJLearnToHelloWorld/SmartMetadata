@@ -37,6 +37,14 @@ def english_and_spanish():
     return resolve_model_specifications([ClassificationLanguage.en, ClassificationLanguage.es])
 
 
+@pytest.fixture(autouse=True)
+def isolate_spacy_model_env(monkeypatch):
+    """Keep unit tests independent of CI OM_SPACY_MODEL_* / prepare-spacy-model wheels."""
+    monkeypatch.delenv("OM_SPACY_MODEL_WHEEL_DIR", raising=False)
+    monkeypatch.delenv("OM_SPACY_MODEL_BASE_URL", raising=False)
+    monkeypatch.delenv("OM_SPACY_MODEL_MIRRORS", raising=False)
+
+
 class TestModelProvisioning:
     def test_rejects_an_empty_selection(self):
         with pytest.raises(ValueError, match="At least one"):
@@ -285,6 +293,40 @@ class TestModelProvisioning:
 
 
 class TestPipInstallation:
+    @patch("metadata.pii.model_provisioning.subprocess.run")
+    def test_tries_local_wheel_before_release_url(self, mock_run, english_and_spanish, tmp_path, monkeypatch):
+        wheel = tmp_path / english_and_spanish[0].wheel_filename
+        wheel.write_bytes(b"fake")
+        monkeypatch.setenv("OM_SPACY_MODEL_WHEEL_DIR", str(tmp_path))
+        mock_run.side_effect = [
+            SimpleNamespace(returncode=1, stdout="", stderr="local wheel corrupt"),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ]
+
+        from metadata.pii.model_provisioning import _install_model
+
+        _install_model(english_and_spanish[0], "3.8.16")
+
+        assert mock_run.call_count == 2
+        assert str(wheel) == mock_run.call_args_list[0].args[0][5]
+        assert english_and_spanish[0].wheel_url in mock_run.call_args_list[1].args[0][5]
+
+    @patch("metadata.pii.model_provisioning.subprocess.run")
+    def test_reports_combined_pip_errors_from_all_candidates(self, mock_run, english_and_spanish, tmp_path, monkeypatch):
+        wheel = tmp_path / english_and_spanish[0].wheel_filename
+        wheel.write_bytes(b"fake")
+        monkeypatch.setenv("OM_SPACY_MODEL_WHEEL_DIR", str(tmp_path))
+        mock_run.return_value = SimpleNamespace(returncode=1, stdout="", stderr="wheel unavailable")
+
+        from metadata.pii.model_provisioning import _install_model
+
+        with pytest.raises(RuntimeError, match="wheel unavailable") as error:
+            _install_model(english_and_spanish[0], "3.8.16")
+
+        assert str(wheel) in str(error.value)
+        assert english_and_spanish[0].wheel_url in str(error.value)
+        assert mock_run.call_count == 2
+
     @patch("metadata.pii.model_provisioning.subprocess.run")
     @patch("metadata.pii.model_provisioning.sys.executable", "/venv/bin/python")
     def test_installs_exact_wheel_with_current_spacy_constraint(self, mock_run, english_and_spanish):

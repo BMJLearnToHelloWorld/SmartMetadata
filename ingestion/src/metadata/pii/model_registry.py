@@ -10,7 +10,6 @@
 #  limitations under the License.
 """Release-pinned spaCy model selection for auto classification."""
 
-import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -18,6 +17,7 @@ from metadata.generated.schema.type.classificationLanguages import (
     ClassificationLanguage,
 )
 from metadata.pii.constants import LANGUAGE_MODEL_MAPPING, SPACY_MULTILANG_MODEL
+from metadata.pii.settings import spacy_model_settings
 
 MODEL_VERSION = "3.8.0"
 MODEL_SPACY_VERSION = ">=3.8.0,<3.9.0"
@@ -37,14 +37,14 @@ DEFAULT_SPACY_MODEL_BASE_URL = "https://github.com/explosion/spacy-models/releas
 
 def spacy_model_base_urls() -> list[str]:
     """Ordered wheel bases: OM_SPACY_MODEL_BASE_URL first, then the default."""
+    settings = spacy_model_settings()
     bases: list[str] = []
-    override = os.environ.get("OM_SPACY_MODEL_BASE_URL", "").strip().rstrip("/")
+    override = settings.base_url.strip().rstrip("/")
     if override:
         bases.append(override)
     if DEFAULT_SPACY_MODEL_BASE_URL not in bases:
         bases.append(DEFAULT_SPACY_MODEL_BASE_URL)
-    # Optional comma-separated extra mirrors (CI / air-gapped fallbacks).
-    for item in os.environ.get("OM_SPACY_MODEL_MIRRORS", "").split(","):
+    for item in settings.mirrors.split(","):
         mirror = item.strip().rstrip("/")
         if mirror and mirror not in bases:
             bases.append(mirror)
