@@ -59,4 +59,27 @@ describe('loadConfig', () => {
     expect(loadConfig({ OM_JWT: 't', OM_TIMEOUT_MS: '0' }).timeoutMs).toBe(1);
     expect(loadConfig({ OM_JWT: 't', OM_TIMEOUT_MS: '15000' }).timeoutMs).toBe(15_000);
   });
+
+  it('defaults read-only off and the disabled list empty', () => {
+    const config = loadConfig({ OM_JWT: 't' });
+    expect(config.readOnly).toBe(false);
+    expect(config.disabledTools).toEqual([]);
+  });
+
+  it('reads OM_MCP_READ_ONLY as true/1 only', () => {
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: 'true' }).readOnly).toBe(true);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: '1' }).readOnly).toBe(true);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: 'TRUE' }).readOnly).toBe(true);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: 'false' }).readOnly).toBe(false);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: 'yes' }).readOnly).toBe(false);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_READ_ONLY: '' }).readOnly).toBe(false);
+  });
+
+  it('reads OM_MCP_DISABLED_TOOLS as a comma-separated list', () => {
+    expect(
+      loadConfig({ OM_JWT: 't', OM_MCP_DISABLED_TOOLS: 'create_entity, get_table' }).disabledTools,
+    ).toEqual(['create_entity', 'get_table']);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_DISABLED_TOOLS: ' , , ' }).disabledTools).toEqual([]);
+    expect(loadConfig({ OM_JWT: 't', OM_MCP_DISABLED_TOOLS: '' }).disabledTools).toEqual([]);
+  });
 });

@@ -15,7 +15,10 @@ import { createMcpServer } from './server.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
-  const server = createMcpServer(new RestClient(config));
+  const server = createMcpServer(new RestClient(config), {
+    readOnly: config.readOnly,
+    disabledTools: config.disabledTools,
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

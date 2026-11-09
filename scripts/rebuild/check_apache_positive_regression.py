@@ -136,6 +136,16 @@ REQUIRED_AIRFLOW_ENDPOINTS = (
     "run_automation",
 )
 
+# Snapshot of the APPROVED MCP tool set, in exact TOOL_NAMES order.
+# This is a drift detector, not a license judgment: it fails when the
+# tool set in smartmetadata-mcp/src/tools.ts changes without this tuple
+# changing with it. License / CCL-freeness is governed elsewhere --
+# scripts/rebuild/check_ccl_free_mcp.py and
+# smartmetadata-mcp/tests/licenseBoundary.test.ts -- which forbid copying
+# or depending on the official CCL MCP module. Update this snapshot
+# whenever a batch adds or removes tools, citing the batch's ADR.
+# (The --list group name "mcp-apache-allowlist" is historical; it is kept
+# unchanged because CI references it.)
 REQUIRED_MCP_TOOLS = (
     "search_entities",
     "get_table",
@@ -151,15 +161,26 @@ REQUIRED_MCP_TOOLS = (
     "create_entity",
     "patch_entity",
     "create_test_case",
-)
-
-FORBIDDEN_MCP_TOOLS = (
+    # Batch A read tools (ADR:2026-11-08-mcp-batch-a-read-tools).
+    "company_context",
     "semantic_search",
-    "sparql_query",
-    "entity_neighborhood",
+    "get_persona_context",
+    "get_user_context",
+    "find_context",
+    "get_concept_context",
+    "root_cause_analysis",
     "shacl_validate",
     "ontology_describe",
-    "root_cause_analysis",
+)
+
+# Tool names that must not appear in tools.ts yet: tools slated for a
+# later batch (sparql_query, entity_neighborhood) and names with no
+# approved counterpart (ask_data, nlq, persona_context). This is an
+# approval list, not a license category -- see the note above
+# REQUIRED_MCP_TOOLS.
+FORBIDDEN_MCP_TOOLS = (
+    "sparql_query",
+    "entity_neighborhood",
     "ask_data",
     "nlq",
     "persona_context",
@@ -345,13 +366,13 @@ def check_mcp(errors: list[str]) -> None:
         return
     if tuple(tools) != REQUIRED_MCP_TOOLS:
         errors.append(
-            "MCP TOOL_NAMES drifted from Apache-only allowlist: "
+            "MCP TOOL_NAMES drifted from the approved tool-set snapshot: "
             f"expected {REQUIRED_MCP_TOOLS}, got {tuple(tools)}"
         )
     lowered = {name.lower() for name in tools}
     banned = [name for name in FORBIDDEN_MCP_TOOLS if name.lower() in lowered]
     if banned:
-        errors.append(f"MCP allowlist must not include Collate AI/RDF tools: {banned}")
+        errors.append(f"MCP tool set must not include unapproved tools: {banned}")
     for banned_name in FORBIDDEN_MCP_TOOLS:
         quoted = chr(39) + banned_name + chr(39)
         quoted2 = chr(34) + banned_name + chr(34)

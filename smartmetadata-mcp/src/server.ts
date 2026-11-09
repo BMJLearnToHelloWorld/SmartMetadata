@@ -11,14 +11,99 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { RestError } from './client.js';
 import type { RestClient } from './client.js';
+import type { RuntimeConfig } from './config.js';
 import { createToolHandlers, TOOL_NAMES } from './tools.js';
 
 export const SERVER_NAME = 'smartmetadata';
 export const SERVER_VERSION = '0.12.0';
 
+/**
+ * Whether each tool only reads. The four write tools plus
+ * create_conversation (a write) are false; the nine Batch A tools are all
+ * true. `describe_entity_type` is not registered yet (Batch C) but is
+ * already a write helper, so it is refused in read-only mode from now.
+ * (ADR:2026-11-08-mcp-batch-a-read-tools)
+ */
+export const TOOL_READ_ONLY: Readonly<Record<string, boolean>> = {
+  search_entities: true,
+  get_table: true,
+  get_topic: true,
+  get_entity_details: true,
+  get_lineage: true,
+  create_lineage: false,
+  list_glossaries: true,
+  list_tags: true,
+  find_by_tag: true,
+  get_test_definitions: true,
+  create_conversation: false,
+  create_entity: false,
+  patch_entity: false,
+  create_test_case: false,
+  company_context: true,
+  semantic_search: true,
+  get_persona_context: true,
+  get_user_context: true,
+  find_context: true,
+  get_concept_context: true,
+  root_cause_analysis: true,
+  shacl_validate: true,
+  ontology_describe: true,
+};
+
+/** Write helpers the read-only list hides even though they only read. */
+export const WRITE_HELPER_TOOLS: ReadonlySet<string> = new Set(['describe_entity_type']);
+
+/** Access mode for one server process (I-D5). */
+export interface AccessConfig {
+  readOnly?: boolean;
+  disabledTools?: string[];
+}
+
+export function accessConfigOf(config: RuntimeConfig): AccessConfig {
+  return { readOnly: config.readOnly, disabledTools: config.disabledTools };
+}
+
+/**
+ * The tools a client may see: in read-only mode only read tools, minus
+ * write helpers; then the disabled list, by name. A disabled name that
+ * matches no registered tool is a warning only — a typo must not fail
+ * startup.
+ */
+export function exposedToolNames(access: AccessConfig = {}): string[] {
+  let names = [...TOOL_NAMES];
+  if (access.readOnly) {
+    names = names.filter(
+      (name) => TOOL_READ_ONLY[name] === true && !WRITE_HELPER_TOOLS.has(name),
+    );
+  }
+  const disabled = new Set(access.disabledTools ?? []);
+  for (const name of disabled) {
+    if (!TOOL_NAMES.includes(name as (typeof TOOL_NAMES)[number]) && !WRITE_HELPER_TOOLS.has(name)) {
+      console.warn(`[mcp] disabled tool '${name}' is not a registered tool; ignoring`);
+    }
+  }
+  return names.filter((name) => !disabled.has(name));
+}
+
+/**
+ * Why a call to `name` must be refused under `access`, or null when the
+ * call may proceed. Read-only is checked first, then disabled — the same
+ * order the list filtering applies.
+ */
+export function toolAccessRefusal(name: string, access: AccessConfig = {}): string | null {
+  if (access.readOnly && (TOOL_READ_ONLY[name] !== true || WRITE_HELPER_TOOLS.has(name))) {
+    return `The MCP server is in read-only mode, so ${name} is unavailable`;
+  }
+  if ((access.disabledTools ?? []).includes(name)) {
+    return `${name} is disabled on this MCP server`;
+  }
+  return null;
+}
+
 export interface RegisteredToolConfig {
   description: string;
   inputSchema: z.ZodType;
+  annotations?: { readOnlyHint?: boolean };
 }
 
 export interface ToolCallResult {
@@ -129,13 +214,112 @@ const createTestCaseSchema = z.object({
     .describe('CreateTestCaseRequest.parameterValues'),
 });
 
+// Batch A schemas. Descriptions state the contract in the tools' own
+// words; `ignorePersonaScope` is deliberately absent from semantic_search:
+// persona scope always applies, there is no REST switch to turn it off.
+
+const companyContextSchema = z.object({
+  query: z.string().optional().describe('Free-text question about company knowledge'),
+  fqn: z.string().optional().describe('Knowledge pill FQN; mutually exclusive with query'),
+  size: z.number().int().optional().describe('Page size, default 10, max 50'),
+  from: z.number().int().optional().describe('Result offset, default 0'),
+  cursor: z.string().optional().describe('Opaque page cursor from a previous response'),
+});
+
+const semanticSearchSchema = z.object({
+  query: z.string().describe('Free-text query (required)'),
+  filters: z
+    .record(z.string(), z.array(z.string()))
+    .optional()
+    .describe(
+      'Field filters: entityType, service, serviceType, tags, owners, domains, tier, certification, database, databaseSchema, primaryEntityId, parentId, metricType, granularity, unitOfMeasurement, or customProperties.<name>',
+    ),
+  size: z.number().int().optional().describe('Page size, default 10, max 50'),
+  from: z.number().int().optional().describe('Result offset, default 0'),
+  cursor: z.string().optional().describe('Opaque page cursor from a previous response'),
+  k: z.number().int().optional().describe('Vector candidates per query, default 100, max 10000'),
+  threshold: z.number().optional().describe('Minimum similarity score, 0-1, default 0.0'),
+});
+
+const personaContextSchema = z.object({
+  personaName: z.string().optional().describe('Persona name; omit for the caller’s active persona'),
+  format: z.enum(['markdown', 'json']).optional().describe('Response format, default markdown'),
+  part: z.number().int().optional().describe('Page number, default 1'),
+});
+
+const userContextSchema = z.object({
+  includeOwnedSummary: z.boolean().optional().describe('Include the owned-entities summary, default true'),
+  includeFollowedSummary: z.boolean().optional().describe('Include the followed-entities summary, default true'),
+  ownedLimit: z.number().int().optional().describe('Owned summary page size, default 20, max 100'),
+  followedLimit: z.number().int().optional().describe('Followed summary page size, default 20, max 100'),
+  ownedFilter: z
+    .enum(['NONE', 'MISSING_DESCRIPTION', 'MISSING_TIER', 'ANY_GAP'])
+    .optional()
+    .describe('Gap filter for the owned summary, default NONE'),
+});
+
+const findContextSchema = z.object({
+  query: z.string().describe('Free-text query (required)'),
+  size: z.number().int().optional().describe('Page size, default 10, max 50'),
+  format: z.enum(['markdown', 'json']).optional().describe('Response format, default markdown'),
+});
+
+const conceptContextSchema = z.object({
+  entityType: z.enum(['glossaryTerm', 'metric']).describe('Concept type: glossaryTerm or metric'),
+  fqn: z.string().describe('Fully qualified name'),
+  format: z.enum(['markdown', 'json']).optional().describe('Response format, default markdown'),
+  query: z.string().optional().describe('Optional question the context should answer'),
+});
+
+const rootCauseSchema = z.object({
+  fqn: z.string().describe('Fully qualified name of the analysed asset'),
+  entityType: z.string().describe('Entity type such as table or dashboard'),
+  upstreamDepth: z.number().int().optional().describe('Upstream hops, default 3, max 10'),
+  downstreamDepth: z.number().int().optional().describe('Downstream hops, default 3, max 10'),
+  queryFilter: z.string().optional().describe('Optional Elasticsearch query_filter for the lineage walks'),
+  includeDeleted: z.boolean().optional().describe('Include deleted entities, default false'),
+  includeColumnLineage: z.boolean().optional().describe('Include column-level lineage, default false'),
+});
+
+const shaclValidateSchema = z.object({
+  entityId: z.string().optional().describe('Entity id; use with entityType'),
+  entityType: z.string().optional().describe('Entity type; use with entityId'),
+  entityUri: z.string().optional().describe('Full entity URI; mutually exclusive with entityId+entityType'),
+  fullGraph: z.boolean().optional().describe('Validate the whole dataset (loads the triplestore into memory)'),
+  format: z.enum(['turtle', 'jsonld']).optional().describe('Report serialization, default turtle'),
+  maxBytes: z.number().int().optional().describe('Report size cap in bytes, default 80000, min 1024, max 80000'),
+});
+
+const ontologyDescribeSchema = z.object({
+  resource: z
+    .string()
+    .optional()
+    .describe('Absolute http(s) IRI to DESCRIBE; not available in this batch (Batch C)'),
+  format: z
+    .enum(['turtle', 'jsonld', 'ntriples', 'rdfxml'])
+    .optional()
+    .describe('Document serialization, default turtle'),
+  maxBytes: z.number().int().optional().describe('Document size cap in bytes, default 80000, min 1024, max 80000'),
+});
+
 function toolResult(payload: unknown, isError = false): ToolCallResult {
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
   return isError ? { content: [{ type: 'text', text }], isError: true } : { content: [{ type: 'text', text }] };
 }
 
-function wrap(handler: (args: Record<string, unknown>) => Promise<unknown>) {
+function wrap(
+  name: string,
+  handler: (args: Record<string, unknown>) => Promise<unknown>,
+  access: AccessConfig = {},
+) {
   return async (args: Record<string, unknown>) => {
+    // Second level of the access gate: the list hides refused tools, and a
+    // call that reaches one anyway is refused here with the exact wording —
+    // returned as an isError tool result, never silent, never a crash.
+    const refusal = toolAccessRefusal(name, access);
+    if (refusal) {
+      return toolResult(refusal, true);
+    }
     try {
       return toolResult(await handler(args));
     } catch (error) {
@@ -151,7 +335,11 @@ export function listRegisteredTools(): readonly string[] {
   return TOOL_NAMES;
 }
 
-export function registerCatalogTools(server: ToolRegistrar, client: RestClient): void {
+export function registerCatalogTools(
+  server: ToolRegistrar,
+  client: RestClient,
+  access: AccessConfig = {},
+): void {
   const tools = createToolHandlers(client);
   const specs: Array<{
     name: (typeof TOOL_NAMES)[number];
@@ -248,14 +436,90 @@ export function registerCatalogTools(server: ToolRegistrar, client: RestClient):
       inputSchema: createTestCaseSchema,
       handler: (args) => tools.create_test_case(createTestCaseSchema.parse(args)),
     },
+    {
+      name: 'company_context',
+      description:
+        'Company knowledge pills: search by question over shared, approved, file-extracted memories, or read one pill by FQN. Persona scope always applies.',
+      inputSchema: companyContextSchema,
+      handler: (args) => tools.company_context(companyContextSchema.parse(args)),
+    },
+    {
+      name: 'semantic_search',
+      description:
+        'Semantic search over the vector index: query, field filters, size, k, threshold. Persona scope always applies; there is no switch to turn it off.',
+      inputSchema: semanticSearchSchema,
+      handler: (args) => tools.semantic_search(semanticSearchSchema.parse(args)),
+    },
+    {
+      name: 'get_persona_context',
+      description:
+        'The active persona’s context (or a named persona’s), one page at a time. Part 1 carries the instructions.',
+      inputSchema: personaContextSchema,
+      handler: (args) => tools.get_persona_context(personaContextSchema.parse(args)),
+    },
+    {
+      name: 'get_user_context',
+      description:
+        'The caller’s identity, teams, roles, domains, persona, and owned/followed entity summaries.',
+      inputSchema: userContextSchema,
+      handler: (args) => tools.get_user_context(userContextSchema.parse(args)),
+    },
+    {
+      name: 'find_context',
+      description:
+        'Company knowledge for a question: knowledge items (glossary terms, metrics, articles, pills) plus candidate assets, as markdown or JSON.',
+      inputSchema: findContextSchema,
+      handler: (args) => tools.find_context(findContextSchema.parse(args)),
+    },
+    {
+      name: 'get_concept_context',
+      description:
+        'The server-rendered context of one glossary term or metric, as markdown or JSON.',
+      inputSchema: conceptContextSchema,
+      handler: (args) => tools.get_concept_context(conceptContextSchema.parse(args)),
+    },
+    {
+      name: 'root_cause_analysis',
+      description:
+        'Root-cause analysis for a failing asset: failing upstream entities and their failing tests, plus downstream impact. Status is failed when any failure exists upstream or on the asset itself.',
+      inputSchema: rootCauseSchema,
+      handler: (args) => tools.root_cause_analysis(rootCauseSchema.parse(args)),
+    },
+    {
+      name: 'shacl_validate',
+      description:
+        'SHACL validation of one entity’s subgraph (entityId+entityType, or entityUri) or the whole dataset (fullGraph=true). Admin-only; RDF 503 passes through when RDF is off.',
+      inputSchema: shaclValidateSchema,
+      handler: (args) => tools.shacl_validate(shaclValidateSchema.parse(args)),
+    },
+    {
+      name: 'ontology_describe',
+      description:
+        'The bundled ontology document in the requested serialization. A single-resource DESCRIBE is not available in this batch.',
+      inputSchema: ontologyDescribeSchema,
+      handler: (args) => tools.ontology_describe(ontologyDescribeSchema.parse(args)),
+    },
   ];
 
+  // First level of the access gate: refused tools never reach tools/list.
+  const exposed = new Set(exposedToolNames(access));
   for (const spec of specs) {
-    server.registerTool(spec.name, { description: spec.description, inputSchema: spec.inputSchema }, wrap(spec.handler));
+    if (!exposed.has(spec.name)) {
+      continue;
+    }
+    server.registerTool(
+      spec.name,
+      {
+        description: spec.description,
+        inputSchema: spec.inputSchema,
+        annotations: { readOnlyHint: TOOL_READ_ONLY[spec.name] === true },
+      },
+      wrap(spec.name, spec.handler, access),
+    );
   }
 }
 
-export function createMcpServer(client: RestClient): McpServer {
+export function createMcpServer(client: RestClient, access: AccessConfig = {}): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   // Official registerTool's result union includes an InputRequired variant
   // that our text-only tools never return. Narrow at the boundary only.
@@ -271,6 +535,7 @@ export function createMcpServer(client: RestClient): McpServer {
       },
     },
     client,
+    access,
   );
   return server;
 }

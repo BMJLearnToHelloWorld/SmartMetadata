@@ -77,6 +77,45 @@ export class RestClient {
     return JSON.parse(text) as T;
   }
 
+  /**
+   * Same request, but for endpoints that answer in raw text (persona
+   * context markdown, RDF documents). Returns the body plus the response
+   * headers, so callers can read the SHACL conformance header and the
+   * media type instead of guessing them.
+   */
+  async requestText(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<{ text: string; headers: Headers }> {
+    const url = new URL(`${this.config.apiUrl}${path}`);
+    if (options.query) {
+      for (const [key, value] of Object.entries(options.query)) {
+        if (value !== undefined) {
+          url.searchParams.set(key, String(value));
+        }
+      }
+    }
+    const headers: Record<string, string> = {
+      Accept: '*/*',
+      Authorization: `Bearer ${this.config.jwt}`,
+    };
+    if (options.json !== undefined) {
+      headers['Content-Type'] = options.contentType ?? 'application/json';
+    }
+    const method = options.method ?? (options.json !== undefined ? 'POST' : 'GET');
+    const response = await this.fetchImpl(url.toString(), {
+      method,
+      headers,
+      body: options.json !== undefined ? JSON.stringify(options.json) : undefined,
+      signal: AbortSignal.timeout(this.config.timeoutMs),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new RestError(response.status, text, errorMessage(text, response.status));
+    }
+    return { text, headers: response.headers };
+  }
+
   getByFqn<T>(collectionPath: string, fqn: string, query?: Record<string, string | number | boolean | undefined>): Promise<T> {
     return this.request<T>(`${collectionPath}/${encodeURIComponent(fqn)}`, { query });
   }

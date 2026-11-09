@@ -16,6 +16,8 @@ const config: RuntimeConfig = {
   apiUrl: 'http://om.example/api',
   jwt: 'bot-token',
   timeoutMs: 5_000,
+  readOnly: false,
+  disabledTools: [],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -32,7 +34,7 @@ function handlers(fetchImpl: typeof fetch) {
 describe('tool catalog', () => {
   it('exposes at least four OSS tools and no Collate AI Studio names', () => {
     expect(TOOL_NAMES.length).toBeGreaterThanOrEqual(4);
-    expect(TOOL_NAMES).toHaveLength(14);
+    expect(TOOL_NAMES).toHaveLength(23);
     expect(TOOL_NAMES).toEqual(
       expect.arrayContaining([
         'search_entities',
@@ -49,9 +51,18 @@ describe('tool catalog', () => {
         'create_entity',
         'patch_entity',
         'create_test_case',
+        'company_context',
+        'semantic_search',
+        'get_persona_context',
+        'get_user_context',
+        'find_context',
+        'get_concept_context',
+        'root_cause_analysis',
+        'shacl_validate',
+        'ontology_describe',
       ]),
     );
-    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio|sparql_query|semantic_search|ontology_describe/i);
+    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio|sparql_query/i);
   });
 });
 
