@@ -8,7 +8,7 @@
  *     http://www.apache.org/LICENSE-2.0
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getNLPEnabledStatus, nlqSearch, searchAssets } from './search';
+import { escapeESReservedCharacters, getNLPEnabledStatus, nlqSearch, postAggregateFieldOptions, searchAssets } from './search';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -110,5 +110,59 @@ describe('searchAssets', () => {
     await searchAssets('orders', 0, 20);
     const url = new URL(String(vi.mocked(fetch).mock.calls[0][0]));
     expect(url.searchParams.has('query_filter')).toBe(false);
+  });
+});
+
+describe('postAggregateFieldOptions (W2-2 assignee aggregate)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function captureBody() {
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        return jsonResponse({ aggregations: {} });
+      }),
+    );
+    return () => body;
+  }
+
+  it('wraps a non-empty field value as a wildcard include pattern and POSTs it as given', async () => {
+    const readBody = captureBody();
+    await postAggregateFieldOptions({
+      index: 'testCaseResolutionStatus',
+      fieldName: 'testCaseResolutionStatusDetails.assignee.id',
+      fieldValue: 'ali',
+      size: 1000,
+      deleted: null,
+      sourceFields: ['testCaseResolutionStatusDetails.assignee'],
+      topHits: { size: 1, sortField: 'timestamp', sortOrder: 'desc' },
+    });
+    const init = vi.mocked(fetch).mock.calls[0][1];
+    expect(init?.method).toBe('POST');
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('/api/v1/search/aggregate');
+    expect(readBody()).toMatchObject({
+      index: 'testCaseResolutionStatus',
+      fieldName: 'testCaseResolutionStatusDetails.assignee.id',
+      fieldValue: '.*ali.*',
+      size: 1000,
+      deleted: null,
+    });
+  });
+
+  it('sends a bare wildcard when the field value is empty', async () => {
+    const readBody = captureBody();
+    await postAggregateFieldOptions({ index: 'testCaseResolutionStatus', fieldName: 'x', size: 1000 });
+    expect(readBody().fieldValue).toBe('.*');
+  });
+
+  it('escapeESReservedCharacters backslash-escapes the official reserved set', () => {
+    expect(escapeESReservedCharacters('a+b')).toBe('a\\+b');
+    expect(escapeESReservedCharacters('a/b')).toBe('a\\/b');
+    expect(escapeESReservedCharacters('plain')).toBe('plain');
+    expect(escapeESReservedCharacters(undefined)).toBe('');
   });
 });

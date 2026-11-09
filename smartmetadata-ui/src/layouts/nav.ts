@@ -159,7 +159,9 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'quality-test-definition': 'quality-test-definitions',
   'quality-test-case': 'quality-test-cases',
   'quality-test-suite': 'quality-test-cases',
-  'observability-incident': 'observability-incidents',
+  // The incident record route redirects to the test-case detail page
+  // (F-D-2), so its breadcrumb parent follows the landing page.
+  'observability-incident': 'quality-test-cases',
   'observability-alert': 'observability-alerts',
   'ingestion-service': 'ingestion-services',
   'ingestion-pipeline': 'ingestion-pipelines',

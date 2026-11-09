@@ -18,6 +18,7 @@ import {
   getEntityPermissionByFqn,
   getEntityPermissionById,
   getEntityTypeFieldPermissions,
+  getDerivedPermissionFlags,
   getLoggedInUserPermissions,
   getResourcePermission,
   permissionFlags,
@@ -240,5 +241,47 @@ describe('revokeEditPermissions (upstream ca4dc96d4f)', () => {
       Create: true,
     });
     expect(revokeEditPermissions({})).toEqual({});
+  });
+});
+
+describe('getDerivedPermissionFlags (W2-2 row + page gates)', () => {
+  it('derives view access from ViewBasic or ViewAll', () => {
+    expect(getDerivedPermissionFlags({ ViewBasic: true }).hasViewAccess).toBe(true);
+    expect(getDerivedPermissionFlags({ ViewAll: true }).hasViewAccess).toBe(true);
+    expect(getDerivedPermissionFlags({}).hasViewAccess).toBe(false);
+    expect(getDerivedPermissionFlags({ ViewBasic: false, ViewAll: false }).hasViewAccess).toBe(false);
+  });
+
+  it('prefers the EditStatus field key over EditAll, falling back when absent', () => {
+    expect(getDerivedPermissionFlags({ EditAll: true, EditStatus: false }).canEditStatus).toBe(false);
+    expect(getDerivedPermissionFlags({ EditAll: false, EditStatus: true }).canEditStatus).toBe(true);
+    expect(getDerivedPermissionFlags({ EditAll: true }).canEditStatus).toBe(true);
+    expect(getDerivedPermissionFlags({ EditAll: false }).canEditStatus).toBe(false);
+    expect(getDerivedPermissionFlags({}).can('EditStatus')).toBe(false);
+  });
+
+  it('routes can() through the same edit/view prioritization', () => {
+    const flags = getDerivedPermissionFlags({ EditAll: true, ViewAll: true, Delete: true });
+    expect(flags.can('EditTags')).toBe(true);
+    expect(flags.can('ViewBasic')).toBe(true);
+    expect(flags.can('Delete')).toBe(true);
+    expect(flags.can('Create')).toBe(false);
+  });
+
+  it('revokes every Edit* flag when the entity is deleted, leaving views and Delete alone', () => {
+    const flags = getDerivedPermissionFlags(
+      { ViewAll: true, EditAll: true, EditStatus: true, Delete: true },
+      true,
+    );
+    expect(flags.canEditAll).toBe(false);
+    expect(flags.canEditStatus).toBe(false);
+    expect(flags.can('EditStatus')).toBe(false);
+    expect(flags.hasViewAccess).toBe(true);
+    expect(flags.canDelete).toBe(true);
+  });
+
+  it('prioritizes ViewBasic over the ViewAll fallback', () => {
+    expect(getDerivedPermissionFlags({ ViewAll: true, ViewBasic: false }).canViewBasic).toBe(false);
+    expect(getDerivedPermissionFlags({ ViewAll: true }).canViewBasic).toBe(true);
   });
 });

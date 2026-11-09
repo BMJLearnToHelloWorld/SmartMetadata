@@ -12,6 +12,7 @@ import type { ComposerTranslation } from 'vue-i18n';
 const STATUS_KEYS: Record<string, string> = {
   New: 'observability.incidents.statusNew',
   Ack: 'observability.incidents.statusAck',
+  Assigned: 'observability.incidents.statusAssigned',
   Resolved: 'observability.incidents.statusResolved',
 };
 

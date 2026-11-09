@@ -67,6 +67,74 @@ export function permissionFlags(ops: OperationPermissions): {
 }
 
 /**
+ * Single derivation point turning raw OperationPermissions into named
+ * intent flags, mirroring official getDerivedPermissionFlags (utils/
+ * PermissionDerivation.ts). Edit flags are gated by `deleted` (a
+ * soft-deleted entity is read-only); view and delete flags are not.
+ * The deleted gate reuses revokeEditPermissions: every Edit* key is
+ * revoked first, so a field key (EditStatus, EditTags, …) can never
+ * survive the gate through the EditAll fallback.
+ */
+export interface DerivedPermissionFlags {
+  /** ViewBasic || ViewAll */
+  hasViewAccess: boolean;
+  canEditAll: boolean;
+  canEditStatus: boolean;
+  canCreate: boolean;
+  canDelete: boolean;
+  canViewAll: boolean;
+  canViewBasic: boolean;
+  /**
+   * Escape hatch for operations without a named flag. Applies the same
+   * prioritization (field → EditAll / ViewAll) and deleted gating as
+   * the named flags, so call sites never reimplement policy.
+   */
+  can: (operation: string) => boolean;
+}
+
+function prioritizedEditPermission(ops: OperationPermissions, operation: string): boolean {
+  if (Object.prototype.hasOwnProperty.call(ops, operation)) {
+    return ops[operation] === true;
+  }
+  return ops.EditAll === true;
+}
+
+function prioritizedViewPermission(ops: OperationPermissions, operation: string): boolean {
+  if (Object.prototype.hasOwnProperty.call(ops, operation)) {
+    return ops[operation] === true;
+  }
+  return ops.ViewAll === true;
+}
+
+export function getDerivedPermissionFlags(
+  permissions: OperationPermissions,
+  deleted = false,
+): DerivedPermissionFlags {
+  const ops = deleted ? revokeEditPermissions(permissions) : permissions;
+  const edit = (operation: string): boolean => prioritizedEditPermission(ops, operation);
+  const view = (operation: string): boolean => prioritizedViewPermission(ops, operation);
+  const can = (operation: string): boolean => {
+    if (operation.startsWith('Edit')) {
+      return edit(operation);
+    }
+    if (operation.startsWith('View')) {
+      return view(operation);
+    }
+    return ops[operation] === true;
+  };
+  return {
+    hasViewAccess: ops.ViewBasic === true || ops.ViewAll === true,
+    canEditAll: ops.EditAll === true && !deleted,
+    canEditStatus: edit('EditStatus'),
+    canCreate: ops.Create === true,
+    canDelete: ops.Delete === true,
+    canViewAll: ops.ViewAll === true,
+    canViewBasic: view('ViewBasic'),
+    can,
+  };
+}
+
+/**
  * Upstream revokeEditPermissions (PermissionsUtils, ca4dc96d4f): for a
  * read-only entity (disabled or soft-deleted), revoke EVERY Edit* operation.
  * Revoking EditAll alone is not enough: derived flags prefer a field key

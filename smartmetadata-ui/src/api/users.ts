@@ -181,6 +181,22 @@ export async function getUser(id: string, include: IncludeFilter = 'all'): Promi
   return mapped;
 }
 
+/**
+ * Official getUserByName (rest/userAPI.ts): GET /users/name/{name}.
+ * The assignee filter resolves a selected name to its display ref
+ * through this, falling back to teams (getTeamByName) and then to a
+ * bare {id: name, type: 'user'} ref — never through a list search.
+ * ADR:2026-11-08-incident-assignee-aggregate-candidates
+ */
+export async function getUserByName(name: string): Promise<AdminUser> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/users/name/${encodeURIComponent(name)}`);
+  const mapped = mapUser(raw);
+  if (!mapped) {
+    throw new Error('User response was missing id and name');
+  }
+  return mapped;
+}
+
 export async function createUser(body: CreateUserRequest): Promise<AdminUser> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/users', {
     method: 'POST',

@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Space, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Pagination, Space, Tooltip, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -37,6 +37,15 @@ const props = withDefaults(
     showLoadMore?: boolean;
     hasMore?: boolean;
     loadingMore?: boolean;
+    /**
+     * Numeric-page mode (G-14 incident list): when true, the footer
+     * shows an antd Pagination instead of the prev/next pager.
+     * Additive only — callers that do not opt in keep cursor paging
+     * or the load-more button exactly as before.
+     */
+    numericPaging?: boolean;
+    currentPage?: number;
+    pageSize?: number;
     emptyText?: string;
     showRowActions?: boolean;
     showEditAction?: boolean;
@@ -70,6 +79,9 @@ const props = withDefaults(
     showLoadMore: false,
     hasMore: false,
     loadingMore: false,
+    numericPaging: false,
+    currentPage: 1,
+    pageSize: 10,
     emptyText: '',
     showRowActions: false,
     showEditAction: false,
@@ -87,6 +99,7 @@ const emit = defineEmits<{
   next: [];
   prev: [];
   loadMore: [];
+  pageChange: [page: number];
   view: [record: unknown];
   edit: [record: unknown];
   delete: [record: unknown];
@@ -216,7 +229,17 @@ const tableColumns = computed<EntityListColumn[]>(() => {
       </SmTable>
       <div class="entity-list__footer">
         <Typography.Text type="secondary" data-testid="entity-list-count">{{ shownLabel }}</Typography.Text>
-        <Space v-if="showLoadMore && hasMore">
+        <Pagination
+          v-if="numericPaging && total !== undefined && total > 0"
+          data-testid="entity-list-pagination"
+          size="small"
+          :current="currentPage"
+          :page-size="pageSize"
+          :total="total"
+          :show-size-changer="false"
+          @change="(page: number) => emit('pageChange', page)"
+        />
+        <Space v-else-if="showLoadMore && hasMore">
           <Button
             data-testid="entity-list-load-more"
             :loading="loadingMore"

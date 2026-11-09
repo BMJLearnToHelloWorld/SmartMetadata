@@ -9,7 +9,7 @@ import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { deleteTestCase, getTestCase, updateTestCase } from '@/api/testCases';
+import { deleteTestCase, getTestCase, getTestCaseByName, updateTestCase } from '@/api/testCases';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTestCaseVersionPath } from '@/catalog/versionPaths';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -26,7 +26,7 @@ import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/feat
 import { parseEntityLink } from '@/quality/entityLink';
 import type { TestCase, TestCaseResult, TestIncident } from '@/types/quality';
 
-const props = defineProps<{ id: string }>();
+const props = defineProps<{ id: string; tab?: string }>();
 const router = useRouter();
 const { t } = useI18n();
 const loading = ref(false);
@@ -35,7 +35,11 @@ const testCase = ref<TestCase | null>(null);
 const results = ref<TestCaseResult[]>([]);
 const issues = ref<TestIncident[]>([]);
 const issuesError = ref('');
-const activeTab = ref('overview');
+// The /test-case/:fqn/:tab alias carries the tab in the route; an unknown
+// tab falls back to 'overview'. The supported flag on qualityTabs.ts is
+// deliberately untouched (condition 16(ii) — P4 owns the dimensionality fix).
+const tabKeys = new Set(QUALITY_PAGE_TABS.testCase.map((tab) => tab.key));
+const activeTab = ref(props.tab !== undefined && tabKeys.has(props.tab) ? props.tab : 'overview');
 const editOpen = ref(false);
 const saving = ref(false);
 const editForm = reactive({
@@ -83,7 +87,12 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const loaded = await getTestCase(props.id);
+    // The /test-case/:fqn alias carries an FQN, not a UUID: the server's
+    // GET /v1/dataQuality/testCases/{id} takes a UUID only, so FQNs load
+    // through the /name/{fqn} endpoint.
+    // ADR:2026-11-08-incident-detail-redirects-to-test-case
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.id);
+    const loaded = isUuid ? await getTestCase(props.id) : await getTestCaseByName(props.id);
     testCase.value = loaded;
     if (loaded.fullyQualifiedName) {
       const page = await listTestCaseResults(loaded.fullyQualifiedName);
@@ -217,6 +226,13 @@ watch(
   },
 );
 
+watch(
+  () => props.tab,
+  (tab) => {
+    activeTab.value = tab !== undefined && tabKeys.has(tab) ? tab : 'overview';
+  },
+);
+
 onMounted(() => {
   void load();
 });
@@ -309,7 +325,15 @@ onMounted(() => {
             <a
               href="#"
               :data-testid="`test-case-issue-${(record as TestIncident).id}`"
-              @click.prevent="router.push({ name: 'observability-incident', params: { id: (record as TestIncident).id } })"
+              @click.prevent="
+                router.push(
+                  `/test-case/${encodeURIComponent(
+                    testCase?.fullyQualifiedName ??
+                      (record as TestIncident).testCaseReference?.fullyQualifiedName ??
+                      '',
+                  )}/issues`,
+                )
+              "
             >
               {{ (record as TestIncident).testCaseResolutionStatusType || '—' }}
             </a>

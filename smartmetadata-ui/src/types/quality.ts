@@ -142,6 +142,21 @@ export interface CreateTestSuiteRequest {
   displayName?: string;
 }
 
+/**
+ * Official TestCaseResolutionStatus (generated/tests/
+ * testCaseResolutionStatus.ts): the incident record. The details object
+ * carries the assignee / resolver / failure reason + comment; updatedAt
+ * is the last-update sort/filter key (distinct from timestamp, the
+ * failure creation time); failureSummary and metrics ride along for
+ * P4 detail use and are never dropped by the mapper.
+ */
+export interface TestIncidentResolutionDetails {
+  assignee?: EntityRef;
+  resolvedBy?: EntityRef;
+  testCaseFailureComment?: string;
+  testCaseFailureReason?: string;
+}
+
 export interface TestIncident {
   id: string;
   stateId?: string;
@@ -150,6 +165,10 @@ export interface TestIncident {
   severity?: string;
   testCaseReference?: EntityRef;
   updatedBy?: EntityRef;
+  testCaseResolutionStatusDetails?: TestIncidentResolutionDetails;
+  updatedAt?: number;
+  failureSummary?: string;
+  metrics?: unknown[];
 }
 
 export interface CreateTestIncidentRequest {
@@ -159,6 +178,13 @@ export interface CreateTestIncidentRequest {
   testCaseResolutionStatusDetails?: {
     testCaseFailureReason?: string;
     testCaseFailureComment?: string;
+    /**
+     * Official assigned.json: the Assigned details variant requires an
+     * assignee. The reopen path (Resolved -> Assigned) posts it here;
+     * the open-incident assign flow never uses this request (it goes
+     * through the task resolve endpoint instead).
+     */
+    assignee?: EntityRef;
   };
 }
 

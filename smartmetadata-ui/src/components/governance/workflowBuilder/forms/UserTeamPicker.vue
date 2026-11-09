@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { Select, Typography } from 'ant-design-vue';
 import type { DefaultOptionType, SelectValue } from 'ant-design-vue/es/select';
 import { useI18n } from 'vue-i18n';
@@ -21,14 +21,25 @@ import type { EntityRef } from '@/types/api';
  * filtered only. Values are EntityRefs ({id, type, name,
  * fullyQualifiedName, displayName}); the approval/collect forms reduce
  * them to the AssigneeCandidate payload on save.
+ *
+ * G-14 (W2-2): single-select mode (`single`) for the incident assignee
+ * filter and the row assignee editor — official's filter and inline
+ * Owner are both single-select (multiple: {user: false, team: false}).
+ * `candidates` seeds options that must resolve even when the mounted
+ * first-100 lists do not contain them (the incident assignee aggregate
+ * is page-independent); they merge into the same option set, never
+ * replace it.
+ * ADR:2026-11-08-incident-assignee-aggregate-candidates
  */
 const props = withDefaults(
   defineProps<{
     modelValue: EntityRef[];
     disabled?: boolean;
     testId?: string;
+    single?: boolean;
+    candidates?: EntityRef[];
   }>(),
-  { disabled: false, testId: 'user-team-picker' },
+  { disabled: false, testId: 'user-team-picker', single: false, candidates: undefined },
 );
 const emit = defineEmits<{ 'update:modelValue': [value: EntityRef[]] }>();
 
@@ -63,11 +74,43 @@ function upsertOption(ref: EntityRef): void {
 for (const ref of props.modelValue) {
   upsertOption(ref);
 }
+for (const ref of props.candidates ?? []) {
+  upsertOption(ref);
+}
 
 const selected = ref<string[]>(
   props.modelValue
     .filter((ref) => ref.name && ref.type)
     .map((ref) => `${ref.type}:${ref.name}`),
+);
+
+/** Single-select mode carries one value; multiple mode carries the array. */
+const selectedSingle = computed<string | undefined>(() => selected.value[0]);
+
+// Candidates arriving after mount (the incident aggregate resolves
+// asynchronously) join the same option set.
+watch(
+  () => props.candidates,
+  (candidates) => {
+    for (const ref of candidates ?? []) {
+      upsertOption(ref);
+    }
+  },
+);
+
+// The parent drives the value (the incident filter mirrors the URL),
+// so an external reset — clear-all, back/forward — must re-sync the
+// selection instead of leaving the last picked value on screen.
+watch(
+  () => props.modelValue,
+  (refs) => {
+    for (const ref of refs) {
+      upsertOption(ref);
+    }
+    selected.value = refs
+      .filter((ref) => ref.name && ref.type)
+      .map((ref) => `${ref.type}:${ref.name}`);
+  },
 );
 
 function filterOption(input: string, option?: DefaultOptionType): boolean {
@@ -153,8 +196,8 @@ onMounted(async () => {
 <template>
   <div>
     <Select
-      :value="selected"
-      mode="multiple"
+      :value="single ? selectedSingle : selected"
+      :mode="single ? undefined : 'multiple'"
       show-search
       :disabled="disabled"
       :placeholder="t('workflows.builder.selectUsersAndTeams')"

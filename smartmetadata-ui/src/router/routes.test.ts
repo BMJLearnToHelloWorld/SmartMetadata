@@ -64,6 +64,24 @@ describe('official-path aliases (G-01…G-10)', () => {
   });
 });
 
+// W2-2 (G-14 classic list): F-D-1 /incident-manager and F-D-4
+// /test-case/:fqn(/:tab) aliases.
+describe('incident-manager aliases (W2-2)', () => {
+  const cases: Array<[alias: string, name: string]> = [
+    ['/incident-manager', 'observability-incidents'],
+    ['/test-case/some-case', 'quality-test-case'],
+    ['/test-case/some-case/issues', 'quality-test-case'],
+  ];
+  it.each(cases)('resolves %s to %s', (alias, name) => {
+    expect(router.resolve(alias).name).toBe(name);
+  });
+
+  it('maps the test-case alias params to the detail view props', () => {
+    const resolved = router.resolve('/test-case/some-case/issues');
+    expect(resolved.params).toMatchObject({ fqn: 'some-case', tab: 'issues' });
+  });
+});
+
 describe('settings alias stays admin-gated', () => {
   it('recognises the /settings alias URL as an admin path', () => {
     expect(isAdminPath('/settings')).toBe(true);
