@@ -32,9 +32,7 @@ class ClassificationLanguageSelectionError(ValueError):
 # Example mirror base: https://ghproxy.net/https://github.com/explosion/spacy-models/releases/download
 # The base must already include the ".../releases/download" prefix; wheel_url
 # appends "/{release}/{release}-py3-none-any.whl".
-DEFAULT_SPACY_MODEL_BASE_URL = (
-    "https://github.com/explosion/spacy-models/releases/download"
-)
+DEFAULT_SPACY_MODEL_BASE_URL = "https://github.com/explosion/spacy-models/releases/download"
 
 
 def spacy_model_base_urls() -> list[str]:

@@ -41,7 +41,7 @@ import {
 import {
   PipelineService,
   PipelineServiceType,
-  Type,
+  ConnectionType,
 } from '../generated/entity/services/pipelineService';
 import {
   SearchService,
@@ -241,7 +241,7 @@ export const MOCK_PIPLELINE_SERVICE: PipelineService = {
       hostPort: 'http://localhost:8080',
       numberOfStatus: 10,
       connection: {
-        type: Type.Backend,
+        type: ConnectionType.Backend,
       },
       supportsMetadataExtraction: true,
     },
