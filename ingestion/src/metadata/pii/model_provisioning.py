@@ -11,7 +11,6 @@
 """Install and verify the spaCy models used by auto classification."""
 
 import json
-import os
 import shlex
 import subprocess
 import sys
@@ -27,6 +26,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from metadata.pii.model_registry import ModelSpecification
+from metadata.pii.settings import spacy_model_settings
 
 INGESTION_PACKAGE_NAME = "openmetadata-ingestion"
 PII_PROCESSOR_EXTRA = "pii-processor"
@@ -249,13 +249,16 @@ def _install_model(specification: ModelSpecification, spacy_version: str) -> Non
     ) as constraints:
         constraints.write(f"spacy=={spacy_version}\n")
         constraints_path = Path(constraints.name)
+    settings = spacy_model_settings()
     candidates: list[str] = []
-    wheel_dir = Path(os.environ["OM_SPACY_MODEL_WHEEL_DIR"]) if os.environ.get("OM_SPACY_MODEL_WHEEL_DIR") else None
-    if wheel_dir is not None:
-        local = wheel_dir / specification.wheel_filename
+    if settings.wheel_dir:
+        local = Path(settings.wheel_dir) / specification.wheel_filename
         if local.is_file():
             candidates.append(str(local))
     candidates.extend(specification.wheel_urls())
+    if not candidates:
+        raise RuntimeError(f"no install candidates for {specification.name} {specification.version}")
+
     errors: list[str] = []
     try:
         for target in candidates:
@@ -275,13 +278,17 @@ def _install_model(specification: ModelSpecification, spacy_version: str) -> Non
             )
             if result.returncode == 0:
                 return
-            details = (result.stderr or result.stdout).strip()[-500:]
-            errors.append(f"{target}: exit {result.returncode}: {details}")
+            stderr = (result.stderr or "").strip()
+            stdout = (result.stdout or "").strip()
+            details = (stderr or stdout)[-500:]
+            errors.append(f"{target}: exit {result.returncode}: {details or '(no pip output)'}")
     finally:
         constraints_path.unlink(missing_ok=True)
     raise RuntimeError(
         "pip failed to install {name} from {n} candidate(s): {errs}".format(
-            name=specification.name, n=len(candidates), errs=" | ".join(errors)[-2000:]
+            name=specification.name,
+            n=len(candidates),
+            errs=" | ".join(errors)[-2000:],
         )
     )
 

@@ -95,7 +95,8 @@ jobs:
 
   checkstyle:
     needs: authorize
-    runs-on: ubuntu-latest
+    # Playwright 1.57 browser downloads do not yet ship for ubuntu-26.04 runners.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -588,7 +589,6 @@ jobs:
       - name: Bundle Runtime Check (route chunks load)
         id: bundle_runtime
         if: steps.bundle_build.outcome == 'success'
-        continue-on-error: true
         working-directory: ${{ env.UI_WORKING_DIRECTORY }}
         run: |
           npx playwright install --with-deps chromium > /tmp/pw-install.out 2>&1 || { tail -20 /tmp/pw-install.out; exit 1; }
@@ -831,7 +831,8 @@ jobs:
              [ "${{ needs.checkstyle.outputs.tw_audit_result }}" = 'failure' ] || \
              [ "${{ needs.checkstyle.outputs.tw_guard_result }}" = 'failure' ] || \
              [ "${{ needs.checkstyle.outputs.bundle_build_result }}" = 'failure' ] || \
-             [ "${{ needs.checkstyle.outputs.bundle_budget_result }}" = 'failure' ]; then
+             [ "${{ needs.checkstyle.outputs.bundle_budget_result }}" = 'failure' ] || \
+             [ "${{ needs.checkstyle.outputs.bundle_runtime_result }}" = 'failure' ]; then
             echo "One or more checks failed."
             exit 1
           fi
