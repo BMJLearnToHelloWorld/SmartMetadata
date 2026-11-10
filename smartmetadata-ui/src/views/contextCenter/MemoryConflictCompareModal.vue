@@ -206,7 +206,7 @@ async function handleKeep(decision: ReviewDecision): Promise<void> {
     @update:open="close"
   >
     <div v-if="loading">
-      <Typography.Text type="secondary">{{ t('crud.loading') }}</Typography.Text>
+      <Typography.Text type="secondary">{{ t('shared.loading') }}</Typography.Text>
     </div>
     <div v-else-if="!review">
       <Empty :description="t('contextCenter.reviewEmpty')" />

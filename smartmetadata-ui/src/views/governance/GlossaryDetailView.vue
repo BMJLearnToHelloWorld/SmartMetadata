@@ -818,7 +818,7 @@ onMounted(() => {
                       >
                         {{ childErrors.get((record as GlossaryTerm).fullyQualifiedName || '') }}
                         <Button type="link" size="small" @click="fetchMoreChildren(record as GlossaryTerm)">
-                          {{ t('crud.retry') }}
+                          {{ t('shared.retry') }}
                         </Button>
                       </span>
                       <Button
