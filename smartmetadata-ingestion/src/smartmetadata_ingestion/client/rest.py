@@ -42,6 +42,8 @@ LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
 TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
+TEST_SUITES_PATH = "/v1/dataQuality/testSuites"
+TEST_CASES_PATH = "/v1/dataQuality/testCases"
 TABLES_PROFILE_PATH = TABLES_PATH  # /v1/tables/{id}/tableProfile
 SYSTEM_SETTINGS_PATH = "/v1/system/settings"
 INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
@@ -284,6 +286,74 @@ class RestClient:
         body = dict(payload)
         body.setdefault("fqn", test_case_fqn)
         return self.request("POST", path, json=body)
+
+    # --- Data-quality pull (Wave 2 H track 3) -------------------------------
+    # TestSuite / TestCase read methods for the server-pulled TestSuite path
+    # (ADR:2026-11-08-test-suite-server-pull). The Sampler messaging chain
+    # (H track 1) adds its sample-data write methods in the section below;
+    # do not add a second REST client or duplicate these paths elsewhere.
+
+    def list_test_suites(
+        self,
+        *,
+        limit: int = 100,
+        extra_params: dict[str, Any] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """GET /v1/dataQuality/testSuites (paged list)."""
+        yield from self.iter_collection(
+            TEST_SUITES_PATH, limit=limit, extra_params=extra_params
+        )
+
+    def get_test_suite_by_id(self, suite_id: str) -> dict[str, Any]:
+        """GET /v1/dataQuality/testSuites/{id}."""
+        if not suite_id or not str(suite_id).strip():
+            raise WorkflowError("test suite id is required")
+        path = f"{TEST_SUITES_PATH}/{encode_path_segment(str(suite_id).strip())}"
+        return self._as_object(self.request("GET", path))
+
+    def get_test_suite_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/dataQuality/testSuites/name/{name}."""
+        if not name or not str(name).strip():
+            raise WorkflowError("test suite name is required")
+        path = f"{TEST_SUITES_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
+    def list_test_cases(
+        self,
+        *,
+        test_suite_id: str | None = None,
+        limit: int = 100,
+        extra_params: dict[str, Any] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """GET /v1/dataQuality/testCases (paged list, optional testSuiteId filter).
+
+        Requests the fields the pull layer needs (``testSuite``, ``entityLink``,
+        ``testDefinition``) — the official ``TestSuiteSource`` reads the same
+        three fields for every case it pulls.
+        """
+        params: dict[str, Any] = {
+            "fields": "testSuite,entityLink,testDefinition",
+        }
+        if test_suite_id:
+            params["testSuiteId"] = test_suite_id
+        if extra_params:
+            params.update(extra_params)
+        yield from self.iter_collection(
+            TEST_CASES_PATH, limit=limit, extra_params=params
+        )
+
+    def get_table_by_name(
+        self,
+        fqn: str,
+        *,
+        fields: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /v1/tables/name/{fqn} (table entity for the pull layer)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("table fqn is required")
+        path = f"{TABLES_PATH}/name/{encode_path_segment(str(fqn).strip())}"
+        params = {"fields": fields} if fields else None
+        return self._as_object(self.request("GET", path, params=params))
 
     # --- Sample data (H track 1: sampler messaging chain) -----------------
     # First Wave 2 H track to extend RestClient. Later tracks add their

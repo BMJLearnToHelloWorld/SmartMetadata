@@ -134,6 +134,21 @@ class SourceConfig(CamelModel):
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)
 
+    # --- TestSuite server pull (Wave 2 H track 3) ---
+    # ADR:2026-11-08-test-suite-server-pull — mirrors official
+    # TestSuitePipeline: the table FQN of a table suite (absent = the logical
+    # suite named `service_name`), plus an optional case-name filter.
+    entity_fully_qualified_name: str | None = None
+    test_case_names: list[str] = Field(default_factory=list)
+
+    @field_validator("entity_fully_qualified_name")
+    @classmethod
+    def strip_entity_fqn(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = str(value).strip()
+        return stripped or None
+
     @field_validator("type")
     @classmethod
     def normalize_type(cls, value: str) -> str:

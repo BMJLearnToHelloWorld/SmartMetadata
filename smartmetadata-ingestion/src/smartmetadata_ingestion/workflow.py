@@ -29,19 +29,30 @@ from smartmetadata_ingestion.config import (
     WorkflowConfig,
 )
 from smartmetadata_ingestion.connectors.base import Source, build_source
+from smartmetadata_ingestion.data_quality.builder import ValidatorBuilder
+from smartmetadata_ingestion.data_quality.source import (
+    PulledSuite,
+    pull_test_cases,
+)
+from smartmetadata_ingestion.datadiff import (
+    DataDiffBinding,
+    datadiff_binding,
+    run_data_diff_spec,
+)
 from smartmetadata_ingestion.errors import (
     WorkflowError,
     WorkflowExecutionError,
     WorkflowInitializationError,
     WorkflowTeardownError,
 )
-from smartmetadata_ingestion.processors.identity import Processor, build_processors
 from smartmetadata_ingestion.pipeline_status import (
     PipelineState,
     build_pipeline_status,
     final_pipeline_state,
     now_ms,
 )
+from smartmetadata_ingestion.processors.identity import Processor, build_processors
+from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
 from smartmetadata_ingestion.progress import (
     NullHook,
     ProgressHook,
@@ -49,31 +60,23 @@ from smartmetadata_ingestion.progress import (
     RunReport,
     StepStatus,
 )
-from smartmetadata_ingestion.datadiff import (
-    DataDiffBinding,
-    SqlKeyFetcher,
-    build_side,
-    compare_key_sets,
-    datadiff_binding,
-)
-from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
+from smartmetadata_ingestion.reconcile import reconcile_stale
 from smartmetadata_ingestion.records import (
+    AppRecord,
+    ClassificationRecord,
     ColumnLineage,
     DatabaseRecord,
     EntityRef,
     LineageEndpoint,
     LineageRecord,
-    UsageRecord,
     ProfileRecord,
     SchemaRecord,
     TableRecord,
-    TestCaseResultRecord,
-    ClassificationRecord,
     TagRecord,
-    AppRecord,
+    TestCaseResultRecord,
+    UsageRecord,
     WorkflowRecord,
 )
-from smartmetadata_ingestion.reconcile import reconcile_stale
 from smartmetadata_ingestion.sinks.metadata_rest import Sink, build_sink
 from smartmetadata_ingestion.topology import SeenSet, order_records
 
@@ -560,7 +563,16 @@ class ProfilerWorkflow(MetadataWorkflow):
 
 
 class TestSuiteWorkflow(MetadataWorkflow):
-    """Runs the configured test cases live against the source database."""
+    """Runs test cases live against the source database.
+
+    Two modes (ADR:2026-11-08-test-suite-server-pull): the default
+    server-pulled mode (``source.entityFullyQualifiedName`` names a table
+    suite, or an empty inline list pulls the logical suite named
+    ``source.service_name``) and the transitional inline mode
+    (``config.test_cases`` with no FQN). Combining an FQN with inline cases
+    is a configuration error. A pulled case that cannot be built or run
+    writes an ``Aborted`` result and the run continues with the next case.
+    """
 
     def __init__(
         self,
@@ -572,9 +584,13 @@ class TestSuiteWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         execute: Any | None = None,
+        fetch_keys: Any | None = None,
         run_id: str | None = None,
     ) -> None:
         self._injected_execute = execute
+        self._injected_fetch_keys = fetch_keys
+        self._pulled_suites: list[PulledSuite] | None = None
+        self._validator_builder: ValidatorBuilder | None = None
         super().__init__(
             config,
             client=client,
@@ -592,6 +608,27 @@ class TestSuiteWorkflow(MetadataWorkflow):
         self._quality_binding = _require_binding(self.config, "TestSuite")
         execute = self._injected_execute or self._execute_scalar
         self._quality = self._quality_binding.quality(execute)
+        entity_fqn = self.config.source.entity_fully_qualified_name
+        if entity_fqn and self.config.test_cases:
+            raise WorkflowInitializationError(
+                "TestSuite workflow cannot combine "
+                "source.entityFullyQualifiedName with inline testCases; "
+                "pick the server-pulled path or the inline path"
+            )
+        if entity_fqn or not self.config.test_cases:
+            self._pulled_suites = pull_test_cases(
+                self._client,
+                entity_fqn=entity_fqn,
+                service_name=self.config.source.service_name,
+                test_case_names=self.config.source.test_case_names,
+            )
+            self._validator_builder = ValidatorBuilder(
+                dialect=self.config.source.type,
+                execute=execute,
+                table_resolver=self._client.get_table_by_name,
+                source_connection=self.config.source.connection or {},
+                fetch_keys=self._injected_fetch_keys,
+            )
 
     def _execute_scalar(self, sql: str) -> Any:
         connect = self._quality_binding.connect(self.config.source.connection or {})
@@ -608,6 +645,9 @@ class TestSuiteWorkflow(MetadataWorkflow):
 
     def _execute_records(self) -> None:
         timestamp = now_ms()
+        if self._pulled_suites is not None:
+            self._execute_pulled(timestamp)
+            return
         for spec in self.config.test_cases:
             result = self._quality.run_test_case(
                 test_case_fqn=spec.test_case_fqn,
@@ -616,6 +656,33 @@ class TestSuiteWorkflow(MetadataWorkflow):
                 expected=spec.expected,
             )
             self._handle_record(result)
+
+    def _execute_pulled(self, timestamp: int) -> None:
+        builder = self._validator_builder
+        if builder is None or self._pulled_suites is None:
+            raise WorkflowInitializationError(
+                "pulled TestSuite workflow was not prepared"
+            )
+        for suite in self._pulled_suites:
+            for case in suite.cases:
+                try:
+                    validator = builder.build(
+                        case, suite.table, timestamp=timestamp
+                    )
+                    result = validator.run()
+                except Exception as exc:
+                    # Official per-case handling: a case that cannot be
+                    # built or run aborts itself, it does not fail the run.
+                    result = TestCaseResultRecord(
+                        test_case_fqn=case.fully_qualified_name,
+                        timestamp=timestamp,
+                        test_case_status="Aborted",
+                        result=(
+                            f"Test case {case.fully_qualified_name!r} could "
+                            f"not run: {exc}"
+                        ),
+                    )
+                self._handle_record(result)
 
 
 class DataDiffWorkflow(MetadataWorkflow):
@@ -689,100 +756,14 @@ class DataDiffWorkflow(MetadataWorkflow):
         right_binding: DataDiffBinding,
         timestamp: int,
     ) -> TestCaseResultRecord:
-        left_side = build_side(
-            left_binding,
-            self._side_connection(spec.left),
-            database=spec.left.database,
-            schema=spec.left.schema,
-            table=spec.left.table,
-            key_columns=spec.left.key_columns,
-        )
-        right_side = build_side(
-            right_binding,
-            self._side_connection(spec.right),
-            database=spec.right.database,
-            schema=spec.right.schema,
-            table=spec.right.table,
-            key_columns=spec.right.key_columns,
-        )
-        left_keys = self._fetch_keys_for(spec, spec.left, left_binding, left_side)
-        duplicate_side = spec.left if _has_duplicate_keys(left_keys) else None
-        if duplicate_side is None:
-            right_keys = self._fetch_keys_for(spec, spec.right, right_binding, right_side)
-            duplicate_side = spec.right if _has_duplicate_keys(right_keys) else None
-        if duplicate_side is not None:
-            return self._aborted_result(spec, duplicate_side, timestamp)
-        diff = compare_key_sets(left_keys, right_keys)
-        total = diff.total
-        passed = (spec.threshold or total) == 0 or total < spec.threshold
-        return TestCaseResultRecord(
-            test_case_fqn=spec.test_case_fqn,
+        return run_data_diff_spec(
+            spec,
+            left_binding=left_binding,
+            right_binding=right_binding,
+            default_connection=self.config.source.connection or {},
+            fetch_keys=self._injected_fetch_keys,
             timestamp=timestamp,
-            test_case_status="Success" if passed else "Failed",
-            test_result_value=[
-                {"name": "removedRows", "value": str(diff.extra_left)},
-                {"name": "addedRows", "value": str(diff.extra_right)},
-                {"name": "diffCount", "value": str(total)},
-            ],
-            result=(
-                f"Found {total} different keys (key-set comparison only: "
-                f"{diff.extra_left} only in left table, {diff.extra_right} only in "
-                f"right table; row-value and schema differences are not compared)"
-            ),
-            passed_rows=diff.common,
-            failed_rows=total,
         )
-
-    def _side_connection(self, side_spec: DataDiffSideSpec) -> dict[str, Any]:
-        if side_spec.connection:
-            return side_spec.connection
-        return self.config.source.connection or {}
-
-    def _fetch_keys_for(
-        self,
-        spec: DataDiffSpec,
-        side_spec: DataDiffSideSpec,
-        binding: DataDiffBinding,
-        side: dict[str, Any],
-    ) -> list[tuple[Any, ...]]:
-        if self._injected_fetch_keys is not None:
-            return [tuple(row) for row in self._injected_fetch_keys(side)]
-        fetcher = SqlKeyFetcher(
-            binding.connect(self._side_connection(side_spec)),
-            quote=binding.quote,
-            ident_style=binding.ident_style,
-        )
-        return fetcher.fetch_keys(
-            side_spec.database,
-            side_spec.schema,
-            side_spec.table,
-            side_spec.key_columns,
-            where_clause=spec.where_clause,
-        )
-
-    @staticmethod
-    def _aborted_result(
-        spec: DataDiffSpec, side_spec: DataDiffSideSpec, timestamp: int
-    ) -> TestCaseResultRecord:
-        key_columns = side_spec.key_columns
-        if len(key_columns) == 1:
-            subject = f"Key column '{key_columns[0]}' is"
-        else:
-            subject = f"Key columns ({', '.join(repr(column) for column in key_columns)}) are"
-        location = f"in {side_spec.database}.{side_spec.schema}.{side_spec.table}"
-        return TestCaseResultRecord(
-            test_case_fqn=spec.test_case_fqn,
-            timestamp=timestamp,
-            test_case_status="Aborted",
-            result=(
-                f"{subject} not unique {location}. A row-level diff needs a unique key: "
-                "pick a unique column, or add more columns to the key."
-            ),
-        )
-
-
-def _has_duplicate_keys(keys: list[tuple[Any, ...]]) -> bool:
-    return len(keys) != len(set(keys))
 
 
 def _require_binding(config: WorkflowConfig, kind: str) -> ProfilerBinding:

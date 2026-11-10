@@ -70,6 +70,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             execute=execute,
+            fetch_keys=fetch_keys,
             run_id=run_id,
         )
     elif workflow_type == "data_diff":
