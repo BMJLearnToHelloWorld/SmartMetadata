@@ -16,14 +16,19 @@ import TestCaseDetailView from './TestCaseDetailView.vue';
 
 const getTestCase = vi.fn();
 const getTestCaseByName = vi.fn();
+const updateTestCase = vi.fn();
 const listTestCaseResults = vi.fn();
 const listTestIncidents = vi.fn();
+const getTestDefinition = vi.fn();
 
 vi.mock('@/api/testCases', () => ({
   getTestCase: (...args: unknown[]) => getTestCase(...args),
   getTestCaseByName: (...args: unknown[]) => getTestCaseByName(...args),
-  updateTestCase: vi.fn(),
+  updateTestCase: (...args: unknown[]) => updateTestCase(...args),
   listTestCaseDimensionResults: vi.fn(async () => ({ data: [], paging: { total: 0 } })),
+}));
+vi.mock('@/api/testDefinitions', () => ({
+  getTestDefinition: (...args: unknown[]) => getTestDefinition(...args),
 }));
 vi.mock('@/api/testCaseResults', () => ({
   listTestCaseResults: (...args: unknown[]) => listTestCaseResults(...args),
@@ -146,5 +151,163 @@ describe('TestCaseDetailView results chart', () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/test-case/svc.db.schema.orders.row_count/issues');
     expect(router.currentRoute.value.name).toBe('test-case-alias');
+  });
+});
+
+describe('TestCaseDetailView diff values (P2-6)', () => {
+  const tableDiffDefinition = {
+    id: 'td-diff',
+    name: 'tableDiff',
+    fullyQualifiedName: 'tableDiff',
+    parameterDefinition: [
+      { name: 'keyColumns', displayName: "Table 1's key columns", dataType: 'ARRAY' },
+      { name: 'table2', displayName: 'Table 2', dataType: 'STRING', required: true },
+      { name: 'table2.keyColumns', displayName: "Table 2's key columns", dataType: 'ARRAY' },
+      { name: 'threshold', displayName: 'Threshold', dataType: 'NUMBER' },
+      { name: 'useColumns', displayName: 'Use Columns', dataType: 'ARRAY' },
+      { name: 'where', displayName: 'SQL Where Clause', dataType: 'STRING' },
+      { name: 'caseSensitiveColumns', displayName: 'Case sensitive columns', dataType: 'BOOLEAN' },
+      { name: 'parallelQueries', displayName: 'Parallel queries per database', dataType: 'NUMBER' },
+    ],
+  };
+
+  beforeEach(() => {
+    getTestCase.mockReset();
+    updateTestCase.mockReset();
+    listTestCaseResults.mockReset();
+    listTestIncidents.mockReset();
+    getTestDefinition.mockReset();
+    listTestIncidents.mockResolvedValue({ data: [] });
+    getTestDefinition.mockResolvedValue(tableDiffDefinition);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/search/query')) {
+          return new Response(
+            JSON.stringify({
+              hits: {
+                total: { value: 1 },
+                hits: [
+                  {
+                    _index: 'table_search_index',
+                    _source: {
+                      fullyQualifiedName: 'svc.db.schema.orders_copy',
+                      displayName: 'orders_copy',
+                      name: 'orders_copy',
+                    },
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        if (url.includes('/api/v1/tables/name/')) {
+          return new Response(
+            JSON.stringify({
+              fullyQualifiedName: 'svc.db.schema.orders',
+              name: 'orders',
+              columns: [
+                { name: 'id', dataType: 'INT' },
+                { name: 'code', dataType: 'STRING' },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('renders only the measured values the API returned, with a dash when a run has none', async () => {
+    const firstTs = Date.UTC(2026, 0, 1);
+    const secondTs = Date.UTC(2026, 0, 2);
+    getTestCase.mockResolvedValue({
+      id: 'tc1',
+      name: 'orders_diff',
+      fullyQualifiedName: 'svc.db.schema.orders.table_diff',
+      parameterValues: [],
+      testSuites: [],
+    });
+    listTestCaseResults.mockResolvedValue({
+      data: [
+        {
+          testCaseStatus: 'Failed',
+          timestamp: firstTs,
+          testResultValue: [
+            { name: 'removedRows', value: '1' },
+            { name: 'addedRows', value: '2' },
+            { name: 'diffCount', value: '3' },
+          ],
+        },
+        { testCaseStatus: 'Success', timestamp: secondTs },
+      ],
+    });
+    const wrapper = await mountView();
+    const valuesCell = wrapper.find(`[data-testid="test-case-result-values-${firstTs}"]`);
+    expect(valuesCell.exists()).toBe(true);
+    expect(valuesCell.text()).toContain('removedRows: 1');
+    expect(valuesCell.text()).toContain('addedRows: 2');
+    expect(valuesCell.text()).toContain('diffCount: 3');
+    // The run without testResultValue shows a dash, and nothing invents the
+    // fields the engine did not compute (no changedRows / columnDiffCounts).
+    expect(wrapper.find(`[data-testid="test-case-result-values-${secondTs}"]`).exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('changedRows');
+    expect(wrapper.text()).not.toContain('columnDiffCounts');
+    wrapper.unmount();
+  });
+
+  it('opens the tableDiff fields in the edit modal and saves the merged parameter values', async () => {
+    getTestCase.mockResolvedValue({
+      id: 'tc1',
+      name: 'orders_diff',
+      fullyQualifiedName: 'svc.db.schema.orders.table_diff',
+      entityFQN: 'svc.db.schema.orders',
+      entityLink: '<#E::table::svc.db.schema.orders>',
+      testDefinition: { id: 'td-diff', name: 'tableDiff', fullyQualifiedName: 'tableDiff' },
+      parameterValues: [
+        { name: 'table2', value: 'svc.db.schema.orders_copy' },
+        { name: 'keyColumns', value: '["id"]' },
+      ],
+      testSuites: [],
+    });
+    listTestCaseResults.mockResolvedValue({ data: [] });
+    updateTestCase.mockResolvedValue({});
+    const wrapper = await mountView();
+    await wrapper.get('[data-testid="edit-test-case"]').trigger('click');
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-diff-param-keyColumns"]')).not.toBeNull();
+    const whereInput = document.body.querySelector(
+      '[data-testid="table-diff-param-where"]',
+    ) as HTMLInputElement | null;
+    expect(whereInput).not.toBeNull();
+    whereInput?.focus();
+    if (whereInput) {
+      whereInput.value = 'id > 0';
+      whereInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await flushPromises();
+    const okButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(updateTestCase).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parameterValues: [
+          { name: 'table2', value: 'svc.db.schema.orders_copy' },
+          { name: 'keyColumns', value: '["id"]' },
+          { name: 'where', value: 'id > 0' },
+        ],
+      }),
+    );
+    wrapper.unmount();
   });
 });

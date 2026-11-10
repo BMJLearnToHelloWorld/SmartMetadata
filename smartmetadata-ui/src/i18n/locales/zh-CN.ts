@@ -1223,6 +1223,11 @@ const zhCN = {
       searchPlaceholder: '搜索测试用例',
       statusFilter: '状态',
       empty: '还没有测试用例。创建一个以开始监控数据质量。',
+      diffValues: '测量值',
+      tableDiffSearchTable: '搜索表',
+      tableDiffTypeColumn: '输入列名，或从列表选择',
+      tableDiffTable2Required: 'tableDiff 测试用例需要选择表 2',
+      tableDiffColumnsUnavailable: '未能加载该表的列，可直接输入列名。',
     },
     testDefinitions: {
       title: '测试定义',

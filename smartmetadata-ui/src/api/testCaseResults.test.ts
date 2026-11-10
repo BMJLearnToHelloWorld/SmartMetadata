@@ -50,4 +50,37 @@ describe('testCaseResults API', () => {
       '/api/v1/dataQuality/testCases/testCaseResults/svc.db.schema.orders.row_count',
     );
   });
+
+  it('maps testResultValue entries so the detail view can render measured diff values (P2-6)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                testCaseStatus: 'Failed',
+                timestamp: 99,
+                testResultValue: [
+                  { name: 'removedRows', value: '1' },
+                  { name: 'addedRows', value: '2' },
+                  { name: 'diffCount', value: '3' },
+                ],
+              },
+              { testCaseStatus: 'Success', timestamp: 100 },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTestCaseResults('svc.db.schema.orders.table_diff');
+    expect(page.data[0]?.testResultValue).toEqual([
+      { name: 'removedRows', value: '1' },
+      { name: 'addedRows', value: '2' },
+      { name: 'diffCount', value: '3' },
+    ]);
+    expect(page.data[1]?.testResultValue).toBeUndefined();
+  });
 });

@@ -44,11 +44,23 @@ export interface TestParameterValue {
   value: string;
 }
 
+export interface TestResultValue {
+  name: string;
+  value: string;
+}
+
 export interface TestCaseResult {
   timestamp?: number;
   testCaseStatus?: string;
   result?: string;
   testCaseFQN?: string;
+  /**
+   * Named measured values (official TestCaseResult.testResultValue), e.g. a
+   * tableDiff run's removedRows / addedRows / diffCount. Only entries the
+   * run actually computed are present — never placeholders.
+   * ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
+   */
+  testResultValue?: TestResultValue[];
 }
 
 export interface TestSummary {

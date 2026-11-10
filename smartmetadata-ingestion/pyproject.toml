@@ -55,6 +55,11 @@ doris = [
 mssql = ["sqlalchemy-pytds~=1.0"]
 mssql-odbc = ["pyodbc~=5.3"]
 mssql-pymssql = ["pymssql~=2.3.9"]
+# trino: OM plugins["trino"] is bare trino[sqlalchemy]; SM live reads use trino.dbapi directly.
+trino = ["trino[sqlalchemy]"]
+# clickzetta: OM pins clickzetta-connector==1.0.30 (+ clickzetta-sqlalchemy, unused here — SM has no SQLAlchemy engine for ClickZetta).
+clickzetta = ["clickzetta-connector==1.0.30"]
+# azuresql: no new extra — its TDS drivers come from mssql / mssql-odbc / mssql-pymssql.
 
 mariadb = ["pymysql>=1.1,<2"]
 redshift = [

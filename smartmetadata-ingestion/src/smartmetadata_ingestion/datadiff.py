@@ -11,7 +11,10 @@
 Maps a ``source.type`` to the connector's table-parameter builder, key-set
 differ, live connect factory and live key fetcher. A type with no entry here
 has no data-diff implementation and the workflow rejects it explicitly
-instead of silently running a metadata pass.
+instead of silently running a metadata pass. Nine types are bound
+(databricks / mssql / mysql / postgres / snowflake / unitycatalog +
+trino / azuresql / clickzetta, P2-5); redshift is still unbound by design —
+it gets its own connector item, it never reuses the postgres binding.
 
 Clean-room: no collate-data-diff dependency. The official engine
 (``data_diff.diff_tables``) compares full row values; this module only
@@ -27,6 +30,10 @@ from typing import Any, Literal
 
 from smartmetadata_ingestion.config import DataDiffSideSpec, DataDiffSpec
 from smartmetadata_ingestion.connectors import (
+    azuresql_common,
+    azuresql_data_diff,
+    clickzetta_common,
+    clickzetta_data_diff,
     databricks_common,
     databricks_data_diff,
     mssql_common,
@@ -37,10 +44,13 @@ from smartmetadata_ingestion.connectors import (
     postgres_data_diff,
     snowflake_common,
     snowflake_data_diff,
+    trino_common,
+    trino_data_diff,
     unitycatalog_data_diff,
 )
 from smartmetadata_ingestion.connectors.profile_sql import (
     quote_ansi,
+    quote_clickzetta,
     quote_mssql,
     quote_mysql,
 )
@@ -136,6 +146,34 @@ DATA_DIFF_BINDINGS: dict[str, DataDiffBinding] = {
         databricks_common.quote_ident,
         "three",
         "catalog",
+    ),
+    # P2-5: Trino takes the table-specific catalog per side (official
+    # TrinoTableParameter injects catalog + schema from the table FQN).
+    "trino": DataDiffBinding(
+        trino_data_diff.TrinoTableParameter,
+        trino_data_diff.TrinoDataDiff,
+        trino_common.trino_connect,
+        quote_ansi,
+        "three",
+        "catalog",
+    ),
+    # P2-5: Azure SQL is SQL Server over TDS (official groups Mssql +
+    # AzureSQL as one dialect family; dialect stays "mssql").
+    "azuresql": DataDiffBinding(
+        azuresql_data_diff.AzureSQLTableParameter,
+        azuresql_data_diff.AzureSQLDataDiff,
+        azuresql_common.azuresql_connect,
+        quote_mssql,
+        "three",
+    ),
+    # P2-5: ClickZetta tables are addressed schema.table; the side's
+    # database segment is the workspace.
+    "clickzetta": DataDiffBinding(
+        clickzetta_data_diff.ClickzettaTableParameter,
+        clickzetta_data_diff.ClickzettaDataDiff,
+        clickzetta_common.clickzetta_connect,
+        quote_clickzetta,
+        "two",
     ),
 }
 

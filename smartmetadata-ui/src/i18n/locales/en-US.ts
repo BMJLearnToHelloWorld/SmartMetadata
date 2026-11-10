@@ -1229,6 +1229,12 @@ const enUS = {
       searchPlaceholder: 'Search test cases',
       statusFilter: 'Status',
       empty: 'No test cases yet. Create one to start monitoring data quality.',
+      diffValues: 'Measured values',
+      tableDiffSearchTable: 'Search tables',
+      tableDiffTypeColumn: 'Type a column name, or pick one',
+      tableDiffTable2Required: 'Table 2 is required for a tableDiff test case',
+      tableDiffColumnsUnavailable:
+        'Columns could not be loaded for this table; type column names instead.',
     },
     testDefinitions: {
       title: 'Test Definitions',
