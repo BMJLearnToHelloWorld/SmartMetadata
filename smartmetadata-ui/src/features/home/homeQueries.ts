@@ -14,7 +14,7 @@ import type { LoginUser, SearchHit } from '@/types/api';
 export type CountSort = 'high' | 'low';
 export type AssetSort = 'latest' | 'name';
 export type ActivityFilter = 'all' | string;
-export type TotalRangeDays = 7 | 30;
+export type TotalRangeDays = 7 | 14 | 30 | 90;
 
 export function domainFilters(domain: string | undefined): SearchFilters {
   const trimmed = domain?.trim();

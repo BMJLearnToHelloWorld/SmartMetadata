@@ -10,7 +10,6 @@ import SmIcon from '@/components/shared/SmIcon.vue';
 
 const props = withDefaults(
   defineProps<{
-    userName: string;
     domains: Array<{ value: string; label: string }>;
     selectedDomain: string;
     serviceChips: Array<{ key: string; count: number }>;
@@ -47,12 +46,9 @@ function onDomainChange(value: unknown): void {
 <template>
   <section class="home-hero" data-testid="home-hero">
     <span class="home-hero__mark" aria-hidden="true" />
-    <div class="home-hero__copy">
-      <h2 class="home-hero__welcome" data-testid="home-hero-welcome">
-        {{ t('home.welcome', { name: userName || t('chrome.signedIn') }) }}
-      </h2>
-      <p class="home-hero__slogan">{{ t('home.slogan') }}</p>
-    </div>
+    <!-- D-2: the welcome line lives in the page-top greeting header
+         now, so this hero keeps only its tools — search, domain
+         filter and service chips. -->
     <div class="home-hero__tools">
       <div class="home-hero__search-row">
       <Input
@@ -117,24 +113,6 @@ function onDomainChange(value: unknown): void {
   background: var(--sm-color-primary);
   box-shadow: var(--sm-shadow-card);
 }
-.home-hero__copy {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-}
-.home-hero__welcome {
-  margin: 0;
-  color: var(--sm-text-on-primary);
-  font-size: 22px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-.home-hero__slogan {
-  margin: 6px 0 0;
-  color: var(--sm-color-primary-25);
-  font-size: 13px;
-  line-height: 1.45;
-}
 .home-hero__mark {
   position: absolute;
   right: -22px;
@@ -147,6 +125,41 @@ function onDomainChange(value: unknown): void {
   transform: rotate(18deg);
 }
 .home-hero__tools {
-  display: none;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.home-hero__search-row {
+  display: flex;
+  gap: 12px;
+}
+.home-hero__search {
+  flex: 1;
+  min-width: 0;
+}
+.home-hero__domain {
+  flex-shrink: 0;
+  width: 200px;
+}
+.home-hero__domain-note {
+  margin: 0;
+  color: var(--sm-color-primary-25);
+  font-size: 12px;
+}
+.home-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.home-hero__chip {
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sm-text-on-primary);
+  cursor: pointer;
+  font-size: 12px;
 }
 </style>

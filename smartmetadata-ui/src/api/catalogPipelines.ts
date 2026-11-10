@@ -70,11 +70,14 @@ export function mapCatalogPipelineStatus(value: unknown): CatalogPipelineStatus 
         return mapped ? [mapped] : [];
       })
     : [];
+  const errorRec = asRecord(rec.error);
+  const errorMessage = errorRec ? asString(errorRec.errorMessage) : undefined;
   return {
     timestamp,
     executionStatus,
     executionId: asString(rec.executionId) || undefined,
     endTime: asNumber(rec.endTime),
+    error: errorMessage ? { errorMessage } : undefined,
     taskStatus,
   };
 }

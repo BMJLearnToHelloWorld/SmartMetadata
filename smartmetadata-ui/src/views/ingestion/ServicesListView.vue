@@ -3,25 +3,54 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Button, Tabs, message } from 'ant-design-vue';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
+import { getServicesOverview, type ServiceHealth, type ServiceSummary } from '@/api/services';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import {
+  KIND_BY_ENTITY_TYPE,
+  OVERVIEW_PARAMS,
+} from '@/features/home/widgets/usePlatformHealth';
 import { SERVICE_DELETE_API, SERVICE_LIST_API } from '@/ingestion/serviceApis';
 import type { CatalogService, ServiceKind } from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const services = ref<CatalogService[]>([]);
 const total = ref<number | undefined>();
 const activeKind = ref<string>('all');
+
+/**
+ * The `?health=` filter the PlatformHealth widget links with (condition 8):
+ * `failing` / `healthy` / `notRun`, the same three buckets the card counts.
+ * An unknown value is no filter, never a broken page.
+ * ADR:2026-11-08-my-data-services-health-filter
+ */
+type HealthFilter = 'failing' | 'healthy' | 'notRun';
+const HEALTH_FILTER_TO_SERVICE_HEALTH: Record<HealthFilter, ServiceHealth> = {
+  failing: 'failed',
+  healthy: 'success',
+  notRun: 'notRun',
+};
+const healthFilter = computed<HealthFilter | undefined>(() => {
+  const value = route.query.health;
+  return value === 'failing' || value === 'healthy' || value === 'notRun' ? value : undefined;
+});
+const healthCounts = ref<Record<HealthFilter, number>>({
+  failing: 0,
+  healthy: 0,
+  notRun: 0,
+});
+
 const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
 const filteredServices = computed(() =>
   activeKind.value === 'all' ? services.value : services.value.filter((item) => item.kind === activeKind.value),
@@ -41,6 +70,27 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
+    if (healthFilter.value) {
+      // The health buckets come from the server's own tally — the overview
+      // endpoint reduces every service's pipelines worst-wins. The page is
+      // narrowed by health; the counts in the chips are estate-wide.
+      const overview = await getServicesOverview({
+        ...OVERVIEW_PARAMS,
+        health: [HEALTH_FILTER_TO_SERVICE_HEALTH[healthFilter.value]],
+        limit: 100,
+      });
+      services.value = overview.data.map((summary: ServiceSummary) => ({
+        id: summary.id,
+        name: summary.name,
+        displayName: summary.displayName,
+        description: summary.description,
+        fullyQualifiedName: summary.fullyQualifiedName,
+        kind: KIND_BY_ENTITY_TYPE[summary.entityType] ?? 'database',
+        serviceType: summary.serviceType ?? '',
+      }));
+      total.value = overview.total;
+      return;
+    }
     const kinds = supportedCategories.value.map((row) => row.key as ServiceKind);
     const settled = await Promise.allSettled(kinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })));
     const pages = settled.map((result) =>
@@ -60,6 +110,31 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadHealthCounts(): Promise<void> {
+  try {
+    const overview = await getServicesOverview(OVERVIEW_PARAMS);
+    const sum = (health: ServiceHealth): number =>
+      Object.values(overview.healthCounts ?? {}).reduce(
+        (acc, byHealth) => acc + (byHealth[health] ?? 0),
+        0,
+      );
+    healthCounts.value = {
+      failing: sum('failed'),
+      healthy: sum('success'),
+      notRun: sum('notRun'),
+    };
+  } catch {
+    healthCounts.value = { failing: 0, healthy: 0, notRun: 0 };
+  }
+}
+
+function setHealthFilter(filter: HealthFilter | undefined): void {
+  void router.replace({
+    name: 'ingestion-services',
+    query: filter ? { health: filter } : {},
+  });
 }
 
 function openDetail(service: CatalogService): void {
@@ -90,6 +165,11 @@ async function onDelete(service: CatalogService): Promise<void> {
 
 onMounted(() => {
   void load();
+  void loadHealthCounts();
+});
+
+watch(healthFilter, () => {
+  void load();
 });
 </script>
 
@@ -119,6 +199,30 @@ onMounted(() => {
       </Button>
     </template>
     <template #filters>
+      <div class="services-list__health" data-testid="services-health-filter" role="group" :aria-label="t('ingestion.services.health')">
+        <button
+          type="button"
+          class="services-list__health-chip"
+          :class="{ 'services-list__health-chip--active': !healthFilter }"
+          :aria-pressed="!healthFilter"
+          data-testid="services-health-all"
+          @click="setHealthFilter(undefined)"
+        >
+          {{ t('ingestion.services.allServices') }}
+        </button>
+        <button
+          v-for="option in (['failing', 'healthy', 'notRun'] as const)"
+          :key="option"
+          type="button"
+          class="services-list__health-chip"
+          :class="{ 'services-list__health-chip--active': healthFilter === option }"
+          :aria-pressed="healthFilter === option"
+          :data-testid="`services-health-${option}`"
+          @click="setHealthFilter(option)"
+        >
+          {{ t(`ingestion.services.health${option[0].toUpperCase()}${option.slice(1)}`) }} · {{ healthCounts[option] }}
+        </button>
+      </div>
       <Tabs :active-key="activeKind" data-testid="services-kind-tabs" @change="(key) => (activeKind = String(key))">
         <Tabs.TabPane key="all" :tab="t('ingestion.services.allKinds')" />
         <Tabs.TabPane
@@ -141,3 +245,27 @@ onMounted(() => {
     </template>
   </EntityListShell>
 </template>
+
+<style scoped>
+.services-list__health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.services-list__health-chip {
+  border: 1px solid #d9d9d9;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.services-list__health-chip--active {
+  border-color: #005587;
+  color: #005587;
+  font-weight: 600;
+}
+</style>

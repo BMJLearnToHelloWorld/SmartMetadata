@@ -22,7 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(initialPath = '/ingestion/services') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -41,7 +41,7 @@ async function mountView() {
       },
     ],
   });
-  await router.push('/ingestion/services');
+  await router.push(initialPath);
   await router.isReady();
   const wrapper = mount(ServicesListView, {
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -170,6 +170,44 @@ describe('ServicesListView', () => {
     );
     const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('Warehouse');
+  });
+
+  it('filters by health from the overview endpoint when ?health=failing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/overview')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 's9',
+                name: 'broken',
+                displayName: 'Broken',
+                entityType: 'databaseService',
+                serviceType: 'Postgres',
+                health: 'failed',
+              },
+            ],
+            total: 1,
+            healthCounts: { databaseService: { failed: 1, success: 2, notRun: 0 } },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView('/ingestion/services?health=failing');
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Broken');
+    // The failing chip is active and carries the estate-wide count.
+    expect(wrapper.get('[data-testid="services-health-failing"]').text()).toContain('1');
+    expect(wrapper.get('[data-testid="services-health-healthy"]').text()).toContain('2');
+    // The per-kind list APIs were never called for the filtered view.
+    const listCalled = vi.mocked(fetch).mock.calls.some(([input]) =>
+      String(input).includes('/api/v1/services/databaseServices'),
+    );
+    expect(listCalled).toBe(false);
   });
 
 });

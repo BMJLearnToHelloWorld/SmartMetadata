@@ -27,6 +27,12 @@ export const KPI_FIELDS = 'owners,dataInsightChart,kpiResult';
 export interface ListKpisQuery {
   limit?: number;
   after?: string;
+  /**
+   * Field set override. The KPI widget's whole-list fetch asks for
+   * `dataInsightChart` only (official fetchAllKpis); every other
+   * caller keeps the default KPI_FIELDS.
+   */
+  fields?: string;
 }
 
 function mapKpiTarget(raw: Record<string, unknown>): KpiTarget | null {
@@ -122,7 +128,7 @@ async function parseKpiResponse(raw: unknown, context: string): Promise<Kpi> {
 export function listKpis(query: ListKpisQuery = {}): Promise<Paged<Kpi>> {
   return apiRequest<unknown>('/v1/kpi', {
     query: {
-      fields: KPI_FIELDS,
+      fields: query.fields ?? KPI_FIELDS,
       limit: query.limit ?? 25,
       after: query.after,
     },
@@ -225,4 +231,27 @@ export async function getLatestKpiResult(name: string): Promise<KpiResult | unde
   const raw = await apiRequest<unknown>(`/v1/kpi/${encodeURIComponent(name)}/latestKpiResult`);
   const rec = asRecord(raw);
   return rec ? mapKpiResult(rec) : undefined;
+}
+
+/** Page size for the KPI widget's whole-list fetch (official PAGE_SIZE_LARGE). */
+export const KPI_PAGE_SIZE_LARGE = 50;
+
+/**
+ * Official kpiAPI.fetchAllKpis (rest/kpiAPI.ts): pages listKpis until
+ * the server total is covered, requesting fields=dataInsightChart so
+ * each KPI carries its chart definition. The widget lists every KPI
+ * definition — a single page would silently drop the rest.
+ */
+export async function fetchAllKpis(): Promise<Kpi[]> {
+  const all: Kpi[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await listKpis({ fields: 'dataInsightChart', limit: KPI_PAGE_SIZE_LARGE, after });
+    all.push(...page.data);
+    const next = page.paging?.after;
+    if (!next || page.data.length === 0) {
+      return all;
+    }
+    after = next;
+  }
 }

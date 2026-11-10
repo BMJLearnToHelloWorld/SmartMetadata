@@ -142,10 +142,14 @@ describe('tasks API', () => {
     expect(page.data[0]?.type).toBe('MemoryConflictReview');
     const url = new URL(lastFetch().url);
     expect(url.pathname).toBe('/api/v1/tasks/assigned');
-    expect(url.searchParams.get('type')).toBe('MemoryConflictReview');
-    expect(url.searchParams.get('status')).toBe('Open');
-    expect(url.searchParams.get('fields')).toBe('about,createdBy,payload');
-    expect(url.searchParams.get('limit')).toBe('20');
+    // G-11 (Wave 2): the My Tasks widget wants every open task, so the
+    // client no longer defaults type to MemoryConflictReview or status
+    // to Open — the widget passes statusGroup=open instead, fields
+    // include assignees, and the page is 100 (official useMyTasks).
+    expect(url.searchParams.has('type')).toBe(false);
+    expect(url.searchParams.has('status')).toBe(false);
+    expect(url.searchParams.get('fields')).toBe('assignees,createdBy,about,payload');
+    expect(url.searchParams.get('limit')).toBe('100');
     expect(url.searchParams.get('after')).toBe('cursor-1');
     expect(url.searchParams.has('offset')).toBe(false);
   });

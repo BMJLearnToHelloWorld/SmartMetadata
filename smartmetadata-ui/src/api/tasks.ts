@@ -154,6 +154,7 @@ function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
     payload: isDar ? mapDataAccessPayload(raw.payload) : undefined,
     suggestionPayload: isDar ? undefined : parseTaskSuggestionPayload(raw.payload),
     reviewPayload: isReview ? mapReviewPayload(raw.payload) : undefined,
+    rawPayload: isDar ? undefined : (asRecord(raw.payload) ?? undefined),
     availableTransitions: mapAvailableTransitions(raw.availableTransitions),
   };
 }
@@ -185,7 +186,12 @@ export function listTasks(query: ListTasksQuery = {}): Promise<Paged<Collaborati
  * Official listMyAssignedTasks (rest/tasksAPI.ts): GET /v1/tasks/assigned,
  * filtered by the current user and their teams server-side, cursor-paged
  * (before/after via listInternal) — never the offset mode of
- * listDataAccessRequests. The review payload mapping (R-W13-2) is done:
+ * listDataAccessRequests. The My Tasks widget calls it with
+ * fields=assignees,createdBy,about,payload, limit=100 and
+ * statusGroup=open (official useMyTasks); no type default — the widget
+ * wants every open task, not only MemoryConflictReview. Callers that
+ * need one type pass `type` explicitly (G-21 passes
+ * MemoryConflictReview). The review payload mapping (R-W13-2) is done:
  * mapTask fills reviewPayload for MemoryConflictReview tasks.
  */
 export interface ListMyAssignedTasksQuery {
@@ -194,6 +200,7 @@ export interface ListMyAssignedTasksQuery {
   before?: string;
   type?: string;
   status?: string;
+  statusGroup?: string;
   fields?: string;
 }
 
@@ -202,12 +209,13 @@ export function listMyAssignedTasks(
 ): Promise<Paged<CollaborationTask>> {
   return apiRequest<unknown>('/v1/tasks/assigned', {
     query: {
-      fields: query.fields ?? 'about,createdBy,payload',
-      limit: query.limit ?? 20,
+      fields: query.fields ?? 'assignees,createdBy,about,payload',
+      limit: query.limit ?? 100,
       after: query.after,
       before: query.before,
-      type: query.type ?? 'MemoryConflictReview',
-      status: query.status ?? 'Open',
+      type: query.type,
+      status: query.status,
+      statusGroup: query.statusGroup,
     },
   }).then((payload) => parsePaged(payload, mapTask));
 }

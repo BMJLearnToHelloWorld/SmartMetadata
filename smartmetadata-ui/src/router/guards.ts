@@ -48,7 +48,17 @@ import type { OperationPermissions } from '@/api/permissions';
 // task-forms, glossary-term-relations), which resolve to admin
 // routes as well. Every /settings/* URL in the product currently
 // resolves to an admin route, so no non-admin route is affected.
-export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings'] as const;
+// '/announcements' is the announcements management list (B-7,
+// Wave 2 G-11 stage C): official puts system announcements under
+// Settings with a bare <AdminProtectedRoute> — "System announcements
+// are admin-only: the server lets no one else write them"
+// (SettingsRouter.tsx) — i.e. admin-only with no hasPermission line.
+// The product equivalent is this prefix with no ADMIN_ROUTE_RESOURCE
+// entry, so non-admins are forbidden and only admins enter; the
+// duplicate sub-route shares the prefix. The read-only home
+// announcement rail is unaffected: it is not an admin route.
+// ADR:2026-11-08-my-data-announcements-admin-gate
+export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements'] as const;
 
 /**
  * Admin route name -> permission resource for the guard's second

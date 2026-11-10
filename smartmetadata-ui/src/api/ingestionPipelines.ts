@@ -28,6 +28,14 @@ export interface ListIngestionPipelinesQuery {
   service?: string;
   pipelineType?: string;
   serviceType?: string;
+  /**
+   * Field-set override (official arrQueryFields, joined into the
+   * `fields` query param). The Platform Health culprit lookup asks
+   * for `pipelineStatuses`; every other caller keeps the default.
+   */
+  fields?: string;
+  /** Service FQN filter — official `serviceFilter`, sent as `service`. */
+  serviceFilter?: string;
 }
 
 function mapSourceConfig(value: unknown): PipelineSourceConfig | undefined {
@@ -90,6 +98,31 @@ export function mapIngestionPipeline(raw: Record<string, unknown>): IngestionPip
     deployed: asBoolean(raw.deployed),
     enabled: asBoolean(raw.enabled),
     loggerLevel: asString(raw.loggerLevel) || undefined,
+    pipelineStatuses: Array.isArray(raw.pipelineStatuses)
+      ? raw.pipelineStatuses.flatMap((item) => {
+          const rec = asRecord(item);
+          const mapped = rec ? mapPipelineStatus(rec) : null;
+          return mapped ? [mapped] : [];
+        })
+      : undefined,
+  };
+}
+
+function mapPipelineStepStatus(value: unknown): PipelineStepStatus | null {
+  const rec = asRecord(value);
+  if (!rec) {
+    return null;
+  }
+  const failures = Array.isArray(rec.failures)
+    ? rec.failures.flatMap((item) => {
+        const failure = asRecord(item);
+        const error = failure ? asString(failure.error) : '';
+        return error ? [{ error }] : [];
+      })
+    : undefined;
+  return {
+    name: asString(rec.name) || undefined,
+    failures: failures?.length ? failures : undefined,
   };
 }
 
@@ -106,6 +139,12 @@ export function mapPipelineStatus(raw: Record<string, unknown>): PipelineStatus 
     timestamp: asNumber(raw.timestamp),
     endDate: asNumber(raw.endDate),
     triggeredBy: asString(raw.triggeredBy) || undefined,
+    status: Array.isArray(raw.status)
+      ? raw.status.flatMap((item) => {
+          const mapped = mapPipelineStepStatus(item);
+          return mapped ? [mapped] : [];
+        })
+      : undefined,
   };
 }
 
@@ -114,10 +153,10 @@ export function listIngestionPipelines(
 ): Promise<Paged<IngestionPipeline>> {
   return apiRequest<unknown>('/v1/services/ingestionPipelines', {
     query: {
-      fields: INGESTION_PIPELINE_FIELDS,
+      fields: query.fields ?? INGESTION_PIPELINE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
-      service: query.service,
+      service: query.serviceFilter ?? query.service,
       pipelineType: query.pipelineType,
       serviceType: query.serviceType,
     },
