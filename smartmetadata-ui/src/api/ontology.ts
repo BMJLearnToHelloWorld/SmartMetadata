@@ -20,6 +20,12 @@ import type {
   OntologyProperty,
   OntologyRelease,
 } from '@/types/ontology';
+import type {
+  NativeOntologyDataGraphPage,
+  NativeOntologyDataGraphPageRequest,
+  OntologyInferenceExplanation,
+  OntologyInferenceExplanationRequest,
+} from '@/types/ontologyDataGraph';
 import { apiRequest } from './client';
 
 /**
@@ -102,9 +108,11 @@ function mapOntologyConcept(raw: Record<string, unknown>): OntologyConcept | nul
     description: asString(raw.description) || undefined,
     iri: asString(raw.iri) || undefined,
     conceptType: asString(raw.conceptType) || undefined,
+    ontology: mapEntityRefs(raw.ontology ? [raw.ontology] : [])[0],
     synonyms,
     superClasses: mapEntityRefs(raw.superClasses),
     subClasses: mapEntityRefs(raw.subClasses),
+    conceptMappings: mapEntityRefs(raw.conceptMappings),
     lifecycleStatus: asString(raw.lifecycleStatus) || undefined,
     deprecated: asBoolean(raw.deprecated) ?? undefined,
     owners: mapEntityRefs(raw.owners),
@@ -446,15 +454,234 @@ export async function getOntologyConceptBindings(
           return [];
         }
         const assetRefs = mapEntityRefs(rec.asset ? [rec.asset] : []);
+        const columns = Array.isArray(rec.columns)
+          ? rec.columns.flatMap((column) => {
+              const col = asRecord(column);
+              if (!col) {
+                return [];
+              }
+              const propertyRefs = mapEntityRefs(col.property ? [col.property] : []);
+              return [
+                {
+                  columnPath: Array.isArray(col.columnPath)
+                    ? col.columnPath.filter((item): item is string => typeof item === 'string')
+                    : [],
+                  propertyId: asString(col.propertyId) || undefined,
+                  property: propertyRefs[0],
+                },
+              ];
+            })
+          : undefined;
         return [
           {
             assetType: asString(rec.assetType) || undefined,
             assetId: asString(rec.assetId) || undefined,
             asset: assetRefs[0],
             columnCount: Array.isArray(rec.columns) ? rec.columns.length : undefined,
+            columns,
           },
         ];
       })
     : [];
   return { assets, after: asString(root.after) || undefined };
+}
+
+/**
+ * Official getNativeOntologyDataGraphPage (rest/ontologyAPI.ts): POST
+ * /v1/ontologies/{ontologyId}/dataGraph/pages — the native data-mode
+ * page endpoint. One request at a time: each response replaces the
+ * `loaded` context the next request must carry
+ * (see useNativeOntologyDataGraph).
+ */
+export async function getNativeOntologyDataGraphPage(
+  ontologyId: string,
+  request: NativeOntologyDataGraphPageRequest,
+  signal?: AbortSignal,
+): Promise<NativeOntologyDataGraphPage> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `${ONTOLOGIES_PATH}/${encodeURIComponent(ontologyId)}/dataGraph/pages`,
+    { json: request, signal },
+  );
+  const clusters = Array.isArray(raw.clusters)
+    ? raw.clusters.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        const conceptRefs = mapEntityRefs(rec.concept ? [rec.concept] : []);
+        const assets = Array.isArray(rec.assets)
+          ? rec.assets.flatMap((assetItem) => {
+              const assetRec = asRecord(assetItem);
+              if (!assetRec) {
+                return [];
+              }
+              const assetRefs = mapEntityRefs(assetRec.asset ? [assetRec.asset] : []);
+              return [
+                {
+                  asset: assetRefs[0] ?? { name: '' },
+                  columnCount: asNumber(assetRec.columnCount) ?? 0,
+                  serviceType: asString(assetRec.serviceType) || undefined,
+                },
+              ];
+            })
+          : [];
+        return [
+          {
+            concept: conceptRefs[0] ?? { name: '' },
+            assetCount: asNumber(rec.assetCount) ?? assets.length,
+            assets,
+            after: asString(rec.after) || undefined,
+          },
+        ];
+      })
+    : undefined;
+  const bindings = asRecord(raw.bindings);
+  const topology = asRecord(raw.topology) ?? {};
+  const loaded = Array.isArray(raw.loaded)
+    ? raw.loaded.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        return [
+          {
+            bindingRevision: asNumber(rec.bindingRevision) ?? 0,
+            conceptId: asString(rec.conceptId) || '',
+            throughAssetId: asString(rec.throughAssetId) || undefined,
+          },
+        ];
+      })
+    : [];
+  return {
+    bindings: bindings
+      ? {
+          after: asString(bindings.after) || undefined,
+          assets: Array.isArray(bindings.assets)
+            ? bindings.assets.flatMap((assetItem) => {
+                const assetRec = asRecord(assetItem);
+                if (!assetRec) {
+                  return [];
+                }
+                const assetRefs = mapEntityRefs(assetRec.asset ? [assetRec.asset] : []);
+                const columns = Array.isArray(assetRec.columns)
+                  ? assetRec.columns.flatMap((column) => {
+                      const col = asRecord(column);
+                      if (!col) {
+                        return [];
+                      }
+                      const propertyRefs = mapEntityRefs(col.property ? [col.property] : []);
+                      return [
+                        {
+                          columnPath: Array.isArray(col.columnPath)
+                            ? col.columnPath.filter((p): p is string => typeof p === 'string')
+                            : [],
+                          propertyId: asString(col.propertyId) || '',
+                          property: propertyRefs[0],
+                          state: asString(col.state) || undefined,
+                        },
+                      ];
+                    })
+                  : [];
+                return [
+                  {
+                    asset: assetRefs[0] ?? { name: '' },
+                    assetId: asString(assetRec.assetId) || '',
+                    assetType: asString(assetRec.assetType) || '',
+                    columns,
+                    serviceType: asString(assetRec.serviceType) || undefined,
+                  },
+                ];
+              })
+            : [],
+          revision: asNumber(bindings.revision) ?? 0,
+        }
+      : undefined,
+    clusters,
+    contextFull: raw.contextFull === true,
+    loaded,
+    nextClusterOffset: asNumber(raw.nextClusterOffset) ?? undefined,
+    topology: {
+      edges: Array.isArray(topology.edges)
+        ? topology.edges.flatMap((edgeItem) => {
+            const edgeRec = asRecord(edgeItem);
+            if (!edgeRec) {
+              return [];
+            }
+            return [
+              {
+                fromConceptId: asString(edgeRec.fromConceptId) || '',
+                toConceptId: asString(edgeRec.toConceptId) || '',
+                propertyIri: asString(edgeRec.propertyIri) || '',
+                label: asString(edgeRec.label) || undefined,
+              },
+            ];
+          })
+        : [],
+      lineageEdges: Array.isArray(topology.lineageEdges)
+        ? topology.lineageEdges.flatMap((edgeItem) => {
+            const edgeRec = asRecord(edgeItem);
+            if (!edgeRec) {
+              return [];
+            }
+            return [
+              {
+                fromEntity: asString(edgeRec.fromEntity) || '',
+                toEntity: asString(edgeRec.toEntity) || '',
+              },
+            ];
+          })
+        : [],
+      after: asString(topology.after) || undefined,
+    },
+  };
+}
+
+/**
+ * Official explainOntologyInference (rest/ontologyAPI.ts): POST
+ * /v1/ontologies/reasoning/explanations. Response shape follows the spec
+ * (api/data/ontologyInferenceExplanation.json).
+ */
+export async function explainOntologyInference(
+  request: OntologyInferenceExplanationRequest,
+): Promise<OntologyInferenceExplanation> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    '/v1/ontology/reasoning/explanations',
+    { json: request },
+  );
+  const glossaryRefs = mapEntityRefs(raw.glossary ? [raw.glossary] : []);
+  const statement = asRecord(raw.statement);
+  const explanations = Array.isArray(raw.explanations)
+    ? raw.explanations.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        const rule = asRecord(rec.rule) ?? {};
+        return [
+          {
+            graphUri: asString(rec.graphUri) || '',
+            rule: {
+              name: asString(rule.name) || '',
+              displayName: asString(rule.displayName) || undefined,
+              description: asString(rule.description) || undefined,
+            },
+            tripleCount: asNumber(rec.tripleCount) ?? 0,
+            lastMaterializedAt: asNumber(rec.lastMaterializedAt) ?? undefined,
+          },
+        ];
+      })
+    : [];
+  return {
+    glossary: glossaryRefs[0],
+    statement: statement
+      ? {
+          subject: asString(statement.subject) || undefined,
+          predicate: asString(statement.predicate) || undefined,
+          object: asString(statement.object) || undefined,
+        }
+      : undefined,
+    asserted: asBoolean(raw.asserted) ?? undefined,
+    inferred: asBoolean(raw.inferred) ?? undefined,
+    explanations,
+  };
 }

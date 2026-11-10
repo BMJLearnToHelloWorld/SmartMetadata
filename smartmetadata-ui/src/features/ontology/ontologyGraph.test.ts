@@ -80,7 +80,7 @@ describe('buildOntologyGraphData', () => {
     // getModelRelations and the studio draw-to-connect semantics. The
     // previous product direction (superclass -> subclass) was inverted.
     expect(data.edges).toEqual([
-      { id: 'child->parent:subClassOf', label: 'isA', source: 'child', target: 'parent', relationType: 'subClassOf' },
+      { edgeKind: 'ontology', id: 'child->parent:subClassOf', label: 'isA', source: 'child', target: 'parent', relationType: 'subClassOf' },
     ]);
   });
 
@@ -313,6 +313,8 @@ describe('buildOntologyModelGraph', () => {
         label: 'Customer',
         ontologyFqn: 'sales',
         ontologyId: 'o1',
+        originalLabel: 'Customer',
+        type: 'ontologyConcept',
       },
       {
         conceptType: undefined,
@@ -324,6 +326,8 @@ describe('buildOntologyModelGraph', () => {
         label: 'Party',
         ontologyFqn: 'sales',
         ontologyId: 'o1',
+        originalLabel: 'Party',
+        type: 'ontologyConcept',
       },
       {
         conceptType: undefined,
@@ -335,10 +339,12 @@ describe('buildOntologyModelGraph', () => {
         label: 'Lonely',
         ontologyFqn: 'sales',
         ontologyId: 'o1',
+        originalLabel: 'Lonely',
+        type: 'ontologyConcept',
       },
     ]);
     expect(data.edges).toEqual([
-      { id: 'axiom:ax-sub:0', label: 'isA', relationType: 'subClassOf', source: 'c1', target: 'c2' },
+      { edgeKind: 'ontology', id: 'axiom:ax-sub:0', label: 'isA', relationType: 'subClassOf', source: 'c1', target: 'c2' },
     ]);
   });
 
@@ -361,6 +367,7 @@ describe('buildOntologyModelGraph', () => {
     );
     expect(data.edges).toHaveLength(1);
     expect(data.edges[0]).toEqual({
+      edgeKind: 'ontology',
       id: 'axiom:ax-sub:0',
       label: 'isA',
       relationType: 'subClassOf',

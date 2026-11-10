@@ -41,10 +41,14 @@ export interface OntologyConcept {
   description?: string;
   iri?: string;
   conceptType?: string;
+  /** Owning ontology (spec entity/data/ontologyConcept.json). */
+  ontology?: EntityRef;
   synonyms?: string[];
   superClasses?: EntityRef[];
   subClasses?: EntityRef[];
   lifecycleStatus?: string;
+  /** Mappings to external vocabularies (spec entity/data/ontologyConcept.json). */
+  conceptMappings?: EntityRef[];
   deprecated?: boolean;
   owners: EntityRef[];
 }
@@ -71,6 +75,8 @@ export interface OntologyProperty {
   enumValues?: string[];
   unit?: string;
   isIdentifier?: boolean;
+  /** Soft-delete flag (openmetadata-spec entity/data/ontologyProperty.json). */
+  deleted?: boolean;
   owners: EntityRef[];
 }
 
@@ -172,6 +178,10 @@ export interface OntologyConceptBinding {
   assetId?: string;
   asset?: EntityRef;
   columnCount?: number;
+  /** Bound columns (assetBinding.columns): the inspector needs the
+   * property ids to list properties a binding uses that the concept
+   * does not declare. */
+  columns?: Array<{ columnPath: string[]; propertyId?: string; property?: EntityRef }>;
 }
 
 /**

@@ -57,6 +57,19 @@ export interface EntityRef {
    * glossaryTerms.mapRelatedTerms; other EntityRef producers leave it unset.
    */
   relationType?: string;
+  /**
+   * Stored TermRelation passthrough (official type/termRelation.json),
+   * carried only by glossaryTerms.mapRelatedTerms: the relation's own id
+   * (the graph edge key), the relationship-type entity, provenance,
+   * status, and audit fields. The graph builder and the relation
+   * details panel read them; no other producer sets them.
+   */
+  relationId?: string;
+  relationshipType?: EntityRef;
+  provenance?: 'AiSuggested' | 'Imported' | 'Inferred' | 'Manual';
+  relationStatus?: string;
+  createdBy?: string;
+  createdAt?: number;
 }
 
 /** Official votes shape (openmetadata-spec type/votes.json). */

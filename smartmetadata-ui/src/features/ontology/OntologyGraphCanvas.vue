@@ -19,6 +19,10 @@ import {
   type OntologyGraphNode,
 } from './ontologyGraph';
 import { ontologyEdgeKey, type GraphSearchHighlight } from './ontologySearchHighlight';
+import {
+  DEFAULT_ONTOLOGY_GRAPH_SETTINGS,
+  type OntologyGraphSettings,
+} from '@/types/ontologyDataGraph';
 
 /**
  * G6 canvas (official OntologyGraphG6.tsx + useOntologyGraphEdit.ts, Vue
@@ -60,6 +64,13 @@ const props = defineProps<{
   scopeKey?: string;
   selectedNodeId?: string | null;
   selectedEdgeId?: string | null;
+  /**
+   * Graph settings (G-18 stage 2, official GraphSettingsPanel): layout +
+   * edge-label visibility. Optional — unset keeps the stage-1 behaviour
+   * (hierarchical dagre + labels shown), so the studio and glossary
+   * relations callers are unaffected.
+   */
+  settings?: OntologyGraphSettings;
 }>();
 
 const emit = defineEmits<{
@@ -181,7 +192,10 @@ function syncElementStyles(): void {
   const edgeUpdates: Array<Record<string, unknown>> = [];
   for (const edge of props.graph.edges) {
     const flags = edgeFlags(edge);
-    const key = `e:${edge.id}:${flags.selected ? 1 : 0}:${flags.dimmed ? 1 : 0}`;
+    // The label-visibility setting is part of the applied key, so a
+    // showEdgeLabels flip re-pushes the edge data and the style function
+    // re-evaluates the label.
+    const key = `e:${edge.id}:${flags.selected ? 1 : 0}:${flags.dimmed ? 1 : 0}:${showEdgeLabels() ? 1 : 0}`;
     if (appliedFlags.get(`e:${edge.id}`) !== key) {
       appliedFlags.set(`e:${edge.id}`, key);
       edgeUpdates.push({ data: { dimmed: flags.dimmed, ontologyEdge: edge, selected: flags.selected }, id: edge.id });
@@ -190,6 +204,25 @@ function syncElementStyles(): void {
   if (edgeUpdates.length) {
     graph.updateEdgeData(edgeUpdates);
   }
+}
+
+/** Official toLayoutEngineType (OntologyExplorer.constants.ts):
+ * Hierarchical -> dagre, Circular -> circular. */
+function layoutConfig(): { type: string; rankdir?: string } {
+  const layout = props.settings?.layout ?? DEFAULT_ONTOLOGY_GRAPH_SETTINGS.layout;
+  return layout === 'Circular' ? { type: 'circular' } : { type: 'dagre', rankdir: 'TB' };
+}
+
+function showEdgeLabels(): boolean {
+  return props.settings?.showEdgeLabels ?? DEFAULT_ONTOLOGY_GRAPH_SETTINGS.showEdgeLabels;
+}
+
+async function remountGraph(): Promise<void> {
+  graph?.destroy();
+  graph = null;
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  await mountGraph();
 }
 
 function getNodePositions(): Record<string, { x: number; y: number }> {
@@ -359,7 +392,7 @@ async function mountGraph(): Promise<void> {
             stroke: data.selected ? '#005587' : '#d5d7da',
             lineWidth: data.selected ? 2 : 1,
             opacity: data.dimmed ? 0.15 : 1,
-            labelText: edge?.label ?? edge?.relationType ?? '',
+            labelText: showEdgeLabels() ? (edge?.label ?? edge?.relationType ?? '') : '',
             labelFontSize: 11,
             labelFill: '#535862',
           };
@@ -382,7 +415,7 @@ async function mountGraph(): Promise<void> {
           };
         },
       },
-      layout: { type: 'dagre', rankdir: 'TB' },
+      layout: layoutConfig(),
       behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
     }) as unknown as GraphLike;
     graph.on('node:click', (event) => {
@@ -456,6 +489,24 @@ watch(
   () => {
     syncElementStyles();
   },
+);
+
+watch(
+  () => props.settings,
+  (next, previous) => {
+    if (!graph) {
+      return;
+    }
+    // A layout change re-lays-out the whole graph (a new layout
+    // repositions everything anyway); a label-only change re-pushes the
+    // edge styles in place.
+    if (next?.layout !== previous?.layout) {
+      void remountGraph();
+    } else {
+      syncElementStyles();
+    }
+  },
+  { deep: true },
 );
 
 watch(

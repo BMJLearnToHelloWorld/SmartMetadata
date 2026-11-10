@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord } from '@/api/json';
+import { asRecord, asString } from '@/api/json';
 import { apiRequest } from './client';
 
 /** Result serializations the playground can request, mirroring SparqlResultFormat. */
@@ -205,14 +205,47 @@ export function replaceSparqlQueryTemplates(
   });
 }
 
+/**
+ * Authenticated RDF and Ontology capability status (pin generated
+ * api/rdf/rdfStatus: RDFStatus) — the full shape, not just the playground's
+ * availableLevels subset: the inference panel gates on `enabled` +
+ * `inference.enabled` and builds entity IRIs from `baseUri`.
+ */
 export interface RdfStatus {
-  enabled?: boolean;
-  inference?: { availableLevels?: string[] };
+  aiEnabled: boolean;
+  baseUri: string;
+  enabled: boolean;
+  inference: { availableLevels: string[]; defaultLevel: string; enabled: boolean };
+  projectionState: 'DEGRADED' | 'DISABLED' | 'READY' | 'REBUILDING';
+  storageType: string;
 }
 
-/** Official rdfAPI: GET /v1/rdf/status. */
-export function fetchRdfConfig(): Promise<RdfStatus> {
-  return apiRequest<RdfStatus>('/v1/rdf/status');
+/** Official rdfAPI fetchRdfConfig: GET /v1/rdf/status. */
+export async function fetchRdfConfig(): Promise<RdfStatus> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/rdf/status');
+  const inference = asRecord(raw.inference);
+  const levels = Array.isArray(inference?.availableLevels)
+    ? inference.availableLevels.filter((level): level is string => typeof level === 'string')
+    : [];
+  const projectionState = asString(raw.projectionState);
+  return {
+    aiEnabled: raw.aiEnabled === true,
+    baseUri: asString(raw.baseUri),
+    enabled: raw.enabled === true,
+    inference: {
+      availableLevels: levels,
+      defaultLevel: asString(inference?.defaultLevel),
+      enabled: inference?.enabled === true,
+    },
+    projectionState:
+      projectionState === 'DEGRADED' ||
+      projectionState === 'DISABLED' ||
+      projectionState === 'READY' ||
+      projectionState === 'REBUILDING'
+        ? projectionState
+        : 'DISABLED',
+    storageType: asString(raw.storageType),
+  };
 }
 
 /**
@@ -334,3 +367,4 @@ function getTermSyntax(term?: RDFTerm): string {
 export function getTermDisplayText(term?: RDFTerm): string {
   return term?.type === 'triple' ? getTermSyntax(term) : getTermLexicalValue(term);
 }
+

@@ -11,6 +11,11 @@ import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } fr
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateGlossaryTermRequest, GlossaryTerm } from '@/types/governance';
+import type {
+  OntologyDataGraph,
+  OntologyDataGraphEdge,
+  OntologySummary,
+} from '@/types/ontologyDataGraph';
 import { apiRequest } from './client';
 import { mapTags } from './entities';
 
@@ -31,7 +36,7 @@ function mapRelatedTerms(value: unknown): EntityRef[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => {
+  return value.flatMap((item): EntityRef[] => {
     if (typeof item === 'string') {
       return item ? [{ name: item, fullyQualifiedName: item, type: 'glossaryTerm' }] : [];
     }
@@ -41,11 +46,21 @@ function mapRelatedTerms(value: unknown): EntityRef[] {
     }
     const nested = asRecord(rec.term);
     // TermRelation carries its typed relation on the outer object
-    // (relationType, default 'relatedTo'); the graph builder needs it.
+    // (relationType, default 'relatedTo'); the graph builder needs it,
+    // plus the stored relation id and audit fields — the edge keys on
+    // relation.id (ADR:2026-11-10-g18-stage2-inspector-rail).
     const relationType = asString(rec.relationType) || undefined;
-    return mapEntityRefs(nested ? [nested] : [rec]).map((ref) =>
-      relationType ? { ...ref, relationType } : ref,
-    );
+    const relationshipRefs = mapEntityRefs(rec.relationshipType ? [rec.relationshipType] : []);
+    return mapEntityRefs(nested ? [nested] : [rec]).map((ref) => ({
+      ...ref,
+      ...(relationType ? { relationType } : {}),
+      relationId: asString(rec.id) || undefined,
+      relationshipType: relationshipRefs[0],
+      provenance: (asString(rec.provenance) as EntityRef['provenance']) || undefined,
+      relationStatus: asString(rec.status) || undefined,
+      createdBy: asString(rec.createdBy) || undefined,
+      createdAt: asNumber(rec.createdAt) || undefined,
+    }));
   });
 }
 
@@ -101,6 +116,7 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     parent: parentRefs[0],
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),
     relatedTerms: mapRelatedTerms(raw.relatedTerms),
+    conceptMappings: mapEntityRefs(raw.conceptMappings),
     owners: mapEntityRefs(raw.owners),
     tags: mapTags(raw.tags),
     // Ant Table draws an expand icon for any truthy children value and an
@@ -202,10 +218,165 @@ export async function updateGlossaryTerm(body: CreateGlossaryTermRequest): Promi
   return mapped;
 }
 
-export function listGlossaryTermAssets(id: string, limit = 25): Promise<Paged<EntityRef>> {
+export function listGlossaryTermAssets(
+  id: string,
+  limit = 25,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<Paged<EntityRef>> {
   return apiRequest<unknown>(`/v1/glossaryTerms/${encodeURIComponent(id)}/assets`, {
-    query: { limit },
+    query: { limit, offset },
+    signal,
   }).then((payload) => parsePaged(payload, (raw) => mapEntityRefs([raw])[0] ?? null));
+}
+
+/**
+ * Official getGlossaryTermAssets (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms/{termId}/assets?limit&offset — the data-mode
+ * tagged-with load-more path (useOntologyExplorer
+ * appendTermAssetsForTerm). Returns the page plus its total so the
+ * caller can track the remaining count.
+ */
+export async function getGlossaryTermAssets(
+  termId: string,
+  limit = 100,
+  offset = 0,
+  signal?: AbortSignal,
+): Promise<{ data: EntityRef[]; total: number }> {
+  const page = await listGlossaryTermAssets(termId, limit, offset, signal);
+  return { data: page.data, total: page.total ?? page.data.length };
+}
+
+/**
+ * Official getOntologySummary (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms/ontology/summary?limit&offset&parent — the health
+ * panel's endpoint. Field mapping follows the spec
+ * (api/data/ontologySummary.json) and is live-verify-before-trust
+ * (ADR:2026-11-10-g18-stage2-data-mode).
+ */
+export async function getOntologySummary(
+  params: { limit?: number; offset?: number; parent?: string } = {},
+  signal?: AbortSignal,
+): Promise<OntologySummary> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/glossaryTerms/ontology/summary', {
+    query: { limit: params.limit, offset: params.offset, parent: params.parent },
+    signal,
+  });
+  const isolatedPreview = Array.isArray(raw.isolatedPreview)
+    ? raw.isolatedPreview.flatMap((item) => mapEntityRefs([item]))
+    : [];
+  return {
+    totalTerms: asNumber(raw.totalTerms) ?? 0,
+    totalRelations: asNumber(raw.totalRelations) ?? 0,
+    isolatedTerms: asNumber(raw.isolatedTerms) ?? 0,
+    connectedPercentage: asNumber(raw.connectedPercentage) ?? 0,
+    isolatedPreview,
+    paging: asRecord(raw.paging)
+      ? {
+          total: asNumber(asRecord(raw.paging)?.total) ?? undefined,
+          offset: asNumber(asRecord(raw.paging)?.offset) ?? undefined,
+          limit: asNumber(asRecord(raw.paging)?.limit) ?? undefined,
+        }
+      : undefined,
+  };
+}
+
+export interface OntologyDataGraphParams {
+  limit?: number;
+  offset?: number;
+  parent?: string;
+  assetPreviewSize?: number;
+  connectedTermLimit?: number;
+  edgeLimit?: number;
+  lineageEdgeLimit?: number;
+}
+
+/**
+ * Official getOntologyDataGraph (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms/ontology/data — the glossary data-mode endpoint.
+ * Field mapping follows the spec (api/data/ontologyDataGraph.json) and
+ * is live-verify-before-trust
+ * (ADR:2026-11-10-g18-stage2-data-mode).
+ */
+export async function getOntologyDataGraph(
+  params: OntologyDataGraphParams = {},
+  signal?: AbortSignal,
+): Promise<OntologyDataGraph> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/glossaryTerms/ontology/data', {
+    query: {
+      limit: params.limit,
+      offset: params.offset,
+      parent: params.parent,
+      assetPreviewSize: params.assetPreviewSize,
+      connectedTermLimit: params.connectedTermLimit,
+      edgeLimit: params.edgeLimit,
+      lineageEdgeLimit: params.lineageEdgeLimit,
+    },
+    signal,
+  });
+  const clusters = Array.isArray(raw.clusters)
+    ? raw.clusters.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        const termRefs = mapEntityRefs(rec.term ? [rec.term] : []);
+        const assets = Array.isArray(rec.assets) ? rec.assets.flatMap((a) => mapEntityRefs([a])) : [];
+        return [
+          {
+            term: termRefs[0] ?? { name: '' },
+            assetCount: asNumber(rec.assetCount) ?? assets.length,
+            assets,
+          },
+        ];
+      })
+    : [];
+  const edges = Array.isArray(raw.edges)
+    ? raw.edges.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        const relationshipRefs = mapEntityRefs(rec.relationshipType ? [rec.relationshipType] : []);
+        return [
+          {
+            id: asString(rec.id) || '',
+            from: asString(rec.from) || '',
+            to: asString(rec.to) || '',
+            relationType: asString(rec.relationType) || 'relatedTo',
+            relationshipType: relationshipRefs[0],
+            provenance: (asString(rec.provenance) as OntologyDataGraphEdge['provenance']) || undefined,
+            status: asString(rec.status) || undefined,
+            createdBy: asString(rec.createdBy) || undefined,
+            createdAt: asNumber(rec.createdAt) || undefined,
+          },
+        ];
+      })
+    : [];
+  const lineageEdges = Array.isArray(raw.lineageEdges)
+    ? raw.lineageEdges.flatMap((item) => {
+        const rec = asRecord(item);
+        if (!rec) {
+          return [];
+        }
+        return [{ fromEntity: asString(rec.fromEntity) || '', toEntity: asString(rec.toEntity) || '' }];
+      })
+    : [];
+  const paging = asRecord(raw.paging);
+  return {
+    clusters,
+    seedTermIds: Array.isArray(raw.seedTermIds)
+      ? raw.seedTermIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    edges,
+    lineageEdges,
+    paging: {
+      total: paging ? asNumber(paging.total) ?? undefined : undefined,
+      offset: paging ? asNumber(paging.offset) ?? undefined : undefined,
+      limit: paging ? asNumber(paging.limit) ?? undefined : undefined,
+      after: paging ? asString(paging.after) || undefined : undefined,
+    },
+  };
 }
 
 export interface DeleteEntityOptions {

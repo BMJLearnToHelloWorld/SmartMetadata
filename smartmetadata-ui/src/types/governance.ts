@@ -53,6 +53,8 @@ export interface GlossaryTerm {
       nothing while its children page is still unloaded. */
   childrenCount?: number;
   usageCount?: number;
+  /** Mappings to external vocabularies (spec entity/data/glossaryTerm.json). */
+  conceptMappings?: EntityRef[];
   /** Present when the catalog returns entityStatus; never invent one. */
   status?: string;
 }
