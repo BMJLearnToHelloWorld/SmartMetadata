@@ -107,6 +107,23 @@ export const usePermissionStore = defineStore('permissions', () => {
     return ops;
   }
 
+  /**
+   * Drop the cached entity permission for one key so the next read
+   * re-fetches (useEntityPermissions refresh). The per-principal cache
+   * is otherwise append-only until a login switch.
+   */
+  function invalidateEntityPermission(
+    resource: string,
+    identifier: string | { id: string },
+  ): void {
+    ensureFresh();
+    const key =
+      typeof identifier === 'object'
+        ? `${resource}:${identifier.id}`
+        : `${resource}:name:${identifier}`;
+    entityCache.value.delete(key);
+  }
+
   return {
     isAdminUser,
     resetPermissions,
@@ -114,6 +131,7 @@ export const usePermissionStore = defineStore('permissions', () => {
     getResourcePermission,
     getEntityPermissionById,
     getEntityPermissionByFqn,
+    invalidateEntityPermission,
     permissionFlags,
   };
 });

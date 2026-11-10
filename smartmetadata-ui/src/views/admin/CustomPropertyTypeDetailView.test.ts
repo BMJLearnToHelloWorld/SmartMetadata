@@ -8,12 +8,28 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { Modal, Select, Switch } from 'ant-design-vue';
+import Antd, { message, Modal, Select, Switch } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import CustomPropertyTypeDetailView from './CustomPropertyTypeDetailView.vue';
+
+// Stage 4: the permission store is mocked (precedent:
+// DataEstateWidget.test.ts) so the per-type grant is controllable per
+// test without touching the per-test fetch stubs. Default grant is
+// EditAll — the permission context the pre-stage-4 tests always
+// assumed (admin); the gate tests override it per test.
+const getEntityPermissionById = vi.fn(async (): Promise<Record<string, boolean>> => ({ EditAll: true }));
+const getEntityPermissionByFqn = vi.fn(async (): Promise<Record<string, boolean>> => ({}));
+const invalidateEntityPermission = vi.fn();
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    getEntityPermissionById,
+    getEntityPermissionByFqn,
+    invalidateEntityPermission,
+  }),
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,6 +72,8 @@ async function mountDefs(entityType = 'table') {
 describe('CustomPropertyTypeDetailView', () => {
   beforeEach(() => {
     localStorage.clear();
+    getEntityPermissionById.mockResolvedValue({ EditAll: true });
+    getEntityPermissionByFqn.mockResolvedValue({});
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -765,6 +783,81 @@ describe('CustomPropertyTypeDetailView', () => {
     );
     expect(patchCalls).toHaveLength(0);
     expect(wrapper.find('[data-testid="custom-property-defs-empty"]').exists()).toBe(true);
+  });
+
+  // Stage 4 per-type gate (official useEntityPermissions(TYPE) wiring):
+  // the Add/Edit/Delete entry points are visible only with per-type
+  // EditAll. 20s caps: same mount cost as the other tests in this file.
+  describe('stage 4 per-type gate', () => {
+    it('hides Add/Edit/Delete without EditAll — empty and ViewBasic-only grants', async () => {
+      getEntityPermissionById.mockResolvedValue({});
+      const { wrapper } = await mountDefs();
+      expect(wrapper.text()).toContain('retentionDays');
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="delete-custom-property-retentionDays"]').exists()).toBe(false);
+
+      getEntityPermissionById.mockResolvedValue({ ViewBasic: true });
+      const { wrapper: viewWrapper } = await mountDefs();
+      expect(viewWrapper.text()).toContain('retentionDays');
+      expect(viewWrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+      expect(viewWrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(false);
+      expect(viewWrapper.find('[data-testid="delete-custom-property-retentionDays"]').exists()).toBe(false);
+    }, 20000);
+
+    it('shows Add/Edit/Delete with EditAll', async () => {
+      const { wrapper } = await mountDefs();
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="delete-custom-property-retentionDays"]').exists()).toBe(true);
+    }, 20000);
+
+    it('hides Add on the Schema tab even with EditAll', async () => {
+      const { wrapper } = await mountDefs();
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(true);
+      const schemaTab = wrapper
+        .findAll('.ant-tabs-tab')
+        .find((tab) => tab.text() === 'Schema');
+      expect(schemaTab).toBeTruthy();
+      await schemaTab!.trigger('click');
+      await flushPromises();
+      expect(wrapper.find('[data-testid="custom-property-type-schema"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+    }, 20000);
+
+    it('hides the buttons while the permission is still loading', async () => {
+      getEntityPermissionById.mockImplementation(() => new Promise<Record<string, boolean>>(() => {}));
+      const { wrapper } = await mountDefs();
+      await flushPromises();
+      // The type itself loaded (page readable) but the grant has not
+      // resolved — fail-closed, never optimistically shown.
+      expect(wrapper.text()).toContain('retentionDays');
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="delete-custom-property-retentionDays"]').exists()).toBe(false);
+    }, 20000);
+
+    it('shows a permission-error toast, keeps the page readable, and hides the buttons', async () => {
+      const errorSpy = vi.spyOn(message, 'error');
+      getEntityPermissionById.mockRejectedValue(new Error('permission denied'));
+      const { wrapper } = await mountDefs();
+      await flushPromises();
+      expect(errorSpy).toHaveBeenCalledWith('permission denied');
+      expect(wrapper.text()).toContain('retentionDays');
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="delete-custom-property-retentionDays"]').exists()).toBe(false);
+    }, 20000);
+
+    it('the form cannot be opened without EditAll', async () => {
+      getEntityPermissionById.mockResolvedValue({});
+      const { wrapper } = await mountDefs();
+      // No Add/Edit/Delete entry point exists, and the form (which only
+      // those handlers open) is not in the DOM.
+      expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="edit-custom-property-retentionDays"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="custom-property-name"]').exists()).toBe(false);
+    }, 20000);
   });
 });
 
