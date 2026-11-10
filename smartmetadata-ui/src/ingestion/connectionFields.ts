@@ -280,6 +280,89 @@ const connectionArgumentsField: Field = {
   hintKey: 'connection.connectionArgumentsHint',
 };
 
+// W3-3A lean-forms tier 3A (Rest/Mlflow/OpenMetadata/GoogleDrive/
+// ElasticSearch/OpenAI/Mcp/Ranger). Labels take the spec titles verbatim
+// where the spec has one; hints take the spec descriptions. ShowWhen gates
+// follow the spec oneOf branches (GoogleDrive gcpConfig, ElasticSearch
+// authType / sslConfig certificates) — the same oneOf rendering the
+// official schema-driven form does.
+const GCP_VALUES_GATE: ConnectionFieldShowWhen = {
+  field: 'gcpConfigType',
+  equals: 'gcpValues',
+  defaultValue: 'gcpValues',
+};
+const GCP_PATH_GATE: ConnectionFieldShowWhen = {
+  field: 'gcpConfigType',
+  equals: 'gcpCredentialsPath',
+  defaultValue: 'gcpValues',
+};
+const GCP_EXTERNAL_GATE: ConnectionFieldShowWhen = {
+  field: 'gcpConfigType',
+  equals: 'gcpExternalAccount',
+  defaultValue: 'gcpValues',
+};
+const ES_BASIC_AUTH_GATE: ConnectionFieldShowWhen = {
+  field: 'elasticSearchAuthMode',
+  equals: 'basicAuth',
+  defaultValue: 'basicAuth',
+};
+const ES_API_AUTH_GATE: ConnectionFieldShowWhen = {
+  field: 'elasticSearchAuthMode',
+  equals: 'apiAuth',
+  defaultValue: 'basicAuth',
+};
+const ES_SSL_PATHS_GATE: ConnectionFieldShowWhen = {
+  field: 'sslCertMode',
+  equals: 'paths',
+  defaultValue: 'paths',
+};
+const ES_SSL_VALUES_GATE: ConnectionFieldShowWhen = {
+  field: 'sslCertMode',
+  equals: 'values',
+  defaultValue: 'paths',
+};
+
+// gcpConfig branch titles are the spec file titles verbatim
+// (gcpValues.json / gcpCredentialsPath / gcpExternalAccount.json / gcpADC).
+const gcpConfigTypeField: Field = {
+  key: 'gcpConfigType',
+  control: 'select',
+  labelKey: 'connection.gcpConfigType',
+  testId: 'service-gcp-config-type',
+  options: [
+    { value: 'gcpValues', labelKey: 'connection.gcpConfigTypeValues' },
+    { value: 'gcpCredentialsPath', labelKey: 'connection.gcpConfigTypePath' },
+    { value: 'gcpExternalAccount', labelKey: 'connection.gcpConfigTypeExternal' },
+    { value: 'gcpADC', labelKey: 'connection.gcpConfigTypeAdc' },
+  ],
+};
+
+// authType branch titles are the spec file titles verbatim
+// (basicAuth.json / apiAuth.json).
+const elasticSearchAuthModeField: Field = {
+  key: 'elasticSearchAuthMode',
+  control: 'select',
+  labelKey: 'connection.authMode',
+  testId: 'service-elastic-auth-mode',
+  options: [
+    { value: 'basicAuth', labelKey: 'connection.elasticSearchAuthBasic' },
+    { value: 'apiAuth', labelKey: 'connection.elasticSearchAuthApi' },
+  ],
+};
+
+// certificates branch titles are the spec file titles verbatim
+// (sslCertPaths.json / sslCertValues.json).
+const sslCertModeField: Field = {
+  key: 'sslCertMode',
+  control: 'select',
+  labelKey: 'connection.sslCertMode',
+  testId: 'service-ssl-cert-mode',
+  options: [
+    { value: 'paths', labelKey: 'connection.sslCertModePaths' },
+    { value: 'values', labelKey: 'connection.sslCertModeValues' },
+  ],
+};
+
 // policyAgentConfig (connectionBasicType.json): four booleans; spec default
 // is { enabled: true, supportsColumnAccess: false, supportsFullAccess: true,
 // supportsMaskedAccess: true } (see createEmptyServiceForm).
@@ -1027,6 +1110,21 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-api-key',
         passwordPlaceholder: true,
       },
+      // W3-3A: docURL label is the spec property name verbatim
+      // (restConnection.json has no title for it).
+      text('docURL', 'connection.docURL', {
+        testId: 'service-doc-url',
+        hintKey: 'connection.docURLHint',
+      }),
+      verifySSLField,
+      ...sslConfigLeavesFor(
+        [
+          ['restSSLCaCertificate', 'connection.restSSLCaCertificate', 'service-rest-ssl-ca-certificate'],
+          ['restSSLCertificate', 'connection.restSSLCertificate', 'service-rest-ssl-certificate'],
+          ['restSSLKey', 'connection.restSSLKey', 'service-rest-ssl-key'],
+        ],
+        false,
+      ),
       storeSecretsField,
     ],
   },
@@ -1037,26 +1135,181 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-tracking-uri',
         placeholder: 'http://localhost:5000',
       }),
-      requiredText('registryUri', 'connection.registryUri', {
+      // W3-3A: registryUri is a password-format field in the spec, but the
+      // whole URI refills in plaintext (condition 5) — it is the registry
+      // address, not a pure secret.
+      {
+        key: 'registryUri',
+        control: 'password',
+        labelKey: 'connection.registryUri',
         testId: 'service-registry-uri',
+        required: true,
         placeholder: 'mysql+pymysql://mlflow:password@localhost:3306/mlflow',
-      }),
+      },
       storeSecretsField,
     ],
   },
   {
     types: ['OpenMetadata'],
-    fields: [hostPort('http://localhost:8585'), storeSecretsField],
+    fields: [
+      // W3-3A: A group (openMetadataConnection.json), spec order. The B
+      // group (16 switches) is not modelled (R-W3-3A-2).
+      text('clusterName', 'connection.clusterName', {
+        testId: 'service-cluster-name',
+        placeholder: 'openmetadata',
+        hintKey: 'connection.clusterNameHint',
+      }),
+      hostPort('http://localhost:8585/api'),
+      {
+        key: 'authProvider',
+        control: 'select',
+        labelKey: 'connection.authProvider',
+        testId: 'service-auth-provider',
+        hintKey: 'connection.authProviderHint',
+        options: [
+          { value: 'basic' },
+          { value: 'azure' },
+          { value: 'google' },
+          { value: 'okta' },
+          { value: 'auth0' },
+          { value: 'aws-cognito' },
+          { value: 'custom-oidc' },
+          { value: 'ldap' },
+          { value: 'saml' },
+          { value: 'openmetadata' },
+        ],
+      },
+      verifySSLField,
+      ...sslConfigLeavesFor(
+        [
+          ['openMetadataSSLCaCertificate', 'connection.openMetadataSSLCaCertificate', 'service-om-ssl-ca-certificate'],
+          ['openMetadataSSLCertificate', 'connection.openMetadataSSLCertificate', 'service-om-ssl-certificate'],
+          ['openMetadataSSLKey', 'connection.openMetadataSSLKey', 'service-om-ssl-key'],
+        ],
+        false,
+      ),
+      {
+        key: 'jwtToken',
+        control: 'password',
+        labelKey: 'connection.jwtToken',
+        testId: 'service-jwt-token',
+        passwordPlaceholder: true,
+        hintKey: 'connection.jwtTokenHint',
+      },
+      {
+        key: 'secretsManagerProvider',
+        control: 'select',
+        labelKey: 'connection.secretsManagerProvider',
+        testId: 'service-secrets-manager-provider',
+        hintKey: 'connection.secretsManagerProviderHint',
+        options: [
+          { value: 'db' },
+          { value: 'managed-aws' },
+          { value: 'aws' },
+          { value: 'managed-aws-ssm' },
+          { value: 'aws-ssm' },
+          { value: 'managed-azure-kv' },
+          { value: 'azure-kv' },
+          { value: 'in-memory' },
+          { value: 'gcp' },
+          { value: 'kubernetes' },
+        ],
+      },
+      {
+        key: 'secretsManagerLoader',
+        control: 'select',
+        labelKey: 'connection.secretsManagerLoader',
+        testId: 'service-secrets-manager-loader',
+        hintKey: 'connection.secretsManagerLoaderHint',
+        options: [{ value: 'noop' }, { value: 'airflow' }, { value: 'env' }],
+      },
+      text('apiVersion', 'connection.apiVersion', {
+        testId: 'service-api-version',
+        placeholder: 'v1',
+        hintKey: 'connection.apiVersionHint',
+      }),
+      {
+        key: 'enableVersionValidation',
+        control: 'checkbox',
+        labelKey: 'connection.enableVersionValidation',
+        testId: 'service-enable-version-validation',
+      },
+      {
+        key: 'omStoreServiceConnection',
+        control: 'checkbox',
+        labelKey: 'connection.omStoreServiceConnection',
+        testId: 'service-om-store-service-connection',
+      },
+      {
+        key: 'extraHeaders',
+        control: 'textarea',
+        labelKey: 'connection.extraHeaders',
+        testId: 'service-extra-headers',
+        placeholder: '{"X-Custom": "value"}',
+        hintKey: 'connection.extraHeadersHint',
+      },
+      storeSecretsField,
+    ],
   },
   {
     types: ['GoogleDrive'],
     fields: [
-      requiredText('credentialsJson', 'connection.credentialsJson', {
+      // W3-3A: gcpConfig oneOf branches (gcpCredentials.json). A branch input
+      // is required only when its branch is selected — hidden fields are
+      // not rendered, so their required rules do not apply.
+      gcpConfigTypeField,
+      {
+        key: 'credentialsJson',
+        control: 'textarea',
+        labelKey: 'connection.credentialsJson',
         testId: 'service-credentials-json',
+        required: true,
         placeholder: '{"type": "service_account", ...}',
+        hintKey: 'connection.credentialsJsonHint',
+        showWhen: GCP_VALUES_GATE,
+      },
+      text('gcpCredentialsPath', 'connection.gcpCredentialsPath', {
+        testId: 'service-gcp-credentials-path',
+        required: true,
+        hintKey: 'connection.gcpCredentialsPathHint',
+        showWhen: GCP_PATH_GATE,
       }),
+      {
+        key: 'gcpExternalAccountJson',
+        control: 'textarea',
+        labelKey: 'connection.gcpExternalAccountJson',
+        testId: 'service-gcp-external-account-json',
+        required: true,
+        placeholder: '{"type": "external_account", ...}',
+        hintKey: 'connection.gcpExternalAccountJsonHint',
+        showWhen: GCP_EXTERNAL_GATE,
+      },
+      text('impersonateServiceAccount', 'connection.impersonateServiceAccount', {
+        testId: 'service-impersonate-service-account',
+        hintKey: 'connection.impersonateServiceAccountHint',
+      }),
+      {
+        key: 'impersonateLifetime',
+        control: 'number',
+        labelKey: 'connection.impersonateLifetime',
+        testId: 'service-impersonate-lifetime',
+      },
       text('delegatedEmail', 'connection.delegatedEmail', { testId: 'service-delegated-email' }),
       text('driveId', 'connection.driveId', { testId: 'service-drive-id' }),
+      {
+        key: 'includeTeamDrives',
+        control: 'checkbox',
+        labelKey: 'connection.includeTeamDrives',
+        testId: 'service-include-team-drives',
+      },
+      {
+        key: 'includeGoogleSheets',
+        control: 'checkbox',
+        labelKey: 'connection.includeGoogleSheets',
+        testId: 'service-include-google-sheets',
+      },
+      connectionOptionsField,
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -1064,15 +1317,74 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     types: ['ElasticSearch'],
     fields: [
       hostPort('http://localhost:9200'),
-      usernameOptional,
-      passwordField,
+      elasticSearchAuthModeField,
+      {
+        ...usernameOptional,
+        showWhen: ES_BASIC_AUTH_GATE,
+      },
+      {
+        ...passwordField,
+        showWhen: ES_BASIC_AUTH_GATE,
+      },
       {
         key: 'apiKey',
         control: 'password',
         labelKey: 'connection.apiKey',
         testId: 'service-api-key',
         passwordPlaceholder: true,
+        showWhen: ES_API_AUTH_GATE,
       },
+      text('apiKeyId', 'connection.apiKeyId', {
+        testId: 'service-api-key-id',
+        hintKey: 'connection.apiKeyIdHint',
+        showWhen: ES_API_AUTH_GATE,
+      }),
+      sslCertModeField,
+      text('sslCaCertPath', 'connection.sslCaCertPath', {
+        testId: 'service-ssl-ca-cert-path',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      text('sslClientCertPath', 'connection.sslClientCertPath', {
+        testId: 'service-ssl-client-cert-path',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      text('sslPrivateKeyPath', 'connection.sslPrivateKeyPath', {
+        testId: 'service-ssl-private-key-path',
+        showWhen: ES_SSL_PATHS_GATE,
+      }),
+      {
+        key: 'sslCaCertValue',
+        control: 'textarea',
+        labelKey: 'connection.sslCaCertValue',
+        testId: 'service-ssl-ca-cert-value',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      {
+        key: 'sslClientCertValue',
+        control: 'textarea',
+        labelKey: 'connection.sslClientCertValue',
+        testId: 'service-ssl-client-cert-value',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      {
+        key: 'sslPrivateKeyValue',
+        control: 'textarea',
+        labelKey: 'connection.sslPrivateKeyValue',
+        testId: 'service-ssl-private-key-value',
+        showWhen: ES_SSL_VALUES_GATE,
+      },
+      text('sslStagingDir', 'connection.sslStagingDir', {
+        testId: 'service-ssl-staging-dir',
+        placeholder: '/tmp/openmetadata-certs',
+        showWhen: ES_SSL_VALUES_GATE,
+      }),
+      {
+        key: 'connectionTimeoutSecs',
+        control: 'number',
+        labelKey: 'connection.connectionTimeoutSecs',
+        testId: 'service-connection-timeout-secs',
+      },
+      connectionArgumentsField,
       storeSecretsField,
     ],
   },
@@ -1089,19 +1401,90 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       },
       text('organization', 'connection.organization', { testId: 'service-organization' }),
       text('baseUrl', 'connection.baseUrl', { testId: 'service-base-url', placeholder: 'https://api.openai.com/v1' }),
+      {
+        key: 'openAITimeout',
+        control: 'number',
+        labelKey: 'connection.openAITimeout',
+        testId: 'service-openai-timeout',
+        hintKey: 'connection.openAITimeoutHint',
+      },
+      {
+        key: 'openAIMaxRetries',
+        control: 'number',
+        labelKey: 'connection.openAIMaxRetries',
+        testId: 'service-openai-max-retries',
+        hintKey: 'connection.openAIMaxRetriesHint',
+      },
       storeSecretsField,
     ],
   },
   {
     types: ['Mcp'],
     fields: [
-      text('registryUrl', 'connection.registryUrl', { testId: 'service-registry-url' }),
+      // W3-3A: discoveryMethod + configFilePaths + servers + registryUrl +
+      // timeouts + fetch flags (mcpConnection.json), spec order. No showWhen
+      // linkage: the spec defines none — all three inputs stay visible and
+      // the hints say which discoveryMethod each applies to. No fields for
+      // the deprecated stdio leaves (command/args/env).
+      {
+        key: 'discoveryMethod',
+        control: 'select',
+        labelKey: 'connection.discoveryMethod',
+        testId: 'service-discovery-method',
+        hintKey: 'connection.discoveryMethodHint',
+        options: [{ value: 'ConfigFile' }, { value: 'DirectConnection' }, { value: 'Registry' }],
+      },
+      {
+        key: 'configFilePaths',
+        control: 'textarea',
+        labelKey: 'connection.configFilePaths',
+        testId: 'service-config-file-paths',
+        placeholder: '["/path/to/claude_desktop_config.json"]',
+        hintKey: 'connection.configFilePathsHint',
+      },
+      {
+        key: 'servers',
+        control: 'textarea',
+        labelKey: 'connection.servers',
+        testId: 'service-servers',
+        placeholder: '[{"name": "my-server", "url": "https://..."}]',
+        hintKey: 'connection.serversHint',
+      },
+      text('registryUrl', 'connection.registryUrl', {
+        testId: 'service-registry-url',
+        hintKey: 'connection.registryUrlHint',
+      }),
       {
         key: 'connectionTimeout',
         control: 'number',
         labelKey: 'connection.timeout',
         testId: 'service-connection-timeout',
-        min: 1,
+        hintKey: 'connection.connectionTimeoutHint',
+      },
+      {
+        key: 'initializationTimeout',
+        control: 'number',
+        labelKey: 'connection.initializationTimeout',
+        testId: 'service-initialization-timeout',
+        hintKey: 'connection.initializationTimeoutHint',
+      },
+      {
+        key: 'fetchTools',
+        control: 'checkbox',
+        labelKey: 'connection.fetchTools',
+        testId: 'service-fetch-tools',
+      },
+      {
+        key: 'fetchResources',
+        control: 'checkbox',
+        labelKey: 'connection.fetchResources',
+        testId: 'service-fetch-resources',
+      },
+      {
+        key: 'fetchPrompts',
+        control: 'checkbox',
+        labelKey: 'connection.fetchPrompts',
+        testId: 'service-fetch-prompts',
       },
       storeSecretsField,
     ],

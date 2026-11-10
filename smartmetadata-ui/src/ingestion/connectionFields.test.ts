@@ -453,4 +453,118 @@ describe('connectionFields', () => {
     expect(prefectCa).toBeDefined();
     expect(isConnectionFieldVisible(prefectCa!, { verifySSL: 'no-ssl' })).toBe(true);
   });
+
+  it('lists the tier 3A fields in spec order, with the spec oneOf gates (W3-3A)', () => {
+    expect(connectionFieldsForType('Rest').map((field) => field.key)).toEqual([
+      'openApiSchemaUrl',
+      'apiKey',
+      'docURL',
+      'verifySSL',
+      'restSSLCaCertificate',
+      'restSSLCertificate',
+      'restSSLKey',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toEqual([
+      'clusterName',
+      'hostPort',
+      'authProvider',
+      'verifySSL',
+      'openMetadataSSLCaCertificate',
+      'openMetadataSSLCertificate',
+      'openMetadataSSLKey',
+      'jwtToken',
+      'secretsManagerProvider',
+      'secretsManagerLoader',
+      'apiVersion',
+      'enableVersionValidation',
+      'omStoreServiceConnection',
+      'extraHeaders',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toEqual([
+      'gcpConfigType',
+      'credentialsJson',
+      'gcpCredentialsPath',
+      'gcpExternalAccountJson',
+      'impersonateServiceAccount',
+      'impersonateLifetime',
+      'delegatedEmail',
+      'driveId',
+      'includeTeamDrives',
+      'includeGoogleSheets',
+      'connectionOptions',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('ElasticSearch').map((field) => field.key)).toEqual([
+      'hostPort',
+      'elasticSearchAuthMode',
+      'username',
+      'password',
+      'apiKey',
+      'apiKeyId',
+      'sslCertMode',
+      'sslCaCertPath',
+      'sslClientCertPath',
+      'sslPrivateKeyPath',
+      'sslCaCertValue',
+      'sslClientCertValue',
+      'sslPrivateKeyValue',
+      'sslStagingDir',
+      'connectionTimeoutSecs',
+      'connectionArguments',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('OpenAI').map((field) => field.key)).toEqual([
+      'apiKey',
+      'organization',
+      'baseUrl',
+      'openAITimeout',
+      'openAIMaxRetries',
+      'storeConnectionSecrets',
+    ]);
+    expect(connectionFieldsForType('Mcp').map((field) => field.key)).toEqual([
+      'discoveryMethod',
+      'configFilePaths',
+      'servers',
+      'registryUrl',
+      'connectionTimeout',
+      'initializationTimeout',
+      'fetchTools',
+      'fetchResources',
+      'fetchPrompts',
+      'storeConnectionSecrets',
+    ]);
+    // Mlflow registryUri is a password control (spec format password);
+    // the Mcp connectionTimeout lost its min: 1 (§2-11).
+    expect(connectionFieldsForType('Mlflow').find((field) => field.key === 'registryUri')?.control).toBe(
+      'password',
+    );
+    expect(
+      connectionFieldsForType('Mcp').find((field) => field.key === 'connectionTimeout')?.min,
+    ).toBeUndefined();
+    // The spec oneOf gates: ES auth branches and ssl branches, GoogleDrive
+    // gcpConfig branches. Mcp has no showWhen linkage (spec defines none).
+    const esFields = connectionFieldsForType('ElasticSearch');
+    const esUsername = esFields.find((field) => field.key === 'username')!;
+    expect(isConnectionFieldVisible(esUsername, { elasticSearchAuthMode: 'basicAuth' })).toBe(true);
+    expect(isConnectionFieldVisible(esUsername, { elasticSearchAuthMode: 'apiAuth' })).toBe(false);
+    const esApiKey = esFields.find((field) => field.key === 'apiKey')!;
+    expect(isConnectionFieldVisible(esApiKey, { elasticSearchAuthMode: 'apiAuth' })).toBe(true);
+    expect(isConnectionFieldVisible(esApiKey, { elasticSearchAuthMode: 'basicAuth' })).toBe(false);
+    const esCertValue = esFields.find((field) => field.key === 'sslCaCertValue')!;
+    expect(isConnectionFieldVisible(esCertValue, { sslCertMode: 'values' })).toBe(true);
+    expect(isConnectionFieldVisible(esCertValue, { sslCertMode: 'paths' })).toBe(false);
+    const driveFields = connectionFieldsForType('GoogleDrive');
+    const credentialsJson = driveFields.find((field) => field.key === 'credentialsJson')!;
+    expect(isConnectionFieldVisible(credentialsJson, { gcpConfigType: 'gcpValues' })).toBe(true);
+    expect(isConnectionFieldVisible(credentialsJson, { gcpConfigType: 'gcpADC' })).toBe(false);
+    const credentialsPath = driveFields.find((field) => field.key === 'gcpCredentialsPath')!;
+    expect(isConnectionFieldVisible(credentialsPath, { gcpConfigType: 'gcpCredentialsPath' })).toBe(true);
+    expect(isConnectionFieldVisible(credentialsPath, { gcpConfigType: 'gcpValues' })).toBe(false);
+    for (const field of connectionFieldsForType('Mcp')) {
+      expect(field.showWhen).toBeUndefined();
+    }
+  });
 });
