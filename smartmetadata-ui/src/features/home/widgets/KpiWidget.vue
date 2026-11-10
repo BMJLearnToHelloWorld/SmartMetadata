@@ -7,6 +7,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Select, Tag } from 'ant-design-vue';
+import type { SelectValue } from 'ant-design-vue/es/select';
 import HomeWidgetCard from '../HomeWidgetCard.vue';
 import { permissionFlags } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
@@ -30,6 +31,10 @@ const range = ref<KpiWindow>(KPI_WINDOW_DAYS);
 const { kpis, atRiskCount, isError, isLoading, refetch } = useKpiProgress(
   computed(() => range.value),
 );
+
+function onRangeChange(value: SelectValue): void {
+  range.value = value === KPI_ALL_TIME ? KPI_ALL_TIME : Number(value);
+}
 
 const canCreate = ref(false);
 void (async () => {
@@ -197,7 +202,7 @@ function openKpiAdd(): void {
           :value="String(range)"
           :options="windowOptions"
           size="small"
-          @change="(value) => (range = value === KPI_ALL_TIME ? KPI_ALL_TIME : Number(value))"
+          @change="onRangeChange"
         />
       </div>
       <ul class="kpi__rows" data-testid="kpi-rows">
@@ -323,7 +328,7 @@ function openKpiAdd(): void {
   gap: 8px;
   min-width: 0;
   padding: 16px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .kpi__row:last-child {
@@ -375,7 +380,7 @@ function openKpiAdd(): void {
   width: 100%;
   overflow: hidden;
   border-radius: 999px;
-  background: #f0f0f0;
+  background: var(--sm-border-secondary);
 }
 
 .kpi__bar span {
@@ -406,7 +411,7 @@ function openKpiAdd(): void {
 .kpi__projection {
   margin: 0;
   font-size: 12px;
-  color: #d48806;
+  color: var(--sm-color-warning-text);
 }
 
 .kpi__spark {

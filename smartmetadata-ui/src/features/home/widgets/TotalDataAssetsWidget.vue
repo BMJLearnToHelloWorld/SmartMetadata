@@ -223,7 +223,7 @@ function openExplore(): void {
   border-radius: 999px;
   overflow: hidden;
   margin-top: 16px;
-  background: #f0f0f0;
+  background: var(--sm-border-secondary);
 }
 
 .total-assets__share-bar i {
@@ -243,7 +243,7 @@ function openExplore(): void {
   gap: 12px;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .total-assets__row:last-child {
@@ -284,10 +284,10 @@ function openExplore(): void {
 }
 
 .total-assets__delta--up {
-  color: #52c41a;
+  color: var(--sm-color-success);
 }
 
 .total-assets__delta--down {
-  color: #ff4d4f;
+  color: var(--sm-color-error);
 }
 </style>

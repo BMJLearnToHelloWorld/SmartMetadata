@@ -53,7 +53,7 @@ const EMPTY_PAGE: BucketPage = { rows: [], total: 0 };
 function toPage(response: Paged<PipelineSummary>): BucketPage {
   return {
     rows: response.data ?? [],
-    total: response.paging?.total ?? response.data?.length ?? 0,
+    total: response.total ?? response.data?.length ?? 0,
   };
 }
 
@@ -92,7 +92,7 @@ export function rankAllPipelines(pages: PipelineStatusPages): PipelineSummary[] 
 
 export function derivePipelineStatus(
   pages: PipelineStatusPages | undefined,
-): Pick<PipelineStatusOverview, 'counts' | 'rows'> {
+): { counts: Record<PipelineStatusBucket, number>; rows: Record<PipelineStatusBucket, PipelineSummary[]> } {
   const bucketPage = (bucket: PipelineStatusBucket): BucketPage => pages?.[bucket] ?? EMPTY_PAGE;
   const buckets: PipelineStatusBucket[] = [ALL_PIPELINES, ...PIPELINE_STATUS_BUCKETS];
   const counts = Object.fromEntries(
@@ -140,7 +140,7 @@ export interface PipelineRunDot {
   errorMessage?: string;
 }
 
-export function usePipelineRunHistory(fqns: Ref<string[]>) {
+export function usePipelineRunHistory() {
   const runsByFqn: Ref<Record<string, PipelineRunDot[]>> = ref({});
   const loadingByFqn: Ref<Record<string, boolean>> = ref({});
 

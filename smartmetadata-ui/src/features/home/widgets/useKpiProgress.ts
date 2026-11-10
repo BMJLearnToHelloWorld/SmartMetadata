@@ -69,9 +69,9 @@ export interface KpiOverview {
   kpis: ComputedRef<KpiProgress[]>;
   atRiskCount: ComputedRef<number>;
   /** First load only — a range switch keeps the previous KPIs on screen. */
-  isLoading: ComputedRef<boolean>;
-  isFetching: ComputedRef<boolean>;
-  isError: ComputedRef<boolean>;
+  isLoading: Ref<boolean>;
+  isFetching: Ref<boolean>;
+  isError: Ref<boolean>;
   refetch: () => Promise<void>;
 }
 

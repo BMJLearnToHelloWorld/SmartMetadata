@@ -49,7 +49,7 @@ const TASKS_PAGE = {
       createdBy: { id: 'u2', displayName: 'Bob', name: 'bob', type: 'user' },
     },
   ],
-  paging: { total: 2 },
+  total: 2,
 };
 
 function mountWidget() {
@@ -103,7 +103,7 @@ describe('MyTasksWidget', () => {
     await flushPromises();
     await wrapper
       .get('[data-testid="my-tasks-row-t-access"] [data-testid="my-tasks-row-select"]')
-      .setChecked();
+      .setValue(true);
     await flushPromises();
     expect(wrapper.find('[data-testid="my-tasks-bulk-approve"]').exists()).toBe(true);
     await wrapper.get('[data-testid="my-tasks-bulk-approve"]').trigger('click');
@@ -118,7 +118,7 @@ describe('MyTasksWidget', () => {
     await flushPromises();
     await wrapper
       .get('[data-testid="my-tasks-row-t-access"] [data-testid="my-tasks-row-select"]')
-      .setChecked();
+      .setValue(true);
     await flushPromises();
     expect(wrapper.find('[data-testid="my-tasks-selection-bar"]').exists()).toBe(true);
     await wrapper.get('[data-testid="my-tasks-chip-access"]').trigger('click');
@@ -133,7 +133,7 @@ describe('MyTasksWidget', () => {
     await flushPromises();
     await wrapper
       .get('[data-testid="my-tasks-row-t-access"] [data-testid="my-tasks-row-select"]')
-      .setChecked();
+      .setValue(true);
     await flushPromises();
     await wrapper.get('[data-testid="my-tasks-bulk-approve"]').trigger('click');
     await flushPromises();
@@ -146,7 +146,7 @@ describe('MyTasksWidget', () => {
   });
 
   it('renders the all-caught-up empty state when there are no open tasks', async () => {
-    listMyAssignedTasks.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listMyAssignedTasks.mockResolvedValue({ data: [], total: 0 });
     const { wrapper } = mountWidget();
     await flushPromises();
     await flushPromises();
@@ -156,7 +156,7 @@ describe('MyTasksWidget', () => {
   });
 
   it('shows the loaded-of-total meta on a partial page', async () => {
-    listMyAssignedTasks.mockResolvedValue({ data: TASKS_PAGE.data, paging: { total: 250 } });
+    listMyAssignedTasks.mockResolvedValue({ data: TASKS_PAGE.data, total: 250 });
     const { wrapper } = mountWidget();
     await flushPromises();
     await flushPromises();

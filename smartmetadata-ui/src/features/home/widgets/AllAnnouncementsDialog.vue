@@ -54,11 +54,11 @@ async function fetchPage(pageAfter: string | undefined, first: boolean): Promise
     });
     if (first) {
       loaded.value = page.data;
-      total.value = page.paging?.total;
+      total.value = page.total;
     } else {
       loaded.value = [...loaded.value, ...page.data];
     }
-    after.value = page.paging?.after;
+    after.value = page.after;
   } catch {
     if (first) {
       loaded.value = [];
@@ -169,8 +169,8 @@ function onClose(): void {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: var(--sm-color-primary-bg, #e7f3fb);
-  color: var(--sm-color-primary, #005587);
+  background: var(--sm-color-primary-bg);
+  color: var(--sm-color-primary);
 }
 .all-announcements__title {
   font-size: 14px;

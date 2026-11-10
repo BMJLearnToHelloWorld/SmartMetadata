@@ -100,9 +100,9 @@ watch(
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--sm-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
-  background: var(--sm-bg-elevated, #fff);
+  background: var(--sm-bg-elevated);
   cursor: pointer;
 }
 .rail-pager__button:disabled {

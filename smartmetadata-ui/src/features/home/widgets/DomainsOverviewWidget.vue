@@ -61,7 +61,7 @@ const status = computed(() =>
 const chips = computed(() => [
   { id: 'all' as OverviewFilter, label: t('home.all'), count: totalCount.value, tone: 'brand' },
   { id: 'noOwner' as OverviewFilter, label: t('home.noOwner'), count: unownedCount.value, tone: 'warning' },
-  { id: 'empty' as OverviewFilter, label: t('home.empty'), count: emptyCount.value, tone: 'muted' },
+  { id: 'empty' as OverviewFilter, label: t('home.emptyFilter'), count: emptyCount.value, tone: 'muted' },
 ]);
 
 function ownerNames(owners: { displayName?: string; name: string }[]): string {
@@ -154,17 +154,17 @@ function openDomain(id: string): void {
 }
 
 .overview-widget__chip {
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--sm-border-color);
   border-radius: 999px;
-  background: #fff;
+  background: var(--sm-bg-container);
   cursor: pointer;
   padding: 4px 12px;
   font-size: 12px;
 }
 
 .overview-widget__chip--active {
-  border-color: #005587;
-  color: #005587;
+  border-color: var(--sm-color-primary);
+  color: var(--sm-color-primary);
   font-weight: 600;
 }
 
@@ -182,7 +182,7 @@ function openDomain(id: string): void {
   gap: 12px;
   min-width: 0;
   padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .overview-widget__row:last-child {
@@ -197,7 +197,7 @@ function openDomain(id: string): void {
   height: 32px;
   flex-shrink: 0;
   border-radius: 8px;
-  background: #e6f0f6;
+  background: var(--sm-color-primary-bg);
   font-size: 16px;
 }
 
@@ -220,7 +220,7 @@ function openDomain(id: string): void {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
-  color: #005587;
+  color: var(--sm-color-primary);
 }
 
 .overview-widget__meta {

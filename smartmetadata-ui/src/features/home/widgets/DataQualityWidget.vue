@@ -332,7 +332,7 @@ const barSegments = computed(() => {
   height: 8px;
   border-radius: 4px;
   overflow: hidden;
-  background: #f0f0f0;
+  background: var(--sm-border-secondary);
 }
 
 .data-quality__bar span {
@@ -366,7 +366,7 @@ const barSegments = computed(() => {
   gap: 12px;
   min-width: 0;
   padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .data-quality__row:last-child {
@@ -415,14 +415,14 @@ const barSegments = computed(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  background: #f5f5f5;
+  background: var(--sm-bg-elevated);
   padding: 8px 12px;
 }
 
 .data-quality__group-name {
   font-size: 12px;
   font-weight: 600;
-  color: #005587;
+  color: var(--sm-color-primary);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -445,14 +445,14 @@ const barSegments = computed(() => {
 }
 
 .data-quality__count--passed {
-  color: #52c41a;
+  color: var(--sm-color-success);
 }
 
 .data-quality__count--failed {
-  color: #ff4d4f;
+  color: var(--sm-color-error);
 }
 
 .data-quality__count--aborted {
-  color: #faad14;
+  color: var(--sm-color-warning);
 }
 </style>

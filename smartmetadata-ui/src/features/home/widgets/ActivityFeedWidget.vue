@@ -100,7 +100,7 @@ const emptyState = computed(() =>
 );
 
 function sentence(event: ActivityEvent): string {
-  return activitySentence(event, (key, params) => t(key, params));
+  return activitySentence(event, (key, params) => t(key, params ?? {}));
 }
 
 function actorName(event: ActivityEvent): string {

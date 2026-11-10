@@ -49,7 +49,7 @@ export function useMyTasks(): MyTasks {
     { ttlMs: MY_TASKS_TTL_MS },
   );
   const tasks = computed(() => loaded.data.value?.data ?? []);
-  const total = computed(() => loaded.data.value?.paging?.total ?? tasks.value.length);
+  const total = computed(() => loaded.data.value?.total ?? tasks.value.length);
   const counts = computed(() => countMyTaskBuckets(tasks.value, total.value));
   return { counts, isError: loaded.isError, isLoading: loaded.isLoading, refetch: loaded.refetch, tasks, total };
 }

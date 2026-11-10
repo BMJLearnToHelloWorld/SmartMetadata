@@ -17,6 +17,7 @@ import type {
   PipelineServiceClientResponse,
   PipelineSourceConfig,
   PipelineStatus,
+  PipelineStepStatus,
 } from '@/types/ingestion';
 import { apiRequest } from './client';
 

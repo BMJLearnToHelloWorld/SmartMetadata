@@ -170,7 +170,7 @@ describe('CuratedAssetsWidget', () => {
     await flushPromises();
     await flushPromises();
     expect(
-      wrapper.get('[data-testid="home-widget-KnowledgePanel.CuratedAssets-empty"]').exists(),
+      wrapper.find('[data-testid="home-widget-KnowledgePanel.CuratedAssets-empty"]').exists(),
     ).toBe(true);
     expect(wrapper.find('[data-testid="edit-curated-assets"]').exists()).toBe(false);
     expect(wrapper.findComponent(CuratedAssetsModal).exists()).toBe(true);

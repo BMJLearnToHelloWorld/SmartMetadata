@@ -78,7 +78,7 @@ describe('KnowledgeCenterWidget', () => {
 
   it('lists the most recently updated pages first, 6 rows, with the recent count', async () => {
     const pages = Array.from({ length: 8 }, (_, i) => page(`p${i}`));
-    listKnowledgePages.mockResolvedValue({ data: pages, paging: { total: 8 } });
+    listKnowledgePages.mockResolvedValue({ data: pages, total: 8 });
     const wrapper = mountWidget();
     await flushPromises();
     await flushPromises();
@@ -95,7 +95,7 @@ describe('KnowledgeCenterWidget', () => {
 
   it('marks the count as a floor when every fetched page is recent and more exist', async () => {
     const pages = Array.from({ length: 10 }, (_, i) => page(`p${i}`));
-    listKnowledgePages.mockResolvedValue({ data: pages, paging: { total: 25 } });
+    listKnowledgePages.mockResolvedValue({ data: pages, total: 25 });
     const wrapper = mountWidget();
     await flushPromises();
     await flushPromises();
@@ -107,7 +107,7 @@ describe('KnowledgeCenterWidget', () => {
   it('shows Caught up when nothing is recent', async () => {
     listKnowledgePages.mockResolvedValue({
       data: [page('old', { updatedAt: Date.now() - 30 * 24 * 60 * 60 * 1000 })],
-      paging: { total: 1 },
+      total: 1,
     });
     const wrapper = mountWidget();
     await flushPromises();
@@ -123,7 +123,7 @@ describe('KnowledgeCenterWidget', () => {
         page('safe', { pageType: 'QuickLink', pageUrl: 'https://example.com/guide' }),
         page('unsafe', { pageType: 'QuickLink', pageUrl: 'javascript:alert(1)' }),
       ],
-      paging: { total: 2 },
+      total: 2,
     });
     const wrapper = mountWidget();
     await flushPromises();
@@ -136,7 +136,7 @@ describe('KnowledgeCenterWidget', () => {
   });
 
   it('renders the empty state with the create action when creation is allowed', async () => {
-    listKnowledgePages.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listKnowledgePages.mockResolvedValue({ data: [], total: 0 });
     const wrapper = mountWidget();
     await flushPromises();
     await flushPromises();
@@ -152,7 +152,7 @@ describe('KnowledgeCenterWidget', () => {
     getLimitByResource.mockResolvedValue({
       featureLimitStatuses: [{ limitReached: true }],
     });
-    listKnowledgePages.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listKnowledgePages.mockResolvedValue({ data: [], total: 0 });
     const wrapper = mountWidget();
     await flushPromises();
     await flushPromises();
@@ -164,7 +164,7 @@ describe('KnowledgeCenterWidget', () => {
   });
 
   it('refreshes the limit after a successful create', async () => {
-    listKnowledgePages.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listKnowledgePages.mockResolvedValue({ data: [], total: 0 });
     createKnowledgePage.mockResolvedValue({});
     const wrapper = mountWidget();
     await flushPromises();

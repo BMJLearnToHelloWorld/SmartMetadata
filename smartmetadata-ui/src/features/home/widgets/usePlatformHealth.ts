@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { listIngestionPipelines, type IngestionPipeline } from '@/api/ingestionPipelines';
+import { listIngestionPipelines } from '@/api/ingestionPipelines';
+import type { IngestionPipeline } from '@/types/ingestion';
 import {
   getServicesOverview,
   type ServiceHealth,

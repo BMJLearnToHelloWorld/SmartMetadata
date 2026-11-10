@@ -69,6 +69,6 @@ const userName = computed(() => auth.user?.name || '');
 .home-landing-page-header__subtitle {
   margin: 0;
   font-size: 12px;
-  color: var(--sm-text-secondary, #595959);
+  color: var(--sm-text-secondary);
 }
 </style>

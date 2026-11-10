@@ -10,7 +10,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { ref, type Component } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import { resetWidgetLoadCache } from '@/features/home/widgetLoad';
@@ -76,7 +76,7 @@ function connectorsResponse() {
   };
 }
 
-function mountWidget(Component: unknown) {
+function mountWidget(Component: Component) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -84,7 +84,7 @@ function mountWidget(Component: unknown) {
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
     ],
   });
-  return mount(Component as never, {
+  return mount(Component, {
     props: { widgetKey: 'dataEstate' },
     global: { plugins: [router, Antd, createTestI18n()] },
   });

@@ -43,7 +43,7 @@ async function fetchCriticalAnnouncements(): Promise<Announcement[]> {
       type: 'Critical',
     });
     announcements.push(...response.data);
-    after = response.paging?.after;
+    after = response.after;
   } while (after);
   return announcements.sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0));
 }
@@ -77,6 +77,10 @@ const count = computed(() => visible.value.length);
 const countRef = computed(() => count.value);
 const { railRef, canScroll, pageIndex, syncScrollState, goToPrevious, goToNext } =
   useRailPager(countRef);
+// The template binds the scroll container with ref="railRef"; vue-tsc's
+// unused-local check does not see template-ref usage. This reference
+// keeps the binding: the pager scrolls through it, so it must stay.
+void railRef;
 </script>
 
 <template>

@@ -255,17 +255,17 @@ watch(healthFilter, () => {
 }
 
 .services-list__health-chip {
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--sm-border-color);
   border-radius: 999px;
-  background: #fff;
+  background: var(--sm-bg-container);
   cursor: pointer;
   padding: 4px 12px;
   font-size: 12px;
 }
 
 .services-list__health-chip--active {
-  border-color: #005587;
-  color: #005587;
+  border-color: var(--sm-color-primary);
+  color: var(--sm-color-primary);
   font-weight: 600;
 }
 </style>

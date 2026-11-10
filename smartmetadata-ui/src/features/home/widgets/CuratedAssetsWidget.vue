@@ -13,6 +13,7 @@ import {
 } from '@/catalog/curatedAssets';
 import { DEFAULT_CURATED_RULE, describeCuratedClause, describeCuratedRule } from '@/catalog/curatedRule';
 import { useCuratedAssets, type CuratedAssetsSource } from './useCuratedAssets';
+import type { CuratedAssetsConfig } from './CuratedAssetsModal.vue';
 import { serviceTypeIcon } from '@/features/home/serviceTypeIcon';
 import type { LandingPageLayoutItem } from '@/features/home/landingPageLayout';
 
@@ -107,7 +108,7 @@ function openExplore(): void {
 // Writing the config back onto this widget's layout entry is the only way it
 // is persisted — the rule lives on the persona's page layout, not on an
 // entity of its own.
-async function handleSave(next: Record<string, unknown>): Promise<void> {
+async function handleSave(next: CuratedAssetsConfig): Promise<void> {
   // Carry the existing config forward, so a stale `sortBy` (a dead config —
   // see ADR) is preserved rather than silently dropped on save.
   const merged = { ...(config.value ?? {}), ...next };
@@ -231,8 +232,8 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
 .curated-assets__create {
   border: 0;
   border-radius: 6px;
-  background: #005587;
-  color: #fff;
+  background: var(--sm-color-primary);
+  color: var(--sm-text-on-primary);
   cursor: pointer;
   padding: 6px 12px;
   font-size: 13px;
@@ -244,7 +245,7 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
   align-items: center;
   gap: 8px;
   border-radius: 12px;
-  background: #f5f5f5;
+  background: var(--sm-bg-elevated);
   padding: 14px;
   margin-bottom: 16px;
 }
@@ -269,8 +270,8 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
 
 .curated-assets__chip {
   border-radius: 6px;
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  background: var(--sm-bg-container);
+  border: 1px solid var(--sm-border-color);
   padding: 2px 8px;
   font-size: 12px;
 }
@@ -302,7 +303,7 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
   gap: 10px;
   min-width: 0;
   border-radius: 8px;
-  background: #f5f5f5;
+  background: var(--sm-bg-elevated);
   padding: 10px 12px;
   text-decoration: none;
   color: inherit;
@@ -344,11 +345,11 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
 }
 
 .curated-assets__dot--healthy {
-  background: #52c41a;
+  background: var(--sm-color-success);
 }
 
 .curated-assets__dot--failing {
-  background: #ff4d4f;
+  background: var(--sm-color-error);
 }
 
 .curated-assets__edit {
@@ -358,9 +359,9 @@ async function handleSave(next: Record<string, unknown>): Promise<void> {
 }
 
 .curated-assets__edit button {
-  border: 1px solid #d9d9d9;
+  border: 1px solid var(--sm-border-color);
   border-radius: 6px;
-  background: #fff;
+  background: var(--sm-bg-container);
   cursor: pointer;
   padding: 4px 12px;
   font-size: 12px;

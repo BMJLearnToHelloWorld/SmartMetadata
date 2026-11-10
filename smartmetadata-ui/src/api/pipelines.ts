@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asRecord, asString, parsePaged } from '@/api/json';
+import { asNumber, asString, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import { apiRequest } from './client';
 

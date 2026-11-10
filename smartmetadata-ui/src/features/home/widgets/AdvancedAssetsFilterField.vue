@@ -172,7 +172,7 @@ const isInvalid = computed(
 .advanced-filter__error {
   margin: 0;
   font-size: 12px;
-  color: #ff4d4f;
+  color: var(--sm-color-error);
 }
 
 .advanced-filter__count {

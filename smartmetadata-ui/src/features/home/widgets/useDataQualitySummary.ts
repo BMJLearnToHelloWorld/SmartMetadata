@@ -81,7 +81,7 @@ async function fetchByStatus(
     testCaseStatus: status,
     ...toSearchParams(filters, userName),
   });
-  return { tests: response.data ?? [], total: response.paging?.total ?? 0 };
+  return { tests: response.data ?? [], total: response.total ?? 0 };
 }
 
 /** Whether any test case exists — counted, never listed. */
@@ -91,7 +91,7 @@ async function fetchAnyTestCount(): Promise<number> {
     limit: COUNT_ONLY_PAGE_SIZE,
     q: '*',
   });
-  return response.paging?.total ?? 0;
+  return response.total ?? 0;
 }
 
 // Failures first, then aborted, then passing: the card is about what needs

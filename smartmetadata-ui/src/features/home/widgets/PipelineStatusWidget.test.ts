@@ -33,7 +33,7 @@ vi.mock('@/features/home/useAddServiceAction', () => ({
 }));
 
 function page(rows: unknown[], total: number) {
-  return { data: rows, paging: { total } };
+  return { data: rows, total };
 }
 
 function summary(id: string, status?: string, overrides: Record<string, unknown> = {}) {
@@ -71,7 +71,7 @@ describe('PipelineStatusWidget', () => {
     getResourcePermission.mockResolvedValue({ Create: true });
     listCatalogPipelineStatuses.mockResolvedValue({
       data: [{ timestamp: 1760000000000, executionStatus: 'Successful', taskStatus: [] }],
-      paging: { total: 1 },
+      total: 1,
     });
   });
 
@@ -149,7 +149,7 @@ describe('PipelineStatusWidget', () => {
         },
         { timestamp: 1760000001000, executionStatus: 'Successful', taskStatus: [] },
       ],
-      paging: { total: 2 },
+      total: 2,
     });
     const { wrapper } = mountWidget();
     await flushPromises();
@@ -175,7 +175,7 @@ describe('PipelineStatusWidget', () => {
         },
         { timestamp: 1760000001000, executionStatus: 'Successful', taskStatus: [] },
       ],
-      paging: { total: 2 },
+      total: 2,
     });
     const { wrapper } = mountWidget();
     await flushPromises();

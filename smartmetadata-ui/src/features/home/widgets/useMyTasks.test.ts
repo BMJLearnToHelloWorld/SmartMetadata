@@ -40,7 +40,7 @@ describe('useMyTasks', () => {
         { id: '2', category: 'DataAccess', assignees: [], comments: [] },
         { id: '3', category: 'Custom', assignees: [], comments: [] },
       ],
-      paging: { total: 250 },
+      total: 250,
     });
     mount(Harness);
     await flushPromises();

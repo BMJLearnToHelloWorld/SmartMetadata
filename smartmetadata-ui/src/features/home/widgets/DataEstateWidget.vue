@@ -204,14 +204,14 @@ function openExplore(): void {
   grid-column: 1 / -1;
   height: 6px;
   border-radius: 999px;
-  background: #f0f0f0;
+  background: var(--sm-border-secondary);
   overflow: hidden;
 }
 
 .data-estate__connector-bar i {
   display: block;
   height: 100%;
-  background: #005587;
+  background: var(--sm-color-primary);
   border-radius: 999px;
 }
 

@@ -72,7 +72,7 @@ describe('AnnouncementsRail', () => {
   it('lists live asset announcements and dismisses one from the rail', async () => {
     listAnnouncements.mockResolvedValue({
       data: [asset('a1'), asset('a2')],
-      paging: { total: 2 },
+      total: 2,
     });
     const wrapper = await mountRail();
     expect(listAnnouncements).toHaveBeenCalledWith({
@@ -89,7 +89,7 @@ describe('AnnouncementsRail', () => {
   });
 
   it('stands the whole section down when nothing is live', async () => {
-    listAnnouncements.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listAnnouncements.mockResolvedValue({ data: [], total: 0 });
     const wrapper = await mountRail();
     expect(wrapper.find('[data-testid="announcements-section"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="announcement-view-all"]').exists()).toBe(false);
@@ -97,12 +97,12 @@ describe('AnnouncementsRail', () => {
 
   it('opens the all-announcements dialog, which pages and counts the server total', async () => {
     listAnnouncements
-      .mockResolvedValueOnce({ data: [asset('a1')], paging: { total: 3 } })
+      .mockResolvedValueOnce({ data: [asset('a1')], total: 3 })
       .mockResolvedValueOnce({
         data: [asset('a1'), asset('a2')],
-        paging: { total: 3, after: 'c1' },
+        total: 3, after: 'c1',
       })
-      .mockResolvedValueOnce({ data: [asset('a3')], paging: { total: 3 } });
+      .mockResolvedValueOnce({ data: [asset('a3')], total: 3 });
     const wrapper = await mountRail();
     await wrapper.get('[data-testid="announcement-view-all"]').trigger('click');
     await flushPromises();

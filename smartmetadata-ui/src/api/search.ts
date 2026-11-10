@@ -230,49 +230,6 @@ export interface AggregateBucket {
   docCount: number;
 }
 
-/**
- * Official StringUtils.ts escapeESReservedCharacters: every reserved
- * character maps to backslash + itself, looked up one character at a
- * time. `#` is in the regex class but has no map entry, so it passes
- * through unchanged — mirrored here, not "fixed".
- */
-const ES_RESERVED_CHARACTERS: Record<string, string> = {
-  '+': '\\+',
-  '-': '\\-',
-  '=': '\\=',
-  '&': '\\&',
-  '|': '\\|',
-  '>': '\\>',
-  '<': '\\<',
-  '!': '\\!',
-  '(': '\\(',
-  ')': '\\)',
-  '{': '\\{',
-  '}': '\\}',
-  '[': '\\[',
-  ']': '\\]',
-  '^': '\\^',
-  '"': '\\"',
-  '~': '\\~',
-  '*': '\\*',
-  '?': '\\?',
-  ':': '\\:',
-  '\\': '\\\\',
-  '/': '\\/',
-};
-
-const ES_RESERVED_CHARACTERS_REGEX = /[\\[\]#+=&|><!(){}^"~*?:/-]/g;
-
-export function escapeESReservedCharacters(text?: string): string {
-  if (!text) {
-    return '';
-  }
-  return text.replaceAll(
-    ES_RESERVED_CHARACTERS_REGEX,
-    (char) => ES_RESERVED_CHARACTERS[char] ?? char,
-  );
-}
-
 function toAggregateBody(request: AggregateFieldOptionsRequest): Record<string, unknown> {
   return {
     query: request.query,
@@ -285,17 +242,6 @@ function toAggregateBody(request: AggregateFieldOptionsRequest): Record<string, 
     queryText: request.queryText,
     topHits: request.topHits,
   };
-}
-
-export function postAggregateFieldOptions(
-  request: AggregateFieldOptionsRequest,
-): Promise<unknown> {
-  const { fieldValue, ...rest } = request;
-  const withWildCardValue = fieldValue ? `.*${escapeESReservedCharacters(fieldValue)}.*` : '.*';
-  return apiRequest<unknown>('/v1/search/aggregate', {
-    method: 'POST',
-    json: toAggregateBody({ ...rest, fieldValue: withWildCardValue }),
-  });
 }
 
 export function postExactAggregateFieldOptions(
@@ -333,7 +279,7 @@ export function mapAggregateBuckets(payload: unknown, fieldName: string): Aggreg
         return [];
       }
       const key = typeof rec.key === 'string' ? rec.key : rec.key !== undefined ? String(rec.key) : '';
-      return key ? [{ key, docCount: asNumber(rec.doc_count) }] : [];
+      return key ? [{ key, docCount: asNumber(rec.doc_count) ?? 0 }] : [];
     });
   }
   return [];

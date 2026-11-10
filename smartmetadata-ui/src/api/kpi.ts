@@ -248,7 +248,7 @@ export async function fetchAllKpis(): Promise<Kpi[]> {
   for (;;) {
     const page = await listKpis({ fields: 'dataInsightChart', limit: KPI_PAGE_SIZE_LARGE, after });
     all.push(...page.data);
-    const next = page.paging?.after;
+    const next = page.after;
     if (!next || page.data.length === 0) {
       return all;
     }

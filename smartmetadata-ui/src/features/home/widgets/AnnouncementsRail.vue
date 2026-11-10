@@ -64,6 +64,10 @@ const activeAnnouncements = computed(() =>
 const count = computed(() => activeAnnouncements.value.length);
 const countRef = computed(() => count.value);
 const { railRef, canScroll, syncScrollState, goToPrevious, goToNext } = useRailPager(countRef);
+// The template binds the scroll container with ref="railRef"; vue-tsc's
+// unused-local check does not see template-ref usage. This reference
+// keeps the binding: the pager scrolls through it, so it must stay.
+void railRef;
 
 const hasLive = computed(() => loaded.value && !isError.value && count.value > 0);
 </script>

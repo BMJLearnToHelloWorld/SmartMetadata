@@ -563,7 +563,7 @@ describe('MyDataView', () => {
     const { wrapper } = await mountPage();
     await vi.waitFor(() => {
       expect(
-        wrapper.get('[data-testid="total-data-assets-window-filter"]').exists(),
+        wrapper.find('[data-testid="total-data-assets-window-filter"]').exists(),
       ).toBe(true);
     });
     expect(listSystemChartData).toHaveBeenCalledWith(

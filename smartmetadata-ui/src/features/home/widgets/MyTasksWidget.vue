@@ -229,7 +229,7 @@ function kindLabel(task: CollaborationTask): string {
 }
 
 .my-tasks__chip {
-  border: 1px solid var(--sm-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 999px;
   background: transparent;
   padding: 2px 10px;
@@ -238,8 +238,8 @@ function kindLabel(task: CollaborationTask): string {
 }
 
 .my-tasks__chip--active {
-  border-color: #005587;
-  color: #005587;
+  border-color: var(--sm-color-primary);
+  color: var(--sm-color-primary);
   font-weight: 600;
 }
 
@@ -287,7 +287,7 @@ function kindLabel(task: CollaborationTask): string {
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--sm-border, #f0f0f0);
+  border-top: 1px solid var(--sm-border-secondary);
   font-size: 12px;
 }
 </style>

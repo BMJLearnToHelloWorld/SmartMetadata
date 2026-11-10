@@ -8,7 +8,13 @@ import { useI18n } from 'vue-i18n';
 
 export interface HomeWidgetStatus {
   label: string;
-  tone: 'error' | 'success' | 'muted';
+  /**
+   * The tones the stage-B cards actually pass: 'warning' for items that
+   * need attention, 'info' for deltas and informational counts,
+   * 'default'/'neutral' for plain counts; 'error'/'success'/'muted' as
+   * before. statusColor maps each to a real antd Tag colour below.
+   */
+  tone: 'error' | 'success' | 'muted' | 'warning' | 'info' | 'default' | 'neutral';
 }
 
 export interface HomeWidgetEmptyState {
@@ -51,7 +57,18 @@ const emit = defineEmits<{
 const { t } = useI18n();
 
 function statusColor(tone: HomeWidgetStatus['tone']): string {
-  return tone === 'error' ? 'error' : tone === 'success' ? 'success' : 'default';
+  switch (tone) {
+    case 'error':
+      return 'error';
+    case 'success':
+      return 'success';
+    case 'warning':
+      return 'warning';
+    case 'info':
+      return 'processing';
+    default:
+      return 'default';
+  }
 }
 </script>
 

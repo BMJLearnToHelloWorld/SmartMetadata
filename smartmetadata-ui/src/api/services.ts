@@ -8,7 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
-import type { EntityRef, Paged } from '@/types/admin';
+import type { Paged } from '@/types/admin';
+import type { EntityRef } from '@/types/api';
 import { apiRequest } from './client';
 
 /**
@@ -44,7 +45,8 @@ export interface ServicesOverview {
   healthCounts?: Record<string, Record<string, number>>;
   total: number;
   data: ServiceSummary[];
-  paging?: Paged<ServiceSummary>['paging'];
+  /** Cursor/total of the underlying page, flattened from Paged<T>. */
+  paging?: Pick<Paged<ServiceSummary>, 'after' | 'before' | 'total'>;
 }
 
 export interface ServicesOverviewParams {
@@ -146,7 +148,7 @@ export async function getServicesOverview(params: ServicesOverviewParams = {}): 
     }
     const out: Record<string, number> = {};
     for (const [key, entry] of Object.entries(rec)) {
-      out[key] = asNumber(entry);
+      out[key] = asNumber(entry) ?? 0;
     }
     return out;
   };
@@ -168,8 +170,8 @@ export async function getServicesOverview(params: ServicesOverviewParams = {}): 
     counts: asCountMap(root?.counts),
     serviceTypeCounts: asCountMap(root?.serviceTypeCounts),
     healthCounts: asHealthMap(root?.healthCounts),
-    total: page.paging?.total ?? page.data.length,
+    total: page.total ?? page.data.length,
     data: page.data,
-    paging: page.paging,
+    paging: { total: page.total, after: page.after, before: page.before },
   };
 }

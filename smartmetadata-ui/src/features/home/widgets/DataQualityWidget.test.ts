@@ -76,23 +76,23 @@ describe('DataQualityWidget', () => {
     // Counts: Failed 2, Success 3, Aborted 1, any-test 6; latest rows: 1 failed + 1 success.
     listTestCasesBySearch.mockImplementation(async (query: { testCaseStatus?: string; limit?: number }) => {
       if (query.limit === 1 && query.testCaseStatus === 'Failed') {
-        return { data: [], paging: { total: 2 } };
+        return { data: [], total: 2 };
       }
       if (query.limit === 1 && query.testCaseStatus === 'Success') {
-        return { data: [], paging: { total: 3 } };
+        return { data: [], total: 3 };
       }
       if (query.limit === 1 && query.testCaseStatus === 'Aborted') {
-        return { data: [], paging: { total: 1 } };
+        return { data: [], total: 1 };
       }
       if (query.limit === 1 && !query.testCaseStatus) {
-        return { data: [], paging: { total: 6 } };
+        return { data: [], total: 6 };
       }
       return {
         data: [
           testCase('f1', 'Failed', '<#E::table::db.schema.t1>'),
           testCase('s1', 'Success', '<#E::table::db.schema.t1::columns::c1>'),
         ],
-        paging: { total: 2 },
+        total: 2,
       };
     });
   });
@@ -111,7 +111,7 @@ describe('DataQualityWidget', () => {
     expect(rows.map((row) => row.attributes('data-testid'))).toEqual(['dq-test-f1', 'dq-test-s1']);
     // The grouped row names its column, not the table.
     expect(wrapper.get('[data-testid="dq-test-s1"]').text()).toContain('c1');
-    expect(wrapper.get('[data-testid="dq-table-group-db.schema.t1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="dq-table-group-db.schema.t1"]').exists()).toBe(true);
   });
 
   it('sends the 30-day window and the scope params', async () => {
@@ -130,12 +130,12 @@ describe('DataQualityWidget', () => {
   it('shows the no-tests empty state with the create entry when the estate has no tests', async () => {
     listTestCasesBySearch.mockImplementation(async (query: { testCaseStatus?: string; limit?: number }) => {
       if (query.limit === 1 && !query.testCaseStatus) {
-        return { data: [], paging: { total: 0 } };
+        return { data: [], total: 0 };
       }
       if (query.limit === 1) {
-        return { data: [], paging: { total: 0 } };
+        return { data: [], total: 0 };
       }
-      return { data: [], paging: { total: 0 } };
+      return { data: [], total: 0 };
     });
     const wrapper = mountWidget();
     await flushPromises();

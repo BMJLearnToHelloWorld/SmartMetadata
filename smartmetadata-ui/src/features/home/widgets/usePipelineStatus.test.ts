@@ -11,6 +11,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { resetWidgetLoadCache } from '@/features/home/widgetLoad';
+import type { PipelineLastRunStatus } from '@/api/pipelines';
 import {
   derivePipelineStatus,
   rankAllPipelines,
@@ -24,7 +25,7 @@ vi.mock('@/api/pipelines', () => ({
   listPipelineSummaries: (...args: unknown[]) => listPipelineSummaries(...args),
 }));
 
-function summary(id: string, status?: string) {
+function summary(id: string, status?: PipelineLastRunStatus) {
   return {
     pipelineId: id,
     pipelineFqn: `svc.${id}`,

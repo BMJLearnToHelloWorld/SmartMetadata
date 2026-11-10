@@ -111,9 +111,7 @@ const router = useRouter();
 const { rows, counts, isLoading, isError, refetch } = usePipelineStatus();
 const bucket: Ref<PipelineStatusBucket> = ref(ALL_PIPELINES);
 const visibleRows = computed(() => rows.value[bucket.value]);
-const { runsByFqn, loadHistory } = usePipelineRunHistory(
-  computed(() => visibleRows.value.map((row) => row.pipelineFqn)),
-);
+const { runsByFqn, loadHistory } = usePipelineRunHistory();
 const { addService, canAddService } = useAddServiceAction('pipeline');
 
 const total = computed(() => counts.value[ALL_PIPELINES]);
@@ -219,7 +217,7 @@ function openPipeline(pipeline: PipelineSummary): void {
 }
 
 .pipeline-status__chip {
-  border: 1px solid var(--sm-border, #d9d9d9);
+  border: 1px solid var(--sm-border-color);
   border-radius: 999px;
   background: transparent;
   padding: 2px 10px;
@@ -228,8 +226,8 @@ function openPipeline(pipeline: PipelineSummary): void {
 }
 
 .pipeline-status__chip--active {
-  border-color: #005587;
-  color: #005587;
+  border-color: var(--sm-color-primary);
+  color: var(--sm-color-primary);
   font-weight: 600;
 }
 
@@ -289,8 +287,8 @@ function openPipeline(pipeline: PipelineSummary): void {
   margin: 2px 0 0;
   padding: 6px 10px;
   border-radius: 8px;
-  background: #fff1f0;
-  color: #cf1322;
+  background: var(--sm-color-error-bg);
+  color: var(--sm-color-error-text);
   font-size: 12px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -308,14 +306,14 @@ function openPipeline(pipeline: PipelineSummary): void {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d9d9d9;
+  background: var(--sm-border-color);
 }
 
 .pipeline-status__dot--success {
-  background: #52c41a;
+  background: var(--sm-color-success);
 }
 
 .pipeline-status__dot--failed {
-  background: #ff4d4f;
+  background: var(--sm-color-error);
 }
 </style>

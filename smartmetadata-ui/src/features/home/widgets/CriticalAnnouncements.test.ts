@@ -61,11 +61,11 @@ describe('CriticalAnnouncements', () => {
     listAnnouncements
       .mockResolvedValueOnce({
         data: [critical('old', NOW - 5000)],
-        paging: { total: 3, after: 'c1' },
+        total: 3, after: 'c1',
       })
       .mockResolvedValueOnce({
         data: [critical('new', NOW - 1000), critical('mid', NOW - 3000)],
-        paging: { total: 3 },
+        total: 3,
       });
     const wrapper = mountBanner();
     await flushPromises();
@@ -85,24 +85,24 @@ describe('CriticalAnnouncements', () => {
   });
 
   it('renders the fallback when no critical is live', async () => {
-    listAnnouncements.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listAnnouncements.mockResolvedValue({ data: [], total: 0 });
     const wrapper = mountBanner();
     await flushPromises();
     expect(wrapper.find('[data-testid="critical-announcements"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="greeting-fallback"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="greeting-fallback"]').exists()).toBe(true);
   });
 
   it('dismisses a banner into its own storage key and hides it', async () => {
     listAnnouncements.mockResolvedValue({
       data: [critical('c1', NOW - 1000)],
-      paging: { total: 1 },
+      total: 1,
     });
     const wrapper = mountBanner();
     await flushPromises();
     await wrapper.get('[data-testid="critical-announcement-dismiss"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="critical-announcements"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="greeting-fallback"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="greeting-fallback"]').exists()).toBe(true);
     expect(localStorage.getItem('om-home-dismissed-critical-announcements:u-1')).toBe('["c1"]');
   });
 });

@@ -69,9 +69,6 @@ export interface CuratedAssets {
 const PAGE_SIZE = 10;
 const TTL_MS = 5 * 60 * 1000;
 
-/** Test cases point at their table through this field; it is lowercased on the index. */
-const ORIGIN_ENTITY_FIELD = 'originEntityFQN';
-
 // `Tier.Tier1` reads as noise in a chip; the leaf is what the mock shows.
 export function tierLeaf(tagFQN?: string): string | undefined {
   return tagFQN?.split('.').pop();

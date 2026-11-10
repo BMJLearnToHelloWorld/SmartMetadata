@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
@@ -34,7 +34,7 @@ const loaded = useWidgetLoad(
   'context-center',
   async () => {
     const page = await listKnowledgePages({ limit: CONTEXT_CENTER_FETCH_LIMIT, sortBy: 'updatedAt', sortOrder: 'desc' });
-    return { pages: page.data ?? [], total: page.paging?.total ?? page.data?.length ?? 0 };
+    return { pages: page.data ?? [], total: page.total ?? page.data?.length ?? 0 };
   },
   { ttlMs: 5 * 60 * 1000 },
 );
@@ -210,7 +210,7 @@ async function onCreate(value: {
   gap: 12px;
   min-width: 0;
   padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--sm-border-secondary);
 }
 
 .context-center__row:last-child {
