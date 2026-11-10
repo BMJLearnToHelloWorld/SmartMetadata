@@ -32,7 +32,13 @@ export interface LandingPageLayoutItem {
   y: number;
   w: number;
   h: number;
-  static: boolean;
+  /**
+   * Optional, as in pin's `WidgetConfig` (react-grid-layout
+   * `LayoutItem.static` is optional): pin's empty branch builds the
+   * placeholder inline without `static`, while `createPlaceholderWidget`
+   * carries it — both shapes are valid.
+   */
+  static?: boolean;
   /**
    * Per-widget saved config, official WidgetConfig.config. The normalizer
    * spreads the saved entry, so a config survives normalization; widgets

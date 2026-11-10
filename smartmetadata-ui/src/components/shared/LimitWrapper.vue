@@ -3,10 +3,11 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Skeleton, Tooltip } from 'ant-design-vue';
 import { getLimitByResource, type ResourceLimit } from '@/api/limits';
+import { useLimitBannerStore, startCase } from '@/stores/limitBanner';
 import { useShellConfigStore } from '@/stores/shellConfig';
 
 /**
@@ -36,6 +37,7 @@ const props = defineProps<{ resource: string }>();
 
 const { t } = useI18n();
 const shellConfig = useShellConfigStore();
+const banner = useLimitBannerStore();
 
 const resourceLimit = ref<ResourceLimit | null>(null);
 const loading = ref(false);
@@ -55,7 +57,7 @@ const passthrough = computed(
 );
 
 const resourceLabel = computed(() =>
-  props.resource === 'metric' ? t('metrics.title') : props.resource,
+  props.resource === 'metric' ? t('metrics.title') : startCase(props.resource),
 );
 const limitMessage = computed(() =>
   t('limits.reached', {
@@ -73,6 +75,17 @@ async function loadResourceLimit(): Promise<void> {
   failed.value = false;
   try {
     resourceLimit.value = await getLimitByResource(props.resource);
+    // Stage D (G-11): the fetched status also drives the global
+    // banner — a limit at or over its threshold sets it, exactly as
+    // official's LimitWrapper does. A non-exceeding status leaves
+    // the banner alone.
+    if (firstStatus.value) {
+      banner.maybeShowLimitBanner({
+        status: firstStatus.value,
+        header: t('server.entityLimitReached', { entity: resourceLabel.value }),
+        plan: shellConfig.limit?.limits.config.plan || 'FREE',
+      });
+    }
   } catch {
     // Fail-open: a limit fetch failure renders the wrapped entry.
     failed.value = true;
@@ -81,6 +94,11 @@ async function loadResourceLimit(): Promise<void> {
     loading.value = false;
   }
 }
+
+// Official parity: unmounting a LimitWrapper clears the banner details.
+onUnmounted(() => {
+  banner.clearBannerDetails();
+});
 
 onMounted(() => {
   if (!shellConfig.limit && !shellConfig.limitLoading) {

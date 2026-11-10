@@ -32,6 +32,35 @@ import {
 
 export { MY_DATA_WIDGET_KEYS };
 
+/**
+ * The picker list for the customize modal: one entry per registry
+ * key with its display name (the title the widget itself renders).
+ * Pin reads this list from the server's KnowledgePanel seed docs and
+ * filters it through the registry allowlist; the product's registry
+ * IS the allowlist, so the list is built from it directly — same 13
+ * entries, no network round-trip (R-W3G11D-2).
+ */
+export interface MyDataWidgetOption {
+  key: string;
+  label: string;
+}
+
+export const MY_DATA_WIDGET_OPTIONS: readonly MyDataWidgetOption[] = [
+  { key: LANDING_PAGE_WIDGET_KEYS.PLATFORM_HEALTH, label: 'Platform Health' },
+  { key: LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE, label: 'Your data estate' },
+  { key: LANDING_PAGE_WIDGET_KEYS.TOTAL_DATA_ASSETS, label: 'Total data assets' },
+  { key: LANDING_PAGE_WIDGET_KEYS.MY_TASK, label: 'My tasks' },
+  { key: LANDING_PAGE_WIDGET_KEYS.PIPELINE_STATUS, label: 'Pipeline status' },
+  { key: LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED, label: 'Activity Feed' },
+  { key: LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED, label: 'Yours and Followed' },
+  { key: LANDING_PAGE_WIDGET_KEYS.KNOWLEDGE_CENTER, label: 'Context Center' },
+  { key: LANDING_PAGE_WIDGET_KEYS.CURATED_ASSETS, label: 'Curated Assets' },
+  { key: LANDING_PAGE_WIDGET_KEYS.DATA_QUALITY, label: 'Data Quality' },
+  { key: LANDING_PAGE_WIDGET_KEYS.DOMAINS, label: 'Domains' },
+  { key: LANDING_PAGE_WIDGET_KEYS.DATA_PRODUCTS, label: 'Data Products' },
+  { key: LANDING_PAGE_WIDGET_KEYS.KPI, label: 'KPI' },
+];
+
 const registry: Array<{ key: string; component: Component }> = [
   {
     key: LANDING_PAGE_WIDGET_KEYS.PLATFORM_HEALTH,

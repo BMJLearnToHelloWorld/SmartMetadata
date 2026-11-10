@@ -31,6 +31,8 @@ const props = defineProps<{
   followedTotal: number;
   sort: AssetSort;
   sortOptions: Array<{ value: AssetSort; label: string }>;
+  /** The layout key, forwarded to the card for the edit-view test-ids. */
+  widgetKey?: string;
 }>();
 
 const emit = defineEmits<{
@@ -68,7 +70,11 @@ function onSort(value: unknown): void {
 </script>
 
 <template>
-  <HomeWidgetCard :title="t('home.yoursAndFollowed')" test-id="home-widget-yours-and-followed">
+  <HomeWidgetCard
+    :title="t('home.yoursAndFollowed')"
+    test-id="home-widget-yours-and-followed"
+    :widget-key="props.widgetKey"
+  >
     <template #extra>
       <Select
         data-testid="home-tracked-filter"

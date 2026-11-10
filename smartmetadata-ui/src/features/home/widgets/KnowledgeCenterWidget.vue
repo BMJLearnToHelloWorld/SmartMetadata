@@ -18,7 +18,24 @@ import { getRelativeTime } from '@/utils/relativeTime';
 import { usePermissionStore } from '@/stores/permissions';
 import type { KnowledgePage } from '@/types/contextCenter';
 
-const props = defineProps<{ widgetKey: string }>();
+const props = defineProps<{
+  widgetKey: string;
+  /**
+   * Stage D: the home view and the editor pass the card chrome through
+   * these props, and the widget forwards them to its HomeWidgetCard
+   * explicitly. They cannot fall through: this widget renders a
+   * fragment root (the card plus the article modal beside it), so
+   * fallthrough attrs are dropped with a Vue warning instead.
+   */
+  editView?: boolean;
+  collapsible?: boolean;
+  collapsed?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (event: 'remove'): void;
+  (event: 'toggle-collapse'): void;
+}>();
 
 const { t } = useI18n();
 const router = useRouter();
@@ -136,8 +153,13 @@ async function onCreate(value: {
     :status="status"
     :summary="recentLabel"
     :empty-state="emptyState"
+    :edit-view="props.editView"
+    :collapsible="props.collapsible"
+    :collapsed="props.collapsed"
     @retry="refetch"
     @empty-action="showCreateModal = true"
+    @remove="emit('remove')"
+    @toggle-collapse="emit('toggle-collapse')"
   >
     <template #extra>
       <button type="button" class="home-widget-card__link" @click="openContextCenter">

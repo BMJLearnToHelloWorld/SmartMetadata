@@ -101,6 +101,17 @@ export interface PersonaDocument {
   data: {
     pages?: PersonaPage[];
     personaPreferences?: PersonaPreferences[];
+    /**
+     * Stage D (G-11): the per-user preferences array, a NEW data shape
+     * that must not be confused with `personaPreferences` above. The
+     * persona admin's choices live in `personaPreferences`; a single
+     * user's own choices for a persona (today: the landing-page header
+     * colour) live here, keyed by personaId, exactly as official
+     * `Document.data.personPreferences`. The header-colour write path
+     * (`handleBackgroundColorUpdate`) and the resolution order (own
+     * choice first, then the persona admin's) both read this array.
+     */
+    personPreferences?: PersonaPreferences[];
     navigation?: unknown;
   };
   domains?: EntityRef[];

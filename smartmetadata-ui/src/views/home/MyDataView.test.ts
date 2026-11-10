@@ -103,6 +103,10 @@ vi.mock('@/stores/permissions', () => ({
 vi.mock('@/stores/shellConfig', () => ({
   useShellConfigStore: () => ({ limit: { enable: false }, loadLimitConfig: vi.fn() }),
 }));
+const patchUser = vi.fn();
+vi.mock('@/api/users', () => ({
+  patchUser: (...args: unknown[]) => patchUser(...args),
+}));
 vi.mock('@/api/persona', () => ({
   listPersonas: (...args: unknown[]) => listPersonas(...args),
 }));
@@ -136,6 +140,11 @@ async function mountPage(options: { flush?: boolean } = {}) {
       { path: '/my-data', name: 'home', component: MyDataView },
       { path: '/search', name: 'search', component: { template: '<div>search</div>' } },
       { path: '/insights', name: 'insights', component: { template: '<div>insights</div>' } },
+      {
+        path: '/customize-page/:fqn/:pageFqn',
+        name: 'customize-page',
+        component: { template: '<div>customize</div>' },
+      },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
     ],
   });
@@ -239,6 +248,7 @@ describe('MyDataView', () => {
     listTestCasesBySearch.mockReset();
     listAnnouncements.mockReset();
     getResourcePermission.mockReset();
+    patchUser.mockReset();
     // Every self-fetching widget lands on its empty state: the page
     // test asserts the 13 real cells render, not their data.
     postAggregateFieldOptions.mockResolvedValue({ buckets: [] });
@@ -334,7 +344,9 @@ describe('MyDataView', () => {
     ]) {
       expect(wrapper.find(`[data-testid="${retired}"]`).exists()).toBe(false);
     }
-    expect(wrapper.text()).not.toContain('Topics to catch up');
+    // Stage D: the topics section exists now, with its header.
+    expect(wrapper.text()).toContain('Topics to catch up on');
+    expect(wrapper.find('[data-testid="toggle-all-widgets"]').exists()).toBe(true);
     // No live announcements: the rail stands down, the greeting header
     // is the only thing above the grid.
     expect(wrapper.find('[data-testid="announcements-section"]').exists()).toBe(false);
@@ -580,5 +592,82 @@ describe('MyDataView', () => {
     const secondStart = listSystemChartData.mock.calls.at(-1)?.[1] as number;
     const secondEnd = listSystemChartData.mock.calls.at(-1)?.[2] as number;
     expect(secondEnd - secondStart).toBeCloseTo(30 * 24 * 60 * 60 * 1000, -3);
+  });
+
+  it('stage D: the topics header renders with its view controls and tour step', async () => {
+    const { wrapper } = await mountPage();
+    expect(wrapper.find('[data-testid="toggle-all-widgets"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="topics-list-view"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="topics-grid-view"]').exists()).toBe(true);
+    expect(wrapper.find('[data-tour-step="topics-to-catch-up-on"]').exists()).toBe(true);
+    // The customize entry is admin + persona only: hidden by default.
+    expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(false);
+  });
+
+  it('stage D: the customize entry appears for an admin with a persona and navigates', async () => {
+    localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+    listPersonas.mockResolvedValue({ data: [personaRow()], paging: { total: 1 } });
+    const { wrapper, router } = await mountPage();
+    useAuthStore().user = { id: 'u-1', name: 'admin', displayName: 'admin', isAdmin: true };
+    await flushPromises();
+    expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="customize-home-page"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    expect(router.currentRoute.value.params).toEqual({ fqn: 'Analyst', pageFqn: 'LandingPage' });
+  });
+
+  it('stage D: the first-login welcome stays hidden for a returning user', async () => {
+    const { wrapper } = await mountPage();
+    expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(false);
+    expect(patchUser).not.toHaveBeenCalled();
+  });
+
+  it('stage D: a first-time user sees the welcome, is marked returning, and can close it', async () => {
+    const { wrapper } = await mountPage();
+    useAuthStore().user = {
+      id: 'u-1',
+      name: 'admin',
+      displayName: 'admin',
+      isFirstTimeUser: true,
+    };
+    await flushPromises();
+    expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Your iSmart is ready');
+    // The welcome replaces the grid while it shows.
+    expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(0);
+    expect(patchUser).toHaveBeenCalledWith('u-1', [
+      { op: 'add', path: '/isFirstTimeUser', value: false },
+    ]);
+    await wrapper.get('[data-testid="welcome-screen-close"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(false);
+  });
+
+  it('stage D: toggle-all collapses every widget to one subdivided row and back', async () => {
+    const { wrapper } = await mountPage();
+    const cells = () => wrapper.findAll('[data-testid="home-widget-cell"]');
+    expect(cells()).toHaveLength(13);
+    for (const cell of cells()) {
+      expect(cell.attributes('style')).toContain('span 12');
+    }
+    await wrapper.get('[data-testid="toggle-all-widgets"]').trigger('click');
+    for (const cell of cells()) {
+      expect(cell.attributes('style')).toContain('span 3');
+    }
+    await wrapper.get('[data-testid="toggle-all-widgets"]').trigger('click');
+    for (const cell of cells()) {
+      expect(cell.attributes('style')).toContain('span 12');
+    }
+  });
+
+  it('stage D: list mode renders the topics grid in one column', async () => {
+    const { wrapper } = await mountPage();
+    const grid = wrapper.get('[data-testid="home-landing-grid"]');
+    expect(grid.attributes('style') ?? '').not.toContain('grid-template-columns: 1fr');
+    await wrapper.get('[data-testid="topics-list-view"]').trigger('click');
+    expect(wrapper.get('[data-testid="home-landing-grid"]').attributes('style')).toContain(
+      'grid-template-columns: 1fr',
+    );
   });
 });

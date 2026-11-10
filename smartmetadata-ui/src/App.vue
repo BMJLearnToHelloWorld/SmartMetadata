@@ -11,6 +11,7 @@ import enUS from 'ant-design-vue/es/locale/en_US';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import { SESSION_EXPIRED_EVENT } from '@/auth/sessionEvents';
 import CsvJobsTray from '@/components/shared/CsvJobsTray.vue';
+import LimitBanner from '@/components/shared/LimitBanner.vue';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import { smAntdTheme } from '@/theme/tokens';
@@ -65,6 +66,9 @@ onUnmounted(() => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :form="{ validateMessages: formValidateMessages }">
+    <!-- Stage D (G-11): the global limit banner, driven by LimitWrapper
+         mounts (the home page's hidden data-assets driver). -->
+    <LimitBanner />
     <router-view />
     <CsvJobsTray />
   </ConfigProvider>

@@ -58,7 +58,11 @@ import type { OperationPermissions } from '@/api/permissions';
 // duplicate sub-route shares the prefix. The read-only home
 // announcement rail is unaffected: it is not an admin route.
 // ADR:2026-11-08-my-data-announcements-admin-gate
-export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements'] as const;
+// Stage D (G-11): the persona landing-page editor is admin-only too —
+// a non-admin must never reach the customize route, and the home page
+// only offers the entry to admins with a persona in play.
+// ADR:2026-11-10-my-data-customize-page-drag
+export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements', '/customize-page'] as const;
 
 /**
  * Admin route name -> permission resource for the guard's second

@@ -3,7 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { Button, Card, Skeleton, Tag } from 'ant-design-vue';
+import { computed } from 'vue';
+import { DeleteOutlined, DownOutlined, HolderOutlined, UpOutlined } from '@ant-design/icons-vue';
+import { Button, Card, Skeleton, Tag, Tooltip } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
 
 export interface HomeWidgetStatus {
@@ -41,20 +43,65 @@ const props = withDefaults(
     summary?: string;
     meta?: string;
     emptyState?: HomeWidgetEmptyState;
+    /**
+     * Stage D (G-11) edit-view variant, per the official TopicCardControls:
+     * the drag handle (pointer-only, not focusable) and the remove button,
+     * on the right of the header. The editor passes these through the
+     * widget as undeclared props — they fall through to this card, the
+     * widget's root — so no widget has to forward them explicitly.
+     */
+    editView?: boolean;
+    /**
+     * Stage D collapse (official TopicWidget header strip): when true the
+     * title area + chevron toggle the collapsed state, which hides the
+     * body. The chevron lives in the header strip itself, NOT in the
+     * edit-view control group above. Collapse is display-only — the
+     * state is derived in `useTopicsView` and never written back.
+     */
+    collapsible?: boolean;
+    collapsed?: boolean;
+    /**
+     * The widget key, for the edit-view test-ids (`drag-widget-{key}`,
+     * `remove-widget-{key}`). Widgets that carry it pass it explicitly;
+     * otherwise it is derived from the card test-id, which encodes the
+     * key for every self-fetching widget (`home-widget-<key>`).
+     */
+    widgetKey?: string;
   }>(),
   {
     testId: 'home-widget',
     isLoading: false,
     isError: false,
+    editView: false,
+    collapsible: false,
+    collapsed: false,
   },
 );
 
 const emit = defineEmits<{
   (event: 'retry'): void;
   (event: 'empty-action'): void;
+  (event: 'remove'): void;
+  (event: 'toggle-collapse'): void;
 }>();
 
 const { t } = useI18n();
+
+/** The widget key for the edit-view test-ids. */
+const dragKey = computed(() => {
+  if (props.widgetKey) {
+    return props.widgetKey;
+  }
+  return props.testId.startsWith('home-widget-')
+    ? props.testId.slice('home-widget-'.length)
+    : props.testId;
+});
+
+function toggleCollapse(): void {
+  if (props.collapsible) {
+    emit('toggle-collapse');
+  }
+}
 
 function statusColor(tone: HomeWidgetStatus['tone']): string {
   switch (tone) {
@@ -75,17 +122,62 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
 <template>
   <Card :data-testid="testId" class="home-widget-card" :bordered="true">
     <template #title>
-      <span class="home-widget-card__title">{{ title }}</span>
-      <Tag v-if="status" :data-testid="`${testId}-status`" :color="statusColor(status.tone)">
-        {{ status.label }}
-      </Tag>
+      <span
+        class="home-widget-card__title"
+        :class="{ 'home-widget-card__title--collapsible': collapsible }"
+        @click="toggleCollapse"
+      >
+        <span class="home-widget-card__title-text">{{ title }}</span>
+        <Tag v-if="status" :data-testid="`${testId}-status`" :color="statusColor(status.tone)">
+          {{ status.label }}
+        </Tag>
+        <Button
+          v-if="collapsible"
+          type="text"
+          size="small"
+          class="home-widget-card__collapse"
+          :data-testid="`${testId}-collapse`"
+          :aria-label="t(collapsed ? 'home.expand' : 'home.collapse')"
+          @click.stop="toggleCollapse"
+        >
+          <template #icon>
+            <UpOutlined v-if="!collapsed" />
+            <DownOutlined v-else />
+          </template>
+        </Button>
+      </span>
     </template>
     <template #extra>
       <div class="home-widget-card__extra">
+        <span v-if="editView" class="home-widget-card__edit-controls">
+          <!-- The editor's drag handle: `.drag-widget-icon` is the
+               selector the editor's drag logic keys off, and dragging
+               is pointer-only, so this is not a focusable control. -->
+          <Tooltip :title="t('home.reposition')">
+            <span
+              aria-hidden="true"
+              class="drag-widget-icon"
+              :data-testid="`drag-widget-${dragKey}`"
+              draggable="true"
+            >
+              <HolderOutlined />
+            </span>
+          </Tooltip>
+          <Button
+            type="text"
+            size="small"
+            class="home-widget-card__remove"
+            :data-testid="`remove-widget-${dragKey}`"
+            :aria-label="t('home.remove')"
+            @click="emit('remove')"
+          >
+            <template #icon><DeleteOutlined /></template>
+          </Button>
+        </span>
         <slot name="extra" />
       </div>
     </template>
-    <div class="home-widget-card__body">
+    <div v-if="!collapsed" class="home-widget-card__body">
       <p v-if="summary" :data-testid="`${testId}-summary`" class="home-widget-card__summary">
         {{ summary }}
       </p>
@@ -180,6 +272,38 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+.home-widget-card__title--collapsible {
+  cursor: pointer;
+}
+.home-widget-card__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-widget-card__collapse {
+  flex: none;
+  padding: 0 2px;
+  color: var(--sm-text-secondary);
+}
+.home-widget-card__edit-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.drag-widget-icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  color: var(--sm-text-tertiary);
+  cursor: grab;
+}
+.drag-widget-icon:active {
+  cursor: grabbing;
+}
+.home-widget-card__remove {
+  color: var(--sm-text-secondary);
 }
 .home-widget-card__extra {
   display: inline-flex;

@@ -26,6 +26,7 @@ const KpiDetailView = () => import('@/views/insights/KpiDetailView.vue');
 const KpiFormView = () => import('@/views/insights/KpiFormView.vue');
 const OnlineUsersView = () => import('@/views/insights/OnlineUsersView.vue');
 const MyDataView = () => import('@/views/home/MyDataView.vue');
+const CustomizePageView = () => import('@/views/home/CustomizePageView.vue');
 const LineageHomeView = () => import('@/views/LineageHomeView.vue');
 const LineageView = () => import('@/views/LineageView.vue');
 const BotDetailView = () => import('@/views/admin/BotDetailView.vue');
@@ -217,6 +218,15 @@ export const router = createRouter({
         // redirect (entry-only; later visits resolve to Home).
         { path: '', component: PersonaLandingRedirect },
         { path: 'my-data', name: 'home', component: MyDataView, meta: { flush: true } },
+        // Stage D (G-11): the persona landing-page editor, admin-only
+        // (see ADMIN_ROUTE_PREFIXES). `homepage` is the alias pin
+        // renders the LandingPage editor for.
+        {
+          path: 'customize-page/:fqn/:pageFqn',
+          name: 'customize-page',
+          component: CustomizePageView,
+          props: true,
+        },
         // G-01 (visual comparison): official EXPLORE '/explore'
         // (constants.ts:155); the product search lives at /search.
         { path: 'search', name: 'search', component: SearchView, alias: 'explore' },

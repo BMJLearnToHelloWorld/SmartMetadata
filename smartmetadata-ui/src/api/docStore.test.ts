@@ -145,6 +145,42 @@ describe('docStore API', () => {
     expect(lastFetch().init?.method).toBe('PATCH');
   });
 
+  it('maps personPreferences through a read, header colour included (stage D round-trip)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'doc1',
+      name: 'Analyst-Analyst',
+      fullyQualifiedName: 'persona.Analyst',
+      entityType: 'Page',
+      data: {
+        pages: [{ pageType: 'LandingPage', layout: [] }],
+        personaPreferences: [{ personaId: 'p1', landingPageSettings: { headerColor: '#1570EF' } }],
+        personPreferences: [{ personaId: 'p1', landingPageSettings: { headerColor: '#099250' } }],
+      },
+    })));
+    const doc = await getDocumentByFqn('persona.Analyst');
+    expect(doc.data.personaPreferences?.[0]?.landingPageSettings?.headerColor).toBe('#1570EF');
+    expect(doc.data.personPreferences?.[0]?.landingPageSettings?.headerColor).toBe('#099250');
+  });
+
+  it('saves a personPreferences change with a personPreferences replace patch only', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc })));
+    const saved = await savePersonaDocument(storedDoc, (draft) => {
+      draft.data.personPreferences = [
+        { personaId: 'p1', landingPageSettings: { headerColor: '#099250' } },
+      ];
+    });
+    expect(saved.id).toBe('doc1');
+    expect(lastFetch().init?.method).toBe('PATCH');
+    const body = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(body).toEqual([
+      {
+        op: 'replace',
+        path: '/data/personPreferences',
+        value: [{ personaId: 'p1', landingPageSettings: { headerColor: '#099250' } }],
+      },
+    ]);
+  });
+
   it('creates a document with POST /v1/docStore', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc, id: 'doc9' })));
     const saved = await createDocument({

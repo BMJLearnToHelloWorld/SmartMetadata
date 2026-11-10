@@ -11,14 +11,18 @@ import { listDomains } from '@/api/domains';
 import { searchAssets } from '@/api/search';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { searchRouteQuery, type SearchFilters } from '@/catalog/searchQuery';
+import LimitWrapper from '@/components/shared/LimitWrapper.vue';
 import HomeHero from '@/features/home/HomeHero.vue';
 import HomeLandingPageHeader from '@/features/home/HomeLandingPageHeader.vue';
+import TopicsSectionHeader from '@/features/home/TopicsSectionHeader.vue';
+import WelcomeScreen from '@/features/home/WelcomeScreen.vue';
+import { useFirstLoginWelcome } from '@/features/home/useFirstLoginWelcome';
+import { useTopicsView, type TopicsViewMode } from '@/features/home/useTopicsView';
 import AnnouncementsRail from '@/features/home/widgets/AnnouncementsRail.vue';
 import CriticalAnnouncements from '@/features/home/widgets/CriticalAnnouncements.vue';
 import {
   EXCLUDED_WIDGET_FQNS,
   LANDING_PAGE_MAX_GRID_SIZE,
-  LANDING_PAGE_WIDGET_HEIGHT_PX,
   LANDING_PAGE_WIDGET_KEYS,
   MY_DATA_WIDGET_KEYS,
   DEFAULT_LANDING_PAGE_LAYOUT,
@@ -53,14 +57,22 @@ import type { Domain } from '@/types/governance';
  * Above the grid sit the critical-announcements banner (with the
  * greeting header as its fallback) and the announcements rail.
  *
+ * Stage D adds the topics section header (collapse-all + list/grid
+ * view controls + the customize entry, admin + persona only), the
+ * first-login welcome (which replaces the grid, never the rail), and
+ * the hidden data-assets limit driver for the global banner.
+ *
  * ADR:2026-11-07-my-data-layout-normalization-five-params
  * ADR:2026-11-07-my-data-row-height-non-subdivided
  * ADR:2026-11-07-my-data-right-rail-keeps-home-hero
  * ADR:2026-11-08-my-data-announcements-rail
  * ADR:2026-11-08-my-data-greeting-header-home-hero-merge
+ * ADR:2026-11-10-my-data-customize-page-drag
+ * ADR:2026-11-10-my-data-limit-banner-no-plans-link
  *
- * No customize entry lives here (B-1 is stage D), and no per-user
- * layout is read or written (B-6: per-persona only).
+ * The header colour is NOT tinted here: pin has no production
+ * home-page consumer for it (R-G11D-1) — it is written and previewed
+ * in the editor only.
  */
 const router = useRouter();
 const auth = useAuthStore();
@@ -102,6 +114,36 @@ const layout = computed(() =>
 const renderableLayout = computed(() =>
   layout.value.filter((item) => resolveMyDataWidget(item.i) !== null),
 );
+
+/**
+ * Stage D view state: collapse + grid/list over the renderable
+ * layout, rendered at the subdivided row height (21.3325px) so a
+ * collapsed card takes three quarter-rows (~96px) instead of a full
+ * row. The overrides are derived, never written back.
+ */
+const topics = useTopicsView(renderableLayout);
+
+/** Stage D first-login welcome: once per user, never on the tour. */
+const { showWelcome, closeWelcome } = useFirstLoginWelcome();
+
+/**
+ * Stage D customize entry (B-1 (a)): admins only, and only when a
+ * persona is in play — the editor customizes one persona's page.
+ */
+const canCustomize = computed(
+  () => auth.user?.isAdmin === true && persona.selectedPersona !== null,
+);
+
+function goCustomize(): void {
+  const selected = persona.selectedPersona;
+  if (!selected) {
+    return;
+  }
+  void router.push({
+    name: 'customize-page',
+    params: { fqn: selected.fullyQualifiedName, pageFqn: 'LandingPage' },
+  });
+}
 
 const domainOptions = computed(() =>
   domains.value.map((domain) => ({
@@ -224,23 +266,35 @@ watch(selectedDomain, () => {
  * takes its instance key (`widgetKey`); CuratedAssets additionally
  * reads its saved config off the layout by that key. Only
  * YoursAndFollowed still takes central props.
+ *
+ * Stage D collapse (official TopicWidget header strip): every card
+ * gets `collapsible` + its collapsed state + the toggle, which fall
+ * through the widget to its root HomeWidgetCard — no widget forwards
+ * them explicitly.
  */
 function widgetProps(item: LandingPageLayoutItem): Record<string, unknown> {
   const baseKey = resolveMyDataWidgetBaseKey(item.i);
+  const collapse = {
+    collapsible: true,
+    collapsed: topics.collapseValue.value.isCollapsed(item.i),
+    onToggleCollapse: () => topics.collapseValue.value.toggle(item.i),
+  };
   switch (baseKey) {
     case LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED:
       return {
+        widgetKey: item.i,
         owned: owned.value,
         followed: followed.value,
         ownedTotal: ownedTotal.value,
         followedTotal: followedTotal.value,
         sort: trackedSort.value,
         sortOptions: assetSortOptions.value,
+        ...collapse,
       };
     case LANDING_PAGE_WIDGET_KEYS.CURATED_ASSETS:
-      return { widgetKey: item.i, currentLayout: layout.value };
+      return { widgetKey: item.i, currentLayout: layout.value, ...collapse };
     default:
-      return { widgetKey: item.i };
+      return { widgetKey: item.i, ...collapse };
   }
 }
 
@@ -262,14 +316,29 @@ function widgetListeners(baseKey: string): Record<string, WidgetListener> {
   }
 }
 
-function cellStyle(item: { x: number; y: number }): Record<string, string> {
-  return { gridColumn: String(item.x + 1), gridRow: String(item.y + 1) };
+/**
+ * The cell's grid placement, from the topics view's subdivided
+ * layout. Grid mode places explicitly (row height 21.3325px); list
+ * mode is one column, auto-placed in reading order, each cell
+ * spanning its subdivided height.
+ */
+function cellStyle(
+  item: { x: number; y: number; w: number; h: number },
+  viewMode: TopicsViewMode,
+): Record<string, string> {
+  if (viewMode === 'list') {
+    return { gridColumn: '1', gridRow: `span ${item.h}` };
+  }
+  return {
+    gridColumn: `${item.x + 1} / span ${item.w}`,
+    gridRow: `${item.y + 1} / span ${item.h}`,
+  };
 }
 </script>
 
 <template>
-  <!-- P2 B5 tour: no topics section exists on this page, so the tour
-       step falls back to the page content per TOUR_PAGE_SELECTOR. -->
+  <!-- The topics section exists now (stage D), so the tour step targets
+       its header via data-tour-step="topics-to-catch-up-on". -->
   <div class="my-data" data-testid="my-data-page" data-tour-page>
     <div v-if="!layoutReady" class="my-data__skeleton" data-testid="home-landing-skeleton">
       <div class="my-data__skeleton-bar" />
@@ -286,24 +355,44 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
           </CriticalAnnouncements>
           <AnnouncementsRail />
         </div>
-        <div class="my-data__grid">
-          <div
-            class="my-data__widgets"
-            data-testid="home-landing-grid"
-            :style="{ gridAutoRows: `${LANDING_PAGE_WIDGET_HEIGHT_PX}px` }"
-          >
+        <!-- Stage D: the first-login welcome replaces the grid (never
+             the rail — two welcomes never appear). -->
+        <WelcomeScreen v-if="showWelcome" :on-close="closeWelcome" />
+        <div v-else class="my-data__grid">
+          <div class="my-data__topics">
+            <TopicsSectionHeader
+              :is-every-widget-collapsed="topics.isEveryWidgetCollapsed.value"
+              :is-layout-empty="topics.displayLayout.value.length === 0"
+              :view-mode="topics.viewMode.value"
+              :on-customize="canCustomize ? goCustomize : undefined"
+              @toggle-all="topics.toggleAll()"
+              @view-mode-change="topics.setViewMode($event)"
+            />
+            <!-- The grid remounts on a view-mode switch, exactly as
+                 official keys it by viewMode. -->
             <div
-              v-for="item in renderableLayout"
-              :key="`${item.i}-${item.x}-${item.y}`"
-              class="my-data__cell"
-              data-testid="home-widget-cell"
-              :style="cellStyle(item)"
+              :key="topics.viewMode.value"
+              class="my-data__widgets"
+              data-testid="home-landing-grid"
+              :style="{
+                gridAutoRows: `${topics.rowHeight}px`,
+                gridTemplateColumns:
+                  topics.viewMode.value === 'list' ? '1fr' : undefined,
+              }"
             >
-              <component
-                :is="resolveMyDataWidget(item.i)"
-                v-bind="widgetProps(item)"
-                v-on="widgetListeners(resolveMyDataWidgetBaseKey(item.i))"
-              />
+              <div
+                v-for="item in topics.displayLayout.value"
+                :key="`${item.i}-${item.x}-${item.y}`"
+                class="my-data__cell"
+                data-testid="home-widget-cell"
+                :style="cellStyle(item, topics.viewMode.value)"
+              >
+                <component
+                  :is="resolveMyDataWidget(item.i)"
+                  v-bind="widgetProps(item)"
+                  v-on="widgetListeners(resolveMyDataWidgetBaseKey(item.i))"
+                />
+              </div>
             </div>
           </div>
           <div class="my-data__rail">
@@ -318,6 +407,14 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
               @select-service="onSelectServiceName"
             />
           </div>
+        </div>
+        <!-- Stage D: the hidden data-assets limit driver — it fetches
+             the resource limit purely to drive the global banner (the
+             wrapper's own loading skeleton stays hidden with it). -->
+        <div class="my-data__limit-driver" aria-hidden="true">
+          <LimitWrapper resource="dataAssets">
+            <span />
+          </LimitWrapper>
         </div>
       </div>
     </Spin>
@@ -376,12 +473,18 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
   align-items: start;
   gap: 14px;
 }
-.my-data__widgets {
+.my-data__topics {
   grid-column: 1 / span 2;
+  min-width: 0;
+}
+.my-data__widgets {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   min-width: 0;
+}
+.my-data__limit-driver {
+  display: none;
 }
 .my-data__cell {
   display: flex;
@@ -429,8 +532,10 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
 .my-data__grid {
     grid-template-columns: 1fr;
   }
-  .my-data__widgets {
+  .my-data__topics {
     grid-column: auto;
+  }
+  .my-data__widgets {
     grid-template-columns: 1fr;
     grid-auto-rows: auto !important;
   }
