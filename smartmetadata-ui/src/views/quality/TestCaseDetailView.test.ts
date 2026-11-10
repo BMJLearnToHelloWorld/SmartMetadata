@@ -250,7 +250,7 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
         { testCaseStatus: 'Success', timestamp: secondTs },
       ],
     });
-    const wrapper = await mountView();
+    const { wrapper } = await mountView();
     const valuesCell = wrapper.find(`[data-testid="test-case-result-values-${firstTs}"]`);
     expect(valuesCell.exists()).toBe(true);
     expect(valuesCell.text()).toContain('removedRows: 1');
@@ -265,7 +265,9 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
   });
 
   it('opens the tableDiff fields in the edit modal and saves the merged parameter values', async () => {
-    getTestCase.mockResolvedValue({
+    // 'tc1' is not a UUID, so load() dispatches to getTestCaseByName, not
+    // getTestCase (see the beforeEach comment above).
+    getTestCaseByName.mockResolvedValue({
       id: 'tc1',
       name: 'orders_diff',
       fullyQualifiedName: 'svc.db.schema.orders.table_diff',
@@ -280,7 +282,25 @@ describe('TestCaseDetailView diff values (P2-6)', () => {
     });
     listTestCaseResults.mockResolvedValue({ data: [] });
     updateTestCase.mockResolvedValue({});
-    const wrapper = await mountView();
+    // The edit modal renders TableDiffFields only once the definition is
+    // loaded (v-if="isTableDiff && editDefinition"); the definition's
+    // parameterDefinition is the official tableDiff.json list, in order.
+    getTestDefinition.mockResolvedValue({
+      id: 'td-diff',
+      name: 'tableDiff',
+      fullyQualifiedName: 'tableDiff',
+      parameterDefinition: [
+        { name: 'keyColumns', dataType: 'ARRAY' },
+        { name: 'table2', dataType: 'STRING', required: true },
+        { name: 'table2.keyColumns', dataType: 'ARRAY' },
+        { name: 'threshold', dataType: 'NUMBER' },
+        { name: 'useColumns', dataType: 'ARRAY' },
+        { name: 'where', dataType: 'STRING' },
+        { name: 'caseSensitiveColumns', dataType: 'BOOLEAN' },
+        { name: 'parallelQueries', dataType: 'NUMBER' },
+      ],
+    });
+    const { wrapper } = await mountView();
     await wrapper.get('[data-testid="edit-test-case"]').trigger('click');
     await flushPromises();
     expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
