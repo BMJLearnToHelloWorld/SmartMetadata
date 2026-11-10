@@ -7,8 +7,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Card, Progress, Space, Typography } from 'ant-design-vue';
 import { cancelCsvAsyncJob, type CsvAsyncJob } from '@/api/csvImport';
-import { CSV_JOBS_REFRESH_EVENT, listCsvAsyncJobs } from '@/api/csvJobs';
-import { downloadTextFile } from '@/features/csv/csv';
+import {
+  CSV_JOBS_REFRESH_EVENT,
+  isCsvJobOwned,
+  listCsvAsyncJobs,
+} from '@/api/csvJobs';
+import { downloadCsv } from '@/features/csv/csv';
 
 /**
  * Official CsvJobsTray (components/common/EntityImport/CsvJobsTray):
@@ -19,13 +23,22 @@ import { downloadTextFile } from '@/features/csv/csv';
  * refreshes on the csv-jobs-refresh event dispatched when a job starts.
  * Jobs are listed server-side for the current user only
  * (CsvAsyncJobResource listJobs). Dismissal is session-only.
+ *
+ * First-load stale guard (official fetchJobs): jobs already terminal on
+ * the very first fetch are leftovers (e.g. shown after a page refresh)
+ * and are pre-dismissed — except jobs the user just started this
+ * session (isCsvJobOwned), which are never pre-dismissed, so a fast
+ * export that finishes before the first fetch still surfaces.
+ * ADR:2026-11-08-csv-job-owned-memory-set.
  */
 const { t } = useI18n();
 
 const ACTIVE_STATUSES = ['QUEUED', 'RUNNING', 'CANCELLING'];
+const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'CANCELLED'];
 
 const jobs = ref<CsvAsyncJob[]>([]);
 const dismissed = ref(new Set<string>());
+const hasLoadedInitialJobs = ref(false);
 const open = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
@@ -48,7 +61,24 @@ async function refresh(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    jobs.value = await listCsvAsyncJobs(50);
+    const fetched = await listCsvAsyncJobs(50);
+    if (!hasLoadedInitialJobs.value) {
+      // First fetch only: pre-dismiss terminal jobs the user did not
+      // start this session; owned jobs are never pre-dismissed.
+      const staleTerminalJobIds = fetched
+        .filter(
+          (job) =>
+            job.status &&
+            TERMINAL_STATUSES.includes(job.status) &&
+            !isCsvJobOwned(job.jobId),
+        )
+        .map((job) => job.jobId);
+      if (staleTerminalJobIds.length > 0) {
+        dismissed.value = new Set([...dismissed.value, ...staleTerminalJobIds]);
+      }
+      hasLoadedInitialJobs.value = true;
+    }
+    jobs.value = fetched;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
@@ -96,7 +126,7 @@ async function onDownload(job: CsvAsyncJob): Promise<void> {
     if (!response.ok) {
       throw new Error(t('csvJobs.resultUnavailable'));
     }
-    downloadTextFile(`csv-job-${job.jobId}.csv`, await response.text());
+    downloadCsv(await response.text(), `csv-job-${job.jobId}.csv`);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {

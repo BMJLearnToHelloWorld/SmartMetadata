@@ -393,19 +393,25 @@ export async function createMetric(data: CreateMetric): Promise<Metric> {
 /**
  * Official exportMetricDetailsInCSV (rest/metricsAPI.ts): GET
  * /v1/metrics/name/{fqn}/exportAsync. The list export passes the literal
- * fqn '*'; callers pass a real FQN for a single-metric export. On
- * success the CSV jobs tray is told to refresh, so the job appears even
- * if the tray has not polled yet. No UI calls it yet (Wave 2 export
- * wiring). The product has no markCsvJobOwned equivalent — whether the
- * "completed job is always shown" semantic needs one is a Wave 2
- * decision, not this batch's.
+ * fqn '*'; callers pass a real FQN for a single-metric export. The
+ * server answers with the async job record; only its `jobId` is read
+ * here, so the export wiring can claim the job for the CSV jobs tray
+ * (markCsvJobOwned). On success the CSV jobs tray is told to refresh,
+ * so the job appears even if the tray has not polled yet. When the
+ * response carries no jobId the caller only gets the refresh event —
+ * a jobId is never invented (ADR:2026-11-08-csv-job-owned-memory-set).
  */
-export async function exportMetricsCsvAsync(fqn: string): Promise<unknown> {
+export interface MetricCsvExportJob {
+  jobId?: string;
+}
+
+export async function exportMetricsCsvAsync(fqn: string): Promise<MetricCsvExportJob> {
   const payload = await apiRequest<unknown>(
     `/v1/metrics/name/${encodeURIComponent(fqn)}/exportAsync`,
   );
   notifyCsvJobsRefresh();
-  return payload;
+  const jobId = asString(asRecord(payload)?.jobId);
+  return jobId ? { jobId } : {};
 }
 
 /** Official getCustomUnitsOfMeasurement: GET /v1/metrics/customUnits. */

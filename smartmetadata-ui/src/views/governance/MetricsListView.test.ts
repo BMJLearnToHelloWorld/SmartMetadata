@@ -7,7 +7,9 @@ import Antd, { Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { ApiError } from '@/api/client';
 import { createTestI18n } from '@/test/i18n';
+import MetricCreateDrawer from '@/components/governance/MetricCreateDrawer.vue';
 import { useBulkEditScopeStore } from '@/stores/bulkEditScope';
 import MetricsListView from './MetricsListView.vue';
 
@@ -18,6 +20,11 @@ const getMetricSearchPaths = vi.fn();
 const getMetricAncestorFqns = vi.fn();
 const getMetricObservability = vi.fn();
 const searchAssets = vi.fn();
+const exportMetricsCsvAsync = vi.fn();
+const deleteMetricAsync = vi.fn();
+const getMetricParentIds = vi.fn();
+const getMetricByFqn = vi.fn();
+const markCsvJobOwned = vi.fn();
 
 const permState = vi.hoisted(() => ({
   isAdmin: false,
@@ -32,6 +39,10 @@ vi.mock('@/api/metrics', () => ({
   getMetricSearchPaths: (...args: unknown[]) => getMetricSearchPaths(...args),
   getMetricAncestorFqns: (...args: unknown[]) => getMetricAncestorFqns(...args),
   getMetricObservability: (...args: unknown[]) => getMetricObservability(...args),
+  exportMetricsCsvAsync: (...args: unknown[]) => exportMetricsCsvAsync(...args),
+  deleteMetricAsync: (...args: unknown[]) => deleteMetricAsync(...args),
+  getMetricParentIds: (...args: unknown[]) => getMetricParentIds(...args),
+  getMetricByFqn: (...args: unknown[]) => getMetricByFqn(...args),
   buildMetricStatusQueryFilter: (status: string) =>
     JSON.stringify({ query: { bool: { must: [{ term: { entityStatus: status } }] } } }),
   METRIC_STATUS_VALUES: [
@@ -48,6 +59,10 @@ vi.mock('@/api/metrics', () => ({
 
 vi.mock('@/api/search', () => ({
   searchAssets: (...args: unknown[]) => searchAssets(...args),
+}));
+
+vi.mock('@/api/csvJobs', () => ({
+  markCsvJobOwned: (...args: unknown[]) => markCsvJobOwned(...args),
 }));
 
 vi.mock('@/stores/permissions', () => ({
@@ -138,13 +153,19 @@ async function mountView(query: Record<string, string> = {}, attach = false) {
       { path: '/governance/metrics/:fqn', name: 'governance-metric', component: { template: '<div>metric</div>' } },
       { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
       { path: '/bulk/edit/:entityType/:fqn', name: 'bulk-edit', component: { template: '<div>bulk-edit</div>' } },
+      { path: '/bulk/import/:entityType/:fqn', name: 'bulk-import', component: { template: '<div>bulk-import</div>' } },
     ],
   });
   await router.push({ name: 'governance-metrics', query });
   await router.isReady();
   const wrapper = mount(MetricsListView, {
     attachTo: attach ? document.body : undefined,
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: {
+      plugins: [pinia, router, Antd, createTestI18n()],
+      stubs: {
+        LimitWrapper: { template: '<span><slot :limit-reached="false" /></span>' },
+      },
+    },
   });
   await flushPromises();
   return { wrapper, router };
@@ -163,6 +184,15 @@ describe('MetricsListView', () => {
     getMetricAncestorFqns.mockReset();
     getMetricObservability.mockReset();
     searchAssets.mockReset();
+    exportMetricsCsvAsync.mockReset();
+    deleteMetricAsync.mockReset();
+    getMetricParentIds.mockReset();
+    getMetricByFqn.mockReset();
+    markCsvJobOwned.mockReset();
+    exportMetricsCsvAsync.mockResolvedValue({ jobId: 'job-1' });
+    deleteMetricAsync.mockResolvedValue(undefined);
+    getMetricParentIds.mockResolvedValue(new Map());
+    getMetricByFqn.mockRejectedValue(new ApiError(404, '', 'Not found'));
     getMetricHierarchy.mockResolvedValue(
       hierarchyPage([groupItem, { kind: 'metric', metric: parentMetric }], 2),
     );
@@ -182,6 +212,10 @@ describe('MetricsListView', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     localStorage.clear();
+    // Teleported overlays (Dropdown menu, Modal, Drawer) live in
+    // document.body; drop them so the next test's body queries only
+    // ever see its own overlay.
+    document.body.innerHTML = '';
   });
 
   it('renders the tree by default with group banner and parent expand button', { timeout: 15000 }, async () => {
@@ -261,14 +295,22 @@ describe('MetricsListView', () => {
     expect(wrapper.text()).toContain('Monthly Active Users');
   });
 
-  it('shows the three-feature intro empty state with no dead button', async () => {
+  it('shows the three-feature intro empty state with a New metric button when creation is allowed', async () => {
     getMetricHierarchy.mockResolvedValue(hierarchyPage([], 0));
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="metrics-empty-intro"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Define it');
     expect(wrapper.text()).toContain('Define the action');
     expect(wrapper.text()).toContain('Assign an owner');
-    expect(wrapper.text()).not.toContain('New metric');
+    expect(wrapper.find('[data-testid="metrics-empty-new-metric"]').exists()).toBe(true);
+  });
+
+  it('hides the empty-state New metric button without Create', async () => {
+    permState.ops = { ViewAll: true, EditAll: true, Delete: true };
+    getMetricHierarchy.mockResolvedValue(hierarchyPage([], 0));
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="metrics-empty-intro"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="metrics-empty-new-metric"]').exists()).toBe(false);
   });
 
   it('shows the search empty state when a search finds nothing', async () => {
@@ -396,5 +438,120 @@ describe('MetricsListView', () => {
     const { wrapper } = await mountView();
     expect(wrapper.text()).not.toContain('Description');
     expect(wrapper.find('[data-testid="metrics-customize-columns"]').exists()).toBe(true);
+  });
+
+  it('shows the create button with Create and opens the create drawer', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="create-metric"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="create-metric"]').trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="metric-create-drawer-save"]')).not.toBeNull();
+    });
+  });
+
+  it('hides the create button without Create', async () => {
+    permState.ops = { ViewAll: true, EditAll: true, Delete: true };
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="create-metric"]').exists()).toBe(false);
+  });
+
+  it('navigates to the new metric detail page when the drawer reports created', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.get('[data-testid="create-metric"]').trigger('click');
+    await flushPromises();
+    const drawer = wrapper.findComponent(MetricCreateDrawer);
+    drawer.vm.$emit('created', 'kpi.mau');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('governance-metric');
+    expect(router.currentRoute.value.params).toMatchObject({ fqn: 'kpi.mau' });
+  });
+
+  it('exports metrics and marks the job owned', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="metrics-actions-menu"]').trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="metrics-export"]')).not.toBeNull();
+    });
+    (document.body.querySelector('[data-testid="metrics-export"]') as HTMLElement).click();
+    await flushPromises();
+    expect(exportMetricsCsvAsync).toHaveBeenCalledWith('*');
+    expect(markCsvJobOwned).toHaveBeenCalledWith('job-1');
+  });
+
+  it('navigates to the bulk-import wizard for metrics', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.get('[data-testid="metrics-actions-menu"]').trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="metrics-import"]')).not.toBeNull();
+    });
+    (document.body.querySelector('[data-testid="metrics-import"]') as HTMLElement).click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('bulk-import');
+    expect(router.currentRoute.value.params).toMatchObject({ entityType: 'metric', fqn: '*' });
+  });
+
+  it('bulk deletes the selected metrics, clears the selection, and reloads once they are gone', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="metric-card-view-button"]').trigger('click');
+    await flushPromises();
+    const checkbox = wrapper.find('[data-testid="metric-select-kpi.mau"]');
+    (checkbox.element as HTMLInputElement).checked = true;
+    await checkbox.trigger('change');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="metrics-bulk-bar"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="metrics-bulk-delete-button"]').trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="metrics-delete-confirm"]')).not.toBeNull();
+    });
+    const hierarchyCallsBeforeConfirm = getMetricHierarchy.mock.calls.length;
+    (document.body.querySelector('[data-testid="metrics-delete-confirm"]') as HTMLElement).click();
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(getMetricHierarchy.mock.calls.length).toBe(hierarchyCallsBeforeConfirm + 1);
+    });
+    expect(deleteMetricAsync).toHaveBeenCalledWith('m1', true);
+    expect(getMetricByFqn).toHaveBeenCalledWith('kpi.mau');
+    expect(wrapper.find('[data-testid="metrics-bulk-bar"]').exists()).toBe(false);
+  });
+
+  it('keeps the selection, dialog, and page when a bulk delete submit fails', async () => {
+    deleteMetricAsync.mockRejectedValueOnce(new Error('delete failed'));
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="metric-card-view-button"]').trigger('click');
+    await flushPromises();
+    const checkbox = wrapper.find('[data-testid="metric-select-kpi.mau"]');
+    (checkbox.element as HTMLInputElement).checked = true;
+    await checkbox.trigger('change');
+    await flushPromises();
+    await wrapper.get('[data-testid="metrics-bulk-delete-button"]').trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[data-testid="metrics-delete-confirm"]')).not.toBeNull();
+    });
+    const hierarchyCallsBeforeConfirm = getMetricHierarchy.mock.calls.length;
+    (document.body.querySelector('[data-testid="metrics-delete-confirm"]') as HTMLElement).click();
+    await flushPromises();
+    expect(deleteMetricAsync).toHaveBeenCalledWith('m1', true);
+    // No reload: the list stays where it was.
+    expect(getMetricHierarchy.mock.calls.length).toBe(hierarchyCallsBeforeConfirm);
+    expect(wrapper.find('[data-testid="metrics-bulk-bar"]').exists()).toBe(true);
+    expect(document.body.querySelector('[data-testid="metrics-delete-confirm"]')).not.toBeNull();
+  });
+
+  it('hides the bulk-delete button without Delete', async () => {
+    permState.ops = { ViewAll: true, Create: true, EditAll: true };
+    const { wrapper } = await mountView();
+    await wrapper.get('[data-testid="metric-card-view-button"]').trigger('click');
+    await flushPromises();
+    const checkbox = wrapper.find('[data-testid="metric-select-kpi.mau"]');
+    (checkbox.element as HTMLInputElement).checked = true;
+    await checkbox.trigger('change');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="metrics-bulk-bar"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="metrics-bulk-delete-button"]').exists()).toBe(false);
   });
 });

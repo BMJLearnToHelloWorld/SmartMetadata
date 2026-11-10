@@ -16,8 +16,11 @@ import { DRAWER_WIDTHS, type DrawerWidthKey } from './presentation';
  * caller's slot; the footer is save/cancel, mirroring FormModal copy.
  * ok only emits — the caller closes on success and leaves the panel
  * open on failure (official FormDrawerUtils.submitAndClose semantics).
- * Mask-click close semantics are NOT confirmed in the snapshot and
- * are therefore left at the Ant default, not invented here.
+ *
+ * Mask-click / Escape close are Ant defaults (both true) and stay
+ * that way for existing callers: the new `maskClosable` / `keyboard`
+ * props only let a caller opt out, as the metric create drawer does
+ * (official closeOnEscape/closeOnBackdrop = false).
  */
 const props = withDefaults(
   defineProps<{
@@ -30,6 +33,8 @@ const props = withDefaults(
     showOk?: boolean;
     widthKey?: DrawerWidthKey;
     testId?: string;
+    maskClosable?: boolean;
+    keyboard?: boolean;
   }>(),
   {
     okText: undefined,
@@ -39,6 +44,8 @@ const props = withDefaults(
     showOk: true,
     widthKey: 'form',
     testId: 'sm-drawer',
+    maskClosable: true,
+    keyboard: true,
   },
 );
 const emit = defineEmits<{ ok: []; cancel: []; 'update:open': [open: boolean] }>();
@@ -69,6 +76,8 @@ watch(
     :title="title"
     placement="right"
     :width="DRAWER_WIDTHS[widthKey]"
+    :mask-closable="maskClosable"
+    :keyboard="keyboard"
     :destroy-on-close="true"
     @close="close"
   >

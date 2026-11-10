@@ -3,9 +3,10 @@
  *
  * Licensed under the Apache License, Version 2.0.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   classifyImportRow,
+  downloadCsv,
   normalizeCsvLineBreaks,
   parseCsv,
   rowsToRecords,
@@ -84,5 +85,34 @@ describe('classifyImportRow / summarizeImportRows', () => {
         { status: 'failure', details: 'denied' },
       ]),
     ).toEqual({ create: 1, update: 1, skip: 1 });
+  });
+});
+
+describe('downloadCsv', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('prepends the UTF-8 BOM and downloads as text/csv', async () => {
+    const blobs: Blob[] = [];
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn((blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:csv';
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    downloadCsv('name,description\nfoo,bar', 'metrics.csv');
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0]?.type).toBe('text/csv;charset=utf-8');
+    // jsdom's Blob.text() decodes through Node, which strips a leading
+    // UTF-8 BOM — assert on the raw bytes instead.
+    const bytes = new Uint8Array(await blobs[0]!.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(new TextDecoder('utf-8').decode(bytes.slice(3))).toBe('name,description\nfoo,bar');
+    expect(click).toHaveBeenCalled();
   });
 });

@@ -31,3 +31,28 @@ export const CSV_JOBS_REFRESH_EVENT = 'csv-jobs-refresh';
 export function notifyCsvJobsRefresh(): void {
   window.dispatchEvent(new Event(CSV_JOBS_REFRESH_EVENT));
 }
+
+// ---------------------------------------------------------------------------
+// Owned jobs (official CsvJobsTray.constants.ts markCsvJobOwned /
+// isCsvJobOwned, verbatim in semantics). Job ids the current user started
+// in this browser-tab session via an export or import action. The tray
+// must always surface these — even a fast job that finishes before the
+// tray's first jobs fetch — so the stale-job guard (which hides jobs
+// already terminal on first load, e.g. leftovers shown after a page
+// refresh) never suppresses a job the user just triggered. A module-level
+// Set, not sessionStorage, not persisted: ownership lasts exactly this
+// tab session, matching the official in-memory set.
+// ADR:2026-11-08-csv-job-owned-memory-set.
+// ---------------------------------------------------------------------------
+
+const ownedCsvJobIds = new Set<string>();
+
+export function markCsvJobOwned(jobId?: string): void {
+  if (jobId) {
+    ownedCsvJobIds.add(jobId);
+  }
+}
+
+export function isCsvJobOwned(jobId: string): boolean {
+  return ownedCsvJobIds.has(jobId);
+}
