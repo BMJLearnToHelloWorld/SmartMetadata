@@ -60,9 +60,12 @@ class ApachePositiveRegressionContract(unittest.TestCase):
         self.assertTrue(any("STAGE_ORDER" in item for item in errors), errors)
 
     def test_tool_names_drift_fails(self) -> None:
+        # entity_neighborhood is a still-unlanded Batch C tool name, so
+        # appending it simulates a snapshot claiming a tool the tree
+        # does not have.
         checker = load_checker()
         original = checker.REQUIRED_MCP_TOOLS
-        checker.REQUIRED_MCP_TOOLS = original + ("sparql_query",)
+        checker.REQUIRED_MCP_TOOLS = original + ("entity_neighborhood",)
         try:
             errors = checker.run_checks()
         finally:
@@ -72,11 +75,11 @@ class ApachePositiveRegressionContract(unittest.TestCase):
     def test_forbidden_mcp_tool_fails(self) -> None:
         # The forbidden checks read tools.ts, not REQUIRED_MCP_TOOLS, so
         # this test points MCP_TOOLS at a temp tools.ts that contains a
-        # still-forbidden tool (sparql_query, a Batch B tool) and asserts
+        # still-forbidden tool (entity_neighborhood, a Batch C tool) and asserts
         # the forbidden-path error -- not the drift error.
         checker = load_checker()
         original = checker.MCP_TOOLS
-        names = list(checker.REQUIRED_MCP_TOOLS) + ["sparql_query"]
+        names = list(checker.REQUIRED_MCP_TOOLS) + ["entity_neighborhood"]
         lines = ["export const TOOL_NAMES = ["] + [f'  "{name}",' for name in names] + ["];"]
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp) / "tools.ts"
@@ -87,7 +90,7 @@ class ApachePositiveRegressionContract(unittest.TestCase):
             finally:
                 checker.MCP_TOOLS = original
         self.assertTrue(
-            any("must not include" in item and "sparql_query" in item for item in errors),
+            any("must not include" in item and "entity_neighborhood" in item for item in errors),
             errors,
         )
 

@@ -171,15 +171,16 @@ REQUIRED_MCP_TOOLS = (
     "root_cause_analysis",
     "shacl_validate",
     "ontology_describe",
+    # Batch B sparql_query tool (ADR:2026-11-10-mcp-batch-b-sparql-query).
+    "sparql_query",
 )
 
 # Tool names that must not appear in tools.ts yet: tools slated for a
-# later batch (sparql_query, entity_neighborhood) and names with no
+# later batch (entity_neighborhood) and names with no
 # approved counterpart (ask_data, nlq, persona_context). This is an
 # approval list, not a license category -- see the note above
 # REQUIRED_MCP_TOOLS.
 FORBIDDEN_MCP_TOOLS = (
-    "sparql_query",
     "entity_neighborhood",
     "ask_data",
     "nlq",
