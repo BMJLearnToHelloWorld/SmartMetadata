@@ -34,7 +34,7 @@ function handlers(fetchImpl: typeof fetch) {
 describe('tool catalog', () => {
   it('exposes at least four OSS tools and no Collate AI Studio names', () => {
     expect(TOOL_NAMES.length).toBeGreaterThanOrEqual(4);
-    expect(TOOL_NAMES).toHaveLength(23);
+    expect(TOOL_NAMES).toHaveLength(24);
     expect(TOOL_NAMES).toEqual(
       expect.arrayContaining([
         'search_entities',
@@ -60,9 +60,10 @@ describe('tool catalog', () => {
         'root_cause_analysis',
         'shacl_validate',
         'ontology_describe',
+        'sparql_query',
       ]),
     );
-    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio|sparql_query/i);
+    expect(TOOL_NAMES.join(',')).not.toMatch(/nlq_search|create_article|ai_studio/i);
   });
 });
 

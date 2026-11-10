@@ -19,9 +19,10 @@ export const SERVER_VERSION = '0.12.0';
 
 /**
  * Whether each tool only reads. The four write tools plus
- * create_conversation (a write) are false; the nine Batch A tools are all
- * true. `describe_entity_type` is not registered yet (Batch C) but is
- * already a write helper, so it is refused in read-only mode from now.
+ * create_conversation (a write) are false; the nine Batch A tools and the
+ * Batch B tool are all true. `describe_entity_type` is not registered yet
+ * (Batch C) but is already a write helper, so it is refused in read-only
+ * mode from now.
  * (ADR:2026-11-08-mcp-batch-a-read-tools)
  */
 export const TOOL_READ_ONLY: Readonly<Record<string, boolean>> = {
@@ -48,6 +49,7 @@ export const TOOL_READ_ONLY: Readonly<Record<string, boolean>> = {
   root_cause_analysis: true,
   shacl_validate: true,
   ontology_describe: true,
+  sparql_query: true,
 };
 
 /** Write helpers the read-only list hides even though they only read. */
@@ -302,6 +304,36 @@ const ontologyDescribeSchema = z.object({
   maxBytes: z.number().int().optional().describe('Document size cap in bytes, default 80000, min 1024, max 80000'),
 });
 
+// Batch B schema. `format` and `inferenceLevel` stay plain strings on
+// purpose: the pin's schema types them as strings, and the handler must
+// see every value to refuse a non-admin's non-json format (or non-none
+// inference) with the pin's wording — a zod enum would reject it first
+// with a zod message instead.
+const sparqlQuerySchema = z.object({
+  query: z
+    .string()
+    .describe('The SPARQL query string. Use https://open-metadata.org/ontology/ as the om: prefix.'),
+  format: z
+    .string()
+    .optional()
+    .describe(
+      'Result format. Non-administrators: json only. Administrators: SELECT/ASK json (default), xml, csv, tsv; CONSTRUCT/DESCRIBE turtle, jsonld, ntriples, rdfxml.',
+    ),
+  inferenceLevel: z
+    .string()
+    .optional()
+    .describe(
+      'Optional. none (default) queries the stored graph. custom also returns facts derived by materialized inference rules and needs materialized inference enabled. rdfs and owl are not available and fail. Non-administrators: none only.',
+    ),
+  maxBytes: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      "Cap on the response body size in bytes. Defaults to the server's MCP response budget, which is also the maximum; min 1024. Values above the maximum are clamped, because a larger body is discarded wholesale by the response budget.",
+    ),
+});
+
 function toolResult(payload: unknown, isError = false): ToolCallResult {
   const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
   return isError ? { content: [{ type: 'text', text }], isError: true } : { content: [{ type: 'text', text }] };
@@ -498,6 +530,12 @@ export function registerCatalogTools(
         'The bundled ontology document in the requested serialization. A single-resource DESCRIBE is not available in this batch.',
       inputSchema: ontologyDescribeSchema,
       handler: (args) => tools.ontology_describe(ontologyDescribeSchema.parse(args)),
+    },
+    {
+      name: 'sparql_query',
+      description: `Run a read-only SPARQL query against the OpenMetadata knowledge graph. Use it for graph-shaped questions: lineage paths, column lineage, and joins across owners, tags, tiers and services. Requires the ExecuteSparqlQuery permission; administrators always pass. Callers who are not administrators get SELECT only, with no FROM, GRAPH or SERVICE, no inference and JSON output. Administrators may also run ASK, DESCRIBE and CONSTRUCT and set format and inferenceLevel. Updates are rejected. PAGING: always ORDER BY a stable key, then LIMIT 250 (a page of typical column rows is 50-60 KB, under the default 80000-byte body cap; an administrator can lower that cap, and maxBytes can only narrow it further, never raise it) and OFFSET 0, 250, 500 and so on; stop when a page returns fewer rows than LIMIT. If 'truncated' is true the body was cut, so lower LIMIT and repeat the same OFFSET. If completeness.status is TRUNCATED the server capped the rows, so add an explicit LIMIT. VOCABULARY (PREFIX om: <https://open-metadata.org/ontology/>): entities are https://open-metadata.org/entity/{type}/{uuid}, typed 'a om:Table', om:Dashboard, om:Pipeline, om:Topic or om:Container, with om:fullyQualifiedName and rdfs:label for the name. Related terms: om:hasOwner, om:hasTag and om:hasGlossaryTerm (tag nodes carry om:tagFQN), om:hasTier, om:belongsToService, om:belongsToSchema, om:belongsToDatabase, om:belongsToDomain. Table lineage points from the output to its source: ?output om:upstream ?source (om:downstream is the reverse). COLUMN LINEAGE: om:fromColumn and om:toColumn reference column IRIs; om:fromColumnFqn and om:toColumnFqn carry FQN literals. One mapping can have several fromColumn values. Columns are resources: ?asset om:hasColumn ?c, with om:fullyQualifiedName and nested columns under om:hasChildColumn. All columns downstream of one column, with their asset: SELECT DISTINCT ?column ?asset WHERE { ?start om:fullyQualifiedName "svc.db.schema.table.col" . ?start (^om:fromColumn/om:toColumn)+ ?c . ?c om:fullyQualifiedName ?column . ?c (^om:hasChildColumn)*/^om:hasColumn ?asset } ORDER BY ?column ?asset LIMIT 250 OFFSET 0. For upstream use ^om:toColumn/om:fromColumn. Filter by adding patterns on ?asset, for example ?asset a om:Table, ?asset om:belongsToService/om:fullyQualifiedName "svc", ?asset om:hasOwner/rdfs:label "growth", or ?asset om:hasTier/om:tagFQN "Tier.Tier1". Lineage columns whose table is not in the graph are skipped silently, and live writes and RdfIndexApp both project column mappings. A store not rebuilt since 2.1 can still hold FQN literals in om:fromColumn and om:toColumn, so an empty result does not prove a column has no lineage. Use ontology_describe for the rest of the vocabulary.`,
+      inputSchema: sparqlQuerySchema,
+      handler: (args) => tools.sparql_query(sparqlQuerySchema.parse(args)),
     },
   ];
 

@@ -44,6 +44,7 @@ import {
 import { fetchPersonaContext, pagePersonaContext } from './personaContext.js';
 import { boolParam, fetchUserContext, limitParam } from './userContext.js';
 import { analyzeRootCause, clampRcaDepth } from './rootCause.js';
+import { sparqlQuery } from './sparql.js';
 import { ontologyDescribe, shaclValidate } from './rdf.js';
 
 export const TABLE_FIELDS = 'owners,tags,columns,domains';
@@ -113,6 +114,9 @@ export const TOOL_NAMES = [
   'root_cause_analysis',
   'shacl_validate',
   'ontology_describe',
+  // Batch B (read-only, clean-room): tool names and parameter contracts only.
+  // (ADR:2026-11-10-mcp-batch-b-sparql-query)
+  'sparql_query',
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -277,6 +281,13 @@ export interface OntologyDescribeArgs {
   maxBytes?: number;
 }
 
+export interface SparqlQueryArgs {
+  query: string;
+  format?: string;
+  inferenceLevel?: string;
+  maxBytes?: number;
+}
+
 export interface ToolHandlers {
   search_entities: (args: SearchArgs) => Promise<unknown>;
   get_table: (args: FqnArgs) => Promise<unknown>;
@@ -301,6 +312,7 @@ export interface ToolHandlers {
   root_cause_analysis: (args: RootCauseArgs) => Promise<unknown>;
   shacl_validate: (args: ShaclValidateArgs) => Promise<unknown>;
   ontology_describe: (args: OntologyDescribeArgs) => Promise<unknown>;
+  sparql_query: (args: SparqlQueryArgs) => Promise<unknown>;
 }
 
 export function resolveEntityCollection(entityType: string): string {
@@ -837,6 +849,14 @@ export function createToolHandlers(client: RestClient): ToolHandlers {
       return ontologyDescribe(client, {
         resource: args.resource,
         format: args.format,
+        maxBytes: args.maxBytes,
+      });
+    },
+    async sparql_query(args) {
+      return sparqlQuery(client, {
+        query: args.query,
+        format: args.format,
+        inferenceLevel: args.inferenceLevel,
         maxBytes: args.maxBytes,
       });
     },
