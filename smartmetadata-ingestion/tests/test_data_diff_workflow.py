@@ -402,6 +402,67 @@ def test_metadata_dispatch_ignores_data_diffs() -> None:
     assert len(sink.written) == 0
 
 
+def test_data_diff_p2_5_trino_vs_azuresql_cross_service() -> None:
+    """P2-5: a trino left side and an azuresql right side diff through the workflow."""
+    seen: dict[str, dict[str, Any]] = {}
+
+    def _capture(side: dict[str, Any]):
+        seen[side["table"]] = side
+        return [(1,), (2,)] if side["table"] == "orders" else [(2,), (3,)]
+
+    sink = CollectingSink()
+    config = _config(
+        type="data_diff",
+        data_diffs=[
+            DataDiffSpec(
+                test_case_fqn="suite.p2_5",
+                left=_side(
+                    "orders",
+                    source_type="trino",
+                    connection={
+                        "hostPort": "trino.test:8080",
+                        "username": "ingest",
+                        "password": "secret",
+                        "catalog": "warehouse",
+                    },
+                ),
+                right=_side(
+                    "orders_copy",
+                    source_type="azuresql",
+                    connection={
+                        "hostPort": "azuresql.test:1433",
+                        "username": "ingest",
+                        "password": "secret",
+                        "database": "warehouse",
+                    },
+                ),
+            )
+        ],
+        source_type="trino",
+        connection={
+            "hostPort": "trino.test:8080",
+            "username": "ingest",
+            "password": "secret",
+            "catalog": "warehouse",
+        },
+    )
+    report = run_workflow(
+        config,
+        client=_client(config),
+        source=StubSource(),
+        sink=sink,
+        fetch_keys=_capture,
+    )
+    assert report.ok()
+    assert len(sink.written) == 1
+    assert sink.written[0].test_case_status == "Failed"  # total 2, threshold 0
+    assert seen["orders"]["type"] == "Trino"
+    assert seen["orders"]["catalog"] == "warehouse"
+    assert seen["orders"]["dialect"] == "trino"
+    assert seen["orders_copy"]["type"] == "AzureSQL"
+    assert seen["orders_copy"]["dialect"] == "mssql"
+
+
 def test_data_diff_spec_validation() -> None:
     with pytest.raises(ValidationError, match="key_columns"):
         DataDiffSideSpec(database="warehouse", schema="public", table="orders", key_columns=[])

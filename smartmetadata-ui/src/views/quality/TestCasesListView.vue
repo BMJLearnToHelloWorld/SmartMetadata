@@ -28,6 +28,8 @@ import {
 import type { EntityListColumn } from '@/features/crud/types';
 import { filterCasesForSearch } from '@/quality/landing';
 import { toEntityLink } from '@/quality/entityLink';
+import TableDiffFields from '@/features/quality/TableDiffFields.vue';
+import { TABLE2_PARAM, isTableDiffDefinition } from '@/features/quality/tableDiffParams';
 import { TEST_CASE_STATUSES, type TestCase, type TestDefinition } from '@/types/quality';
 
 const props = withDefaults(
@@ -82,6 +84,17 @@ const selectedParameters = computed(() => {
   );
   return definition?.parameterDefinition ?? [];
 });
+
+const selectedDefinition = computed(() =>
+  definitions.value.find(
+    (item) => (item.fullyQualifiedName || item.name) === form.testDefinition,
+  ),
+);
+
+/** tableDiff 用专属字段表单（TableDiffFields），其余定义沿用通用文本输入。 */
+const isTableDiff = computed(() =>
+  isTableDiffDefinition(selectedDefinition.value?.name, selectedDefinition.value?.fullyQualifiedName),
+);
 
 /** Switching definitions must not carry the previous definition's values forward. */
 function onDefinitionChange(): void {
@@ -237,6 +250,10 @@ function onSearch(): void {
 }
 
 async function onCreate(): Promise<void> {
+  if (isTableDiff.value && !(form.parameterValues[TABLE2_PARAM] ?? '').trim()) {
+    message.error(t('quality.testCases.tableDiffTable2Required'));
+    return;
+  }
   creating.value = true;
   try {
     const created = await createTestCase({
@@ -438,7 +455,15 @@ defineExpose({ openCreate });
       <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
         <Input.TextArea v-model:value="form.description" :rows="2" />
       </Form.Item>
-      <template v-if="selectedParameters.length > 0">
+      <TableDiffFields
+        v-if="isTableDiff"
+        :definitions="selectedParameters"
+        :entity-fqn="form.entityFqn"
+        :entity-type="form.entityType"
+        :model-value="form.parameterValues"
+        @update:model-value="form.parameterValues = $event"
+      />
+      <template v-else-if="selectedParameters.length > 0">
         <Form.Item
           v-for="param in selectedParameters"
           :key="param.name"

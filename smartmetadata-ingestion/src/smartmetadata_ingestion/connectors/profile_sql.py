@@ -25,6 +25,7 @@ not stringified.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -159,6 +160,19 @@ def quote_mysql(name: str) -> str:
 def quote_mssql(name: str) -> str:
     """Bracket identifier (SQL Server)."""
     return "[" + _check_ident(name).replace("]", "]]") + "]"
+
+
+# Official ClickZetta data-diff dialect (ClickzettaDialect.quote): backticks,
+# and identifiers must match ^[A-Za-z_][A-Za-z0-9_$]*$ — anything else is
+# rejected, never escaped. ADR:2026-11-08-data-diff-p2-5-p2-6-bindings-and-form
+_CLICKZETTA_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+
+
+def quote_clickzetta(name: str) -> str:
+    """Backtick identifier (ClickZetta)."""
+    if not isinstance(name, str) or not _CLICKZETTA_IDENT.fullmatch(name):
+        raise WorkflowError(f"unsafe ClickZetta identifier {name!r}")
+    return f"`{name}`"
 
 
 def is_numeric_type(data_type: str | None) -> bool:

@@ -241,3 +241,159 @@ describe('TestCasesListView definition-driven parameters (Fix5)', () => {
     expect(postedBody?.parameterValues).toEqual([{ name: 'minCount', value: '5' }]);
   });
 });
+
+describe('TestCasesListView tableDiff fields (P2-6)', () => {
+  let postedBody: Record<string, unknown> | null = null;
+
+  const tableDiffDefinition = {
+    id: 'td-diff',
+    name: 'tableDiff',
+    fullyQualifiedName: 'tableDiff',
+    parameterDefinition: [
+      { name: 'keyColumns', displayName: "Table 1's key columns", dataType: 'ARRAY' },
+      { name: 'table2', displayName: 'Table 2', dataType: 'STRING', required: true },
+      { name: 'table2.keyColumns', displayName: "Table 2's key columns", dataType: 'ARRAY' },
+      { name: 'threshold', displayName: 'Threshold', dataType: 'NUMBER' },
+      { name: 'useColumns', displayName: 'Use Columns', dataType: 'ARRAY' },
+      { name: 'where', displayName: 'SQL Where Clause', dataType: 'STRING' },
+      { name: 'caseSensitiveColumns', displayName: 'Case sensitive columns', dataType: 'BOOLEAN' },
+      { name: 'parallelQueries', displayName: 'Parallel queries per database', dataType: 'NUMBER' },
+    ],
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    postedBody = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST' && url.includes('/api/v1/dataQuality/testCases')) {
+          postedBody = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
+          return jsonResponse({ id: 'tc-diff', name: 'orders_diff', testDefinition: 'tableDiff' });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _index: 'table_search_index',
+                  _source: {
+                    fullyQualifiedName: 'svc.db.schema.orders_copy',
+                    displayName: 'orders_copy',
+                    name: 'orders_copy',
+                  },
+                },
+              ],
+            },
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/dataQuality/testDefinitions')) {
+          return jsonResponse({ data: [tableDiffDefinition] });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  function setDomInput(testid: string, value: string): void {
+    const input = document.body.querySelector(`[data-testid="${testid}"]`) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    if (input) {
+      input.focus();
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  async function openCreateAndSelectTableDiff(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
+    await wrapper.get('[data-testid="create-test-case"]').trigger('click');
+    await flushPromises();
+    const definitionSelect = document.body.querySelector(
+      '[data-testid="create-test-case-definition"]',
+    ) as HTMLElement | null;
+    const selector = definitionSelect?.querySelector('.ant-select-selector') as HTMLElement | null;
+    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
+      el.textContent?.includes('tableDiff'),
+    ) as HTMLElement | undefined;
+    expect(option).toBeDefined();
+    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+  }
+
+  async function pickTable2(): Promise<void> {
+    const table2Select = document.body.querySelector(
+      '[data-testid="table-diff-param-table2"]',
+    ) as HTMLElement | null;
+    expect(table2Select).not.toBeNull();
+    const selector = table2Select?.querySelector('.ant-select-selector') as HTMLElement | null;
+    selector?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    selector?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find((el) =>
+      el.textContent?.includes('orders_copy'),
+    ) as HTMLElement | undefined;
+    expect(option).toBeDefined();
+    option?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+  }
+
+  async function clickCreate(): Promise<void> {
+    const okButton = Array.from(document.body.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Create'),
+    );
+    expect(okButton).toBeDefined();
+    okButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+  }
+
+  it('renders the tableDiff fields instead of the generic text inputs', async () => {
+    const { wrapper } = await mountView();
+    await openCreateAndSelectTableDiff(wrapper);
+    expect(document.body.querySelector('[data-testid="table-diff-param-table2"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-diff-param-keyColumns"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-diff-param-table2.keyColumns"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="table-diff-param-where"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="create-test-case-param-table2"]')).toBeNull();
+  });
+
+  it('posts table2 and the typed values; untouched array parameters are omitted', async () => {
+    const { wrapper } = await mountView();
+    await openCreateAndSelectTableDiff(wrapper);
+    await pickTable2();
+    setDomInput('create-test-case-name', 'orders_diff');
+    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
+    setDomInput('table-diff-param-where', 'id > 0');
+    await flushPromises();
+    await clickCreate();
+    expect(postedBody?.parameterValues).toEqual([
+      { name: 'table2', value: 'svc.db.schema.orders_copy' },
+      { name: 'where', value: 'id > 0' },
+    ]);
+  });
+
+  it('blocks submit while table2 is empty', async () => {
+    const { wrapper } = await mountView();
+    await openCreateAndSelectTableDiff(wrapper);
+    setDomInput('create-test-case-name', 'orders_diff');
+    setDomInput('create-test-case-fqn', 'svc.db.schema.orders');
+    await flushPromises();
+    await clickCreate();
+    expect(postedBody).toBeNull();
+  });
+});

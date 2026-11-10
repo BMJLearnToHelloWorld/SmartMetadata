@@ -78,14 +78,25 @@ export function mapTestCaseResult(value: unknown): TestCaseResult | undefined {
   const result = asString(rec.result);
   const fqn = asString(rec.testCaseFQN);
   const timestamp = asNumber(rec.timestamp);
-  if (!status && !result && timestamp === undefined && !fqn) {
+  if (!status && !result && timestamp === undefined && !fqn && !Array.isArray(rec.testResultValue)) {
     return undefined;
   }
+  const testResultValue = Array.isArray(rec.testResultValue)
+    ? rec.testResultValue.flatMap((item) => {
+        const valueRec = asRecord(item);
+        const valueName = valueRec ? asString(valueRec.name) : '';
+        if (!valueName) {
+          return [];
+        }
+        return [{ name: valueName, value: valueRec ? asString(valueRec.value) : '' }];
+      })
+    : undefined;
   return {
     timestamp,
     testCaseStatus: status || undefined,
     result: result || undefined,
     testCaseFQN: fqn || undefined,
+    testResultValue: testResultValue && testResultValue.length > 0 ? testResultValue : undefined,
   };
 }
 
