@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from smartmetadata_ingestion.connectors import databricks_common as dbx
+from smartmetadata_ingestion.connectors.profile_sql import MetricParamsByColumn
 from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.records import ProfileRecord
 
@@ -32,8 +33,11 @@ class DatabricksProfilerInterface:
         schema: str,
         table: str,
         timestamp: int,
+        metric_params: MetricParamsByColumn | None = None,
     ) -> ProfileRecord:
-        stats = list(self._reader.profile_table(database, schema, table))
+        stats = list(
+            self._reader.profile_table(database, schema, table, metric_params=metric_params)
+        )
         table_stat = next((s for s in stats if s.column_name is None), None)
         column_profile = [
             {
@@ -43,6 +47,25 @@ class DatabricksProfilerInterface:
                 "min": s.min_value,
                 "max": s.max_value,
                 "mean": s.mean,
+                "valuesCount": s.values_count,
+                "countInSet": s.count_in_set,
+                "likeCount": s.like_count,
+                "iLikeCount": s.ilike_count,
+                "notLikeCount": s.not_like_count,
+                "regexCount": s.regex_count,
+                "notRegexCount": s.not_regex_count,
+                "maxLength": s.max_length,
+                "minLength": s.min_length,
+                "stddev": s.stddev,
+                "sum": s.sum_value,
+                "uniqueCount": s.unique_count,
+                "nullMissingCount": s.null_missing_count,
+                "distinctProportion": s.distinct_proportion,
+                "uniqueProportion": s.unique_proportion,
+                "nullProportion": s.null_proportion,
+                "duplicateCount": s.duplicate_count,
+                "likeRatio": s.like_ratio,
+                "iLikeRatio": s.ilike_ratio,
             }
             for s in stats
             if s.column_name
@@ -60,6 +83,7 @@ class DatabricksProfilerInterface:
             table_profile={
                 "timestamp": timestamp,
                 "rowCount": table_stat.row_count if table_stat else None,
+                "columnCount": table_stat.column_count if table_stat else None,
             },
             column_profile=column_profile,
         )

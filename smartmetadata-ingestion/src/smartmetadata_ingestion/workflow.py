@@ -21,6 +21,7 @@ from smartmetadata_ingestion.config import (
     DataDiffSideSpec,
     DataDiffSpec,
     LineageSpec,
+    ProfilerMetricParamSpec,
     ProfileSpec,
     TagSpec,
     TestCaseResultSpec,
@@ -455,6 +456,32 @@ class MetadataWorkflow:
         return failure
 
 
+def _profiler_metric_params(
+    specs: list[ProfilerMetricParamSpec],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Convert config-file metric params to the reader's per-column mapping.
+
+    One spec names one column; repeated specs for the same column merge.
+    Metric names are the official ones (likeCount, iLikeCount, ...).
+    """
+    params: dict[str, dict[str, dict[str, Any]]] = {}
+    for spec in specs:
+        column_params = params.setdefault(spec.column, {})
+        for field, metric in (
+            ("like_count", "likeCount"),
+            ("ilike_count", "iLikeCount"),
+            ("not_like_count", "notLikeCount"),
+            ("regex_count", "regexCount"),
+            ("not_regex_count", "notRegexCount"),
+        ):
+            expression = getattr(spec, field)
+            if expression is not None:
+                column_params[metric] = {"expression": expression}
+        if spec.count_in_set is not None:
+            column_params["countInSet"] = {"values": list(spec.count_in_set)}
+    return params
+
+
 class ProfilerWorkflow(MetadataWorkflow):
     """Runs the connector's profiler interface live against the source database.
 
@@ -519,6 +546,7 @@ class ProfilerWorkflow(MetadataWorkflow):
         finally:
             self._close_iterator(iterator)
         timestamp = now_ms()
+        metric_params = _profiler_metric_params(self.config.profiler_metric_params)
         for database, schema, table in tables:
             profile = self._profiler.profile(
                 service=self.config.source.service_name,
@@ -526,6 +554,7 @@ class ProfilerWorkflow(MetadataWorkflow):
                 schema=schema,
                 table=table,
                 timestamp=timestamp,
+                metric_params=metric_params,
             )
             self._handle_record(profile)
 

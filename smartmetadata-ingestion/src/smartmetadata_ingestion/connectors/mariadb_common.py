@@ -19,7 +19,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from smartmetadata_ingestion.connectors.profile_sql import SqlProfileReader, quote_mysql
+from smartmetadata_ingestion.connectors.profile_sql import (
+    MetricParamsByColumn,
+    SqlProfileReader,
+    quote_mysql,
+)
 from smartmetadata_ingestion.errors import WorkflowError
 
 DEFAULT_SCHEME = "mysql+pymysql"
@@ -72,9 +76,30 @@ class ProfileStatRow:
     row_count: int | None = None
     null_count: int | None = None
     distinct_count: int | None = None
-    min_value: str | None = None
-    max_value: str | None = None
+    min_value: Any | None = None
+    max_value: Any | None = None
     mean: float | None = None
+    column_count: int | None = None
+    column_names: list[str] | None = None
+    values_count: int | None = None
+    count_in_set: int | None = None
+    like_count: int | None = None
+    ilike_count: int | None = None
+    not_like_count: int | None = None
+    regex_count: int | None = None
+    not_regex_count: int | None = None
+    max_length: int | None = None
+    min_length: int | None = None
+    stddev: float | None = None
+    sum_value: float | None = None
+    unique_count: int | None = None
+    null_missing_count: int | None = None
+    distinct_proportion: float | None = None
+    unique_proportion: float | None = None
+    null_proportion: float | None = None
+    duplicate_count: int | None = None
+    like_ratio: float | None = None
+    ilike_ratio: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +119,13 @@ class LineageReader(Protocol):
 
 
 class ProfileReader(Protocol):
-    def profile_table(self, schema: str, table: str) -> Sequence[ProfileStatRow]: ...
+    def profile_table(
+        self,
+        schema: str,
+        table: str,
+        *,
+        metric_params: MetricParamsByColumn | None = None,
+    ) -> Sequence[ProfileStatRow]: ...
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]: ...
 
 
@@ -147,10 +178,18 @@ class SequenceProfileReader:
         self._stats = list(stats)
         self._samples = list(samples)
 
-    def profile_table(self, schema: str, table: str) -> Sequence[ProfileStatRow]:
+    def profile_table(
+        self,
+        schema: str,
+        table: str,
+        *,
+        metric_params: MetricParamsByColumn | None = None,
+    ) -> Sequence[ProfileStatRow]:
         return self._stats
 
-    def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]:
+    def sample_table(
+        self, schema: str, table: str, *, limit: int = 50
+    ) -> Sequence[SampleRow]:
         return self._samples[:limit]
 
 
@@ -331,10 +370,17 @@ class CursorProfileReader:
             ident_style="two",
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
+            dialect="mysql",
         )
 
-    def profile_table(self, schema: str, table: str) -> Sequence[ProfileStatRow]:
-        return self._reader.profile(None, schema, table)
+    def profile_table(
+        self,
+        schema: str,
+        table: str,
+        *,
+        metric_params: MetricParamsByColumn | None = None,
+    ) -> Sequence[ProfileStatRow]:
+        return self._reader.profile(None, schema, table, metric_params=metric_params)
 
     def sample_table(
         self, schema: str, table: str, *, limit: int = 50
