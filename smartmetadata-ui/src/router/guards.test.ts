@@ -90,12 +90,17 @@ describe('route guards', () => {
     ).toEqual({ kind: 'allow' });
   });
 
-  it('maps only user/team admin routes to a permission resource', () => {
+  it('maps user/team admin routes and the custom-properties routes to a permission resource', () => {
     expect(ADMIN_ROUTE_RESOURCE['admin-users']).toBe('user');
     expect(ADMIN_ROUTE_RESOURCE['admin-user']).toBe('user');
     expect(ADMIN_ROUTE_RESOURCE['admin-admins']).toBe('user');
     expect(ADMIN_ROUTE_RESOURCE['admin-teams']).toBe('team');
     expect(ADMIN_ROUTE_RESOURCE['admin-team']).toBe('team');
+    // G-23 stage 4: both custom-properties route names map to 'type' so a
+    // non-admin holding a type grant can reach the per-type gated detail
+    // page (the list route alone would still forbid them).
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-custom-properties']).toBe('type');
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-custom-property-type']).toBe('type');
     // Roles, bots, policies, settings, personas and the debugger stay
     // admin-only until their resource mappings are determined.
     expect(ADMIN_ROUTE_RESOURCE['admin-roles']).toBeUndefined();

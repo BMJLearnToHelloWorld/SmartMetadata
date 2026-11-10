@@ -29,6 +29,7 @@ import {
   type CustomPropertyConfigSummary,
   type CustomPropertyFormValues,
 } from '@/api/customProperties';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
@@ -73,6 +74,30 @@ const isEdit = computed(() => editingName.value !== null);
 const editingDef = computed(
   () => definitions.value.find((def) => def.name === editingName.value) ?? null,
 );
+
+/**
+ * Stage 4 per-type gate (official useEntityPermissions(TYPE), pin
+ * CustomPropertiesPageV1.tsx): the Add/Edit/Delete entry points are
+ * visible only with per-type EditAll. No `deleted` option — pin passes
+ * none for TYPE. The identifier and `enabled` are reactive because the
+ * type id resolves only after load() (see useEntityPermissions).
+ * ADR:2026-11-10-custom-properties-stage-4-per-type-gate
+ */
+const typeId = computed(() => typeMeta.value?.id ?? '');
+const {
+  canEditAll: editPermission,
+  error: permissionsError,
+} = useEntityPermissions('type', computed(() => ({ id: typeId.value })), {
+  enabled: computed(() => Boolean(typeId.value)),
+});
+
+// Pin shows the raw permission error as a toast; the page stays
+// readable and the gated buttons stay hidden (fail-closed).
+watch(permissionsError, (err) => {
+  if (err) {
+    message.error(err instanceof Error ? err.message : t('crud.loadFailed'));
+  }
+});
 
 /** Official ENTITY_REFERENCE_OPTIONS labels: reuse the explore.entity keys, fall back to official labels. */
 const entityReferenceOptions = computed(() =>
@@ -442,7 +467,7 @@ watch(
   >
     <template #actions>
       <Button
-        v-if="typeMeta?.id"
+        v-if="typeMeta?.id && editPermission && activeTab === 'custom-properties'"
         type="primary"
         data-testid="add-custom-property"
         @click="openCreate"
@@ -524,24 +549,29 @@ watch(
             <span v-else data-testid="no-config">—</span>
           </template>
           <template v-else-if="column.key === 'actions'">
-            <Button
-              type="link"
-              size="small"
-              :data-testid="`edit-custom-property-${(record as CustomPropertyDef).name}`"
-              @click="openEdit(record as CustomPropertyDef)"
-            >
-              {{ t('crud.edit') }}
-            </Button>
-            <Button
-              type="link"
-              danger
-              size="small"
-              :loading="deletingName === (record as CustomPropertyDef).name"
-              :data-testid="`delete-custom-property-${(record as CustomPropertyDef).name}`"
-              @click="onDelete(record as CustomPropertyDef)"
-            >
-              {{ t('crud.delete') }}
-            </Button>
+            <!-- Stage 4: pin renders the Actions cell null when neither
+                 Edit nor Delete is allowed — hidden, not disabled. Both
+                 ride the same hasAccess flag (no edit/delete split). -->
+            <template v-if="editPermission">
+              <Button
+                type="link"
+                size="small"
+                :data-testid="`edit-custom-property-${(record as CustomPropertyDef).name}`"
+                @click="openEdit(record as CustomPropertyDef)"
+              >
+                {{ t('crud.edit') }}
+              </Button>
+              <Button
+                type="link"
+                danger
+                size="small"
+                :loading="deletingName === (record as CustomPropertyDef).name"
+                :data-testid="`delete-custom-property-${(record as CustomPropertyDef).name}`"
+                @click="onDelete(record as CustomPropertyDef)"
+              >
+                {{ t('crud.delete') }}
+              </Button>
+            </template>
           </template>
         </template>
       </SmTable>
