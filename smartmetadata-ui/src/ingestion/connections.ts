@@ -10,6 +10,9 @@
 import { isMaskedSecret, shouldPersistSecret } from '@/ingestion/secrets';
 import type {
   CatalogService,
+  ElasticSearchSslConfig,
+  EsSslCertPaths,
+  EsSslCertValues,
   ServiceConnection,
   ServiceConnectionConfig,
   ServiceFormValues,
@@ -211,6 +214,52 @@ export function createEmptyServiceForm(): ServiceFormValues {
     baseUrl: '',
     registryUrl: '',
     connectionTimeout: undefined,
+    // W3-3A lean-forms tier 3A: spec defaults, prefilled like the tier 2
+    // defaults above (ADR:2026-11-10-leanforms-3a-form-defaults). The Mcp
+    // connectionTimeout default (30) is NOT prefilled here: the form key is
+    // shared with Databricks, whose spec default is 120 — prefilling 30
+    // would silently override it. The Mcp default applies on the read side
+    // (formValuesFromService) and via the server default on create.
+    docURL: '',
+    restSSLCaCertificate: '',
+    restSSLCertificate: '',
+    restSSLKey: '',
+    clusterName: 'openmetadata',
+    authProvider: 'basic',
+    jwtToken: '',
+    secretsManagerProvider: 'db',
+    secretsManagerLoader: 'noop',
+    apiVersion: 'v1',
+    enableVersionValidation: true,
+    extraHeaders: '',
+    omStoreServiceConnection: true,
+    gcpConfigType: 'gcpValues',
+    gcpCredentialsPath: '',
+    gcpExternalAccountJson: '',
+    impersonateServiceAccount: '',
+    impersonateLifetime: 3600,
+    includeTeamDrives: true,
+    includeGoogleSheets: false,
+    elasticSearchAuthMode: 'basicAuth',
+    apiKeyId: '',
+    sslCertMode: 'paths',
+    sslCaCertPath: '',
+    sslClientCertPath: '',
+    sslPrivateKeyPath: '',
+    sslCaCertValue: '',
+    sslClientCertValue: '',
+    sslPrivateKeyValue: '',
+    sslStagingDir: '/tmp/openmetadata-certs',
+    connectionTimeoutSecs: 30,
+    openAITimeout: 60,
+    openAIMaxRetries: 3,
+    discoveryMethod: 'ConfigFile',
+    configFilePaths: '',
+    servers: '',
+    initializationTimeout: 60,
+    fetchTools: true,
+    fetchResources: true,
+    fetchPrompts: true,
     // Wave 0 lean-forms database档: spec defaults (RULING.md §1.4). These are
     // the official defaults for the new fields; the builder only emits them
     // when set, so a blank form stays equivalent to the server default.
@@ -273,6 +322,11 @@ function pickPassword(config: ServiceConnectionConfig | undefined): string | und
 
 export function formValuesFromService(service: CatalogService): ServiceFormValues {
   const config = service.connection?.config ?? {};
+  // W3-3A: computed once for the refill keys below.
+  const esCerts = elasticSearchCertificatesFromConfig(config);
+  const esCertPaths = esCerts && 'caCertPath' in esCerts ? esCerts : undefined;
+  const esCertValues = esCerts && 'caCertValue' in esCerts ? esCerts : undefined;
+  const driveRefill = googleDriveRefill(config);
   return {
     name: service.name,
     displayName: service.displayName,
@@ -289,8 +343,8 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
         ? config.username
         : typeof config.connection?.username === 'string'
           ? config.connection.username
-          : typeof (config.authType as { username?: string } | undefined)?.username === 'string'
-            ? ((config.authType as { username?: string }).username as string)
+          : typeof config.authType?.username === 'string'
+            ? config.authType.username
             : '',
     database: typeof config.database === 'string' ? config.database : '',
     databaseName: typeof config.databaseName === 'string' ? config.databaseName : '',
@@ -374,14 +428,9 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     bucketNames: Array.isArray(config.bucketNames) ? config.bucketNames.join(', ') : '',
     consoleEndpointURL: typeof config.consoleEndpointURL === 'string' ? config.consoleEndpointURL : '',
     prefectAuthMode: prefectAuthModeFromConfig(config),
-    prefectAccountId:
-      typeof (config.authType as { accountId?: string } | undefined)?.accountId === 'string'
-        ? (config.authType as { accountId?: string }).accountId!
-        : '',
+    prefectAccountId: typeof config.authType?.accountId === 'string' ? config.authType.accountId : '',
     prefectWorkspaceId:
-      typeof (config.authType as { workspaceId?: string } | undefined)?.workspaceId === 'string'
-        ? (config.authType as { workspaceId?: string }).workspaceId!
-        : '',
+      typeof config.authType?.workspaceId === 'string' ? config.authType.workspaceId : '',
     prefectAuthString: '',
     numberOfStatus: typeof config.numberOfStatus === 'number' ? config.numberOfStatus : 10,
     dagsterTimeout: typeof config.timeout === 'number' ? config.timeout : 1000,
@@ -391,6 +440,10 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     // Eight-kind default types (see connectionFields.ts): secrets are never
     // prefilled — the build step preserves a masked previous secret instead.
     trackingUri: typeof config.trackingUri === 'string' ? config.trackingUri : '',
+    // W3-3A (condition 5): the registry URI refills in plaintext, unchanged.
+    // It is a connection locator (the whole URI is the address, credentials
+    // embedded), not a pure secret — blanking it would silently drop the
+    // registry address on edit-save.
     registryUri: typeof config.registryUri === 'string' ? config.registryUri : '',
     openApiSchemaUrl:
       typeof (config.openAPISchemaConnection as Record<string, unknown> | undefined)?.openAPISchemaURL ===
@@ -411,7 +464,92 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
           ? config.baseUrl
           : '',
     registryUrl: typeof config.registryUrl === 'string' ? config.registryUrl : '',
-    connectionTimeout: typeof config.connectionTimeout === 'number' ? config.connectionTimeout : undefined,
+    // W3-3A: the Mcp spec default is 30, but the form key is shared with
+    // Databricks (spec default 120) — the default applies only for Mcp, so
+    // a Databricks refill keeps its previous behaviour (undefined).
+    connectionTimeout:
+      typeof config.connectionTimeout === 'number'
+        ? config.connectionTimeout
+        : service.serviceType === 'Mcp'
+          ? 30
+          : undefined,
+    // W3-3A lean-forms tier 3A: round-trip the new fields. Secrets are never
+    // prefilled (blank; masked previous values are preserved at build time).
+    // Spec defaults apply when the stored config omits the field.
+    // Rest (restConnection.json).
+    docURL: typeof config.docURL === 'string' ? config.docURL : '',
+    restSSLCaCertificate: '',
+    restSSLCertificate: '',
+    restSSLKey: '',
+    // OpenMetadata (openMetadataConnection.json), A group.
+    clusterName: typeof config.clusterName === 'string' ? config.clusterName : 'openmetadata',
+    authProvider: typeof config.authProvider === 'string' ? config.authProvider : 'basic',
+    jwtToken: '',
+    secretsManagerProvider:
+      typeof config.secretsManagerProvider === 'string' ? config.secretsManagerProvider : 'db',
+    secretsManagerLoader:
+      typeof config.secretsManagerLoader === 'string' ? config.secretsManagerLoader : 'noop',
+    apiVersion: typeof config.apiVersion === 'string' ? config.apiVersion : 'v1',
+    enableVersionValidation:
+      typeof config.enableVersionValidation === 'boolean' ? config.enableVersionValidation : true,
+    extraHeaders: stringifyJsonMap(config.extraHeaders),
+    omStoreServiceConnection:
+      typeof config.storeServiceConnection === 'boolean' ? config.storeServiceConnection : true,
+    openMetadataSSLCaCertificate: '',
+    openMetadataSSLCertificate: '',
+    openMetadataSSLKey: '',
+    // GoogleDrive (googleDriveConnection.json): the credential JSON textareas
+    // refill empty (secret discipline); only the branch, the path, and the
+    // impersonate fields refill.
+    gcpConfigType: driveRefill.gcpConfigType,
+    gcpCredentialsPath: driveRefill.gcpCredentialsPath,
+    gcpExternalAccountJson: '',
+    impersonateServiceAccount: driveRefill.impersonateServiceAccount,
+    impersonateLifetime: driveRefill.impersonateLifetime,
+    includeTeamDrives: typeof config.includeTeamDrives === 'boolean' ? config.includeTeamDrives : true,
+    includeGoogleSheets:
+      typeof config.includeGoogleSheets === 'boolean' ? config.includeGoogleSheets : false,
+    // ElasticSearch (elasticSearchConnection.json).
+    elasticSearchAuthMode: elasticSearchAuthModeFromConfig(config),
+    apiKeyId: typeof config.authType?.apiKeyId === 'string' ? config.authType.apiKeyId : '',
+    sslCertMode: elasticSearchSslCertModeFromConfig(config),
+    sslCaCertPath:
+      esCertPaths && typeof esCertPaths.caCertPath === 'string' ? esCertPaths.caCertPath : '',
+    sslClientCertPath:
+      esCertPaths && typeof esCertPaths.clientCertPath === 'string'
+        ? esCertPaths.clientCertPath
+        : '',
+    sslPrivateKeyPath:
+      esCertPaths && typeof esCertPaths.privateKeyPath === 'string'
+        ? esCertPaths.privateKeyPath
+        : '',
+    sslCaCertValue: '',
+    sslClientCertValue: '',
+    sslPrivateKeyValue: '',
+    sslStagingDir:
+      esCertValues && typeof esCertValues.stagingDir === 'string'
+        ? esCertValues.stagingDir
+        : '/tmp/openmetadata-certs',
+    connectionTimeoutSecs:
+      typeof config.connectionTimeoutSecs === 'number' ? config.connectionTimeoutSecs : 30,
+    // OpenAI (openAIConnection.json): the spec attribute names (timeout /
+    // maxRetries) are shared with Dagster's config timeout — the form keys
+    // are type-prefixed and the builder dispatches per type, so the refill
+    // defaults here apply to the OpenAI keys only.
+    openAITimeout: typeof config.timeout === 'number' ? config.timeout : 60,
+    openAIMaxRetries: typeof config.maxRetries === 'number' ? config.maxRetries : 3,
+    // Mcp (mcpConnection.json): servers refills with each apiKey masked.
+    discoveryMethod: typeof config.discoveryMethod === 'string' ? config.discoveryMethod : 'ConfigFile',
+    configFilePaths: Array.isArray(config.configFilePaths) ? JSON.stringify(config.configFilePaths) : '',
+    servers:
+      Array.isArray(config.servers) && config.servers.length
+        ? JSON.stringify(maskServerApiKeys(config.servers))
+        : '',
+    initializationTimeout:
+      typeof config.initializationTimeout === 'number' ? config.initializationTimeout : 60,
+    fetchTools: typeof config.fetchTools === 'boolean' ? config.fetchTools : true,
+    fetchResources: typeof config.fetchResources === 'boolean' ? config.fetchResources : true,
+    fetchPrompts: typeof config.fetchPrompts === 'boolean' ? config.fetchPrompts : true,
     // Wave 0 lean-forms database档: round-trip the new fields. Secrets are
     // never prefilled (password fields stay blank; masked previous values are
     // preserved at build time instead). Spec defaults apply when the stored
@@ -492,6 +630,133 @@ function authModeFromConfig(config: ServiceConnectionConfig): 'pat' | 'oauth' | 
     return 'oauth';
   }
   return 'pat';
+}
+
+/** W3-3A: ElasticSearch auth branch, inferred from the stored authType —
+ * an apiKey means apiAuth, anything else is basicAuth
+ * (ADR:2026-11-10-leanforms-3a-elasticsearch-auth-mode). */
+function elasticSearchAuthModeFromConfig(config: ServiceConnectionConfig): 'basicAuth' | 'apiAuth' {
+  const auth = config.authType;
+  if (auth && typeof auth === 'object' && typeof auth.apiKey === 'string') {
+    return 'apiAuth';
+  }
+  return 'basicAuth';
+}
+
+/** W3-3A: ElasticSearch sslConfig certificates object (common/sslConfig.json
+ * oneOf), or undefined when the stored sslConfig is the 3-leaf shape or
+ * absent. The 'certificates' in-check narrows the sslConfig union without
+ * a cast. */
+function elasticSearchCertificatesFromConfig(
+  config: ServiceConnectionConfig,
+): EsSslCertPaths | EsSslCertValues | undefined {
+  const ssl = config.sslConfig;
+  if (ssl && typeof ssl === 'object' && 'certificates' in ssl) {
+    return ssl.certificates;
+  }
+  return undefined;
+}
+
+/** W3-3A: which certificates branch the stored config uses — value leaves
+ * mean the values branch, anything else (incl. absent) is the paths branch. */
+function elasticSearchSslCertModeFromConfig(config: ServiceConnectionConfig): 'paths' | 'values' {
+  const certs = elasticSearchCertificatesFromConfig(config);
+  if (
+    certs &&
+    ('caCertValue' in certs || 'clientCertValue' in certs || 'privateKeyValue' in certs)
+  ) {
+    return 'values';
+  }
+  return 'paths';
+}
+
+/** W3-3A: mask the apiKey leaf of each Mcp server entry — the detail page
+ * and the edit form never show a stored server apiKey in plaintext
+ * (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key). */
+function maskServerApiKeys(
+  servers: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return servers.map((server) =>
+    typeof server.apiKey === 'string' ? { ...server, apiKey: '********' } : server,
+  );
+}
+
+interface GoogleDriveRefill {
+  gcpConfigType: 'gcpValues' | 'gcpCredentialsPath' | 'gcpExternalAccount' | 'gcpADC';
+  gcpCredentialsPath: string;
+  impersonateServiceAccount: string;
+  impersonateLifetime: number;
+}
+
+/**
+ * W3-3A: GoogleDrive credentials refill (ADR:2026-11-10-leanforms-3a-googledrive-credentials).
+ * The stored wrapper is { gcpConfig, gcpImpersonateServiceAccount? }
+ * (gcpCredentials.json); the branch is identified by gcpConfig.type, which
+ * is a const in all four branches (service_account / gcp_credential_path /
+ * external_account / gcp_adc). The credential JSON textareas refill EMPTY —
+ * secrets are never prefilled (the builder preserves the stored
+ * credentials when the textarea is left blank); only the branch selector
+ * and the impersonate fields refill. A legacy bare service-account JSON
+ * (no gcpConfig) infers the gcpValues branch, and an edit-save re-wraps
+ * it (see buildServiceConnection) instead of dropping it.
+ */
+function googleDriveRefill(config: ServiceConnectionConfig): GoogleDriveRefill {
+  const refill: GoogleDriveRefill = {
+    gcpConfigType: 'gcpValues',
+    gcpCredentialsPath: '',
+    impersonateServiceAccount: '',
+    impersonateLifetime: 3600,
+  };
+  const credentials = config.credentials;
+  if (!credentials || typeof credentials !== 'object') {
+    return refill;
+  }
+  const impersonate = credentials.gcpImpersonateServiceAccount;
+  if (impersonate) {
+    if (typeof impersonate.impersonateServiceAccount === 'string') {
+      refill.impersonateServiceAccount = impersonate.impersonateServiceAccount;
+    }
+    if (typeof impersonate.lifetime === 'number') {
+      refill.impersonateLifetime = impersonate.lifetime;
+    }
+  }
+  const gcpConfig = credentials.gcpConfig;
+  const type =
+    gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig)
+      ? gcpConfig.type
+      : credentials.type;
+  if (type === 'gcp_credential_path') {
+    refill.gcpConfigType = 'gcpCredentialsPath';
+    // The path is not a secret, so it refills like any other plain field.
+    if (gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig) && typeof gcpConfig.path === 'string') {
+      refill.gcpCredentialsPath = gcpConfig.path;
+    }
+  } else if (type === 'gcp_adc') {
+    refill.gcpConfigType = 'gcpADC';
+  } else if (type === 'external_account') {
+    refill.gcpConfigType = 'gcpExternalAccount';
+  } else {
+    refill.gcpConfigType = 'gcpValues';
+  }
+  return refill;
+}
+
+/** W3-3A: the stored gcpConfig object when it belongs to the given branch,
+ * so an edit-save preserves branch leaves the form does not model
+ * (projectId on the path/ADC branches — optional per spec, no form field). */
+function prevGcpConfigOfType(
+  existing: ServiceConnection | undefined,
+  typeConst: string,
+): Record<string, unknown> | undefined {
+  const credentials = existing?.config?.credentials;
+  if (!credentials || typeof credentials !== 'object') {
+    return undefined;
+  }
+  const gcpConfig = credentials.gcpConfig;
+  if (!gcpConfig || typeof gcpConfig !== 'object' || Array.isArray(gcpConfig)) {
+    return undefined;
+  }
+  return gcpConfig.type === typeConst ? gcpConfig : undefined;
 }
 
 
@@ -676,6 +941,47 @@ function parseJsonObject(raw: string | undefined, field: string): Record<string,
 }
 
 /**
+ * W3-3A: parse a JSON-array textarea (Mcp configFilePaths / servers) into a
+ * typed array. Invalid JSON, a non-array, or an element failing the check
+ * throws instead of sending a schema-invalid config — the same discipline
+ * as parseJsonMap / parseJsonObject, for arrays.
+ */
+function parseJsonArray<T>(
+  raw: string | undefined,
+  field: string,
+  elementCheck: (element: unknown) => element is T,
+  elementDescription: string,
+): T[] | undefined {
+  const text = raw?.trim() ?? '';
+  if (!text) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${field} must be a valid JSON array`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${field} must be a JSON array`);
+  }
+  for (const element of parsed) {
+    if (!elementCheck(element)) {
+      throw new Error(`${field} elements must be ${elementDescription}`);
+    }
+  }
+  return parsed.length ? parsed : undefined;
+}
+
+function isJsonString(element: unknown): element is string {
+  return typeof element === 'string';
+}
+
+function isJsonObject(element: unknown): element is Record<string, unknown> {
+  return !!element && typeof element === 'object' && !Array.isArray(element);
+}
+
+/**
  * Secret-field discipline shared by the new secret leaves (Snowflake
  * privateKey/passphrase, sslConfig leaves): same rules as applyPassword —
  * a typed literal is sent only when it is an ${ENV} placeholder or
@@ -712,13 +1018,23 @@ interface SslLeafFormKeys {
     | 'sslCaCertificate'
     | 'consumerConfigSSLCaCertificate'
     | 'schemaRegistrySSLCaCertificate'
-    | 'supersetSSLCaCertificate';
+    | 'supersetSSLCaCertificate'
+    | 'restSSLCaCertificate'
+    | 'openMetadataSSLCaCertificate';
   sslCertificate:
     | 'sslCertificate'
     | 'consumerConfigSSLCertificate'
     | 'schemaRegistrySSLCertificate'
-    | 'supersetSSLCertificate';
-  sslKey: 'sslKey' | 'consumerConfigSSLKey' | 'schemaRegistrySSLKey' | 'supersetSSLKey';
+    | 'supersetSSLCertificate'
+    | 'restSSLCertificate'
+    | 'openMetadataSSLCertificate';
+  sslKey:
+    | 'sslKey'
+    | 'consumerConfigSSLKey'
+    | 'schemaRegistrySSLKey'
+    | 'supersetSSLKey'
+    | 'restSSLKey'
+    | 'openMetadataSSLKey';
 }
 
 function sslConfigFromFormKeys(
@@ -737,6 +1053,20 @@ function sslConfigFromFormKeys(
   return Object.keys(sslConfig).length ? sslConfig : undefined;
 }
 
+/** Narrow a stored sslConfig to the 3-leaf validateSSLClientConfig shape
+ * (Rest / OpenMetadata / database types). The ElasticSearch certificates
+ * oneOf shape is not a 3-leaf group — it has its own builder below. */
+function asSslClientConfig(
+  value: SslClientConfig | ElasticSearchSslConfig | undefined,
+): SslClientConfig | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  return 'caCertificate' in value || 'sslCertificate' in value || 'sslKey' in value
+    ? value
+    : undefined;
+}
+
 function sslConfigFromForm(
   form: ServiceFormValues,
   existing?: ServiceConnectionConfig,
@@ -744,8 +1074,118 @@ function sslConfigFromForm(
   return sslConfigFromFormKeys(
     form,
     { caCertificate: 'sslCaCertificate', sslCertificate: 'sslCertificate', sslKey: 'sslKey' },
-    existing?.sslConfig,
+    asSslClientConfig(existing?.sslConfig),
   );
+}
+
+/**
+ * W3-3A: ElasticSearch sslConfig (common/sslConfig.json) from the form —
+ * the certificates oneOf: the paths branch (three file paths) or the
+ * values branch (three secret values + staging dir). Only the selected
+ * branch's leaves are emitted, so stale values left in the hidden branch
+ * never leak into the other oneOf arm. The value leaves follow the secret
+ * discipline against the stored certificates.
+ */
+function elasticSearchSslConfigFromForm(
+  form: ServiceFormValues,
+  existing?: ServiceConnectionConfig,
+): ElasticSearchSslConfig | undefined {
+  const mode =
+    form.sslCertMode ??
+    (form.sslCaCertValue?.trim() || form.sslClientCertValue?.trim() || form.sslPrivateKeyValue?.trim()
+      ? 'values'
+      : 'paths');
+  const store = Boolean(form.storeConnectionSecrets);
+  const prev = elasticSearchCertificatesFromConfig(existing ?? {});
+  const prevValues = prev && 'caCertValue' in prev ? prev : undefined;
+  if (mode === 'values') {
+    const certificates: EsSslCertValues = {};
+    const caCertValue = secretFieldValue(form.sslCaCertValue, store, prevValues?.caCertValue);
+    if (caCertValue) {
+      certificates.caCertValue = caCertValue;
+    }
+    const clientCertValue = secretFieldValue(
+      form.sslClientCertValue,
+      store,
+      prevValues?.clientCertValue,
+    );
+    if (clientCertValue) {
+      certificates.clientCertValue = clientCertValue;
+    }
+    const privateKeyValue = secretFieldValue(
+      form.sslPrivateKeyValue,
+      store,
+      prevValues?.privateKeyValue,
+    );
+    if (privateKeyValue) {
+      certificates.privateKeyValue = privateKeyValue;
+    }
+    if (form.sslStagingDir?.trim()) {
+      certificates.stagingDir = form.sslStagingDir.trim();
+    }
+    return Object.keys(certificates).length ? { certificates } : undefined;
+  }
+  const certificates: EsSslCertPaths = {};
+  if (form.sslCaCertPath?.trim()) {
+    certificates.caCertPath = form.sslCaCertPath.trim();
+  }
+  if (form.sslClientCertPath?.trim()) {
+    certificates.clientCertPath = form.sslClientCertPath.trim();
+  }
+  if (form.sslPrivateKeyPath?.trim()) {
+    certificates.privateKeyPath = form.sslPrivateKeyPath.trim();
+  }
+  return Object.keys(certificates).length ? { certificates } : undefined;
+}
+
+/**
+ * W3-3A: Mcp servers apiKey retention (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
+ * The edit refill puts the masked value in each server's apiKey, so a
+ * masked (or blank) apiKey restores the previous value matched by server
+ * name. A fresh literal follows the secret discipline. A masked value with
+ * no name match — e.g. the server was renamed — is omitted: never store
+ * the literal mask, and never claim retention after a rename.
+ */
+function mcpServerApiKey(
+  typed: string | undefined,
+  store: boolean,
+  previousServers: Array<Record<string, unknown>> | undefined,
+  name: unknown,
+): string | undefined {
+  const value = typed?.trim() ?? '';
+  if (shouldPersistSecret(value, store)) {
+    return value;
+  }
+  if (value && !isMaskedSecret(value)) {
+    return undefined;
+  }
+  const previous = previousServers?.find((server) => server.name === name);
+  const prevKey = previous && typeof previous.apiKey === 'string' ? previous.apiKey : undefined;
+  return prevKey && isMaskedSecret(prevKey) ? prevKey : undefined;
+}
+
+/** W3-3A: preserve stored GoogleDrive credentials when no new credentials
+ * were entered — wrapped credentials stay wrapped; legacy bare credentials
+ * are re-wrapped (content-preserving; the bare shape is schema-invalid and
+ * fails ingestion). An empty bare object preserves nothing. */
+function preservedGoogleDriveCredentials(
+  existing: ServiceConnection | undefined,
+): { gcpConfig: Record<string, unknown> } | undefined {
+  const credentials = existing?.config?.credentials;
+  if (!credentials || typeof credentials !== 'object') {
+    return undefined;
+  }
+  const gcpConfig = credentials.gcpConfig;
+  if (gcpConfig && typeof gcpConfig === 'object' && !Array.isArray(gcpConfig)) {
+    return { gcpConfig };
+  }
+  const bare: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(credentials)) {
+    if (key !== 'gcpImpersonateServiceAccount') {
+      bare[key] = value;
+    }
+  }
+  return Object.keys(bare).length ? { gcpConfig: bare } : undefined;
 }
 
 function policyAgentConfigFromForm(form: ServiceFormValues): Record<string, boolean> {
@@ -1368,6 +1808,59 @@ export function buildServiceConnection(
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
     }
+    // W3-3A: A group (openMetadataConnection.json), spec order.
+    if (form.clusterName?.trim()) {
+      config.clusterName = form.clusterName.trim();
+    }
+    if (form.authProvider?.trim()) {
+      config.authProvider = form.authProvider.trim();
+    }
+    const omVerifySSL = form.verifySSL?.trim() ?? '';
+    if (omVerifySSL) {
+      config.verifySSL = omVerifySSL;
+    }
+    const omSslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'openMetadataSSLCaCertificate',
+        sslCertificate: 'openMetadataSSLCertificate',
+        sslKey: 'openMetadataSSLKey',
+      },
+      asSslClientConfig(existing?.config?.sslConfig),
+    );
+    if (omSslConfig) {
+      config.sslConfig = omSslConfig;
+    }
+    const store = Boolean(form.storeConnectionSecrets);
+    const jwtToken = secretFieldValue(
+      form.jwtToken,
+      store,
+      typeof existing?.config?.securityConfig?.jwtToken === 'string'
+        ? existing.config.securityConfig.jwtToken
+        : undefined,
+    );
+    if (jwtToken) {
+      config.securityConfig = { jwtToken };
+    }
+    if (form.secretsManagerProvider?.trim()) {
+      config.secretsManagerProvider = form.secretsManagerProvider.trim();
+    }
+    if (form.secretsManagerLoader?.trim()) {
+      config.secretsManagerLoader = form.secretsManagerLoader.trim();
+    }
+    if (form.apiVersion?.trim()) {
+      config.apiVersion = form.apiVersion.trim();
+    }
+    if (typeof form.enableVersionValidation === 'boolean') {
+      config.enableVersionValidation = form.enableVersionValidation;
+    }
+    if (typeof form.omStoreServiceConnection === 'boolean') {
+      config.storeServiceConnection = form.omStoreServiceConnection;
+    }
+    const extraHeaders = parseJsonMap(form.extraHeaders, 'Extra headers');
+    if (extraHeaders) {
+      config.extraHeaders = extraHeaders;
+    }
   } else if (type === 'Rest') {
     if (form.openApiSchemaUrl?.trim()) {
       config.openAPISchemaConnection = { openAPISchemaURL: form.openApiSchemaUrl.trim() };
@@ -1381,21 +1874,89 @@ export function buildServiceConnection(
         config.token = prev;
       }
     }
+    if (form.docURL?.trim()) {
+      config.docURL = form.docURL.trim();
+    }
+    const restVerifySSL = form.verifySSL?.trim() ?? '';
+    if (restVerifySSL) {
+      config.verifySSL = restVerifySSL;
+    }
+    const restSslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'restSSLCaCertificate',
+        sslCertificate: 'restSSLCertificate',
+        sslKey: 'restSSLKey',
+      },
+      asSslClientConfig(existing?.config?.sslConfig),
+    );
+    if (restSslConfig) {
+      config.sslConfig = restSslConfig;
+    }
   } else if (type === 'GoogleDrive') {
-    const raw = form.credentialsJson?.trim() ?? '';
-    if (raw) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        throw new Error('Google Drive credentials must be valid JSON');
+    // W3-3A: credentials take the gcpConfig wrapper (gcpCredentials.json) —
+    // a bare service-account JSON is schema-invalid and fails ingestion
+    // (ADR:2026-11-10-leanforms-3a-googledrive-credentials). A blank branch
+    // input preserves the stored credentials: blank means "keep what you
+    // have", never "delete the credentials".
+    const gcpType = form.gcpConfigType ?? 'gcpValues';
+    if (gcpType === 'gcpValues') {
+      const raw = form.credentialsJson?.trim() ?? '';
+      if (raw) {
+        const parsed = parseJsonObject(raw, 'Google Drive credentials');
+        if (parsed) {
+          config.credentials = { gcpConfig: parsed };
+        }
+      } else {
+        const preserved = preservedGoogleDriveCredentials(existing);
+        if (preserved) {
+          config.credentials = preserved;
+        }
       }
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Google Drive credentials must be a JSON object');
+    } else if (gcpType === 'gcpCredentialsPath') {
+      const path = form.gcpCredentialsPath?.trim() ?? '';
+      if (path) {
+        // Preserve a stored projectId for the same branch (opaque; the
+        // spec leaves it optional and the form has no field for it).
+        const prev = prevGcpConfigOfType(existing, 'gcp_credential_path');
+        config.credentials = {
+          gcpConfig: { ...(prev ?? {}), type: 'gcp_credential_path', path },
+        };
+      } else {
+        const preserved = preservedGoogleDriveCredentials(existing);
+        if (preserved) {
+          config.credentials = preserved;
+        }
       }
-      config.credentials = parsed as Record<string, unknown>;
-    } else if (existing?.config?.credentials) {
-      config.credentials = existing.config.credentials;
+    } else if (gcpType === 'gcpExternalAccount') {
+      const raw = form.gcpExternalAccountJson?.trim() ?? '';
+      if (raw) {
+        const parsed = parseJsonObject(raw, 'External account credentials');
+        if (parsed) {
+          config.credentials = { gcpConfig: parsed };
+        }
+      } else {
+        const preserved = preservedGoogleDriveCredentials(existing);
+        if (preserved) {
+          config.credentials = preserved;
+        }
+      }
+    } else {
+      // gcpADC: no inputs — the branch alone is the config. A stored
+      // projectId for the same branch is preserved (opaque).
+      const prev = prevGcpConfigOfType(existing, 'gcp_adc');
+      config.credentials = { gcpConfig: { ...(prev ?? {}), type: 'gcp_adc' } };
+    }
+    const impersonateEmail = form.impersonateServiceAccount?.trim() ?? '';
+    if (impersonateEmail && config.credentials && typeof config.credentials === 'object') {
+      config.credentials = {
+        ...config.credentials,
+        gcpImpersonateServiceAccount: {
+          impersonateServiceAccount: impersonateEmail,
+          lifetime:
+            typeof form.impersonateLifetime === 'number' ? form.impersonateLifetime : 3600,
+        },
+      };
     }
     if (form.delegatedEmail?.trim()) {
       config.delegatedEmail = form.delegatedEmail.trim();
@@ -1403,11 +1964,85 @@ export function buildServiceConnection(
     if (form.driveId?.trim()) {
       config.driveId = form.driveId.trim();
     }
-  } else if (type === 'ElasticSearch' || type === 'Ranger') {
+    if (typeof form.includeTeamDrives === 'boolean') {
+      config.includeTeamDrives = form.includeTeamDrives;
+    }
+    if (typeof form.includeGoogleSheets === 'boolean') {
+      config.includeGoogleSheets = form.includeGoogleSheets;
+    }
+    const driveConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (driveConnectionOptions) {
+      config.connectionOptions = driveConnectionOptions;
+    }
+    const driveConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (driveConnectionArguments) {
+      config.connectionArguments = driveConnectionArguments;
+    }
+  } else if (type === 'ElasticSearch') {
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
     }
-    const auth: Record<string, string> = {};
+    // W3-3A: authType oneOf (elasticSearchConnection.json) — the mode select
+    // decides which branch is emitted. A missing mode infers from the form
+    // / stored values so raw forms keep working
+    // (ADR:2026-11-10-leanforms-3a-elasticsearch-auth-mode).
+    const esAuthMode =
+      form.elasticSearchAuthMode ??
+      (form.apiKey?.trim() || existing?.config?.authType?.apiKey ? 'apiAuth' : 'basicAuth');
+    if (esAuthMode === 'apiAuth') {
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+      const apiKey = form.apiKey?.trim() ?? '';
+      if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+        auth.apiKey = apiKey;
+      } else if (!apiKey || isMaskedSecret(apiKey)) {
+        // Blank or masked: restore the stored key (live edit-loss fix —
+        // the old builder never read the previous apiKey). A masked value
+        // with no stored key is omitted, never stored as the literal mask.
+        const prev = existing?.config?.authType?.apiKey;
+        if (prev && isMaskedSecret(prev)) {
+          auth.apiKey = prev;
+        }
+      }
+      if (form.apiKeyId?.trim()) {
+        auth.apiKeyId = form.apiKeyId.trim();
+      }
+      if (Object.keys(auth).length) {
+        config.authType = auth;
+      }
+    } else {
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+      if (form.username?.trim()) {
+        auth.username = form.username.trim();
+      }
+      const secret = form.password?.trim() ?? '';
+      if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+        auth.password = secret;
+      } else if (!secret) {
+        const prev = existing?.config?.authType?.password;
+        if (prev && isMaskedSecret(prev)) {
+          auth.password = prev;
+        }
+      }
+      if (Object.keys(auth).length) {
+        config.authType = auth;
+      }
+    }
+    const esSslConfig = elasticSearchSslConfigFromForm(form, existing?.config);
+    if (esSslConfig) {
+      config.sslConfig = esSslConfig;
+    }
+    if (typeof form.connectionTimeoutSecs === 'number') {
+      config.connectionTimeoutSecs = form.connectionTimeoutSecs;
+    }
+    const esConnectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
+    if (esConnectionArguments) {
+      config.connectionArguments = esConnectionArguments;
+    }
+  } else if (type === 'Ranger') {
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
     if (form.username?.trim()) {
       auth.username = form.username.trim();
     }
@@ -1415,16 +2050,12 @@ export function buildServiceConnection(
     if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
       auth.password = secret;
     } else if (!secret) {
-      const prevAuth = existing?.config?.authType;
-      const prev = prevAuth && typeof prevAuth === 'object' ? (prevAuth as { password?: string }).password : undefined;
+      const prev = existing?.config?.authType?.password;
       if (prev && isMaskedSecret(prev)) {
         auth.password = prev;
       }
     }
-    const apiKey = form.apiKey?.trim() ?? '';
-    if (type === 'ElasticSearch' && apiKey && shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
-      config.authType = { apiKey };
-    } else if (Object.keys(auth).length) {
+    if (Object.keys(auth).length) {
       config.authType = auth;
     }
   } else if (type === 'OpenAI') {
@@ -1444,12 +2075,64 @@ export function buildServiceConnection(
       // Schema field name, not the product form key: baseURL.
       config.baseURL = form.baseUrl.trim();
     }
+    if (typeof form.openAITimeout === 'number') {
+      config.timeout = form.openAITimeout;
+    }
+    if (typeof form.openAIMaxRetries === 'number') {
+      config.maxRetries = form.openAIMaxRetries;
+    }
   } else if (type === 'Mcp') {
+    if (form.discoveryMethod?.trim()) {
+      config.discoveryMethod = form.discoveryMethod.trim();
+    }
+    const configFilePaths = parseJsonArray(
+      form.configFilePaths,
+      'Config file paths',
+      isJsonString,
+      'strings',
+    );
+    if (configFilePaths) {
+      config.configFilePaths = configFilePaths;
+    }
+    const rawServers = parseJsonArray(form.servers, 'Servers', isJsonObject, 'objects');
+    if (rawServers) {
+      // W3-3A: each server's apiKey follows the restore-by-name retention
+      // (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
+      const store = Boolean(form.storeConnectionSecrets);
+      const previousServers = existing?.config?.servers;
+      config.servers = rawServers.map((server) => {
+        const next: Record<string, unknown> = { ...server };
+        const apiKey = mcpServerApiKey(
+          typeof server.apiKey === 'string' ? server.apiKey : undefined,
+          store,
+          previousServers,
+          server.name,
+        );
+        if (apiKey) {
+          next.apiKey = apiKey;
+        } else {
+          delete next.apiKey;
+        }
+        return next;
+      });
+    }
     if (form.registryUrl?.trim()) {
       config.registryUrl = form.registryUrl.trim();
     }
     if (typeof form.connectionTimeout === 'number') {
       config.connectionTimeout = form.connectionTimeout;
+    }
+    if (typeof form.initializationTimeout === 'number') {
+      config.initializationTimeout = form.initializationTimeout;
+    }
+    if (typeof form.fetchTools === 'boolean') {
+      config.fetchTools = form.fetchTools;
+    }
+    if (typeof form.fetchResources === 'boolean') {
+      config.fetchResources = form.fetchResources;
+    }
+    if (typeof form.fetchPrompts === 'boolean') {
+      config.fetchPrompts = form.fetchPrompts;
     }
   } else {
     return existing;
@@ -1500,6 +2183,25 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   if (typeof config.token === 'string') {
     config.token = '********';
   }
+  // W3-3A: OpenMetadata securityConfig jwtToken is a secret leaf.
+  if (config.securityConfig && typeof config.securityConfig === 'object') {
+    const securityConfig = { ...config.securityConfig };
+    if (typeof securityConfig.jwtToken === 'string') {
+      securityConfig.jwtToken = '********';
+    }
+    config.securityConfig = securityConfig;
+  }
+  // W3-3A: GoogleDrive credentials is the whole service-account JSON
+  // (incl. private_key) — mask the object, never a single leaf
+  // (ADR:2026-11-10-leanforms-3a-googledrive-credentials).
+  if (config.credentials && typeof config.credentials === 'object') {
+    config.credentials = '********';
+  }
+  // W3-3A: Mcp servers[].apiKey — walk the array, mask each key
+  // (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
+  if (Array.isArray(config.servers) && config.servers.length) {
+    config.servers = maskServerApiKeys(config.servers);
+  }
   // Wave 0 lean-forms: new secret leaves (Snowflake privateKey/passphrase,
   // sslConfig PEM leaves) are never rendered back in plain text.
   if (typeof config.privateKey === 'string') {
@@ -1510,12 +2212,31 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (config.sslConfig && typeof config.sslConfig === 'object') {
     const sslConfig = { ...config.sslConfig };
-    for (const key of SSL_CONFIG_LEAF_KEYS) {
-      if (typeof sslConfig[key] === 'string') {
-        sslConfig[key] = '********';
+    const leaves = asSslClientConfig(sslConfig);
+    if (leaves) {
+      for (const key of SSL_CONFIG_LEAF_KEYS) {
+        if (typeof leaves[key] === 'string') {
+          leaves[key] = '********';
+        }
       }
     }
-    config.sslConfig = sslConfig;
+    // W3-3A: ElasticSearch certificates oneOf — mask only the value leaves
+    // (paths are not secrets).
+    const certs = elasticSearchCertificatesFromConfig({ sslConfig });
+    if (
+      certs &&
+      ('caCertValue' in certs || 'clientCertValue' in certs || 'privateKeyValue' in certs)
+    ) {
+      const masked = { ...certs };
+      for (const key of ['caCertValue', 'clientCertValue', 'privateKeyValue'] as const) {
+        if (typeof masked[key] === 'string') {
+          masked[key] = '********';
+        }
+      }
+      config.sslConfig = { ...sslConfig, certificates: masked };
+    } else {
+      config.sslConfig = sslConfig;
+    }
   }
   // W2-5 (condition 4): Kafka's two sslConfig groups live in their own
   // objects — the config.sslConfig branch above does not cover them.

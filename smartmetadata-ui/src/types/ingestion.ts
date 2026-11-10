@@ -194,6 +194,9 @@ export interface ServiceConnectionConfig {
     username?: string;
     /** ElasticSearch api auth (elasticSearch/apiAuth). */
     apiKey?: string;
+    /** ElasticSearch api auth (elasticSearch/apiAuth): the key id — an
+     * identifier, not a secret, so it refills in plaintext. */
+    apiKeyId?: string;
     /** Prefect Cloud auth (prefect/cloudAuth.json). */
     accountId?: string;
     /** Prefect Cloud auth (prefect/cloudAuth.json). */
@@ -234,8 +237,38 @@ export interface ServiceConnectionConfig {
   numberOfStatus?: number;
   /** Prefect top level (prefectConnection.json): verifySSL enum, default no-ssl. */
   verifySSL?: string;
-  /** Prefect top level sslConfig (validateSSLClientConfig). */
-  sslConfig?: SslClientConfig;
+  /** Prefect top level sslConfig (validateSSLClientConfig). ElasticSearch
+   * uses the same key with the certificates oneOf shape instead
+   * (common/sslConfig.json). */
+  sslConfig?: SslClientConfig | ElasticSearchSslConfig;
+  /** OpenMetadata (openMetadataConnection.json): JWT client config. */
+  securityConfig?: {
+    jwtToken?: string;
+  };
+  /** GoogleDrive (googleDriveConnection.json): GCP credentials wrapper
+   * { gcpConfig, gcpImpersonateServiceAccount? } (gcpCredentials.json).
+   * gcpConfig stays free-form — its four branches are entered as JSON /
+   * path fields. A redacted display copy replaces the whole object with
+   * the '********' mask (see redactConnectionForDisplay); stored configs
+   * always carry the object. */
+  credentials?: {
+    gcpConfig?: Record<string, unknown>;
+    gcpImpersonateServiceAccount?: {
+      impersonateServiceAccount?: string;
+      lifetime?: number;
+    };
+    [key: string]: unknown;
+  } | string;
+  /** OpenMetadata (openMetadataConnection.json): extra HTTP headers. */
+  extraHeaders?: Record<string, string>;
+  /** Mcp (mcpConnection.json): directly-connected server list. Free-form
+   * objects (each item follows mcpServerConfig) because the servers field
+   * is entered as textarea JSON, not as structured form fields. */
+  servers?: Array<Record<string, unknown>>;
+  /** ElasticSearch (elasticSearchConnection.json): timeout in seconds. */
+  connectionTimeoutSecs?: number;
+  /** OpenAI (openAIConnection.json): max retries for failed requests. */
+  maxRetries?: number;
   /** Kafka/Redpanda (kafkaConnection.json / redpandaConnection.json). */
   saslUsername?: string;
   saslPassword?: string;
@@ -262,6 +295,31 @@ export interface SslClientConfig {
   caCertificate?: string;
   sslCertificate?: string;
   sslKey?: string;
+}
+
+/**
+ * ElasticSearch sslConfig (openmetadata-spec
+ * .../security/ssl/sslConfig.json): certificates oneOf — either three file
+ * paths (sslCertPaths) or four inline values plus a staging dir
+ * (sslCertValues). Deliberately distinct from SslClientConfig: the leaves
+ * are path/value pairs, not PEM contents, and the value leaves are secrets
+ * (ADR:2026-11-10-leanforms-3a-elasticsearch-auth-mode).
+ */
+export interface EsSslCertPaths {
+  caCertPath?: string;
+  clientCertPath?: string;
+  privateKeyPath?: string;
+}
+
+export interface EsSslCertValues {
+  caCertValue?: string;
+  clientCertValue?: string;
+  privateKeyValue?: string;
+  stagingDir?: string;
+}
+
+export interface ElasticSearchSslConfig {
+  certificates?: EsSslCertPaths | EsSslCertValues;
 }
 
 export interface ServiceConnection {
@@ -377,6 +435,69 @@ export interface ServiceFormValues {
   /** Mcp: registry URL + timeouts (mcpConnection, all optional). */
   registryUrl?: string;
   connectionTimeout?: number;
+  /** Wave 3 lean-forms tier 3A (Rest/Mlflow/OpenMetadata/GoogleDrive/
+   * ElasticSearch/OpenAI/Mcp/Ranger). */
+  /** Rest (restConnection.json): documentation URL for the schema. */
+  docURL?: string;
+  /** Rest / OpenMetadata sslConfig leaves — independent triplets, never
+   * shared with each other or with the single-group leaves
+   * (ADR:2026-11-08-leanforms-tier2-kafka-ssl-groups). */
+  restSSLCaCertificate?: string;
+  restSSLCertificate?: string;
+  restSSLKey?: string;
+  openMetadataSSLCaCertificate?: string;
+  openMetadataSSLCertificate?: string;
+  openMetadataSSLKey?: string;
+  /** OpenMetadata (openMetadataConnection.json), A group. */
+  clusterName?: string;
+  authProvider?: string;
+  jwtToken?: string;
+  secretsManagerProvider?: string;
+  secretsManagerLoader?: string;
+  apiVersion?: string;
+  enableVersionValidation?: boolean;
+  /** Extra headers as a JSON object (string map). */
+  extraHeaders?: string;
+  /** Whether to save the service connection when creating the service.
+   * Independent key from storeConnectionSecrets: that key gates whether a
+   * typed literal secret is persisted, this one is the spec's own flag. */
+  omStoreServiceConnection?: boolean;
+  /** GoogleDrive (googleDriveConnection.json): which gcpConfig branch the
+   * credentials take (gcpCredentials.json oneOf). */
+  gcpConfigType?: 'gcpValues' | 'gcpCredentialsPath' | 'gcpExternalAccount' | 'gcpADC';
+  gcpCredentialsPath?: string;
+  gcpExternalAccountJson?: string;
+  impersonateServiceAccount?: string;
+  impersonateLifetime?: number;
+  includeTeamDrives?: boolean;
+  includeGoogleSheets?: boolean;
+  /** ElasticSearch (elasticSearchConnection.json): auth branch + ssl
+   * certificates oneOf mode. */
+  elasticSearchAuthMode?: 'basicAuth' | 'apiAuth';
+  apiKeyId?: string;
+  sslCertMode?: 'paths' | 'values';
+  sslCaCertPath?: string;
+  sslClientCertPath?: string;
+  sslPrivateKeyPath?: string;
+  sslCaCertValue?: string;
+  sslClientCertValue?: string;
+  sslPrivateKeyValue?: string;
+  sslStagingDir?: string;
+  connectionTimeoutSecs?: number;
+  /** OpenAI (openAIConnection.json): type-prefixed keys — the spec
+   * attribute names (timeout/maxRetries) collide with Dagster's config
+   * timeout, so the form keys are prefixed and the builder dispatches
+   * per type, never cross-values. */
+  openAITimeout?: number;
+  openAIMaxRetries?: number;
+  /** Mcp (mcpConnection.json). */
+  discoveryMethod?: string;
+  configFilePaths?: string;
+  servers?: string;
+  initializationTimeout?: number;
+  fetchTools?: boolean;
+  fetchResources?: boolean;
+  fetchPrompts?: boolean;
   /** Wave 0 lean-forms database档 (official connection schemas, de-noised). */
   /** SSL: sslMode select + validateSSLClientConfig leaves (postgres/redshift/greenplum/timescale/mysql/mssql/doris). */
   sslMode?: string;

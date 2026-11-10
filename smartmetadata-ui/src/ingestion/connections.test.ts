@@ -94,7 +94,10 @@ describe('service connections', () => {
     ).toEqual({
       config: {
         type: 'GoogleDrive',
-        credentials: { type: 'service_account' },
+        // W3-3A (J-Q3): credentials take the gcpConfig wrapper — the bare
+        // service-account JSON is schema-invalid (gcpCredentials.json
+        // requires gcpConfig, additionalProperties: false).
+        credentials: { gcpConfig: { type: 'service_account' } },
         delegatedEmail: 'user@example.com',
       },
     });
@@ -104,7 +107,8 @@ describe('service connections', () => {
     expect(
       buildServiceConnection({
         name: 'es', kind: 'search', serviceType: 'ElasticSearch',
-        hostPort: 'http://localhost:9200', username: 'elastic', password: '${ES_PASSWORD}',
+        hostPort: 'http://localhost:9200', elasticSearchAuthMode: 'basicAuth',
+        username: 'elastic', password: '${ES_PASSWORD}',
         storeConnectionSecrets: false,
       }),
     ).toEqual({
@@ -1439,5 +1443,858 @@ describe('service kind tables', () => {
     expect(form.saslMechanism).toBe('PLAIN');
     expect(form.verifySSL).toBe('no-ssl');
     expect(form.schemaRegistryTopicSuffixName).toBe('-value');
+  });
+});
+
+describe('lean-forms tier 3A (W3-3A)', () => {
+  function tier3AForm(overrides: Partial<ServiceFormValues>): ServiceFormValues {
+    return { ...createEmptyServiceForm(), ...overrides };
+  }
+
+  it('prefills the tier 3A spec defaults (W3-3A)', () => {
+    const form = createEmptyServiceForm();
+    expect(form.clusterName).toBe('openmetadata');
+    expect(form.authProvider).toBe('basic');
+    expect(form.secretsManagerProvider).toBe('db');
+    expect(form.secretsManagerLoader).toBe('noop');
+    expect(form.apiVersion).toBe('v1');
+    expect(form.enableVersionValidation).toBe(true);
+    expect(form.omStoreServiceConnection).toBe(true);
+    expect(form.gcpConfigType).toBe('gcpValues');
+    expect(form.impersonateLifetime).toBe(3600);
+    expect(form.includeTeamDrives).toBe(true);
+    expect(form.includeGoogleSheets).toBe(false);
+    expect(form.elasticSearchAuthMode).toBe('basicAuth');
+    expect(form.sslCertMode).toBe('paths');
+    expect(form.sslStagingDir).toBe('/tmp/openmetadata-certs');
+    expect(form.connectionTimeoutSecs).toBe(30);
+    expect(form.openAITimeout).toBe(60);
+    expect(form.openAIMaxRetries).toBe(3);
+    expect(form.discoveryMethod).toBe('ConfigFile');
+    expect(form.initializationTimeout).toBe(60);
+    expect(form.fetchTools).toBe(true);
+    expect(form.fetchResources).toBe(true);
+    expect(form.fetchPrompts).toBe(true);
+    // The Mcp connectionTimeout default (30) is NOT prefilled: the form key
+    // is shared with Databricks (spec default 120) — the Mcp default
+    // applies on the read side and via the server default on create.
+    expect(form.connectionTimeout).toBeUndefined();
+  });
+
+  it('builds the Rest A-group payload 1:1 (docURL + verifySSL + sslConfig)', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'api',
+          serviceType: 'Rest',
+          openApiSchemaUrl: 'https://example.com/openapi.json',
+          apiKey: '${REST_TOKEN}',
+          docURL: 'https://example.com/docs',
+          storeConnectionSecrets: true,
+          restSSLCaCertificate: '---CA---',
+          restSSLCertificate: '---CERT---',
+          restSSLKey: '---KEY---',
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'Rest',
+        openAPISchemaConnection: { openAPISchemaURL: 'https://example.com/openapi.json' },
+        token: '${REST_TOKEN}',
+        docURL: 'https://example.com/docs',
+        verifySSL: 'no-ssl',
+        sslConfig: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+      },
+    });
+  });
+
+  it('builds the OpenMetadata A-group payload 1:1 (12 items, spec order)', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'metadata',
+          serviceType: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          storeConnectionSecrets: true,
+          jwtToken: 'om-jwt',
+          extraHeaders: '{"X-Tenant": "acme"}',
+          openMetadataSSLCaCertificate: '---CA---',
+          openMetadataSSLCertificate: '---CERT---',
+          openMetadataSSLKey: '---KEY---',
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'OpenMetadata',
+        clusterName: 'openmetadata',
+        hostPort: 'http://localhost:8585/api',
+        authProvider: 'basic',
+        verifySSL: 'no-ssl',
+        sslConfig: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+        securityConfig: { jwtToken: 'om-jwt' },
+        secretsManagerProvider: 'db',
+        secretsManagerLoader: 'noop',
+        apiVersion: 'v1',
+        enableVersionValidation: true,
+        storeServiceConnection: true,
+        extraHeaders: { 'X-Tenant': 'acme' },
+      },
+    });
+  });
+
+  it('builds the GoogleDrive payload 1:1 with the gcpConfig wrapper + impersonate block', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'drive',
+          serviceType: 'GoogleDrive',
+          credentialsJson:
+            '{"type": "service_account", "project_id": "p1", "private_key": "---KEY---", "client_email": "svc@p1.iam.gserviceaccount.com"}',
+          impersonateServiceAccount: 'target@example.com',
+          impersonateLifetime: 1800,
+          delegatedEmail: 'user@example.com',
+          driveId: 'drive-1',
+          connectionOptions: '{"opt": "v"}',
+          connectionArguments: '{"arg": "w"}',
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'GoogleDrive',
+        credentials: {
+          gcpConfig: {
+            type: 'service_account',
+            project_id: 'p1',
+            private_key: '---KEY---',
+            client_email: 'svc@p1.iam.gserviceaccount.com',
+          },
+          gcpImpersonateServiceAccount: {
+            impersonateServiceAccount: 'target@example.com',
+            lifetime: 1800,
+          },
+        },
+        delegatedEmail: 'user@example.com',
+        driveId: 'drive-1',
+        includeTeamDrives: true,
+        includeGoogleSheets: false,
+        connectionOptions: { opt: 'v' },
+        connectionArguments: { arg: 'w' },
+      },
+    });
+    // Path and ADC branches emit only their branch object.
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'drive',
+          serviceType: 'GoogleDrive',
+          gcpConfigType: 'gcpCredentialsPath',
+          gcpCredentialsPath: '/etc/gcp/creds.json',
+        }),
+      )?.config?.credentials,
+    ).toEqual({ gcpConfig: { type: 'gcp_credential_path', path: '/etc/gcp/creds.json' } });
+    expect(
+      buildServiceConnection(
+        tier3AForm({ kind: 'drive', serviceType: 'GoogleDrive', gcpConfigType: 'gcpADC' }),
+      )?.config?.credentials,
+    ).toEqual({ gcpConfig: { type: 'gcp_adc' } });
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'drive',
+          serviceType: 'GoogleDrive',
+          gcpConfigType: 'gcpExternalAccount',
+          gcpExternalAccountJson: '{"type": "external_account", "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/p"}',
+        }),
+      )?.config?.credentials,
+    ).toEqual({
+      gcpConfig: {
+        type: 'external_account',
+        audience: '//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/p',
+      },
+    });
+  });
+
+  it('builds the ElasticSearch apiAuth + ssl values payload 1:1', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'search',
+          serviceType: 'ElasticSearch',
+          hostPort: 'http://localhost:9200',
+          elasticSearchAuthMode: 'apiAuth',
+          apiKey: '${ES_API_KEY}',
+          apiKeyId: 'key-1',
+          sslCertMode: 'values',
+          sslCaCertValue: '---CA---',
+          sslClientCertValue: '---CERT---',
+          sslPrivateKeyValue: '---KEY---',
+          connectionArguments: '{"a": "b"}',
+          // Literal secret leaves persist only with storeConnectionSecrets.
+          storeConnectionSecrets: true,
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        authType: { apiKey: '${ES_API_KEY}', apiKeyId: 'key-1' },
+        sslConfig: {
+          certificates: {
+            caCertValue: '---CA---',
+            clientCertValue: '---CERT---',
+            privateKeyValue: '---KEY---',
+            stagingDir: '/tmp/openmetadata-certs',
+          },
+        },
+        connectionTimeoutSecs: 30,
+        connectionArguments: { a: 'b' },
+      },
+    });
+  });
+
+  it('builds the ElasticSearch basicAuth + ssl paths payload 1:1', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'search',
+          serviceType: 'ElasticSearch',
+          hostPort: 'http://localhost:9200',
+          elasticSearchAuthMode: 'basicAuth',
+          username: 'elastic',
+          password: '${ES_PASSWORD}',
+          sslCaCertPath: '/certs/ca.pem',
+          sslClientCertPath: '/certs/client.pem',
+          sslPrivateKeyPath: '/certs/key.pem',
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        authType: { username: 'elastic', password: '${ES_PASSWORD}' },
+        sslConfig: {
+          certificates: {
+            caCertPath: '/certs/ca.pem',
+            clientCertPath: '/certs/client.pem',
+            privateKeyPath: '/certs/key.pem',
+          },
+        },
+        connectionTimeoutSecs: 30,
+      },
+    });
+  });
+
+  it('builds the OpenAI payload 1:1 (timeout + maxRetries)', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'llm',
+          serviceType: 'OpenAI',
+          apiKey: '${OPENAI_API_KEY}',
+          organization: 'org-1',
+          baseUrl: 'https://api.openai.com/v1',
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'OpenAI',
+        apiKey: '${OPENAI_API_KEY}',
+        organization: 'org-1',
+        baseURL: 'https://api.openai.com/v1',
+        timeout: 60,
+        maxRetries: 3,
+      },
+    });
+  });
+
+  it('builds the Mcp payload 1:1 (no connectionTimeout on create — server default 30 applies)', () => {
+    expect(
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'mcp',
+          serviceType: 'Mcp',
+          configFilePaths: '["/etc/mcp/claude.json", "/etc/mcp/vscode.json"]',
+          servers:
+            '[{"name": "s1", "url": "https://s1.example.com", "apiKey": "k1"}, {"name": "s2", "url": "https://s2.example.com"}]',
+          registryUrl: 'https://registry.example.com',
+          storeConnectionSecrets: true,
+        }),
+      ),
+    ).toEqual({
+      config: {
+        type: 'Mcp',
+        discoveryMethod: 'ConfigFile',
+        configFilePaths: ['/etc/mcp/claude.json', '/etc/mcp/vscode.json'],
+        servers: [
+          { name: 's1', url: 'https://s1.example.com', apiKey: 'k1' },
+          { name: 's2', url: 'https://s2.example.com' },
+        ],
+        registryUrl: 'https://registry.example.com',
+        initializationTimeout: 60,
+        fetchTools: true,
+        fetchResources: true,
+        fetchPrompts: true,
+      },
+    });
+  });
+
+  it('round-trips the tier 3A fields from stored services', () => {
+    const om = formValuesFromService({
+      id: 'om1',
+      name: 'meta',
+      kind: 'metadata',
+      serviceType: 'OpenMetadata',
+      connection: {
+        config: {
+          type: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          clusterName: 'prod',
+          authProvider: 'azure',
+          verifySSL: 'validate',
+          securityConfig: { jwtToken: '********' },
+          secretsManagerProvider: 'aws',
+          secretsManagerLoader: 'env',
+          apiVersion: 'v2',
+          enableVersionValidation: false,
+          storeServiceConnection: false,
+          extraHeaders: { 'X-Tenant': 'acme' },
+          sslConfig: { caCertificate: '********', sslCertificate: '********', sslKey: '********' },
+        },
+      },
+    });
+    expect(om.clusterName).toBe('prod');
+    expect(om.authProvider).toBe('azure');
+    expect(om.verifySSL).toBe('validate');
+    expect(om.jwtToken).toBe('');
+    expect(om.secretsManagerProvider).toBe('aws');
+    expect(om.secretsManagerLoader).toBe('env');
+    expect(om.apiVersion).toBe('v2');
+    expect(om.enableVersionValidation).toBe(false);
+    expect(om.omStoreServiceConnection).toBe(false);
+    expect(om.extraHeaders).toBe('{"X-Tenant":"acme"}');
+    expect(om.openMetadataSSLCaCertificate).toBe('');
+    // Spec defaults apply when the stored config omits the field.
+    const bareOm = formValuesFromService({
+      id: 'om2',
+      name: 'meta2',
+      kind: 'metadata',
+      serviceType: 'OpenMetadata',
+      connection: { config: { type: 'OpenMetadata' } },
+    });
+    expect(bareOm.clusterName).toBe('openmetadata');
+    expect(bareOm.authProvider).toBe('basic');
+    expect(bareOm.verifySSL).toBe('no-ssl');
+    expect(bareOm.secretsManagerProvider).toBe('db');
+    expect(bareOm.secretsManagerLoader).toBe('noop');
+    expect(bareOm.apiVersion).toBe('v1');
+    expect(bareOm.enableVersionValidation).toBe(true);
+    expect(bareOm.omStoreServiceConnection).toBe(true);
+
+    const es = formValuesFromService({
+      id: 'es1',
+      name: 'es',
+      kind: 'search',
+      serviceType: 'ElasticSearch',
+      connection: {
+        config: {
+          type: 'ElasticSearch',
+          hostPort: 'http://localhost:9200',
+          authType: { apiKey: '********', apiKeyId: 'key-1' },
+          sslConfig: {
+            certificates: {
+              caCertValue: '********',
+              clientCertValue: '********',
+              privateKeyValue: '********',
+              stagingDir: '/certs',
+            },
+          },
+          connectionTimeoutSecs: 45,
+          connectionArguments: { a: 'b' },
+        },
+      },
+    });
+    expect(es.elasticSearchAuthMode).toBe('apiAuth');
+    expect(es.apiKey).toBe('');
+    expect(es.apiKeyId).toBe('key-1');
+    expect(es.sslCertMode).toBe('values');
+    expect(es.sslCaCertValue).toBe('');
+    expect(es.sslStagingDir).toBe('/certs');
+    expect(es.connectionTimeoutSecs).toBe(45);
+    expect(es.connectionArguments).toBe('{"a":"b"}');
+
+    const mcp = formValuesFromService({
+      id: 'mcp1',
+      name: 'mcp',
+      kind: 'mcp',
+      serviceType: 'Mcp',
+      connection: {
+        config: {
+          type: 'Mcp',
+          discoveryMethod: 'DirectConnection',
+          configFilePaths: ['/etc/mcp/a.json'],
+          servers: [
+            { name: 's1', url: 'https://s1.example.com', apiKey: '********' },
+            { name: 's2', url: 'https://s2.example.com', apiKey: '********' },
+          ],
+          registryUrl: 'https://registry.example.com',
+          connectionTimeout: 45,
+          initializationTimeout: 90,
+          fetchTools: false,
+          fetchResources: true,
+          fetchPrompts: false,
+        },
+      },
+    });
+    expect(mcp.discoveryMethod).toBe('DirectConnection');
+    expect(mcp.configFilePaths).toBe('["/etc/mcp/a.json"]');
+    expect(mcp.servers).toBe(
+      '[{"name":"s1","url":"https://s1.example.com","apiKey":"********"},{"name":"s2","url":"https://s2.example.com","apiKey":"********"}]',
+    );
+    expect(mcp.connectionTimeout).toBe(45);
+    expect(mcp.initializationTimeout).toBe(90);
+    expect(mcp.fetchTools).toBe(false);
+    expect(mcp.fetchResources).toBe(true);
+    expect(mcp.fetchPrompts).toBe(false);
+    const bareMcp = formValuesFromService({
+      id: 'mcp2',
+      name: 'mcp2',
+      kind: 'mcp',
+      serviceType: 'Mcp',
+      connection: { config: { type: 'Mcp' } },
+    });
+    expect(bareMcp.discoveryMethod).toBe('ConfigFile');
+    expect(bareMcp.connectionTimeout).toBe(30);
+    expect(bareMcp.initializationTimeout).toBe(60);
+    expect(bareMcp.fetchTools).toBe(true);
+    expect(bareMcp.fetchResources).toBe(true);
+    expect(bareMcp.fetchPrompts).toBe(true);
+    // The shared connectionTimeout key keeps Databricks behaviour: no Mcp
+    // default leaks into a Databricks refill.
+    const bareDatabricks = formValuesFromService({
+      id: 'dbx1',
+      name: 'dbx',
+      kind: 'database',
+      serviceType: 'Databricks',
+      connection: { config: { type: 'Databricks' } },
+    });
+    expect(bareDatabricks.connectionTimeout).toBeUndefined();
+
+    const drive = formValuesFromService({
+      id: 'd1',
+      name: 'drive',
+      kind: 'drive',
+      serviceType: 'GoogleDrive',
+      connection: {
+        config: {
+          type: 'GoogleDrive',
+          credentials: {
+            gcpConfig: { type: 'gcp_credential_path', path: '/etc/gcp/creds.json' },
+            gcpImpersonateServiceAccount: {
+              impersonateServiceAccount: 'target@example.com',
+              lifetime: 1800,
+            },
+          },
+          delegatedEmail: 'user@example.com',
+          driveId: 'drive-1',
+          includeTeamDrives: false,
+          includeGoogleSheets: true,
+        },
+      },
+    });
+    expect(drive.gcpConfigType).toBe('gcpCredentialsPath');
+    expect(drive.gcpCredentialsPath).toBe('/etc/gcp/creds.json');
+    expect(drive.credentialsJson).toBe('');
+    expect(drive.impersonateServiceAccount).toBe('target@example.com');
+    expect(drive.impersonateLifetime).toBe(1800);
+    expect(drive.includeTeamDrives).toBe(false);
+    expect(drive.includeGoogleSheets).toBe(true);
+    // Legacy bare credentials infer the values branch; the JSON stays blank.
+    const legacy = formValuesFromService({
+      id: 'd2',
+      name: 'drive2',
+      kind: 'drive',
+      serviceType: 'GoogleDrive',
+      connection: {
+        config: {
+          type: 'GoogleDrive',
+          credentials: { type: 'service_account', project_id: 'p1', private_key: '---KEY---' },
+        },
+      },
+    });
+    expect(legacy.gcpConfigType).toBe('gcpValues');
+    expect(legacy.credentialsJson).toBe('');
+
+    const rest = formValuesFromService({
+      id: 'r1',
+      name: 'rest',
+      kind: 'api',
+      serviceType: 'Rest',
+      connection: {
+        config: {
+          type: 'Rest',
+          openAPISchemaConnection: { openAPISchemaURL: 'https://example.com/openapi.json' },
+          token: '********',
+          docURL: 'https://example.com/docs',
+          verifySSL: 'validate',
+          sslConfig: { caCertificate: '********' },
+        },
+      },
+    });
+    expect(rest.openApiSchemaUrl).toBe('https://example.com/openapi.json');
+    expect(rest.apiKey).toBe('');
+    expect(rest.docURL).toBe('https://example.com/docs');
+    expect(rest.verifySSL).toBe('validate');
+    expect(rest.restSSLCaCertificate).toBe('');
+
+    const openai = formValuesFromService({
+      id: 'o1',
+      name: 'llm',
+      kind: 'llm',
+      serviceType: 'OpenAI',
+      connection: {
+        config: {
+          type: 'OpenAI',
+          apiKey: '********',
+          organization: 'org-1',
+          baseURL: 'https://x.example.com/v1',
+          timeout: 120,
+          maxRetries: 5,
+        },
+      },
+    });
+    expect(openai.apiKey).toBe('');
+    expect(openai.organization).toBe('org-1');
+    expect(openai.baseUrl).toBe('https://x.example.com/v1');
+    expect(openai.openAITimeout).toBe(120);
+    expect(openai.openAIMaxRetries).toBe(5);
+    const bareOpenai = formValuesFromService({
+      id: 'o2',
+      name: 'llm2',
+      kind: 'llm',
+      serviceType: 'OpenAI',
+      connection: { config: { type: 'OpenAI' } },
+    });
+    expect(bareOpenai.openAITimeout).toBe(60);
+    expect(bareOpenai.openAIMaxRetries).toBe(3);
+
+    // Mlflow registryUri refills in plaintext: it is the registry address,
+    // not a pure secret.
+    const mlflow = formValuesFromService({
+      id: 'm1',
+      name: 'ml',
+      kind: 'mlmodel',
+      serviceType: 'Mlflow',
+      connection: {
+        config: {
+          type: 'Mlflow',
+          trackingUri: 'http://localhost:5000',
+          registryUri: 'mysql+pymysql://mlflow:password@localhost:3306/mlflow',
+        },
+      },
+    });
+    expect(mlflow.trackingUri).toBe('http://localhost:5000');
+    expect(mlflow.registryUri).toBe('mysql+pymysql://mlflow:password@localhost:3306/mlflow');
+  });
+
+  it('redacts the tier 3A secrets for display JSON', () => {
+    const om = redactConnectionForDisplay({
+      config: {
+        type: 'OpenMetadata',
+        securityConfig: { jwtToken: 'om-jwt' },
+        sslConfig: { caCertificate: '---CA---', sslCertificate: '---CERT---', sslKey: '---KEY---' },
+      },
+    });
+    expect(om?.config?.securityConfig).toEqual({ jwtToken: '********' });
+    expect(om?.config?.sslConfig).toEqual({
+      caCertificate: '********',
+      sslCertificate: '********',
+      sslKey: '********',
+    });
+    const drive = redactConnectionForDisplay({
+      config: {
+        type: 'GoogleDrive',
+        credentials: { gcpConfig: { type: 'service_account', private_key: '---KEY---' } },
+      },
+    });
+    expect(drive?.config?.credentials).toBe('********');
+    const mcp = redactConnectionForDisplay({
+      config: {
+        type: 'Mcp',
+        servers: [
+          { name: 's1', url: 'https://s1.example.com', apiKey: 'k1' },
+          { name: 's2', url: 'https://s2.example.com', apiKey: 'k2' },
+        ],
+      },
+    });
+    expect(mcp?.config?.servers).toEqual([
+      { name: 's1', url: 'https://s1.example.com', apiKey: '********' },
+      { name: 's2', url: 'https://s2.example.com', apiKey: '********' },
+    ]);
+    const es = redactConnectionForDisplay({
+      config: {
+        type: 'ElasticSearch',
+        authType: { apiKey: 'es-key', apiKeyId: 'key-1' },
+        sslConfig: {
+          certificates: {
+            caCertValue: '---CA---',
+            clientCertValue: '---CERT---',
+            privateKeyValue: '---KEY---',
+            stagingDir: '/tmp/openmetadata-certs',
+          },
+        },
+      },
+    });
+    expect(es?.config?.authType).toEqual({ apiKey: '********', apiKeyId: 'key-1' });
+    expect(es?.config?.sslConfig).toEqual({
+      certificates: {
+        caCertValue: '********',
+        clientCertValue: '********',
+        privateKeyValue: '********',
+        stagingDir: '/tmp/openmetadata-certs',
+      },
+    });
+    // Certificate paths are not secrets and stay visible.
+    const esPaths = redactConnectionForDisplay({
+      config: {
+        type: 'ElasticSearch',
+        sslConfig: { certificates: { caCertPath: '/certs/ca.pem' } },
+      },
+    });
+    expect(esPaths?.config?.sslConfig).toEqual({ certificates: { caCertPath: '/certs/ca.pem' } });
+  });
+
+  it('keeps an OpenMetadata JWT on edit-save without retyping it', () => {
+    const kept = buildServiceConnection(
+      tier3AForm({ kind: 'metadata', serviceType: 'OpenMetadata', hostPort: 'http://localhost:8585/api' }),
+      {
+        config: {
+          type: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          securityConfig: { jwtToken: '********' },
+        },
+      },
+    );
+    expect(kept?.config?.securityConfig).toEqual({ jwtToken: '********' });
+  });
+
+  it('keeps Mcp server apiKeys on edit-save without retyping them, and drops a renamed one', () => {
+    const kept = buildServiceConnection(
+      tier3AForm({
+        kind: 'mcp',
+        serviceType: 'Mcp',
+        servers:
+          '[{"name": "s1", "url": "https://s1.example.com", "apiKey": "********"}, {"name": "s2", "url": "https://s2.example.com", "apiKey": "********"}]',
+      }),
+      {
+        config: {
+          type: 'Mcp',
+          servers: [
+            { name: 's1', url: 'https://s1.example.com', apiKey: '********' },
+            { name: 's2', url: 'https://s2.example.com', apiKey: '********' },
+          ],
+        },
+      },
+    );
+    expect(kept?.config?.servers).toEqual([
+      { name: 's1', url: 'https://s1.example.com', apiKey: '********' },
+      { name: 's2', url: 'https://s2.example.com', apiKey: '********' },
+    ]);
+    // Rename: the masked apiKey has no name match, so it is omitted —
+    // never stored as the literal mask.
+    const renamed = buildServiceConnection(
+      tier3AForm({
+        kind: 'mcp',
+        serviceType: 'Mcp',
+        servers: '[{"name": "s1-renamed", "url": "https://s1.example.com", "apiKey": "********"}]',
+      }),
+      {
+        config: {
+          type: 'Mcp',
+          servers: [{ name: 's1', url: 'https://s1.example.com', apiKey: '********' }],
+        },
+      },
+    );
+    expect(renamed?.config?.servers).toEqual([
+      { name: 's1-renamed', url: 'https://s1.example.com' },
+    ]);
+    // Retype: a fresh literal with storeConnectionSecrets replaces the old one.
+    const retyped = buildServiceConnection(
+      tier3AForm({
+        kind: 'mcp',
+        serviceType: 'Mcp',
+        servers: '[{"name": "s1", "url": "https://s1.example.com", "apiKey": "new-key"}]',
+        storeConnectionSecrets: true,
+      }),
+      {
+        config: {
+          type: 'Mcp',
+          servers: [{ name: 's1', url: 'https://s1.example.com', apiKey: '********' }],
+        },
+      },
+    );
+    expect(retyped?.config?.servers).toEqual([
+      { name: 's1', url: 'https://s1.example.com', apiKey: 'new-key' },
+    ]);
+  });
+
+  it('keeps an ElasticSearch apiKey on edit-save without retyping it', () => {
+    const kept = buildServiceConnection(
+      tier3AForm({
+        kind: 'search',
+        serviceType: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        elasticSearchAuthMode: 'apiAuth',
+        apiKeyId: 'key-1',
+      }),
+      {
+        config: {
+          type: 'ElasticSearch',
+          hostPort: 'http://localhost:9200',
+          authType: { apiKey: '********', apiKeyId: 'key-1' },
+        },
+      },
+    );
+    expect(kept?.config?.authType).toEqual({ apiKey: '********', apiKeyId: 'key-1' });
+    const retyped = buildServiceConnection(
+      tier3AForm({
+        kind: 'search',
+        serviceType: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        elasticSearchAuthMode: 'apiAuth',
+        apiKey: 'new-es-key',
+        storeConnectionSecrets: true,
+      }),
+      { config: { type: 'ElasticSearch', authType: { apiKey: '********' } } },
+    );
+    expect(retyped?.config?.authType).toEqual({ apiKey: 'new-es-key' });
+    // basicAuth password retention still works after the ES/Ranger split.
+    const basicKept = buildServiceConnection(
+      tier3AForm({
+        kind: 'search',
+        serviceType: 'ElasticSearch',
+        hostPort: 'http://localhost:9200',
+        elasticSearchAuthMode: 'basicAuth',
+        username: 'elastic',
+      }),
+      {
+        config: {
+          type: 'ElasticSearch',
+          authType: { username: 'elastic', password: '********' },
+        },
+      },
+    );
+    expect(basicKept?.config?.authType).toEqual({ username: 'elastic', password: '********' });
+  });
+
+  it('keeps GoogleDrive credentials on edit-save with a blank textarea, and re-wraps legacy bare JSON', () => {
+    const kept = buildServiceConnection(tier3AForm({ kind: 'drive', serviceType: 'GoogleDrive' }), {
+      config: {
+        type: 'GoogleDrive',
+        credentials: { gcpConfig: { type: 'service_account', project_id: 'p1' } },
+      },
+    });
+    expect(kept?.config?.credentials).toEqual({
+      gcpConfig: { type: 'service_account', project_id: 'p1' },
+    });
+    const rewrapped = buildServiceConnection(tier3AForm({ kind: 'drive', serviceType: 'GoogleDrive' }), {
+      config: {
+        type: 'GoogleDrive',
+        credentials: { type: 'service_account', project_id: 'p1', private_key: '---KEY---' },
+      },
+    });
+    expect(rewrapped?.config?.credentials).toEqual({
+      gcpConfig: { type: 'service_account', project_id: 'p1', private_key: '---KEY---' },
+    });
+    // A stored path-branch projectId survives an edit-save (opaque: the
+    // form has no projectId field for the path/ADC branches).
+    const pathKept = buildServiceConnection(
+      tier3AForm({
+        kind: 'drive',
+        serviceType: 'GoogleDrive',
+        gcpConfigType: 'gcpCredentialsPath',
+        gcpCredentialsPath: '/etc/gcp/creds.json',
+      }),
+      {
+        config: {
+          type: 'GoogleDrive',
+          credentials: {
+            gcpConfig: { type: 'gcp_credential_path', path: '/old/path.json', projectId: 'p1' },
+          },
+        },
+      },
+    );
+    expect(pathKept?.config?.credentials).toEqual({
+      gcpConfig: { type: 'gcp_credential_path', path: '/etc/gcp/creds.json', projectId: 'p1' },
+    });
+  });
+
+  it('throws on invalid JSON in the tier 3A textarea fields', () => {
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'metadata',
+          serviceType: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          extraHeaders: 'not-json',
+        }),
+      ),
+    ).toThrow('valid JSON');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'metadata',
+          serviceType: 'OpenMetadata',
+          hostPort: 'http://localhost:8585/api',
+          extraHeaders: '{"a": 1}',
+        }),
+      ),
+    ).toThrow('values must be strings');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({ kind: 'mcp', serviceType: 'Mcp', servers: 'not-json' }),
+      ),
+    ).toThrow('valid JSON');
+    expect(() =>
+      buildServiceConnection(tier3AForm({ kind: 'mcp', serviceType: 'Mcp', servers: '["s1"]' })),
+    ).toThrow('objects');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({ kind: 'mcp', serviceType: 'Mcp', configFilePaths: '{"a": 1}' }),
+      ),
+    ).toThrow('must be a JSON array');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({ kind: 'mcp', serviceType: 'Mcp', configFilePaths: '[1, 2]' }),
+      ),
+    ).toThrow('strings');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'drive',
+          serviceType: 'GoogleDrive',
+          gcpConfigType: 'gcpExternalAccount',
+          gcpExternalAccountJson: 'not-json',
+        }),
+      ),
+    ).toThrow('valid JSON');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'drive',
+          serviceType: 'GoogleDrive',
+          connectionOptions: '{"a": 1}',
+        }),
+      ),
+    ).toThrow('values must be strings');
+    expect(() =>
+      buildServiceConnection(
+        tier3AForm({
+          kind: 'search',
+          serviceType: 'ElasticSearch',
+          hostPort: 'http://localhost:9200',
+          connectionArguments: 'not-json',
+        }),
+      ),
+    ).toThrow('valid JSON');
   });
 });
