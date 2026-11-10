@@ -35,7 +35,7 @@ export interface SettingsItem {
   icon?: Component;
   /** Per-item description; rendered under the link when present. */
   descriptionKey?: string;
-  /** Singular entity label key interpolated as {entity} into descriptionKey. */
+  /** Entity label key interpolated as {entity} into descriptionKey (plural for 17 official items, singular for 8). */
   descriptionEntityKey?: string;
   /** Route params for the link, e.g. { entityType: 'table' }. */
   routeParams?: Record<string, string>;
@@ -46,6 +46,24 @@ export interface SettingsCategory {
   titleKey: string;
   descriptionKey: string;
   items: SettingsItem[];
+  /**
+   * When true, the Hub renders this category's items sorted by rendered
+   * title (localeCompare) instead of the authored order — official
+   * GlobalSettingsClassBase.ts:986 sorts at render time, so the order
+   * follows the active locale. ADR:2026-11-08-custom-properties-s3-config-write-side.
+   */
+  sortItemsByRenderedTitle?: boolean;
+}
+
+/**
+ * Sort a copy of the items by their rendered title; the input is never
+ * mutated and the authored order is not the display order.
+ */
+export function sortSettingsItemsByRenderedTitle<T extends { titleKey: string }>(
+  items: readonly T[],
+  title: (key: string) => string,
+): T[] {
+  return [...items].sort((a, b) => title(a.titleKey).localeCompare(title(b.titleKey)));
 }
 
 /** Route names this hub may navigate to. Keep in lockstep with router/index.ts. */
@@ -321,6 +339,9 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     key: 'custom-properties',
     titleKey: 'settings.categories.customProperties.title',
     descriptionKey: 'settings.categories.customProperties.description',
+    // R-2: the 26 rows render sorted by rendered label (localeCompare),
+    // never in authored order — the order follows the active locale.
+    sortItemsByRenderedTitle: true,
     // G-D1 (a): the 26 official entity types, one row each inside this
     // category card (icon + description), in rendered label order. The rows
     // link to the existing detail route with the type name as the

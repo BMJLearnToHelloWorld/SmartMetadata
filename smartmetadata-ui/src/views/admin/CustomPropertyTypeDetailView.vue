@@ -5,18 +5,29 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Descriptions, Empty, Form, Input, Select, Tag, Tooltip, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Descriptions, Empty, Form, Input, Select, Switch, Tag, Tooltip, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import {
+  ENTITY_REFERENCE_LABELS,
+  ENTITY_REFERENCE_TYPES,
+  ENUM_CONFIG_MAX_VISIBLE_VALUES,
   addOrUpdateCustomProperty,
   deleteCustomPropertyByName,
   filterCustomProperties,
+  getCustomPropertyTypeFlags,
+  getEditFormValues,
+  getCustomPropertyChanges,
   getMetadataTypeByName,
   getPropertyConfigSummary,
   getPropertyTypeOptions,
   listPropertyTypes,
+  propertyTypeLabel,
+  toCustomPropertyPayload,
+  updateCustomPropertyByName,
+  validateCustomPropertyForm,
   type CustomPropertyConfigSummary,
+  type CustomPropertyFormValues,
 } from '@/api/customProperties';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
@@ -25,7 +36,7 @@ import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/feat
 import type { CustomPropertyDef, MetadataType } from '@/types/collaboration';
 
 const props = defineProps<{ entityType: string }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const typeMeta = ref<MetadataType | null>(null);
@@ -45,7 +56,44 @@ const form = reactive({
   displayName: '',
   description: '',
   propertyTypeId: '',
+  enumConfig: [] as string[],
+  multiSelect: false,
+  formatConfig: '',
+  entityReferenceConfig: [] as string[],
+  columns: [] as string[],
 });
+
+/** Stage 3: the selected field type's name drives the conditional fields. */
+const selectedPropertyType = computed(() =>
+  propertyTypeOptions.value.find((opt) => opt.id === form.propertyTypeId),
+);
+const selectedPropertyTypeName = computed(() => selectedPropertyType.value?.name ?? '');
+const typeFlags = computed(() => getCustomPropertyTypeFlags(selectedPropertyTypeName.value));
+const isEdit = computed(() => editingName.value !== null);
+const editingDef = computed(
+  () => definitions.value.find((def) => def.name === editingName.value) ?? null,
+);
+
+/** Official ENTITY_REFERENCE_OPTIONS labels: reuse the explore.entity keys, fall back to official labels. */
+const entityReferenceOptions = computed(() =>
+  ENTITY_REFERENCE_TYPES.map((value) => {
+    const key = `explore.entity.${value}`;
+    const saved = editingDef.value
+      ? getEditFormValues(editingDef.value).entityReferenceConfig
+      : [];
+    return {
+      value,
+      label: te(key) ? String(t(key)) : (ENTITY_REFERENCE_LABELS[value] ?? value),
+      // Edit is additive-only: a saved type cannot be removed (stored
+      // references would break); only newly picked ones are removable.
+      disabled: isEdit.value && saved.includes(value),
+    };
+  }),
+);
+
+const formatOptions = computed(() =>
+  typeFlags.value.supportedFormats.map((format) => ({ value: format, label: format })),
+);
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('settings.customProperties.title'), to: { name: 'admin-settings-custom-properties' } },
@@ -163,6 +211,11 @@ function resetForm(): void {
   form.displayName = '';
   form.description = '';
   form.propertyTypeId = propertyTypeOptions.value[0]?.id || '';
+  form.enumConfig = [];
+  form.multiSelect = false;
+  form.formatConfig = '';
+  form.entityReferenceConfig = [];
+  form.columns = [];
   editingName.value = null;
 }
 
@@ -172,7 +225,7 @@ async function loadPropertyTypes(): Promise<void> {
     .filter((row) => row.id)
     .map((row) => ({
       value: row.id as string,
-      label: row.displayName || row.name,
+      label: propertyTypeLabel(row.name, row.displayName, t('settings.customProperties.sqlQuery')),
       id: row.id as string,
       name: row.name,
     }));
@@ -211,7 +264,29 @@ function openEdit(def: CustomPropertyDef): void {
     (opt) => opt.name === def.propertyType || opt.label === def.propertyType,
   );
   form.propertyTypeId = match?.id || propertyTypeOptions.value[0]?.id || '';
+  // Only enum and entity-reference configs are editable (official
+  // CustomPropertyEditForm): format and table configs have no edit
+  // controls and stay on the server copy untouched.
+  const editValues = getEditFormValues(def);
+  form.enumConfig = editValues.enumConfig;
+  form.multiSelect = editValues.multiSelect;
+  form.entityReferenceConfig = editValues.entityReferenceConfig;
+  form.formatConfig = '';
+  form.columns = [];
   modalOpen.value = true;
+}
+
+/**
+ * Switching property type drops the previous type's condition values
+ * (official: the fields appear/disappear with the type; a stale enum
+ * value must never ride into a format submission).
+ */
+function onPropertyTypeChange(): void {
+  form.enumConfig = [];
+  form.multiSelect = false;
+  form.formatConfig = '';
+  form.entityReferenceConfig = [];
+  form.columns = [];
 }
 
 async function onDelete(def: CustomPropertyDef): Promise<void> {
@@ -250,30 +325,67 @@ async function onSave(): Promise<void> {
     message.error(t('settings.customProperties.missingTypeId'));
     return;
   }
-  const name = form.name.trim();
-  const description = form.description.trim();
-  const selected = propertyTypeOptions.value.find((opt) => opt.id === form.propertyTypeId);
-  if (!name || !description || !selected) {
-    message.error(t('settings.customProperties.createInvalid'));
+  const values: CustomPropertyFormValues = {
+    name: form.name.trim(),
+    displayName: form.displayName.trim(),
+    description: form.description.trim(),
+    propertyTypeName: selectedPropertyTypeName.value,
+    enumConfig: [...form.enumConfig],
+    multiSelect: form.multiSelect,
+    formatConfig: form.formatConfig,
+    entityReferenceConfig: [...form.entityReferenceConfig],
+    columns: [...form.columns],
+  };
+  const issues = validateCustomPropertyForm(values, {
+    existingNames: definitions.value.map((def) => def.name),
+    isEdit: isEdit.value,
+  });
+  if (issues.length > 0) {
+    const first = issues[0]!;
+    message.error(t(first.key, first.params ?? {}));
+    return;
+  }
+  const selected = selectedPropertyType.value;
+  if (!selected) {
+    message.error(t('settings.customProperties.propertyTypeRequired'));
     return;
   }
   saving.value = true;
   try {
-    const updated = await addOrUpdateCustomProperty(typeId, {
-      name,
-      description,
-      displayName: form.displayName.trim() || undefined,
-      propertyType: { id: selected.id, type: 'type', name: selected.name },
-    });
-    typeMeta.value = updated;
-    definitions.value = updated.customProperties;
-    modalOpen.value = false;
-    message.success(
-      editingName.value
-        ? t('settings.customProperties.updated', { name })
-        : t('settings.customProperties.created', { name }),
-    );
-    resetForm();
+    if (isEdit.value && editingDef.value) {
+      // Stage 3: edits go through PATCH (official updateCustomPropertyByName),
+      // never PUT — PUT would overwrite concurrent changes and re-send the
+      // frozen propertyType. ADR:2026-11-08-custom-properties-s3-config-write-side.
+      const changes = getCustomPropertyChanges(editingDef.value, values);
+      const updated = await updateCustomPropertyByName(
+        props.entityType,
+        editingDef.value.name,
+        changes,
+      );
+      if (!updated) {
+        await load();
+        message.error(t('settings.customProperties.editGone'));
+        return;
+      }
+      typeMeta.value = { ...updated, schema: updated.schema ?? typeMeta.value?.schema };
+      definitions.value = updated.customProperties;
+      modalOpen.value = false;
+      message.success(t('settings.customProperties.updated', { name: values.name }));
+      if (typeFlags.value.hasEnumConfig) {
+        message.success(t('settings.customProperties.enumUpdated'));
+      }
+      resetForm();
+    } else {
+      const updated = await addOrUpdateCustomProperty(
+        typeId,
+        toCustomPropertyPayload(values, { id: selected.id, name: selected.name }),
+      );
+      typeMeta.value = updated;
+      definitions.value = updated.customProperties;
+      modalOpen.value = false;
+      message.success(t('settings.customProperties.created', { name: values.name }));
+      resetForm();
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
@@ -489,6 +601,84 @@ watch(
           data-testid="custom-property-type"
           style="width: 100%"
           :options="propertyTypeOptions"
+          :disabled="isEdit"
+          @change="onPropertyTypeChange"
+        />
+      </Form.Item>
+      <!-- Official "Applies to: Table Column" badge, tableColumn only. -->
+      <div
+        v-if="entityType === 'tableColumn'"
+        class="custom-property-applies-to"
+        data-testid="custom-property-applies-to"
+      >
+        <span>{{ t('settings.customProperties.appliesTo') }}</span>
+        <Tag>{{ t('settings.customProperties.tableColumnLabel') }}</Tag>
+      </div>
+      <template v-if="typeFlags.hasEnumConfig">
+        <Form.Item
+          :label="t('settings.customProperties.enumValues')"
+          :extra="t('settings.customProperties.enumValuesHelp')"
+          required
+        >
+          <Select
+            v-model:value="form.enumConfig"
+            mode="tags"
+            data-testid="custom-property-enum-config"
+            :max-tag-count="isEdit ? ENUM_CONFIG_MAX_VISIBLE_VALUES : undefined"
+            :token-separators="[',']"
+            style="width: 100%"
+          />
+        </Form.Item>
+        <Form.Item
+          :label="t('settings.customProperties.configMultiSelect')"
+          :extra="t('settings.customProperties.enumMultiSelectHelp')"
+        >
+          <Switch v-model:checked="form.multiSelect" data-testid="custom-property-multi-select" />
+        </Form.Item>
+      </template>
+      <Form.Item
+        v-if="typeFlags.hasFormatConfig && !isEdit"
+        :label="t('settings.customProperties.configFormat')"
+        :extra="t('settings.customProperties.formatHelp')"
+        required
+      >
+        <Select
+          v-model:value="form.formatConfig"
+          data-testid="custom-property-format-config"
+          :options="formatOptions"
+          style="width: 100%"
+        />
+      </Form.Item>
+      <Form.Item
+        v-if="typeFlags.hasEntityReferenceConfig"
+        :label="t('settings.customProperties.entityReferenceTypes')"
+        :extra="
+          isEdit
+            ? t('settings.customProperties.entityReferenceAddOnly')
+            : t('settings.customProperties.entityReferenceHelp')
+        "
+        required
+      >
+        <Select
+          v-model:value="form.entityReferenceConfig"
+          mode="multiple"
+          data-testid="custom-property-entity-ref-config"
+          :options="entityReferenceOptions"
+          style="width: 100%"
+        />
+      </Form.Item>
+      <Form.Item
+        v-if="typeFlags.hasTableTypeConfig && !isEdit"
+        :label="t('settings.customProperties.configColumns')"
+        :extra="t('settings.customProperties.columnsHelp')"
+        required
+      >
+        <Select
+          v-model:value="form.columns"
+          mode="tags"
+          data-testid="custom-property-columns"
+          :token-separators="[',']"
+          style="width: 100%"
         />
       </Form.Item>
     </Form>
@@ -516,6 +706,13 @@ watch(
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  font-size: 13px;
+}
+.custom-property-applies-to {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
   font-size: 13px;
 }
 </style>

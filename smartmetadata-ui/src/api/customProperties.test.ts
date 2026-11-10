@@ -9,12 +9,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
+import type { CustomPropertyDef } from '@/types/collaboration';
 import {
   ENTITY_TYPE_CATEGORY,
   FIELD_TYPE_CATEGORY,
   addOrUpdateCustomProperty,
+  buildCustomPropertyConfig,
   deleteCustomPropertyByName,
   filterCustomProperties,
+  getCustomPropertyChanges,
+  getCustomPropertyTypeFlags,
+  getEditFormValues,
   getMetadataTypeByName,
   getPropertyConfigSummary,
   getPropertyTypeOptions,
@@ -23,7 +28,12 @@ import {
   listPropertyTypes,
   mapCustomProperty,
   mapMetadataType,
+  propertyTypeLabel,
+  toCustomPropertyPayload,
+  updateCustomPropertyByName,
+  validateCustomPropertyForm,
   TYPE_FIELDS,
+  type CustomPropertyFormValues,
 } from './customProperties';
 
 function lastFetch(): { url: string; init?: RequestInit } {
@@ -383,24 +393,483 @@ describe('custom properties API', () => {
       });
       expect(patchCalls(fetchMock)).toHaveLength(3);
     });
+  });
 
-    it('re-GETs when the PATCH response carries no usable type', async () => {
-      let gets = 0;
+  describe('stage 3 config flags and payload (official buildCustomPropertyConfig)', () => {
+    it('flags the four config kinds by property type name', () => {
+      expect(getCustomPropertyTypeFlags('enum')).toMatchObject({
+        hasEnumConfig: true,
+        hasFormatConfig: false,
+        hasEntityReferenceConfig: false,
+        hasTableTypeConfig: false,
+      });
+      expect(getCustomPropertyTypeFlags('date-cp').supportedFormats).toHaveLength(7);
+      // The pin's constants file lists 8 dateTime formats (the review's "9" is a miscount).
+      expect(getCustomPropertyTypeFlags('dateTime-cp').supportedFormats).toHaveLength(8);
+      expect(getCustomPropertyTypeFlags('time-cp').supportedFormats).toEqual(['HH:mm:ss']);
+      expect(getCustomPropertyTypeFlags('entityReference').hasEntityReferenceConfig).toBe(true);
+      expect(getCustomPropertyTypeFlags('entityReferenceList').hasEntityReferenceConfig).toBe(true);
+      expect(getCustomPropertyTypeFlags('table-cp').hasTableTypeConfig).toBe(true);
+      expect(getCustomPropertyTypeFlags('string')).toMatchObject({
+        hasEnumConfig: false,
+        hasFormatConfig: false,
+        hasEntityReferenceConfig: false,
+        hasTableTypeConfig: false,
+        supportedFormats: [],
+      });
+    });
+
+    it('builds the four config forms and returns undefined for plain types', () => {
+      expect(
+        buildCustomPropertyConfig(
+          { enumConfig: ['gold', 'silver', 'gold'], multiSelect: true },
+          getCustomPropertyTypeFlags('enum'),
+        ),
+      ).toEqual({ config: { multiSelect: true, values: ['gold', 'silver'] } });
+      expect(
+        buildCustomPropertyConfig(
+          { formatConfig: 'dd-MM-yyyy' },
+          getCustomPropertyTypeFlags('date-cp'),
+        ),
+      ).toEqual({ config: 'dd-MM-yyyy' });
+      expect(
+        buildCustomPropertyConfig(
+          { entityReferenceConfig: ['table', 'topic'] },
+          getCustomPropertyTypeFlags('entityReference'),
+        ),
+      ).toEqual({ config: ['table', 'topic'] });
+      expect(
+        buildCustomPropertyConfig(
+          { columns: ['a', 'b', 'a'] },
+          getCustomPropertyTypeFlags('table-cp'),
+        ),
+      ).toEqual({ config: { columns: ['a', 'b'] } });
+      expect(
+        buildCustomPropertyConfig({}, getCustomPropertyTypeFlags('string')),
+      ).toBeUndefined();
+      expect(
+        buildCustomPropertyConfig({}, getCustomPropertyTypeFlags('date-cp')),
+      ).toBeUndefined();
+    });
+
+    it('assembles the create payload without the condition fields', () => {
+      const payload = toCustomPropertyPayload(
+        {
+          name: 'tier',
+          displayName: '',
+          description: 'Service tier',
+          propertyTypeName: 'enum',
+          enumConfig: ['gold'],
+          multiSelect: false,
+          formatConfig: '',
+          entityReferenceConfig: [],
+          columns: [],
+        },
+        { id: 'f-enum', name: 'enum' },
+      );
+      expect(payload).toEqual({
+        name: 'tier',
+        description: 'Service tier',
+        propertyType: { id: 'f-enum', type: 'type', name: 'enum' },
+        customPropertyConfig: { config: { multiSelect: false, values: ['gold'] } },
+      });
+      expect('enumConfig' in payload).toBe(false);
+      const plain = toCustomPropertyPayload(
+        {
+          name: 'note',
+          displayName: 'Note',
+          description: 'd',
+          propertyTypeName: 'string',
+          enumConfig: [],
+          multiSelect: false,
+          formatConfig: '',
+          entityReferenceConfig: [],
+          columns: [],
+        },
+        { id: 'f-str', name: 'string' },
+      );
+      expect(plain).toEqual({
+        name: 'note',
+        description: 'd',
+        propertyType: { id: 'f-str', type: 'type', name: 'string' },
+        displayName: 'Note',
+      });
+      expect('customPropertyConfig' in plain).toBe(false);
+    });
+
+    it('labels property types per official (sqlQuery special-cased, -cp stripped)', () => {
+      expect(propertyTypeLabel('sqlQuery', 'SQL query', 'SQL Query')).toBe('SQL Query');
+      expect(propertyTypeLabel('date-cp', undefined, 'SQL Query')).toBe('Date');
+      expect(propertyTypeLabel('date-cp', 'My Date', 'SQL Query')).toBe('My Date');
+      expect(propertyTypeLabel('entityReference', undefined, 'SQL Query')).toBe('Entity Reference');
+    });
+  });
+
+  describe('validateCustomPropertyForm (official form rules)', () => {
+    const base: CustomPropertyFormValues = {
+      name: 'tier',
+      displayName: '',
+      description: 'Service tier',
+      propertyTypeName: 'enum',
+      enumConfig: ['gold'],
+      multiSelect: false,
+      formatConfig: '',
+      entityReferenceConfig: [],
+      columns: [],
+    };
+
+    it('accepts a valid form', () => {
+      expect(validateCustomPropertyForm(base, { existingNames: [], isEdit: false })).toEqual([]);
+    });
+
+    it('rejects an empty, too-long, or invalid name', () => {
+      expect(
+        validateCustomPropertyForm({ ...base, name: '' }, { existingNames: [], isEdit: false })[0]?.key,
+      ).toBe('settings.customProperties.nameRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, name: 'a'.repeat(257) },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.nameLength');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, name: 'bad"name' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.nameInvalid');
+      // The regex allows a leading digit and spaces inside.
+      expect(
+        validateCustomPropertyForm(
+          { ...base, name: '9 lives ok' },
+          { existingNames: [], isEdit: false },
+        ),
+      ).toEqual([]);
+    });
+
+    it('rejects a case-insensitively duplicate name on create but not on edit', () => {
+      expect(
+        validateCustomPropertyForm(
+          { ...base, name: 'Tier' },
+          { existingNames: ['tier'], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.nameExists');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, name: 'Tier' },
+          { existingNames: ['tier'], isEdit: true },
+        ),
+      ).toEqual([]);
+    });
+
+    it('rejects a missing description or property type', () => {
+      expect(
+        validateCustomPropertyForm(
+          { ...base, description: '' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.descriptionRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: '' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.propertyTypeRequired');
+    });
+
+    it('requires each conditional field for its type', () => {
+      expect(
+        validateCustomPropertyForm(
+          { ...base, enumConfig: [] },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.enumValuesRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'date-cp' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.formatRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'date-cp', formatConfig: 'yyyy-MM-dd HH:mm' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.formatInvalid');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'entityReference' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.entityReferenceRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'table-cp' },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.columnsRequired');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'table-cp', columns: ['a', 'b', 'c', 'd'] },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.columnsTooMany');
+      expect(
+        validateCustomPropertyForm(
+          { ...base, propertyTypeName: 'table-cp', columns: ['__row_id__'] },
+          { existingNames: [], isEdit: false },
+        ).map((issue) => issue.key),
+      ).toContain('settings.customProperties.columnReserved');
+    });
+  });
+
+  describe('getCustomPropertyChanges (official edit diff input)', () => {
+    it('builds the enum config and drops an unchanged displayName', () => {
+      const property: CustomPropertyDef = {
+        name: 'tier',
+        displayName: 'Tier',
+        description: 'old',
+        propertyType: 'enum',
+        customPropertyConfig: { config: { values: ['gold'], multiSelect: false } },
+      };
+      expect(
+        getCustomPropertyChanges(property, {
+          displayName: 'Tier',
+          description: 'new',
+          enumConfig: ['gold', 'silver', 'silver'],
+          multiSelect: true,
+          entityReferenceConfig: [],
+        }),
+      ).toEqual({
+        displayName: undefined,
+        description: 'new',
+        customPropertyConfig: { config: { multiSelect: true, values: ['gold', 'silver'] } },
+      });
+    });
+
+    it('keeps saved entity-reference types (additive only)', () => {
+      const property: CustomPropertyDef = {
+        name: 'refs',
+        description: 'd',
+        propertyType: 'entityReference',
+        customPropertyConfig: { config: ['table'] },
+      };
+      expect(
+        getCustomPropertyChanges(property, {
+          displayName: '',
+          description: 'd',
+          enumConfig: [],
+          multiSelect: false,
+          entityReferenceConfig: ['topic'],
+        }),
+      ).toEqual({
+        displayName: undefined,
+        description: 'd',
+        customPropertyConfig: { config: ['table', 'topic'] },
+      });
+    });
+
+    it('leaves the config unset for format and table properties', () => {
+      const property: CustomPropertyDef = {
+        name: 'fmt',
+        description: 'd',
+        propertyType: 'date-cp',
+        customPropertyConfig: { config: 'yyyy-MM-dd' },
+      };
+      expect(
+        getCustomPropertyChanges(property, {
+          displayName: 'Fmt',
+          description: 'd2',
+          enumConfig: [],
+          multiSelect: false,
+          entityReferenceConfig: [],
+        }),
+      ).toEqual({ displayName: 'Fmt', description: 'd2' });
+    });
+
+    it('seeds the edit form from the saved property', () => {
+      expect(
+        getEditFormValues({
+          name: 'tier',
+          displayName: 'Tier',
+          description: 'd',
+          propertyType: 'enum',
+          customPropertyConfig: { config: { values: ['gold'], multiSelect: true } },
+        }),
+      ).toEqual({
+        displayName: 'Tier',
+        description: 'd',
+        enumConfig: ['gold'],
+        multiSelect: true,
+        entityReferenceConfig: [],
+      });
+      expect(
+        getEditFormValues({
+          name: 'refs',
+          description: 'd',
+          propertyType: 'entityReference',
+          customPropertyConfig: { config: ['table', 'topic'] },
+        }).entityReferenceConfig,
+      ).toEqual(['table', 'topic']);
+    });
+  });
+
+  describe('updateCustomPropertyByName (official PATCH edit)', () => {
+    const typeWith = (properties: CustomPropertyDef[]) => ({
+      id: 'tid',
+      name: 'table',
+      customProperties: properties.map((p) => ({
+        ...p,
+        propertyType: { name: p.propertyType },
+        ...(p.customPropertyConfig ? { customPropertyConfig: p.customPropertyConfig } : {}),
+      })),
+    });
+
+    function patchCalls(fetchMock: ReturnType<typeof vi.fn>) {
+      return fetchMock.mock.calls.filter(
+        ([, init]) => String((init as RequestInit | undefined)?.method || '').toUpperCase() === 'PATCH',
+      );
+    }
+
+    it('PATCHes test+replace by index for changed fields only', async () => {
       const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         if (String(init?.method || '').toUpperCase() === 'PATCH') {
-          return new Response('', { status: 200 });
+          return new Response(
+            JSON.stringify(
+              typeWith([
+                {
+                  name: 'tier',
+                  displayName: 'Tier',
+                  description: 'new',
+                  propertyType: 'enum',
+                  customPropertyConfig: { config: { values: ['gold', 'silver'], multiSelect: true } },
+                },
+              ]),
+            ),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
         }
-        gets += 1;
         return new Response(
           JSON.stringify(
-            gets === 1 ? typeWith(['retentionDays']) : typeWith(['otherProp']),
+            typeWith([
+              {
+                name: 'tier',
+                displayName: 'Tier',
+                description: 'old',
+                propertyType: 'enum',
+                customPropertyConfig: { config: { values: ['gold'], multiSelect: false } },
+              },
+            ]),
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       });
       vi.stubGlobal('fetch', fetchMock);
-      const updated = await deleteCustomPropertyByName('table', 'retentionDays');
-      expect(updated?.customProperties.map((d) => d.name)).toEqual(['otherProp']);
+      const updated = await updateCustomPropertyByName('table', 'tier', {
+        displayName: undefined,
+        description: 'new',
+        customPropertyConfig: { config: { multiSelect: true, values: ['gold', 'silver'] } },
+      });
+      expect(updated?.customProperties[0]?.description).toBe('new');
+      const calls = patchCalls(fetchMock);
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(String((calls[0]![1] as RequestInit).body))).toEqual([
+        { op: 'test', path: '/customProperties/0/name', value: 'tier' },
+        { op: 'replace', path: '/customProperties/0/description', value: 'new' },
+        {
+          op: 'replace',
+          path: '/customProperties/0/customPropertyConfig',
+          value: { config: { multiSelect: true, values: ['gold', 'silver'] } },
+        },
+      ]);
+    });
+
+    it('adds a field the server copy lacks and sends only the test op when nothing changed', async () => {
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(init?.method || '').toUpperCase() === 'PATCH') {
+          return new Response(JSON.stringify(typeWith([{ name: 'tier', description: 'd', propertyType: 'enum' }])), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify(typeWith([{ name: 'tier', description: 'd', propertyType: 'enum' }])),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      await updateCustomPropertyByName('table', 'tier', {
+        displayName: 'Tier',
+        description: 'd',
+      });
+      const calls = patchCalls(fetchMock);
+      expect(JSON.parse(String((calls[0]![1] as RequestInit).body))).toEqual([
+        { op: 'test', path: '/customProperties/0/name', value: 'tier' },
+        { op: 'add', path: '/customProperties/0/displayName', value: 'Tier' },
+      ]);
+      await updateCustomPropertyByName('table', 'tier', {
+        displayName: undefined,
+        description: 'd',
+      });
+      const second = patchCalls(fetchMock)[1]!;
+      expect(JSON.parse(String((second[1] as RequestInit).body))).toEqual([
+        { op: 'test', path: '/customProperties/0/name', value: 'tier' },
+      ]);
+    });
+
+    it('rebuilds the patch after a stale-index 400 and resolves undefined when gone', async () => {
+      let patchCount = 0;
+      const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(init?.method || '').toUpperCase() === 'PATCH') {
+          patchCount += 1;
+          if (patchCount === 1) {
+            return new Response(JSON.stringify({ message: 'stale index' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          return new Response(
+            JSON.stringify(typeWith([{ name: 'tier', description: 'new', propertyType: 'enum' }])),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(
+          JSON.stringify(
+            typeWith(
+              patchCount === 0
+                ? [
+                    { name: 'other', description: 'd', propertyType: 'string' },
+                    { name: 'tier', description: 'old', propertyType: 'enum' },
+                  ]
+                : [{ name: 'tier', description: 'old', propertyType: 'enum' }],
+            ),
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const updated = await updateCustomPropertyByName('table', 'tier', {
+        displayName: undefined,
+        description: 'new',
+      });
+      expect(updated?.customProperties[0]?.description).toBe('new');
+      const calls = patchCalls(fetchMock);
+      expect(calls).toHaveLength(2);
+      expect(JSON.parse(String((calls[1]![1] as RequestInit).body))).toEqual([
+        { op: 'test', path: '/customProperties/0/name', value: 'tier' },
+        { op: 'replace', path: '/customProperties/0/description', value: 'new' },
+      ]);
+      const goneMock = vi.fn(async () =>
+        new Response(JSON.stringify(typeWith([])), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      vi.stubGlobal('fetch', goneMock);
+      await expect(
+        updateCustomPropertyByName('table', 'tier', { displayName: undefined, description: 'new' }),
+      ).resolves.toBeUndefined();
+      expect(patchCalls(goneMock)).toHaveLength(0);
     });
   });
 });

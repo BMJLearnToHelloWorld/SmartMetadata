@@ -39,17 +39,18 @@ import {
 
 /**
  * The 26 entity types the official framework exposes as Custom Properties
- * cards (GlobalSettingsClassBase.ts:748-986, pin a3012259ca), in rendered
- * label order (`localeCompare`, as official sorts at :986). This module is
+ * cards (GlobalSettingsClassBase.ts:748-986, pin a3012259ca). This module is
  * the single definition of the list: the Settings Hub and the custom
  * property types list both import it, so the two surfaces cannot drift
  * apart. ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
  *
- * Icons are mapped onto the product's existing ant-design icon set; no
- * official icon asset is introduced. Description copy follows official:
- * 25 items share "Define the custom properties for your {entity} …" with
- * the singular entity label, Columns uses its own column-level message
- * (dashboardDataModel keeps official's plural entity, per the pin).
+ * The authored order is the en-US label order, but it is NOT the display
+ * order: the Hub sorts by rendered label at render time (official sorts at
+ * :986; see sortSettingsItemsByRenderedTitle). Icons are mapped onto the
+ * product's existing ant-design icon set; no official icon asset is
+ * introduced. Description copy follows official: 17 items interpolate the
+ * plural entity label and 8 the singular, Columns uses its own
+ * column-level message. ADR:2026-11-08-custom-properties-s3-config-write-side.
  */
 export interface CustomPropertyTypeEntry {
   /** Metadata type name, also the detail route's `entityType` param (G-D2 (a)). */

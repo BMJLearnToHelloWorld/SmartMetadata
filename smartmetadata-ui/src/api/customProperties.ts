@@ -133,6 +133,430 @@ function startCase(value: string): string {
     .replace(/^./, (first) => first.toUpperCase());
 }
 
+export { startCase };
+
+/**
+ * Stage 3 write side (Wave 2 G-23): official customPropertyConfig forms,
+ * ported from pin a3012259ca
+ * (`components/discovery/personal-space/Profile/tabs/custom-properties/CustomPropertiesPanel.utils.ts`
+ * + `CustomPropertyFormFields.tsx` + `constants/CustomProperty.constants.ts`
+ * + `constants/regex.constants.ts`). ADR:2026-11-08-custom-properties-s3-config-write-side.
+ */
+
+/** Official CUSTOM_PROPERTY_NAME_REGEX (constants/regex.constants.ts). */
+export const CUSTOM_PROPERTY_NAME_REGEX =
+  /^[A-Za-z0-9][A-Za-z0-9 _\-.,;%#@!'(){}[\]|=+?`]*$/;
+/** Official name maxLength (CustomPropertyFormFields.tsx nameField). */
+export const CUSTOM_PROPERTY_NAME_MAX_LENGTH = 256;
+/** Official PROPERTY_TYPES_WITH_FORMAT. */
+export const PROPERTY_TYPES_WITH_FORMAT = ['date-cp', 'dateTime-cp', 'time-cp'];
+/** Official PROPERTY_TYPES_WITH_ENTITY_REFERENCE. */
+export const PROPERTY_TYPES_WITH_ENTITY_REFERENCE = ['entityReference', 'entityReferenceList'];
+/** Official TABLE_TYPE_CUSTOM_PROPERTY. */
+export const TABLE_TYPE_CUSTOM_PROPERTY = 'table-cp';
+/** Official ENUM_CONFIG_MAX_VISIBLE_VALUES (edit form only). */
+export const ENUM_CONFIG_MAX_VISIBLE_VALUES = 20;
+/** Official RESERVED_TABLE_COLUMN_NAMES. */
+export const RESERVED_TABLE_COLUMN_NAMES = ['__row_id__'];
+/** Official MAX_COLUMNS for the table config (columnsField validate). */
+export const MAX_TABLE_CONFIG_COLUMNS = 3;
+
+/**
+ * Official SUPPORTED_FORMAT_MAP (constants/CustomProperty.constants.ts).
+ * Note the review's "dateTime-cp 9 种" is a miscount: the pin file lists
+ * 8 dateTime formats; this map copies the pin file verbatim.
+ */
+export const SUPPORTED_FORMAT_MAP: Readonly<Record<string, readonly string[]>> = {
+  'date-cp': [
+    'yyyy-MM-dd',
+    'dd MMM yyyy',
+    'MM/dd/yyyy',
+    'dd/MM/yyyy',
+    'dd-MM-yyyy',
+    'yyyyDDD',
+    'd MMMM yyyy',
+  ],
+  'dateTime-cp': [
+    'MMM dd HH:mm:ss yyyy',
+    'yyyy-MM-dd HH:mm:ss',
+    'MM/dd/yyyy HH:mm:ss',
+    'dd/MM/yyyy HH:mm:ss',
+    'dd-MM-yyyy HH:mm:ss',
+    'yyyy-MM-dd HH:mm:ss.SSS',
+    'yyyy-MM-dd HH:mm:ss.SSSSSS',
+    'dd MMMM yyyy HH:mm:ss',
+  ],
+  'time-cp': ['HH:mm:ss'],
+};
+
+/** Official ENTITY_REFERENCE_OPTIONS (16 items, pin order; tag included). */
+export const ENTITY_REFERENCE_TYPES: readonly string[] = [
+  'table',
+  'storedProcedure',
+  'databaseSchema',
+  'database',
+  'dashboard',
+  'dashboardDataModel',
+  'pipeline',
+  'topic',
+  'container',
+  'searchIndex',
+  'mlmodel',
+  'glossaryTerm',
+  'tag',
+  'user',
+  'team',
+  'metric',
+];
+
+/** Official ENTITY_REFERENCE_OPTIONS labels (fallback when no i18n key exists). */
+export const ENTITY_REFERENCE_LABELS: Readonly<Record<string, string>> = {
+  table: 'Table',
+  storedProcedure: 'Stored Procedure',
+  databaseSchema: 'Database Schema',
+  database: 'Database',
+  dashboard: 'Dashboard',
+  dashboardDataModel: 'Dashboard DataModel',
+  pipeline: 'Pipeline',
+  topic: 'Topic',
+  container: 'Container',
+  searchIndex: 'Search Index',
+  mlmodel: 'MLmodel',
+  glossaryTerm: 'Glossary Term',
+  tag: 'Tag',
+  user: 'User',
+  team: 'Team',
+  metric: 'Metric',
+};
+
+export interface CustomPropertyTypeFlags {
+  hasEnumConfig: boolean;
+  hasFormatConfig: boolean;
+  hasEntityReferenceConfig: boolean;
+  hasTableTypeConfig: boolean;
+  supportedFormats: readonly string[];
+}
+
+/**
+ * Official getCustomPropertyTypeFlags, taking the type name directly: the
+ * product resolves the name from the selected field-type option, so the
+ * pin's Type[] lookup is unnecessary here.
+ */
+export function getCustomPropertyTypeFlags(propertyTypeName: string): CustomPropertyTypeFlags {
+  return {
+    hasEnumConfig: propertyTypeName === 'enum',
+    hasFormatConfig: PROPERTY_TYPES_WITH_FORMAT.includes(propertyTypeName),
+    hasEntityReferenceConfig: PROPERTY_TYPES_WITH_ENTITY_REFERENCE.includes(propertyTypeName),
+    hasTableTypeConfig: propertyTypeName === TABLE_TYPE_CUSTOM_PROPERTY,
+    supportedFormats: SUPPORTED_FORMAT_MAP[propertyTypeName] ?? [],
+  };
+}
+
+/**
+ * Official property-type dropdown label (CustomPropertyFormFields.tsx):
+ * `sqlQuery` → the SQL query label; otherwise
+ * `startCase(displayName || name with '-cp' removed)`.
+ */
+export function propertyTypeLabel(
+  name: string,
+  displayName: string | undefined,
+  sqlQueryLabel: string,
+): string {
+  if (name === 'sqlQuery') {
+    return sqlQueryLabel;
+  }
+  return startCase((displayName || name).replaceAll('-cp', ''));
+}
+
+export interface CustomPropertyConfigFormValues {
+  enumConfig?: string[];
+  multiSelect?: boolean;
+  formatConfig?: string;
+  entityReferenceConfig?: string[];
+  columns?: string[];
+}
+
+function uniq(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+/**
+ * Official buildCustomPropertyConfig (CustomPropertiesPanel.utils.ts:61-90).
+ * Enum values and columns are deduplicated (official `uniq` semantics).
+ */
+export function buildCustomPropertyConfig(
+  values: CustomPropertyConfigFormValues,
+  flags: CustomPropertyTypeFlags,
+): CustomPropertyConfig | undefined {
+  if (flags.hasEnumConfig) {
+    return {
+      config: {
+        multiSelect: Boolean(values.multiSelect),
+        values: uniq(values.enumConfig ?? []),
+      },
+    };
+  }
+  if (flags.hasFormatConfig && values.formatConfig) {
+    return { config: values.formatConfig };
+  }
+  if (flags.hasEntityReferenceConfig && values.entityReferenceConfig) {
+    return { config: [...values.entityReferenceConfig] };
+  }
+  if (flags.hasTableTypeConfig && values.columns) {
+    return { config: { columns: uniq(values.columns) } };
+  }
+  return undefined;
+}
+
+/** Form values for one custom property (create and edit share the shape). */
+export interface CustomPropertyFormValues extends CustomPropertyConfigFormValues {
+  name: string;
+  displayName: string;
+  description: string;
+  propertyTypeName: string;
+  enumConfig: string[];
+  multiSelect: boolean;
+  formatConfig: string;
+  entityReferenceConfig: string[];
+  columns: string[];
+}
+
+/**
+ * Official toCustomPropertyPayload (CustomPropertiesPanel.utils.ts:92-123):
+ * condition fields stay out of the top level, `propertyType: { id, type:
+ * 'type' }`, `displayName || undefined`, undefined fields omitted. The
+ * product keeps the `name` in propertyType (its existing request shape,
+ * accepted by the server); only the config assembly is new.
+ */
+export function toCustomPropertyPayload(
+  values: CustomPropertyFormValues,
+  propertyType: { id: string; name: string },
+): CreateCustomPropertyRequest {
+  const flags = getCustomPropertyTypeFlags(propertyType.name);
+  const customPropertyConfig = buildCustomPropertyConfig(values, flags);
+  return {
+    name: values.name,
+    description: values.description,
+    propertyType: { id: propertyType.id, type: 'type', name: propertyType.name },
+    ...(values.displayName ? { displayName: values.displayName } : {}),
+    ...(customPropertyConfig ? { customPropertyConfig } : {}),
+  };
+}
+
+export interface CustomPropertyFormIssue {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
+/**
+ * Submit-time validation for the create/edit form, mirroring official
+ * CustomPropertyFormFields rules (required + 256 + name regex +
+ * case-insensitive uniqueness against the type's existing names; enum /
+ * format / entity-reference / columns required when their type is
+ * selected). Values are expected trimmed (the view trims before calling).
+ * Uniqueness is UI-side only: the server still compares case-sensitively
+ * (see the ADR residual). Returns issues in field order; empty means valid.
+ */
+export function validateCustomPropertyForm(
+  values: CustomPropertyFormValues,
+  options: { existingNames: string[]; isEdit: boolean },
+): CustomPropertyFormIssue[] {
+  const issues: CustomPropertyFormIssue[] = [];
+  if (!values.name) {
+    issues.push({ key: 'settings.customProperties.nameRequired' });
+  } else {
+    if (values.name.length > CUSTOM_PROPERTY_NAME_MAX_LENGTH) {
+      issues.push({
+        key: 'settings.customProperties.nameLength',
+        params: { min: 1, max: CUSTOM_PROPERTY_NAME_MAX_LENGTH },
+      });
+    }
+    if (!CUSTOM_PROPERTY_NAME_REGEX.test(values.name)) {
+      issues.push({ key: 'settings.customProperties.nameInvalid' });
+    }
+    if (
+      !options.isEdit &&
+      options.existingNames.some(
+        (existing) => existing.toLowerCase() === values.name.toLowerCase(),
+      )
+    ) {
+      issues.push({ key: 'settings.customProperties.nameExists' });
+    }
+  }
+  if (!values.description) {
+    issues.push({ key: 'settings.customProperties.descriptionRequired' });
+  }
+  if (!values.propertyTypeName) {
+    issues.push({ key: 'settings.customProperties.propertyTypeRequired' });
+    return issues;
+  }
+  const flags = getCustomPropertyTypeFlags(values.propertyTypeName);
+  if (flags.hasEnumConfig && values.enumConfig.length === 0) {
+    issues.push({ key: 'settings.customProperties.enumValuesRequired' });
+  }
+  if (flags.hasFormatConfig) {
+    if (!values.formatConfig) {
+      issues.push({ key: 'settings.customProperties.formatRequired' });
+    } else if (!flags.supportedFormats.includes(values.formatConfig)) {
+      issues.push({ key: 'settings.customProperties.formatInvalid' });
+    }
+  }
+  if (flags.hasEntityReferenceConfig && values.entityReferenceConfig.length === 0) {
+    issues.push({ key: 'settings.customProperties.entityReferenceRequired' });
+  }
+  if (flags.hasTableTypeConfig) {
+    if (values.columns.length === 0) {
+      issues.push({ key: 'settings.customProperties.columnsRequired' });
+    } else {
+      if (values.columns.length > MAX_TABLE_CONFIG_COLUMNS) {
+        issues.push({
+          key: 'settings.customProperties.columnsTooMany',
+          params: { max: MAX_TABLE_CONFIG_COLUMNS },
+        });
+      }
+      const reserved = values.columns.find((column) =>
+        RESERVED_TABLE_COLUMN_NAMES.includes(column),
+      );
+      if (reserved !== undefined) {
+        issues.push({
+          key: 'settings.customProperties.columnReserved',
+          params: { name: reserved },
+        });
+      }
+    }
+  }
+  return issues;
+}
+
+export interface CustomPropertyEditFormValues {
+  displayName: string;
+  description: string;
+  enumConfig: string[];
+  multiSelect: boolean;
+  entityReferenceConfig: string[];
+}
+
+/**
+ * Official getEditFormValues (CustomPropertyEditForm.utils.ts): only the
+ * enum and entity-reference configs are editable; format and table configs
+ * have no edit controls and are left untouched by the edit path.
+ */
+export function getEditFormValues(property: CustomPropertyDef): CustomPropertyEditFormValues {
+  const config = property.customPropertyConfig?.config;
+  const isEnum = property.propertyType === 'enum';
+  const isEntityRef = PROPERTY_TYPES_WITH_ENTITY_REFERENCE.includes(property.propertyType ?? '');
+  const enumConfig =
+    isEnum && config && typeof config === 'object' && !Array.isArray(config)
+      ? config
+      : undefined;
+  return {
+    displayName: property.displayName ?? '',
+    description: property.description ?? '',
+    enumConfig: [...(enumConfig?.values ?? [])],
+    multiSelect: enumConfig?.multiSelect === true,
+    entityReferenceConfig: isEntityRef && Array.isArray(config) ? [...config] : [],
+  };
+}
+
+/** Official CustomPropertyChanges (metadataTypeAPI.ts): the editable fields. */
+export interface CustomPropertyChanges {
+  displayName?: string;
+  description: string;
+  customPropertyConfig?: CustomPropertyConfig;
+}
+
+/**
+ * Official getCustomPropertyChanges (CustomPropertyEditForm.utils.ts):
+ * only the enum and entity-reference configs are edited here; leaving the
+ * config unset for other types keeps a concurrent config change intact.
+ * Entity-reference types are additive: a saved type stays even if dropped
+ * from the selection. An unchanged displayName is undefined, never an
+ * empty-string add op.
+ */
+export function getCustomPropertyChanges(
+  property: CustomPropertyDef,
+  values: CustomPropertyEditFormValues,
+): CustomPropertyChanges {
+  let customPropertyConfig: CustomPropertyConfig | undefined;
+  const isEnum = property.propertyType === 'enum';
+  const isEntityRef = PROPERTY_TYPES_WITH_ENTITY_REFERENCE.includes(property.propertyType ?? '');
+  if (isEnum) {
+    customPropertyConfig = {
+      config: {
+        multiSelect: Boolean(values.multiSelect),
+        values: uniq(values.enumConfig),
+      },
+    };
+  } else if (isEntityRef) {
+    const saved = getEditFormValues(property).entityReferenceConfig;
+    customPropertyConfig = { config: uniq([...saved, ...values.entityReferenceConfig]) };
+  }
+  return {
+    displayName:
+      values.displayName === (property.displayName ?? '')
+        ? undefined
+        : values.displayName,
+    description: values.description,
+    ...(customPropertyConfig ? { customPropertyConfig } : {}),
+  };
+}
+
+/** Key-order-insensitive deep equality for JSON values (undefined keys count as absent). */
+function jsonEquals(a: unknown, b: unknown): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => jsonEquals(item, b[index]))
+    );
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aRecord = a as Record<string, unknown>;
+    const bRecord = b as Record<string, unknown>;
+    const aKeys = Object.keys(aRecord).filter((key) => aRecord[key] !== undefined);
+    const bKeys = Object.keys(bRecord).filter((key) => bRecord[key] !== undefined);
+    return (
+      aKeys.length === bKeys.length &&
+      aKeys.every((key) => jsonEquals(aRecord[key], bRecord[key]))
+    );
+  }
+  return false;
+}
+
+/**
+ * Hand-written equivalent of fast-json-patch `compare` for the three
+ * editable fields (the product has no fast-json-patch dependency and must
+ * not add it): an unchanged field emits no op; a field absent from the
+ * server copy emits `add`, otherwise `replace`.
+ */
+function diffCustomPropertyChanges(
+  property: CustomPropertyDef,
+  changes: CustomPropertyChanges,
+  path: string,
+): JsonPatchOperation[] {
+  const ops: JsonPatchOperation[] = [];
+  (['displayName', 'description', 'customPropertyConfig'] as const).forEach((field) => {
+    const next = changes[field];
+    if (next === undefined) {
+      return;
+    }
+    const current = property[field];
+    if (jsonEquals(current ?? null, next)) {
+      return;
+    }
+    ops.push({
+      op: current === undefined ? 'add' : 'replace',
+      path: `${path}/${field}`,
+      value: next,
+    });
+  });
+  return ops;
+}
+
 /**
  * Official matchesSearch (CustomPropertyTable.utils.ts): name and display
  * name match; description does not participate.
@@ -279,11 +703,11 @@ export const MAX_CUSTOM_PROPERTY_PATCH_ATTEMPTS = 3;
 interface JsonPatchOperation {
   op: string;
   path: string;
-  value?: string;
+  value?: unknown;
 }
 
 /**
- * Official deleteCustomPropertyByName (metadataTypeAPI.ts:126-187), ported
+ * Official patchCustomPropertyByName (metadataTypeAPI.ts:126-187), ported
  * verbatim in semantics. JSON Patch (RFC 6902) cannot address an array
  * element by name, so the patch is built from a fresh copy and addressed by
  * index, guarded by a `test` op on the name: if the list shifted between
@@ -294,9 +718,13 @@ interface JsonPatchOperation {
  * without a usable type body is followed by a re-GET.
  * ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
  */
-export async function deleteCustomPropertyByName(
+async function patchCustomPropertyByName(
   entityType: string,
   propertyName: string,
+  buildOperations: (
+    property: CustomPropertyDef,
+    path: string,
+  ) => JsonPatchOperation[],
 ): Promise<MetadataType | undefined> {
   for (let attempt = 1; ; attempt++) {
     const type = await getMetadataTypeByName(entityType);
@@ -306,12 +734,12 @@ export async function deleteCustomPropertyByName(
       return undefined;
     }
     if (!type.id) {
-      throw new Error('Entity type id is missing; cannot delete the custom property.');
+      throw new Error('Entity type id is missing; cannot patch the custom property.');
     }
     const path = `/customProperties/${index}`;
     const operations: JsonPatchOperation[] = [
       { op: 'test', path: `${path}/name`, value: propertyName },
-      { op: 'remove', path },
+      ...buildOperations(properties[index]!, path),
     ];
     try {
       const raw = await apiRequest<unknown>(
@@ -332,4 +760,35 @@ export async function deleteCustomPropertyByName(
       }
     }
   }
+}
+
+/**
+ * Official deleteCustomPropertyByName (metadataTypeAPI.ts:126-187).
+ * ADR:2026-11-07-custom-properties-s12-hub-allowlist-delete-patch.
+ */
+export async function deleteCustomPropertyByName(
+  entityType: string,
+  propertyName: string,
+): Promise<MetadataType | undefined> {
+  return patchCustomPropertyByName(entityType, propertyName, (_property, path) => [
+    { op: 'remove', path },
+  ]);
+}
+
+/**
+ * Official updateCustomPropertyByName (metadataTypeAPI.ts:189-…): applies
+ * `changes` to the current server copy, so a concurrent edit to the
+ * property's other fields is kept. An `undefined` change is left out (the
+ * hand-written diff emits no op for it). Resolves to `undefined` when the
+ * property no longer exists.
+ * ADR:2026-11-08-custom-properties-s3-config-write-side.
+ */
+export async function updateCustomPropertyByName(
+  entityType: string,
+  propertyName: string,
+  changes: CustomPropertyChanges,
+): Promise<MetadataType | undefined> {
+  return patchCustomPropertyByName(entityType, propertyName, (property, path) =>
+    diffCustomPropertyChanges(property, changes, path),
+  );
 }

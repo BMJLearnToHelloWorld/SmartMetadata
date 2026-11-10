@@ -15,6 +15,7 @@ import {
   CUSTOM_PROPERTY_ENTITY_TYPE_SET,
   CUSTOM_PROPERTY_TYPE_ENTRIES,
 } from './customProperties';
+import { sortSettingsItemsByRenderedTitle } from './hub';
 
 type TypeLabels = Record<string, { label?: string; entity?: string }>;
 
@@ -46,11 +47,58 @@ describe('custom property type entries (official 26)', () => {
     }
   });
 
-  it('lists entries in rendered (en-US) label order, localeCompare', () => {
+  it('sorts entries by rendered label at render time, per locale (R-2)', () => {
     const enTypes = enUS.settings.customProperties.types as TypeLabels;
-    const labels = CUSTOM_PROPERTY_TYPE_ENTRIES.map(
-      (entry) => enTypes[entry.type]?.label ?? '',
+    const zhTypes = zhCN.settings.customProperties.types as TypeLabels;
+    const labelFor =
+      (types: TypeLabels) =>
+      (key: string): string =>
+        types[key.replace('settings.customProperties.types.', '').replace('.label', '')]
+          ?.label ?? '';
+    // Shuffled input: the helper sorts a copy by rendered label and leaves
+    // the input untouched (the authored order is NOT the display order).
+    const shuffled = [...CUSTOM_PROPERTY_TYPE_ENTRIES].reverse();
+    const enSorted = sortSettingsItemsByRenderedTitle(shuffled, labelFor(enTypes));
+    const enLabels = enSorted.map((entry) => enTypes[entry.type]?.label ?? '');
+    expect(enLabels).toEqual([...enLabels].sort((a, b) => a.localeCompare(b)));
+    expect(shuffled).toEqual([...CUSTOM_PROPERTY_TYPE_ENTRIES].reverse());
+    // The zh-CN rendered order differs from the en-US order: sorting must
+    // follow the active locale, not the authored en-US order.
+    const zhSorted = sortSettingsItemsByRenderedTitle(shuffled, labelFor(zhTypes));
+    const zhLabels = zhSorted.map((entry) => zhTypes[entry.type]?.label ?? '');
+    expect(zhLabels).toEqual([...zhLabels].sort((a, b) => a.localeCompare(b)));
+    expect(zhSorted.map((entry) => entry.type)).not.toEqual(
+      enSorted.map((entry) => entry.type),
     );
-    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it('uses the plural entity label for the 17 official plural items (R-1)', () => {
+    const enTypes = enUS.settings.customProperties.types as TypeLabels;
+    expect(enTypes.table?.entity).toBe('Tables');
+    expect(enTypes.storedProcedure?.entity).toBe('Stored procedures');
+    expect(enTypes.dashboard?.entity).toBe('Dashboards');
+    expect(enTypes.pipeline?.entity).toBe('Pipelines');
+    expect(enTypes.topic?.entity).toBe('Topics');
+    expect(enTypes.container?.entity).toBe('Containers');
+    expect(enTypes.mlmodel?.entity).toBe('ML models');
+    expect(enTypes.searchIndex?.entity).toBe('Search indexes');
+    expect(enTypes.chart?.entity).toBe('Charts');
+    expect(enTypes.directory?.entity).toBe('Directories');
+    expect(enTypes.file?.entity).toBe('Files');
+    expect(enTypes.spreadsheet?.entity).toBe('Spreadsheets');
+    expect(enTypes.worksheet?.entity).toBe('Worksheets');
+    expect(enTypes.page?.entity).toBe('Articles');
+    expect(enTypes.team?.entity).toBe('Teams');
+    expect(enTypes.user?.entity).toBe('Users');
+    expect(enTypes.dashboardDataModel?.entity).toBe('Dashboard Data Models');
+    // The 8 singular items stay singular.
+    expect(enTypes.apiCollection?.entity).toBe('API collection');
+    expect(enTypes.apiEndpoint?.entity).toBe('API endpoint');
+    expect(enTypes.dataProduct?.entity).toBe('Data product');
+    expect(enTypes.database?.entity).toBe('Database');
+    expect(enTypes.databaseSchema?.entity).toBe('Database schema');
+    expect(enTypes.metric?.entity).toBe('Metric');
+    expect(enTypes.glossaryTerm?.entity).toBe('Glossary term');
+    expect(enTypes.domain?.entity).toBe('Domain');
   });
 });

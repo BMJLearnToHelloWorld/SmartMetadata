@@ -17,8 +17,8 @@ import SettingsHubView from './SettingsHubView.vue';
 
 const stub = (label: string) => ({ template: `<div>${label}</div>` });
 
-async function mountHub() {
-  const i18n = createTestI18n('en-US');
+async function mountHub(locale: 'en-US' | 'zh-CN' = 'en-US') {
+  const i18n = createTestI18n(locale);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -177,4 +177,28 @@ describe('SettingsHubView', () => {
     expect(wrapper.text()).not.toContain('Ontology');
     expect(wrapper.text()).not.toContain('Knowledge');
   });
+
+  // 20s cap (same load evidence as the first test in this file). R-2: the
+  // custom-properties rows sort by rendered label at render time, so the
+  // zh-CN order differs from the en-US order — the authored en-US order is
+  // not the display order.
+  it('sorts custom-properties rows by rendered label in zh-CN (R-2)', async () => {
+    const { wrapper } = await mountHub('zh-CN');
+    const card = wrapper.find('[data-testid="settings-category-custom-properties"]');
+    expect(card.exists()).toBe(true);
+    const links = card.findAll('a');
+    expect(links).toHaveLength(26);
+    const labels = links.map((link) => link.find('.settings-hub__link-text > span').text());
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
+    const types = links.map((link) =>
+      (link.attributes('data-testid') ?? '').replace(
+        'settings-link-custom-properties-',
+        '',
+      ),
+    );
+    const enTypes = CUSTOM_PROPERTY_TYPE_ENTRIES.map((entry) => entry.type);
+    expect(types).not.toEqual(enTypes);
+    // The zh-CN first row is the API endpoint, not the API collection.
+    expect(types[0]).toBe('apiEndpoint');
+  }, 20000);
 });
