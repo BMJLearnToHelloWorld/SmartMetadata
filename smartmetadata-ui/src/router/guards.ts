@@ -64,11 +64,18 @@ export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements'] as
  * Admin route name -> permission resource for the guard's second
  * line. Only routes with a determined mapping are listed: users and
  * teams are entity resources served by GET /v1/permissions/{resource}
- * (the same client the debugger and the governance views use).
- * Roles, bots, policies, settings, personas, intake/task forms and
- * the permission debugger stay admin-only until their mappings are
- * determined — the debugger in particular is admin-only by design
- * (its debug/user/{username} endpoint is admin-only server-side).
+ * (the same client the debugger and the governance views use), and
+ * the custom-properties routes map to 'type' (G-23 stage 4: the
+ * per-type entity gate on the detail page needs the route to admit
+ * non-admins holding a type grant — without the mapping the guard
+ * would forbid them before they could ever reach the gated buttons;
+ * entry is the existing hasAdminEntryGrant rule, unchanged).
+ * Roles, bots, policies, other settings routes, personas,
+ * intake/task forms and the permission debugger stay admin-only until
+ * their mappings are determined — the debugger in particular is
+ * admin-only by design (its debug/user/{username} endpoint is
+ * admin-only server-side).
+ * ADR:2026-11-10-custom-properties-stage-4-per-type-gate
  */
 export const ADMIN_ROUTE_RESOURCE: Record<string, string> = {
   'admin-users': 'user',
@@ -76,6 +83,8 @@ export const ADMIN_ROUTE_RESOURCE: Record<string, string> = {
   'admin-admins': 'user',
   'admin-teams': 'team',
   'admin-team': 'team',
+  'admin-settings-custom-properties': 'type',
+  'admin-settings-custom-property-type': 'type',
 };
 
 /**
