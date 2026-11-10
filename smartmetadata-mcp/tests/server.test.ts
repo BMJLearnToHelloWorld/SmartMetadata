@@ -84,9 +84,10 @@ describe('MCP server wiring', () => {
     expect(hints.get('search_entities')).toBe(true);
     expect(hints.get('semantic_search')).toBe(true);
     expect(hints.get('shacl_validate')).toBe(true);
+    expect(hints.get('sparql_query')).toBe(true);
     expect(hints.get('create_entity')).toBe(false);
     expect(hints.get('create_conversation')).toBe(false);
-    expect(hints.size).toBe(23);
+    expect(hints.size).toBe(24);
   });
 });
 
@@ -106,7 +107,8 @@ describe('access config (I-D5)', () => {
     expect(exposed).toContain('search_entities');
     expect(exposed).toContain('semantic_search');
     expect(exposed).toContain('shacl_validate');
-    expect(exposed).toHaveLength(18);
+    expect(exposed).toContain('sparql_query');
+    expect(exposed).toHaveLength(19);
   });
 
   it('hides disabled tools by name and warns on unknown names only', () => {
@@ -117,6 +119,27 @@ describe('access config (I-D5)', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toMatch(/no_such_tool/);
     warn.mockRestore();
+  });
+
+  it('hides and refuses sparql_query when disabled by name', async () => {
+    expect(exposedToolNames({ disabledTools: ['sparql_query'] })).not.toContain('sparql_query');
+    expect(toolAccessRefusal('sparql_query', { disabledTools: ['sparql_query'] })).toBe(
+      'sparql_query is disabled on this MCP server',
+    );
+    // Call-time refusal: the access flips after registration, and the
+    // registered handler still refuses with the Batch A wording.
+    const access = { readOnly: false, disabledTools: [] as string[] };
+    const registrar = { registerTool: vi.fn() };
+    registerCatalogTools(registrar, new RestClient(config, vi.fn()), access);
+    const sparqlQuery = registrar.registerTool.mock.calls.find(
+      (call) => call[0] === 'sparql_query',
+    )?.[2] as (
+      args: Record<string, unknown>,
+    ) => Promise<{ isError?: boolean; content: Array<{ text: string }> }>;
+    access.disabledTools = ['sparql_query'];
+    const result = await sparqlQuery({ query: 'SELECT ?s WHERE { ?s a ?t }' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe('sparql_query is disabled on this MCP server');
   });
 
   it('refuses read-only calls first, then disabled calls, with the official wording', () => {
@@ -161,7 +184,7 @@ describe('access config (I-D5)', () => {
     registerCatalogTools(registrar, new RestClient(config, vi.fn()), { readOnly: true });
     const names = registrar.registerTool.mock.calls.map((call) => call[0]);
     expect(names).not.toContain('create_entity');
-    expect(names).toHaveLength(18);
+    expect(names).toHaveLength(19);
 
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ name: 'orders' }), { status: 200 }));
     const readRegistrar = { registerTool: vi.fn() };

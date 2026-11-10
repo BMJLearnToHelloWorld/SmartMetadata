@@ -31,6 +31,8 @@ Secrets come from the environment. Never commit a token.
 | `OM_API_URL` | no | Server origin. Default `http://localhost:8585`. A bare origin is rewritten to `…/api` |
 | `OM_HOST_PORT` | no | Alias for `OM_API_URL` |
 | `OM_TIMEOUT_MS` | no | HTTP timeout. Default `30000`, clamped to 1–120000 |
+| `OM_MCP_READ_ONLY` | no | Read-only mode: `true`/`1` hides the write tools from `tools/list` and refuses their calls. Default off. Read at startup; restart to change |
+| `OM_MCP_DISABLED_TOOLS` | no | Comma-separated tool names to hide and refuse (e.g. `sparql_query,shacl_validate`). Default empty; unknown names only warn. Read at startup; restart to change |
 
 ```bash
 export OM_API_URL=http://localhost:8585

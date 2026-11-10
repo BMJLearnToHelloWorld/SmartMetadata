@@ -297,6 +297,15 @@ function slimDomains(value: unknown): Array<Record<string, unknown>> {
     .map((item) => ({ name: item.name, fqn: item.fullyQualifiedName }));
 }
 
+/**
+ * The caller's full user record. Every caller of this helper issues a fresh
+ * GET: admin identity is a security decision, so it is never cached and
+ * never shared across calls.
+ */
+export async function fetchLoggedInUser(client: RestClient): Promise<Record<string, unknown>> {
+  return client.request<Record<string, unknown>>('/v1/users/loggedInUser');
+}
+
 export async function fetchUserContext(
   client: RestClient,
   args: {
@@ -307,7 +316,7 @@ export async function fetchUserContext(
     ownedFilter: string | undefined;
   },
 ): Promise<Record<string, unknown>> {
-  const user = await client.request<Record<string, unknown>>('/v1/users/loggedInUser');
+  const user = await fetchLoggedInUser(client);
   const identity = identityOf(user);
   const result: Record<string, unknown> = { user: identity };
 
