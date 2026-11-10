@@ -515,6 +515,12 @@ export interface IngestionPipeline {
   deployed?: boolean;
   enabled?: boolean;
   loggerLevel?: string;
+  /**
+   * Latest run statuses, newest first. Only present when the caller
+   * asks for fields=pipelineStatuses (the Platform Health widget's
+   * culprit lookup); the list mapper drops it otherwise.
+   */
+  pipelineStatuses?: PipelineStatus[];
 }
 
 /**
@@ -552,6 +558,17 @@ export interface PipelineStatus {
   timestamp?: number;
   endDate?: number;
   triggeredBy?: string;
+  /** Per-step summaries; a step's failures carry the raw error text. */
+  status?: PipelineStepStatus[];
+}
+
+export interface PipelineStepStatus {
+  name?: string;
+  failures?: PipelineStepFailure[];
+}
+
+export interface PipelineStepFailure {
+  error?: string;
 }
 
 export interface OrchestratorStatus {

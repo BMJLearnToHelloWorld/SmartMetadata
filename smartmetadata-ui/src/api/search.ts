@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { mapSearchResponse } from '@/catalog/searchHits';
+import { asNumber, asRecord } from '@/api/json';
 import type { SearchPage } from '@/types/api';
 import { apiRequest } from './client';
 
@@ -198,4 +199,88 @@ export async function searchAssets(
     },
   });
   return mapSearchResponse(payload);
+}
+
+/**
+ * Field-value aggregation, mirroring official rest/miscAPI.ts
+ * postAggregateFieldOptions / postExactAggregateFieldOptions against POST
+ * /v1/search/aggregate (operationId aggregateSearchRequest, body
+ * AggregationRequest). The wildcard variant wraps fieldValue as
+ * `.*<escaped>.*` (or `'.*'` when absent) for substring matching; the
+ * exact variant posts the body as given — no `.*` wrapping, which would
+ * break an alternation of exact terms. The POST is the operation the
+ * frontend calls; the GET /v1/search/aggregate is getAggregateFields
+ * (query params), a different operation.
+ * ADR:2026-11-08-my-data-thin-clients-aggregate-post
+ */
+export interface AggregateFieldOptionsRequest {
+  query?: string;
+  index?: string;
+  fieldName: string;
+  fieldValue?: string;
+  deleted?: boolean | null;
+  size?: number;
+  sourceFields?: string[];
+  queryText?: string;
+  topHits?: { size?: number; sortField?: string; sortOrder?: 'asc' | 'desc' };
+}
+
+export interface AggregateBucket {
+  key: string;
+  docCount: number;
+}
+
+function toAggregateBody(request: AggregateFieldOptionsRequest): Record<string, unknown> {
+  return {
+    query: request.query,
+    index: request.index,
+    fieldName: request.fieldName,
+    fieldValue: request.fieldValue,
+    deleted: request.deleted ?? undefined,
+    size: request.size,
+    sourceFields: request.sourceFields,
+    queryText: request.queryText,
+    topHits: request.topHits,
+  };
+}
+
+export function postExactAggregateFieldOptions(
+  request: AggregateFieldOptionsRequest,
+): Promise<unknown> {
+  return apiRequest<unknown>('/v1/search/aggregate', {
+    method: 'POST',
+    json: toAggregateBody(request),
+  });
+}
+
+/**
+ * Official miscAPI.ts getAggregations: the response nests buckets under
+ * `aggregations['sterms#<field>'].buckets` with `{key, doc_count}` rows.
+ * The `sterms#` prefix is stripped and only the requested field's
+ * buckets are returned.
+ */
+export function mapAggregateBuckets(payload: unknown, fieldName: string): AggregateBucket[] {
+  const aggregations = asRecord(asRecord(payload)?.aggregations);
+  if (!aggregations) {
+    return [];
+  }
+  for (const [rawName, rawNode] of Object.entries(aggregations)) {
+    const name = rawName.startsWith('sterms#') ? rawName.slice('sterms#'.length) : rawName;
+    if (name !== fieldName) {
+      continue;
+    }
+    const node = asRecord(rawNode);
+    if (!node || !Array.isArray(node.buckets)) {
+      return [];
+    }
+    return node.buckets.flatMap((item) => {
+      const rec = asRecord(item);
+      if (!rec) {
+        return [];
+      }
+      const key = typeof rec.key === 'string' ? rec.key : rec.key !== undefined ? String(rec.key) : '';
+      return key ? [{ key, docCount: asNumber(rec.doc_count) ?? 0 }] : [];
+    });
+  }
+  return [];
 }

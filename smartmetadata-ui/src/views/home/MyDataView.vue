@@ -7,16 +7,14 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Spin } from 'ant-design-vue';
-import { listActivityEvents } from '@/api/activity';
-import { listSystemChartData } from '@/api/dataInsights';
 import { listDomains } from '@/api/domains';
-import { listKpis } from '@/api/kpi';
 import { searchAssets } from '@/api/search';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { searchRouteQuery, type SearchFilters } from '@/catalog/searchQuery';
 import HomeHero from '@/features/home/HomeHero.vue';
-import { insightResultsToSeries } from '@/features/charts/series';
-import { seriesWindow } from '@/features/charts/types';
+import HomeLandingPageHeader from '@/features/home/HomeLandingPageHeader.vue';
+import AnnouncementsRail from '@/features/home/widgets/AnnouncementsRail.vue';
+import CriticalAnnouncements from '@/features/home/widgets/CriticalAnnouncements.vue';
 import {
   EXCLUDED_WIDGET_FQNS,
   LANDING_PAGE_MAX_GRID_SIZE,
@@ -26,10 +24,9 @@ import {
   DEFAULT_LANDING_PAGE_LAYOUT,
   extractSavedLandingLayout,
   normalizeLandingPageLayout,
+  type LandingPageLayoutItem,
 } from '@/features/home/landingPageLayout';
 import {
-  MY_DATA_WIDGET_PLACEHOLDER_META,
-  myDataWidgetSlug,
   resolveMyDataWidget,
   resolveMyDataWidgetBaseKey,
 } from '@/features/home/landingPageWidgets';
@@ -38,61 +35,49 @@ import {
   followedAssetsQuery,
   ownedAssetsQuery,
   scopedSearchQuery,
-  sortCountBuckets,
-  type ActivityFilter,
   type AssetSort,
-  type CountSort,
-  type TotalRangeDays,
 } from '@/features/home/homeQueries';
 import { useAuthStore } from '@/stores/auth';
 import { usePersonaStore } from '@/stores/persona';
-import type { ActivityEvent } from '@/types/collaboration';
-import type { FacetBucket } from '@/catalog/searchFacets';
 import type { SearchHit } from '@/types/api';
-import type { Kpi } from '@/types/kpi';
+import type { FacetBucket } from '@/catalog/searchFacets';
 import type { Domain } from '@/types/governance';
 
 /**
- * The landing page, stage A (REVIEW-W1-5-G11): the official 13-item
- * grid over the persona document's saved layout, normalized by
+ * The landing page (stage B/C, G-11): the official 13-item grid over
+ * the persona document's saved layout, normalized by
  * `normalizeLandingPageLayout`, rendered through the widget registry.
- * Five cells carry existing product capability; eight are honest
- * empty placeholders until stage B builds their components.
+ * Every cell now carries its real widget; the four rewritten cards
+ * (ActivityFeed, DataEstate, TotalDataAssets, KPI) fetch in their own
+ * composables, and only YoursAndFollowed still takes central props.
+ * Above the grid sit the critical-announcements banner (with the
+ * greeting header as its fallback) and the announcements rail.
  *
  * ADR:2026-11-07-my-data-layout-normalization-five-params
  * ADR:2026-11-07-my-data-row-height-non-subdivided
  * ADR:2026-11-07-my-data-right-rail-keeps-home-hero
+ * ADR:2026-11-08-my-data-announcements-rail
+ * ADR:2026-11-08-my-data-greeting-header-home-hero-merge
  *
- * No customize entry lives here (B-1 is stage D), no greeting header
- * is built (the single welcome copy is HomeHero, in the right rail),
- * and no per-user layout is read or written (B-6: per-persona only).
+ * No customize entry lives here (B-1 is stage D), and no per-user
+ * layout is read or written (B-6: per-persona only).
  */
 const router = useRouter();
 const auth = useAuthStore();
 const persona = usePersonaStore();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const loading = ref(false);
 const selectedDomain = ref('');
-const activityFilter = ref<ActivityFilter>('all');
-const dataAssetSort = ref<CountSort>('high');
 const trackedSort = ref<AssetSort>('latest');
-const totalRange = ref<TotalRangeDays>(7);
 
-const activity = ref<ActivityEvent[]>([]);
-const serviceBuckets = ref<FacetBucket[]>([]);
 const serviceChips = ref<FacetBucket[]>([]);
-const entityBuckets = ref<FacetBucket[]>([]);
-const catalogTotal = ref(0);
 const owned = ref<SearchHit[]>([]);
 const followed = ref<SearchHit[]>([]);
 const ownedTotal = ref(0);
 const followedTotal = ref(0);
-const kpis = ref<Kpi[]>([]);
 const domains = ref<Domain[]>([]);
 const domainsUnavailable = ref(false);
-const totalSeries = ref<ReturnType<typeof insightResultsToSeries>>([]);
-const kpiTried = ref(false);
 
 /**
  * The layout gate (condition 3): until the persona document has been
@@ -118,43 +103,16 @@ const renderableLayout = computed(() =>
   layout.value.filter((item) => resolveMyDataWidget(item.i) !== null),
 );
 
-const userName = computed(() => auth.displayName || auth.user?.name || '');
 const domainOptions = computed(() =>
   domains.value.map((domain) => ({
     value: domain.displayName || domain.name,
     label: domain.displayName || domain.name,
   })),
 );
-const sortedServices = computed(() => sortCountBuckets(serviceBuckets.value, dataAssetSort.value));
-const countSortOptions = computed(() => [
-  { value: 'high', label: t('home.sortHighLow') },
-  { value: 'low', label: t('home.sortLowHigh') },
-]);
 const assetSortOptions = computed(() => [
   { value: 'latest', label: t('home.sortLatest') },
   { value: 'name', label: t('home.sortName') },
 ]);
-const rangeOptions = computed(() => [
-  { value: 7, label: t('home.last7Days') },
-  { value: 30, label: t('home.last30Days') },
-]);
-const donutSeries = computed(() =>
-  entityBuckets.value.length
-    ? [{ name: t('home.totalAssets'), points: entityBuckets.value.map((bucket) => ({ label: bucket.key, value: bucket.count })) }]
-    : catalogTotal.value
-      ? [{ name: t('home.totalAssets'), points: [{ label: t('home.totalAssets'), value: catalogTotal.value }] }]
-      : [],
-);
-function formatCount(value: number): string {
-  return new Intl.NumberFormat(locale.value).format(value);
-}
-
-const formattedTotal = computed(() => formatCount(catalogTotal.value));
-const totalAxisLabels = computed(() => {
-  const labels = totalSeries.value.flatMap((series) => series.points.map((point) => point.label));
-  return [...new Set(labels)];
-});
-
 function exploreFilters(extra: SearchFilters = {}): SearchFilters {
   return { ...domainFilters(selectedDomain.value), ...extra };
 }
@@ -169,10 +127,6 @@ function onHeroSearch(query: string): void {
 
 function onSelectServiceName(name: string): void {
   goExplore('', { service: [name] });
-}
-
-function onSelectServiceType(serviceType: string): void {
-  goExplore('', { serviceType: [serviceType] });
 }
 
 function openHit(hit: SearchHit): void {
@@ -192,60 +146,23 @@ function openFollowedMore(): void {
   goExplore(query || '');
 }
 
-function openKpiSetup(): void {
-  void router.push({ name: 'insights', query: { tab: 'kpis' } });
-}
-
-function openActivity(event: ActivityEvent): void {
-  const type = event.entity?.type;
-  const fqn = event.entity?.fullyQualifiedName;
-  if (type && fqn) {
-    void router.push(assetLocation(type, fqn));
-  }
-}
-
-function onActivityFilter(value: unknown): void {
-  activityFilter.value = typeof value === 'string' ? value : 'all';
-}
-
-function onDataAssetSort(value: unknown): void {
-  if (value === 'high' || value === 'low') {
-    dataAssetSort.value = value;
-  }
-}
-
 function onTrackedSort(value: unknown): void {
   if (value === 'latest' || value === 'name') {
     trackedSort.value = value;
   }
 }
 
-function onTotalRange(value: unknown): void {
-  if (value === 7 || value === 30) {
-    totalRange.value = value;
-  }
-}
-
-async function loadCharts(days: TotalRangeDays): Promise<void> {
-  const window = seriesWindow(days);
-  try {
-    const data = await listSystemChartData(['total_data_assets'], window.startTs, window.endTs);
-    totalSeries.value = insightResultsToSeries('total_data_assets', data.total_data_assets ?? []);
-  } catch {
-    totalSeries.value = [];
-  }
-}
-
 async function loadLanding(): Promise<void> {
   loading.value = true;
-  kpiTried.value = false;
   const user = auth.user;
   const ownedQuery = ownedAssetsQuery(user);
   const followedQuery = followedAssetsQuery(user);
   const estateQuery = scopedSearchQuery('*', selectedDomain.value);
   try {
-    const [activityPage, estate, ownedPage, followedPage, kpiPage] = await Promise.all([
-      listActivityEvents({ days: 7, limit: 20 }).catch(() => ({ data: [] as ActivityEvent[] })),
+    // The estate search still runs centrally: only its service facet
+    // feeds the HomeHero service chips. ActivityFeed, DataEstate,
+    // TotalDataAssets and KPI fetch their own data now.
+    const [estate, ownedPage, followedPage] = await Promise.all([
       searchAssets(estateQuery, 0, 1).catch(() => ({ total: 0, hits: [], facets: [] })),
       ownedQuery
         ? searchAssets(scopedSearchQuery(ownedQuery, selectedDomain.value), 0, 15).catch(() => ({
@@ -261,20 +178,13 @@ async function loadLanding(): Promise<void> {
             facets: [],
           }))
         : Promise.resolve({ total: 0, hits: [], facets: [] }),
-      listKpis({ limit: 20 }).catch(() => ({ data: [] as Kpi[] })),
     ]);
-    activity.value = activityPage.data;
-    catalogTotal.value = estate.total;
-    serviceBuckets.value = estate.facets.find((facet) => facet.id === 'serviceType')?.buckets ?? [];
     serviceChips.value = (estate.facets.find((facet) => facet.id === 'service')?.buckets ?? []).slice(0, 6);
-    entityBuckets.value = estate.facets.find((facet) => facet.id === 'entityType')?.buckets ?? [];
     owned.value = ownedPage.hits;
     ownedTotal.value = ownedPage.total;
     followed.value = followedPage.hits;
     followedTotal.value = followedPage.total;
-    kpis.value = kpiPage.data;
   } finally {
-    kpiTried.value = true;
     loading.value = false;
   }
 }
@@ -301,7 +211,6 @@ onMounted(async () => {
   }
   void loadDomains();
   void loadLanding();
-  void loadCharts(totalRange.value);
 });
 
 watch(selectedDomain, () => {
@@ -310,25 +219,15 @@ watch(selectedDomain, () => {
   }
 });
 
-watch(totalRange, (days) => {
-  void loadCharts(days);
-});
-
-/** Props for the widget in a grid cell, by registry base key. */
-function widgetProps(baseKey: string): Record<string, unknown> {
+/**
+ * Props for the widget in a grid cell. Every self-fetching widget
+ * takes its instance key (`widgetKey`); CuratedAssets additionally
+ * reads its saved config off the layout by that key. Only
+ * YoursAndFollowed still takes central props.
+ */
+function widgetProps(item: LandingPageLayoutItem): Record<string, unknown> {
+  const baseKey = resolveMyDataWidgetBaseKey(item.i);
   switch (baseKey) {
-    case LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED:
-      return { events: activity.value, filter: activityFilter.value };
-    case LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE:
-      return { services: sortedServices.value, sort: dataAssetSort.value, sortOptions: countSortOptions.value };
-    case LANDING_PAGE_WIDGET_KEYS.TOTAL_DATA_ASSETS:
-      return {
-        total: formattedTotal.value,
-        series: donutSeries.value,
-        axisLabels: totalAxisLabels.value,
-        range: totalRange.value,
-        rangeOptions: rangeOptions.value,
-      };
     case LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED:
       return {
         owned: owned.value,
@@ -338,12 +237,10 @@ function widgetProps(baseKey: string): Record<string, unknown> {
         sort: trackedSort.value,
         sortOptions: assetSortOptions.value,
       };
-    case LANDING_PAGE_WIDGET_KEYS.KPI:
-      return { kpis: kpis.value, tried: kpiTried.value };
-    default: {
-      const meta = MY_DATA_WIDGET_PLACEHOLDER_META[baseKey];
-      return { title: meta ? t(meta.titleKey) : baseKey, slug: myDataWidgetSlug(baseKey) };
-    }
+    case LANDING_PAGE_WIDGET_KEYS.CURATED_ASSETS:
+      return { widgetKey: item.i, currentLayout: layout.value };
+    default:
+      return { widgetKey: item.i };
   }
 }
 
@@ -352,19 +249,6 @@ type WidgetListener = (payload?: unknown) => void;
 /** Event listeners for the widget in a grid cell, by registry base key. */
 function widgetListeners(baseKey: string): Record<string, WidgetListener> {
   switch (baseKey) {
-    case LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED:
-      return {
-        'change-filter': (value) => onActivityFilter(value),
-        'open-activity': (value) => openActivity(value as ActivityEvent),
-        explore: () => goExplore(),
-      };
-    case LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE:
-      return {
-        'change-sort': (value) => onDataAssetSort(value),
-        'select-service-type': (value) => onSelectServiceType(String(value)),
-      };
-    case LANDING_PAGE_WIDGET_KEYS.TOTAL_DATA_ASSETS:
-      return { 'change-range': (value) => onTotalRange(value) };
     case LANDING_PAGE_WIDGET_KEYS.YOURS_AND_FOLLOWED:
       return {
         'change-sort': (value) => onTrackedSort(value),
@@ -373,8 +257,6 @@ function widgetListeners(baseKey: string): Record<string, WidgetListener> {
         'open-followed-more': () => openFollowedMore(),
         explore: () => goExplore(),
       };
-    case LANDING_PAGE_WIDGET_KEYS.KPI:
-      return { 'setup-kpi': () => openKpiSetup() };
     default:
       return {};
   }
@@ -396,6 +278,14 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
     </div>
     <Spin v-else :spinning="loading">
       <div class="my-data__scroll">
+        <div class="my-data__top">
+          <CriticalAnnouncements>
+            <template #fallback>
+              <HomeLandingPageHeader />
+            </template>
+          </CriticalAnnouncements>
+          <AnnouncementsRail />
+        </div>
         <div class="my-data__grid">
           <div
             class="my-data__widgets"
@@ -411,7 +301,7 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
             >
               <component
                 :is="resolveMyDataWidget(item.i)"
-                v-bind="widgetProps(resolveMyDataWidgetBaseKey(item.i))"
+                v-bind="widgetProps(item)"
                 v-on="widgetListeners(resolveMyDataWidgetBaseKey(item.i))"
               />
             </div>
@@ -419,7 +309,6 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
           <div class="my-data__rail">
             <HomeHero
               class="home-area home-area--welcome"
-              :user-name="userName"
               :domains="domainOptions"
               :selected-domain="selectedDomain"
               :service-chips="serviceChips"
@@ -471,6 +360,15 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
   overflow-y: auto;
   overflow-x: hidden;
 }
+.my-data__top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.my-data__top:empty {
+  display: none;
+}
 .my-data__grid {
   display: grid;
   min-height: 0;
@@ -519,7 +417,16 @@ function cellStyle(item: { x: number; y: number }): Record<string, string> {
   .my-data__scroll {
     overflow: visible;
   }
-  .my-data__grid {
+  .my-data__top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.my-data__top:empty {
+  display: none;
+}
+.my-data__grid {
     grid-template-columns: 1fr;
   }
   .my-data__widgets {

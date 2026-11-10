@@ -85,6 +85,17 @@ const selectedFqn = ref('');
 
 const query = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const filters = computed(() => filtersFromQuery(route.query));
+/**
+ * A saved query filter carried on the URL (CuratedAssets "View all
+ * matches" for a saved advanced filter, and its editor's Explore link).
+ * Official Explore reads the same `queryFilter`/`quickFilter` URL params;
+ * this console's only verified search surface is GET /v1/search/query,
+ * whose `query_filter` string the API already accepts — the value is
+ * passed through verbatim, never composed into the Lucene query.
+ */
+const queryFilter = computed(() =>
+  typeof route.query.query_filter === 'string' ? route.query.query_filter : undefined,
+);
 const page = computed(() => pageFromQuery(route.query.page));
 const showDeleted = computed(() => route.query.showDeleted === 'true');
 const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, shellPreferences.explorePageSize));
@@ -436,6 +447,7 @@ async function runSearch(): Promise<void> {
       sortField: currentSort.value.field,
       sortOrder: currentSort.value.order,
       deleted: showDeleted.value,
+      query_filter: queryFilter.value,
     });
     hits.value = pageResult.hits;
     total.value = pageResult.total;

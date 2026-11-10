@@ -5,44 +5,103 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Empty, Select, Typography } from 'ant-design-vue';
+import { useRouter } from 'vue-router';
 import HomeWidgetCard from '../HomeWidgetCard.vue';
-import { activityLabel, type ActivityFilter } from '../homeQueries';
+import { getMyActivityFeed } from '@/api/activity';
+import { activitySentence } from '@/catalog/activitySentence';
+import { assetLocation } from '@/catalog/entityRoutes';
+import { useWidgetLoad } from '@/features/home/widgetLoad';
+import { getRelativeTime } from '@/utils/relativeTime';
 import type { ActivityEvent } from '@/types/collaboration';
 
 /**
- * `KnowledgePanel.ActivityFeed` — the existing 7-day activity card,
- * mapped into the landing grid as-is. The official feed is the team
- * activity feed (`getMyActivityFeed`); the "mine vs team" scope
- * difference is a stage-B residual (REVIEW-W1-5-G11 §2-12 row 6), so
- * this widget keeps the current scope and copy and must not be read
- * as the official component.
+ * What changed recently on the assets this user, or one of their teams,
+ * owns — the scope of the `my-feed` endpoint. A port of official
+ * `TeamActivityWidget`. The product's own event-type filter dropdown is
+ * removed (condition 12, closing R-W15-4): the feed is the viewer's
+ * own, unfiltered.
+ * ADR:2026-11-08-my-data-activity-feed
  */
-const props = defineProps<{
-  events: ActivityEvent[];
-  filter: ActivityFilter;
-}>();
+const props = defineProps<{ widgetKey: string }>();
 
-const emit = defineEmits<{
-  'change-filter': [value: string];
-  'open-activity': [event: ActivityEvent];
-  explore: [];
-}>();
+const { t } = useI18n();
+const router = useRouter();
 
-const { t, locale } = useI18n();
+const TEAM_ACTIVITY_WINDOW_DAYS = 7;
+const TEAM_ACTIVITY_TTL_MS = 60_000;
+/** The card is a digest; the footer link is the full feed. */
+const MAX_VISIBLE_ROWS = 6;
+/**
+ * The feed returns no total, so the count is read off the page itself.
+ * One event past the limit is fetched only to learn that there are
+ * more, which the card then says as "20+" instead of passing the cap
+ * off as the real number.
+ */
+const TEAM_ACTIVITY_COUNT_CAP = 20;
 
-const visibleActivity = computed(() =>
-  props.filter === 'all'
-    ? props.events
-    : props.events.filter((event) => event.eventType === props.filter),
+const loaded = useWidgetLoad(
+  'team-activity',
+  () => getMyActivityFeed({ days: TEAM_ACTIVITY_WINDOW_DAYS, limit: TEAM_ACTIVITY_COUNT_CAP + 1 }),
+  { ttlMs: TEAM_ACTIVITY_TTL_MS },
 );
-const activityOptions = computed(() => [
-  { value: 'all', label: t('home.allActivity') },
-  ...[...new Set(props.events.map((event) => event.eventType))].map((value) => ({
-    value,
-    label: value,
-  })),
-]);
+// Destructured: template unwrapping only applies to top-level setup
+// bindings — `loaded.isLoading` would read the Ref object itself
+// (always truthy) instead of the boolean.
+const isLoading = loaded.isLoading;
+const isError = loaded.isError;
+const refetch = loaded.refetch;
+
+const events = computed(() => loaded.data.value?.data ?? []);
+const count = computed(() => events.value.length);
+const latest = computed(() => events.value[0]);
+const visibleEvents = computed(() => events.value.slice(0, MAX_VISIBLE_ROWS));
+
+// The newest event doubles as the card's summary, so a collapsed card
+// still says what actually happened rather than only how much did. With
+// no event there is nothing to summarise; the empty state supplies the
+// header line instead.
+const summary = computed(() => {
+  if (latest.value === undefined) {
+    return undefined;
+  }
+  const relative = latest.value.timestamp
+    ? ` · ${getRelativeTime(latest.value.timestamp)}`
+    : '';
+  return `${sentence(latest.value)}${relative}`;
+});
+
+const status = computed(() =>
+  count.value > 0
+    ? {
+        label:
+          count.value > TEAM_ACTIVITY_COUNT_CAP
+            ? t('home.countPlusUpdates', { count: TEAM_ACTIVITY_COUNT_CAP })
+            : t('home.countUpdates', { count: count.value }),
+        tone: 'default' as const,
+      }
+    : undefined,
+);
+
+const meta = computed(() =>
+  count.value > 0
+    ? t('home.activityOnOwnedAssets', { count: TEAM_ACTIVITY_WINDOW_DAYS })
+    : undefined,
+);
+
+// Quiet is not a setup problem — activity arrives on its own — so there
+// is nothing to configure and no call to action.
+const emptyState = computed(() =>
+  count.value === 0
+    ? {
+        title: t('home.allQuietInYourDomains'),
+        description: t('home.teamActivityEmptyDescription'),
+      }
+    : undefined,
+);
+
+function sentence(event: ActivityEvent): string {
+  return activitySentence(event, (key, params) => t(key, params ?? {}));
+}
 
 function actorName(event: ActivityEvent): string {
   return event.actor?.displayName || event.actor?.name || '';
@@ -52,66 +111,53 @@ function actorInitial(event: ActivityEvent): string {
   return (actorName(event) || event.eventType || '?').slice(0, 1).toUpperCase();
 }
 
-function relativeTime(timestamp?: number): string {
-  if (!timestamp) {
-    return '';
+function openActivity(event: ActivityEvent): void {
+  const type = event.entity?.type;
+  const fqn = event.entity?.fullyQualifiedName;
+  if (type && fqn) {
+    void router.push(assetLocation(type, fqn));
   }
-  const rtf = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' });
-  const delta = timestamp - Date.now();
-  const days = Math.round(delta / 86_400_000);
-  if (Math.abs(days) >= 1) {
-    return rtf.format(days, 'day');
-  }
-  const hours = Math.round(delta / 3_600_000);
-  if (Math.abs(hours) >= 1) {
-    return rtf.format(hours, 'hour');
-  }
-  return rtf.format(Math.round(delta / 60_000), 'minute');
 }
 
-function onFilter(value: unknown): void {
-  emit('change-filter', typeof value === 'string' ? value : 'all');
+function viewAllActivity(): void {
+  void router.push({ name: 'activity' });
 }
 </script>
 
 <template>
-  <HomeWidgetCard :title="t('home.activity')" test-id="home-widget-activity-feed">
+  <HomeWidgetCard
+    :title="t('home.activity')"
+    :test-id="`home-widget-${props.widgetKey}`"
+    :is-loading="isLoading"
+    :is-error="isError"
+    :status="status"
+    :summary="summary"
+    :meta="meta"
+    :empty-state="emptyState"
+    @retry="refetch"
+  >
     <template #extra>
-      <Select
-        data-testid="home-activity-filter"
-        size="small"
-        :value="filter"
-        :options="activityOptions"
-        :bordered="false"
-        @change="onFilter"
-      />
+      <button type="button" class="home-widget-card__link" @click="viewAllActivity">
+        {{ t('home.viewAllActivity') }}
+      </button>
     </template>
-    <Empty
-      v-if="!visibleActivity.length"
-      data-testid="home-activity-empty"
-      :description="t('home.activityEmptyTitle')"
-    >
-      <template #description>
-        <Typography.Title :level="5">{{ t('home.activityEmptyTitle') }}</Typography.Title>
-        <Typography.Paragraph type="secondary">{{ t('home.activityEmpty') }}</Typography.Paragraph>
-      </template>
-      <Button data-testid="home-explore-assets" @click="emit('explore')">{{ t('home.exploreAssets') }}</Button>
-    </Empty>
-    <ul v-else class="home-list" data-testid="home-activity-list">
-      <li v-for="event in visibleActivity" :key="event.id">
+    <ul class="home-list" data-testid="home-activity-list">
+      <li v-for="event in visibleEvents" :key="event.id">
         <button
           type="button"
           class="feed"
           :data-testid="`home-activity-row-${event.id}`"
-          @click="emit('open-activity', event)"
+          @click="openActivity(event)"
         >
           <span class="feed__top">
             <span class="feed__avatar">{{ actorInitial(event) }}</span>
-            <span class="feed__name">{{ actorName(event) }}</span>
-            <span class="feed__time">{{ relativeTime(event.timestamp) }}</span>
+            <span class="feed__sentence">
+              {{ sentence(event) }}
+            </span>
+            <span v-if="event.timestamp" class="feed__time">
+              {{ getRelativeTime(event.timestamp) }}
+            </span>
           </span>
-          <span class="feed__tag">{{ event.eventType }}</span>
-          <span class="feed__body">{{ activityLabel(event) }}</span>
         </button>
       </li>
     </ul>
@@ -154,28 +200,19 @@ function onFilter(value: unknown): void {
   color: var(--sm-color-success-text);
   font-size: 12px;
   font-weight: 700;
+  flex-shrink: 0;
 }
-.feed__name {
-  font-weight: 600;
+.feed__sentence {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 .feed__time {
   margin-left: auto;
   color: var(--sm-text-tertiary);
   font-size: 12px;
-}
-.feed__tag {
-  align-self: flex-start;
-  margin: 8px 0 8px 36px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--sm-bg-elevated);
-  color: var(--sm-text-secondary);
-  font-size: 12px;
-}
-.feed__body {
-  margin-left: 36px;
-  padding: 10px 12px;
-  border: 1px solid var(--sm-home-card-border);
-  border-radius: var(--sm-radius-card);
+  flex-shrink: 0;
 }
 </style>

@@ -148,6 +148,8 @@ export interface CatalogPipelineStatus {
   executionStatus: string;
   executionId?: string;
   endTime?: number;
+  /** Error details when the execution failed (official PipelineStatus.error). */
+  error?: { errorMessage?: string };
   taskStatus: PipelineTaskStatus[];
 }
 

@@ -38,7 +38,7 @@ export interface NormalizedTaskSuggestion {
   isSuggestionEmpty: boolean;
 }
 
-function parseTagFqns(value: unknown): string[] {
+export function parseTagFqns(value: unknown): string[] {
   if (!value) {
     return [];
   }
@@ -64,7 +64,7 @@ function parseTagFqns(value: unknown): string[] {
   return [];
 }
 
-function asStringOrUndefined(value: unknown): string | undefined {
+export function asStringOrUndefined(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 

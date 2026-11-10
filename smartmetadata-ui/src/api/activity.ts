@@ -188,3 +188,18 @@ export async function removeActivityReaction(id: string, reactionType: string): 
   );
   return requireActivityEvent(raw, 'Remove activity reaction');
 }
+
+/**
+ * Official activityAPI.getMyActivityFeed (rest/activityAPI.ts): GET
+ * /v1/activity/my-feed — the viewer's own feed, newest first. The
+ * ActivityFeed widget reads this, never the generic /v1/activity list
+ * (REVIEW-W2-G11-BC condition 12, closing R-W15-4).
+ */
+export function getMyActivityFeed(query: { days?: number; limit?: number } = {}): Promise<Paged<ActivityEvent>> {
+  return apiRequest<unknown>('/v1/activity/my-feed', {
+    query: {
+      days: query.days ?? 7,
+      limit: query.limit ?? 21,
+    },
+  }).then((payload) => parsePaged(payload, mapActivityEvent));
+}

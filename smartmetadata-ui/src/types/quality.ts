@@ -107,6 +107,8 @@ export interface TestCase {
   testCaseResult?: TestCaseResult;
   testCaseStatus?: string;
   incidentId?: string;
+  /** Incident workflow state riding on the row (official fields list). */
+  incidentStatus?: string;
   owners?: EntityRef[];
   /** Columns to group results by dimensions (testCase.json dimensionColumns). */
   dimensionColumns?: string[];

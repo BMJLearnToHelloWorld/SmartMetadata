@@ -187,6 +187,15 @@ export interface CollaborationTask {
    * ADR:2026-11-08-context-center-memory-conflict-review-payload
    */
   reviewPayload?: MemoryConflictReviewPayload;
+  /**
+   * Raw server payload for non-DataAccessRequest tasks. The legacy
+   * approve path echoes it back (official buildLegacyResolution /
+   * getEditableTaskPayload, no form schema on the card), so the card
+   * must not lose it in mapping — a suggestion approve with an empty
+   * payload would apply a blank. DataAccessRequest tasks keep the
+   * typed `payload` above; this record is not duplicated for them.
+   */
+  rawPayload?: Record<string, unknown>;
   availableTransitions?: TaskAvailableTransition[];
 }
 
@@ -235,6 +244,17 @@ export interface Announcement {
   startTime?: number;
   endTime?: number;
   announcementStatus?: string;
+  /** Author name, for the card footer (official AnnouncementEntity.createdBy). */
+  createdBy?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  /**
+   * Custom-type display name and badge color (openmetadata-spec
+   * schema/entity/feed/announcement.json). Only meaningful when
+   * type is Custom; the announcement card renders them there.
+   */
+  customTypeName?: string;
+  color?: string;
 }
 
 export interface CreateAnnouncementRequest {

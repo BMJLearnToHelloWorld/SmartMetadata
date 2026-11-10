@@ -86,6 +86,13 @@ describe('permissions API', () => {
     expect(permission.permissions[0]?.operation).toBe('ViewAll');
   });
 
+  it('derives hasViewAccess as ViewAll || ViewBasic (official getDerivedPermissionFlags)', () => {
+    expect(permissionFlags({ ViewAll: true }).hasViewAccess).toBe(true);
+    expect(permissionFlags({ ViewBasic: true }).hasViewAccess).toBe(true);
+    expect(permissionFlags({ Create: true }).hasViewAccess).toBe(false);
+    expect(permissionFlags({}).hasViewAccess).toBe(false);
+  });
+
   it('reads an entity permission by id from GET /v1/permissions/{resource}/{id}', async () => {
     vi.stubGlobal(
       'fetch',

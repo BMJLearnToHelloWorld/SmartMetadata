@@ -53,16 +53,24 @@ export function toOperationPermissions(
   return result;
 }
 
-/** Derived write flags, mirroring official getDerivedPermissionFlags usage. */
+/**
+ * Derived flags, mirroring official `getDerivedPermissionFlags` usage.
+ * `hasViewAccess` is the official formula `ViewAll || ViewBasic`
+ * (REVIEW-W2-G11-BC condition 5): PlatformHealth checks it before
+ * issuing any request, so a viewer without it never triggers a
+ * service-overview fetch and only renders the no-permission card.
+ */
 export function permissionFlags(ops: OperationPermissions): {
   canCreate: boolean;
   canEditAll: boolean;
   canDelete: boolean;
+  hasViewAccess: boolean;
 } {
   return {
     canCreate: ops.Create === true,
     canEditAll: ops.EditAll === true,
     canDelete: ops.Delete === true,
+    hasViewAccess: ops.ViewAll === true || ops.ViewBasic === true,
   };
 }
 

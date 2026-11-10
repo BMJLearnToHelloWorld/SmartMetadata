@@ -61,6 +61,35 @@ describe('route guards', () => {
     expect(isAdminPath('/my-data')).toBe(false);
   });
 
+  it('recognizes the announcements management list as admin-only (B-7)', () => {
+    expect(isAdminPath('/announcements')).toBe(true);
+    expect(isAdminPath('/announcements/duplicate/abc')).toBe(true);
+    // The home announcement rail is a read-only view on /my-data,
+    // not an admin route, and stays open to any signed-in user.
+    expect(isAdminPath('/my-data')).toBe(false);
+  });
+
+  it('forbids the announcements list for non-admins, admits admins', () => {
+    expect(
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/announcements' }),
+    ).toEqual({ kind: 'forbidden' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/announcements/duplicate/abc',
+      }),
+    ).toEqual({ kind: 'forbidden' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/announcements',
+        isAdminUser: true,
+      }),
+    ).toEqual({ kind: 'allow' });
+  });
+
   it('maps only user/team admin routes to a permission resource', () => {
     expect(ADMIN_ROUTE_RESOURCE['admin-users']).toBe('user');
     expect(ADMIN_ROUTE_RESOURCE['admin-user']).toBe('user');

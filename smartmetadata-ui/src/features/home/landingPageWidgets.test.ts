@@ -10,7 +10,6 @@
 import { describe, expect, it } from 'vitest';
 import { LANDING_PAGE_WIDGET_KEYS, MY_DATA_WIDGET_KEYS } from './landingPageLayout';
 import {
-  MY_DATA_WIDGET_PLACEHOLDER_META,
   MY_DATA_WIDGET_REGISTRY_KEYS,
   myDataWidgetSlug,
   resolveMyDataWidget,
@@ -46,18 +45,11 @@ describe('landing page widget registry', () => {
     expect(resolveMyDataWidgetBaseKey('KnowledgePanel.Foo')).toBe('KnowledgePanel.Foo');
   });
 
-  it('gives every stage-B placeholder a slug and a title key', () => {
-    const placeholders = Object.keys(MY_DATA_WIDGET_PLACEHOLDER_META);
-    expect(placeholders).toHaveLength(8);
-    for (const key of placeholders) {
-      expect(MY_DATA_WIDGET_KEYS).toContain(key);
-      const meta = MY_DATA_WIDGET_PLACEHOLDER_META[key];
-      expect(meta.slug).toMatch(/^[a-z0-9-]+$/);
-      expect(meta.titleKey.startsWith('home.')).toBe(true);
-    }
+  it('derives the test-id slug from the widget key', () => {
     expect(myDataWidgetSlug(LANDING_PAGE_WIDGET_KEYS.KNOWLEDGE_CENTER)).toBe(
       'knowledge-center',
     );
     expect(myDataWidgetSlug(LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED)).toBe('activity-feed');
+    expect(myDataWidgetSlug(LANDING_PAGE_WIDGET_KEYS.DATA_PRODUCTS)).toBe('data-products');
   });
 });

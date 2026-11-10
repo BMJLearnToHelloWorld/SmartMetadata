@@ -163,3 +163,25 @@ export function deleteDomain(id: string, options: DeleteEntityOptions = {}): Pro
     query: { hardDelete: options.hardDelete, recursive: options.recursive },
   });
 }
+
+/**
+ * Official domainAPI.getAllDomainsWithAssetsCount
+ * (rest/domainAPI.ts): GET /v1/domains/assets/counts, a whole-table
+ * Map<fqn, count> — the Domains widget reads counts from here, never
+ * by paging the domain list.
+ */
+export async function getAllDomainsWithAssetsCount(): Promise<Record<string, number>> {
+  const payload = await apiRequest<unknown>('/v1/domains/assets/counts');
+  const root = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  const out: Record<string, number> = {};
+  if (root) {
+    for (const [key, value] of Object.entries(root)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        out[key] = value;
+      }
+    }
+  }
+  return out;
+}

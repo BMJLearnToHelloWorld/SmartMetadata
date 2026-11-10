@@ -91,6 +91,8 @@ export interface ListAnnouncementsQuery {
   status?: string;
   active?: boolean;
   system?: boolean;
+  /** Announcement type filter (Critical, Notice, Warning, Deprecation, Custom). */
+  type?: string;
 }
 
 function mapAnnouncement(raw: Record<string, unknown>): Announcement | null {
@@ -108,6 +110,11 @@ function mapAnnouncement(raw: Record<string, unknown>): Announcement | null {
     startTime: asNumber(raw.startTime),
     endTime: asNumber(raw.endTime),
     announcementStatus: asString(raw.announcementStatus) || undefined,
+    customTypeName: asString(raw.customTypeName) || undefined,
+    color: asString(raw.color) || undefined,
+    createdBy: asString(raw.createdBy) || undefined,
+    createdAt: asNumber(raw.createdAt),
+    updatedAt: asNumber(raw.updatedAt),
   };
 }
 
@@ -120,6 +127,7 @@ export function listAnnouncements(query: ListAnnouncementsQuery = {}): Promise<P
       status: query.status,
       active: query.active,
       system: query.system,
+      type: query.type,
     },
   }).then((payload) => parsePaged(payload, mapAnnouncement));
 }

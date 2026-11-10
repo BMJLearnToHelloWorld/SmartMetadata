@@ -16,7 +16,6 @@ import HomeHero from './HomeHero.vue';
 function mountHero(props: Record<string, unknown> = {}) {
   return mount(HomeHero, {
     props: {
-      userName: 'admin',
       domains: [{ value: 'finance', label: 'Finance' }],
       selectedDomain: '',
       serviceChips: [{ key: 'try_min2', count: 3 }],
@@ -27,9 +26,10 @@ function mountHero(props: Record<string, unknown> = {}) {
 }
 
 describe('HomeHero', () => {
-  it('greets the user and emits search, domain, and service-chip actions', async () => {
+  it('has no welcome copy (D-2: the greeting header owns the welcome) and emits search, domain, and service-chip actions', async () => {
     const wrapper = mountHero();
-    expect(wrapper.get('[data-testid="home-hero-welcome"]').text()).toBe('Welcome, admin!');
+    expect(wrapper.find('[data-testid="home-hero-welcome"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="home-hero-search"]').exists()).toBe(true);
     const input = wrapper.get('[data-testid="home-hero-search"]');
     expect(input.attributes('placeholder')).toBe('Search tables, databases, fields…');
     await input.setValue('orders');

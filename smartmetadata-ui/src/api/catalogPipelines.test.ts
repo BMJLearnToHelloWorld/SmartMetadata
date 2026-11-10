@@ -40,6 +40,25 @@ describe('catalog pipeline mappers', () => {
       taskStatus: [{ name: 'extract', executionStatus: 'Successful' }],
     });
   });
+
+  it('keeps the failure error message and drops an empty error', () => {
+    expect(
+      mapCatalogPipelineStatus({
+        timestamp: 1700000000000,
+        executionStatus: 'Failed',
+        error: { errorMessage: 'connection refused' },
+        taskStatus: [],
+      })?.error,
+    ).toEqual({ errorMessage: 'connection refused' });
+    expect(
+      mapCatalogPipelineStatus({
+        timestamp: 1700000000000,
+        executionStatus: 'Failed',
+        error: {},
+        taskStatus: [],
+      })?.error,
+    ).toBeUndefined();
+  });
 });
 
 describe('listCatalogPipelineStatuses', () => {

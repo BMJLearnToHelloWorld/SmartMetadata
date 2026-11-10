@@ -33,6 +33,13 @@ export interface LandingPageLayoutItem {
   w: number;
   h: number;
   static: boolean;
+  /**
+   * Per-widget saved config, official WidgetConfig.config. The normalizer
+   * spreads the saved entry, so a config survives normalization; widgets
+   * read it off the layout by key (see CuratedAssetsWidget) — never off a
+   * `widgetConfig` prop.
+   */
+  config?: Record<string, unknown>;
 }
 
 export const LANDING_PAGE_DEFAULT_WIDGET_HEIGHT = 3;

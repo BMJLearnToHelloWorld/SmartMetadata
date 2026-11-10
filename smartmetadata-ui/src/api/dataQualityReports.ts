@@ -182,3 +182,33 @@ export function reportCount(value: string | undefined): number {
   const parsed = asNumber(value);
   return parsed === undefined ? 0 : parsed;
 }
+
+export interface DataQualityReportQuery {
+  q?: string;
+  aggregationQuery: string;
+  index: string;
+  domain?: string;
+}
+
+/**
+ * Official dataQualityDashboardAPI.getDataQualityReport: the single
+ * GET /v1/dataQuality/testSuites/dataQualityReport (aggregationQuery +
+ * index required, q optional). The DataQuality widget's table-count
+ * query is a single GET, not a batch item — a failure there must not
+ * drag the card down (the card isolates it from the count queries).
+ */
+export async function getDataQualityReport(query: DataQualityReportQuery): Promise<DataQualityReport> {
+  const raw = await apiRequest<unknown>('/v1/dataQuality/testSuites/dataQualityReport', {
+    query: {
+      q: query.q,
+      aggregationQuery: query.aggregationQuery,
+      index: query.index,
+      domain: query.domain,
+    },
+  });
+  const report = mapReport(raw);
+  if (!report) {
+    throw new Error('Data quality report succeeded but the response had no report');
+  }
+  return report;
+}

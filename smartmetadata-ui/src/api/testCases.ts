@@ -38,6 +38,10 @@ export interface SearchTestCasesQuery {
   offset?: number;
   testCaseStatus?: string;
   owner?: string;
+  followedBy?: string;
+  testCaseType?: string;
+  /** Fields override; defaults to TEST_CASE_FIELDS (incl. incidentStatus). */
+  fields?: string;
   tags?: string;
   tier?: string;
   dataProductFqn?: string;
@@ -121,6 +125,7 @@ function mapTestCase(raw: Record<string, unknown>): TestCase | null {
     testCaseResult: mapTestCaseResult(raw.testCaseResult),
     testCaseStatus: asString(raw.testCaseStatus) || undefined,
     incidentId: asString(raw.incidentId) || undefined,
+    incidentStatus: asString(raw.incidentStatus) || undefined,
     owners: mapEntityRefs(raw.owners),
     dimensionColumns: Array.isArray(raw.dimensionColumns)
       ? raw.dimensionColumns.filter((item): item is string => typeof item === 'string')
@@ -245,12 +250,14 @@ export async function updateTestCase(body: CreateTestCaseRequest): Promise<TestC
 export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise<Paged<TestCase>> {
   return apiRequest<unknown>('/v1/dataQuality/testCases/search/list', {
     query: {
-      fields: TEST_CASE_FIELDS,
+      fields: query.fields ?? TEST_CASE_FIELDS,
       q: query.q,
       limit: query.limit ?? 25,
       offset: query.offset ?? 0,
       testCaseStatus: query.testCaseStatus,
       owner: query.owner,
+      followedBy: query.followedBy,
+      testCaseType: query.testCaseType,
       tags: query.tags,
       tier: query.tier,
       dataProductFqn: query.dataProductFqn,

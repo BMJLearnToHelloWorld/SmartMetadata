@@ -16,6 +16,7 @@ import {
   toOperationPermissions,
   type OperationPermissions,
 } from '@/api/permissions';
+import { resetWidgetLoadCache } from '@/features/home/widgetLoad';
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { useAuthStore } from './auth';
@@ -44,6 +45,9 @@ export const usePermissionStore = defineStore('permissions', () => {
       principal.value = current;
       resourceCache.value = new Map();
       entityCache.value = new Map();
+      // The My Data widget cache is keyed by widget, not by principal —
+      // a login switch must not serve the previous viewer's rows.
+      resetWidgetLoadCache();
     }
   }
 
@@ -51,6 +55,7 @@ export const usePermissionStore = defineStore('permissions', () => {
     principal.value = undefined;
     resourceCache.value = new Map();
     entityCache.value = new Map();
+    resetWidgetLoadCache();
   }
 
   async function loadLoggedInUserPermissions(): Promise<void> {

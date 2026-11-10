@@ -14,32 +14,94 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import { ApiError } from '@/api/client';
+import { resetWidgetLoadCache } from '@/features/home/widgetLoad';
 import { useAuthStore } from '@/stores/auth';
 import { PERSONA_STORAGE_KEY } from '@/stores/persona';
 import MyDataView from './MyDataView.vue';
 
 const searchAssets = vi.fn();
-const listActivityEvents = vi.fn();
+const postAggregateFieldOptions = vi.fn();
+const getMyActivityFeed = vi.fn();
 const listKpis = vi.fn();
 const listDomains = vi.fn();
+const getAllDomainsWithAssetsCount = vi.fn();
+const getAllDataProductsWithAssetsCount = vi.fn();
 const listSystemChartData = vi.fn();
 const listPersonas = vi.fn();
 const getDocumentByFqn = vi.fn();
+const getServicesOverview = vi.fn();
+const listIngestionPipelines = vi.fn();
+const listMyAssignedTasks = vi.fn();
+const listPipelineSummaries = vi.fn();
+const listKnowledgePages = vi.fn();
+const getDataQualityReport = vi.fn();
+const listTestCasesBySearch = vi.fn();
+const listAnnouncements = vi.fn();
+const getResourcePermission = vi.fn();
 
-vi.mock('@/api/search', () => ({
-  searchAssets: (...args: unknown[]) => searchAssets(...args),
-}));
+vi.mock('@/api/search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/search')>();
+  return {
+    ...actual,
+    searchAssets: (...args: unknown[]) => searchAssets(...args),
+    postAggregateFieldOptions: (...args: unknown[]) => postAggregateFieldOptions(...args),
+    postExactAggregateFieldOptions: (...args: unknown[]) => postAggregateFieldOptions(...args),
+  };
+});
 vi.mock('@/api/activity', () => ({
-  listActivityEvents: (...args: unknown[]) => listActivityEvents(...args),
+  getMyActivityFeed: (...args: unknown[]) => getMyActivityFeed(...args),
 }));
+const fetchAllKpis = vi.fn();
+const listKpiResults = vi.fn();
+
 vi.mock('@/api/kpi', () => ({
   listKpis: (...args: unknown[]) => listKpis(...args),
+  fetchAllKpis: (...args: unknown[]) => fetchAllKpis(...args),
+  listKpiResults: (...args: unknown[]) => listKpiResults(...args),
 }));
 vi.mock('@/api/domains', () => ({
   listDomains: (...args: unknown[]) => listDomains(...args),
+  getAllDomainsWithAssetsCount: (...args: unknown[]) => getAllDomainsWithAssetsCount(...args),
+}));
+vi.mock('@/api/dataProducts', () => ({
+  getAllDataProductsWithAssetsCount: (...args: unknown[]) =>
+    getAllDataProductsWithAssetsCount(...args),
 }));
 vi.mock('@/api/dataInsights', () => ({
   listSystemChartData: (...args: unknown[]) => listSystemChartData(...args),
+}));
+vi.mock('@/api/services', () => ({
+  getServicesOverview: (...args: unknown[]) => getServicesOverview(...args),
+}));
+vi.mock('@/api/ingestionPipelines', () => ({
+  listIngestionPipelines: (...args: unknown[]) => listIngestionPipelines(...args),
+}));
+const resolveTask = vi.fn();
+
+vi.mock('@/api/tasks', () => ({
+  listMyAssignedTasks: (...args: unknown[]) => listMyAssignedTasks(...args),
+  resolveTask: (...args: unknown[]) => resolveTask(...args),
+}));
+vi.mock('@/api/pipelines', () => ({
+  listPipelineSummaries: (...args: unknown[]) => listPipelineSummaries(...args),
+}));
+vi.mock('@/api/contextCenter', () => ({
+  listKnowledgePages: (...args: unknown[]) => listKnowledgePages(...args),
+}));
+vi.mock('@/api/dataQualityReports', () => ({
+  getDataQualityReport: (...args: unknown[]) => getDataQualityReport(...args),
+}));
+vi.mock('@/api/testCases', () => ({
+  listTestCasesBySearch: (...args: unknown[]) => listTestCasesBySearch(...args),
+}));
+vi.mock('@/api/announcements', () => ({
+  listAnnouncements: (...args: unknown[]) => listAnnouncements(...args),
+}));
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({ getResourcePermission }),
+}));
+vi.mock('@/stores/shellConfig', () => ({
+  useShellConfigStore: () => ({ limit: { enable: false }, loadLimitConfig: vi.fn() }),
 }));
 vi.mock('@/api/persona', () => ({
   listPersonas: (...args: unknown[]) => listPersonas(...args),
@@ -113,33 +175,26 @@ function setSelect(wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper'], te
   vm.$emit('update:value', value);
 }
 
-/** The 13 default-layout cells, in layout order, with their titles. */
+/** The 13 default-layout cells, in layout order, with their titles.
+ * Self-fetching widgets carry their layout key in the card test-id
+ * (`home-widget-KnowledgePanel.<Key>`); PlatformHealth and
+ * YoursAndFollowed keep their hardcoded ids. */
 const DEFAULT_CELLS: Array<[string, string]> = [
   ['home-widget-platform-health', 'Platform Health'],
-  ['home-widget-data-estate', 'Data Assets'],
-  ['home-widget-total-data-assets', 'Total Data Assets'],
-  ['home-widget-my-task', 'My Tasks'],
-  ['home-widget-pipeline-status', 'Pipeline Status'],
-  ['home-widget-activity-feed', 'Activity Feed'],
+  ['home-widget-KnowledgePanel.DataEstate', 'Your data estate'],
+  ['home-widget-KnowledgePanel.TotalAssets', 'Total data assets'],
+  ['home-widget-KnowledgePanel.MyTask', 'My tasks'],
+  ['home-widget-KnowledgePanel.PipelineStatus', 'Pipeline status'],
+  ['home-widget-KnowledgePanel.ActivityFeed', 'Activity Feed'],
   ['home-widget-yours-and-followed', 'Yours and Followed'],
-  ['home-widget-knowledge-center', 'Context Center'],
-  ['home-widget-curated-assets', 'Curated Assets'],
-  ['home-widget-data-quality', 'Data Quality'],
-  ['home-widget-domains', 'Domains'],
-  ['home-widget-data-products', 'Data Products'],
-  ['home-widget-kpi', 'KPI'],
+  ['home-widget-KnowledgePanel.KnowledgeCenter', 'Context Center'],
+  ['home-widget-KnowledgePanel.CuratedAssets', 'Curated Assets'],
+  ['home-widget-KnowledgePanel.DataQuality', 'Data Quality'],
+  ['home-widget-KnowledgePanel.Domains', 'Domains'],
+  ['home-widget-KnowledgePanel.DataProducts', 'Data Products'],
+  ['home-widget-KnowledgePanel.KPI', 'KPI'],
 ];
 
-const PLACEHOLDER_SLUGS = [
-  'platform-health',
-  'my-task',
-  'pipeline-status',
-  'knowledge-center',
-  'curated-assets',
-  'data-quality',
-  'domains',
-  'data-products',
-];
 
 function personaRow() {
   return { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' };
@@ -157,17 +212,54 @@ function personaDocumentWithLayout(layout: unknown[]) {
 describe('MyDataView', () => {
   beforeEach(() => {
     localStorage.clear();
+    // The widget-load cache is module-level: a chart fetched by an
+    // earlier test would otherwise serve this test's widgets without
+    // any call, and the range test's first-call window math would read
+    // the wrong window.
+    resetWidgetLoadCache();
     searchAssets.mockReset();
-    listActivityEvents.mockReset();
+    postAggregateFieldOptions.mockReset();
+    getMyActivityFeed.mockReset();
     listKpis.mockReset();
+    fetchAllKpis.mockReset();
+    listKpiResults.mockReset();
+    resolveTask.mockReset();
     listDomains.mockReset();
+    getAllDomainsWithAssetsCount.mockReset();
+    getAllDataProductsWithAssetsCount.mockReset();
     listSystemChartData.mockReset();
     listPersonas.mockReset();
     getDocumentByFqn.mockReset();
-    listActivityEvents.mockResolvedValue({ data: [] });
+    getServicesOverview.mockReset();
+    listIngestionPipelines.mockReset();
+    listMyAssignedTasks.mockReset();
+    listPipelineSummaries.mockReset();
+    listKnowledgePages.mockReset();
+    getDataQualityReport.mockReset();
+    listTestCasesBySearch.mockReset();
+    listAnnouncements.mockReset();
+    getResourcePermission.mockReset();
+    // Every self-fetching widget lands on its empty state: the page
+    // test asserts the 13 real cells render, not their data.
+    postAggregateFieldOptions.mockResolvedValue({ buckets: [] });
+    getMyActivityFeed.mockResolvedValue({ data: [], paging: { total: 0 } });
     listKpis.mockResolvedValue({ data: [] });
+    fetchAllKpis.mockResolvedValue([]);
+    listKpiResults.mockResolvedValue([]);
+    resolveTask.mockResolvedValue({});
     listDomains.mockResolvedValue({ data: [{ name: 'finance', displayName: 'Finance' }] });
+    getAllDomainsWithAssetsCount.mockResolvedValue({});
+    getAllDataProductsWithAssetsCount.mockResolvedValue({});
     listSystemChartData.mockResolvedValue({});
+    getServicesOverview.mockResolvedValue({ total: 0, data: [], healthCounts: {} });
+    listIngestionPipelines.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listMyAssignedTasks.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listPipelineSummaries.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listKnowledgePages.mockResolvedValue({ data: [], paging: { total: 0 } });
+    getDataQualityReport.mockResolvedValue({ aggregations: {} });
+    listTestCasesBySearch.mockResolvedValue({ data: [], paging: { total: 0 } });
+    listAnnouncements.mockResolvedValue({ data: [], paging: { total: 0 } });
+    getResourcePermission.mockResolvedValue({});
     listPersonas.mockResolvedValue({ data: [], paging: { total: 0 } });
     getDocumentByFqn.mockRejectedValue(new ApiError(404, '', 'Not Found'));
     searchAssets.mockImplementation((query: string) => {
@@ -213,9 +305,12 @@ describe('MyDataView', () => {
   // a fresh worker (single-run 1634ms; 5832ms under parallel load,
   // over the 5000ms default). Same precedent as AssetDetailView's
   // per-test 20000ms timeouts for heavy mounts.
-  it('renders the 13-cell default grid: 5 real widgets, 8 honest placeholders', async () => {
+  it('renders the 13-cell default grid: 13 real widgets, no placeholders', async () => {
     const { wrapper } = await mountPage();
-    expect(wrapper.get('[data-testid="home-hero-welcome"]').text()).toBe('Welcome, admin!');
+    // D-2: the single welcome copy is the page-top greeting header;
+    // the hero keeps only search, domain filter and service chips.
+    expect(wrapper.get('[data-testid="home-landing-page-header"]').text()).toContain('Hi Admin');
+    expect(wrapper.find('[data-testid="home-hero-welcome"]').exists()).toBe(false);
     for (const [testId, title] of DEFAULT_CELLS) {
       expect(wrapper.get(`[data-testid="${testId}"]`).text()).toContain(title);
     }
@@ -226,9 +321,6 @@ describe('MyDataView', () => {
         cell.find('[data-testid^="home-widget-"]').attributes('data-testid'),
       ),
     ).toEqual(DEFAULT_CELLS.map(([testId]) => testId));
-    for (const slug of PLACEHOLDER_SLUGS) {
-      expect(wrapper.find(`[data-testid="home-widget-${slug}-empty"]`).exists()).toBe(true);
-    }
     // The retired two-card shape is gone: no My Data / Following cards,
     // no old Data Assets / Activity / Total / Context card ids.
     for (const retired of [
@@ -243,7 +335,10 @@ describe('MyDataView', () => {
       expect(wrapper.find(`[data-testid="${retired}"]`).exists()).toBe(false);
     }
     expect(wrapper.text()).not.toContain('Topics to catch up');
-    expect(wrapper.get('[data-testid="home-total-count"]').text()).toContain('22,686');
+    // No live announcements: the rail stands down, the greeting header
+    // is the only thing above the grid.
+    expect(wrapper.find('[data-testid="announcements-section"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="critical-announcements"]').exists()).toBe(false);
   }, 20000);
 
   it('renders the default layout when there is no persona and never reads a document', async () => {
@@ -285,12 +380,12 @@ describe('MyDataView', () => {
     expect(cells[0]?.attributes('style')).toContain('grid-column: 1');
     expect(cells[0]?.attributes('style')).toContain('grid-row: 1');
     expect(cells[0]?.find('[data-testid^="home-widget-"]').attributes('data-testid')).toBe(
-      'home-widget-kpi',
+      'home-widget-KnowledgePanel.KPI',
     );
     expect(cells[1]?.attributes('style')).toContain('grid-column: 2');
     expect(cells[1]?.attributes('style')).toContain('grid-row: 1');
     expect(cells[1]?.find('[data-testid^="home-widget-"]').attributes('data-testid')).toBe(
-      'home-widget-activity-feed',
+      'home-widget-KnowledgePanel.ActivityFeed',
     );
   });
 
@@ -306,7 +401,8 @@ describe('MyDataView', () => {
     expect(wrapper.find('[data-testid="home-landing-skeleton"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="home-landing-grid"]').exists()).toBe(false);
     expect(searchAssets).not.toHaveBeenCalled();
-    expect(listActivityEvents).not.toHaveBeenCalled();
+    expect(getMyActivityFeed).not.toHaveBeenCalled();
+    expect(getServicesOverview).not.toHaveBeenCalled();
     expect(listKpis).not.toHaveBeenCalled();
     expect(listDomains).not.toHaveBeenCalled();
     expect(listSystemChartData).not.toHaveBeenCalled();
@@ -347,8 +443,14 @@ describe('MyDataView', () => {
       });
     });
     const { wrapper } = await mountPage();
-    expect(wrapper.get('[data-testid="home-activity-empty"]').text()).toContain('No Recent Activity');
-    expect(wrapper.get('[data-testid="home-kpi-empty"]').text()).toContain('Start Tracking What Matters');
+    // The cards render their shell while loading; the empty states
+    // appear once each widget's own fetch resolves.
+    await vi.waitFor(() => {
+      expect(wrapper.get('[data-testid="home-widget-KnowledgePanel.ActivityFeed-empty"]').text()).toContain(
+        'All quiet in your domains',
+      );
+      expect(wrapper.get('[data-testid="home-widget-KnowledgePanel.KPI-empty"]').text()).toContain('No KPIs yet');
+    });
     // Both lists empty: the merged card opens on Owned.
     expect(wrapper.get('[data-testid="home-owned-empty"]').text()).toContain(
       'No owned assets returned for this user.',
@@ -405,20 +507,8 @@ describe('MyDataView', () => {
     expect(followedScoped).toHaveLength(1);
   });
 
-  it('navigates Explore Assets, service tiles, owned rows, and KPI setup', async () => {
+  it('navigates hero service chips and owned rows', async () => {
     const { wrapper, router } = await mountPage();
-    await wrapper.get('[data-testid="home-explore-assets"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('search');
-
-    await router.push({ name: 'home' });
-    await flushPromises();
-    await wrapper.get('[data-testid="home-service-Postgres"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.query).toMatchObject({ serviceType: 'Postgres' });
-
-    await router.push({ name: 'home' });
-    await flushPromises();
     await wrapper.get('[data-testid="home-hero-chip-try_min2"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.query).toMatchObject({ service: 'try_min2' });
@@ -429,16 +519,6 @@ describe('MyDataView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('asset');
     expect(router.currentRoute.value.params).toMatchObject({ entityType: 'table', fqn: 'svc.db.schema.alpha' });
-
-    await router.push({ name: 'home' });
-    await flushPromises();
-    searchAssets.mockImplementation(() => Promise.resolve(emptySearch));
-    listKpis.mockResolvedValue({ data: [] });
-    await wrapper.unmount();
-    const again = await mountPage();
-    await again.wrapper.get('[data-testid="home-setup-kpi"]').trigger('click');
-    await flushPromises();
-    expect(again.router.currentRoute.value).toMatchObject({ name: 'insights', query: { tab: 'kpis' } });
   });
 
   it('opens View more into owned/followed search queries and sorts lists client-side', async () => {
@@ -453,12 +533,6 @@ describe('MyDataView', () => {
     await flushPromises();
     expect(ownedNames()[0]).toContain('zeta');
 
-    const serviceOrder = () => wrapper.findAll('[data-testid^="home-service-"]').map((node) => node.attributes('data-testid'));
-    expect(serviceOrder()[0]).toBe('home-service-Postgres');
-    setSelect(wrapper, 'home-data-assets-sort', 'low');
-    await flushPromises();
-    expect(serviceOrder()[0]).toBe('home-service-Mysql');
-
     await wrapper.get('[data-testid="home-owned-more"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.query.q).toBe('owners.id:"u-1"');
@@ -472,13 +546,36 @@ describe('MyDataView', () => {
     expect(router.currentRoute.value.query.q).toBe('followers:"u-1"');
   });
 
-  it('reloads the total-assets chart when the range control changes', async () => {
+  it('reloads the total-assets chart when the widget range control changes', async () => {
+    // The window select only renders with data: give the live
+    // fallback one entity-type bucket so the card leaves its empty state.
+    postAggregateFieldOptions.mockImplementation((body: unknown) => {
+      const fieldName = (body as { fieldName?: string } | null)?.fieldName;
+      if (fieldName === 'entityType') {
+        return Promise.resolve({
+          aggregations: {
+            'sterms#entityType': { buckets: [{ key: 'table', doc_count: 100 }] },
+          },
+        });
+      }
+      return Promise.resolve({ buckets: [] });
+    });
     const { wrapper } = await mountPage();
-    expect(listSystemChartData).toHaveBeenCalledWith(['total_data_assets'], expect.any(Number), expect.any(Number));
+    await vi.waitFor(() => {
+      expect(
+        wrapper.find('[data-testid="total-data-assets-window-filter"]').exists(),
+      ).toBe(true);
+    });
+    expect(listSystemChartData).toHaveBeenCalledWith(
+      ['total_data_assets', 'percentage_of_data_asset_with_description'],
+      expect.any(Number),
+      expect.any(Number),
+      { strict: true },
+    );
     const firstEnd = listSystemChartData.mock.calls[0]?.[2] as number;
     const firstStart = listSystemChartData.mock.calls[0]?.[1] as number;
     expect(firstEnd - firstStart).toBeCloseTo(7 * 24 * 60 * 60 * 1000, -3);
-    setSelect(wrapper, 'home-total-range', 30);
+    setSelect(wrapper, 'total-data-assets-window-filter', 30);
     await flushPromises();
     const secondStart = listSystemChartData.mock.calls.at(-1)?.[1] as number;
     const secondEnd = listSystemChartData.mock.calls.at(-1)?.[2] as number;

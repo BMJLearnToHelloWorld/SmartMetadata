@@ -22,11 +22,10 @@ import {
  * import(...))`). Matched by prefix, so an instance key carrying a
  * `uniqueId` suffix still resolves.
  *
- * The five keys with existing product capability map to their real
- * widget components; the eight keys whose official components land in
- * stage B map to `WidgetPlaceholder`, an honestly empty cell (official
- * empty state, never fake data). An unknown key resolves to null and
- * renders nothing — never an error, never a blank placeholder cell.
+ * Every key maps to its real widget component (stage B built the
+ * eight that were placeholders in stage A). An unknown key resolves
+ * to null and renders nothing — never an error, never a blank
+ * placeholder cell.
  *
  * ADR:2026-11-07-my-data-layout-normalization-five-params
  */
@@ -36,7 +35,7 @@ export { MY_DATA_WIDGET_KEYS };
 const registry: Array<{ key: string; component: Component }> = [
   {
     key: LANDING_PAGE_WIDGET_KEYS.PLATFORM_HEALTH,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/PlatformHealthWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.DATA_ESTATE,
@@ -48,11 +47,11 @@ const registry: Array<{ key: string; component: Component }> = [
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.MY_TASK,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/MyTasksWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.PIPELINE_STATUS,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/PipelineStatusWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.ACTIVITY_FEED,
@@ -64,23 +63,23 @@ const registry: Array<{ key: string; component: Component }> = [
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.KNOWLEDGE_CENTER,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/KnowledgeCenterWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.CURATED_ASSETS,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/CuratedAssetsWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.DATA_QUALITY,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/DataQualityWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.DOMAINS,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/DomainsOverviewWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.DATA_PRODUCTS,
-    component: defineAsyncComponent(() => import('./widgets/WidgetPlaceholder.vue')),
+    component: defineAsyncComponent(() => import('./widgets/DataProductsOverviewWidget.vue')),
   },
   {
     key: LANDING_PAGE_WIDGET_KEYS.KPI,
@@ -108,53 +107,10 @@ export function resolveMyDataWidgetBaseKey(widgetKey: string): string {
   return getMyDataWidgetBaseKey(widgetKey, MY_DATA_WIDGET_KEYS);
 }
 
-export interface WidgetPlaceholderMeta {
-  slug: string;
-  titleKey: string;
-}
-
-/**
- * Per-key presentation of the eight stage-B placeholders: the test-id
- * slug and the card title. The real widgets carry their own titles;
- * only placeholders need this map. Stage B replaces each entry with
- * its real component and deletes the corresponding row here.
- */
-export const MY_DATA_WIDGET_PLACEHOLDER_META: Readonly<Record<string, WidgetPlaceholderMeta>> = {
-  [LANDING_PAGE_WIDGET_KEYS.PLATFORM_HEALTH]: {
-    slug: 'platform-health',
-    titleKey: 'home.platformHealth',
-  },
-  [LANDING_PAGE_WIDGET_KEYS.MY_TASK]: { slug: 'my-task', titleKey: 'home.widgets.myTasks' },
-  [LANDING_PAGE_WIDGET_KEYS.PIPELINE_STATUS]: {
-    slug: 'pipeline-status',
-    titleKey: 'home.pipelineStatus',
-  },
-  [LANDING_PAGE_WIDGET_KEYS.KNOWLEDGE_CENTER]: {
-    slug: 'knowledge-center',
-    titleKey: 'home.contextCenter',
-  },
-  [LANDING_PAGE_WIDGET_KEYS.CURATED_ASSETS]: {
-    slug: 'curated-assets',
-    titleKey: 'home.curatedAssets',
-  },
-  [LANDING_PAGE_WIDGET_KEYS.DATA_QUALITY]: {
-    slug: 'data-quality',
-    titleKey: 'home.dataQuality',
-  },
-  [LANDING_PAGE_WIDGET_KEYS.DOMAINS]: { slug: 'domains', titleKey: 'home.domains' },
-  [LANDING_PAGE_WIDGET_KEYS.DATA_PRODUCTS]: {
-    slug: 'data-products',
-    titleKey: 'home.dataProducts',
-  },
-};
-
 /** The test-id slug for a widget key (`home-widget-<slug>`). */
 export function myDataWidgetSlug(baseKey: string): string {
-  return (
-    MY_DATA_WIDGET_PLACEHOLDER_META[baseKey]?.slug ??
-    baseKey
-      .replace(/^KnowledgePanel\./, '')
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .toLowerCase()
-  );
+  return baseKey
+    .replace(/^KnowledgePanel\./, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase();
 }

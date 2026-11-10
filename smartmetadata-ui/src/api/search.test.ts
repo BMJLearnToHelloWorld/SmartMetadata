@@ -8,7 +8,15 @@
  *     http://www.apache.org/LICENSE-2.0
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { escapeESReservedCharacters, getNLPEnabledStatus, nlqSearch, postAggregateFieldOptions, searchAssets } from './search';
+import {
+  escapeESReservedCharacters,
+  getNLPEnabledStatus,
+  mapAggregateBuckets,
+  nlqSearch,
+  postAggregateFieldOptions,
+  postExactAggregateFieldOptions,
+  searchAssets,
+} from './search';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -114,6 +122,13 @@ describe('searchAssets', () => {
 });
 
 describe('postAggregateFieldOptions (W2-2 assignee aggregate)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ aggregations: {} })),
+    );
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -164,5 +179,70 @@ describe('postAggregateFieldOptions (W2-2 assignee aggregate)', () => {
     expect(escapeESReservedCharacters('a/b')).toBe('a\\/b');
     expect(escapeESReservedCharacters('plain')).toBe('plain');
     expect(escapeESReservedCharacters(undefined)).toBe('');
+  });
+  it('POSTs to the aggregate endpoint with the wrapped fieldValue', async () => {
+    await postAggregateFieldOptions({
+      query: 'orders',
+      index: 'testCase',
+      fieldName: 'originEntityFQN',
+      fieldValue: 'svc.db+orders',
+    });
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain('/api/v1/search/aggregate');
+    expect(init?.method).toBe('POST');
+    const body = JSON.parse(String(init?.body ?? ''));
+    expect(body.fieldName).toBe('originEntityFQN');
+    // '.' is not a reserved character; '+' is escaped.
+    expect(body.fieldValue).toBe('.*svc.db\\+orders.*');
+  });
+
+  it('defaults an absent fieldValue to the bare wildcard', async () => {
+    await postAggregateFieldOptions({ index: 'testCase', fieldName: 'originEntityFQN' });
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(init?.body ?? '')).fieldValue).toBe('.*');
+  });
+
+  it('sends the exact body when asked for exact options', async () => {
+    await postExactAggregateFieldOptions({
+      index: 'testCase',
+      fieldName: 'originEntityFQN',
+      fieldValue: 'svc.db.orders',
+    });
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(init?.body ?? '')).fieldValue).toBe('svc.db.orders');
+  });
+});
+
+describe('mapAggregateBuckets', () => {
+  it('strips the sterms# prefix and returns key/docCount pairs', () => {
+    expect(
+      mapAggregateBuckets(
+        {
+          aggregations: {
+            'sterms#originEntityFQN': {
+              buckets: [
+                { key: 'svc.db.orders', doc_count: 3 },
+                { key: 'svc.db.customers', doc_count: 1 },
+              ],
+            },
+          },
+        },
+        'originEntityFQN',
+      ),
+    ).toEqual([
+      { key: 'svc.db.orders', docCount: 3 },
+      { key: 'svc.db.customers', docCount: 1 },
+    ]);
+  });
+
+  it('returns an empty list when the field has no buckets', () => {
+    expect(mapAggregateBuckets({ aggregations: {} }, 'originEntityFQN')).toEqual([]);
+  });
+});
+
+describe('escapeESReservedCharacters', () => {
+  it('escapes reserved characters and leaves # unescaped', () => {
+    expect(escapeESReservedCharacters('a+b(c)')).toBe('a\\+b\\(c\\)');
+    expect(escapeESReservedCharacters('a#b')).toBe('a#b');
   });
 });

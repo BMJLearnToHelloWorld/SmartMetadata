@@ -3,23 +3,82 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { Card } from 'ant-design-vue';
+import { Button, Card, Skeleton, Tag } from 'ant-design-vue';
+import { useI18n } from 'vue-i18n';
 
-withDefaults(
+export interface HomeWidgetStatus {
+  label: string;
+  /**
+   * The tones the stage-B cards actually pass: 'warning' for items that
+   * need attention, 'info' for deltas and informational counts,
+   * 'default'/'neutral' for plain counts; 'error'/'success'/'muted' as
+   * before. statusColor maps each to a real antd Tag colour below.
+   */
+  tone: 'error' | 'success' | 'muted' | 'warning' | 'info' | 'default' | 'neutral';
+}
+
+export interface HomeWidgetEmptyState {
+  title: string;
+  description?: string;
+  actionLabel?: string;
+  /** Rule phrase shown above the title (CuratedAssets: the rule being waited on). */
+  summary?: string;
+}
+
+const props = withDefaults(
   defineProps<{
     title: string;
     testId?: string;
+    /**
+     * Official TopicCard states, extended once for all eight stage-B
+     * cards (REVIEW-W2-G11-BC condition 6): loading skeleton, error
+     * with retry, status chip, summary row, empty state. Stage-A
+     * cards pass none of these and render exactly as before.
+     */
+    isLoading?: boolean;
+    isError?: boolean;
+    status?: HomeWidgetStatus;
+    summary?: string;
+    meta?: string;
+    emptyState?: HomeWidgetEmptyState;
   }>(),
   {
     testId: 'home-widget',
+    isLoading: false,
+    isError: false,
   },
 );
+
+const emit = defineEmits<{
+  (event: 'retry'): void;
+  (event: 'empty-action'): void;
+}>();
+
+const { t } = useI18n();
+
+function statusColor(tone: HomeWidgetStatus['tone']): string {
+  switch (tone) {
+    case 'error':
+      return 'error';
+    case 'success':
+      return 'success';
+    case 'warning':
+      return 'warning';
+    case 'info':
+      return 'processing';
+    default:
+      return 'default';
+  }
+}
 </script>
 
 <template>
   <Card :data-testid="testId" class="home-widget-card" :bordered="true">
     <template #title>
       <span class="home-widget-card__title">{{ title }}</span>
+      <Tag v-if="status" :data-testid="`${testId}-status`" :color="statusColor(status.tone)">
+        {{ status.label }}
+      </Tag>
     </template>
     <template #extra>
       <div class="home-widget-card__extra">
@@ -27,7 +86,54 @@ withDefaults(
       </div>
     </template>
     <div class="home-widget-card__body">
-      <slot />
+      <p v-if="summary" :data-testid="`${testId}-summary`" class="home-widget-card__summary">
+        {{ summary }}
+      </p>
+      <div v-if="isLoading" :data-testid="`${testId}-loading`" class="home-widget-card__loading">
+        <Skeleton :paragraph="{ rows: 3 }" active />
+      </div>
+      <div
+        v-else-if="isError"
+        :data-testid="`${testId}-error`"
+        class="home-widget-card__error"
+        role="alert"
+      >
+        <span>{{ t('home.widgetLoadFailed') }}</span>
+        <Button
+          :data-testid="`${testId}-retry`"
+          type="link"
+          size="small"
+          @click="emit('retry')"
+        >
+          {{ t('shared.retry') }}
+        </Button>
+      </div>
+      <div
+        v-else-if="emptyState"
+        :data-testid="`${testId}-empty`"
+        class="home-widget-card__empty"
+      >
+        <p v-if="emptyState.summary" class="home-widget-card__empty-summary">
+          {{ emptyState.summary }}
+        </p>
+        <p class="home-widget-card__empty-title">{{ emptyState.title }}</p>
+        <p v-if="emptyState.description" class="home-widget-card__empty-description">
+          {{ emptyState.description }}
+        </p>
+        <Button
+          v-if="emptyState.actionLabel"
+          :data-testid="`${testId}-empty-action`"
+          type="link"
+          size="small"
+          @click="emit('empty-action')"
+        >
+          {{ emptyState.actionLabel }}
+        </Button>
+      </div>
+      <slot v-else />
+      <p v-if="meta && !isLoading" :data-testid="`${testId}-meta`" class="home-widget-card__meta">
+        {{ meta }}
+      </p>
     </div>
   </Card>
 </template>
@@ -82,5 +188,40 @@ withDefaults(
 }
 .home-widget-card__body {
   min-height: 0;
+}
+.home-widget-card__summary {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--sm-text-secondary);
+}
+.home-widget-card__loading {
+  padding: 4px 0;
+}
+.home-widget-card__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--sm-text-secondary);
+}
+.home-widget-card__empty {
+  padding: 12px 0;
+}
+.home-widget-card__empty-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sm-text-primary);
+}
+.home-widget-card__empty-description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sm-text-secondary);
+}
+.home-widget-card__meta {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--sm-text-tertiary);
 }
 </style>

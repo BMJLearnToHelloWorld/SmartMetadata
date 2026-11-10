@@ -152,3 +152,24 @@ export function listDataProductAssets(id: string, limit = 25): Promise<Paged<Ent
 export function deleteDataProduct(id: string): Promise<unknown> {
   return apiRequest(`/v1/dataProducts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
+
+/**
+ * Official dataProductAPI.getAllDataProductsWithAssetsCount
+ * (rest/dataProductAPI.ts): GET /v1/dataProducts/assets/counts, a
+ * whole-table Map<fqn, count>.
+ */
+export async function getAllDataProductsWithAssetsCount(): Promise<Record<string, number>> {
+  const payload = await apiRequest<unknown>('/v1/dataProducts/assets/counts');
+  const root = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+  const out: Record<string, number> = {};
+  if (root) {
+    for (const [key, value] of Object.entries(root)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        out[key] = value;
+      }
+    }
+  }
+  return out;
+}
