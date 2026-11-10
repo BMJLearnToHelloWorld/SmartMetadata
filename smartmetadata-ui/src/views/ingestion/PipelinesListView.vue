@@ -72,6 +72,7 @@ const form = reactive<PipelineFormValues>({
   includeViews: true,
   includeSchemas: '',
   includeTopics: '',
+  generateSampleData: false,
   includeDashboards: '',
   includeCharts: '',
   includeContainers: '',
@@ -459,6 +460,14 @@ onMounted(() => {
         :extra="t('ingestion.pipelines.includeTopicsHelp')"
       >
         <Input v-model:value="form.includeTopics" placeholder="orders, payments" />
+      </Form.Item>
+      <Form.Item
+        v-if="form.serviceKind === 'messaging'"
+        :extra="t('ingestion.pipelines.generateSampleDataHelp')"
+      >
+        <Checkbox v-model:checked="form.generateSampleData" data-testid="create-pipeline-generate-sample-data">
+          {{ t('ingestion.pipelines.generateSampleData') }}
+        </Checkbox>
       </Form.Item>
       <Form.Item
         v-if="form.serviceKind === 'dashboard'"

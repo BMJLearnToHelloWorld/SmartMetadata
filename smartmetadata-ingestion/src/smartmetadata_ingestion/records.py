@@ -190,6 +190,20 @@ class MessagingServiceRecord(Record):
         return f"messagingService:{self.name}"
 
 
+class TopicSampleData(BaseModel):
+    """Official ``TopicSampleData``: the sampled messages of one topic.
+
+    ``messages`` are decoded message strings (official
+    ``CommonBrokerSource.decode_message`` returns a string per message);
+    a payload that cannot be decoded as UTF-8 is skipped by the sampler,
+    never stored as mojibake.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    messages: list[str] = Field(default_factory=list)
+
+
 class TopicRecord(Record):
     kind: Literal["topic"] = "topic"
     name: str
@@ -202,6 +216,9 @@ class TopicRecord(Record):
     retention_time: float | None = None
     maximum_message_size: int | None = None
     topic_config: dict[str, Any] | None = None
+    # Sampled live messages (H track 1). The sink PUTs these to
+    # /v1/topics/{id}/sampleData only when messages is non-empty.
+    sample_data: TopicSampleData | None = None
 
     def label(self) -> str:
         return f"topic:{self.service}.{self.name}"

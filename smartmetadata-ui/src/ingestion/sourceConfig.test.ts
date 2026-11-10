@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { buildSourceConfig, sourceConfigTypeForKind } from './sourceConfig';
+import { buildSourceConfig, formHintsFromSourceConfig, sourceConfigTypeForKind } from './sourceConfig';
 
 describe('pipeline sourceConfig', () => {
   it('maps database pipelines to DatabaseMetadata', () => {
@@ -47,6 +47,51 @@ describe('pipeline sourceConfig', () => {
         topicFilterPattern: { includes: ['orders'] },
       },
     });
+  });
+
+  it('emits generateSampleData for messaging only when checked', () => {
+    expect(
+      buildSourceConfig({
+        name: 'kafka-topics',
+        pipelineType: 'metadata',
+        serviceId: 'svc2',
+        serviceKind: 'messaging',
+        includeViews: true,
+        includeTopics: 'orders',
+        generateSampleData: true,
+      }),
+    ).toEqual({
+      config: {
+        type: 'MessagingMetadata',
+        topicFilterPattern: { includes: ['orders'] },
+        generateSampleData: true,
+      },
+    });
+    // Unchecked (or absent) omits the key — official default is false.
+    expect(
+      buildSourceConfig({
+        name: 'kafka-topics',
+        pipelineType: 'metadata',
+        serviceId: 'svc2',
+        serviceKind: 'messaging',
+        includeViews: true,
+        includeTopics: 'orders',
+        generateSampleData: false,
+      }).config?.generateSampleData,
+    ).toBeUndefined();
+  });
+
+  it('reads generateSampleData back into form hints', () => {
+    expect(
+      formHintsFromSourceConfig(
+        { config: { type: 'MessagingMetadata', generateSampleData: true } },
+        'messaging',
+      ).generateSampleData,
+    ).toBe(true);
+    expect(
+      formHintsFromSourceConfig({ config: { type: 'MessagingMetadata' } }, 'messaging')
+        .generateSampleData,
+    ).toBe(false);
   });
 
   it('maps dashboard pipelines to DashboardMetadata filters', () => {

@@ -87,11 +87,33 @@ class WorkflowSettings(CamelModel):
     reconcile_dry_run: bool = False
 
 
+class MessagingMetadataPipelineConfig(CamelModel):
+    """Official ``messagingServiceMetadataPipeline`` sourceConfig (messaging only).
+
+    Carries the sampling flags of the messaging metadata pipeline: the
+    pipeline gate reads ``generateSampleData`` and, for legacy pipeline
+    configs, ``storeSampleData`` (official ``common_broker_source.py``
+    ``getattr`` order). No other pipeline config lives here: filter
+    patterns are translated into the ``include_*`` lists above, and
+    ``markDeletedTopics``/``overrideMetadata`` stay server-side.
+    ADR:2026-11-08-sampler-messaging-config-surface
+    """
+
+    generate_sample_data: bool = False
+    store_sample_data: bool | None = None
+
+
 class SourceConfig(CamelModel):
     type: str
     service_name: str
     service_display_name: str | None = None
     connection: dict[str, Any] = Field(default_factory=dict)
+    # --- H track 1 (Wave 2 sampler messaging chain) -----------------------
+    # The messaging metadata pipeline's sourceConfig surface only. No
+    # generic sampling flag lives on SourceConfig: official defines
+    # generateSampleData only in messagingServiceMetadataPipeline, so the
+    # flag is a typed messaging-scoped block, never a shared boolean.
+    messaging_metadata: MessagingMetadataPipelineConfig | None = None
     include_schemas: list[str] = Field(default_factory=list)
     exclude_schemas: list[str] = Field(
         default_factory=lambda: ["information_schema", "pg_catalog", "pg_toast"]

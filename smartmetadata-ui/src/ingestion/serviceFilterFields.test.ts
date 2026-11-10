@@ -18,7 +18,10 @@ describe('serviceFilterFields', () => {
   });
 
   it('maps messaging, dashboard, and storage to their include fields', () => {
-    expect(serviceFilterFieldsForKind('messaging').map((field) => field.key)).toEqual(['includeTopics']);
+    expect(serviceFilterFieldsForKind('messaging').map((field) => field.key)).toEqual([
+      'includeTopics',
+      'generateSampleData',
+    ]);
     expect(serviceFilterFieldsForKind('dashboard').map((field) => field.key)).toEqual([
       'includeDashboards',
       'includeCharts',
@@ -28,6 +31,17 @@ describe('serviceFilterFields', () => {
 
   it('returns an empty table for the pipeline kind instead of inventing fields', () => {
     expect(serviceFilterFieldsForKind('pipeline')).toEqual([]);
+  });
+
+  it('exposes the sampler switch as a checkbox on messaging only', () => {
+    const messaging = serviceFilterFieldsForKind('messaging');
+    const sampler = messaging.find((field) => field.key === 'generateSampleData');
+    expect(sampler).toMatchObject({
+      control: 'checkbox',
+      labelKey: 'ingestion.pipelines.generateSampleData',
+      testId: 'filter-generate-sample-data',
+    });
+    expect(serviceFilterFieldsForKind('database').some((field) => field.key === 'generateSampleData')).toBe(false);
   });
 
   it('uses the same keys as the pipeline sourceConfig surface', () => {

@@ -311,7 +311,31 @@ def translate_pipeline(
     db_includes, db_excludes = translate_filter_pattern(
         config_block.get("databaseFilterPattern")
     )
-    if config_block.get("generateSampleData") or config_block.get("sampleDataQuery"):
+    # H track 1: the messaging metadata pipeline's generateSampleData
+    # (legacy storeSampleData) travels to the runner as
+    # source.messagingMetadata. Any other pipeline type has no such field
+    # in the official schema, so the flag stays ignored there.
+    # ADR:2026-11-08-sampler-messaging-config-surface
+    messaging_metadata: dict[str, Any] | None = None
+    if (pipeline.get("service") or {}).get("type") == "messagingService":
+        if (
+            config_block.get("generateSampleData") is not None
+            or config_block.get("storeSampleData") is not None
+        ):
+            messaging_metadata = {}
+            if config_block.get("generateSampleData") is not None:
+                messaging_metadata["generateSampleData"] = bool(
+                    config_block["generateSampleData"]
+                )
+            if config_block.get("storeSampleData") is not None:
+                messaging_metadata["storeSampleData"] = bool(config_block["storeSampleData"])
+        if config_block.get("sampleDataQuery"):
+            logger.warning(
+                "sampleDataQuery is not supported by the product runner yet; "
+                "ignoring it for pipeline %s",
+                pipeline.get("name"),
+            )
+    elif config_block.get("generateSampleData") or config_block.get("sampleDataQuery"):
         logger.warning(
             "sample data generation is not supported by the product runner yet; "
             "ignoring generateSampleData for pipeline %s",
@@ -367,6 +391,8 @@ def translate_pipeline(
         "processors": [],
         "sink": {"type": "metadata-rest"},
     }
+    if messaging_metadata is not None:
+        raw["source"]["messagingMetadata"] = messaging_metadata
     try:
         return WorkflowConfig.model_validate(raw)
     except Exception as exc:

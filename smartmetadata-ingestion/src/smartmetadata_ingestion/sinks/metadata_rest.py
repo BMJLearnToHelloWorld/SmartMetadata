@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.client.rest import RestClient
@@ -37,6 +38,8 @@ from smartmetadata_ingestion.records import (
     AppRecord,
     WorkflowRecord,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Sink(Protocol):
@@ -69,6 +72,7 @@ class MetadataRestSink:
             result = self._client.upsert_table(_table_payload(record))
         elif isinstance(record, TopicRecord):
             result = self._client.upsert_topic(_topic_payload(record))
+            _write_topic_sample_data(self._client, record, result)
         elif isinstance(record, ChartRecord):
             result = self._client.upsert_chart(_chart_payload(record))
         elif isinstance(record, DashboardRecord):
@@ -161,6 +165,12 @@ class BulkMetadataRestSink:
             self.written.append(record.label())
             return self._flush_kind("table", force=False)
         if isinstance(record, TopicRecord):
+            if record.sample_data and record.sample_data.messages:
+                # The sample PUT needs the topic id from the upsert
+                # response, which the bulk path does not return per topic:
+                # flush, then single-write (upsert + sample PUT).
+                self.flush()
+                return self._inner.write(record)
             self._buffers["topic"].append(_topic_payload(record))
             self.written.append(record.label())
             return self._flush_kind("topic", force=False)
@@ -267,6 +277,32 @@ def _app_payload(record: AppRecord) -> dict[str, Any]:
     if record.allow_bot_impersonation is not None:
         payload["allowBotImpersonation"] = record.allow_bot_impersonation
     return payload
+
+
+def _write_topic_sample_data(
+    client: RestClient, record: TopicRecord, upsert_result: Any
+) -> None:
+    """PUT sampled messages after the topic upsert (official write_topic_sample_data).
+
+    Only when messages is non-empty; a missing topic id (an upsert response
+    without one) cannot address the endpoint, so the write is skipped with
+    a warning. A failed PUT propagates: the record is counted failed and
+    the run continues (the product's equivalent of official's per-record
+    StackTraceError) — a failed sample write is never silently dropped.
+    ADR:2026-11-08-sampler-messaging-config-surface
+    """
+    if not record.sample_data or not record.sample_data.messages:
+        return None
+    topic_id = upsert_result.get("id") if isinstance(upsert_result, dict) else None
+    if not topic_id:
+        logger.warning(
+            "cannot write sample data for topic %s: upsert returned no id",
+            record.name,
+        )
+        return None
+    client.ingest_topic_sample_data(
+        str(topic_id), {"messages": list(record.sample_data.messages)}
+    )
 
 
 def _write_profile(client: RestClient, record: ProfileRecord) -> Any:
