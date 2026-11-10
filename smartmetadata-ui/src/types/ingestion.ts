@@ -488,6 +488,7 @@ export interface PipelineSourceConfig {
     includeTables?: boolean;
     schemaFilterPattern?: { includes?: string[]; excludes?: string[] };
     topicFilterPattern?: { includes?: string[]; excludes?: string[] };
+    generateSampleData?: boolean;
     dashboardFilterPattern?: { includes?: string[]; excludes?: string[] };
     chartFilterPattern?: { includes?: string[]; excludes?: string[] };
     containerFilterPattern?: { includes?: string[]; excludes?: string[] };
@@ -569,6 +570,7 @@ export interface PipelineFormValues {
   includeViews: boolean;
   includeSchemas?: string;
   includeTopics?: string;
+  generateSampleData?: boolean;
   includeDashboards?: string;
   includeCharts?: string;
   includeContainers?: string;

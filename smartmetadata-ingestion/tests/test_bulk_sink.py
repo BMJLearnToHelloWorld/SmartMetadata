@@ -85,3 +85,33 @@ def test_bulk_sink_flushes_before_lineage() -> None:
     assert kinds.index("bulk_db") < kinds.index("lineage")
     assert kinds.index("bulk_table") < kinds.index("lineage")
 
+
+
+def test_bulk_sink_single_writes_sampled_topic() -> None:
+    from smartmetadata_ingestion.records import TopicRecord, TopicSampleData
+
+    class SampleClient(FakeClient):
+        def upsert_topic(self, payload):
+            self.calls.append(("topic", payload))
+            return {"id": "topic-uuid", **payload}
+
+        def ingest_topic_sample_data(self, topic_id, payload):
+            self.calls.append(("sample", topic_id, payload))
+            return {"sampleData": payload}
+
+    client = SampleClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=1,
+            sample_data=TopicSampleData(messages=['{"id": 1}']),
+        )
+    )
+    # The buffered database goes out first (flush), then the sampled topic
+    # single-writes (upsert + sample PUT) instead of joining the bulk batch.
+    kinds = [call[0] for call in client.calls]
+    assert kinds == ["bulk_db", "topic", "sample"]
+    assert client.calls[2] == ("sample", "topic-uuid", {"messages": ['{"id": 1}']})

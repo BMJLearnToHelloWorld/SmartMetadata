@@ -133,3 +133,35 @@ def test_optional_ingestion_pipeline_fqn(tmp_path: Path) -> None:
     )
     config = load_workflow_config(path, environ={})
     assert config.workflow.ingestion_pipeline_fqn == "service.metadata"
+
+
+def test_messaging_metadata_pipeline_config_parses() -> None:
+    # H track 1: the messaging pipeline's sourceConfig surface is a typed
+    # messaging-scoped block, not a generic SourceConfig boolean.
+    from smartmetadata_ingestion.config import SourceConfig
+
+    source = SourceConfig.model_validate(
+        {
+            "type": "kafka",
+            "serviceName": "events",
+            "connection": {"bootstrapServers": "b:9092"},
+            "messagingMetadata": {"generateSampleData": True},
+        }
+    )
+    assert source.messaging_metadata is not None
+    assert source.messaging_metadata.generate_sample_data is True
+    assert source.messaging_metadata.store_sample_data is None
+
+
+def test_messaging_metadata_rejects_unknown_keys() -> None:
+    from smartmetadata_ingestion.config import SourceConfig
+
+    with pytest.raises(Exception, match="generate_sample_data|extra"):
+        SourceConfig.model_validate(
+            {
+                "type": "kafka",
+                "serviceName": "events",
+                "connection": {},
+                "messagingMetadata": {"topicFilterPattern": {"includes": ["orders"]}},
+            }
+        )

@@ -32,6 +32,7 @@ const form = reactive<PipelineFormValues>({
   includeViews: true,
   includeSchemas: '',
   includeTopics: '',
+  generateSampleData: false,
   includeDashboards: '',
   includeCharts: '',
   includeContainers: '',
@@ -68,6 +69,7 @@ async function load(): Promise<void> {
     form.includeViews = hints.includeViews;
     form.includeSchemas = hints.includeSchemas || '';
     form.includeTopics = hints.includeTopics || '';
+    form.generateSampleData = hints.generateSampleData ?? false;
     form.includeDashboards = hints.includeDashboards || '';
     form.includeCharts = hints.includeCharts || '';
     form.includeContainers = hints.includeContainers || '';

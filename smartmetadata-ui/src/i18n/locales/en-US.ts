@@ -1462,6 +1462,8 @@ const enUS = {
       includeSchemasHelp: 'Comma-separated schemas to include.',
       includeTopics: 'Include topics',
       includeTopicsHelp: 'Comma-separated topics to include.',
+      generateSampleData: 'Generate sample data',
+      generateSampleDataHelp: 'Read recent messages from each topic and store them as sample data.',
       includeDashboards: 'Include dashboards',
       includeDashboardsHelp: 'Comma-separated dashboard names/ids to include.',
       includeCharts: 'Include charts',

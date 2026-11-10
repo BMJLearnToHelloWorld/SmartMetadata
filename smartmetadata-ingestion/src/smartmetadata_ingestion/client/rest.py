@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -20,6 +21,8 @@ import httpx
 
 from smartmetadata_ingestion.config import AuthConfig, ServerConfig
 from smartmetadata_ingestion.errors import RestError, WorkflowError
+
+logger = logging.getLogger(__name__)
 
 LOGIN_PATH = "/v1/users/login"
 DATABASE_SERVICES_PATH = "/v1/services/databaseServices"
@@ -40,6 +43,7 @@ USAGE_PATH = "/v1/usage"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
 TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
 TABLES_PROFILE_PATH = TABLES_PATH  # /v1/tables/{id}/tableProfile
+SYSTEM_SETTINGS_PATH = "/v1/system/settings"
 INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
 CLASSIFICATIONS_PATH = "/v1/classifications"
 TAGS_PATH = "/v1/tags"
@@ -280,6 +284,34 @@ class RestClient:
         body = dict(payload)
         body.setdefault("fqn", test_case_fqn)
         return self.request("POST", path, json=body)
+
+    # --- Sample data (H track 1: sampler messaging chain) -----------------
+    # First Wave 2 H track to extend RestClient. Later tracks add their
+    # methods under their own section headers in this same file; no track
+    # writes a second REST client or a second wrapper for these paths.
+
+    def ingest_topic_sample_data(
+        self,
+        topic_id: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """PUT /v1/topics/{id}/sampleData (official topic_mixin ingest_topic_sample_data)."""
+        path = f"{TOPICS_PATH}/{encode_path_segment(topic_id)}/sampleData"
+        return self.request("PUT", path, json=payload)
+
+    def get_profiler_config_settings(self) -> dict[str, Any] | None:
+        """GET /v1/system/settings/profilerConfiguration; None when unreadable.
+
+        The caller (the sampler double gate) treats None as "cannot confirm
+        the kill-switch is on" and does not sample.
+        ADR:2026-11-08-sampler-messaging-double-gate-fail-closed
+        """
+        try:
+            payload = self.request("GET", f"{SYSTEM_SETTINGS_PATH}/profilerConfiguration")
+        except Exception:
+            logger.debug("could not read profilerConfiguration settings", exc_info=True)
+            return None
+        return payload if isinstance(payload, dict) else None
 
 
     def bulk_upsert_databases(self, payloads: list[dict[str, Any]]) -> Any:

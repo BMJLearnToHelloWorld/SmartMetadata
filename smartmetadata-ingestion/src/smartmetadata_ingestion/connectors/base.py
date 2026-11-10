@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Protocol
+from collections.abc import Callable, Iterable
+from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig, WorkflowConfig
 from smartmetadata_ingestion.connectors.registry import register_source
@@ -209,10 +209,29 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
     raise WorkflowError(f"unsupported static record kind {kind!r}")
 
 
-def build_source(config: WorkflowConfig, source: Source | None = None) -> Source:
+def build_source(
+    config: WorkflowConfig,
+    source: Source | None = None,
+    *,
+    profiler_settings_reader: Callable[[], dict[str, Any] | None] | None = None,
+) -> Source:
+    """Build the source for a workflow config.
+
+    ``profiler_settings_reader`` is the server kill-switch reader (the
+    workflow's RestClient). It is only passed to messaging sources: they
+    are the only ones that sample, and every other factory takes no such
+    keyword. A messaging source without a reader fails its sampling gate
+    closed (ADR:2026-11-08-sampler-messaging-double-gate-fail-closed).
+    """
     if source is not None:
         return source
     from smartmetadata_ingestion.connectors.registry import get_source, load_builtin_sources
 
     load_builtin_sources()
+    if profiler_settings_reader is not None and config.source.type in {"kafka", "redpanda"}:
+        return get_source(
+            config.source.type,
+            config.source,
+            profiler_settings_reader=profiler_settings_reader,
+        )
     return get_source(config.source.type, config.source)

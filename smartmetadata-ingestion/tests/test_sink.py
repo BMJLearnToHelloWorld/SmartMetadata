@@ -103,3 +103,98 @@ def test_unknown_processor_and_sink_are_rejected(workflow_config) -> None:
     workflow_config.sink.type = "files"  # type: ignore[misc]
     with pytest.raises(WorkflowError, match="unsupported sink"):
         build_sink(workflow_config, client=None)  # type: ignore[arg-type]
+
+
+def test_sink_writes_topic_sample_data_after_upsert(workflow_config) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.content.decode()))
+        return httpx.Response(200, json={"id": "topic-uuid", "name": "orders"})
+
+    client = RestClient(workflow_config.server, transport=httpx.MockTransport(handler))
+    sink = MetadataRestSink(client)
+    from smartmetadata_ingestion.records import TopicSampleData
+
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=1,
+            sample_data=TopicSampleData(messages=['{"id": 1}', '{"id": 2}']),
+        )
+    )
+    assert calls == [
+        ("PUT", "/api/v1/topics", '{"name":"orders","service":"events","partitions":1}'),
+        (
+            "PUT",
+            "/api/v1/topics/topic-uuid/sampleData",
+            '{"messages":["{\\"id\\": 1}","{\\"id\\": 2}"]}',
+        ),
+    ]
+
+
+def test_sink_skips_sample_write_when_messages_empty(workflow_config) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"id": "topic-uuid", "name": "orders"})
+
+    client = RestClient(workflow_config.server, transport=httpx.MockTransport(handler))
+    sink = MetadataRestSink(client)
+    from smartmetadata_ingestion.records import TopicSampleData
+
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=1,
+            sample_data=TopicSampleData(messages=[]),
+        )
+    )
+    assert calls == ["/api/v1/topics"]
+
+
+def test_sink_skips_sample_write_when_upsert_has_no_id(workflow_config) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"name": "orders"})
+
+    client = RestClient(workflow_config.server, transport=httpx.MockTransport(handler))
+    sink = MetadataRestSink(client)
+    from smartmetadata_ingestion.records import TopicSampleData
+
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=1,
+            sample_data=TopicSampleData(messages=['{"id": 1}']),
+        )
+    )
+    assert calls == ["/api/v1/topics"]
+
+
+def test_sink_sample_put_failure_fails_the_record(workflow_config) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/sampleData"):
+            return httpx.Response(403, json={"message": "forbidden"})
+        return httpx.Response(200, json={"id": "topic-uuid", "name": "orders"})
+
+    client = RestClient(workflow_config.server, transport=httpx.MockTransport(handler))
+    sink = MetadataRestSink(client)
+    from smartmetadata_ingestion.errors import RestError
+    from smartmetadata_ingestion.records import TopicSampleData
+
+    with pytest.raises(RestError, match="403"):
+        sink.write(
+            TopicRecord(
+                name="orders",
+                service="events",
+                partitions=1,
+                sample_data=TopicSampleData(messages=['{"id": 1}']),
+            )
+        )

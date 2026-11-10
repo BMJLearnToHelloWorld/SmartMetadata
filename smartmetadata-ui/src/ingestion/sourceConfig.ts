@@ -48,6 +48,8 @@ export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfi
       config: {
         type: sourceConfigTypeForPipeline(pipelineType, 'messaging'),
         ...(includes.length ? { topicFilterPattern: { includes } } : {}),
+        // H track 1: only emitted when checked — official default is false.
+        ...(form.generateSampleData ? { generateSampleData: true } : {}),
       },
     };
   }
@@ -115,6 +117,7 @@ export function formHintsFromSourceConfig(
   | 'includeViews'
   | 'includeSchemas'
   | 'includeTopics'
+  | 'generateSampleData'
   | 'includeDashboards'
   | 'includeCharts'
   | 'includeContainers'
@@ -129,6 +132,7 @@ export function formHintsFromSourceConfig(
     includeViews: kind === 'database' ? config.includeViews !== false : true,
     includeSchemas: schemaIncludes.join(', '),
     includeTopics: topicIncludes.join(', '),
+    generateSampleData: config.generateSampleData === true,
     includeDashboards: dashboardIncludes.join(', '),
     includeCharts: chartIncludes.join(', '),
     includeContainers: containerIncludes.join(', '),

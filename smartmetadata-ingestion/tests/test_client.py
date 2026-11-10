@@ -206,3 +206,40 @@ def test_bulk_upsert_and_delete_stale_paths() -> None:
         ("PUT", "/api/v1/topics/bulk"),
         ("DELETE", "/api/v1/tables/deleteStale"),
     ]
+
+
+def test_ingest_topic_sample_data_puts_messages() -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.content.decode()))
+        return httpx.Response(200, json={"sampleData": {"messages": ['{"id": 1}']}})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        client.ingest_topic_sample_data(
+            "topic-uuid", {"messages": ['{"id": 1}']}
+        )
+    assert seen == [
+        ("PUT", "/api/v1/topics/topic-uuid/sampleData", '{"messages":["{\\"id\\": 1}"]}'),
+    ]
+
+
+def test_get_profiler_config_settings_returns_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/system/settings/profilerConfiguration")
+        return httpx.Response(
+            200,
+            json={"configValue": {"sampleDataConfig": {"storeSampleData": True}}},
+        )
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        settings = client.get_profiler_config_settings()
+    assert settings == {"configValue": {"sampleDataConfig": {"storeSampleData": True}}}
+
+
+def test_get_profiler_config_settings_returns_none_on_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "boom"})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        assert client.get_profiler_config_settings() is None

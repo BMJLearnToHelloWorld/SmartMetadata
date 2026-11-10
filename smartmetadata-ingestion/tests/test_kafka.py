@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import httpx
 import pytest
 
@@ -215,6 +217,10 @@ def test_confluent_http_reader_accepts_object_topics_payload() -> None:
     assert names == ["orders", "payments"]
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("kafka") is not None,
+    reason="kafka extra is installed, so the missing-extra error cannot fire",
+)
 def test_kafka_bootstrap_without_extra_fails() -> None:
     source = KafkaSource(
         SourceConfig(
@@ -269,15 +275,20 @@ def test_kafka_sampler_sequence_behavior_matched() -> None:
         sampler=SequenceTopicMessageSampler(samples={"orders": [{"id": 1}, {"id": 2}]}),
     )
     rows = source.sampler().sample(topic="orders", limit=1)
-    assert rows == [{"id": 1}]
+    # H track 1: sample() returns TopicSampleData messages (strings);
+    # injectable rows are serialized to JSON text.
+    assert rows == ['{"id": 1}']
 
 
-def test_kafka_sampler_without_injectable_is_honest_partial() -> None:
+def test_kafka_sampler_without_bootstrap_returns_no_samples() -> None:
+    # H track 1: the Partial raise is gone — without an injectable sampler
+    # the live path is attempted, and a consumer that cannot be built
+    # (no bootstrapServers here) yields no samples with a warning instead
+    # of interrupting the run.
     sampler = KafkaSampler(
-        SourceConfig(type="kafka", service_name="k", connection={"bootstrapServers": "localhost:9092"})
+        SourceConfig(type="kafka", service_name="k", connection={})
     )
-    with pytest.raises(WorkflowError, match="Partial"):
-        sampler.sample(topic="orders")
+    assert sampler.sample(topic="orders") == []
 
 
 def test_kafka_connection_supports_profiler_flag() -> None:
