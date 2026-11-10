@@ -129,7 +129,7 @@ onMounted(() => {
 <template>
   <div data-testid="articles-right-panel">
     <Typography.Text v-if="loading" type="secondary" data-testid="articles-right-panel-loading">
-      {{ t('crud.loading') }}
+      {{ t('shared.loading') }}
     </Typography.Text>
     <Card v-else-if="isEmptyState" data-testid="articles-right-panel-empty">
       <Empty :description="t('contextCenter.quickLinks')">
