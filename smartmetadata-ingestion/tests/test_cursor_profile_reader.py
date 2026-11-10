@@ -73,9 +73,24 @@ class FakeConnection:
         return self._cursor
 
 
-def _script(*, wrap, sample_needle: str = "SELECT * FROM") -> list:
+def _script(
+    *,
+    wrap,
+    sample_needle: str = "SELECT * FROM",
+    percentiles: bool = True,
+    histogram_frequencies: tuple[int, ...] = (6, 4),
+) -> list:
     id_col = f"COUNT(DISTINCT {wrap('id')})"
     name_col = f"COUNT(DISTINCT {wrap('name')})"
+    # Base selects, in slot order: null, distinct, min, max, mean,
+    # values, nullMissing, sum, stddev, median, firstQuartile,
+    # thirdQuartile, maxLength, minLength. MariaDB has no official
+    # percentile compile, so its rows omit the three percentile slots.
+    id_row = (0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, 5.5, 3, 8, None, None)
+    name_row = (1, 9, "a", "z", None, 9, 1, 27, 1.5, 3, 2, 4, 5, 1)
+    if not percentiles:
+        id_row = (0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, None, None)
+        name_row = (1, 9, "a", "z", None, 9, 1, 27, 1.5, 5, 1)
     return [
         (f"GROUP BY {wrap('id')}", [(1,)], None),
         (f"GROUP BY {wrap('name')}", [(1,)], None),
@@ -85,10 +100,9 @@ def _script(*, wrap, sample_needle: str = "SELECT * FROM") -> list:
             [("id", "integer"), ("name", "character varying")],
             None,
         ),
-        # Base selects, in slot order: null, distinct, min, max, mean,
-        # values, nullMissing, sum, stddev, maxLength, minLength.
-        (id_col, [(0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, None, None)], None),
-        (name_col, [(1, 9, "a", "z", None, 9, 1, 27, 1.5, 5, 1)], None),
+        (id_col, [id_row], None),
+        (name_col, [name_row], None),
+        ("COUNT(CASE WHEN", [histogram_frequencies], None),
         (sample_needle, [("1", "a"), ("2", "b")], [("id",), ("name",)]),
     ]
 
@@ -97,7 +111,7 @@ def _connect(cursor: FakeCursor):
     return lambda: FakeConnection(cursor)
 
 
-def _assert_profile(stats, cursor: FakeCursor, *, ident: str) -> None:
+def _assert_profile(stats, cursor: FakeCursor, *, ident: str, window: bool = True) -> None:
     assert len(stats) == 3
     assert stats[0].column_name is None
     assert stats[0].row_count == 10
@@ -135,6 +149,53 @@ def _assert_profile(stats, cursor: FakeCursor, *, ident: str) -> None:
     assert stats[2].unique_proportion == pytest.approx(1 / 9)
     assert stats[2].null_proportion == pytest.approx(0.1)
     assert stats[2].duplicate_count == 0
+    if window:
+        # Window family: median/Q1/Q3, IQR, NPS, histogram on the numeric
+        # column; length-median family and allValuesUnique cardinality on
+        # the string column (mean is None there, so NPS is None).
+        assert stats[1].median == 5.5
+        assert stats[1].first_quartile == 3
+        assert stats[1].third_quartile == 8
+        assert stats[1].inter_quartile_range == 5
+        assert stats[1].non_parametric_skew == 0.0
+        assert stats[1].histogram == {
+            "boundaries": ["1.000 to 5.642", "5.642 and up"],
+            "frequencies": [6, 4],
+        }
+        assert stats[1].cardinality_distribution is None
+        assert stats[2].median == 3
+        assert stats[2].first_quartile == 2
+        assert stats[2].third_quartile == 4
+        assert stats[2].inter_quartile_range == 2
+        assert stats[2].non_parametric_skew is None
+        assert stats[2].histogram is None
+        assert stats[2].cardinality_distribution == {"allValuesUnique": True}
+    else:
+        # MariaDB has no official percentile compile: the three slots stay
+        # None, so the histogram falls back to Sturges bins (5 bins here).
+        assert stats[1].median is None
+        assert stats[1].first_quartile is None
+        assert stats[1].third_quartile is None
+        assert stats[1].inter_quartile_range is None
+        assert stats[1].non_parametric_skew is None
+        assert stats[1].histogram == {
+            "boundaries": [
+                "1.000 to 2.800",
+                "2.800 to 4.600",
+                "4.600 to 6.400",
+                "6.400 to 8.200",
+                "8.200 and up",
+            ],
+            "frequencies": [2, 3, 1, 2, 2],
+        }
+        assert stats[1].cardinality_distribution is None
+        assert stats[2].median is None
+        assert stats[2].first_quartile is None
+        assert stats[2].third_quartile is None
+        assert stats[2].inter_quartile_range is None
+        assert stats[2].non_parametric_skew is None
+        assert stats[2].histogram is None
+        assert stats[2].cardinality_distribution == {"allValuesUnique": True}
     count_sql = next(sql for sql, _ in cursor.executed if sql.startswith("SELECT COUNT(*)"))
     assert ident in count_sql
 
@@ -175,11 +236,23 @@ def test_mysql_cursor_profile_reader() -> None:
 
 
 def test_mysql_family_readers_share_dialect() -> None:
-    for module in (mariadb_common, doris_common):
-        cursor = FakeCursor(_script(wrap=lambda name: f"`{name}`"))
-        reader = module.CursorProfileReader(_connect(cursor))
-        stats = reader.profile_table("mydb", "orders")
-        _assert_profile(stats, cursor, ident="`mydb`.`orders`")
+    # Doris has the official percentile_approx compile; MariaDB has none
+    # and fails closed on the three percentile slots (its histogram falls
+    # back to Sturges bins).
+    cursor = FakeCursor(_script(wrap=lambda name: f"`{name}`"))
+    reader = doris_common.CursorProfileReader(_connect(cursor))
+    stats = reader.profile_table("mydb", "orders")
+    _assert_profile(stats, cursor, ident="`mydb`.`orders`")
+    cursor = FakeCursor(
+        _script(
+            wrap=lambda name: f"`{name}`",
+            percentiles=False,
+            histogram_frequencies=(2, 3, 1, 2, 2),
+        )
+    )
+    reader = mariadb_common.CursorProfileReader(_connect(cursor))
+    stats = reader.profile_table("mydb", "orders")
+    _assert_profile(stats, cursor, ident="`mydb`.`orders`", window=False)
 
 
 def test_mssql_cursor_profile_reader() -> None:

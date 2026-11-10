@@ -20,9 +20,11 @@ ADR:2026-11-08-validator-compile-table-diff-params
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from smartmetadata_ingestion.connectors.profile_sql import (
+    SqlDialect,
+    percentile_sql,
     quote_ansi,
     quote_mssql,
     quote_mysql,
@@ -34,10 +36,19 @@ from smartmetadata_ingestion.errors import WorkflowError
 # every other dialect takes ``database.schema.table``.
 TWO_PART_DIALECTS = frozenset({"mysql", "mariadb", "doris"})
 
-# Official MedianFn has no compile for these dialects (the default
-# ``percentile_cont`` is not valid SQL there); compiling a median for them
-# would invent a value, so the validator fails closed instead.
-MEDIAN_UNSUPPORTED_DIALECTS = frozenset({"mysql", "mariadb", "doris"})
+# Dialect aliases for the shared percentile renderer in
+# ``connectors/profile_sql.py`` (the single shared source for the profiler
+# and the validators). Pin ``profiler/orm/functions/median.py`` HAS a MySQL
+# ROW_NUMBER compile and a Doris ``percentile_approx`` compile; only
+# MariaDB falls through to the default ``percentile_cont``, which is not
+# valid SQL there — so only MariaDB fails closed.
+# ADR:2026-11-10-profiler-window-hybrid-metrics
+_DIALECT_ALIASES = {
+    "greenplum": "postgres",
+    "timescale": "postgres",
+    "redshift": "postgres",
+    "unitycatalog": "databricks",
+}
 
 
 def quote_ident(dialect: str, name: str) -> str:
@@ -101,21 +112,15 @@ def regex_match_sql(dialect: str, column_sql: str, pattern_sql: str) -> str:
     raise WorkflowError(f"regex validators have no compiled form for dialect {dialect!r}")
 
 
-def median_sql(dialect: str, column_sql: str) -> str:
-    """Render the median aggregate for the dialect (official ``MedianFn``)."""
-    if dialect in MEDIAN_UNSUPPORTED_DIALECTS:
-        raise WorkflowError(
-            f"median has no official SQL compile for dialect {dialect!r}; "
-            "it lands with the (c) window metrics (Wave 3 serial point 6), "
-            "not as a substitute value here"
-        )
-    if dialect == "snowflake":
-        return f"approx_percentile({column_sql}, 0.5)"
-    if dialect in {"databricks", "unitycatalog"}:
-        return f"percentile_approx({column_sql}, 0.5)"
-    if dialect == "mssql":
-        return f"percentile_cont(0.50) WITHIN GROUP (ORDER BY {column_sql} ASC) OVER()"
-    return f"percentile_cont(0.50) WITHIN GROUP (ORDER BY {column_sql} ASC)"
+def median_sql(dialect: str, column_sql: str, *, table_sql: str | None = None) -> str:
+    """Render the median aggregate for the dialect (official ``MedianFn``).
+
+    Delegates to the shared percentile renderer in
+    ``connectors/profile_sql.py``; MySQL rendering needs ``table_sql``
+    (the dataset source) for its ROW_NUMBER subquery.
+    """
+    rendered_dialect = cast(SqlDialect, _DIALECT_ALIASES.get(dialect, dialect))
+    return percentile_sql(rendered_dialect, column_sql, 0.5, table_sql=table_sql)
 
 
 def stddev_sql(dialect: str, column_sql: str) -> str:

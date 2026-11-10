@@ -25,6 +25,7 @@ from smartmetadata_ingestion.connectors.profile_sql import (
     SqlProfileReader,
     quote_ansi,
 )
+from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.errors import WorkflowError
 
 DEFAULT_SCHEME = "snowflake"
@@ -123,6 +124,13 @@ class ProfileStatRow:
     duplicate_count: int | None = None
     like_ratio: float | None = None
     ilike_ratio: float | None = None
+    median: float | None = None
+    first_quartile: float | None = None
+    third_quartile: float | None = None
+    inter_quartile_range: float | None = None
+    non_parametric_skew: float | None = None
+    histogram: dict | None = None
+    cardinality_distribution: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +162,7 @@ class ProfileReader(Protocol):
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -236,6 +245,7 @@ class SequenceProfileReader:
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -493,8 +503,11 @@ class CursorProfileReader:
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]:
-        return self._reader.profile(database, schema, table, metric_params=metric_params)
+        return self._reader.profile(
+            database, schema, table, metric_params=metric_params, sample_config=sample_config
+        )
 
     def sample_table(
         self, database: str, schema: str, table: str, *, limit: int = 50

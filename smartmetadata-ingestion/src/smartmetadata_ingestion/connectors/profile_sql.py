@@ -25,26 +25,36 @@ not stringified.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal
 
+from smartmetadata_ingestion.data_quality.sampling import (
+    StaticSampleConfig,
+    dataset_sql,
+)
 from smartmetadata_ingestion.errors import WorkflowError
 
 ParamStyle = Literal["format", "qmark"]
 
 # Dialect key driving the SQL rendering differences (official LenFn / StdDevFn /
 # RegexpMatchFn compiles + SQLAlchemy ilike rendering, per the ADR). Each
-# connector's CursorProfileReader passes exactly one of these.
-SqlDialect = Literal["postgres", "mysql", "mssql", "snowflake", "databricks"]
+# connector's CursorProfileReader passes exactly one of these. MariaDB and
+# Doris are distinct keys from MySQL (same LENGTH/STDDEV/LIKE/REGEXP
+# rendering) because their percentile compile differs: MySQL and Doris have
+# one, MariaDB has none (ADR:2026-11-10-profiler-window-hybrid-metrics).
+SqlDialect = Literal["postgres", "mysql", "mariadb", "doris", "mssql", "snowflake", "databricks"]
 
 # Length function per dialect (official LenFn: LENGTH for MySQL-family and
 # Databricks, LENGTH(CAST AS text) for Postgres, LEN for MSSQL/Snowflake).
 _LENGTH_SQL: dict[SqlDialect, str] = {
     "postgres": "LENGTH(CAST({col} AS text))",
     "mysql": "LENGTH({col})",
+    "mariadb": "LENGTH({col})",
+    "doris": "LENGTH({col})",
     "mssql": "LEN({col})",
     "snowflake": "LEN({col})",
     "databricks": "LENGTH({col})",
@@ -55,10 +65,119 @@ _LENGTH_SQL: dict[SqlDialect, str] = {
 _STDDEV_SQL: dict[SqlDialect, str] = {
     "postgres": "STDDEV_POP({col})",
     "mysql": "STDDEV_POP({col})",
+    "mariadb": "STDDEV_POP({col})",
+    "doris": "STDDEV_POP({col})",
     "mssql": "STDEVP({col})",
     "snowflake": "STDDEV_POP({col})",
     "databricks": "STDDEV_POP({col})",
 }
+
+# Dialects with no official percentile compile. Pin `profiler/orm/functions/
+# median.py` HAS a MySQL ROW_NUMBER compile and a Doris `percentile_approx`
+# compile; only MariaDB falls through to the default `percentile_cont`,
+# which is not valid SQL there — so only MariaDB fails closed. The
+# ``{"mysql", "mariadb", "doris"}`` set that used to sit here was wrong.
+# ADR:2026-11-10-profiler-window-hybrid-metrics
+MEDIAN_UNSUPPORTED_DIALECTS = frozenset({"mariadb"})
+
+
+def percentile_sql(
+    dialect: SqlDialect,
+    column_sql: str,
+    percentile: float,
+    *,
+    table_sql: str | None = None,
+) -> str:
+    """Render a percentile aggregate for the dialect (official MedianFn).
+
+    Single shared source for the profiler and the median validator
+    (``data_quality/sql.py::median_sql`` delegates here): the per-dialect
+    table comes from pin ``profiler/orm/functions/median.py``. Snowflake
+    and Databricks render approximate functions — callers must not assert
+    exact values on those dialects. MariaDB has no official compile and
+    fails closed; MySQL needs ``table_sql`` (the dataset source) for its
+    ROW_NUMBER subquery.
+    """
+    if dialect == "mariadb":
+        raise WorkflowError(
+            "median/quartile metrics are not supported on MariaDB: "
+            "the official MedianFn has no MariaDB compile"
+        )
+    if dialect == "snowflake":
+        return f"approx_percentile({column_sql}, {percentile:.2f})"
+    if dialect == "databricks":
+        return f"percentile_approx({column_sql}, {percentile:.2f})"
+    if dialect == "mssql":
+        return f"percentile_cont({percentile:.2f}) WITHIN GROUP (ORDER BY {column_sql} ASC) OVER()"
+    if dialect == "mysql":
+        if table_sql is None:
+            raise WorkflowError("MySQL percentile rendering needs the table (dataset) source")
+        return (
+            f"(SELECT _pct_col FROM (SELECT {column_sql} AS _pct_col, "
+            f"ROW_NUMBER() OVER (ORDER BY {column_sql}) AS row_num, "
+            f"COUNT(*) OVER () AS total_count FROM {table_sql}) temp "
+            f"WHERE temp.row_num = ROUND({percentile:.2f} * temp.total_count))"
+        )
+    if dialect == "doris":
+        return f"percentile_approx({column_sql}, {percentile:.2f})"
+    return f"percentile_cont({percentile:.2f}) WITHIN GROUP (ORDER BY {column_sql} ASC)"
+
+
+def value_rank_sql(column_sql: str) -> str:
+    """Render the ValueRank window fragment (official ValueRankFn).
+
+    Only used inside the cardinalityDistribution CTE: valueRank has no
+    ColumnProfile field (pin and product ``table.json`` agree), so it never
+    lands as a metric of its own.
+    """
+    return f"ROW_NUMBER() OVER (ORDER BY COUNT({column_sql}) DESC)"
+
+
+def format_large_string_numbers(number: float | int) -> str:
+    """Format a large number human-readably (official ``helpers.py``).
+
+    1,000,000 -> ``"1.000M"``. One deliberate fix: the official magnitude is
+    unclamped, so 0 < |n| < 1 indexes the units list with a negative
+    magnitude (``0.25`` would label ``"250.000T"``); the magnitude is
+    clamped at 0 here, so small numbers render plain (``"0.250"``).
+    """
+    if number == 0:
+        return "0"
+    magnitude = max(0, int(math.floor(math.log(abs(number), 1000.0))))
+    units = ["", "K", "M", "B", "T"]
+    if magnitude >= len(units):
+        return f"{int(number / 1000.0**magnitude)}e{magnitude * 3}"
+    return f"{number / 1000.0**magnitude:.3f}{units[magnitude]}"
+
+
+def _format_bin_label(lower: float | None, upper: float | None = None) -> str:
+    """Format a histogram bin label (official ``Histogram._format_bin_labels``)."""
+    formatted_lower = "null" if lower is None else format_large_string_numbers(lower)
+    if upper is None:
+        return f"{formatted_lower} and up"
+    return f"{formatted_lower} to {format_large_string_numbers(upper)}"
+
+
+def _histogram_bins(
+    iqr: float | None, row_count: int, res_min: float, res_max: float
+) -> tuple[int, float]:
+    """Bin count + width (official ``Histogram._get_bins``).
+
+    Freedman-Diaconis first; when the IQR is missing or the bin count
+    exceeds 100, fall back to Sturges; still over 100, cap at 100.
+    """
+    max_bin_count = 100
+    if iqr is not None:
+        bin_width = 1.0 if iqr == 0 else 2 * iqr * row_count ** (-1 / 3)
+        num_bins = math.ceil((res_max - res_min) / bin_width)
+    if iqr is None or num_bins > max_bin_count:
+        num_bins = int(math.ceil(math.log2(row_count) + 1))
+        bin_width = (res_max - res_min) / num_bins
+    if num_bins > max_bin_count:
+        num_bins = max_bin_count
+        bin_width = (res_max - res_min) / num_bins
+    return num_bins, bin_width
+
 
 # Case-insensitive LIKE operator per dialect (official ilike: ILIKE where the
 # engine supports it; plain LIKE where LIKE is already case-insensitive by
@@ -66,6 +185,8 @@ _STDDEV_SQL: dict[SqlDialect, str] = {
 _ILIKE_OP: dict[SqlDialect, str] = {
     "postgres": "ILIKE",
     "mysql": "LIKE",
+    "mariadb": "LIKE",
+    "doris": "LIKE",
     "mssql": "LIKE",
     "snowflake": "ILIKE",
     "databricks": "ILIKE",
@@ -78,6 +199,8 @@ _ILIKE_OP: dict[SqlDialect, str] = {
 _REGEX_SQL: dict[SqlDialect, str | None] = {
     "postgres": "{col} ~ {ph}",
     "mysql": "{col} REGEXP {ph}",
+    "mariadb": "{col} REGEXP {ph}",
+    "doris": "{col} REGEXP {ph}",
     "mssql": None,
     "snowflake": "REGEXP_LIKE({col}, {ph})",
     "databricks": "REGEXP_LIKE({col}, {ph})",
@@ -270,8 +393,10 @@ class SqlProfileReader:
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[Any]:
         ident = self._ident(database, schema, table)
+        dataset = dataset_sql(self._dialect, ident, sample_config=sample_config)
         row_count = self._fetch_scalar(f"SELECT COUNT(*) FROM {ident}")
         columns = self._fetch_columns(database, schema, table)
         stats = [
@@ -284,7 +409,9 @@ class SqlProfileReader:
         ]
         for column_name, data_type in columns:
             column_params = (metric_params or {}).get(column_name)
-            stats.append(self._profile_column(ident, column_name, data_type, params=column_params))
+            stats.append(
+                self._profile_column(dataset, column_name, data_type, params=column_params)
+            )
         return stats
 
     def sample(
@@ -321,7 +448,7 @@ class SqlProfileReader:
 
     def _profile_column(
         self,
-        ident: str,
+        dataset: str,
         column_name: str,
         data_type: str | None,
         *,
@@ -369,6 +496,20 @@ class SqlProfileReader:
         else:
             add("sum_value", "NULL")
             add("stddev", "NULL")
+        if self._dialect not in MEDIAN_UNSUPPORTED_DIALECTS and (numeric or string):
+            # Official window metrics (median / firstQuartile / thirdQuartile):
+            # quantifiable columns direct, concatenable columns over their
+            # length; other types resolve to None without failing the query.
+            percentile_column = column if numeric else length
+            add("median", percentile_sql(self._dialect, percentile_column, 0.5, table_sql=dataset))
+            add(
+                "first_quartile",
+                percentile_sql(self._dialect, percentile_column, 0.25, table_sql=dataset),
+            )
+            add(
+                "third_quartile",
+                percentile_sql(self._dialect, percentile_column, 0.75, table_sql=dataset),
+            )
         if string:
             add("max_length", f"MAX({length})")
             add("min_length", f"MIN({length})")
@@ -425,18 +566,52 @@ class SqlProfileReader:
                 *values,
             )
 
-        row = self._fetch_one(f"SELECT {', '.join(selects)} FROM {ident}", tuple(sql_params))
+        row = self._fetch_one(f"SELECT {', '.join(selects)} FROM {dataset}", tuple(sql_params))
         got = dict(zip(slots, row, strict=True)) if row else {}
-        unique_count = self._unique_count(ident, column, data_type)
+        unique_count = self._unique_count(dataset, column, data_type)
         values_count = _as_int(got.get("values_count"))
         distinct_count = _as_int(got.get("distinct_count"))
+        mean_value = _as_float(got.get("mean"))
+        stddev_value = _as_float(got.get("stddev"))
+        min_value = _typed_value(got.get("min_value"))
+        max_value = _typed_value(got.get("max_value"))
+        median = _as_float(got.get("median"))
+        first_quartile = _as_float(got.get("first_quartile"))
+        third_quartile = _as_float(got.get("third_quartile"))
+        # Official composed metrics (IQR / NonParametricSkew): derived in
+        # Python from the static results, never from a second data pass.
+        inter_quartile_range = (
+            third_quartile - first_quartile
+            if first_quartile is not None and third_quartile is not None
+            else None
+        )
+        non_parametric_skew = (
+            (mean_value - median) / stddev_value
+            if mean_value is not None
+            and median is not None
+            and stddev_value is not None
+            and stddev_value != 0
+            else None
+        )
+        histogram = (
+            self._histogram(
+                dataset, column, values_count, min_value, max_value, inter_quartile_range
+            )
+            if numeric
+            else None
+        )
+        cardinality_distribution = (
+            self._cardinality_distribution(dataset, column, values_count, distinct_count)
+            if string
+            else None
+        )
         return self._stat_row(
             column_name=column_name,
             null_count=_as_int(got.get("null_count")),
             distinct_count=distinct_count,
-            min_value=_typed_value(got.get("min_value")),
-            max_value=_typed_value(got.get("max_value")),
-            mean=_as_float(got.get("mean")),
+            min_value=min_value,
+            max_value=max_value,
+            mean=mean_value,
             values_count=values_count,
             count_in_set=_as_int(got.get("count_in_set")),
             like_count=_as_int(got.get("like_count")),
@@ -446,7 +621,7 @@ class SqlProfileReader:
             not_regex_count=_as_int(got.get("not_regex_count")),
             max_length=_as_int(got.get("max_length")),
             min_length=_as_int(got.get("min_length")),
-            stddev=_as_float(got.get("stddev")),
+            stddev=stddev_value,
             sum_value=_as_float(got.get("sum_value")),
             unique_count=unique_count,
             null_missing_count=_as_int(got.get("null_missing_count")),
@@ -456,9 +631,16 @@ class SqlProfileReader:
             duplicate_count=_difference(values_count, distinct_count),
             like_ratio=_proportion(_as_int(got.get("like_count")), values_count),
             ilike_ratio=_proportion(_as_int(got.get("ilike_count")), values_count),
+            median=median,
+            first_quartile=first_quartile,
+            third_quartile=third_quartile,
+            inter_quartile_range=inter_quartile_range,
+            non_parametric_skew=non_parametric_skew,
+            histogram=histogram,
+            cardinality_distribution=cardinality_distribution,
         )
 
-    def _unique_count(self, ident: str, column: str, data_type: str | None) -> int | None:
+    def _unique_count(self, dataset: str, column: str, data_type: str | None) -> int | None:
         """Count of values appearing exactly once (official UniqueCount).
 
         One grouped subquery: ``SELECT COUNT(*) FROM (SELECT col ... GROUP BY
@@ -468,10 +650,113 @@ class SqlProfileReader:
         if self._dialect == "mssql" and (data_type or "").lower() in (_MSSQL_UNGROUPABLE_TYPES):
             return None
         row = self._fetch_one(
-            f"SELECT COUNT(*) FROM (SELECT {column} FROM {ident} "
+            f"SELECT COUNT(*) FROM (SELECT {column} FROM {dataset} "
             f"GROUP BY {column} HAVING COUNT(*) = 1) AS only_once"
         )
         return _as_int(row[0]) if row else None
+
+    def _histogram(
+        self,
+        dataset: str,
+        column: str,
+        values_count: int | None,
+        min_value: Any,
+        max_value: Any,
+        iqr: float | None,
+    ) -> dict[str, Any] | None:
+        """Histogram over the dataset (official hybrid Histogram).
+
+        One session query with one CASE per bin (at most 100). Only
+        quantifiable columns; min/max NaN/inf resolve to None. The bin
+        count/width follow ``_histogram_bins`` (Freedman-Diaconis, then
+        Sturges, capped at 100); the last bin is lower-bound-only.
+        """
+        if values_count is None or values_count <= 0:
+            return None
+        if min_value is None or max_value is None:
+            return None
+        if not isinstance(min_value, (int, float)) or not isinstance(max_value, (int, float)):
+            return None
+        if isinstance(min_value, float) and (math.isnan(min_value) or math.isinf(min_value)):
+            return None
+        if isinstance(max_value, float) and (math.isnan(max_value) or math.isinf(max_value)):
+            return None
+        res_min, res_max = float(min_value), float(max_value)
+        num_bins, bin_width = _histogram_bins(iqr, values_count, res_min, res_max)
+        if num_bins == 0:
+            return None
+        labels: list[str] = []
+        case_exprs: list[str] = []
+        lower = res_min
+        for bin_num in range(num_bins):
+            upper = lower + bin_width
+            if bin_num < num_bins - 1:
+                label = _format_bin_label(lower, upper)
+                case_exprs.append(
+                    f"COUNT(CASE WHEN {column} >= {lower!r} AND {column} < {upper!r} "
+                    f"THEN {column} END) AS {self._quote(label)}"
+                )
+            else:
+                label = _format_bin_label(lower)
+                case_exprs.append(
+                    f"COUNT(CASE WHEN {column} >= {lower!r} THEN {column} END) "
+                    f"AS {self._quote(label)}"
+                )
+            labels.append(label)
+            lower = upper
+        row = self._fetch_one(f"SELECT {', '.join(case_exprs)} FROM {dataset}")
+        if not row:
+            return None
+        return {
+            "boundaries": labels,
+            "frequencies": [int(value) if value is not None else 0 for value in row],
+        }
+
+    def _cardinality_distribution(
+        self,
+        dataset: str,
+        column: str,
+        values_count: int | None,
+        distinct_count: int | None,
+    ) -> dict[str, Any] | None:
+        """Cardinality distribution over the dataset (official hybrid).
+
+        One GROUP BY query in three CTE stages: per-value counts ranked by
+        the ValueRank fragment, low-frequency values folded into 'Others'
+        (threshold 0 while distinct <= 20, else 2% of the total), then
+        summed per category, ordered by count descending.
+        """
+        if values_count is None or values_count == 0:
+            return None
+        if values_count == distinct_count:
+            return {"allValuesUnique": True}
+        if distinct_count is not None and distinct_count <= 20:
+            threshold: float | int = 0
+        else:
+            threshold = 0.02 * values_count
+        rank = value_rank_sql(column)
+        rank_alias = self._quote("valueRank")
+        sum_alias = self._quote("sum")
+        sql = (
+            f"WITH value_counts AS (SELECT {column} AS category, "
+            f"COUNT({column}) AS category_count, {rank} AS {rank_alias} "
+            f"FROM {dataset} WHERE {column} IS NOT NULL GROUP BY {column}), "
+            f"categories AS (SELECT CASE WHEN category_count >= {threshold!r} "
+            f"OR {rank_alias} <= 5 THEN category ELSE 'Others' END AS category, "
+            f"category_count FROM value_counts) "
+            f"SELECT category, SUM(category_count) AS {sum_alias} FROM categories "
+            f"GROUP BY category ORDER BY {sum_alias} DESC"
+        )
+        rows = self._fetch(sql)
+        if not rows:
+            return None
+        categories = [row[0] for row in rows]
+        counts = [int(row[1]) for row in rows]
+        return {
+            "categories": categories,
+            "counts": counts,
+            "percentages": [round(count / values_count * 100, 2) for count in counts],
+        }
 
     def _fetch_scalar(self, sql: str) -> int:
         row = self._fetch_one(sql)

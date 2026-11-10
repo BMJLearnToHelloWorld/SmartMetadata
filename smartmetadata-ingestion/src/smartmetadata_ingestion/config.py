@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.expand import expand_value
 
@@ -300,6 +301,64 @@ class ProfilerMetricParamSpec(CamelModel):
         return self
 
 
+class ProfilerSampleSpec(CamelModel):
+    """Static sampling config for the profiler dataset (Wave 3 serial point 6).
+
+    Mirrors the official ``StaticSamplingConfig`` (PERCENTAGE / ROW_COUNT;
+    ``samplingMethodType`` SYSTEM / BERNOULLI, only consumed by Snowflake
+    TABLESAMPLE). The profiler computes every metric — window, composed
+    and hybrid alike — on this dataset. No ``profileQuery`` field: a
+    user-query dataset is not supported in this batch
+    (R-W3H-6-profile-query); DYNAMIC sampling is likewise out of scope
+    (R-W3H-6-dynamic-sampling).
+
+    ADR:2026-11-10-profiler-window-hybrid-metrics
+    """
+
+    __test__ = False
+
+    profile_sample: float
+    profile_sample_type: Literal["PERCENTAGE", "ROW_COUNT"] = "PERCENTAGE"
+    sampling_method_type: Literal["SYSTEM", "BERNOULLI"] | None = None
+
+    @model_validator(mode="after")
+    def require_valid_sample(self) -> ProfilerSampleSpec:
+        if self.profile_sample_type == "PERCENTAGE":
+            if not 0 < self.profile_sample <= 100:
+                raise ValueError("profiler sample profileSample must be in (0, 100] for PERCENTAGE")
+        elif not float(self.profile_sample).is_integer() or self.profile_sample < 1:
+            raise ValueError("profiler sample profileSample must be an integer >= 1 for ROW_COUNT")
+        return self
+
+    def to_static(self) -> StaticSampleConfig:
+        return StaticSampleConfig(
+            profile_sample=self.profile_sample,
+            sample_type=self.profile_sample_type,
+            sampling_method=self.sampling_method_type,
+        )
+
+
+class ProfilerTableSampleSpec(ProfilerSampleSpec):
+    """Per-table sampling override, keyed by table FQN.
+
+    Resolution order: per-table config, then the workflow default
+    (``profilerSample``), then no sampling. The server levels (entity
+    ``tableProfilerConfig`` / schema / database) are not pulled by the
+    workflow yet (R-W3H-6-sampler-server-config).
+    """
+
+    __test__ = False
+
+    table_fqn: str
+
+    @field_validator("table_fqn")
+    @classmethod
+    def require_table_fqn(cls, value: str) -> str:
+        if not value or not str(value).strip():
+            raise ValueError("profiler table sample tableFqn is required")
+        return value
+
+
 class DataDiffSideSpec(CamelModel):
     """One side of a data-diff comparison.
 
@@ -399,6 +458,8 @@ class WorkflowConfig(CamelModel):
     test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
     test_cases: list[TestCaseSpec] = Field(default_factory=list)
     profiler_metric_params: list[ProfilerMetricParamSpec] = Field(default_factory=list)
+    profiler_sample: ProfilerSampleSpec | None = None
+    profiler_table_samples: list[ProfilerTableSampleSpec] = Field(default_factory=list)
     data_diffs: list[DataDiffSpec] = Field(default_factory=list)
     classifications: list[ClassificationSpec] = Field(default_factory=list)
     tags: list[TagSpec] = Field(default_factory=list)

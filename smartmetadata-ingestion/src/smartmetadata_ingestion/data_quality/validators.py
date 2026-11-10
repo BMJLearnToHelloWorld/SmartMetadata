@@ -33,6 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from smartmetadata_ingestion.connectors.profile_sql import is_string_type
 from smartmetadata_ingestion.data_quality import sql as dq_sql
 from smartmetadata_ingestion.data_quality.models import (
     PulledTestCase,
@@ -547,7 +548,12 @@ class ColumnValueMedianToBeBetweenValidator(_AggregateBetweenValidator):
     the (c) window metric `median` (Wave 3 serial point 6) — no median
     value is ever faked inside the validator.
 
+    String columns median over their length (official Median.fn: LenFn
+    for concatenable columns); the shared percentile renderer supplies
+    the per-dialect compile, including MySQL (needs the table source).
+
     ADR:2026-11-08-validator-compile-table-diff-params
+    ADR:2026-11-10-profiler-window-hybrid-metrics
     """
 
     definition_name = "columnValueMedianToBeBetween"
@@ -556,7 +562,9 @@ class ColumnValueMedianToBeBetweenValidator(_AggregateBetweenValidator):
     metric_name = "median"
 
     def _aggregate_sql(self, column_sql: str) -> str:
-        return dq_sql.median_sql(self.dialect, column_sql)
+        if is_string_type(self._column_data_type()):
+            column_sql = dq_sql.length_sql(self.dialect, column_sql)
+        return dq_sql.median_sql(self.dialect, column_sql, table_sql=self._table_sql())
 
 
 class ColumnValuesSumToBeBetweenValidator(_AggregateBetweenValidator):
