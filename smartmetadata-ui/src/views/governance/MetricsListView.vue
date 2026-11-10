@@ -1455,8 +1455,8 @@ onUnmounted(() => {
       </Modal>
 
       <MetricCreateDrawer
-        v-model:open="createDrawer.open"
-        :parent-metric-fqn="createDrawer.parentMetricFqn"
+        v-model:open="createDrawer.open.value"
+        :parent-metric-fqn="createDrawer.parentMetricFqn.value"
         @created="onMetricCreated"
       />
     </template>

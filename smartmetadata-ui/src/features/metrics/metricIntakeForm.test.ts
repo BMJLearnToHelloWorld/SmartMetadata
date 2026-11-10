@@ -27,12 +27,16 @@ describe('getIntakeFormFields', () => {
   it('returns formFields when present, else requiredFields forced required', () => {
     expect(
       getIntakeFormFields({
+        id: 'metric-intake-form',
+        entityType: 'metric',
         formFields: [nativeField],
         requiredFields: [{ ...nativeField, required: false }],
       }),
     ).toEqual([nativeField]);
     expect(
       getIntakeFormFields({
+        id: 'metric-intake-form',
+        entityType: 'metric',
         formFields: [],
         requiredFields: [{ ...nativeField, required: false }],
       }),

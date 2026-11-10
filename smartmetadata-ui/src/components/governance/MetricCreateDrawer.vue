@@ -6,6 +6,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Input, Select, Skeleton, Typography, message } from 'ant-design-vue';
+import type { SelectValue } from 'ant-design-vue/es/select';
 import { createMetric } from '@/api/metrics';
 import { getPropertyConfigSummary } from '@/api/customProperties';
 import type { IntakeFormField } from '@/api/intakeForms';
@@ -260,6 +261,29 @@ function fqnKey(ref: EntityRef): string {
   return ref.fullyQualifiedName ?? ref.name ?? '';
 }
 
+/**
+ * antd Select emits SelectValue (RawValue | LabeledValue, single or array);
+ * these selects only ever carry plain string values, so normalise to
+ * string terms here and keep the handlers in string terms.
+ */
+function asSingleString(value: SelectValue): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const labeled = value.value;
+    return typeof labeled === 'string' ? labeled : undefined;
+  }
+  return undefined;
+}
+
+function asStringArray(value: SelectValue): string[] {
+  const list = value === undefined ? [] : Array.isArray(value) ? value : [value];
+  return list.map((item) =>
+    typeof item === 'object' && item !== null ? String(item.value) : String(item),
+  );
+}
+
 function onOwnersChange(selectedValues: string[]): void {
   values.value.owners = refsFromValues(userTeamRefs, selectedValues);
 }
@@ -289,7 +313,7 @@ function close(): void {
 async function handleSubmit(): Promise<void> {
   errors.value = validateMetricForm(
     values.value,
-    intake.requiredNativeFields.value,
+    new Set(intake.requiredNativeFields.value.keys()),
     requiredExtensionNames.value,
   );
   if (errors.value.length > 0) {
@@ -422,7 +446,7 @@ watch(
           allow-clear
           :placeholder="t('metrics.form.metricType')"
           style="width: 100%"
-          @change="(value: string | undefined) => { values.metricType = value ?? null; }"
+          @change="(value: SelectValue) => { values.metricType = asSingleString(value) ?? null; }"
         />
         <Typography.Text v-if="errorFor('metricType')" type="danger">
           {{ errorFor('metricType') }}
@@ -440,7 +464,7 @@ watch(
           allow-clear
           :placeholder="t('metrics.form.granularity')"
           style="width: 100%"
-          @change="(value: string | undefined) => { values.granularity = value ?? null; }"
+          @change="(value: SelectValue) => { values.granularity = asSingleString(value) ?? null; }"
         />
         <Typography.Text v-if="errorFor('granularity')" type="danger">
           {{ errorFor('granularity') }}
@@ -458,7 +482,7 @@ watch(
           allow-clear
           :placeholder="t('metrics.form.unitOfMeasurement')"
           style="width: 100%"
-          @change="(value: string | undefined) => { values.unitOfMeasurement = value ?? null; }"
+          @change="(value: SelectValue) => { values.unitOfMeasurement = asSingleString(value) ?? null; }"
         />
         <Typography.Text v-if="errorFor('unitOfMeasurement')" type="danger">
           {{ errorFor('unitOfMeasurement') }}
@@ -492,7 +516,7 @@ watch(
           style="width: 100%"
           @focus="() => { if (metricOptions.length === 0) void loadMetricOptions(''); }"
           @search="debouncedMetricSearch"
-          @change="(value: string | undefined) => onParentMetricChange(value)"
+          @change="(value: SelectValue) => onParentMetricChange(asSingleString(value))"
         />
         <Typography.Text v-if="errorFor('parentMetric')" type="danger">
           {{ errorFor('parentMetric') }}
@@ -514,7 +538,7 @@ watch(
           style="width: 100%"
           @focus="() => { if (userTeamOptions.length === 0) void loadUserTeamOptions(''); }"
           @search="debouncedUserTeamSearch"
-          @change="(selected: string[]) => onOwnersChange(selected)"
+          @change="(value: SelectValue) => onOwnersChange(asStringArray(value))"
         />
         <Typography.Text v-if="errorFor('owners')" type="danger">
           {{ errorFor('owners') }}
@@ -536,7 +560,7 @@ watch(
           style="width: 100%"
           @focus="() => { if (userTeamOptions.length === 0) void loadUserTeamOptions(''); }"
           @search="debouncedUserTeamSearch"
-          @change="(selected: string[]) => onReviewersChange(selected)"
+          @change="(value: SelectValue) => onReviewersChange(asStringArray(value))"
         />
         <Typography.Text v-if="errorFor('reviewers')" type="danger">
           {{ errorFor('reviewers') }}
@@ -558,7 +582,7 @@ watch(
           style="width: 100%"
           @focus="() => { if (domainOptions.length === 0) void loadDomainOptions(''); }"
           @search="debouncedDomainSearch"
-          @change="(selected: string[]) => onDomainsChange(selected)"
+          @change="(value: SelectValue) => onDomainsChange(asStringArray(value))"
         />
         <Typography.Text v-if="errorFor('domains')" type="danger">
           {{ errorFor('domains') }}
@@ -577,7 +601,7 @@ watch(
           style="width: 100%"
           @focus="() => { if (metricOptions.length === 0) void loadMetricOptions(''); }"
           @search="debouncedMetricSearch"
-          @change="(selected: string[]) => onRelatedMetricsChange(selected)"
+          @change="(value: SelectValue) => onRelatedMetricsChange(asStringArray(value))"
         />
         <Typography.Text v-if="errorFor('relatedMetrics')" type="danger">
           {{ errorFor('relatedMetrics') }}
@@ -594,7 +618,7 @@ watch(
           data-testid="metric-create-language"
           :placeholder="t('metrics.form.language')"
           style="width: 100%"
-          @change="(value: string) => { values.language = value; }"
+          @change="(value: SelectValue) => { values.language = asSingleString(value) ?? values.language; }"
         />
         <Typography.Text v-if="errorFor('language')" type="danger">
           {{ errorFor('language') }}
@@ -641,7 +665,7 @@ watch(
           :data-testid="`metric-create-extension-${extensionPropertyName(field)}`"
           allow-clear
           style="width: 100%"
-          @change="(value: string | string[]) => setExtensionValue(extensionPropertyName(field), value)"
+          @change="(value: SelectValue) => setExtensionValue(extensionPropertyName(field), value)"
         />
         <Input
           v-else-if="

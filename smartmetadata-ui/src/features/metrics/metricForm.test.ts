@@ -15,7 +15,7 @@ import {
   validateMetricForm,
   type MetricFormValues,
 } from './metricForm';
-import type { CustomPropertyDef } from '@/api/customProperties';
+import type { CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef } from '@/types/api';
 
 function baseValues(overrides: Partial<MetricFormValues> = {}): MetricFormValues {
