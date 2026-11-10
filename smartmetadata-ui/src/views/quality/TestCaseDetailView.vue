@@ -437,7 +437,7 @@ onMounted(() => {
       <TableDiffFields
         v-if="isTableDiff && editDefinition"
         :definitions="editDefinition.parameterDefinition"
-        :entity-fqn="editEntity?.fqn ?? testCase.entityFQN ?? ''"
+        :entity-fqn="editEntity?.fqn ?? testCase?.entityFQN ?? ''"
         :entity-type="editEntity?.entityType ?? 'table'"
         :model-value="editForm.parameterValues"
         @update:model-value="editForm.parameterValues = $event"

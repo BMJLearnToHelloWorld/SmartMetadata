@@ -36,7 +36,10 @@ export async function getTableByName(fqn: string): Promise<TableColumns> {
   const columns = Array.isArray(raw.columns)
     ? raw.columns.flatMap((item) => {
         const rec = asRecord(item);
-        const name = rec ? asString(rec.name) : '';
+        if (!rec) {
+          return [];
+        }
+        const name = asString(rec.name);
         if (!name) {
           return [];
         }
