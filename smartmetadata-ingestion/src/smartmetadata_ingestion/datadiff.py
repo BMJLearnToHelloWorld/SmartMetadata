@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from smartmetadata_ingestion.config import DataDiffSideSpec, DataDiffSpec
 from smartmetadata_ingestion.connectors import (
     databricks_common,
     databricks_data_diff,
@@ -44,6 +45,7 @@ from smartmetadata_ingestion.connectors.profile_sql import (
     quote_mysql,
 )
 from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.records import TestCaseResultRecord
 
 
 @dataclass(frozen=True)
@@ -228,3 +230,137 @@ class SqlKeyFetcher:
                 return [tuple(row) for row in cursor.fetchall()]
             finally:
                 cursor.close()
+
+
+def _side_connection(
+    side_spec: DataDiffSideSpec, default_connection: dict[str, Any]
+) -> dict[str, Any]:
+    if side_spec.connection:
+        return side_spec.connection
+    return default_connection
+
+
+def _fetch_keys_for(
+    spec: DataDiffSpec,
+    side_spec: DataDiffSideSpec,
+    binding: DataDiffBinding,
+    side: dict[str, Any],
+    *,
+    default_connection: dict[str, Any],
+    fetch_keys: Callable[[dict[str, Any]], Iterable[tuple[Any, ...]]] | None = None,
+) -> list[tuple[Any, ...]]:
+    if fetch_keys is not None:
+        return [tuple(row) for row in fetch_keys(side)]
+    fetcher = SqlKeyFetcher(
+        binding.connect(_side_connection(side_spec, default_connection)),
+        quote=binding.quote,
+        ident_style=binding.ident_style,
+    )
+    return fetcher.fetch_keys(
+        side_spec.database,
+        side_spec.schema,
+        side_spec.table,
+        side_spec.key_columns,
+        where_clause=spec.where_clause,
+    )
+
+
+def _aborted_result(
+    spec: DataDiffSpec, side_spec: DataDiffSideSpec, timestamp: int
+) -> TestCaseResultRecord:
+    key_columns = side_spec.key_columns
+    if len(key_columns) == 1:
+        subject = f"Key column '{key_columns[0]}' is"
+    else:
+        subject = f"Key columns ({', '.join(repr(column) for column in key_columns)}) are"
+    location = f"in {side_spec.database}.{side_spec.schema}.{side_spec.table}"
+    return TestCaseResultRecord(
+        test_case_fqn=spec.test_case_fqn,
+        timestamp=timestamp,
+        test_case_status="Aborted",
+        result=(
+            f"{subject} not unique {location}. A row-level diff needs a unique key: "
+            "pick a unique column, or add more columns to the key."
+        ),
+    )
+
+
+def _has_duplicate_keys(keys: list[tuple[Any, ...]]) -> bool:
+    return len(keys) != len(set(keys))
+
+
+def run_data_diff_spec(
+    spec: DataDiffSpec,
+    *,
+    left_binding: DataDiffBinding,
+    right_binding: DataDiffBinding,
+    default_connection: dict[str, Any],
+    fetch_keys: Callable[[dict[str, Any]], Iterable[tuple[Any, ...]]] | None = None,
+    timestamp: int,
+) -> TestCaseResultRecord:
+    """Run one compiled data-diff spec (key-set comparison) and build its result.
+
+    The single verdict implementation shared by the DataDiff workflow and
+    the tableDiff validator (ADR:2026-11-08-validator-compile-table-diff-params):
+    the official verdict formula (``(threshold or total) == 0 or total <
+    threshold``), duplicate keys abort the case, and only the fields the
+    key-set engine actually computes are written (``removedRows`` /
+    ``addedRows`` / ``diffCount`` plus the key-set-only disclosure).
+    """
+    left_side = build_side(
+        left_binding,
+        _side_connection(spec.left, default_connection),
+        database=spec.left.database,
+        schema=spec.left.schema,
+        table=spec.left.table,
+        key_columns=spec.left.key_columns,
+    )
+    right_side = build_side(
+        right_binding,
+        _side_connection(spec.right, default_connection),
+        database=spec.right.database,
+        schema=spec.right.schema,
+        table=spec.right.table,
+        key_columns=spec.right.key_columns,
+    )
+    left_keys = _fetch_keys_for(
+        spec,
+        spec.left,
+        left_binding,
+        left_side,
+        default_connection=default_connection,
+        fetch_keys=fetch_keys,
+    )
+    duplicate_side = spec.left if _has_duplicate_keys(left_keys) else None
+    if duplicate_side is None:
+        right_keys = _fetch_keys_for(
+            spec,
+            spec.right,
+            right_binding,
+            right_side,
+            default_connection=default_connection,
+            fetch_keys=fetch_keys,
+        )
+        duplicate_side = spec.right if _has_duplicate_keys(right_keys) else None
+    if duplicate_side is not None:
+        return _aborted_result(spec, duplicate_side, timestamp)
+    diff = compare_key_sets(left_keys, right_keys)
+    total = diff.total
+    passed = (spec.threshold or total) == 0 or total < spec.threshold
+    return TestCaseResultRecord(
+        test_case_fqn=spec.test_case_fqn,
+        timestamp=timestamp,
+        test_case_status="Success" if passed else "Failed",
+        test_result_value=[
+            {"name": "removedRows", "value": str(diff.extra_left)},
+            {"name": "addedRows", "value": str(diff.extra_right)},
+            {"name": "diffCount", "value": str(total)},
+        ],
+        result=(
+            f"Found {total} different keys (key-set comparison only: "
+            f"{diff.extra_left} only in left table, {diff.extra_right} only in "
+            f"right table; row-value and schema differences are not compared)"
+        ),
+        passed_rows=diff.common,
+        failed_rows=total,
+    )
