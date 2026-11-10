@@ -320,7 +320,39 @@ def _write_profile(client: RestClient, record: ProfileRecord) -> Any:
             payload["profileType"] = record.profile_type
         if record.timestamp is not None:
             payload["timestamp"] = record.timestamp
-        return client.post_entity_profile_by_name(record.entity_type, record.fqn, payload)
+        result = client.post_entity_profile_by_name(record.entity_type, record.fqn, payload)
+        # The fqn path used to post only the table profile and silently drop
+        # record.column_profile. Each column profile is its own
+        # CreateEntityProfile (profileType "column") on the same table FQN;
+        # the server stores it against the column FQN resolved from
+        # profileData.name (ADR:2026-11-08-profiler-fqn-path-posts-column-profiles).
+        # A failed column post raises like a failed table post: it must
+        # surface, never be swallowed.
+        for column in record.column_profile:
+            column_payload: dict[str, Any] = {
+                "entityType": record.entity_type,
+                "profileType": "column",
+                "profileData": column,
+            }
+            if record.timestamp is not None:
+                column_payload["timestamp"] = record.timestamp
+            client.post_entity_profile_by_name(record.entity_type, record.fqn, column_payload)
+        # The fqn path also used to drop record.system_profile. Each system
+        # profile is its own CreateEntityProfile (profileType "system") on
+        # the same table FQN; the server stores it keyed by timestamp +
+        # operation inside profileData (ADR:2026-11-08-profiler-fqn-path-posts-column-profiles).
+        # A failed system post raises like a failed table post: it must
+        # surface, never be swallowed.
+        for system in record.system_profile:
+            system_payload: dict[str, Any] = {
+                "entityType": record.entity_type,
+                "profileType": "system",
+                "profileData": system,
+            }
+            if record.timestamp is not None:
+                system_payload["timestamp"] = record.timestamp
+            client.post_entity_profile_by_name(record.entity_type, record.fqn, system_payload)
+        return result
     if record.table_id:
         if record.table_profile is None:
             raise WorkflowError("legacy table profile requires tableProfile + tableId")

@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import AuthConfig, ServerConfig
 from smartmetadata_ingestion.connectors.base import parse_static_record
+from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import ProfileRecord, TestCaseResultRecord
 from smartmetadata_ingestion.sinks.metadata_rest import MetadataRestSink
 
@@ -104,6 +106,201 @@ def test_sink_writes_entity_profile_and_test_result() -> None:
     assert calls[1][0] == "tcr"
     assert calls[1][2]["testCaseStatus"] == "Failed"
     assert calls[1][2]["failedRows"] == 2
+
+
+def test_sink_posts_each_column_profile_on_fqn_path() -> None:
+    calls: list[tuple] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(("profile", entity_type, fqn, payload))
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    sink.write(
+        ProfileRecord(
+            fqn="svc.db.s.t",
+            profile_data={"timestamp": 1, "rowCount": 3},
+            profile_type="table",
+            timestamp=1,
+            column_profile=[
+                {"name": "id", "nullCount": 0, "distinctCount": 3},
+                {"name": "amount", "nullCount": 1, "distinctCount": 2},
+            ],
+        )
+    )
+    assert len(calls) == 3
+    assert calls[0][3]["profileType"] == "table"
+    assert calls[0][3]["profileData"]["rowCount"] == 3
+    for call, name in ((calls[1], "id"), (calls[2], "amount")):
+        assert call[1] == "table"
+        assert call[2] == "svc.db.s.t"
+        assert call[3]["profileType"] == "column"
+        assert call[3]["profileData"]["name"] == name
+        assert call[3]["timestamp"] == 1
+    assert calls[1][3]["profileData"] == {"name": "id", "nullCount": 0, "distinctCount": 3}
+    assert calls[2][3]["profileData"] == {"name": "amount", "nullCount": 1, "distinctCount": 2}
+
+
+def test_sink_fqn_path_without_columns_posts_table_only() -> None:
+    calls: list[tuple] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(("profile", entity_type, fqn, payload))
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    sink.write(
+        ProfileRecord(
+            fqn="svc.db.s.t",
+            profile_data={"timestamp": 1, "rowCount": 3},
+            profile_type="table",
+            timestamp=1,
+        )
+    )
+    assert len(calls) == 1
+    assert calls[0][3]["profileType"] == "table"
+
+
+def test_sink_legacy_table_id_path_still_bundles_columns() -> None:
+    calls: list[tuple] = []
+
+    class Fake:
+        def put_table_profile(self, table_id, payload):
+            calls.append(("table-profile", table_id, payload))
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    sink.write(
+        ProfileRecord(
+            table_id="uuid-1",
+            table_profile={"timestamp": 1, "rowCount": 3},
+            column_profile=[{"name": "id", "nullCount": 0}],
+            system_profile=[{"timestamp": 1, "operation": "INSERT"}],
+        )
+    )
+    assert len(calls) == 1
+    assert calls[0][0] == "table-profile"
+    assert calls[0][1] == "uuid-1"
+    assert calls[0][2]["tableProfile"] == {"timestamp": 1, "rowCount": 3}
+    assert calls[0][2]["columnProfile"] == [{"name": "id", "nullCount": 0}]
+    assert calls[0][2]["systemProfile"] == [{"timestamp": 1, "operation": "INSERT"}]
+
+
+def test_sink_posts_each_system_profile_on_fqn_path() -> None:
+    calls: list[tuple] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(("profile", entity_type, fqn, payload))
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    sink.write(
+        ProfileRecord(
+            fqn="svc.db.s.t",
+            profile_data={"timestamp": 1, "rowCount": 3},
+            profile_type="table",
+            timestamp=1,
+            system_profile=[
+                {"timestamp": 1, "operation": "INSERT", "rowsAffected": 10},
+                {"timestamp": 2, "operation": "DELETE", "rowsAffected": 4},
+            ],
+        )
+    )
+    assert len(calls) == 3
+    assert calls[0][3]["profileType"] == "table"
+    assert calls[0][3]["profileData"]["rowCount"] == 3
+    for call, operation in ((calls[1], "INSERT"), (calls[2], "DELETE")):
+        assert call[1] == "table"
+        assert call[2] == "svc.db.s.t"
+        assert call[3]["profileType"] == "system"
+        assert call[3]["profileData"]["operation"] == operation
+        assert call[3]["timestamp"] == 1
+    assert calls[1][3]["profileData"] == {
+        "timestamp": 1,
+        "operation": "INSERT",
+        "rowsAffected": 10,
+    }
+    assert calls[2][3]["profileData"] == {
+        "timestamp": 2,
+        "operation": "DELETE",
+        "rowsAffected": 4,
+    }
+
+
+def test_sink_fqn_path_without_system_posts_table_and_columns_only() -> None:
+    calls: list[tuple] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(("profile", entity_type, fqn, payload))
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    sink.write(
+        ProfileRecord(
+            fqn="svc.db.s.t",
+            profile_data={"timestamp": 1, "rowCount": 3},
+            profile_type="table",
+            timestamp=1,
+            column_profile=[{"name": "id", "nullCount": 0}],
+        )
+    )
+    assert len(calls) == 2
+    assert calls[0][3]["profileType"] == "table"
+    assert calls[1][3]["profileType"] == "column"
+    assert all(call[3]["profileType"] != "system" for call in calls)
+
+
+def test_sink_failing_system_post_surfaces() -> None:
+    calls: list[str] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(payload["profileType"])
+            if payload.get("profileType") == "system":
+                raise WorkflowError("system post failed")
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    with pytest.raises(WorkflowError, match="system post failed"):
+        sink.write(
+            ProfileRecord(
+                fqn="svc.db.s.t",
+                profile_data={"timestamp": 1, "rowCount": 3},
+                profile_type="table",
+                timestamp=1,
+                column_profile=[{"name": "id", "nullCount": 0}],
+                system_profile=[{"timestamp": 1, "operation": "INSERT"}],
+            )
+        )
+    assert calls == ["table", "column", "system"]
+
+
+def test_sink_failing_column_post_surfaces() -> None:
+    calls: list[str] = []
+
+    class Fake:
+        def post_entity_profile_by_name(self, entity_type, fqn, payload):
+            calls.append(payload["profileType"])
+            if payload.get("profileType") == "column":
+                raise WorkflowError("column post failed")
+            return payload
+
+    sink = MetadataRestSink(Fake())  # type: ignore[arg-type]
+    with pytest.raises(WorkflowError, match="column post failed"):
+        sink.write(
+            ProfileRecord(
+                fqn="svc.db.s.t",
+                profile_data={"timestamp": 1, "rowCount": 3},
+                profile_type="table",
+                timestamp=1,
+                column_profile=[{"name": "id", "nullCount": 0}],
+            )
+        )
+    assert calls == ["table", "column"]
 
 
 def test_static_profile_and_test_result() -> None:
