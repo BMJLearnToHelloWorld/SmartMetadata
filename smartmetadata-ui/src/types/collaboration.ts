@@ -303,6 +303,8 @@ export interface CreateCustomPropertyRequest {
   description: string;
   propertyType: { id: string; type: string; name: string };
   displayName?: string;
+  /** Stage 3 (Wave 2 G-23): the four official config forms, built by buildCustomPropertyConfig. */
+  customPropertyConfig?: CustomPropertyConfig;
 }
 
 export type ExtensionValues = Record<string, unknown>;

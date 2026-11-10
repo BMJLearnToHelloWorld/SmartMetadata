@@ -3,21 +3,32 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink } from 'vue-router';
 import { Card, Col, Row, Typography } from 'ant-design-vue';
-import { SETTINGS_CATEGORIES } from '@/settings/hub';
+import { SETTINGS_CATEGORIES, sortSettingsItemsByRenderedTitle } from '@/settings/hub';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 
 const { t } = useI18n();
+
+/** Categories render as authored, except flagged ones sort by rendered title (R-2). */
+const sortedCategories = computed(() =>
+  SETTINGS_CATEGORIES.map((category) => ({
+    ...category,
+    items: category.sortItemsByRenderedTitle
+      ? sortSettingsItemsByRenderedTitle(category.items, (key) => t(key))
+      : category.items,
+  })),
+);
 </script>
 
 <template>
   <PageLayout test-id="settings-hub">
     <PageHeader :header="t('settings.title')" :sub-header="t('settings.lead')" test-id="settings-hub-title" />
     <Row :gutter="[16, 16]">
-      <Col v-for="category in SETTINGS_CATEGORIES" :key="category.key" :xs="24" :md="12" :xl="8">
+      <Col v-for="category in sortedCategories" :key="category.key" :xs="24" :md="12" :xl="8">
         <Card class="settings-hub__card" :data-testid="`settings-category-${category.key}`" size="small">
           <Typography.Title :level="5">{{ t(category.titleKey) }}</Typography.Title>
           <Typography.Paragraph type="secondary">{{ t(category.descriptionKey) }}</Typography.Paragraph>

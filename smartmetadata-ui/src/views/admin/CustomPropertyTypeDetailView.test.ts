@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { Modal, Select } from 'ant-design-vue';
+import Antd, { Modal, Select, Switch } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -423,6 +423,306 @@ describe('CustomPropertyTypeDetailView', () => {
     ]);
     expect(wrapper.text()).not.toContain('retentionDays');
     expect(wrapper.text()).toContain('ownerTeam');
+  });
+
+  // 20s caps (same load evidence as the first test in this file: mounts
+  // take ~1–5s quiet and up to ~9s under peak VM load).
+  describe('stage 3 config write side', () => {
+    const FIELD_TYPES = [
+      { id: 'f-int', name: 'integer', category: 'field', displayName: 'Integer' },
+      { id: 'f-enum', name: 'enum', category: 'field', displayName: 'Enum' },
+      { id: 'f-date', name: 'date-cp', category: 'field', displayName: 'Date' },
+      { id: 'f-ref', name: 'entityReference', category: 'field', displayName: 'Entity Reference' },
+      { id: 'f-table', name: 'table-cp', category: 'field', displayName: 'Table' },
+      { id: 'f-string', name: 'string', category: 'field', displayName: 'String' },
+    ];
+
+    function stage3Fetch(defs: unknown[], updated?: unknown) {
+      return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = String(init?.method || '').toUpperCase();
+        if (url.includes('category=field')) {
+          return jsonResponse({ data: FIELD_TYPES, paging: { total: FIELD_TYPES.length } });
+        }
+        if ((method === 'PUT' || method === 'PATCH') && url.includes('/api/v1/metadata/types/tid')) {
+          return jsonResponse(updated ?? { id: 'tid', name: 'table', customProperties: defs });
+        }
+        if (url.includes('/api/v1/metadata/types/name/')) {
+          return jsonResponse({ id: 'tid', name: 'table', customProperties: defs });
+        }
+        return new Response('not found', { status: 404 });
+      });
+    }
+
+    function putBodies(fetchMock: ReturnType<typeof vi.fn>): unknown[] {
+      return fetchMock.mock.calls
+        .filter(
+          (call) =>
+            String(call[0]).includes('/api/v1/metadata/types/tid') &&
+            String((call[1] as RequestInit | undefined)?.method || '').toUpperCase() === 'PUT',
+        )
+        .map((call) => JSON.parse(String((call[1] as RequestInit).body)));
+    }
+
+    function patchBodies(fetchMock: ReturnType<typeof vi.fn>): unknown[] {
+      return fetchMock.mock.calls
+        .filter(
+          (call) =>
+            String(call[0]).includes('/api/v1/metadata/types/tid') &&
+            String((call[1] as RequestInit | undefined)?.method || '').toUpperCase() === 'PATCH',
+        )
+        .map((call) => JSON.parse(String((call[1] as RequestInit).body)));
+    }
+
+    function formSelect(wrapper: ReturnType<typeof mount>, testid: string) {
+      const select = wrapper
+        .findAllComponents(Select)
+        .find((c) => c.attributes('data-testid') === testid);
+      expect(select).toBeTruthy();
+      return select!;
+    }
+
+    async function selectFormType(
+      wrapper: ReturnType<typeof mount>,
+      id: string,
+    ): Promise<void> {
+      const select = formSelect(wrapper, 'custom-property-type');
+      await select.vm.$emit('update:value', id);
+      await select.vm.$emit('change', id);
+      await flushPromises();
+    }
+
+    async function clickModalOk(wrapper: ReturnType<typeof mount>): Promise<void> {
+      const modalOk = wrapper
+        .findAll('.ant-modal-footer button')
+        .find((b) => b.classes().includes('ant-btn-primary'));
+      expect(modalOk).toBeTruthy();
+      await modalOk!.trigger('click');
+      await flushPromises();
+    }
+
+    async function openCreate(wrapper: ReturnType<typeof mount>): Promise<void> {
+      await wrapper.get('[data-testid="add-custom-property"]').trigger('click');
+      await flushPromises();
+    }
+
+    it('creates an enum property with config and echoes it in the Configuration column', async () => {
+      const created = {
+        name: 'tier',
+        displayName: '',
+        description: 'Service tier',
+        propertyType: { name: 'enum' },
+        customPropertyConfig: { config: { values: ['gold', 'silver'], multiSelect: true } },
+      };
+      const fetchMock = stage3Fetch([], { id: 'tid', name: 'table', customProperties: [created] });
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-enum');
+      await wrapper.get('[data-testid="custom-property-name"]').setValue('tier');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('Service tier');
+      const enumSelect = formSelect(wrapper, 'custom-property-enum-config');
+      await enumSelect.vm.$emit('update:value', ['gold', 'silver']);
+      const multiSelect = wrapper.findComponent(Switch);
+      await multiSelect.vm.$emit('update:checked', true);
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toEqual([
+        {
+          name: 'tier',
+          description: 'Service tier',
+          propertyType: { id: 'f-enum', type: 'type', name: 'enum' },
+          customPropertyConfig: { config: { multiSelect: true, values: ['gold', 'silver'] } },
+        },
+      ]);
+      expect(wrapper.find('[data-testid="enum-config"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="enum-config"]').text()).toContain('Values · Multi-select');
+    }, 20000);
+
+    it('creates a date property with a format config', async () => {
+      const fetchMock = stage3Fetch([]);
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-date');
+      await wrapper.get('[data-testid="custom-property-name"]').setValue('reviewedOn');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('Review date');
+      const formatSelect = formSelect(wrapper, 'custom-property-format-config');
+      await formatSelect.vm.$emit('update:value', 'dd-MM-yyyy');
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toEqual([
+        {
+          name: 'reviewedOn',
+          description: 'Review date',
+          propertyType: { id: 'f-date', type: 'type', name: 'date-cp' },
+          customPropertyConfig: { config: 'dd-MM-yyyy' },
+        },
+      ]);
+    }, 20000);
+
+    it('creates an entity-reference property with the selected types', async () => {
+      const fetchMock = stage3Fetch([]);
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-ref');
+      await wrapper.get('[data-testid="custom-property-name"]').setValue('ownerRef');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('Owner reference');
+      const refSelect = formSelect(wrapper, 'custom-property-entity-ref-config');
+      await refSelect.vm.$emit('update:value', ['table', 'user']);
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toEqual([
+        {
+          name: 'ownerRef',
+          description: 'Owner reference',
+          propertyType: { id: 'f-ref', type: 'type', name: 'entityReference' },
+          customPropertyConfig: { config: ['table', 'user'] },
+        },
+      ]);
+    }, 20000);
+
+    it('creates a table property with column names', async () => {
+      const fetchMock = stage3Fetch([]);
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-table');
+      await wrapper.get('[data-testid="custom-property-name"]').setValue('breakdown');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('Breakdown table');
+      const columnsSelect = formSelect(wrapper, 'custom-property-columns');
+      await columnsSelect.vm.$emit('update:value', ['col_a', 'col_b']);
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toEqual([
+        {
+          name: 'breakdown',
+          description: 'Breakdown table',
+          propertyType: { id: 'f-table', type: 'type', name: 'table-cp' },
+          customPropertyConfig: { config: { columns: ['col_a', 'col_b'] } },
+        },
+      ]);
+    }, 20000);
+
+    it('blocks submit when a conditional field is missing', async () => {
+      const fetchMock = stage3Fetch([]);
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-enum');
+      await wrapper.get('[data-testid="custom-property-name"]').setValue('tier');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('Service tier');
+      // No enum values: validation reports the first issue, nothing is sent.
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(0);
+    }, 20000);
+
+    it('blocks a case-insensitively duplicate name, an invalid name, and a too-long name', async () => {
+      const fetchMock = stage3Fetch([
+        { name: 'retentionDays', description: 'd', propertyType: { name: 'integer' } },
+      ]);
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      const nameInput = () => wrapper.get('[data-testid="custom-property-name"]');
+      await wrapper.get('[data-testid="custom-property-description"]').setValue('d');
+      await nameInput().setValue('RetentionDays');
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(0);
+      await nameInput().setValue('bad:name');
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(0);
+      await nameInput().setValue('x'.repeat(257));
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(0);
+      await nameInput().setValue('tier2');
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(1);
+    }, 20000);
+
+    it('edits an enum property via PATCH with an additive config change', async () => {
+      const saved = {
+        name: 'tier',
+        displayName: 'Tier',
+        description: 'Service tier',
+        propertyType: { name: 'enum' },
+        customPropertyConfig: { config: { values: ['gold'], multiSelect: false } },
+      };
+      const updated = {
+        ...saved,
+        customPropertyConfig: { config: { values: ['gold', 'silver'], multiSelect: false } },
+      };
+      const fetchMock = stage3Fetch([saved], {
+        id: 'tid',
+        name: 'table',
+        customProperties: [updated],
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const { wrapper } = await mountDefs();
+      await wrapper.get('[data-testid="edit-custom-property-tier"]').trigger('click');
+      await flushPromises();
+      // The type is frozen in edit and the saved enum values are prefilled.
+      expect(formSelect(wrapper, 'custom-property-type').props('disabled')).toBe(true);
+      expect(formSelect(wrapper, 'custom-property-enum-config').props('value')).toEqual(['gold']);
+      const enumSelect = formSelect(wrapper, 'custom-property-enum-config');
+      await enumSelect.vm.$emit('update:value', ['gold', 'silver']);
+      await clickModalOk(wrapper);
+      expect(putBodies(fetchMock)).toHaveLength(0);
+      expect(patchBodies(fetchMock)).toEqual([
+        [
+          { op: 'test', path: '/customProperties/0/name', value: 'tier' },
+          {
+            op: 'replace',
+            path: '/customProperties/0/customPropertyConfig',
+            value: { config: { multiSelect: false, values: ['gold', 'silver'] } },
+          },
+        ],
+      ]);
+    }, 20000);
+
+    it('edit hides format and columns controls (official edit scope)', async () => {
+      const saved = {
+        name: 'reviewedOn',
+        displayName: '',
+        description: 'Review date',
+        propertyType: { name: 'date-cp' },
+        customPropertyConfig: { config: 'dd-MM-yyyy' },
+      };
+      vi.stubGlobal('fetch', stage3Fetch([saved]));
+      const { wrapper } = await mountDefs();
+      await wrapper.get('[data-testid="edit-custom-property-reviewedOn"]').trigger('click');
+      await flushPromises();
+      expect(wrapper.find('[data-testid="custom-property-format-config"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="custom-property-columns"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="custom-property-enum-config"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="custom-property-entity-ref-config"]').exists()).toBe(false);
+      expect(formSelect(wrapper, 'custom-property-type').props('disabled')).toBe(true);
+    }, 20000);
+
+    it('switching property type clears the previous type condition values', async () => {
+      vi.stubGlobal('fetch', stage3Fetch([]));
+      const { wrapper } = await mountDefs();
+      await openCreate(wrapper);
+      await selectFormType(wrapper, 'f-enum');
+      const enumSelect = formSelect(wrapper, 'custom-property-enum-config');
+      await enumSelect.vm.$emit('update:value', ['gold']);
+      await selectFormType(wrapper, 'f-date');
+      expect(wrapper.find('[data-testid="custom-property-enum-config"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="custom-property-format-config"]').exists()).toBe(true);
+      await selectFormType(wrapper, 'f-enum');
+      expect(formSelect(wrapper, 'custom-property-enum-config').props('value')).toEqual([]);
+    }, 20000);
+
+    it('shows the Applies To badge only for tableColumn', async () => {
+      vi.stubGlobal('fetch', stage3Fetch([]));
+      const { wrapper } = await mountDefs('tableColumn');
+      await openCreate(wrapper);
+      const badge = wrapper.find('[data-testid="custom-property-applies-to"]');
+      expect(badge.exists()).toBe(true);
+      expect(badge.text()).toContain('Applies To');
+      expect(badge.text()).toContain('Table Column');
+      vi.stubGlobal('fetch', stage3Fetch([]));
+      const { wrapper: tableWrapper } = await mountDefs('table');
+      await openCreate(tableWrapper);
+      expect(tableWrapper.find('[data-testid="custom-property-applies-to"]').exists()).toBe(false);
+    }, 20000);
   });
 
   it('treats deleting an already-gone property as deleted, not a failure', async () => {

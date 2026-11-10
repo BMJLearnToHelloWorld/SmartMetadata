@@ -110,6 +110,14 @@ describe('settings hub catalog', () => {
     expect(types.size).toBe(26);
   });
 
+  it('sorts custom-properties rows by rendered title at render time (R-2)', () => {
+    const category = SETTINGS_CATEGORIES.find((c) => c.key === 'custom-properties');
+    expect(category?.sortItemsByRenderedTitle).toBe(true);
+    for (const other of SETTINGS_CATEGORIES.filter((c) => c.key !== 'custom-properties')) {
+      expect(other.sortItemsByRenderedTitle, other.key).toBeUndefined();
+    }
+  });
+
   it('wires Apache Preferences children as live routes (not residual)', () => {
     const prefs = SETTINGS_CATEGORIES.find((c) => c.key === 'preferences');
     expect(prefs).toBeTruthy();
