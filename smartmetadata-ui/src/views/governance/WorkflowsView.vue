@@ -196,7 +196,7 @@ onMounted(() => {
     </Space>
     <Typography.Text v-if="errorMessage" type="danger" data-testid="workflows-error">
       {{ errorMessage }}
-      <Button type="link" @click="load">{{ t('crud.retry') }}</Button>
+      <Button type="link" @click="load">{{ t('shared.retry') }}</Button>
     </Typography.Text>
     <Empty
       v-if="forbidden"

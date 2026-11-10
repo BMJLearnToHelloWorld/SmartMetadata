@@ -149,12 +149,12 @@ onMounted(() => {
 <template>
   <div data-testid="memory-reviews">
     <div v-if="loading">
-      <Typography.Text type="secondary">{{ t('crud.loading') }}</Typography.Text>
+      <Typography.Text type="secondary">{{ t('shared.loading') }}</Typography.Text>
     </div>
     <div v-else-if="errorMessage">
       <Typography.Text type="danger">{{ errorMessage }}</Typography.Text>
       <Button data-testid="memory-reviews-retry" @click="reload">
-        {{ t('crud.retry') }}
+        {{ t('shared.retry') }}
       </Button>
     </div>
     <Empty
