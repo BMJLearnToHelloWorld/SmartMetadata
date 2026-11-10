@@ -71,6 +71,7 @@ import org.openmetadata.service.events.AuditExcludeFilterFactory;
 import org.openmetadata.service.events.AuditOnlyFilterFactory;
 import org.openmetadata.service.governance.workflows.WorkflowHandler;
 import org.openmetadata.service.jdbi3.CollectionDAO;
+import org.openmetadata.service.jdbi3.EntityRelationshipRepository;
 import org.openmetadata.service.jdbi3.HikariCPDataSourceFactory;
 import org.openmetadata.service.jdbi3.locator.ConnectionAwareAnnotationSqlLocator;
 import org.openmetadata.service.jdbi3.locator.ConnectionType;
@@ -787,6 +788,8 @@ public class TestSuiteBootstrap implements LauncherSessionListener {
     SearchRepository searchRepository = new SearchRepository(getSearchConfig(), 50);
     Entity.setSearchRepository(searchRepository);
     Entity.setCollectionDAO(jdbi.onDemand(CollectionDAO.class));
+    Entity.setEntityRelationshipRepository(
+        new EntityRelationshipRepository(Entity.getCollectionDAO()));
     Entity.setJobDAO(jdbi.onDemand(JobDAO.class));
     Entity.setJdbi(jdbi);
     Entity.initializeRepositories(config, jdbi);
