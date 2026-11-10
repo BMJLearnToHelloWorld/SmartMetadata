@@ -36,9 +36,9 @@ const storedDoc: PersonaDocument = {
   },
 };
 
-const getPersonaByName = vi.fn(async () => persona);
-const listPersonas = vi.fn(async () => ({ data: [persona] }));
-const getDocumentByFqn = vi.fn(async () => structuredClone(storedDoc));
+const getPersonaByName = vi.fn(async (..._args: unknown[]) => persona);
+const listPersonas = vi.fn(async (..._args: unknown[]) => ({ data: [persona] }));
+const getDocumentByFqn = vi.fn(async (..._args: unknown[]) => structuredClone(storedDoc));
 
 vi.mock('@/api/persona', () => ({
   getPersonaByName: (...args: unknown[]) => getPersonaByName(...args),

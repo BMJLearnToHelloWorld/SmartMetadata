@@ -22,14 +22,20 @@ import type { PersonaPage } from '@/types/persona';
 // them to a HomeWidgetCard so the grid, edit chrome and remove flow
 // are exercised without the widgets' own data fetching.
 const StubWidget = defineComponent({
-  props: { widgetKey: { type: String, required: true } },
-  setup(props, { attrs }) {
+  props: {
+    widgetKey: { type: String, required: true },
+    // The editor binds `editView: true` (see CustomizeMyData
+    // `editorWidgetProps`); declaring it keeps the prop typed boolean
+    // instead of falling through as an unknown attr.
+    editView: { type: Boolean, default: false },
+  },
+  setup(props) {
     return () =>
       h(HomeWidgetCard, {
         title: props.widgetKey,
         testId: `home-widget-${props.widgetKey}`,
         widgetKey: props.widgetKey,
-        editView: attrs.editView,
+        editView: props.editView,
       });
   },
 });
@@ -39,8 +45,8 @@ vi.mock('./landingPageWidgets', async (importOriginal) => {
   return { ...actual, resolveMyDataWidget: () => StubWidget };
 });
 
-const onSaveLayout = vi.fn(async () => {});
-const onBackgroundColorUpdate = vi.fn(async () => {});
+const onSaveLayout = vi.fn(async (..._args: unknown[]) => {});
+const onBackgroundColorUpdate = vi.fn(async (..._args: unknown[]) => {});
 
 let router: Router;
 

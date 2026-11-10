@@ -330,6 +330,9 @@ export function getLandingPageLayoutWithEmptyWidgetPlaceholder(
         w: emptyWidgetWidth,
         x: 0,
         y: 0,
+        // The empty cell is static and undraggable, same as
+        // `createPlaceholderWidget` (the placeholder constructor).
+        static: true,
         isDraggable: false,
       },
     ];
