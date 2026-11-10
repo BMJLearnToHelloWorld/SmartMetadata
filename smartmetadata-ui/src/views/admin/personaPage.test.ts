@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { PersonaDocument } from '@/types/persona';
 import {
   DEFAULT_LANDING_PAGE,
+  getPersonPreferences,
   getPersonaPage,
   getPersonaPreferences,
   isLandingPageOption,
@@ -18,6 +19,7 @@ import {
   resolveLandingRedirect,
   resolvePersonaLandingPage,
   resolvePersonaViewMode,
+  updatePersonPreferences,
   updatePersonaAppLayout,
   updatePersonaDocumentPage,
 } from './personaPage';
@@ -83,6 +85,40 @@ describe('personaPage utils', () => {
     expect(updatePersonaAppLayout([], { id: 'p1', name: 'Analyst' }, {})).toEqual([]);
     const cleared = updatePersonaAppLayout(doc.data.personaPreferences ?? [], { id: 'p1', name: 'Analyst' }, {});
     expect(cleared[0]).toEqual({ personaId: 'p1', personaName: 'Analyst' });
+  });
+
+  it('reads and updates per-user preferences without touching personaPreferences', () => {
+    const withPerson = {
+      ...doc,
+      data: {
+        ...doc.data,
+        personPreferences: [
+          { personaId: 'p1', landingPageSettings: { headerColor: '#099250' } },
+          { personaId: 'p2', landingPageSettings: { headerColor: '#1570EF' } },
+        ],
+      },
+    };
+    expect(getPersonPreferences(withPerson, 'p1')?.landingPageSettings?.headerColor).toBe('#099250');
+    expect(getPersonPreferences(withPerson, 'p9')).toBeUndefined();
+    expect(getPersonPreferences(doc, 'p1')).toBeUndefined();
+    const added = updatePersonPreferences([], { id: 'p1', name: 'Analyst' }, '#099250');
+    expect(added).toEqual([
+      { personaId: 'p1', personaName: 'Analyst', landingPageSettings: { headerColor: '#099250' } },
+    ]);
+    const updated = updatePersonPreferences(
+      withPerson.data.personPreferences ?? [],
+      { id: 'p1', name: 'Analyst' },
+      '#E04F16',
+    );
+    expect(updated[0]?.landingPageSettings?.headerColor).toBe('#E04F16');
+    expect(updated[1]?.landingPageSettings?.headerColor).toBe('#1570EF');
+    const cleared = updatePersonPreferences(
+      withPerson.data.personPreferences ?? [],
+      { id: 'p1', name: 'Analyst' },
+      undefined,
+    );
+    expect(cleared[0]?.landingPageSettings?.headerColor).toBeUndefined();
+    expect(cleared[0]?.personaId).toBe('p1');
   });
 
   it('resolves the landing page only from the curated list', () => {

@@ -7,11 +7,27 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { resetWidgetLoadCache } from '@/features/home/widgetLoad';
+import DataQualityWidget from './widgets/DataQualityWidget.vue';
 import HomeWidgetCard from './HomeWidgetCard.vue';
+
+const getDataQualityReport = vi.fn();
+const listTestCasesBySearch = vi.fn();
+vi.mock('@/api/dataQualityReports', () => ({
+  getDataQualityReport: (...args: unknown[]) => getDataQualityReport(...args),
+}));
+vi.mock('@/api/testCases', () => ({
+  listTestCasesBySearch: (...args: unknown[]) => listTestCasesBySearch(...args),
+}));
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ user: { id: 'u1', name: 'admin', teams: [] } }),
+}));
 
 function mountCard(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   return mount(HomeWidgetCard, {
@@ -70,5 +86,98 @@ describe('HomeWidgetCard', () => {
     await wrapper.get('[data-testid="home-widget-activity-empty-action"]').trigger('click');
     expect(wrapper.emitted('empty-action')).toHaveLength(1);
     expect(wrapper.text()).not.toContain('No Recent Activity');
+  });
+});
+
+describe('HomeWidgetCard stage D: edit view and collapse', () => {
+  it('shows the drag handle and remove button only in edit view', () => {
+    const wrapper = mountCard({ editView: true });
+    const handle = wrapper.get('[data-testid="drag-widget-activity"]');
+    expect(handle.classes()).toContain('drag-widget-icon');
+    expect(handle.attributes('draggable')).toBe('true');
+    // Pointer-only drag: the handle is not a focusable control.
+    expect(handle.attributes('aria-hidden')).toBe('true');
+    expect(handle.attributes('tabindex')).toBeUndefined();
+    expect(wrapper.find('[data-testid="remove-widget-activity"]').exists()).toBe(true);
+  });
+
+  it('shows no edit controls outside edit view', () => {
+    const wrapper = mountCard();
+    expect(wrapper.find('[data-testid^="drag-widget-"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid^="remove-widget-"]').exists()).toBe(false);
+  });
+
+  it('derives the drag key from an explicit widgetKey', () => {
+    const wrapper = mountCard({ editView: true, widgetKey: 'KnowledgePanel.DataQuality' });
+    expect(wrapper.find('[data-testid="drag-widget-KnowledgePanel.DataQuality"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="remove-widget-KnowledgePanel.DataQuality"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it('emits remove when the remove button is clicked', async () => {
+    const wrapper = mountCard({ editView: true });
+    await wrapper.get('[data-testid="remove-widget-activity"]').trigger('click');
+    expect(wrapper.emitted('remove')).toHaveLength(1);
+  });
+
+  it('toggles collapse from the chevron and hides the body when collapsed', async () => {
+    const wrapper = mountCard({ collapsible: true, collapsed: false });
+    expect(wrapper.find('[data-testid="home-widget-activity-collapse"]').exists()).toBe(true);
+    expect(wrapper.find('.home-widget-card__body').exists()).toBe(true);
+    await wrapper.get('[data-testid="home-widget-activity-collapse"]').trigger('click');
+    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1);
+    const collapsed = mountCard({ collapsible: true, collapsed: true });
+    expect(collapsed.find('.home-widget-card__body').exists()).toBe(false);
+  });
+
+  it('toggles collapse from the title area when collapsible, not otherwise', async () => {
+    const wrapper = mountCard({ collapsible: true });
+    await wrapper.get('.home-widget-card__title').trigger('click');
+    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1);
+    const plain = mountCard();
+    await plain.get('.home-widget-card__title').trigger('click');
+    expect(plain.emitted('toggle-collapse')).toBeUndefined();
+  });
+
+  it('shows no collapse chevron when not collapsible', () => {
+    expect(mountCard().find('[data-testid="home-widget-activity-collapse"]').exists()).toBe(false);
+  });
+});
+
+describe('HomeWidgetCard edit view through a real widget', () => {
+  beforeEach(() => {
+    resetWidgetLoadCache();
+    vi.clearAllMocks();
+    getDataQualityReport.mockResolvedValue({ data: [], metadata: { keys: [], dimensions: [], metrics: [] } });
+    listTestCasesBySearch.mockResolvedValue({ data: [], total: 0 });
+  });
+
+  it('falls the edit-view props through the widget to the card', async () => {
+    setActivePinia(createPinia());
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
+        { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div>dq</div>' } },
+        { path: '/quality/test-cases/:id', name: 'quality-test-case', component: { template: '<div>test</div>' } },
+      ],
+    });
+    // `editView` is not a declared DataQualityWidget prop: it falls
+    // through the widget to its root HomeWidgetCard, which is how the
+    // editor reaches every widget without per-widget forwarding.
+    const wrapper = mount(DataQualityWidget, {
+      props: { widgetKey: 'KnowledgePanel.DataQuality', editView: true },
+      global: { plugins: [router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="drag-widget-KnowledgePanel.DataQuality"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="remove-widget-KnowledgePanel.DataQuality"]').exists()).toBe(
+      true,
+    );
   });
 });

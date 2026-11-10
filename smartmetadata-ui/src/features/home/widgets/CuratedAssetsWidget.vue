@@ -27,6 +27,21 @@ const props = defineProps<{
   isEditView?: boolean;
   handleLayoutUpdate?: (layout: LandingPageLayoutItem[]) => void;
   handleSaveLayout?: (layout: LandingPageLayoutItem[]) => Promise<void>;
+  /**
+   * Stage D: the home view and the editor pass the card chrome through
+   * these props, and the widget forwards them to its HomeWidgetCard
+   * explicitly. They cannot fall through: this widget renders a
+   * fragment root (the card plus the config modal beside it), so
+   * fallthrough attrs are dropped with a Vue warning instead.
+   */
+  editView?: boolean;
+  collapsible?: boolean;
+  collapsed?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (event: 'remove'): void;
+  (event: 'toggle-collapse'): void;
 }>();
 
 const { t, locale } = useI18n();
@@ -66,7 +81,13 @@ const isModalOpen = ref(false);
 
 // Only the persona editor can define the rule, so the prompt to do so belongs
 // in edit view alone — a reader seeing "Create" could not act on it.
-const isUnconfigured = computed(() => props.isEditView === true && !hasSavedFilter.value);
+// The editor signals edit mode with `editView`; the older `isEditView`
+// prop (never set by any caller) is kept as a fallback. (Both are
+// boolean props, so an absent one reads `false`, not `undefined` —
+// `??` would never fall through, hence `||`.)
+const inEditView = computed(() => props.editView || props.isEditView || false);
+
+const isUnconfigured = computed(() => inEditView.value && !hasSavedFilter.value);
 
 // Chips describe the built-in rule only; a saved advanced filter is arbitrary
 // JSON that cannot be rendered back as `<field> is <value>` clauses.
@@ -138,7 +159,12 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
     :summary="headlineSummary"
     :meta="remaining > 0 ? t('home.countMoreAssetsMatchRule', { count: remaining }) : undefined"
     :empty-state="emptyState"
+    :edit-view="props.editView"
+    :collapsible="props.collapsible"
+    :collapsed="props.collapsed"
     @retry="refetch"
+    @remove="emit('remove')"
+    @toggle-collapse="emit('toggle-collapse')"
   >
     <template #extra>
       <button type="button" class="home-widget-card__link" @click="openExplore">
@@ -148,7 +174,7 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
     <div v-if="isUnconfigured" class="curated-assets__unconfigured" data-testid="widget-empty-state">
       <p>{{ t('home.noCuratedAssets') }}</p>
       <button type="button" class="curated-assets__create" @click="isModalOpen = true">
-        {{ t('crud.create') }}
+        {{ t('shared.create') }}
       </button>
     </div>
     <div v-if="ruleClauses.length > 0" class="curated-assets__rule" data-testid="curated-rule-summary">
@@ -196,9 +222,9 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
         </router-link>
       </li>
     </ul>
-    <div v-if="props.isEditView && hasSavedFilter" class="curated-assets__edit">
+    <div v-if="inEditView && hasSavedFilter" class="curated-assets__edit">
       <button type="button" data-testid="edit-curated-assets" @click="isModalOpen = true">
-        {{ t('crud.edit') }}
+        {{ t('shared.edit') }}
       </button>
     </div>
   </HomeWidgetCard>
@@ -207,7 +233,7 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
     inside it would unmount when the card goes empty — including while it
     is open. -->
   <CuratedAssetsModal
-    v-if="props.isEditView"
+    v-if="inEditView"
     :curated-assets-config="config"
     :is-open="isModalOpen"
     @cancel="isModalOpen = false"

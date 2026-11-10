@@ -215,6 +215,7 @@ function viewAllLabel(): string {
   <HomeWidgetCard
     :title="t('home.platformHealth')"
     test-id="home-widget-platform-health"
+    :widget-key="props.widgetKey"
     :is-loading="hasViewAccess === undefined || isLoading"
     :is-error="isError"
     :status="status"

@@ -31,6 +31,13 @@ export interface LoginUser {
   roles?: EntityRef[];
   teams?: EntityRef[];
   /**
+   * Official User.isFirstTimeUser (v210 migration): the server clears it
+   * to false the first time the user is seen, so the first-login welcome
+   * shows exactly once. The login call returns a JWT only; this arrives
+   * with the profile, like isAdmin above.
+   */
+  isFirstTimeUser?: boolean;
+  /**
    * Official User.defaultPersona: the persona a user falls back to when
    * no persona is selected. The profile endpoint returns it; the persona
    * store uses it as the selection fallback.

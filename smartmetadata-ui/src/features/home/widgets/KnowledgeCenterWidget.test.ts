@@ -44,7 +44,7 @@ function page(id: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function mountWidget() {
+function mountWidget(props: Record<string, unknown> = {}) {
   setActivePinia(createPinia());
   const router = createRouter({
     history: createMemoryHistory(),
@@ -63,7 +63,7 @@ function mountWidget() {
     ],
   });
   return mount(KnowledgeCenterWidget, {
-    props: { widgetKey: 'knowledgeCenter' },
+    props: { widgetKey: 'knowledgeCenter', ...props },
     global: { plugins: [router, Antd, createTestI18n()] },
   });
 }
@@ -180,5 +180,24 @@ describe('KnowledgeCenterWidget', () => {
       expect.objectContaining({ name: 'new-page', pageType: 'Article' }),
     );
     expect(getLimitByResource).toHaveBeenCalledWith('knowledgeCenter');
+  });
+
+  it('stage D: forwards edit view and collapse to the card despite the fragment root', async () => {
+    // The widget renders a fragment root (card + article modal beside
+    // it), so the edit-view/collapse props cannot fall through — they
+    // are declared and forwarded explicitly.
+    listKnowledgePages.mockResolvedValue({ data: [], total: 0 });
+    const wrapper = mountWidget({ editView: true, collapsible: true, collapsed: false });
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="drag-widget-knowledgeCenter"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="remove-widget-knowledgeCenter"]').exists()).toBe(true);
+    expect(wrapper.find('.home-widget-card__body').exists()).toBe(true);
+    await wrapper.get('[data-testid="home-widget-knowledgeCenter-collapse"]').trigger('click');
+    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1);
+    const collapsed = mountWidget({ editView: true, collapsible: true, collapsed: true });
+    await flushPromises();
+    await flushPromises();
+    expect(collapsed.find('.home-widget-card__body').exists()).toBe(false);
   });
 });

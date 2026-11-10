@@ -94,6 +94,57 @@ export function getPersonaPreferences(
   return document?.data?.personaPreferences?.find((entry) => entry.personaId === personaId);
 }
 
+/**
+ * Stage D (G-11): the same lookup on the per-user array. The two
+ * arrays must never be confused: `personaPreferences` holds the
+ * persona admin's choices, `personPreferences` holds a single user's
+ * own choices for the persona (today: the landing-page header colour).
+ */
+export function getPersonPreferences(
+  document: PersonaDocument | null | undefined,
+  personaId: string | undefined,
+): PersonaPreferences | undefined {
+  return document?.data?.personPreferences?.find((entry) => entry.personaId === personaId);
+}
+
+/**
+ * Stage D (G-11): upserts the user's own header-colour choice for a
+ * persona into `personPreferences`, mirroring the official
+ * `handleBackgroundColorUpdate` (which appends when the persona has
+ * no entry and maps the matching entry otherwise). An undefined colour
+ * clears the choice — the entry stays, with `headerColor` dropped by
+ * JSON serialization, exactly as official stores it.
+ */
+export function updatePersonPreferences(
+  preferences: PersonaPreferences[],
+  persona: { id: string; name: string },
+  headerColor: string | undefined,
+): PersonaPreferences[] {
+  const hasEntry = preferences.some((entry) => entry.personaId === persona.id);
+  if (!hasEntry) {
+    return [
+      ...preferences,
+      {
+        personaId: persona.id,
+        personaName: persona.name,
+        landingPageSettings: { headerColor },
+      },
+    ];
+  }
+  return preferences.map((entry) => {
+    if (entry.personaId !== persona.id) {
+      return entry;
+    }
+    return {
+      ...entry,
+      landingPageSettings: {
+        ...entry.landingPageSettings,
+        headerColor,
+      },
+    };
+  });
+}
+
 const APP_LAYOUT_PREFERENCE_KEYS: Array<keyof PersonaAppLayoutPreferences> = [
   'appMode',
   'defaultLandingPage',

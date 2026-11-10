@@ -185,4 +185,30 @@ describe('CuratedAssetsWidget', () => {
     expect(wrapper.find('[data-testid="curated-asset-health-a.b"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="curated-asset-a.b"]').exists()).toBe(true);
   });
+
+  it('stage D: forwards edit view and collapse to the card despite the fragment root', async () => {
+    // The widget renders a fragment root (card + modal beside it), so
+    // the edit-view/collapse props cannot fall through — they are
+    // declared and forwarded explicitly. Without that, the card would
+    // never show the drag handle or collapse in the home view/editor.
+    searchAssets.mockResolvedValue({ hits: [], total: 0, facets: [] });
+    const wrapper = mountWidget({ editView: true, collapsible: true, collapsed: false });
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="drag-widget-KnowledgePanel.CuratedAssets"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="remove-widget-KnowledgePanel.CuratedAssets"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('.home-widget-card__body').exists()).toBe(true);
+    await wrapper
+      .get('[data-testid="home-widget-KnowledgePanel.CuratedAssets-collapse"]')
+      .trigger('click');
+    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1);
+    const collapsed = mountWidget({ editView: true, collapsible: true, collapsed: true });
+    await flushPromises();
+    await flushPromises();
+    expect(collapsed.find('.home-widget-card__body').exists()).toBe(false);
+  });
 });

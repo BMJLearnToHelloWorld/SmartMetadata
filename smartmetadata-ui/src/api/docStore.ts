@@ -23,6 +23,36 @@ import { apiRequest } from './client';
  */
 export const DOCSTORE_BASE = '/v1/docStore';
 
+/**
+ * One entry of a persona document's `personaPreferences` or
+ * `personPreferences` array, mirroring the official personaPreferences
+ * schema. Both arrays share the entry shape; only their owners differ
+ * (the persona admin's choices vs a single user's own choices for the
+ * persona). `landingPageSettings` is carried verbatim — it is the
+ * header-colour write path, and dropping it on read lost the colour
+ * before stage D.
+ */
+function mapPreferences(raw: unknown): PersonaPreferences | null {
+  const rec = asRecord(raw);
+  const personaId = asString(rec?.personaId);
+  if (!rec || !personaId) {
+    return null;
+  }
+  const settings = asRecord(rec.landingPageSettings);
+  const headerColor = asString(settings?.headerColor) || undefined;
+  const headerImage = asString(settings?.headerImage) || undefined;
+  return {
+    personaId,
+    personaName: asString(rec.personaName) || undefined,
+    appMode: rec.appMode === 'classic' || rec.appMode === 'AI' ? rec.appMode : undefined,
+    defaultLandingPage: asString(rec.defaultLandingPage) || undefined,
+    defaultViewModes: asRecord(rec.defaultViewModes) as PersonaPreferences['defaultViewModes'],
+    ...(headerColor || headerImage
+      ? { landingPageSettings: { headerColor, headerImage } }
+      : {}),
+  };
+}
+
 function mapDocument(raw: Record<string, unknown>): PersonaDocument | null {
   const name = asString(raw.name);
   const fullyQualifiedName = asString(raw.fullyQualifiedName);
@@ -32,6 +62,7 @@ function mapDocument(raw: Record<string, unknown>): PersonaDocument | null {
   const data = asRecord(raw.data) ?? {};
   const pagesRaw = Array.isArray(data.pages) ? data.pages : [];
   const prefsRaw = Array.isArray(data.personaPreferences) ? data.personaPreferences : [];
+  const personPrefsRaw = Array.isArray(data.personPreferences) ? data.personPreferences : [];
   const domains = mapEntityRefs(raw.domains);
   return {
     id: asString(raw.id) || undefined,
@@ -62,21 +93,16 @@ function mapDocument(raw: Record<string, unknown>): PersonaDocument | null {
         ];
       }),
       personaPreferences: prefsRaw.flatMap((pref) => {
-        const rec = asRecord(pref);
-        const personaId = asString(rec?.personaId);
-        if (!rec || !personaId) {
-          return [];
-        }
-        return [
-          {
-            personaId,
-            personaName: asString(rec.personaName) || undefined,
-            appMode:
-              rec.appMode === 'classic' || rec.appMode === 'AI' ? rec.appMode : undefined,
-            defaultLandingPage: asString(rec.defaultLandingPage) || undefined,
-            defaultViewModes: asRecord(rec.defaultViewModes) as PersonaPreferences['defaultViewModes'],
-          },
-        ];
+        const mapped = mapPreferences(pref);
+        return mapped ? [mapped] : [];
+      }),
+      // Stage D (G-11): the per-user preferences array. Same entry
+      // shape as personaPreferences, mapped through the same helper —
+      // dropping it here is what lost the header colour on read before
+      // this stage (cond. 4).
+      personPreferences: personPrefsRaw.flatMap((pref) => {
+        const mapped = mapPreferences(pref);
+        return mapped ? [mapped] : [];
       }),
       navigation: data.navigation,
     },
@@ -157,10 +183,10 @@ export async function updateDocument(id: string, patch: JsonPatchOp[]): Promise<
 /**
  * Official savePersonaDocument (customizeEditor.utils): clone, mutate,
  * then PATCH the diff when the document already exists, else create.
- * The customize editors only ever mutate data.pages and
- * data.personaPreferences, so the patch replaces exactly the subtrees
- * that changed (deep-compared) instead of a whole-object diff — same
- * effect, and the ops stay reviewable.
+ * The customize editors only ever mutate data.pages,
+ * data.personaPreferences and data.personPreferences, so the patch
+ * replaces exactly the subtrees that changed (deep-compared) instead
+ * of a whole-object diff — same effect, and the ops stay reviewable.
  */
 export async function savePersonaDocument(
   document: PersonaDocument,
@@ -181,6 +207,16 @@ export async function savePersonaDocument(
         op: 'replace',
         path: '/data/personaPreferences',
         value: draft.data.personaPreferences ?? [],
+      });
+    }
+    if (
+      JSON.stringify(draft.data.personPreferences ?? []) !==
+      JSON.stringify(document.data.personPreferences ?? [])
+    ) {
+      patch.push({
+        op: 'replace',
+        path: '/data/personPreferences',
+        value: draft.data.personPreferences ?? [],
       });
     }
     if (!patch.length) {
