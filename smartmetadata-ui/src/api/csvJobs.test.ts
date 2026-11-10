@@ -3,7 +3,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { listCsvAsyncJobs } from './csvJobs';
+import { isCsvJobOwned, listCsvAsyncJobs, markCsvJobOwned } from './csvJobs';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -38,5 +38,17 @@ describe('listCsvAsyncJobs', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('markCsvJobOwned / isCsvJobOwned', () => {
+  it('remembers a marked job id for the session and ignores empty ids', () => {
+    // A fresh id is never owned; marking is what makes it owned.
+    expect(isCsvJobOwned('owned-in-this-test-only')).toBe(false);
+    markCsvJobOwned('owned-in-this-test-only');
+    expect(isCsvJobOwned('owned-in-this-test-only')).toBe(true);
+    markCsvJobOwned();
+    markCsvJobOwned('');
+    expect(isCsvJobOwned('')).toBe(false);
   });
 });

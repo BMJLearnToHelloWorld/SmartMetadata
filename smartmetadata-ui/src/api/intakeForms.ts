@@ -9,7 +9,7 @@
  */
 import { asBoolean, asRecord, asString, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
-import { apiRequest } from './client';
+import { ApiError, apiRequest } from './client';
 
 /** Entity types an IntakeForm may target; one form per entity type. */
 export type TargetEntityType =
@@ -111,6 +111,32 @@ export function listIntakeForms(
   return apiRequest<unknown>('/v1/governance/intakeForms', {
     query: query.fields ? { fields: query.fields } : {},
   }).then((payload) => parsePaged(payload, mapIntakeForm));
+}
+
+/**
+ * Official getIntakeFormByEntityType (rest/intakeFormsAPI.ts): GET
+ * /v1/governance/intakeForms/entityType/{entityType}. A 404 means no
+ * form is configured for the entity type and resolves to null — it is
+ * not an error, and the caller (the metric create drawer) still
+ * submits without an extension section. Any other failure throws.
+ * Must not be replaced by listIntakeForms + client filtering: the list
+ * has no entityType filter and the server has a dedicated endpoint.
+ */
+export async function getIntakeFormByEntityType(
+  entityType: TargetEntityType,
+): Promise<IntakeForm | null> {
+  try {
+    const raw = await apiRequest<unknown>(
+      `/v1/governance/intakeForms/entityType/${encodeURIComponent(entityType)}`,
+    );
+    const rec = asRecord(raw);
+    return rec ? mapIntakeForm(rec) : null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /** Official intakeFormsAPI: POST /v1/governance/intakeForms. */

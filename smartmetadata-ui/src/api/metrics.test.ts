@@ -267,6 +267,16 @@ describe('exportMetricsCsvAsync', () => {
       window.removeEventListener('csv-jobs-refresh', listener);
     }
   });
+
+  it('returns an empty job record when the server response carries no jobId', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ status: 'QUEUED' })));
+    try {
+      const payload = await exportMetricsCsvAsync('*');
+      expect(payload).toEqual({});
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe('getCustomUnitsOfMeasurement', () => {

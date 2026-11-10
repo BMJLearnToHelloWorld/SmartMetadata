@@ -154,6 +154,22 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
   URL.revokeObjectURL(url);
 }
 
+export const UTF8_BOM = '\uFEFF';
+
+/**
+ * Official downloadCsv (utils/Export/ExportUtils.ts): every CSV download
+ * starts with a UTF-8 byte order mark, so Excel reads the file as UTF-8
+ * instead of falling back to the system code page and garbling
+ * non-Latin text. The BOM is not optional. The export result path is
+ * text throughout (official rest/csvAPI.ts getCsvAsyncJobResult uses
+ * Accept: 'text/csv' + responseType: 'text'); there is no blob download
+ * on this path, so the W1-3 Uint8Array/blob handling for binary
+ * downloads does not apply here and must not be "unified" into it.
+ */
+export function downloadCsv(content: string, fileName: string): void {
+  downloadTextFile(fileName, UTF8_BOM + content, 'text/csv;charset=utf-8');
+}
+
 /** Safe filename fragment: FQNs carry dots, which are kept; anything else becomes _. */
 export function safeFileFragment(value: string): string {
   return value.replace(/[^A-Za-z0-9_.-]/g, '_');

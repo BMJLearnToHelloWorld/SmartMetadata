@@ -15,6 +15,8 @@ import {
   Empty,
   Input,
   Menu,
+  message,
+  Modal,
   Select,
   Skeleton,
   Space,
@@ -24,9 +26,12 @@ import {
 } from 'ant-design-vue';
 import {
   buildMetricStatusQueryFilter,
+  deleteMetricAsync,
+  exportMetricsCsvAsync,
   getMetricAncestorFqns,
   getMetricGroupMetrics,
   getMetricHierarchy,
+  getMetricParentIds,
   getMetricSearchPaths,
   listMetrics,
   METRIC_STATUS_VALUES,
@@ -35,10 +40,20 @@ import {
   type MetricGroup,
   type MetricHierarchyItem,
 } from '@/api/metrics';
+import { markCsvJobOwned } from '@/api/csvJobs';
 import { searchAssets } from '@/api/search';
 import { composeSearchQuery } from '@/catalog/searchQuery';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import LimitWrapper from '@/components/shared/LimitWrapper.vue';
+import MetricCreateDrawer from '@/components/governance/MetricCreateDrawer.vue';
 import MetricHealthCell from '@/components/governance/MetricHealthCell.vue';
+import {
+  getTopmostSelectedMetrics,
+  getUnloadedMetricAncestorIds,
+  waitForMetricsGone,
+  type MetricParentLink,
+} from '@/features/metrics/metricBulkDelete';
+import { useMetricCreateDrawer } from '@/features/metrics/useMetricCreateDrawer';
 import { useBulkEditScopeStore } from '@/stores/bulkEditScope';
 import { usePermissionStore } from '@/stores/permissions';
 import type { EntityRef, SearchHit, TagRef } from '@/types/api';
@@ -54,11 +69,13 @@ import { entityLabel } from '@/features/crud/paging';
  * fail-closed on fetch failure, entries hidden (not disabled) when ungated:
  * - View (ViewBasic || ViewAll): without it the page renders a
  *   no-permission state and sends no list request.
- * - Bulk edit (this batch's only write entry): `canEditAll`.
- * - Not built in this batch — gates fixed here for Wave 2 to reuse:
- *   create `permission.Create`, wrapped in <LimitWrapper
- *   resource="metric">; import/export `canEditAll`; bulk delete
- *   `permission.Delete`. All hidden when ungated.
+ * - Create (`canCreate`): the create button, wrapped in <LimitWrapper
+ *   resource="metric"> (limit fetch failure fails open — the opposite
+ *   of the permission failure below).
+ * - Import/export (`canEditAll`): the ⋮ actions menu.
+ * - Bulk edit (`canEditAll`): the bulk-edit entries.
+ * - Bulk delete (`canDelete`): the bulk-bar Delete button.
+ * A permission fetch failure renders the no-permission state (fail-closed).
  */
 const METRIC_VIEW_STORAGE_KEY = 'metricsList.viewMode.v1';
 const METRIC_PAGE_SIZE_STORAGE_KEY = 'metricsList.pageSize.v1';
@@ -239,6 +256,12 @@ const hasView = computed(
   () => isAdmin.value || resourceOps.value.ViewAll === true || resourceOps.value.ViewBasic === true,
 );
 const canEditAll = computed(() => isAdmin.value || resourceOps.value.EditAll === true);
+const canCreate = computed(() => isAdmin.value || resourceOps.value.Create === true);
+const canDelete = computed(() => isAdmin.value || resourceOps.value.Delete === true);
+const createDrawer = useMetricCreateDrawer();
+const isExporting = ref(false);
+const deleteDialogOpen = ref(false);
+const isDeletingMetrics = ref(false);
 
 const searchText = ref('');
 const debouncedSearch = ref('');
@@ -789,6 +812,138 @@ function onBulkEdit(): void {
   void router.push({ name: 'bulk-edit', params: { entityType: 'metric', fqn: '*' } });
 }
 
+/**
+ * Flat parent-link list for the bulk-delete helpers (condition 16):
+ * every loaded metric with its direct parent id, from the tree data
+ * in tree mode and from the search hits' `_source.parent` in flat
+ * mode. Group members and lazily loaded children are included — a
+ * selected child must resolve its parent even when the parent row
+ * sits in another branch of the page.
+ */
+function metricParentLinks(): MetricParentLink[] {
+  const links: MetricParentLink[] = [];
+  const seen = new Set<string>();
+  const add = (id: string, parentId: string | undefined, fqn: string): void => {
+    if (!id || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    links.push({ id, parentId, fullyQualifiedName: fqn });
+  };
+  if (isTreeMode.value) {
+    for (const item of topItems.value) {
+      if (item.kind === 'metric' && item.metric) {
+        add(item.metric.id, item.metric.parent?.id, item.metric.fullyQualifiedName);
+      }
+    }
+    for (const members of Object.values(groupMembers.value)) {
+      for (const member of members.rows) {
+        add(member.id, member.parent?.id, member.fullyQualifiedName);
+      }
+    }
+    for (const children of Object.values(childrenByParent.value)) {
+      for (const child of children.rows) {
+        add(child.id, child.parent?.id, child.fullyQualifiedName);
+      }
+    }
+  } else {
+    for (const hit of flatHits.value) {
+      add(hit.id ?? hit.fullyQualifiedName, hit.parent?.id, hit.fullyQualifiedName);
+    }
+  }
+  return links;
+}
+
+/** Official resetHierarchy: drop the loaded tree state, then reload. */
+function resetHierarchy(): void {
+  childrenByParent.value = {};
+  groupMembers.value = {};
+  expandedMetricIds.value = new Set();
+  expandedGroupIds.value = new Set();
+  searchPaths.value = null;
+  void load();
+}
+
+/**
+ * Official handleExport (MetricListPage.tsx): async export of the whole
+ * collection (`*`), then claim the job for the CSV jobs tray so it
+ * surfaces even if it finishes before the tray's first fetch. The
+ * export call itself dispatches the tray refresh event. The menu item
+ * is disabled while an export is in flight; a failure toasts.
+ */
+async function onExport(): Promise<void> {
+  if (isExporting.value) {
+    return;
+  }
+  isExporting.value = true;
+  try {
+    const job = await exportMetricsCsvAsync('*');
+    markCsvJobOwned(job.jobId);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+/** Official handleImport: navigate to the bulk-import wizard for metrics. */
+function onImport(): void {
+  void router.push({ name: 'bulk-import', params: { entityType: 'metric', fqn: '*' } });
+}
+
+/**
+ * Official handleBulkDelete (MetricListPage.tsx), with the product's
+ * bounded re-read in place of the AsyncDeleteProvider refresh
+ * (ADR:2026-11-08-metric-bulk-delete-bounded-reread): confirm → only
+ * the topmost selected metrics are submitted, each with
+ * `recursive=true` → success toast counts ALL selected metrics, not
+ * just the topmost → clear selection, close the dialog, back to page
+ * 1, then re-read until the deleted metrics are gone and reload.
+ * Any submit failure toasts and changes nothing: the selection, the
+ * dialog, and the page all stay where they were.
+ */
+async function confirmBulkDelete(): Promise<void> {
+  if (isDeletingMetrics.value) {
+    return;
+  }
+  const selectedIds = [...selectedKeys.value];
+  if (selectedIds.length === 0) {
+    return;
+  }
+  isDeletingMetrics.value = true;
+  try {
+    const links = metricParentLinks();
+    const unloadedAncestorIds = getUnloadedMetricAncestorIds(links, selectedIds);
+    const extraParentIds =
+      unloadedAncestorIds.length > 0
+        ? await getMetricParentIds(unloadedAncestorIds).catch(() => undefined)
+        : undefined;
+    const topmost = getTopmostSelectedMetrics(links, selectedIds, extraParentIds);
+    await Promise.all(topmost.map(({ id }) => deleteMetricAsync(id, true)));
+    message.success(t('metrics.asyncBulkDeleteSubmitted', { count: selectedIds.length }));
+    selectedKeys.value = [];
+    deleteDialogOpen.value = false;
+    page.value = 1;
+    const topFqns = topmost
+      .map((metric) => metric.fullyQualifiedName ?? '')
+      .filter((fqn) => fqn.length > 0);
+    const allGone = await waitForMetricsGone(topFqns);
+    if (!allGone) {
+      message.warning(t('metrics.bulkDeletePartialTimeout'));
+    }
+    resetHierarchy();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  } finally {
+    isDeletingMetrics.value = false;
+  }
+}
+
+/** Create drawer success: the new metric's detail page is the landing spot. */
+function onMetricCreated(fqn: string): void {
+  void router.push({ name: 'governance-metric', params: { fqn } });
+}
+
 function onRefresh(): void {
   page.value = 1;
   void load();
@@ -856,6 +1011,40 @@ onUnmounted(() => {
     </div>
     <template v-else>
       <Space wrap class="metrics-list__toolbar">
+        <LimitWrapper
+          v-if="canCreate"
+          resource="metric"
+          v-slot="{ limitReached }"
+        >
+          <Button
+            type="primary"
+            data-testid="create-metric"
+            :disabled="limitReached"
+            @click="createDrawer.openDrawer()"
+          >
+            {{ t('metrics.createButton') }}
+          </Button>
+        </LimitWrapper>
+        <Dropdown v-if="canEditAll" :trigger="['click']">
+          <Button data-testid="metrics-actions-menu" :aria-label="t('crud.moreActions')">
+            ⋮
+          </Button>
+          <template #overlay>
+            <Menu>
+              <Menu.Item
+                key="export"
+                :disabled="isExporting"
+                data-testid="metrics-export"
+                @click="onExport"
+              >
+                {{ t('metrics.export') }}
+              </Menu.Item>
+              <Menu.Item key="import" data-testid="metrics-import" @click="onImport">
+                {{ t('metrics.import') }}
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
         <Input.Search
           v-model:value="searchText"
           :placeholder="t('metrics.searchPlaceholder')"
@@ -929,6 +1118,14 @@ onUnmounted(() => {
         >
           {{ t('metrics.bulkEditSelected', { count: selectedKeys.length }) }}
         </Button>
+        <Button
+          v-if="canDelete"
+          danger
+          data-testid="metrics-bulk-delete-button"
+          @click="deleteDialogOpen = true"
+        >
+          {{ t('crud.delete') }}
+        </Button>
       </div>
 
       <div v-if="loading" data-testid="metrics-loading">
@@ -958,6 +1155,21 @@ onUnmounted(() => {
                 <Typography.Text>{{ t('metrics.emptyOwnerText') }}</Typography.Text>
               </div>
             </div>
+            <LimitWrapper
+              v-if="canCreate"
+              resource="metric"
+              v-slot="{ limitReached }"
+            >
+              <Button
+                type="primary"
+                data-testid="metrics-empty-new-metric"
+                :disabled="limitReached"
+                style="margin-top: 16px"
+                @click="createDrawer.openDrawer()"
+              >
+                {{ t('metrics.newMetric') }}
+              </Button>
+            </LimitWrapper>
           </Empty>
         </div>
         <Empty
@@ -1216,6 +1428,37 @@ onUnmounted(() => {
           />
         </Space>
       </div>
+
+      <Modal
+        :open="deleteDialogOpen"
+        :title="t('metrics.deleteSelectedTitle')"
+        :mask-closable="true"
+        :closable="true"
+        data-testid="metrics-delete-dialog"
+        @cancel="deleteDialogOpen = false"
+      >
+        <Typography.Text>{{ t('metrics.deleteSelectedWarning') }}</Typography.Text>
+        <template #footer>
+          <Button data-testid="metrics-delete-cancel" @click="deleteDialogOpen = false">
+            {{ t('crud.cancel') }}
+          </Button>
+          <Button
+            type="primary"
+            danger
+            data-testid="metrics-delete-confirm"
+            :loading="isDeletingMetrics"
+            @click="confirmBulkDelete"
+          >
+            {{ t('crud.delete') }}
+          </Button>
+        </template>
+      </Modal>
+
+      <MetricCreateDrawer
+        v-model:open="createDrawer.open.value"
+        :parent-metric-fqn="createDrawer.parentMetricFqn.value"
+        @created="onMetricCreated"
+      />
     </template>
   </div>
 </template>
