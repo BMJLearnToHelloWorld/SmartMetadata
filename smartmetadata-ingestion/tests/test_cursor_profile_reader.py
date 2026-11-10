@@ -77,14 +77,18 @@ def _script(*, wrap, sample_needle: str = "SELECT * FROM") -> list:
     id_col = f"COUNT(DISTINCT {wrap('id')})"
     name_col = f"COUNT(DISTINCT {wrap('name')})"
     return [
+        (f"GROUP BY {wrap('id')}", [(1,)], None),
+        (f"GROUP BY {wrap('name')}", [(1,)], None),
         ("SELECT COUNT(*) FROM", [(10,)], None),
         (
             "information_schema.columns",
             [("id", "integer"), ("name", "character varying")],
             None,
         ),
-        (id_col, [(0, 10, "1", "10", 5.5)], None),
-        (name_col, [(1, 9, "a", "z")], None),
+        # Base selects, in slot order: null, distinct, min, max, mean,
+        # values, nullMissing, sum, stddev, maxLength, minLength.
+        (id_col, [(0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, None, None)], None),
+        (name_col, [(1, 9, "a", "z", None, 9, 1, 27, 1.5, 5, 1)], None),
         (sample_needle, [("1", "a"), ("2", "b")], [("id",), ("name",)]),
     ]
 
@@ -97,14 +101,40 @@ def _assert_profile(stats, cursor: FakeCursor, *, ident: str) -> None:
     assert len(stats) == 3
     assert stats[0].column_name is None
     assert stats[0].row_count == 10
+    assert stats[0].column_count == 2
+    assert stats[0].column_names == ["id", "name"]
     assert stats[1].column_name == "id"
     assert stats[1].null_count == 0
     assert stats[1].distinct_count == 10
-    assert stats[1].min_value == "1"
-    assert stats[1].max_value == "10"
+    # min/max are written back typed now, not stringified.
+    assert stats[1].min_value == 1
+    assert stats[1].max_value == 10
     assert stats[1].mean == 5.5
+    assert stats[1].values_count == 10
+    assert stats[1].null_missing_count == 0
+    assert stats[1].sum_value == 55
+    assert stats[1].stddev == 2.87
+    assert stats[1].max_length is None
+    assert stats[1].min_length is None
+    assert stats[1].unique_count == 1
+    assert stats[1].distinct_proportion == 1.0
+    assert stats[1].unique_proportion == 0.1
+    assert stats[1].null_proportion == 0.0
+    assert stats[1].duplicate_count == 0
+    assert stats[1].like_ratio is None
     assert stats[2].column_name == "name"
     assert stats[2].mean is None
+    assert stats[2].values_count == 9
+    assert stats[2].null_missing_count == 1
+    assert stats[2].sum_value == 27
+    assert stats[2].stddev == 1.5
+    assert stats[2].max_length == 5
+    assert stats[2].min_length == 1
+    assert stats[2].unique_count == 1
+    assert stats[2].distinct_proportion == 1.0
+    assert stats[2].unique_proportion == pytest.approx(1 / 9)
+    assert stats[2].null_proportion == pytest.approx(0.1)
+    assert stats[2].duplicate_count == 0
     count_sql = next(sql for sql, _ in cursor.executed if sql.startswith("SELECT COUNT(*)"))
     assert ident in count_sql
 

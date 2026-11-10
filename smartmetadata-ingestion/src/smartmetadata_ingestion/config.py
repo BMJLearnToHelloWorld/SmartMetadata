@@ -219,6 +219,50 @@ class TestCaseSpec(CamelModel):
     expected: Any = True
 
 
+class ProfilerMetricParamSpec(CamelModel):
+    """Per-column runtime props for the parameterized profiler metrics.
+
+    Mirrors the official RUNTIME_PROPS_METRICS contract: likeCount /
+    iLikeCount / notLikeCount / regexCount / notRegexCount take an
+    expression, countInSet takes a values list. Props are bound as DB-API
+    parameters, never interpolated into SQL
+    (ADR:2026-11-08-profiler-extended-metrics-static-like-composed).
+    """
+
+    __test__ = False
+
+    column: str
+    like_count: str | None = None
+    ilike_count: str | None = None
+    not_like_count: str | None = None
+    regex_count: str | None = None
+    not_regex_count: str | None = None
+    count_in_set: list[str | int | float | bool] | None = None
+
+    @field_validator("column")
+    @classmethod
+    def require_column(cls, value: str) -> str:
+        if not value or not str(value).strip():
+            raise ValueError("profiler metric param column is required")
+        return value
+
+    @model_validator(mode="after")
+    def require_at_least_one_param(self) -> ProfilerMetricParamSpec:
+        if not any(
+            value is not None
+            for value in (
+                self.like_count,
+                self.ilike_count,
+                self.not_like_count,
+                self.regex_count,
+                self.not_regex_count,
+                self.count_in_set,
+            )
+        ):
+            raise ValueError("profiler metric param entry must set at least one metric param")
+        return self
+
+
 class DataDiffSideSpec(CamelModel):
     """One side of a data-diff comparison.
 
@@ -317,6 +361,7 @@ class WorkflowConfig(CamelModel):
     profiles: list[ProfileSpec] = Field(default_factory=list)
     test_case_results: list[TestCaseResultSpec] = Field(default_factory=list)
     test_cases: list[TestCaseSpec] = Field(default_factory=list)
+    profiler_metric_params: list[ProfilerMetricParamSpec] = Field(default_factory=list)
     data_diffs: list[DataDiffSpec] = Field(default_factory=list)
     classifications: list[ClassificationSpec] = Field(default_factory=list)
     tags: list[TagSpec] = Field(default_factory=list)
