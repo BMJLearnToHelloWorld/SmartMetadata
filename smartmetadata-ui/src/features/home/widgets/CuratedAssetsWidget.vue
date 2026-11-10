@@ -174,7 +174,7 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
     <div v-if="isUnconfigured" class="curated-assets__unconfigured" data-testid="widget-empty-state">
       <p>{{ t('home.noCuratedAssets') }}</p>
       <button type="button" class="curated-assets__create" @click="isModalOpen = true">
-        {{ t('shared.create') }}
+        {{ t('crud.create') }}
       </button>
     </div>
     <div v-if="ruleClauses.length > 0" class="curated-assets__rule" data-testid="curated-rule-summary">
@@ -224,7 +224,7 @@ async function handleSave(next: CuratedAssetsConfig): Promise<void> {
     </ul>
     <div v-if="inEditView && hasSavedFilter" class="curated-assets__edit">
       <button type="button" data-testid="edit-curated-assets" @click="isModalOpen = true">
-        {{ t('shared.edit') }}
+        {{ t('crud.edit') }}
       </button>
     </div>
   </HomeWidgetCard>
