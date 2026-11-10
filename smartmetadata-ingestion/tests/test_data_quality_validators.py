@@ -316,7 +316,7 @@ def test_stddev_uses_stdev_on_mssql() -> None:
     assert "STDEV(" in execute.seen[0]
 
 
-def test_median_sql_per_dialect_and_mysql_fails_closed() -> None:
+def test_median_sql_per_dialect_mysql_renders_and_mariadb_fails_closed() -> None:
     _, execute = _run(
         "columnValueMedianToBeBetween",
         {"percentile_cont(0.50)": 5.0},
@@ -351,14 +351,49 @@ def test_median_sql_per_dialect_and_mysql_fails_closed() -> None:
         dialect="mssql",
     )
     assert "OVER()" in execute.seen[0]
-    # No official compile for MySQL: fail closed, never a substitute value.
-    with pytest.raises(WorkflowError, match="no official SQL compile"):
+    # MySQL renders the official ROW_NUMBER subquery against the table.
+    _, execute = _run(
+        "columnValueMedianToBeBetween",
+        {"ROW_NUMBER()": 5.0},
+        column="age",
+        params={"minValueForMedianInCol": "1", "maxValueForMedianInCol": "10"},
+        dialect="mysql",
+    )
+    assert execute.seen[0] == (
+        "SELECT (SELECT _pct_col FROM (SELECT `age` AS _pct_col, "
+        "ROW_NUMBER() OVER (ORDER BY `age`) AS row_num, "
+        "COUNT(*) OVER () AS total_count FROM `analytics`.`orders`) temp "
+        "WHERE temp.row_num = ROUND(0.50 * temp.total_count)) "
+        "FROM `analytics`.`orders`"
+    )
+    # Doris renders percentile_approx.
+    _, execute = _run(
+        "columnValueMedianToBeBetween",
+        {"percentile_approx": 5.0},
+        column="age",
+        params={"minValueForMedianInCol": "1", "maxValueForMedianInCol": "10"},
+        dialect="doris",
+    )
+    assert "percentile_approx(`age`, 0.50)" in execute.seen[0]
+    # String columns median over their length (official LenFn).
+    _, execute = _run(
+        "columnValueMedianToBeBetween",
+        {"percentile_cont(0.50)": 3.0},
+        column="email",
+        params={"minValueForMedianInCol": "1", "maxValueForMedianInCol": "10"},
+    )
+    assert execute.seen[0] == (
+        'SELECT percentile_cont(0.50) WITHIN GROUP (ORDER BY CHAR_LENGTH("email") ASC) '
+        'FROM "analytics"."public"."orders"'
+    )
+    # No official compile for MariaDB: fail closed, never a substitute value.
+    with pytest.raises(WorkflowError, match="no MariaDB compile"):
         _run(
             "columnValueMedianToBeBetween",
             {},
             column="age",
             params={"minValueForMedianInCol": "1", "maxValueForMedianInCol": "10"},
-            dialect="mysql",
+            dialect="mariadb",
         )
 
 

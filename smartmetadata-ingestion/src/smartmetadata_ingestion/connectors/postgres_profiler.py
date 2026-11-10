@@ -14,6 +14,7 @@ from typing import Any
 
 from smartmetadata_ingestion.connectors import postgres_common as postgres
 from smartmetadata_ingestion.connectors.profile_sql import MetricParamsByColumn
+from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.records import ProfileRecord
 
@@ -31,9 +32,12 @@ class PostgresProfilerInterface:
         table: str,
         timestamp: int,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> ProfileRecord:
         stats = list(
-            self._reader.profile_table(database, schema, table, metric_params=metric_params)
+            self._reader.profile_table(
+                database, schema, table, metric_params=metric_params, sample_config=sample_config
+            )
         )
         table_stat = next((s for s in stats if s.column_name is None), None)
         column_profile = [
@@ -63,6 +67,13 @@ class PostgresProfilerInterface:
                 "duplicateCount": s.duplicate_count,
                 "likeRatio": s.like_ratio,
                 "iLikeRatio": s.ilike_ratio,
+                "median": s.median,
+                "firstQuartile": s.first_quartile,
+                "thirdQuartile": s.third_quartile,
+                "interQuartileRange": s.inter_quartile_range,
+                "nonParametricSkew": s.non_parametric_skew,
+                "histogram": s.histogram,
+                "cardinalityDistribution": s.cardinality_distribution,
             }
             for s in stats
             if s.column_name

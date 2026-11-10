@@ -107,15 +107,16 @@ def _connect(cursor: FakeCursor):
 
 
 # Base selects, in slot order: null, distinct, min, max, mean, values,
-# nullMissing, sum, stddev, maxLength, minLength.
-ID_ROW = (0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, None, None)
-NAME_ROW = (1, 9, "a", "z", None, 9, 1, 27, 1.5, 5, 1)
+# nullMissing, sum, stddev, median, firstQuartile, thirdQuartile,
+# maxLength, minLength.
+ID_ROW = (0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, 5.5, 3, 8, None, None)
+NAME_ROW = (1, 9, "a", "z", None, 9, 1, 27, 1.5, 3, 2, 4, 5, 1)
 # With all six parameterized metrics, in slot order: like, ilike, notLike,
 # regex, notRegex, countInSet. (nullMissing 2 here: 1 null + 1 empty string.)
-NAME_ROW_PARAMS = (1, 9, "a", "z", None, 9, 2, 27, 1.5, 5, 1, 3, 3, 3, 3, 3, 3)
+NAME_ROW_PARAMS = (1, 9, "a", "z", None, 9, 2, 27, 1.5, 3, 2, 4, 5, 1, 3, 3, 3, 3, 3, 3)
 # MSSQL has no regex operator, so its SELECT has no regex/notRegex slots:
-# 11 base + like, ilike, notLike, countInSet.
-NAME_ROW_PARAMS_MSSQL = (1, 9, "a", "z", None, 9, 2, 27, 1.5, 5, 1, 3, 3, 3, 3)
+# 14 base + like, ilike, notLike, countInSet.
+NAME_ROW_PARAMS_MSSQL = (1, 9, "a", "z", None, 9, 2, 27, 1.5, 3, 2, 4, 5, 1, 3, 3, 3, 3)
 NAME_PARAMS = ("J%", "j%", "J%", "^J.*", "^J.*", "John", "Jane")
 
 
@@ -131,6 +132,8 @@ def _script(*, wrap, id_row=ID_ROW, name_row=NAME_ROW, id_unique=(1,), name_uniq
         ),
         (f"COUNT(DISTINCT {wrap('id')})", [id_row], None),
         (f"COUNT(DISTINCT {wrap('name')})", [name_row], None),
+        # Histogram on the numeric column: IQR 5 over 10 values bins twice.
+        ("COUNT(CASE WHEN", [(6, 4)], None),
     ]
 
 
@@ -389,12 +392,12 @@ def test_empty_table_ratios_are_none() -> None:
             ),
             (
                 'COUNT(DISTINCT "id")',
-                [(0, 0, None, None, None, 0, 0, None, None, None, None)],
+                [(0, 0, None, None, None, 0, 0, None, None, None, None, None, None, None)],
                 None,
             ),
             (
                 'COUNT(DISTINCT "name")',
-                [(0, 0, None, None, None, 0, 0, None, None, None, None)],
+                [(0, 0, None, None, None, 0, 0, None, None, None, None, None, None, None)],
                 None,
             ),
         ]
@@ -409,6 +412,15 @@ def test_empty_table_ratios_are_none() -> None:
         assert stat.null_proportion is None
         assert stat.duplicate_count == 0
         assert stat.like_ratio is None
+        # Empty table: no percentile, no IQR/NPS, no histogram, no
+        # cardinality distribution — all resolve to None, never to a value.
+        assert stat.median is None
+        assert stat.first_quartile is None
+        assert stat.third_quartile is None
+        assert stat.inter_quartile_range is None
+        assert stat.non_parametric_skew is None
+        assert stat.histogram is None
+        assert stat.cardinality_distribution is None
 
 
 def test_mssql_deprecated_type_unique_count_skipped() -> None:
@@ -418,7 +430,7 @@ def test_mssql_deprecated_type_unique_count_skipped() -> None:
             ("information_schema.columns", [("bio", "text")], None),
             (
                 "COUNT(DISTINCT [bio])",
-                [(0, 4, "a", "z", None, 4, 0, 12, 1.0, 3, 1)],
+                [(0, 4, "a", "z", None, 4, 0, 12, 1.0, 3, 2, 4, 3, 1)],
                 None,
             ),
         ]
@@ -427,6 +439,12 @@ def test_mssql_deprecated_type_unique_count_skipped() -> None:
     stats = reader.profile_table("db", "dbo", "notes")
     assert stats[1].unique_count is None
     assert stats[1].values_count == 4
+    # String column: length-median family; all values unique.
+    assert stats[1].median == 3
+    assert stats[1].first_quartile == 2
+    assert stats[1].third_quartile == 4
+    assert stats[1].inter_quartile_range == 2
+    assert stats[1].cardinality_distribution == {"allValuesUnique": True}
 
 
 def test_typed_min_max_normalization() -> None:
@@ -459,12 +477,17 @@ def test_typed_min_max_through_reader() -> None:
                         0,
                         Decimal("10.75"),
                         Decimal("3.9"),
+                        Decimal("5.375"),
+                        Decimal("3.0"),
+                        Decimal("7.0"),
                         None,
                         None,
                     )
                 ],
                 None,
             ),
+            # Histogram: IQR 4 over 2 values bins twice.
+            ("COUNT(CASE WHEN", [(1, 1)], None),
         ]
     )
     reader = postgres_common.CursorProfileReader(_connect(cursor))
@@ -473,6 +496,14 @@ def test_typed_min_max_through_reader() -> None:
     assert stats[1].max_value == 9.25
     assert stats[1].mean == 5.375
     assert stats[1].sum_value == 10.75
+    assert stats[1].median == 5.375
+    assert stats[1].first_quartile == 3.0
+    assert stats[1].third_quartile == 7.0
+    assert stats[1].inter_quartile_range == 4.0
+    assert stats[1].histogram == {
+        "boundaries": ["1.500 to 7.850", "7.850 and up"],
+        "frequencies": [1, 1],
+    }
 
 
 def test_interface_maps_extended_keys() -> None:
@@ -524,26 +555,33 @@ def test_interface_maps_extended_keys() -> None:
     assert column["uniqueProportion"] == 0.1
     assert column["nullProportion"] == 0.0
     assert column["duplicateCount"] == 0
-    # Wave 3 metrics must not appear in this batch.
-    assert "median" not in column
-    assert "interQuartileRange" not in column
-    assert "nonParametricSkew" not in column
-    assert "histogram" not in column
+    # Wave 3 serial point 6 keys land with None for a row that carries none.
+    assert column["median"] is None
+    assert column["firstQuartile"] is None
+    assert column["thirdQuartile"] is None
+    assert column["interQuartileRange"] is None
+    assert column["nonParametricSkew"] is None
+    assert column["histogram"] is None
+    assert column["cardinalityDistribution"] is None
+    # valueRank has no ColumnProfile field; system is not in this batch.
+    assert "valueRank" not in column
+    assert "system" not in column
 
 
-def test_no_wave3_metric_attributes_on_stat_row() -> None:
+def test_wave3_metric_attributes_on_stat_row() -> None:
     row = ProfileStatRow("id")
     for attr in (
         "median",
         "first_quartile",
         "third_quartile",
-        "value_rank",
         "histogram",
         "cardinality_distribution",
         "inter_quartile_range",
         "non_parametric_skew",
-        "system",
     ):
+        assert hasattr(row, attr)
+    # valueRank has no ColumnProfile field; system is not in this batch.
+    for attr in ("value_rank", "system"):
         assert not hasattr(row, attr)
 
 
@@ -553,9 +591,11 @@ class _RecordingReader:
     def __init__(self, stats) -> None:
         self._stats = list(stats)
         self.seen_metric_params = None
+        self.seen_sample_config = None
 
-    def profile_table(self, database, schema, table, *, metric_params=None):
+    def profile_table(self, database, schema, table, *, metric_params=None, sample_config=None):
         self.seen_metric_params = metric_params
+        self.seen_sample_config = sample_config
         return self._stats
 
     def sample_table(self, database, schema, table, *, limit=50):
@@ -639,6 +679,7 @@ def test_workflow_threads_config_params_to_reader() -> None:
             "countInSet": {"values": ["John", "Jane"]},
         }
     }
+    assert recording.seen_sample_config is None
 
 
 def test_config_parses_camel_case_keys_and_rejects_empty_entry() -> None:

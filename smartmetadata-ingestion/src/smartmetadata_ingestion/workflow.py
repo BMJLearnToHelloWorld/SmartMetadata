@@ -30,6 +30,7 @@ from smartmetadata_ingestion.config import (
 )
 from smartmetadata_ingestion.connectors.base import Source, build_source
 from smartmetadata_ingestion.data_quality.builder import ValidatorBuilder
+from smartmetadata_ingestion.data_quality.sampling import resolve_sample_config
 from smartmetadata_ingestion.data_quality.source import (
     PulledSuite,
     pull_test_cases,
@@ -45,6 +46,7 @@ from smartmetadata_ingestion.errors import (
     WorkflowInitializationError,
     WorkflowTeardownError,
 )
+from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.pipeline_status import (
     PipelineState,
     build_pipeline_status,
@@ -550,7 +552,20 @@ class ProfilerWorkflow(MetadataWorkflow):
             self._close_iterator(iterator)
         timestamp = now_ms()
         metric_params = _profiler_metric_params(self.config.profiler_metric_params)
+        default_sample = (
+            self.config.profiler_sample.to_static()
+            if self.config.profiler_sample is not None
+            else None
+        )
+        table_samples = {
+            spec.table_fqn: spec.to_static() for spec in self.config.profiler_table_samples
+        }
         for database, schema, table in tables:
+            # Per-table override wins over the workflow default; the server
+            # levels (entity tableProfilerConfig / schema / database) are
+            # not pulled by the workflow yet (R-W3H-6-sampler-server-config).
+            table_fqn = build_fqn(self.config.source.service_name, database, schema, table)
+            sample_config = resolve_sample_config(table_samples.get(table_fqn), default_sample)
             profile = self._profiler.profile(
                 service=self.config.source.service_name,
                 database=database,
@@ -558,6 +573,7 @@ class ProfilerWorkflow(MetadataWorkflow):
                 table=table,
                 timestamp=timestamp,
                 metric_params=metric_params,
+                sample_config=sample_config,
             )
             self._handle_record(profile)
 

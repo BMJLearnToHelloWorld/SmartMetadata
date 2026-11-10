@@ -24,6 +24,7 @@ from smartmetadata_ingestion.connectors.profile_sql import (
     SqlProfileReader,
     quote_mysql,
 )
+from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.errors import WorkflowError
 
 _SYSTEM_SCHEMAS = frozenset({"information_schema", "mysql", "__internal_schema", "sys"})
@@ -99,6 +100,13 @@ class ProfileStatRow:
     duplicate_count: int | None = None
     like_ratio: float | None = None
     ilike_ratio: float | None = None
+    median: float | None = None
+    first_quartile: float | None = None
+    third_quartile: float | None = None
+    inter_quartile_range: float | None = None
+    non_parametric_skew: float | None = None
+    histogram: dict | None = None
+    cardinality_distribution: dict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +135,7 @@ class ProfileReader(Protocol):
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]: ...
@@ -187,12 +196,11 @@ class SequenceProfileReader:
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
-    def sample_table(
-        self, schema: str, table: str, *, limit: int = 50
-    ) -> Sequence[SampleRow]:
+    def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]:
         return self._samples[:limit]
 
 
@@ -243,8 +251,7 @@ def doris_connect(connection: dict[str, Any]):
         import pymysql
     except ImportError as exc:
         raise WorkflowError(
-            "doris live reads need the optional extra: "
-            "pip install 'smartmetadata-ingestion[doris]'"
+            "doris live reads need the optional extra: pip install 'smartmetadata-ingestion[doris]'"
         ) from exc
     host_port = connection.get("hostPort") or "localhost:9030"
     if ":" in str(host_port):
@@ -372,7 +379,7 @@ class CursorProfileReader:
             ident_style="two",
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
-            dialect="mysql",
+            dialect="doris",
         )
 
     def profile_table(
@@ -381,10 +388,11 @@ class CursorProfileReader:
         table: str,
         *,
         metric_params: MetricParamsByColumn | None = None,
+        sample_config: StaticSampleConfig | None = None,
     ) -> Sequence[ProfileStatRow]:
-        return self._reader.profile(None, schema, table, metric_params=metric_params)
+        return self._reader.profile(
+            None, schema, table, metric_params=metric_params, sample_config=sample_config
+        )
 
-    def sample_table(
-        self, schema: str, table: str, *, limit: int = 50
-    ) -> Sequence[SampleRow]:
+    def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]:
         return self._reader.sample(None, schema, table, limit=limit)
