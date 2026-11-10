@@ -52,6 +52,8 @@ export interface ApiRequestOptions {
   response?: 'json' | 'text';
   /** Extra headers merged over the defaults (e.g. a SPARQL Accept override). */
   headers?: Record<string, string>;
+  /** AbortSignal for cancellable requests (data-mode generations). */
+  signal?: AbortSignal;
   /** Internal single-retry guard for the silent-refresh path; callers never set it. */
   retried?: boolean;
 }
@@ -112,6 +114,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     method,
     headers,
     body: options.json !== undefined ? JSON.stringify(options.json) : options.text,
+    signal: options.signal,
   });
 
   const text = await response.text();

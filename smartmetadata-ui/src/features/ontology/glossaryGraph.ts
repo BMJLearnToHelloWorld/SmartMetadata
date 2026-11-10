@@ -47,39 +47,74 @@ export function buildGlossaryGraphData(terms: readonly GlossaryTerm[]): Ontology
       continue;
     }
     nodeIds.add(term.id);
+    const label = term.displayName || term.name || term.fullyQualifiedName || term.id;
     nodes.push({
       description: term.description,
       fullyQualifiedName: term.fullyQualifiedName,
       glossaryId: term.glossary?.id,
       group: term.glossary?.displayName || term.glossary?.name,
       id: term.id,
-      label: term.displayName || term.name || term.fullyQualifiedName || term.id,
+      label,
+      originalLabel: label,
+      type: 'glossaryTerm',
     });
   }
   const edges: OntologyGraphEdge[] = [];
-  const seenEdges = new Set<string>();
-  const addEdge = (source: string, target: string, relationType: string): void => {
-    if (!nodeIds.has(source) || !nodeIds.has(target) || source === target) {
+  const edgeSet = new Set<string>();
+  const addEdge = (edge: OntologyGraphEdge, dedupKey: string): void => {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target) || edge.source === edge.target) {
       return;
     }
-    const key = `${source}|${target}|${relationType}`;
-    if (seenEdges.has(key)) {
+    if (edgeSet.has(dedupKey)) {
       return;
     }
-    seenEdges.add(key);
-    edges.push({ id: key, source, target, relationType });
+    edgeSet.add(dedupKey);
+    edges.push(edge);
   };
   for (const term of terms) {
     if (!term.id || !nodeIds.has(term.id)) {
       continue;
     }
     if (term.parent?.id) {
-      addEdge(term.parent.id, term.id, 'parentOf');
+      // Official graphBuilders.ts addParentEdge: the dedup key doubles as
+      // the product edge id (pin leaves parent edges id-less).
+      addEdge(
+        {
+          edgeKind: 'ontology',
+          id: `parent-${term.parent.id}-${term.id}`,
+          label: 'Parent',
+          relationType: 'parentOf',
+          source: term.parent.id,
+          target: term.id,
+        },
+        `parent-${term.parent.id}-${term.id}`,
+      );
     }
     for (const related of term.relatedTerms ?? []) {
-      if (related.id) {
-        addEdge(term.id, related.id, related.relationType || 'relatedTo');
+      if (!related.id) {
+        continue;
       }
+      // Official graphBuilders.ts: edges key on the stored TermRelation
+      // id; two relations between the same pair with different types are
+      // distinct edges (dedup key = sorted pair + relationType).
+      // ADR:2026-11-10-g18-stage2-inspector-rail
+      const relationType = related.relationType || 'relatedTo';
+      addEdge(
+        {
+          createdAt: related.createdAt,
+          createdBy: related.createdBy,
+          edgeKind: 'ontology',
+          id: related.relationId ?? `${[term.id, related.id].sort().join('-')}|${relationType}`,
+          label: relationType,
+          provenance: related.provenance,
+          relationType,
+          relationshipType: related.relationshipType,
+          source: term.id,
+          status: related.relationStatus,
+          target: related.id,
+        },
+        `${[term.id, related.id].sort().join('-')}|${relationType}`,
+      );
     }
   }
   const connected = new Set(edges.flatMap((edge) => [edge.source, edge.target]));

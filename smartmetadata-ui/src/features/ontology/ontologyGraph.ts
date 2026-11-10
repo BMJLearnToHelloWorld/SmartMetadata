@@ -51,6 +51,15 @@ export type OntologyRelationKind =
 export interface OntologyGraphNode {
   id: string;
   label: string;
+  /**
+   * Node kind (official OntologyExplorer.interface.ts: OntologyNode.type).
+   * The health math counts exactly 'glossaryTerm' / 'glossaryTermIsolated'
+   * / 'ontologyConcept' as terms; data-mode asset rows are 'dataAsset'.
+   * Stage-1 builders set it; unset means "not a term node".
+   */
+  type?: 'glossaryTerm' | 'glossaryTermIsolated' | 'ontologyConcept' | 'dataAsset';
+  /** Label before any search/highlight rewrite (relation details show it). */
+  originalLabel?: string;
   conceptType?: string;
   /** Owning ontology; the combo grouping and per-ontology open actions. */
   ontologyId?: string;
@@ -63,6 +72,19 @@ export interface OntologyGraphNode {
   description?: string;
   /** No incident edge: rendered in the tree's unconnected section. */
   isolated?: boolean;
+  /** Data-mode fields (official OntologyNode): the catalog entity behind
+   * an asset row, its service label, bound-column count, lineage notes,
+   * and the cluster's asset counts / loading state. */
+  entityRef?: import('@/types/api').EntityRef;
+  serviceLabel?: string;
+  columnCount?: number;
+  lineageNotes?: Array<{ direction: 'downstream' | 'upstream'; label: string }>;
+  assetCount?: number;
+  loadedAssetCount?: number;
+  isLoadingAssets?: boolean;
+  isDataModeSeed?: boolean;
+  /** Draft nodes carry no inspector (stage 2 fallback: entity panel). */
+  isDraft?: boolean;
 }
 
 export interface OntologyGraphEdge {
@@ -74,6 +96,26 @@ export interface OntologyGraphEdge {
   /** Display label (official getModelRelationLabel): 'isA' for subClassOf,
       the property label for restriction/objectProperty/objectAssertion. */
   label?: string;
+  /** The relationship-type entity behind a glossary relation, when known. */
+  relationshipType?: import('@/types/api').EntityRef;
+  /** Stored TermRelation fields (official glossaryTermRelationGraphEdge):
+   * provenance / status / createdBy / createdAt feed the relation
+   * details panel; inferred edges carry provenance 'Inferred'. */
+  provenance?: 'AiSuggested' | 'Imported' | 'Inferred' | 'Manual';
+  status?: string;
+  createdBy?: string;
+  createdAt?: number;
+  /** Edge family (official OntologyEdge.edgeKind): 'ontology' for model
+   * edges, 'assetBinding' for tagged-with/binding edges,
+   * 'semanticProjection' for inferred edges, 'observedLineage' for
+   * lineage edges. */
+  edgeKind?: 'ontology' | 'assetBinding' | 'semanticProjection' | 'observedLineage';
+  /** Lineage detail (official OntologyEdge.lineage): the two row nodes
+   * the edge joins, for the data-mode card renderer. */
+  lineage?: {
+    from: { nodeId: string; label: string };
+    to: { nodeId: string; label: string };
+  };
 }
 
 export interface OntologyGraphData {
@@ -285,7 +327,7 @@ export function buildOntologyModelGraph(model: OntologyStudioModel): OntologyGra
       return;
     }
     seenEdges.add(key);
-    edges.push({ id, label, relationType, source, target });
+    edges.push({ edgeKind: 'ontology', id, label, relationType, source, target });
   };
   for (const relation of relations) {
     addEdge(relation.key, relation.fromId, relation.toId, relation.kind, relation.label);
@@ -305,6 +347,7 @@ export function buildOntologyModelGraph(model: OntologyStudioModel): OntologyGra
       continue;
     }
     nodeIds.add(concept.id);
+    const label = concept.displayName || concept.name || concept.fullyQualifiedName || concept.id;
     nodes.push({
       conceptType: concept.conceptType,
       description: concept.description,
@@ -312,9 +355,11 @@ export function buildOntologyModelGraph(model: OntologyStudioModel): OntologyGra
       group,
       id: concept.id,
       isolated: !connected.has(concept.id),
-      label: concept.displayName || concept.name || concept.fullyQualifiedName || concept.id,
+      label,
+      originalLabel: label,
       ontologyFqn: model.ontology.fullyQualifiedName || undefined,
       ontologyId: model.ontology.id || undefined,
+      type: 'ontologyConcept',
     });
   }
   return { edges, nodes };

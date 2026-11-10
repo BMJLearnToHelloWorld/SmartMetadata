@@ -35,8 +35,20 @@ describe('buildGlossaryGraphData', () => {
     ]);
     expect(graph.nodes.map((node) => node.id)).toEqual(['root', 'child', 'sib']);
     expect(graph.edges).toEqual([
-      { id: 'root|child|parentOf', source: 'root', target: 'child', relationType: 'parentOf' },
-      { id: 'sib|child|relatedTo', source: 'sib', target: 'child', relationType: 'relatedTo' },
+      { edgeKind: 'ontology', id: 'parent-root-child', label: 'Parent', relationType: 'parentOf', source: 'root', target: 'child' },
+      {
+        createdAt: undefined,
+        createdBy: undefined,
+        edgeKind: 'ontology',
+        id: 'child-sib|relatedTo',
+        label: 'relatedTo',
+        provenance: undefined,
+        relationType: 'relatedTo',
+        relationshipType: undefined,
+        source: 'sib',
+        status: undefined,
+        target: 'child',
+      },
     ]);
   });
 
@@ -46,7 +58,19 @@ describe('buildGlossaryGraphData', () => {
       term({ id: 'b', name: 'B' }),
     ]);
     expect(graph.edges).toEqual([
-      { id: 'a|b|broader', source: 'a', target: 'b', relationType: 'broader' },
+      {
+        createdAt: undefined,
+        createdBy: undefined,
+        edgeKind: 'ontology',
+        id: 'a-b|broader',
+        label: 'broader',
+        provenance: undefined,
+        relationType: 'broader',
+        relationshipType: undefined,
+        source: 'a',
+        status: undefined,
+        target: 'b',
+      },
     ]);
   });
 
@@ -92,6 +116,8 @@ describe('buildGlossaryGraphData', () => {
         id: 'a',
         isolated: false,
         label: 'Term A',
+        originalLabel: 'Term A',
+        type: 'glossaryTerm',
       },
       {
         description: undefined,
@@ -101,6 +127,8 @@ describe('buildGlossaryGraphData', () => {
         id: 'b',
         isolated: false,
         label: 'B',
+        originalLabel: 'B',
+        type: 'glossaryTerm',
       },
       {
         description: undefined,
@@ -110,6 +138,8 @@ describe('buildGlossaryGraphData', () => {
         id: 'lonely',
         isolated: true,
         label: 'Lonely',
+        originalLabel: 'Lonely',
+        type: 'glossaryTerm',
       },
     ]);
   });
@@ -164,7 +194,19 @@ describe('fetchGlossaryGraphData', () => {
     const graph = await fetchGlossaryGraphData('g1');
     expect(graph.nodes.map((node) => node.id)).toEqual(['a', 'x1']);
     expect(graph.edges).toEqual([
-      { id: 'a|x1|narrower', source: 'a', target: 'x1', relationType: 'narrower' },
+      {
+        createdAt: undefined,
+        createdBy: undefined,
+        edgeKind: 'ontology',
+        id: 'a-x1|narrower',
+        label: 'narrower',
+        provenance: undefined,
+        relationType: 'narrower',
+        relationshipType: undefined,
+        source: 'a',
+        status: undefined,
+        target: 'x1',
+      },
     ]);
   });
 });

@@ -22,6 +22,8 @@ import {
   listOntologyPacks,
   listOntologyReleases,
 } from '@/api/ontology';
+import { getGlossaryTerm, getGlossaryTermAssets, getGlossaryTermsByIds, getOntologyDataGraph, getOntologySummary } from '@/api/glossaryTerms';
+import { listAllRelationshipTypes, type RelationshipType } from '@/api/relationshipTypes';
 import type {
   Ontology,
   OntologyAxiom,
@@ -32,12 +34,34 @@ import type {
   OntologyProperty,
   OntologyRelease,
 } from '@/types/ontology';
-import type { Glossary } from '@/types/governance';
+import type { Glossary, GlossaryTerm } from '@/types/governance';
+import {
+  ASSET_RELATION_TYPE,
+  DATA_MODE_ASSET_LOAD_PAGE_SIZE,
+  DATA_MODE_ASSET_MAX_LOAD,
+  DATA_MODE_ASSET_PREVIEW_SIZE,
+  DATA_MODE_CONNECTED_TERM_LIMIT,
+  DATA_MODE_EDGE_LIMIT,
+  DATA_MODE_SEED_PAGE_SIZE,
+  DEFAULT_ONTOLOGY_GRAPH_SETTINGS,
+  ONTOLOGY_HEALTH_PREVIEW_SIZE,
+  type OntologyGraphSettings,
+  type OntologySummary,
+} from '@/types/ontologyDataGraph';
 import { usePermissionStore } from '@/stores/permissions';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef } from '@/types/api';
 import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
 import OntologyTreeView from '@/features/ontology/OntologyTreeView.vue';
+import OntologyHealthPanel from '@/features/ontology/OntologyHealthPanel.vue';
+import OntologyConceptInspector from '@/features/ontology/OntologyConceptInspector.vue';
+import OntologyAuthoringInspector from '@/features/ontology/OntologyAuthoringInspector.vue';
+import OntologyEntityPanel from '@/features/ontology/OntologyEntityPanel.vue';
+import OntologyRelationDetailsPanel from '@/features/ontology/OntologyRelationDetailsPanel.vue';
+import OntologyDataGraph from '@/features/ontology/OntologyDataGraph.vue';
+import OntologyNativeDataMode from '@/features/ontology/OntologyNativeDataMode.vue';
+import OntologyGraphModeTabs from '@/features/ontology/OntologyGraphModeTabs.vue';
+import GraphSettingsPanel from '@/features/ontology/GraphSettingsPanel.vue';
 import {
   AggregateCapacityError,
   buildAggregateGraph,
@@ -46,10 +70,23 @@ import {
   loadAggregateModels,
   loadOntologyModel,
 } from '@/features/ontology/ontologyAggregate';
-import { buildOntologyModelGraph, type OntologyGraphData, type OntologyGraphEdge } from '@/features/ontology/ontologyGraph';
+import {
+  buildOntologyModelGraph,
+  getModelRelations,
+  type OntologyGraphData,
+  type OntologyGraphEdge,
+  type OntologyGraphNode,
+  type OntologyStudioModel,
+} from '@/features/ontology/ontologyGraph';
 import { fetchAllGlossariesGraphData, fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
 import { computeOntologySearchHighlight } from '@/features/ontology/ontologySearchHighlight';
 import { buildOntologyTreeIndex } from '@/features/ontology/ontologyTree';
+import {
+  composeOntologyHealthSummary,
+  getOntologyHealthSummary,
+  isolatedTermIdsToHydrate,
+} from '@/features/ontology/ontologyHealth';
+import { buildGraphFromOntologyData, ontologyAssetNode } from '@/features/ontology/nativeDataGraph';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -132,6 +169,31 @@ const searchQuery = ref('');
 const graphData = ref<OntologyGraphData | null>(null);
 const selectedNodeId = ref<string | null>(null);
 const selectedEdge = ref<OntologyGraphEdge | null>(null);
+
+// Stage 2: graph mode, settings, health, inspectors, glossary data mode.
+const graphMode = ref<'model' | 'data'>('model');
+const hasOpenedData = ref(false);
+const graphSettings = ref<OntologyGraphSettings>({ ...DEFAULT_ONTOLOGY_GRAPH_SETTINGS });
+const ontologySummary = ref<OntologySummary | null>(null);
+const summaryUnavailable = ref(false);
+const hydratedLabels = ref<Record<string, string>>({});
+const aggregateModels = ref<OntologyStudioModel[]>([]);
+const singleModel = ref<OntologyStudioModel | null>(null);
+const inspectorConcept = ref<OntologyConcept | null>(null);
+const selectedTerm = ref<GlossaryTerm | null>(null);
+const relationshipTypes = ref<RelationshipType[]>([]);
+const relationshipTypesLoading = ref(false);
+const glossaryDataGraph = ref<OntologyGraphData | null>(null);
+const dataModeLoading = ref(false);
+const dataModeLoadingMore = ref(false);
+const dataModeNextOffset = ref(0);
+const dataModeTotal = ref(0);
+const dataModeError = ref('');
+const termAssetCounts = ref<Record<string, number>>({});
+const loadingTermIds = ref<Set<string>>(new Set());
+const assetControllers = new Map<string, AbortController>();
+let selectionToken = 0;
+let healthToken = 0;
 const ontology = ref<Ontology | null>(null);
 const concepts = ref<OntologyConcept[]>([]);
 const properties = ref<OntologyProperty[]>([]);
@@ -233,6 +295,116 @@ const statsLabel = computed(() => {
   }
   return t('ontology.browser.statsConceptsRelations', { concepts: graphData.value.nodes.length, relations });
 });
+
+// Stage 2: scope-derived helpers for the health panel, inspectors and data mode.
+const isGlossaryScope = computed(() => scope.value.kind === 'glossaries');
+const isSingleGlossaryScope = computed(
+  () => scope.value.kind === 'glossaries' && Boolean(scope.value.glossaryId),
+);
+const selectedNode = computed<OntologyGraphNode | null>(() => {
+  if (!selectedNodeId.value) return null;
+  const data = graphMode.value === 'data' && isGlossaryScope.value ? glossaryDataGraph.value : graphData.value;
+  return data?.nodes.find((node) => node.id === selectedNodeId.value)
+    ?? graphData.value?.nodes.find((node) => node.id === selectedNodeId.value)
+    ?? null;
+});
+const effectiveGraph = computed<OntologyGraphData | null>(() =>
+  graphMode.value === 'data' && isGlossaryScope.value ? glossaryDataGraph.value : graphData.value,
+);
+const composedHealth = computed(() => {
+  if (isGlossaryScope.value && ontologySummary.value) {
+    return composeOntologyHealthSummary(ontologySummary.value);
+  }
+  return null;
+});
+const health = computed(() => {
+  if (composedHealth.value) return composedHealth.value.health;
+  const derived = getOntologyHealthSummary(graphData.value, {
+    glossaryIds: isSingleGlossaryScope.value && scope.value.kind === 'glossaries' && scope.value.glossaryId
+      ? [scope.value.glossaryId]
+      : [],
+  });
+  if (Object.keys(hydratedLabels.value).length === 0) return derived;
+  return {
+    ...derived,
+    isolatedTerms: derived.isolatedTerms.map((term) => {
+      const label = hydratedLabels.value[term.id];
+      return label ? { ...term, label } : term;
+    }),
+  };
+});
+const isolatedTermCount = computed<number | undefined>(() => composedHealth.value?.isolatedTermCount);
+const inspectorModel = computed<OntologyStudioModel | null>(() => {
+  if (scope.value.kind === 'ontology') return singleModel.value;
+  if (scope.value.kind === 'allOntologies' && selectedNode.value?.ontologyId) {
+    return aggregateModels.value.find((model) => model.ontology.id === selectedNode.value?.ontologyId) ?? null;
+  }
+  return null;
+});
+const inspectorRelations = computed(() => (inspectorModel.value ? getModelRelations(inspectorModel.value) : []));
+const showHealth = computed(
+  () => graphData.value !== null
+    && surface.value === 'graph'
+    && graphMode.value === 'model'
+    && !selectedNodeId.value
+    && !selectedEdge.value,
+);
+const showConceptInspector = computed(
+  () => !isGlossaryScope.value
+    && selectedNode.value?.type === 'ontologyConcept'
+    && inspectorConcept.value !== null
+    && inspectorModel.value !== null
+    && surface.value === 'graph'
+    && !selectedEdge.value,
+);
+const showAuthoringInspector = computed(
+  () => isGlossaryScope.value
+    && !isSingleGlossaryScope.value
+    && selectedNode.value?.type === 'glossaryTerm'
+    && !selectedNode.value.isDraft
+    && surface.value === 'graph'
+    && !selectedEdge.value,
+);
+const showEntityPanel = computed(
+  () => selectedNode.value !== null
+    && surface.value === 'graph'
+    && !selectedEdge.value
+    && !showConceptInspector.value
+    && !showAuthoringInspector.value
+    && (selectedNode.value.type === 'dataAsset'
+      || (isSingleGlossaryScope.value && selectedNode.value.type === 'glossaryTerm')),
+);
+const showRail = computed(
+  () => (showHealth.value && !isGlossaryScope.value)
+    || showConceptInspector.value
+    || showAuthoringInspector.value
+    || showEntityPanel.value
+    || (selectedEdge.value !== null && surface.value === 'graph'),
+);
+const nativeDataOntologyId = computed<string | null>(() => {
+  if (scope.value.kind === 'ontology') return scope.value.ontologyId;
+  if (scope.value.kind === 'allOntologies') {
+    return selectedNode.value?.ontologyId ?? inspectorConcept.value?.ontology?.id ?? null;
+  }
+  return null;
+});
+const hasMoreDataTerms = computed(() => dataModeNextOffset.value > 0 && dataModeNextOffset.value < dataModeTotal.value);
+const pageableTermNodes = computed(() => {
+  if (!glossaryDataGraph.value || !isSingleGlossaryScope.value) return [];
+  return glossaryDataGraph.value.nodes
+    .filter((node) => node.type === 'glossaryTerm')
+    .filter((node) => {
+      const total = termAssetCounts.value[node.id] ?? node.assetCount ?? 0;
+      const loaded = node.loadedAssetCount ?? 0;
+      return total - loaded > 0;
+    })
+    .map((node) => ({
+      id: node.id,
+      label: node.label,
+      remaining: (termAssetCounts.value[node.id] ?? node.assetCount ?? 0) - (node.loadedAssetCount ?? 0),
+    }));
+});
+const remainingDataAssets = computed(() => pageableTermNodes.value.reduce((sum, term) => sum + term.remaining, 0));
 
 const filteredConcepts = computed(() => {
   const q = conceptFilter.value.trim().toLowerCase();
@@ -410,6 +582,24 @@ async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: b
   graphData.value = null;
   graphError.value = '';
   capacityExceeded.value = false;
+  // Stage 2 state resets with the scope.
+  graphMode.value = 'model';
+  hasOpenedData.value = false;
+  glossaryDataGraph.value = null;
+  dataModeLoading.value = false;
+  dataModeLoadingMore.value = false;
+  dataModeNextOffset.value = 0;
+  dataModeTotal.value = 0;
+  dataModeError.value = '';
+  termAssetCounts.value = {};
+  loadingTermIds.value = new Set();
+  ontologySummary.value = null;
+  summaryUnavailable.value = false;
+  hydratedLabels.value = {};
+  aggregateModels.value = [];
+  singleModel.value = null;
+  inspectorConcept.value = null;
+  selectedTerm.value = null;
   if (options.updateRoute !== false) {
     const query: Record<string, string | undefined> = { ...route.query, scope: scopeKeyOf(next) };
     if (next.kind === 'ontology') {
@@ -431,6 +621,7 @@ async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: b
       if (token !== graphLoadToken) {
         return;
       }
+      aggregateModels.value = models;
       graphData.value = buildAggregateGraph(models);
     } else if (next.kind === 'ontology') {
       const detail = await loadDetail(next.ontologyId);
@@ -449,6 +640,7 @@ async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: b
         graphError.value = t('crud.loadFailed');
         return;
       }
+      singleModel.value = model;
       graphData.value = buildOntologyModelGraph(model);
     } else if (next.kind === 'glossaries' && next.glossaryId) {
       ontology.value = null;
@@ -461,6 +653,7 @@ async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: b
         return;
       }
       graphData.value = data;
+      void loadHealthSummary();
     } else {
       ontology.value = null;
       concepts.value = [];
@@ -472,6 +665,7 @@ async function applyScope(next: OntologyBrowserScope, options: { updateRoute?: b
         return;
       }
       graphData.value = data;
+      void loadHealthSummary();
     }
   } catch (error) {
     if (token !== graphLoadToken) {
@@ -504,6 +698,34 @@ function onSelectNode(nodeId: string | null): void {
   selectedNodeId.value = nodeId;
   if (nodeId !== null) {
     selectedEdge.value = null;
+    void loadSelectionDetails(nodeId);
+  }
+}
+
+async function loadSelectionDetails(nodeId: string): Promise<void> {
+  const token = ++selectionToken;
+  inspectorConcept.value = null;
+  selectedTerm.value = null;
+  const node = selectedNode.value;
+  if (!node) return;
+  if (node.type === 'ontologyConcept' && node.ontologyId) {
+    try {
+      const detail = await getOntologyConcept(nodeId);
+      if (token !== selectionToken) return;
+      inspectorConcept.value = detail;
+    } catch {
+      // Inspector stays hidden when the full concept cannot be loaded.
+    }
+    return;
+  }
+  if (node.type === 'glossaryTerm') {
+    try {
+      const term = await getGlossaryTerm(nodeId);
+      if (token !== selectionToken) return;
+      selectedTerm.value = term;
+    } catch {
+      // The authoring inspector / entity panel still renders from the node.
+    }
   }
 }
 
@@ -511,21 +733,225 @@ function onSelectEdge(edge: OntologyGraphEdge | null): void {
   selectedEdge.value = edge;
   if (edge !== null) {
     selectedNodeId.value = null;
+    if (edge.provenance === 'Inferred') {
+      void ensureRelationshipTypes();
+    }
+  }
+}
+
+async function ensureRelationshipTypes(): Promise<void> {
+  if (relationshipTypes.value.length > 0 || relationshipTypesLoading.value) return;
+  relationshipTypesLoading.value = true;
+  try {
+    relationshipTypes.value = await listAllRelationshipTypes();
+  } catch {
+    relationshipTypes.value = [];
+  } finally {
+    relationshipTypesLoading.value = false;
   }
 }
 
 function onGraphNodeDblClick(nodeId: string): void {
-  const node = graphData.value?.nodes.find((item) => item.id === nodeId);
-  if (node?.ontologyId) {
+  const node = graphData.value?.nodes.find((item) => item.id === nodeId)
+    ?? glossaryDataGraph.value?.nodes.find((item) => item.id === nodeId);
+  if (!node) return;
+  if (node.type === 'glossaryTerm' || (node.glossaryId && !node.ontologyId)) {
+    void router.push({ name: 'governance-term', params: { id: nodeId } });
+    return;
+  }
+  if (node.ontologyId) {
     void openConceptDetail(nodeId);
   }
 }
 
-function nodeLabel(id: string | undefined): string {
-  if (!id) {
-    return '';
+function onInspectorEdit(concept: OntologyConcept): void {
+  const ontologyId = concept.ontology?.id ?? inspectorModel.value?.ontology.id;
+  void router.push({ name: 'ontology-studio', query: ontologyId ? { ontology: ontologyId } : {} });
+}
+
+function onInspectorOpenData(): void {
+  graphMode.value = 'data';
+  hasOpenedData.value = true;
+}
+
+function openTermDetails(termId: string): void {
+  void router.push({ name: 'governance-term', params: { id: termId } });
+}
+
+function onConnect(term: { id: string }): void {
+  onSelectNode(term.id);
+}
+
+function changeGraphMode(mode: 'model' | 'data'): void {
+  if (graphMode.value === mode) return;
+  graphMode.value = mode;
+  if (mode === 'data') {
+    hasOpenedData.value = true;
+    if (isGlossaryScope.value && !glossaryDataGraph.value) {
+      void loadDataModeTerms(0);
+    }
   }
-  return graphData.value?.nodes.find((item) => item.id === id)?.label ?? id;
+}
+
+function onSettingsChange(next: OntologyGraphSettings): void {
+  graphSettings.value = next;
+}
+
+async function loadHealthSummary(): Promise<void> {
+  const token = ++healthToken;
+  summaryUnavailable.value = false;
+  ontologySummary.value = null;
+  const glossaryId = scope.value.kind === 'glossaries' ? scope.value.glossaryId : undefined;
+  const parent = glossaries.value.find((item) => item.id === glossaryId)?.fullyQualifiedName;
+  try {
+    const summary = await getOntologySummary({ limit: ONTOLOGY_HEALTH_PREVIEW_SIZE, offset: 0, parent });
+    if (token !== healthToken) return;
+    ontologySummary.value = summary;
+  } catch {
+    if (token !== healthToken) return;
+    summaryUnavailable.value = true;
+    // Fallback: derive health from the model graph and hydrate unresolved
+    // isolated-term labels (those whose label is still their id).
+    const derived = getOntologyHealthSummary(graphData.value, {
+      glossaryIds: glossaryId ? [glossaryId] : [],
+    });
+    const ids = isolatedTermIdsToHydrate(derived);
+    if (ids.length === 0) return;
+    try {
+      const terms = await getGlossaryTermsByIds(ids);
+      if (token !== healthToken) return;
+      const labels: Record<string, string> = {};
+      terms.forEach((term) => {
+        if (term.id) labels[term.id] = term.displayName || term.name || term.id;
+      });
+      hydratedLabels.value = labels;
+    } catch {
+      // Labels stay unresolved; the panel still shows the term ids.
+    }
+  }
+}
+
+function mergeDataGraph(next: OntologyGraphData): void {
+  const current = glossaryDataGraph.value;
+  if (!current) {
+    glossaryDataGraph.value = next;
+    return;
+  }
+  const nodes = new Map(current.nodes.map((node) => [node.id, node]));
+  next.nodes.forEach((node) => nodes.set(node.id, node));
+  const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
+  next.edges.forEach((edge) => edges.set(edge.id, edge));
+  glossaryDataGraph.value = { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
+async function loadDataModeTerms(offset: number): Promise<void> {
+  if (offset === 0) {
+    dataModeLoading.value = true;
+  } else {
+    dataModeLoadingMore.value = true;
+  }
+  dataModeError.value = '';
+  const glossaryId = scope.value.kind === 'glossaries' ? scope.value.glossaryId : undefined;
+  const parent = glossaries.value.find((item) => item.id === glossaryId)?.fullyQualifiedName;
+  try {
+    const response = await getOntologyDataGraph({
+      assetPreviewSize: DATA_MODE_ASSET_PREVIEW_SIZE,
+      connectedTermLimit: DATA_MODE_CONNECTED_TERM_LIMIT,
+      edgeLimit: DATA_MODE_EDGE_LIMIT,
+      limit: DATA_MODE_SEED_PAGE_SIZE,
+      offset,
+      parent,
+    });
+    const built = buildGraphFromOntologyData(response, glossaries.value);
+    mergeDataGraph(built);
+    const counts: Record<string, number> = { ...termAssetCounts.value };
+    built.nodes.forEach((node) => {
+      if (node.type === 'glossaryTerm' && node.assetCount !== undefined) {
+        counts[node.id] = node.assetCount;
+      }
+    });
+    termAssetCounts.value = counts;
+    dataModeNextOffset.value = (response.paging.offset ?? offset) + (response.paging.limit ?? DATA_MODE_SEED_PAGE_SIZE);
+    dataModeTotal.value = response.paging.total ?? 0;
+  } catch (error) {
+    dataModeError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+  } finally {
+    dataModeLoading.value = false;
+    dataModeLoadingMore.value = false;
+  }
+}
+
+function loadMoreDataTerms(): void {
+  if (dataModeLoading.value || dataModeLoadingMore.value || !hasMoreDataTerms.value) return;
+  void loadDataModeTerms(dataModeNextOffset.value);
+}
+
+async function handleLoadMoreAssets(termId: string): Promise<void> {
+  const node = glossaryDataGraph.value?.nodes.find((item) => item.id === termId);
+  if (!node || node.type !== 'glossaryTerm') return;
+  assetControllers.get(termId)?.abort();
+  const controller = new AbortController();
+  assetControllers.set(termId, controller);
+  loadingTermIds.value = new Set([...loadingTermIds.value, termId]);
+  const size = Math.min(DATA_MODE_ASSET_MAX_LOAD, Math.max(1, DATA_MODE_ASSET_LOAD_PAGE_SIZE));
+  const fromOffset = node.loadedAssetCount ?? 0;
+  try {
+    const response = await getGlossaryTermAssets(termId, size, fromOffset, controller.signal);
+    if (controller.signal.aborted) return;
+    const assets = response.data ?? [];
+    const nodes = glossaryDataGraph.value?.nodes ?? [];
+    const edges = glossaryDataGraph.value?.edges ?? [];
+    const nodeIds = new Set(nodes.map((item) => item.id));
+    const edgeIds = new Set(edges.map((item) => item.id));
+    const nextNodes = [...nodes];
+    const nextEdges = [...edges];
+    // Same node/edge construction as buildGraphFromOntologyData: asset nodes
+    // carry the bare asset id, tagged-with edges run asset -> term.
+    assets.forEach((asset) => {
+      const assetNode = ontologyAssetNode(asset);
+      if (!nodeIds.has(assetNode.id)) {
+        nodeIds.add(assetNode.id);
+        nextNodes.push(assetNode);
+      }
+      const edgeId = `${assetNode.id}|${termId}|${ASSET_RELATION_TYPE}`;
+      if (!edgeIds.has(edgeId)) {
+        edgeIds.add(edgeId);
+        nextEdges.push({
+          edgeKind: 'assetBinding',
+          id: edgeId,
+          label: 'tagged-with',
+          relationType: ASSET_RELATION_TYPE,
+          source: assetNode.id,
+          target: termId,
+        });
+      }
+    });
+    const nextNodesWithCounts = nextNodes.map((item) => {
+      if (item.id !== termId) return item;
+      return {
+        ...item,
+        assetCount: response.total ?? item.assetCount,
+        isLoadingAssets: false,
+        loadedAssetCount: fromOffset + assets.length,
+      };
+    });
+    glossaryDataGraph.value = { nodes: nextNodesWithCounts, edges: nextEdges };
+    termAssetCounts.value = {
+      ...termAssetCounts.value,
+      [termId]: response.total ?? node.assetCount ?? 0,
+    };
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  } finally {
+    const next = new Set(loadingTermIds.value);
+    next.delete(termId);
+    loadingTermIds.value = next;
+    if (assetControllers.get(termId) === controller) {
+      assetControllers.delete(termId);
+    }
+  }
 }
 
 async function loadScopes(): Promise<void> {
@@ -629,7 +1055,10 @@ onMounted(() => {
         <Radio.Button value="graph">{{ t('ontology.browser.surfaceGraph') }}</Radio.Button>
         <Radio.Button value="tree">{{ t('ontology.browser.surfaceTree') }}</Radio.Button>
       </Radio.Group>
+      <OntologyGraphModeTabs v-if="surface === 'graph'" :mode="graphMode" :data-disabled="graphLoading" @change="changeGraphMode" />
+      <GraphSettingsPanel v-if="isSingleGlossaryScope && surface === 'graph'" :settings="graphSettings" @settings-change="onSettingsChange" />
       <Input
+        v-if="graphMode === 'model'"
         v-model:value="searchQuery"
         allow-clear
         data-testid="ontology-graph-search"
@@ -696,32 +1125,141 @@ onMounted(() => {
       <Empty :description="t('ontology.browser.searchEmpty')" />
     </div>
     <div v-if="graphData && !graphLoading && !graphError && !capacityExceeded && !searchNoHit">
-      <OntologyGraphCanvas
-        v-if="surface === 'graph'"
-        :graph="graphData"
-        :can-edit="false"
-        :highlight="highlight"
-        :scope-key="scopeKey"
-        :selected-node-id="selectedNodeId"
-        :selected-edge-id="selectedEdge?.id ?? null"
-        @select-node="onSelectNode"
-        @node-dblclick="onGraphNodeDblClick"
-        @select-edge="onSelectEdge"
-        @canvas-click="onSelectNode(null)"
-      />
-      <OntologyTreeView
-        v-if="surface === 'tree'"
-        :index="treeIndex"
-        :selected-node-id="selectedNodeId"
-        :search-query="searchQuery"
-        @select-node="onSelectNode"
-      />
-      <Card v-if="selectedEdge" data-testid="ontology-edge-detail" style="margin-bottom: 16px">
-        <Typography.Text strong>{{ selectedEdge.label ?? selectedEdge.relationType }}</Typography.Text>
-        <Typography.Paragraph type="secondary">
-          {{ nodeLabel(selectedEdge.source) }} → {{ nodeLabel(selectedEdge.target) }} · {{ selectedEdge.relationType }}
-        </Typography.Paragraph>
-      </Card>
+      <div style="display: flex; gap: 16px; align-items: flex-start">
+        <div style="flex: 1; min-width: 0; position: relative">
+          <OntologyGraphCanvas
+            v-if="surface === 'graph' && graphMode === 'model'"
+            :graph="graphData"
+            :can-edit="false"
+            :highlight="highlight"
+            :scope-key="scopeKey"
+            :selected-node-id="selectedNodeId"
+            :selected-edge-id="selectedEdge?.id ?? null"
+            :settings="isGlossaryScope ? graphSettings : undefined"
+            @select-node="onSelectNode"
+            @node-dblclick="onGraphNodeDblClick"
+            @select-edge="onSelectEdge"
+            @canvas-click="onSelectNode(null)"
+          />
+          <OntologyTreeView
+            v-if="surface === 'tree'"
+            :index="treeIndex"
+            :selected-node-id="selectedNodeId"
+            :search-query="searchQuery"
+            @select-node="onSelectNode"
+          />
+          <div v-if="surface === 'graph' && graphMode === 'data' && isGlossaryScope">
+            <Card v-if="dataModeError" data-testid="ontology-data-error" style="margin-bottom: 16px">
+              <Typography.Text type="danger">{{ dataModeError }}</Typography.Text>
+              <div style="margin-top: 12px">
+                <Button type="primary" data-testid="ontology-data-retry" @click="loadDataModeTerms(0)">
+                  {{ t('crud.refresh') }}
+                </Button>
+              </div>
+            </Card>
+            <Card v-if="dataModeLoading && !glossaryDataGraph" :loading="true" data-testid="ontology-data-loading" style="margin-bottom: 16px" />
+            <OntologyDataGraph
+              v-if="glossaryDataGraph"
+              variant="glossary"
+              :data="glossaryDataGraph"
+              :has-more-terms="hasMoreDataTerms"
+              :is-loading-more-terms="dataModeLoadingMore"
+              :selected-node-id="selectedNodeId"
+              @load-more="handleLoadMoreAssets"
+              @load-more-terms="loadMoreDataTerms"
+              @pane-click="onSelectNode(null)"
+              @select-node="onSelectNode"
+            />
+            <Card
+              v-if="pageableTermNodes.length > 0"
+              data-testid="ontology-data-pagination"
+              :title="t('ontology.browser.dataLoadMoreAssets', { count: remainingDataAssets })"
+              style="margin-bottom: 16px"
+            >
+              <Space wrap>
+                <Button
+                  v-for="term in pageableTermNodes"
+                  :key="term.id"
+                  :loading="loadingTermIds.has(term.id)"
+                  :data-testid="`ontology-data-load-more-${term.id}`"
+                  @click="handleLoadMoreAssets(term.id)"
+                >
+                  {{ t('ontology.browser.dataLoadMoreAssetsFor', { label: term.label, remaining: term.remaining }) }}
+                </Button>
+              </Space>
+            </Card>
+          </div>
+          <div v-if="surface === 'graph' && graphMode === 'data' && !isGlossaryScope">
+            <Typography.Text
+              v-if="!nativeDataOntologyId"
+              data-testid="ontology-data-select-concept"
+              type="secondary"
+              style="display: block; margin-bottom: 16px"
+            >
+              {{ t('ontology.browser.dataSelectConcept') }}
+            </Typography.Text>
+            <OntologyNativeDataMode
+              v-if="nativeDataOntologyId && hasOpenedData"
+              :key="nativeDataOntologyId"
+              :ontology-id="nativeDataOntologyId"
+              :selected-concept-id="selectedNodeId"
+              :is-active="graphMode === 'data'"
+              @select-concept="onSelectNode"
+            />
+          </div>
+          <OntologyHealthPanel
+            v-if="showHealth && isGlossaryScope"
+            placement="floating"
+            :health="health"
+            :isolated-term-count="isolatedTermCount"
+            @connect="onConnect"
+          />
+        </div>
+        <div v-if="showRail" style="width: 320px; flex-shrink: 0">
+          <OntologyHealthPanel
+            v-if="showHealth && !isGlossaryScope"
+            placement="sidebar"
+            :health="health"
+            @connect="onConnect"
+          />
+          <OntologyConceptInspector
+            v-if="showConceptInspector && inspectorConcept && inspectorModel"
+            :concept="inspectorConcept"
+            :model="inspectorModel"
+            :relations="inspectorRelations"
+            @close="onSelectNode(null)"
+            @edit="onInspectorEdit"
+            @open-data="onInspectorOpenData"
+            @select-concept="onSelectNode"
+          />
+          <OntologyAuthoringInspector
+            v-if="showAuthoringInspector && selectedNode"
+            :node="selectedNode"
+            :nodes="effectiveGraph?.nodes ?? []"
+            :edges="effectiveGraph?.edges ?? []"
+            :term="selectedTerm"
+            @close="onSelectNode(null)"
+            @select-node="onSelectNode"
+            @show-full-details="openTermDetails"
+          />
+          <OntologyEntityPanel
+            v-if="showEntityPanel && selectedNode"
+            :node="selectedNode"
+            :nodes="effectiveGraph?.nodes ?? []"
+            :edges="effectiveGraph?.edges ?? []"
+            :term="selectedTerm"
+            @close="onSelectNode(null)"
+            @select-node="onSelectNode"
+          />
+          <OntologyRelationDetailsPanel
+            v-if="selectedEdge && surface === 'graph'"
+            :edge="selectedEdge"
+            :nodes="effectiveGraph?.nodes ?? []"
+            :relationship-types="relationshipTypes"
+            @close="onSelectEdge(null)"
+          />
+        </div>
+      </div>
     </div>
     <div v-if="scope.kind === 'ontology' && ontology" data-testid="ontology-detail">
       <Card :loading="detailLoading" :title="entityLabel(ontology)" style="margin-bottom: 16px">

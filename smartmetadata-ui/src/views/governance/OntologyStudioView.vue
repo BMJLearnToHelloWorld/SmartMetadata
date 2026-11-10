@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { Card, Select, Space, Typography } from 'ant-design-vue';
 import { listOntologies } from '@/api/ontology';
@@ -23,6 +24,7 @@ import ReasoningPanel from '@/features/ontology/ReasoningPanel.vue';
 import ReviewTasksPanel from '@/features/ontology/ReviewTasksPanel.vue';
 
 const { t } = useI18n();
+const route = useRoute();
 const permissionStore = usePermissionStore();
 
 /**
@@ -65,6 +67,13 @@ async function loadOntologies(): Promise<void> {
   try {
     const page = await listOntologies({ limit: 100 });
     ontologies.value = page.data;
+    // Stage 2: the explorer's inspector Edit action deep-links here with
+    // ?ontology=<id>; preselect it when it is in the loaded page.
+    const requested = typeof route.query.ontology === 'string' ? route.query.ontology : undefined;
+    if (requested && page.data.some((item) => item.id === requested)) {
+      selectedId.value = requested;
+      return;
+    }
     if (!selectedId.value && page.data.length) {
       selectedId.value = page.data[0]?.id;
     }

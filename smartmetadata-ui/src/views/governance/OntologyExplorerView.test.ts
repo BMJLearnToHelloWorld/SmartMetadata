@@ -527,4 +527,104 @@ describe('OntologyExplorerView', () => {
     expect(wrapper.find('[data-testid="ontology-detail"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="ontology-concepts"]').text()).toContain('Customer');
   });
+
+  // Stage 2: glossary-scope fetch stub with a glossary, terms, the
+  // summary endpoint and the data-graph endpoint.
+  function stubGlossaryScopeFetch(): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'POST') {
+          return jsonResponse({});
+        }
+        if (url.includes('/v1/permissions/glossaryTerm')) {
+          return jsonResponse({ resource: 'glossaryTerm', permissions: [] });
+        }
+        if (url.includes('/v1/permissions/glossary')) {
+          return jsonResponse({ resource: 'glossary', permissions: [] });
+        }
+        if (url.includes('/v1/glossaryTerms/ontology/data')) {
+          return jsonResponse({
+            clusters: [
+              {
+                term: { id: 't1', name: 'Customer', displayName: 'Customer', type: 'glossaryTerm', fullyQualifiedName: 'G.Customer' },
+                assetCount: 1,
+                assets: [{ id: 'a1', name: 'customers', displayName: 'customers', type: 'table', fullyQualifiedName: 'svc.customers' }],
+              },
+            ],
+            seedTermIds: ['t1'],
+            edges: [],
+            lineageEdges: [],
+            paging: { total: 1, offset: 0, limit: 12 },
+          });
+        }
+        if (url.includes('/v1/glossaryTerms/ontology/summary')) {
+          return jsonResponse({
+            totalTerms: 10,
+            totalRelations: 8,
+            isolatedTerms: 2,
+            connectedPercentage: 80,
+            isolatedPreview: [{ id: 't2', name: 'Beta', displayName: 'Beta', type: 'glossaryTerm' }],
+          });
+        }
+        if (url.includes('/v1/glossaryTerms')) {
+          return jsonResponse({
+            data: [
+              { id: 't1', name: 'Customer', displayName: 'Customer', type: 'glossaryTerm', fullyQualifiedName: 'G.Customer', glossary: { id: 'g1', name: 'G', displayName: 'G' } },
+              { id: 't2', name: 'Beta', displayName: 'Beta', type: 'glossaryTerm', fullyQualifiedName: 'G.Beta', glossary: { id: 'g1', name: 'G', displayName: 'G' } },
+            ],
+            paging: { total: 2 },
+          });
+        }
+        if (url.includes('/v1/glossaries')) {
+          return jsonResponse({
+            data: [{ id: 'g1', name: 'G', displayName: 'G', fullyQualifiedName: 'G' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/ontologyConcepts')) {
+          return jsonResponse({
+            data: [{ id: 'c1', name: 'Customer', displayName: 'Customer', conceptType: 'Class', iri: 'https://example.com/sales#Customer' }],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/v1/ontologyProperties') || url.includes('/v1/ontologyAxioms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/ontologies')) {
+          return jsonResponse({
+            data: [{ id: 'o1', name: 'sales-ontology', displayName: 'Sales Ontology' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  it('shows the health panel from the summary endpoint in the glossary scope', { timeout: 15000 }, async () => {
+    const wrapper = await mountAt('/govern/ontology?scope=glossary:all', () => stubGlossaryScopeFetch());
+    const panel = wrapper.find('[data-testid="ontology-health-panel"]');
+    expect(panel.exists()).toBe(true);
+    expect(panel.text()).toContain('80%');
+    expect(panel.text()).toContain('2 isolated terms');
+    // No settings UI in the all-glossaries scope (pin has none there).
+    expect(wrapper.find('[data-testid="ontology-graph-settings"]').exists()).toBe(false);
+  });
+
+  it('switches to data mode in a single glossary and renders the data graph', { timeout: 15000 }, async () => {
+    const wrapper = await mountAt('/govern/ontology?scope=glossary:g1', () => stubGlossaryScopeFetch());
+    expect(wrapper.find('[data-testid="ontology-graph-canvas"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="ontology-graph-settings"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="ontology-graph-mode-data"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="ontology-graph-canvas"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="ontology-data-cluster-t1"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="ontology-data-asset-a1"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="ontology-graph-mode-model"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="ontology-graph-canvas"]').exists()).toBe(true);
+  });
 });
