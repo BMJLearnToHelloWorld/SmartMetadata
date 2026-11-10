@@ -137,7 +137,16 @@ class MetadataWorkflow:
         if self._prepared:
             return
         try:
-            self._source = build_source(self.config, self._provided_source)
+            self._source = build_source(
+                self.config,
+                self._provided_source,
+                # H track 1: the sampler kill-switch reader. getattr-guarded:
+                # a stub client without the method yields no reader and the
+                # sampling gate fails closed, never a crash here.
+                profiler_settings_reader=getattr(
+                    self._client, "get_profiler_config_settings", None
+                ),
+            )
             self._processors = (
                 self._provided_processors
                 if self._provided_processors is not None

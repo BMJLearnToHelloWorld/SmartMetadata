@@ -1455,6 +1455,8 @@ const zhCN = {
       includeSchemasHelp: '要包含的 schema，逗号分隔。',
       includeTopics: '包含 topic',
       includeTopicsHelp: '要包含的 topic，逗号分隔。',
+      generateSampleData: '生成样本数据',
+      generateSampleDataHelp: '读取各 topic 的近期消息并存为样本数据。',
       includeDashboards: '包含仪表盘',
       includeDashboardsHelp: '逗号分隔的仪表盘名称/ID。',
       includeCharts: '包含图表',

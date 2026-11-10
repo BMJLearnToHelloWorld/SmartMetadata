@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import httpx
 import pytest
 
@@ -76,15 +78,20 @@ def test_redpanda_sampler_sequence_behavior_matched() -> None:
         ),
     )
     rows = source.sampler().sample(topic="orders", limit=1)
-    assert rows == [{"offset": 1, "value": {"id": 7}}]
+    # H track 1: sample() returns TopicSampleData messages (strings);
+    # injectable rows are serialized to JSON text.
+    assert rows == ['{"offset": 1, "value": {"id": 7}}']
 
 
-def test_redpanda_sampler_without_injectable_is_honest_partial() -> None:
+def test_redpanda_sampler_without_bootstrap_returns_no_samples() -> None:
+    # H track 1: the Partial raise is gone — without an injectable sampler
+    # the live path is attempted, and a consumer that cannot be built
+    # (no bootstrapServers here) yields no samples with a warning instead
+    # of interrupting the run.
     sampler = RedpandaSampler(
-        SourceConfig(type="redpanda", service_name="rp", connection={"bootstrapServers": "b:9092"})
+        SourceConfig(type="redpanda", service_name="rp", connection={})
     )
-    with pytest.raises(WorkflowError, match="Partial"):
-        sampler.sample(topic="orders")
+    assert sampler.sample(topic="orders") == []
 
 
 def test_redpanda_http_source_wires_mocked_transport() -> None:
@@ -136,6 +143,10 @@ def test_redpanda_prepare_lists_topics() -> None:
     source.prepare()
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("kafka") is not None,
+    reason="kafka extra is installed, so the missing-extra error cannot fire",
+)
 def test_redpanda_bootstrap_without_extra_fails() -> None:
     source = RedpandaSource(
         SourceConfig(

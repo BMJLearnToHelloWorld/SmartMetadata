@@ -19,6 +19,7 @@ export interface ServiceFilterValues {
   includeViews?: boolean;
   includeSchemas?: string;
   includeTopics?: string;
+  generateSampleData?: boolean;
   includeDashboards?: string;
   includeCharts?: string;
   includeContainers?: string;
@@ -50,6 +51,13 @@ export const SERVICE_FILTER_FIELDS_BY_KIND: Record<ServiceKind, readonly Service
       labelKey: 'ingestion.pipelines.includeTopics',
       helpKey: 'ingestion.pipelines.includeTopicsHelp',
       testId: 'filter-include-topics',
+    },
+    {
+      key: 'generateSampleData',
+      control: 'checkbox',
+      labelKey: 'ingestion.pipelines.generateSampleData',
+      helpKey: 'ingestion.pipelines.generateSampleDataHelp',
+      testId: 'filter-generate-sample-data',
     },
   ],
   dashboard: [
