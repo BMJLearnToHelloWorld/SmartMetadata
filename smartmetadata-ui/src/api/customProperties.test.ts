@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
+import type { CustomPropertyDef } from '@/types/collaboration';
 import {
   ENTITY_TYPE_CATEGORY,
   FIELD_TYPE_CATEGORY,
@@ -32,7 +33,6 @@ import {
   updateCustomPropertyByName,
   validateCustomPropertyForm,
   TYPE_FIELDS,
-  type CustomPropertyDef,
   type CustomPropertyFormValues,
 } from './customProperties';
 
