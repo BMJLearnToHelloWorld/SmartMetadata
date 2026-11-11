@@ -119,8 +119,13 @@ export const SM_SHADOWS = {
   '2xl': '0px 24px 48px -12px rgba(10, 13, 18, 0.18)',
   '3xl': '0px 32px 64px -12px rgba(10, 13, 18, 0.14)',
 } as const;
-/** card = shadow-xs, raised = shadow-lg, overlay = shadow-xl (tokens.css). */
-export const SM_SHADOW_CARD = SM_SHADOWS.xs;
+/**
+ * Card shadow, decoupled from SM_SHADOWS.xs: the CSS value
+ * (--sm-shadow-card in theme.css) is two-segment, the ladder's xs
+ * is single-segment. Keep the ladder's xs as the ladder step.
+ * ADR:2026-11-11-home-style-compaction-and-tokens
+ */
+export const SM_SHADOW_CARD = '0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06)';
 export const SM_SHADOW_RAISED = SM_SHADOWS.lg;
 export const SM_SHADOW_OVERLAY = SM_SHADOWS.xl;
 
@@ -242,14 +247,14 @@ export const SM_DATA_INSIGHT_COLORS = [
 export const SM_SURFACES = {
   bgBase: '#ffffff',
   bgContainer: '#ffffff',
-  bgElevated: '#f7f8fa',
-  contentBg: '#f0f2f5',
+  bgElevated: '#fafafa',
+  contentBg: '#fafafa',
   textPrimary: '#181d27',
   textSecondary: '#414651',
   textTertiary: '#535862',
   textQuaternary: '#717680',
-  borderColor: '#f0f0f0',
-  borderSecondary: '#f0f0f0',
+  borderColor: '#d5d7da',
+  borderSecondary: '#e9eaeb',
   layoutBg: '#ffffff',
   siderBg: '#ffffff',
   triggerBg: '#f4f4f5',
@@ -297,7 +302,7 @@ const smThemeObject = {
     controlHeight: SM_CONTROL_HEIGHT,
     colorBgLayout: SM_SURFACES.contentBg,
     colorBgContainer: SM_SURFACES.bgContainer,
-    colorBgElevated: SM_SURFACES.bgContainer,
+    colorBgElevated: SM_SURFACES.bgElevated,
     colorBgSpotlight: SM_SURFACES.textPrimary,
     colorText: SM_SURFACES.textPrimary,
     colorTextSecondary: SM_SURFACES.textSecondary,

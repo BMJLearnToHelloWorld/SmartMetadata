@@ -347,10 +347,14 @@ describe('MyDataView', () => {
     // Stage D: the topics section exists now, with its header.
     expect(wrapper.text()).toContain('Topics to catch up on');
     expect(wrapper.find('[data-testid="toggle-all-widgets"]').exists()).toBe(true);
-    // No live announcements: the rail stands down, the greeting header
-    // is the only thing above the grid.
+    // No live announcements: the rail stands down; the greeting
+    // header and the full-width hero sit above the grid.
     expect(wrapper.find('[data-testid="announcements-section"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="critical-announcements"]').exists()).toBe(false);
+    // No right rail: the hero sits full-width in the top stack.
+    expect(wrapper.find('.my-data__rail').exists()).toBe(false);
+    expect(wrapper.find('.my-data__grid').exists()).toBe(false);
+    expect(wrapper.find('.my-data__top [data-testid="home-hero-search"]').exists()).toBe(true);
   }, 20000);
 
   it('renders the default layout when there is no persona and never reads a document', async () => {
@@ -411,6 +415,8 @@ describe('MyDataView', () => {
     );
     const { wrapper } = await mountPage({ flush: false });
     expect(wrapper.find('[data-testid="home-landing-skeleton"]').exists()).toBe(true);
+    // The skeleton mirrors the 2-column grid: 6 cards, not bars.
+    expect(wrapper.findAll('.my-data__skeleton-card')).toHaveLength(6);
     expect(wrapper.find('[data-testid="home-landing-grid"]').exists()).toBe(false);
     expect(searchAssets).not.toHaveBeenCalled();
     expect(getMyActivityFeed).not.toHaveBeenCalled();
@@ -600,15 +606,17 @@ describe('MyDataView', () => {
     expect(wrapper.find('[data-testid="topics-list-view"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="topics-grid-view"]').exists()).toBe(true);
     expect(wrapper.find('[data-tour-step="topics-to-catch-up-on"]').exists()).toBe(true);
-    // The customize entry is admin + persona only: hidden by default.
+    // The customize entry needs a persona: hidden by default.
     expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(false);
   });
 
-  it('stage D: the customize entry appears for an admin with a persona and navigates', async () => {
+  it('stage D: the customize entry appears for any user with a persona (admin not required) and navigates', async () => {
     localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
     listPersonas.mockResolvedValue({ data: [personaRow()], paging: { total: 1 } });
     const { wrapper, router } = await mountPage();
-    useAuthStore().user = { id: 'u-1', name: 'admin', displayName: 'admin', isAdmin: true };
+    // mountPage signs in as a non-admin user; the entry shows for
+    // any persona, the admin gate lives at the editor route.
+    useAuthStore().user = { id: 'u-1', name: 'analyst', displayName: 'analyst', isAdmin: false };
     await flushPromises();
     expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(true);
     await wrapper.get('[data-testid="customize-home-page"]').trigger('click');
@@ -634,14 +642,16 @@ describe('MyDataView', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Your iSmart is ready');
-    // The welcome replaces the grid while it shows.
+    // The welcome owns the page while it shows: no grid, no hero.
     expect(wrapper.findAll('[data-testid="home-widget-cell"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="home-hero-search"]').exists()).toBe(false);
     expect(patchUser).toHaveBeenCalledWith('u-1', [
       { op: 'add', path: '/isFirstTimeUser', value: false },
     ]);
     await wrapper.get('[data-testid="welcome-screen-close"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="home-hero-search"]').exists()).toBe(true);
   });
 
   it('stage D: toggle-all collapses every widget to one subdivided row and back', async () => {

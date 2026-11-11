@@ -645,7 +645,7 @@ async function onLogout(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 64px;
+  height: var(--sm-header-height);
   line-height: 1.2;
   background: var(--sm-home-canvas);
   padding-inline: 12px 20px;

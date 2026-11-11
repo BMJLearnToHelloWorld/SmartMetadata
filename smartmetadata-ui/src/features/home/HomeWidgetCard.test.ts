@@ -147,6 +147,33 @@ describe('HomeWidgetCard stage D: edit view and collapse', () => {
   });
 });
 
+describe('HomeWidgetCard header tone and summary placement', () => {
+  it('renders the official tone tile for a known widget key', () => {
+    const dq = mountCard({ widgetKey: 'KnowledgePanel.DataQuality' });
+    const dqTone = dq.find('.home-widget-card__tone');
+    expect(dqTone.exists()).toBe(true);
+    expect(dqTone.attributes('style')).toContain('var(--sm-color-error-bg)');
+    const domains = mountCard({ widgetKey: 'KnowledgePanel.Domains' });
+    const domainsTone = domains.find('.home-widget-card__tone');
+    expect(domainsTone.exists()).toBe(true);
+    expect(domainsTone.attributes('style')).toContain('var(--sm-color-primary-bg)');
+  });
+
+  it('renders no tone tile for an unknown widget key', () => {
+    expect(mountCard().find('.home-widget-card__tone').exists()).toBe(false);
+  });
+
+  it('places the summary in the header strip, not the body', () => {
+    const wrapper = mountCard({ summary: '1/3 services failing' });
+    expect(wrapper.find('.home-widget-card__title .home-widget-card__summary').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('.home-widget-card__body .home-widget-card__summary').exists()).toBe(
+      false,
+    );
+  });
+});
+
 describe('HomeWidgetCard edit view through a real widget', () => {
   beforeEach(() => {
     resetWidgetLoadCache();

@@ -9,50 +9,7 @@
  * Dark values are a CSS hook only — no Settings appearance UI.
  */
 
-/* Same stack as the other console. Files are loaded here so the names resolve
-   instead of falling through to Segoe UI. Chinese stays on the system sans. */
-@font-face {
-  font-family: Inter;
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.2.8/files/inter-latin-wght-normal.woff2')
-    format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
-    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: Poppins;
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-400-normal.woff2')
-    format('woff2');
-}
-@font-face {
-  font-family: Poppins;
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-500-normal.woff2')
-    format('woff2');
-}
-@font-face {
-  font-family: Poppins;
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-600-normal.woff2')
-    format('woff2');
-}
-@font-face {
-  font-family: Poppins;
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('https://cdn.jsdelivr.net/npm/@fontsource/poppins@5.2.7/files/poppins-latin-700-normal.woff2')
-    format('woff2');
-}
+/* Fonts load from styles/fonts.css (local @fontsource packages); no CDN font faces here. */
 
 :root {
   color-scheme: light;
@@ -76,6 +33,7 @@
   --sm-table-header-bg: #f7f8fa;
   --sm-font-family: Inter, Poppins, sans-serif;
   --sm-color-primary: #005587;
+  --sm-brand: var(--sm-color-primary);
   --sm-color-primary-hover: #00466d;
   --sm-color-primary-active: #003d5c;
   --sm-color-primary-75: #4087a9;
@@ -107,6 +65,9 @@
   --sm-border-radius: 6px;
   --sm-radius-card: 6px;
   --sm-radius-modal: 6px;
+  /* Single token for the shell header height (AppShell + pages that
+   * size against the viewport, e.g. MyDataView). T-4. */
+  --sm-header-height: 64px;
   --sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06);
   --sm-shadow-raised: 0 6px 16px rgba(15, 17, 21, 0.08), 0 3px 6px -2px rgba(15, 17, 21, 0.06);
   --sm-shadow-overlay: 0px 20px 24px -4px rgba(10, 13, 18, 0.08), 0px 8px 8px -4px rgba(10, 13, 18, 0.03);
@@ -136,6 +97,20 @@
   --sm-nav-panel: #fafafa;
   --sm-count-pill-bg: #e7f4fb;
   --sm-count-pill-text: #0c7bc0;
+}
+
+/* Home widget "view more" links: slotted widget bodies carry the
+ * widget's scope attribute, so a scoped rule in HomeWidgetCard would
+ * not match them — the rule lives here, globally. It was previously
+ * defined scoped in PlatformHealthWidget only, leaving the same class
+ * unstyled in every other widget (S-H1). */
+.home-widget-card__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sm-brand);
+  cursor: pointer;
+  font-size: 13px;
 }
 
 :root[data-theme='dark'] {

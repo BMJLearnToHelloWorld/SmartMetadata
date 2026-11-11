@@ -39,6 +39,30 @@ import {
 
 export const ROW_SUBDIVISIONS = 4;
 
+/**
+ * Vertically compacts a subdivided display layout, the react-grid-layout
+ * behaviour the native CSS grid this layout renders in does not do on
+ * its own: items are slid up within their column until each one starts
+ * at the first free subdivided row, so a collapsed card can no longer
+ * leave a gap the next row's card overlaps. Display-only — the saved
+ * layout is never rewritten; the same function also compacts the editor
+ * grid (CustomizeMyData), where the coordinates are unsubdivided.
+ *
+ * ADR:2026-11-11-home-style-compaction-and-tokens
+ */
+export function compactDisplayLayout(
+  items: readonly LandingPageLayoutItem[],
+): LandingPageLayoutItem[] {
+  const cursor = new Map<number, number>();
+  return [...items]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map((item) => {
+      const nextY = cursor.get(item.x) ?? 0;
+      cursor.set(item.x, nextY + item.h);
+      return { ...item, y: nextY };
+    });
+}
+
 /** Three quarter-rows ≈ 96px, just clear of a header-only card. */
 export const COLLAPSED_WIDGET_HEIGHT = 3;
 
@@ -106,7 +130,10 @@ export function useTopicsView(layoutSource: MaybeRefOrGetter<LandingPageLayoutIt
         : { ...widget, h: widget.h * ROW_SUBDIVISIONS, y: widget.y * ROW_SUBDIVISIONS },
     );
     if (viewMode.value !== 'list') {
-      return sized;
+      // The native CSS grid places items literally, so the subdivided
+      // coordinates must be compacted here: without it a collapsed
+      // card leaves a gap the next row's card overlaps (T-1).
+      return compactDisplayLayout(sized);
     }
     // One full-width column in reading order; the grid compacts the
     // rows, so `y` only has to carry the order.

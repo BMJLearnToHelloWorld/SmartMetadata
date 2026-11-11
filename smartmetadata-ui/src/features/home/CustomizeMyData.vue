@@ -9,6 +9,7 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { Button, Modal } from 'ant-design-vue';
 import CustomizeHomeModal from './CustomizeHomeModal.vue';
 import HomeWidgetCard from './HomeWidgetCard.vue';
+import { compactDisplayLayout } from './useTopicsView';
 import {
   DEFAULT_LANDING_PAGE_LAYOUT,
   EXCLUDED_WIDGET_FQNS,
@@ -109,6 +110,17 @@ const pendingLeave = ref<(() => void) | null>(null);
 const leaveModalOpen = ref(false);
 
 const disableSave = computed(() => !isLayoutDirty(initialLayout.value, layout.value));
+
+/**
+ * What the grid renders. The working layout is already tightly packed
+ * by `ensurePlaceholderAtEnd` on every path (load, add, remove, drag,
+ * reset), so compaction is the identity here — it is a render-level
+ * guard, so a gapped layout can never render overlapped the way the
+ * home page did before T-1 (ADR:2026-11-11-home-style-compaction-and-tokens).
+ * The saved layout is never rewritten by this: save still writes
+ * `layout.value`.
+ */
+const displayLayout = computed(() => compactDisplayLayout(layout.value));
 
 const addedWidgetsList = computed(() =>
   layout.value.filter((widget) => widget.i.startsWith('KnowledgePanel')).map((widget) => widget.i),
@@ -381,7 +393,7 @@ function onDragEnd(): void {
       @dragend="onDragEnd"
     >
       <div
-        v-for="item in layout"
+        v-for="item in displayLayout"
         :key="item.i"
         class="customize-my-data__cell"
         :data-widget-key="item.i"

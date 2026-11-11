@@ -16,12 +16,10 @@ import { useAddServiceAction } from './useAddServiceAction';
  * (openmetadata-ui `components/MyData/WelcomeScreen/WelcomeScreen.tsx`),
  * full version per B-4 (a).
  *
- * It replaces the whole grid on first login: a first-name greeting,
- * the platform name, and two ways in — connect a data source (only
- * when the user can add a database service, the classic-mode rule)
- * or take the product tour. Closing dismisses it for this mount; the
- * server-side `isFirstTimeUser` flag is what makes it once-per-user.
- * The right-rail HomeHero never renders alongside it.
+ * It owns the whole page on first login: greeting, announcements
+ * rail, hero and grid all stand down, so only the welcome shows.
+ * Closing dismisses it for this mount; the server-side
+ * `isFirstTimeUser` flag is what makes it once-per-user.
  *
  * AI mode does not exist in the product, so the AI-mode branches are
  * omitted, not stubbed.

@@ -359,14 +359,6 @@ function viewAllLabel(): string {
 </template>
 
 <style scoped>
-.home-widget-card__link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--sm-brand);
-  cursor: pointer;
-  font-size: 13px;
-}
 .platform-health__chips {
   display: flex;
   flex-wrap: wrap;

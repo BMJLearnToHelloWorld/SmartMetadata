@@ -121,13 +121,13 @@ describe('OM console theme tokens + iPlatform soul accents', () => {
   });
 
   it('layers iPlatform-inspired neutrals without dropping OM text / selected chrome', () => {
-    expect(SM_SURFACES.contentBg).toBe('#f0f2f5');
+    expect(SM_SURFACES.contentBg).toBe('#fafafa');
     expect(SM_SURFACES.bgContainer).toBe('#ffffff');
-    expect(SM_SURFACES.bgElevated).toBe('#f7f8fa');
+    expect(SM_SURFACES.bgElevated).toBe('#fafafa');
     expect(SM_SURFACES.textPrimary).toBe('#181d27');
     expect(SM_SURFACES.textSecondary).toBe('#414651');
-    expect(SM_SURFACES.borderColor).toBe('#f0f0f0');
-    expect(SM_SURFACES.borderSecondary).toBe('#f0f0f0');
+    expect(SM_SURFACES.borderColor).toBe('#d5d7da');
+    expect(SM_SURFACES.borderSecondary).toBe('#e9eaeb');
     expect(SM_SURFACES.triggerBg).toBe('#f4f4f5');
     expect(SM_SURFACES.triggerHoverBg).toBe('#e3e6e8');
     expect(SM_SURFACES.tableHeaderBg).toBe('#f7f8fa');
@@ -135,16 +135,25 @@ describe('OM console theme tokens + iPlatform soul accents', () => {
     expect(SM_SURFACES.rowSelectedBg).toBe(SM_PALETTE.primary[25]);
     expect(SM_SURFACES.siderBg).toBe('#ffffff');
     expect(smAntdTheme.token?.colorBgLayout).toBe(SM_SURFACES.contentBg);
+    expect(smAntdTheme.token?.colorBgElevated).toBe(SM_SURFACES.bgElevated);
     expect(smAntdTheme.token?.colorBorder).toBe(SM_SURFACES.borderColor);
     expect(themeCss).toContain('--sm-content-bg: #fafafa');
     expect(themeCss).toContain('--sm-bg-elevated: #fafafa');
     expect(themeCss).toContain('--sm-border-color: #d5d7da');
     expect(themeCss).not.toContain('--sm-content-bg: #f0f2f5');
     expect(themeCss).not.toContain('--sm-border-color: #f0f0f0');
+    // Single token source: the TS values equal the CSS values.
+    // ADR:2026-11-11-home-style-compaction-and-tokens
+    expect(themeCss).toContain(`--sm-content-bg: ${SM_SURFACES.contentBg}`);
+    expect(themeCss).toContain(`--sm-bg-elevated: ${SM_SURFACES.bgElevated}`);
+    expect(themeCss).toContain(`--sm-border-color: ${SM_SURFACES.borderColor}`);
+    expect(themeCss).toContain(`--sm-border-secondary: ${SM_SURFACES.borderSecondary}`);
   });
 
   it('applies the official shadow ladder, z ladder, spacing and motion', () => {
-    expect(SM_SHADOW_CARD).toBe('0px 1px 2px rgba(10, 13, 18, 0.05)');
+    expect(SM_SHADOW_CARD).toBe(
+      '0 1px 2px rgba(15, 17, 21, 0.04), 0 4px 12px rgba(15, 17, 21, 0.06)',
+    );
     expect(SM_SHADOW_RAISED).toContain('0px 12px 16px -4px');
     expect(SM_SHADOW_OVERLAY).toContain('0px 20px 24px -4px');
     expect(smAntdTheme.token?.boxShadow).toBe(SM_SHADOW_CARD);
@@ -156,6 +165,7 @@ describe('OM console theme tokens + iPlatform soul accents', () => {
     expect(smAntdTheme.token?.motionDurationMid).toBe('0.2s');
     expect(smAntdTheme.token?.motionDurationSlow).toBe('0.3s');
     expect(themeCss).toContain('--sm-shadow-card: 0 1px 2px rgba(15, 17, 21, 0.04)');
+    expect(themeCss).toContain(`--sm-shadow-card: ${SM_SHADOW_CARD}`);
     expect(themeCss).toContain('--sm-shadow-overlay:');
   });
 

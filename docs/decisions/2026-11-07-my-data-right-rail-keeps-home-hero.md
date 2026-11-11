@@ -1,7 +1,7 @@
 # My-data right rail keeps HomeHero only; no official greeting header in stage A
 
-- **Status:** Accepted
-- **Revisions:** v1 2026-11-07 (initial)
+- **Status:** Superseded by ADR:2026-11-11-home-style-compaction-and-tokens
+- **Revisions:** v1 2026-11-07 (initial) · v2 2026-11-11 (superseded: the rail is removed, Bai 2026-11-11)
 - **Deciders:** Bai
 - **Guard:** `MyDataView.test.ts` (single welcome copy, rail contents)
 - **Related:** Wave 1 W1-5 stage A, `wave1/REVIEW-W1-5-G11.md` condition 7, `RULING-my-data.md` §8裁决 3 (B-3 (a))
