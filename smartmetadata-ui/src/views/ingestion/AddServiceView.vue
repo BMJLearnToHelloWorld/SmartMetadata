@@ -11,8 +11,6 @@ import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import ServiceFilterFields from '@/components/ingestion/ServiceFilterFields.vue';
 import { serviceFilterFieldsForKind, type ServiceFilterValues } from '@/ingestion/serviceFilterFields';
-import { buildSourceConfig } from '@/ingestion/sourceConfig';
-import { createIngestionPipeline } from '@/api/ingestionPipelines';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import {
@@ -20,7 +18,6 @@ import {
   SERVICE_TYPES_BY_KIND,
   buildServiceConnection,
   createEmptyServiceForm,
-  entityTypeForKind,
 } from '@/ingestion/connections';
 import { hasConnectionForm } from '@/ingestion/connectionFields';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
@@ -69,26 +66,37 @@ function onBack(): void {
 }
 
 /**
- * R-17: the filter step used to be silently dropped at creation. The
- * filter fields are exactly the pipeline sourceConfig surface
- * (ingestion/serviceFilterFields.ts), so entered scope is now carried
- * into a metadata pipeline created with the service. Only scope beyond
- * the defaults is carried: with nothing entered, the wizard still
- * creates just the service record (a default-scope pipeline would be
- * an extra the user did not ask for). A pipeline failure does not roll
- * back the service — the service exists, and the pipeline can be
- * created from the service detail page; the error is surfaced, not
- * swallowed.
+ * P-12: the wizard no longer creates a metadata pipeline with the
+ * service — a pipeline the user did not ask for. The filter step is
+ * still meaningful: entered scope is carried into the service create
+ * request's `connection.config`, and the add-ingestion form prefills
+ * its filter defaults from there (P-08(c),
+ * `getDefaultFilterPropertyValues`). Only scope beyond the defaults is
+ * carried (includeViews only when false, text fields only when
+ * non-blank, generateSampleData only when true), so a plain service
+ * create stores no filter keys at all.
  */
-function filterScopeEntered(): boolean {
-  return (
-    filterForm.includeViews === false ||
-    Boolean(filterForm.includeSchemas?.trim()) ||
-    Boolean(filterForm.includeTopics?.trim()) ||
-    Boolean(filterForm.includeDashboards?.trim()) ||
-    Boolean(filterForm.includeCharts?.trim()) ||
-    Boolean(filterForm.includeContainers?.trim())
-  );
+function enteredFilterValues(): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  if (filterForm.includeViews === false) {
+    values.includeViews = false;
+  }
+  for (const key of [
+    'includeSchemas',
+    'includeTopics',
+    'includeDashboards',
+    'includeCharts',
+    'includeContainers',
+  ] as const) {
+    const value = filterForm[key]?.trim();
+    if (value) {
+      values[key] = value;
+    }
+  }
+  if (filterForm.generateSampleData) {
+    values.generateSampleData = true;
+  }
+  return values;
 }
 
 async function onCreate(): Promise<void> {
@@ -98,37 +106,21 @@ async function onCreate(): Promise<void> {
   }
   creating.value = true;
   try {
+    const connection = buildServiceConnection(form);
+    const filterValues = enteredFilterValues();
     const created = await SERVICE_CREATE_API[form.kind]({
       name: form.name.trim(),
       serviceType: form.serviceType,
       displayName: form.displayName?.trim() || undefined,
       description: form.description?.trim() || undefined,
-      connection: buildServiceConnection(form),
+      connection: connection
+        ? {
+            ...connection,
+            config: { ...connection.config, ...filterValues },
+          }
+        : undefined,
     });
     message.success(t('ingestion.services.created', { name: created.name }));
-    if (filterScopeEntered()) {
-      try {
-        const pipeline = await createIngestionPipeline({
-          name: `${created.name}-metadata`,
-          pipelineType: 'metadata',
-          service: { id: created.id, type: entityTypeForKind(form.kind) },
-          sourceConfig: buildSourceConfig({
-            ...filterForm,
-            name: `${created.name}-metadata`,
-            pipelineType: 'metadata',
-            serviceId: created.id,
-            serviceKind: form.kind,
-            includeViews: filterForm.includeViews ?? true,
-          }),
-          airflowConfig: { pausePipeline: true },
-        });
-        message.success(t('ingestion.pipelines.created', { name: pipeline.name }));
-      } catch (pipelineError) {
-        message.error(
-          pipelineError instanceof Error ? pipelineError.message : t('crud.createFailed'),
-        );
-      }
-    }
     await router.push({ name: 'ingestion-service', params: { kind: form.kind, id: created.id } });
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));

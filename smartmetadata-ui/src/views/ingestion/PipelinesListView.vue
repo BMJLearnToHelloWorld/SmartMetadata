@@ -3,15 +3,22 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import {Alert, Button, Checkbox, Form, Input, Menu, Modal, Select, message} from 'ant-design-vue';
+import { useRoute, useRouter } from 'vue-router';
+import {Alert, Button, Form, Input, Modal, Select, Tag, Tooltip, Typography, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import { bulkDeployIngestionPipelines, createIngestionPipeline, deleteIngestionPipeline, listIngestionPipelines } from '@/api/ingestionPipelines';
+import {
+  bulkDeployIngestionPipelines,
+  createIngestionPipeline,
+  deployIngestionPipeline,
+  getOrchestratorStatus,
+  isPipelineClientDisabled,
+  listIngestionPipelines,
+} from '@/api/ingestionPipelines';
 import { SERVICE_LIST_API } from '@/ingestion/serviceApis';
-import { confirmDelete } from '@/features/crud/confirmDelete';
+import { SERVICE_KIND_BY_ENTITY_TYPE } from '@/ingestion/connections';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
@@ -29,17 +36,41 @@ import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { entityTypeForKind } from '@/ingestion/connections';
 import { buildSourceConfig } from '@/ingestion/sourceConfig';
+import SchemaDrivenSourceConfigForm from '@/components/ingestion/SchemaDrivenSourceConfigForm.vue';
 import {
+  SERVICE_CATEGORY_BY_KIND,
+  getSchemaByWorkflowType,
+  type RjsfSchema,
+} from '@/ingestion/ingestionSchemas';
+import { canDeployPipeline } from '@/ingestion/pipelineActions';
+import {
+  getIngestionStatusCount,
+  renderPipelineState,
+  renderPipelineType,
+  runBadgeColor,
+  splitSearchHighlight,
+} from '@/ingestion/pipelineDisplay';
+import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
+import {
+  PIPELINE_TYPES,
   agentKindsForService,
   type CatalogService,
   type IngestionPipeline,
+  type OrchestratorStatus,
   type PipelineFormValues,
   type PipelineServiceClientResponse,
+  type PipelineStatus,
   type PipelineType,
 } from '@/types/ingestion';
+import IngestionLogsModal from './IngestionLogsModal.vue';
+import IngestionRunDetailsModal from './IngestionRunDetailsModal.vue';
+import KillPipelineModal from './KillPipelineModal.vue';
+import PipelineRowActions from './PipelineRowActions.vue';
+import PipelineScheduleCell from './PipelineScheduleCell.vue';
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 /**
  * Official IngestionListTable gating: row actions come from the
  * per-pipeline entity permission by FQN, create from the
@@ -49,19 +80,32 @@ const router = useRouter();
 const permissionStore = usePermissionStore();
 const pipelinePermissions = ref(new Map<string, OperationPermissions>());
 const pipelineCreateAllowed = ref(false);
+const permissionsLoading = ref(false);
 const selectedRowKeys = ref<string[]>([]);
 const bulkDeploying = ref(false);
 const bulkResults = ref<Array<{ id: string; name: string } & PipelineServiceClientResponse>>([]);
 const bulkResultsOpen = ref(false);
+const bulkNotDeployed = ref(0);
 const loading = ref(false);
 const errorMessage = ref('');
 const pipelines = ref<IngestionPipeline[]>([]);
 const catalogServices = ref<CatalogService[]>([]);
+const servicesLoaded = ref(false);
 const total = ref<number | undefined>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
 const creating = ref(false);
+const orchestrator = ref<OrchestratorStatus | null>(null);
+const orchestratorChecked = ref(false);
+const selectedTypes = ref<string[]>([]);
+const selectedService = ref<string | undefined>(undefined);
+const searchText = ref('');
+const pageSize = ref(DEFAULT_PAGE_SIZE);
+const sortOrder = ref<'asc' | 'desc' | undefined>(
+  route.query.sortOrder === 'asc' ? 'asc' : route.query.sortOrder === 'desc' ? 'desc' : undefined,
+);
+const runDetailsStatus = ref<PipelineStatus | null>(null);
 const form = reactive<PipelineFormValues>({
   name: '',
   displayName: '',
@@ -69,22 +113,50 @@ const form = reactive<PipelineFormValues>({
   pipelineType: 'metadata',
   serviceId: '',
   serviceKind: 'database',
-  includeViews: true,
-  includeSchemas: '',
-  includeTopics: '',
-  generateSampleData: false,
-  includeDashboards: '',
-  includeCharts: '',
-  includeContainers: '',
+  sourceConfigData: {},
   scheduleInterval: '',
 });
+// The schema-driven sourceConfig form (P-08(d)) for the create modal:
+// resolved from the selected service + pipeline type.
+const createSchema = ref<RjsfSchema | null>(null);
+const createSchemaFormRef = ref<{ validate: () => boolean } | null>(null);
+const createSchemaFormValid = ref(true);
 
-const selectedService = computed(
+/**
+ * P-24: the orchestrator probe decides availability. Null counts only
+ * once the probe has settled (a failed fetch is null too); while the
+ * probe is in flight nothing is gated, so the banner and the disabled
+ * buttons never flash on a healthy deployment.
+ */
+const orchestratorUnavailable = computed(
+  () =>
+    orchestratorChecked.value &&
+    (orchestrator.value == null ||
+      orchestrator.value.platform === 'disabled' ||
+      orchestrator.value.code !== 200),
+);
+
+const orchestratorBannerMessage = computed(() => {
+  if (!orchestratorUnavailable.value) {
+    return '';
+  }
+  // Official AirflowMessageBanner: a disabled platform gets the disabled
+  // fallback, otherwise the server reason, otherwise the unreachable one.
+  if (orchestrator.value?.platform === 'disabled') {
+    return t('ingestion.pipelines.orchestratorDisabled');
+  }
+  if (orchestrator.value?.reason) {
+    return orchestrator.value.reason;
+  }
+  return t('ingestion.pipelines.orchestratorUnreachable');
+});
+
+const selectedFormService = computed(
   () => catalogServices.value.find((item) => item.id === form.serviceId) ?? null,
 );
 
 const availablePipelineTypes = computed<readonly PipelineType[]>(() => {
-  const service = selectedService.value;
+  const service = selectedFormService.value;
   if (!service) {
     return ['metadata'] as const;
   }
@@ -92,37 +164,85 @@ const availablePipelineTypes = computed<readonly PipelineType[]>(() => {
 });
 
 const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
+  {
+    title: t('crud.name'),
+    dataIndex: 'name',
+    key: 'name',
+    sorter: true,
+    sortOrder: sortOrder.value === 'asc' ? 'ascend' : sortOrder.value === 'desc' ? 'descend' : null,
+  },
   { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
   { title: t('ingestion.pipelines.service'), key: 'service' },
-  { title: t('crud.enabled'), key: 'enabled', width: 100 },
+  { title: t('ingestion.pipelines.count'), key: 'count', width: 190 },
+  { title: t('ingestion.pipelines.scheduleInterval'), key: 'schedule', width: 210 },
+  { title: t('ingestion.pipelines.recentRuns'), key: 'recentRuns', width: 210 },
+  { title: t('ingestion.pipelines.status'), key: 'status', width: 110 },
+  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
 ]);
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
 
+/** P-36: the list search filters the loaded page by name (official's searchText only highlights — the server offers no pipeline full-text search). */
+const displayedPipelines = computed(() => {
+  if (!searchText.value) {
+    return pipelines.value;
+  }
+  const needle = searchText.value.toLowerCase();
+  return pipelines.value.filter((pipeline) =>
+    entityLabel(pipeline).toLowerCase().includes(needle),
+  );
+});
+
+const typeFilterOptions = computed(() =>
+  PIPELINE_TYPES.map((pipelineType) => ({
+    value: pipelineType,
+    label: t(`ingestion.pipelines.types.${pipelineType}`),
+  })),
+);
+
+const serviceFilterOptions = computed(() =>
+  catalogServices.value.map((service) => ({
+    value: service.fullyQualifiedName ?? service.name,
+    label: service.displayName ?? service.name,
+  })),
+);
+
+const rowActions = usePipelineRowActions({
+  isAdminUser: () => permissionStore.isAdminUser,
+  getOps: (pipeline) => pipelinePermissions.value.get(pipeline.id),
+  refresh: () => load(),
+});
+
+/**
+ * Template auto-unwrap applies to top-level refs only: passing
+ * `rowActions.logsPipeline` to a modal would hand it the Ref object
+ * itself (and its `.value` would never update the prop). Bind the two
+ * modal refs at top level; the handlers stay on `rowActions`.
+ */
+const logsPipeline = rowActions.logsPipeline;
+const killPipeline = rowActions.killPipeline;
+
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const serviceKinds = Object.keys(SERVICE_LIST_API) as Array<keyof typeof SERVICE_LIST_API>;
-    const settled = await Promise.allSettled([
-      listIngestionPipelines({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after }),
-      ...serviceKinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })),
+    const [page, orch] = await Promise.all([
+      listIngestionPipelines({
+        limit: pageSize.value,
+        after: cursor.value.after,
+        pipelineType: selectedTypes.value.length ? selectedTypes.value.join(',') : undefined,
+        service: selectedService.value,
+        sortField: sortOrder.value ? 'displayName' : undefined,
+        sortOrder: sortOrder.value,
+      }),
+      getOrchestratorStatus().catch(() => null),
     ]);
-    const pageResult = settled[0];
-    if (pageResult.status !== 'fulfilled') {
-      throw pageResult.reason instanceof Error
-        ? pageResult.reason
-        : new Error(String(pageResult.reason));
-    }
-    const page = pageResult.value;
     pipelines.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
-    catalogServices.value = settled.slice(1).flatMap((result) =>
-      result.status === 'fulfilled' ? result.value.data : [],
-    );
+    orchestrator.value = orch;
+    orchestratorChecked.value = true;
     void loadPipelinePermissions();
   } catch (error) {
     pipelines.value = [];
@@ -133,6 +253,7 @@ async function load(): Promise<void> {
 }
 
 async function loadPipelinePermissions(): Promise<void> {
+  permissionsLoading.value = true;
   try {
     const resourceOps = await permissionStore.getResourcePermission('ingestionPipeline');
     pipelineCreateAllowed.value = resourceOps.Create === true;
@@ -157,23 +278,40 @@ async function loadPipelinePermissions(): Promise<void> {
     }
   }
   pipelinePermissions.value = next;
+  // P-17: Trigger and EditIngestionPipelineStatus arrive in the same
+  // per-FQN fetch — the permission API returns the full operation map,
+  // so no second request is needed; the Run and Pause/Resume gates read
+  // them from this map (see pipelineActions.ts).
+  permissionsLoading.value = false;
 }
 
-function canEditPipeline(pipeline: IngestionPipeline): boolean {
-  return pipelinePermissions.value.get(pipeline.id)?.EditAll === true;
-}
-
-function canDeletePipeline(pipeline: IngestionPipeline): boolean {
-  return pipelinePermissions.value.get(pipeline.id)?.Delete === true;
-}
-
-/** Same official deploy rule as the detail view: EditAll or Deploy, plus the P1 admin line. */
-function canDeployPipeline(pipeline: IngestionPipeline): boolean {
-  if (pipeline.enabled === false) {
-    return false;
+/**
+ * P-49: the service list is fetched lazily, once — on first create-modal
+ * open or first service-filter open — never on every load().
+ */
+let servicesLoading: Promise<void> | null = null;
+async function ensureServicesLoaded(): Promise<void> {
+  if (servicesLoaded.value) {
+    return;
   }
-  const ops = pipelinePermissions.value.get(pipeline.id);
-  return permissionStore.isAdminUser || ops?.EditAll === true || ops?.Deploy === true;
+  if (servicesLoading) {
+    return servicesLoading;
+  }
+  servicesLoading = (async () => {
+    const serviceKinds = Object.keys(SERVICE_LIST_API) as Array<keyof typeof SERVICE_LIST_API>;
+    const settled = await Promise.allSettled(
+      serviceKinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })),
+    );
+    catalogServices.value = settled.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value.data : [],
+    );
+    servicesLoaded.value = true;
+  })();
+  try {
+    await servicesLoading;
+  } finally {
+    servicesLoading = null;
+  }
 }
 
 const rowSelection = computed(() => ({
@@ -185,7 +323,9 @@ const rowSelection = computed(() => ({
 
 const deployableSelected = computed(() =>
   pipelines.value.filter(
-    (pipeline) => selectedRowKeys.value.includes(pipeline.id) && canDeployPipeline(pipeline),
+    (pipeline) =>
+      selectedRowKeys.value.includes(pipeline.id) &&
+      canDeployPipeline(permissionStore.isAdminUser, pipelinePermissions.value.get(pipeline.id), pipeline),
   ),
 );
 
@@ -196,8 +336,31 @@ const bulkResultColumns = computed<EntityListColumn[]>(() => [
   { title: t('ingestion.pipelines.resultReason'), dataIndex: 'reason', key: 'reason' },
 ]);
 
+function excludedReason(pipeline: IngestionPipeline): 'bulkDeployExcludedOrchestrator' | 'bulkDeployExcludedDisabled' | 'bulkDeployExcludedNoPermission' {
+  if (orchestratorUnavailable.value) {
+    return 'bulkDeployExcludedOrchestrator';
+  }
+  if (pipeline.enabled === false) {
+    return 'bulkDeployExcludedDisabled';
+  }
+  return 'bulkDeployExcludedNoPermission';
+}
+
 async function onBulkDeploy(): Promise<void> {
+  const selected = pipelines.value.filter((pipeline) =>
+    selectedRowKeys.value.includes(pipeline.id),
+  );
   const targets = deployableSelected.value;
+  const excluded = selected.filter((pipeline) => !targets.includes(pipeline));
+  if (excluded.length > 0) {
+    const reasons = [...new Set(excluded.map((pipeline) => excludedReason(pipeline)))];
+    message.warning(
+      t('ingestion.pipelines.bulkDeployExcluded', {
+        count: excluded.length,
+        reason: reasons.map((reason) => t(`ingestion.pipelines.${reason}`)).join(', '),
+      }),
+    );
+  }
   if (targets.length === 0) {
     message.warning(t('ingestion.pipelines.bulkDeployNoneSelected'));
     return;
@@ -210,14 +373,72 @@ async function onBulkDeploy(): Promise<void> {
       name: pipeline.name,
       ...(results[index] ?? {}),
     }));
+    // P-29: the summary names the rows that were not actually deployed
+    // (C-01: a 200 with reason "Pipeline Client Disabled" deployed nothing).
+    bulkNotDeployed.value = bulkResults.value.filter(
+      (result) => result.code !== 200 || isPipelineClientDisabled(result),
+    ).length;
     bulkResultsOpen.value = true;
     selectedRowKeys.value = [];
-    await load();
+    // C-01: re-fetch row statuses after the 500ms delay.
+    setTimeout(() => {
+      void load();
+    }, 500);
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('ingestion.pipelines.actionFailed'));
   } finally {
     bulkDeploying.value = false;
   }
+}
+
+function resetCursorAndLoad(): void {
+  cursor.value = createCursorPager();
+  void load();
+}
+
+function onFilterChange(): void {
+  resetCursorAndLoad();
+}
+
+function onServiceFilterOpen(open: boolean): void {
+  if (open) {
+    void ensureServicesLoaded();
+  }
+}
+
+/**
+ * antd Select emits SelectValue (string | number | arrays | ...); the
+ * handlers take unknown and narrow to what the control actually offers,
+ * so the signature stays assignable to the component's onChange type.
+ */
+function onServiceFilterChange(value: unknown): void {
+  selectedService.value = typeof value === 'string' ? value : undefined;
+  onFilterChange();
+}
+
+function onPageSizeChange(value: unknown): void {
+  const size = Number(value);
+  if (!Number.isFinite(size)) {
+    return;
+  }
+  pageSize.value = size;
+  resetCursorAndLoad();
+}
+
+function onTableChange(sorter: { columnKey?: string | number; order?: 'ascend' | 'descend' | null }): void {
+  if (sorter.columnKey !== 'name') {
+    return;
+  }
+  sortOrder.value =
+    sorter.order === 'ascend' ? 'asc' : sorter.order === 'descend' ? 'desc' : undefined;
+  // P-28: the sort value is written to the route query string (?sortOrder=).
+  void router.replace({
+    query: {
+      ...route.query,
+      ...(sortOrder.value ? { sortOrder: sortOrder.value } : { sortOrder: undefined }),
+    },
+  });
+  resetCursorAndLoad();
 }
 
 function onNext(): void {
@@ -232,7 +453,10 @@ function onPrev(): void {
   void load();
 }
 
-function onServiceChange(id: string): void {
+function onServiceChange(id: unknown): void {
+  if (typeof id !== 'string') {
+    return;
+  }
   form.serviceId = id;
   const service = catalogServices.value.find((item) => item.id === id);
   if (service) {
@@ -245,9 +469,17 @@ function onServiceChange(id: string): void {
 }
 
 async function onCreate(): Promise<void> {
-  const service = selectedService.value;
+  const service = selectedFormService.value;
   if (!service) {
     message.error(t('ingestion.pipelines.selectService'));
+    return;
+  }
+  // The schema form validates its own fields (AJV + ownerConfig maps)
+  // and shows the errors inline.
+  if (createSchemaFormRef.value && !createSchemaFormRef.value.validate()) {
+    return;
+  }
+  if (!createSchemaFormValid.value) {
     return;
   }
   creating.value = true;
@@ -256,17 +488,41 @@ async function onCreate(): Promise<void> {
       name: form.name.trim(),
       pipelineType: form.pipelineType || 'metadata',
       service: { id: service.id, type: entityTypeForKind(service.kind) },
-      sourceConfig: buildSourceConfig({ ...form, serviceKind: service.kind }),
+      sourceConfig: buildSourceConfig({
+        pipelineType: form.pipelineType as PipelineType,
+        serviceKind: service.kind,
+        sourceConfigData: form.sourceConfigData ?? {},
+      }),
       airflowConfig: {
-        pausePipeline: true,
         scheduleInterval: form.scheduleInterval?.trim() || undefined,
       },
       displayName: form.displayName?.trim() || undefined,
       description: form.description?.trim() || undefined,
     });
+    // P-30: a created pipeline is deployed immediately (official
+    // onAddIngestionSave -> onIngestionDeploy). The deploy runs outside
+    // the create try: a deploy throw must not be reported as a create
+    // failure — the pipeline was created, only its deploy failed. A
+    // disabled client or a non-200 deploy is the existing deployFailed
+    // error, never a bare "created" success toast.
+    let deployFailed = false;
+    try {
+      const deployResult = await deployIngestionPipeline(created.id);
+      deployFailed =
+        isPipelineClientDisabled(deployResult) ||
+        (deployResult.code !== undefined && deployResult.code !== 200);
+    } catch {
+      deployFailed = true;
+    }
     createOpen.value = false;
-    message.success(t('ingestion.pipelines.created', { name: created.name }));
-    await load();
+    if (deployFailed) {
+      message.error(t('ingestion.pipelines.deployFailed'));
+    } else {
+      message.success(t('ingestion.pipelines.created', { name: created.name }));
+    }
+    setTimeout(() => {
+      void load();
+    }, 500);
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));
   } finally {
@@ -278,36 +534,66 @@ function openDetail(pipeline: IngestionPipeline): void {
   void router.push({ name: 'ingestion-pipeline', params: { id: pipeline.id } });
 }
 
-function onEditPipeline(pipeline: IngestionPipeline): void {
-  if (!canEditPipeline(pipeline)) {
-    message.error(t('errors.forbidden'));
-    return;
+/** Official openLogs branch (PipelineActions.tsx:112-122): TestSuite -> testSuite, otherwise the service category. */
+function logEntityTypeFor(pipeline: IngestionPipeline): string {
+  if (pipeline.pipelineType === 'TestSuite') {
+    return 'testSuite';
   }
-  openDetail(pipeline);
+  return SERVICE_KIND_BY_ENTITY_TYPE[pipeline.service?.type ?? ''] ?? '';
 }
 
-async function onDelete(pipeline: IngestionPipeline): Promise<void> {
-  if (!canDeletePipeline(pipeline)) {
-    message.error(t('errors.forbidden'));
-    return;
-  }
-  const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('ingestion.pipelines.deleteConfirm', { name: pipeline.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await deleteIngestionPipeline(pipeline.id);
-    message.success(t('ingestion.pipelines.deleted', { name: pipeline.name }));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
-  }
+function openRunDetails(status: PipelineStatus): void {
+  runDetailsStatus.value = status;
 }
+
+/** Recent runs, newest first in the data, rendered oldest-first like official IngestionRecentRuns (latest last, with text). */
+function recentRunBadges(pipeline: IngestionPipeline): PipelineStatus[] {
+  return (pipeline.pipelineStatuses ?? []).slice(0, 5).reverse();
+}
+
+function runTooltip(status: PipelineStatus): string {
+  const parts: string[] = [];
+  if (status.timestamp) {
+    parts.push(`${t('ingestion.pipelines.timestamp')}: ${new Date(status.timestamp).toLocaleString()}`);
+  }
+  if (status.startDate) {
+    parts.push(`${t('ingestion.pipelines.startDate')}: ${new Date(status.startDate).toLocaleString()}`);
+  }
+  if (status.endDate) {
+    parts.push(`${t('ingestion.pipelines.endDate')}: ${new Date(status.endDate).toLocaleString()}`);
+  }
+  return parts.join('\n');
+}
+
+watch(createOpen, (open) => {
+  if (open) {
+    void ensureServicesLoaded();
+  }
+});
+
+// Resolve the ingestion schema for the create modal's (service, type)
+// selection; a new selection means a new config, so the form data resets
+// and the form remounts (via :key) to seed the schema defaults.
+async function loadCreateSchema(): Promise<void> {
+  const service = selectedFormService.value;
+  if (!createOpen.value || !service) {
+    createSchema.value = null;
+    return;
+  }
+  createSchema.value = await getSchemaByWorkflowType(
+    form.pipelineType as PipelineType,
+    SERVICE_CATEGORY_BY_KIND[service.kind],
+    service.serviceType,
+  );
+  form.sourceConfigData = {};
+}
+
+watch(
+  () => [form.serviceId, form.pipelineType],
+  () => {
+    void loadCreateSchema();
+  },
+);
 
 onMounted(() => {
   void load();
@@ -321,71 +607,185 @@ onMounted(() => {
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
-    :data-source="pipelines"
+    :data-source="displayedPipelines"
     table-test-id="pipelines-table"
     show-row-actions
+    :row-actions-loading="permissionsLoading"
     :row-selection="rowSelection"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
+    show-search
+    :search-value="searchText"
+    :search-placeholder="t('ingestion.pipelines.searchByName')"
+    :empty-text="t('ingestion.pipelines.noPipelinesYet')"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
     @view="openDetail($event as IngestionPipeline)"
-    @delete="onDelete($event as IngestionPipeline)"
+    @table-change="onTableChange"
+    @update:search-value="searchText = $event"
   >
     <template #rowActions="{ record }">
-      <Menu.Item
-        key="edit"
-        data-testid="row-overflow-edit"
-        :disabled="!canEditPipeline(record as IngestionPipeline)"
-        @click="onEditPipeline(record as IngestionPipeline)"
-      >
-        {{ t('crud.edit') }}
-      </Menu.Item>
-      <Menu.Item
-        key="delete"
-        danger
-        data-testid="row-overflow-delete"
-        :disabled="!canDeletePipeline(record as IngestionPipeline)"
-        @click="onDelete(record as IngestionPipeline)"
-      >
-        {{ t('crud.delete') }}
-      </Menu.Item>
+      <PipelineRowActions
+        :pipeline="record as IngestionPipeline"
+        :ops="pipelinePermissions.get((record as IngestionPipeline).id)"
+        :is-admin-user="permissionStore.isAdminUser"
+        :orchestrator-unavailable="orchestratorUnavailable"
+        @run="rowActions.onRun"
+        @deploy="rowActions.onDeploy"
+        @toggle="rowActions.onToggle"
+        @logs="rowActions.onLogs"
+        @edit="rowActions.onEdit"
+        @kill="rowActions.onKill"
+        @delete="rowActions.onDelete"
+      />
     </template>
     <template #actions>
       <Button
         data-testid="bulk-deploy-pipelines"
-        :disabled="deployableSelected.length === 0"
+        :disabled="orchestratorUnavailable || deployableSelected.length === 0 || loading"
         :loading="bulkDeploying"
         @click="onBulkDeploy"
       >
         {{ t('ingestion.pipelines.deploySelected') }}
       </Button>
-      <Button type="primary" data-testid="create-pipeline" :disabled="!pipelineCreateAllowed" @click="createOpen = true">
+      <Button
+        type="primary"
+        data-testid="create-pipeline"
+        :disabled="!pipelineCreateAllowed || loading || orchestratorUnavailable"
+        @click="createOpen = true"
+      >
         {{ t('ingestion.pipelines.create') }}
       </Button>
     </template>
     <template #filters>
-      <Alert type="info" show-icon :message="t('ingestion.pipelines.triggerNote')" />
+      <Alert
+        v-if="orchestratorUnavailable"
+        type="warning"
+        show-icon
+        data-testid="pipeline-orchestrator-banner"
+        :message="orchestratorBannerMessage"
+      />
+      <Select
+        v-model:value="selectedTypes"
+        mode="multiple"
+        :placeholder="t('ingestion.pipelines.filterByType')"
+        data-testid="pipeline-type-filter"
+        style="width: 220px"
+        :options="typeFilterOptions"
+        @change="onFilterChange"
+      />
+      <Select
+        :value="selectedService"
+        :placeholder="t('ingestion.pipelines.filterByService')"
+        data-testid="pipeline-service-filter"
+        style="width: 220px"
+        allow-clear
+        :options="serviceFilterOptions"
+        @change="onServiceFilterChange"
+        @dropdown-visible-change="onServiceFilterOpen"
+      />
+      <Select
+        :value="pageSize"
+        :aria-label="t('ingestion.pipelines.pageSize')"
+        data-testid="pipeline-page-size"
+        style="width: 110px"
+        @change="onPageSizeChange"
+      >
+        <Select.Option :value="10">10</Select.Option>
+        <Select.Option :value="25">25</Select.Option>
+        <Select.Option :value="50">50</Select.Option>
+      </Select>
+    </template>
+    <template #emptyExtra>
+      <Typography.Text v-if="orchestratorUnavailable" type="secondary">
+        {{ orchestratorBannerMessage }}
+      </Typography.Text>
+      <Button
+        v-else
+        type="primary"
+        data-testid="empty-create-pipeline"
+        :disabled="!pipelineCreateAllowed"
+        @click="createOpen = true"
+      >
+        {{ t('ingestion.pipelines.create') }}
+      </Button>
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
         <a
           href="#"
           :data-testid="`pipeline-row-${(record as IngestionPipeline).id}`"
-          @click.prevent="
-            router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })
-          "
+          @click.prevent="openDetail(record as IngestionPipeline)"
         >
-          {{ entityLabel(record as IngestionPipeline) }}
+          <template v-for="(part, index) in splitSearchHighlight(entityLabel(record as IngestionPipeline), searchText)" :key="index">
+            <mark v-if="part.match">{{ part.text }}</mark>
+            <template v-else>{{ part.text }}</template>
+          </template>
         </a>
+      </template>
+      <template v-else-if="column.key === 'pipelineType'">
+        {{ renderPipelineType((record as IngestionPipeline).pipelineType) }}
       </template>
       <template v-else-if="column.key === 'service'">
         {{ (record as IngestionPipeline).service?.name || '—' }}
       </template>
-      <template v-else-if="column.key === 'enabled'">
-        {{ (record as IngestionPipeline).enabled === false ? t('crud.no') : t('crud.yes') }}
+      <template v-else-if="column.key === 'count'">
+        <span v-if="getIngestionStatusCount(record as IngestionPipeline)" :data-testid="`pipeline-count-${(record as IngestionPipeline).id}`">
+          <Tag
+            v-for="count in getIngestionStatusCount(record as IngestionPipeline)"
+            :key="count.type"
+            :color="count.type === 'success' ? 'success' : count.type === 'failed' ? 'error' : 'warning'"
+          >
+            {{ t(`ingestion.pipelines.count${count.label === 'success' ? 'Success' : count.label === 'failed' ? 'Failed' : 'Warning'}`) }} {{ count.value }}
+          </Tag>
+        </span>
+        <span v-else>—</span>
+      </template>
+      <template v-else-if="column.key === 'schedule'">
+        <PipelineScheduleCell
+          :schedule-interval="(record as IngestionPipeline).airflowConfig?.scheduleInterval"
+        />
+      </template>
+      <template v-else-if="column.key === 'recentRuns'">
+        <span v-if="(record as IngestionPipeline).pipelineStatuses?.length">
+          <Tooltip
+            v-for="(status, index) in recentRunBadges(record as IngestionPipeline)"
+            :key="status.runId ?? index"
+            :title="runTooltip(status)"
+          >
+            <Tag
+              :color="runBadgeColor(status.pipelineState)"
+              :data-testid="`pipeline-status-${status.runId}`"
+              style="cursor: pointer"
+              @click="openRunDetails(status)"
+            >
+              {{
+                index === recentRunBadges(record as IngestionPipeline).length - 1
+                  ? renderPipelineState(status.pipelineState)
+                  : ''
+              }}
+            </Tag>
+          </Tooltip>
+        </span>
+        <span v-else>—</span>
+      </template>
+      <template v-else-if="column.key === 'status'">
+        <Tag :color="(record as IngestionPipeline).enabled === false ? 'default' : 'success'">
+          {{
+            t(
+              (record as IngestionPipeline).enabled === false
+                ? 'ingestion.pipelines.statusPaused'
+                : 'ingestion.pipelines.statusActive',
+            )
+          }}
+        </Tag>
+      </template>
+      <template v-else-if="column.key === 'description'">
+        <span :title="(record as IngestionPipeline).description || ''">
+          {{ (record as IngestionPipeline).description || '—' }}
+        </span>
       </template>
     </template>
   </EntityListShell>
@@ -395,6 +795,9 @@ onMounted(() => {
     :footer="null"
     @cancel="bulkResultsOpen = false"
   >
+    <p v-if="bulkNotDeployed > 0" data-testid="bulk-deploy-summary">
+      {{ t('ingestion.pipelines.bulkDeployNotDeployed', { count: bulkNotDeployed }) }}
+    </p>
     <SmTable
       row-key="id"
       size="small"
@@ -414,6 +817,9 @@ onMounted(() => {
     <Form layout="vertical">
       <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
         <Input v-model:value="form.name" data-testid="create-pipeline-name" />
+      </Form.Item>
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="form.displayName" data-testid="create-pipeline-display-name" />
       </Form.Item>
       <Form.Item :label="t('ingestion.pipelines.service')" :rules="requiredField(t, t('ingestion.pipelines.service'))">
         <Select
@@ -442,54 +848,14 @@ onMounted(() => {
           </Select.Option>
         </Select>
       </Form.Item>
-      <Form.Item v-if="form.serviceKind === 'database' && form.pipelineType === 'metadata'">
-        <Checkbox v-model:checked="form.includeViews" data-testid="create-pipeline-include-views">
-          {{ t('ingestion.pipelines.includeViews') }}
-        </Checkbox>
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'database'"
-        :label="t('ingestion.pipelines.includeSchemas')"
-        :extra="t('ingestion.pipelines.includeSchemasHelp')"
-      >
-        <Input v-model:value="form.includeSchemas" placeholder="public, analytics" />
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'messaging'"
-        :label="t('ingestion.pipelines.includeTopics')"
-        :extra="t('ingestion.pipelines.includeTopicsHelp')"
-      >
-        <Input v-model:value="form.includeTopics" placeholder="orders, payments" />
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'messaging'"
-        :extra="t('ingestion.pipelines.generateSampleDataHelp')"
-      >
-        <Checkbox v-model:checked="form.generateSampleData" data-testid="create-pipeline-generate-sample-data">
-          {{ t('ingestion.pipelines.generateSampleData') }}
-        </Checkbox>
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'dashboard'"
-        :label="t('ingestion.pipelines.includeDashboards')"
-        :extra="t('ingestion.pipelines.includeDashboardsHelp')"
-      >
-        <Input v-model:value="form.includeDashboards" placeholder="sales, ops" />
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'dashboard'"
-        :label="t('ingestion.pipelines.includeCharts')"
-        :extra="t('ingestion.pipelines.includeChartsHelp')"
-      >
-        <Input v-model:value="form.includeCharts" placeholder="kpi-1, funnel" />
-      </Form.Item>
-      <Form.Item
-        v-if="form.serviceKind === 'storage'"
-        :label="t('ingestion.pipelines.includeContainers')"
-        :extra="t('ingestion.pipelines.includeContainersHelp')"
-      >
-        <Input v-model:value="form.includeContainers" placeholder="analytics, raw" />
-      </Form.Item>
+      <SchemaDrivenSourceConfigForm
+        v-if="createSchema"
+        :key="`${form.serviceKind}-${form.pipelineType}`"
+        ref="createSchemaFormRef"
+        :schema="createSchema"
+        v-model="form.sourceConfigData"
+        @validity-change="(valid) => (createSchemaFormValid = valid)"
+      />
       <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">
         <Input v-model:value="form.scheduleInterval" placeholder="0 0 * * *" />
       </Form.Item>
@@ -498,4 +864,22 @@ onMounted(() => {
       </Form.Item>
     </Form>
   </FormModal>
+  <IngestionLogsModal
+    :open="logsPipeline !== null"
+    :pipeline="logsPipeline"
+    :log-entity-type="logsPipeline ? logEntityTypeFor(logsPipeline) : ''"
+    @close="logsPipeline = null"
+  />
+  <KillPipelineModal
+    :open="killPipeline !== null"
+    :pipeline-id="killPipeline?.id ?? ''"
+    :pipeline-name="killPipeline ? entityLabel(killPipeline) : ''"
+    @close="killPipeline = null"
+    @killed="rowActions.onKillDone"
+  />
+  <IngestionRunDetailsModal
+    :open="runDetailsStatus !== null"
+    :status="runDetailsStatus"
+    @close="runDetailsStatus = null"
+  />
 </template>

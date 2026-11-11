@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Pagination, Space, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Pagination, Skeleton, Space, Tooltip, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
@@ -51,6 +51,11 @@ const props = withDefaults(
     showEditAction?: boolean;
     showDeleteAction?: boolean;
     /**
+     * P-50: while the per-row permissions are still loading, the row
+     * action trigger shows loading instead of flashing disabled.
+     */
+    rowActionsLoading?: boolean;
+    /**
      * ADR:2026-11-07-context-center-permission-gates — per-row delete
      * predicate (e.g. memory delete needs owner-or-admin on top of the
      * resource Delete grant). When provided and false for a row, that
@@ -86,6 +91,7 @@ const props = withDefaults(
     showRowActions: false,
     showEditAction: false,
     showDeleteAction: false,
+    rowActionsLoading: false,
     rowCanDelete: undefined,
     hideHeading: false,
     rowSelection: undefined,
@@ -103,7 +109,14 @@ const emit = defineEmits<{
   view: [record: unknown];
   edit: [record: unknown];
   delete: [record: unknown];
+  /** Server-sort change from the table: the sorter of the sorted column, if any. */
+  tableChange: [sorter: { columnKey?: string | number; order?: 'ascend' | 'descend' | null }];
 }>();
+
+function onTableChange(_pagination: unknown, _filters: unknown, sorter: unknown): void {
+  const record = (sorter ?? {}) as { columnKey?: string | number; order?: 'ascend' | 'descend' | null };
+  emit('tableChange', { columnKey: record.columnKey, order: record.order ?? null });
+}
 
 const shownLabel = computed(() => {
   const shown = props.dataSource.length;
@@ -174,8 +187,14 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         </template>
         <slot name="emptyExtra" />
       </Empty>
+      <Skeleton
+        v-if="loading && dataSource.length === 0"
+        active
+        :paragraph="{ rows: 5 }"
+        data-testid="entity-list-loading"
+      />
       <SmTable
-        v-else
+        v-else-if="dataSource.length > 0 || error"
         :row-key="rowKey"
         :test-id="tableTestId"
         :columns="tableColumns"
@@ -183,6 +202,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         :loading="loading"
         :pagination="false"
         :row-selection="rowSelection"
+        :on-change="onTableChange"
         size="small"
       >
         <template #bodyCell="slotProps">
@@ -192,6 +212,7 @@ const tableColumns = computed<EntityListColumn[]>(() => {
                 <Button
                   type="text"
                   :aria-label="t('crud.moreActions')"
+                  :loading="rowActionsLoading"
                   :data-testid="`row-overflow-${(slotProps.record as { id?: string }).id ?? ''}`"
                 >
                   <SmIcon icon-key="action-more" />
@@ -228,7 +249,8 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         </template>
       </SmTable>
       <div class="entity-list__footer">
-        <Typography.Text type="secondary" data-testid="entity-list-count">{{ shownLabel }}</Typography.Text>
+        <Typography.Text v-if="!loading" type="secondary" data-testid="entity-list-count">{{ shownLabel }}</Typography.Text>
+        <span v-else />
         <Pagination
           v-if="numericPaging && total !== undefined && total > 0"
           data-testid="entity-list-pagination"

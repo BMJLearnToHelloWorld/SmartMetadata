@@ -122,39 +122,74 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
   dagster: 'Dagster',
 };
 
-export const PIPELINE_TYPES = ['metadata', 'usage', 'lineage', 'profiler', 'TestSuite'] as const;
+/**
+ * Official pipeline types, all 12 (generated/entity/services/
+ * ingestionPipelines/ingestionPipeline.ts:940-953): `application`,
+ * `autoClassification`, `dataInsight`, `dbt`, `elasticSearchReindex`,
+ * `lineage`, `metadata`, `policyAgent`, `profiler`, `reverseMetadata`,
+ * `TestSuite`, `usage`. `dataInsight` / `elasticSearchReindex` are
+ * settings pipelines (no parent service of their own — they are created
+ * under the OpenMetadata metadata service; see agentKindsForService).
+ */
+export const PIPELINE_TYPES = [
+  'application',
+  'autoClassification',
+  'dataInsight',
+  'dbt',
+  'elasticSearchReindex',
+  'lineage',
+  'metadata',
+  'policyAgent',
+  'profiler',
+  'reverseMetadata',
+  'TestSuite',
+  'usage',
+] as const;
 export type PipelineType = (typeof PIPELINE_TYPES)[number];
 
 /**
  * Agent / ingestion pipeline kinds offered per serviceType, derived 1:1 from OM
  * service_spec class fields that map to PipelineType (metadata_source_class,
- * lineage_source_class, usage_source_class, profiler_class, test_suite_class).
- * DefaultDatabaseSpec always supplies profiler + TestSuite. Sampler / data_diff
- * are capabilities, not pipelineType agents. No AutoClassification / dbt invent
- * (those are schema-flag UX extras without service_spec classes here).
+ * lineage_source_class, usage_source_class, profiler_class, test_suite_class)
+ * plus the two schema-driven kinds official offers by service category
+ * (`getSupportedPipelineTypes`, IngestionConfigUtils.ts): `supportsProfiler`
+ * yields profiler + autoClassification on database services and
+ * autoClassification alone on messaging / storage services, and
+ * `supportsDBTExtraction` yields dbt. Sampler / data_diff are
+ * capabilities, not pipelineType agents.
  */
 export const AGENT_KINDS_BY_SERVICE: Record<SupportedServiceType, readonly PipelineType[]> = {
-  Postgres: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Mysql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Snowflake: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Databricks: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  UnityCatalog: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Doris: ['metadata', 'lineage', 'profiler', 'TestSuite'],
-  Mssql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Redshift: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  MariaDB: ['metadata', 'lineage', 'profiler', 'TestSuite'],
-  Greenplum: ['metadata', 'lineage', 'profiler', 'TestSuite'],
-  Timescale: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite'],
-  Kafka: ['metadata'],
-  Redpanda: ['metadata'],
+  Postgres: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Mysql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Snowflake: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Databricks: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  UnityCatalog: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Doris: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Mssql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Redshift: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  MariaDB: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Greenplum: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Timescale: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
+  Kafka: ['metadata', 'autoClassification'],
+  Redpanda: ['metadata', 'autoClassification'],
   Superset: ['metadata'],
   Metabase: ['metadata'],
-  S3: ['metadata'],
+  S3: ['metadata', 'autoClassification'],
   Prefect: ['metadata'],
   Dagster: ['metadata'],
 };
 
 export function agentKindsForService(serviceType: string): readonly PipelineType[] {
+  // Settings pipelines live under the OpenMetadata metadata service
+  // (official `supportsDataInsightExtraction` /
+  // `supportsElasticSearchReindexingExtraction` are flags on the
+  // OpenMetadata connection; the settings pages route creation through
+  // that service). 'OpenMetadata' is outside SUPPORTED_SERVICE_TYPES by
+  // design (no CLI source mapping), so it is handled here rather than in
+  // the table above.
+  if (serviceType === 'OpenMetadata') {
+    return ['metadata', 'dataInsight', 'elasticSearchReindex'];
+  }
   const kinds = AGENT_KINDS_BY_SERVICE[serviceType as SupportedServiceType];
   return kinds ?? (['metadata'] as const);
 }
@@ -335,6 +370,8 @@ export interface CatalogService {
   kind: ServiceKind;
   serviceType: string;
   connection?: ServiceConnection;
+  /** Owners of the service (fetched with fields=owners); seeds a new pipeline's owners (P-13). */
+  owners?: EntityRef[];
   /**
    * Stored test-connection outcome (openmetadata-spec
    * entity/services/connections/testConnectionResult.json), written by a
@@ -420,7 +457,6 @@ export interface ServiceFormValues {
   numberOfStatus?: number;
   dagsterTimeout?: number;
   stripAssetKeyPrefixLength?: number;
-  storeConnectionSecrets?: boolean;
   /** Mlflow (mlmodel): tracking + registry URIs (mlflowConnection, required). */
   trackingUri?: string;
   registryUri?: string;
@@ -460,8 +496,7 @@ export interface ServiceFormValues {
   /** Extra headers as a JSON object (string map). */
   extraHeaders?: string;
   /** Whether to save the service connection when creating the service.
-   * Independent key from storeConnectionSecrets: that key gates whether a
-   * typed literal secret is persisted, this one is the spec's own flag. */
+   * The spec's own flag (openMetadataConnection / storeServiceConnection). */
   omStoreServiceConnection?: boolean;
   /** GoogleDrive (googleDriveConnection.json): which gcpConfig branch the
    * credentials take (gcpCredentials.json oneOf). */
@@ -614,6 +649,10 @@ export interface PipelineSourceConfig {
     dashboardFilterPattern?: { includes?: string[]; excludes?: string[] };
     chartFilterPattern?: { includes?: string[]; excludes?: string[] };
     containerFilterPattern?: { includes?: string[]; excludes?: string[] };
+    /** TestSuite pipelines: the table under test; absent for bundle suites. */
+    entityFullyQualifiedName?: string;
+    /** TestSuite pipelines: selected test case names; absent means "all". */
+    testCases?: string[];
     [key: string]: unknown;
   };
 }
@@ -622,6 +661,14 @@ export interface AirflowConfig {
   pausePipeline?: boolean;
   scheduleInterval?: string;
   pipelineTimezone?: string;
+  /** Retry count for failed runs (official default 0, min 0). */
+  retries?: number;
+  /**
+   * Start date of the pipeline (ISO 8601 date-time, official
+   * `startDate`). Create sets it to yesterday UTC 00:00; edits keep the
+   * saved value via the JSON Patch.
+   */
+  startDate?: string;
 }
 
 export interface IngestionPipeline {
@@ -637,6 +684,12 @@ export interface IngestionPipeline {
   deployed?: boolean;
   enabled?: boolean;
   loggerLevel?: string;
+  /** Fail fast on a test error (TestSuite pipelines; official default true). */
+  raiseOnError?: boolean;
+  /** Soft-deleted flag; the detail shell renders its deleted Tag from this. */
+  deleted?: boolean;
+  /** Owners of the pipeline, only present when the caller asks for fields=owners. */
+  owners?: EntityRef[];
   /**
    * Latest run statuses, newest first. Only present when the caller
    * asks for fields=pipelineStatuses (the Platform Health widget's
@@ -671,6 +724,10 @@ export interface CreateIngestionPipelineRequest {
   loggerLevel?: string;
   /** Test-suite pipelines (createIngestionPipeline schema): fail fast on a test error. */
   raiseOnError?: boolean;
+  /** Owners of the new pipeline (official: required except settings pipelines). */
+  owners?: EntityRef[];
+  /** Profiler pipelines only (official: Spark agent processing engine). */
+  processingEngine?: EntityRef;
 }
 
 export interface PipelineStatus {
@@ -686,17 +743,56 @@ export interface PipelineStatus {
 
 export interface PipelineStepStatus {
   name?: string;
+  /** Records processed by this step (official StepSummary.records). */
+  records?: number;
+  /** Records filtered out by this step (official StepSummary.filtered). */
+  filtered?: number;
+  /** Records updated by this step (official StepSummary.updated_records). */
+  updated_records?: number;
+  /** Warning count for this step (official StepSummary.warnings). */
+  warnings?: number;
+  /** Error count for this step (official StepSummary.errors). */
+  errors?: number;
   failures?: PipelineStepFailure[];
 }
 
 export interface PipelineStepFailure {
+  /** Failing step/record name (official StepSummary failure name). */
+  name?: string;
   error?: string;
+  /** Raw stack trace for the failure (official StepSummary failure stackTrace). */
+  stackTrace?: string;
 }
 
 export interface OrchestratorStatus {
   code?: number;
   platform?: string;
   reason?: string;
+}
+
+/**
+ * One page of `GET …/logs/{idOrFqn}/last` (official
+ * IngestionPipelineLogByIdInterface). A by-fqn fetch returns the logs
+ * under the generic `logs` key; a by-id fetch returns them under the
+ * pipeline-type task field (`ingestion_task`, `profiler_task`, …).
+ * `after`/`total` are the pagination cursor and line count; both are
+ * absent on the last (growing) page.
+ */
+export interface IngestionPipelineLog {
+  logs?: string;
+  after?: string;
+  /** Total log lines, a JSON number from the server (not a string). */
+  total?: number;
+  ingestion_task?: string;
+  profiler_task?: string;
+  usage_task?: string;
+  lineage_task?: string;
+  dbt_task?: string;
+  test_suite_task?: string;
+  application_task?: string;
+  data_insight_task?: string;
+  elasticsearch_reindex_task?: string;
+  auto_classification_task?: string;
 }
 
 export interface PipelineFormValues {
@@ -706,12 +802,18 @@ export interface PipelineFormValues {
   pipelineType: string;
   serviceId: string;
   serviceKind: ServiceKind;
-  includeViews: boolean;
-  includeSchemas?: string;
-  includeTopics?: string;
-  generateSampleData?: boolean;
-  includeDashboards?: string;
-  includeCharts?: string;
-  includeContainers?: string;
+  /**
+   * The schema-driven sourceConfig form data (P-08(d)): the
+   * `sourceConfig.config` object itself. The hand-written filter fields
+   * (includeViews / includeSchemas / ...) are gone — the form renders
+   * every field of the resolved ingestion schema, includes AND excludes.
+   */
+  sourceConfigData: Record<string, unknown>;
   scheduleInterval?: string;
+  /** Retry count for failed runs (official default 0, min 0). */
+  retries?: number;
+  /** Fail fast on an error (official default true). */
+  raiseOnError?: boolean;
+  /** Enable debug logging (loggerLevel DEBUG instead of INFO). */
+  debugLog?: boolean;
 }

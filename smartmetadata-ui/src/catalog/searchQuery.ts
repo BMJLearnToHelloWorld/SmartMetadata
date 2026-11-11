@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { FacetId } from './searchFacets';
+import { aggregationFieldNamesForFacet } from './searchFacets';
 import { estateFromQuery } from './browseEstate';
 
 export type SearchFilters = Partial<Record<FacetId, string[]>>;
@@ -105,6 +106,45 @@ export function composeSearchQuery(userQuery: string, filters: SearchFilters = {
     }
   }
   return clauses.length ? clauses.join(' AND ') : '*';
+}
+
+/**
+ * The facet ids whose filter must be left out of one facet's own options
+ * query. A filter is excluded when its Lucene field is one of the facet's
+ * own aggregation names. Official keeps two entity-type filter keys
+ * (`entityType` and `entityType.keyword`) and excludes both when the
+ * entity-type dropdown opens; this console collapses them into the one
+ * `entityType` FacetId, so the derivation yields just `['entityType']` —
+ * the `.keyword` aggregation name is recorded in AGG_TO_FACET, but there
+ * is no second filter id to exclude.
+ */
+export function selfExcludedFacetIds(facetId: FacetId): FacetId[] {
+  const ownFields = new Set(aggregationFieldNamesForFacet(facetId));
+  return (Object.keys(FILTER_LUCENE_FIELD) as FacetId[]).filter((id) =>
+    ownFields.has(FILTER_LUCENE_FIELD[id]),
+  );
+}
+
+/**
+ * Official ExploreQuickFilters.getFacetQueryFilter
+ * (components/Explore/ExploreQuickFilters.tsx), ported to this console's
+ * Lucene `q` transport: the query behind one facet's options is built
+ * from every active filter EXCEPT that facet's own — selecting a value
+ * must not shrink its own facet's list to just the selection. The free
+ * text and every other filter are kept, so the options still narrow by
+ * the other active facets. The excluded ids come from
+ * `selfExcludedFacetIds`, derived from the facet's own mapping.
+ * ADR:2026-11-11-explore-facet-self-exclusion.
+ */
+export function composeFacetQuery(userQuery: string, filters: SearchFilters = {}, facetId: FacetId): string {
+  const excluded = new Set(selfExcludedFacetIds(facetId));
+  const kept: SearchFilters = {};
+  for (const id of Object.keys(FILTER_LUCENE_FIELD) as FacetId[]) {
+    if (!excluded.has(id) && (filters[id]?.length ?? 0) > 0) {
+      kept[id] = filters[id];
+    }
+  }
+  return composeSearchQuery(userQuery, kept);
 }
 
 export function readQueryList(value: unknown): string[] {

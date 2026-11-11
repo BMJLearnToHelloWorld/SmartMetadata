@@ -28,12 +28,15 @@ export function displaySecret(_value: string | undefined): string {
   return '';
 }
 
-export function shouldPersistSecret(value: string | undefined, storeConnectionSecrets: boolean): boolean {
+/**
+ * Typed secrets are saved as entered, like official
+ * (ADR:2026-11-11-leanforms-save-secrets-as-entered): any non-empty,
+ * non-masked literal persists. A masked value is never sent as a literal,
+ * so an edit-save can never store the display mask as the password.
+ */
+export function shouldPersistSecret(value: string | undefined): boolean {
   if (!value || !value.trim() || isMaskedSecret(value)) {
     return false;
   }
-  if (isEnvPlaceholder(value)) {
-    return true;
-  }
-  return storeConnectionSecrets;
+  return true;
 }

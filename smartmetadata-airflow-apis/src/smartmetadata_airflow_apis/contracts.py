@@ -62,7 +62,7 @@ TYPE_TO_TASK: dict[str, str] = {
     "lineage": "lineage_task",
     "dbt": "dbt_task",
     "usage": "usage_task",
-    "testSuite": "test_suite_task",
+    "TestSuite": "test_suite_task",
     "dataInsight": "data_insight_task",
     "elasticSearchReindex": "elasticsearch_reindex_task",
     "application": "application_task",

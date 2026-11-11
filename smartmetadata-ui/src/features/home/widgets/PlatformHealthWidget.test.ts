@@ -173,6 +173,35 @@ describe('PlatformHealthWidget', () => {
     expect(addService).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the not-run service instead of the empty state when nothing is failing', async () => {
+    // Live 2026-11-11 case: the health=failed page is empty (paging.total 0)
+    // but one service exists, not yet run. The card must show it under the
+    // not-run bucket, not the "no services connected" empty state.
+    getServicesOverview
+      .mockResolvedValueOnce(
+        overviewResponse([], { databaseService: { notRun: 1 } }, 0),
+      )
+      .mockResolvedValueOnce(
+        overviewResponse(
+          [serviceSummary('x', 'notRun')],
+          { databaseService: { notRun: 1 } },
+          1,
+        ),
+      );
+    const { wrapper } = await mountWidget();
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="home-widget-platform-health-empty"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="home-widget-platform-health-summary"]').text()).toContain(
+      'All 1 services healthy',
+    );
+    expect(wrapper.get('[data-testid="platform-health-chip-notRun"]').text()).toContain('1 not run yet');
+    expect(wrapper.get('[data-testid="platform-health-chip-notRun"]').attributes('disabled')).toBeUndefined();
+    expect(getServicesOverview).toHaveBeenCalledTimes(2);
+    expect(getServicesOverview.mock.calls[1]?.[0]).toMatchObject({ health: ['notRun'], limit: 3 });
+    expect(wrapper.get('[data-testid="bucket-service-x"]').text()).toContain('Service x');
+  });
+
   it('opens the service detail page from a row (no AGENTS tab in the product)', async () => {
     getServicesOverview.mockResolvedValueOnce(
       overviewResponse(

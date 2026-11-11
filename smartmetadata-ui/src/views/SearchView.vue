@@ -61,6 +61,7 @@ import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
+import { useFacetOptions } from '@/features/explore/useFacetOptions';
 import type { SearchHit } from '@/types/api';
 
 const route = useRoute();
@@ -114,6 +115,29 @@ const currentSort = computed<ExploreSort>(() => {
   const base = sortFromQuery(route.query);
   return { id: base.id, order: base.order, field: sortField(base) };
 });
+
+/**
+ * Chip options with official's per-facet self-exclusion: the main-search
+ * facets stay the chips' options until a chip's dropdown opens, when
+ * useFacetOptions fetches that facet's options without its own filter
+ * (ADR:2026-11-11-explore-facet-self-exclusion).
+ */
+const facetOptions = useFacetOptions(() => ({
+  query: query.value,
+  filters: filters.value,
+  index: activeTab.value?.index ?? 'dataAsset',
+  deleted: showDeleted.value,
+  queryFilter: queryFilter.value,
+}));
+const chipFacets = computed<SearchFacet[]>(() => {
+  const base = facets.value.length ? facets.value : estateFacets.value;
+  const byId = new Map(base.map((facet) => [facet.id, facet]));
+  for (const [id, facet] of Object.entries(facetOptions.chipFacets.value)) {
+    byId.set(id as FacetId, facet);
+  }
+  return [...byId.values()];
+});
+watch(facets, (next) => facetOptions.rememberFacets(next));
 const tabCounts = computed(() => {
   const facet = facets.value.find((item) => item.id === 'entityType');
   const counts = new Map<string, number>();
@@ -244,6 +268,12 @@ function onChipChange(id: FacetId, values: string[]): void {
   }
   const estate = id === 'entityType' ? selectedEstateFromFilters(next) : estateFromQuery(route.query);
   pushSearch(query.value, next, 0, currentSort.value, estate);
+}
+
+function onChipOpen(id: FacetId, open: boolean): void {
+  if (open) {
+    void facetOptions.loadOptions(id);
+  }
 }
 
 function onToggleFacet(id: FacetId, value: string): void {
@@ -427,6 +457,9 @@ async function loadEstateChildren(node: EstateNode): Promise<void> {
 }
 
 async function runSearch(): Promise<void> {
+  // A new search invalidates the per-facet chip overrides fetched for
+  // the previous context; the context-keyed options cache survives.
+  facetOptions.reset();
   loading.value = true;
   errorMessage.value = '';
   indexNotFound.value = false;
@@ -506,7 +539,7 @@ watch(expandedKeys, (keys) => {
       @change="onTabChange"
     />
     <div class="explore__toolbar">
-      <ExploreFilterChips :facets="facets.length ? facets : estateFacets" :filters="filters" @change="onChipChange" />
+      <ExploreFilterChips :facets="chipFacets" :filters="filters" @change="onChipChange" @open="onChipOpen" />
       <div class="explore__toolbar-end">
         <Select
           data-testid="explore-sort"

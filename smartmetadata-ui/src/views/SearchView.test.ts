@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -464,5 +464,96 @@ describe('SearchView explore tabs (Stage 2)', () => {
     await flushPromises();
     expect(router.currentRoute.value.query.sort).toBe('relevance');
     expect(router.currentRoute.value.query.order).toBe('asc');
+  });
+});
+
+describe('SearchView chip options exclude the chip own filter (ADR:2026-11-11-explore-facet-self-exclusion)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function facetOptionsFetch(input: RequestInfo | URL) {
+    const url = new URL(String(input), 'http://localhost');
+    if (url.searchParams.get('size') === '0' && url.searchParams.get('q')?.includes('service.displayName.keyword:mysql')) {
+      // The per-facet options fetch for the entityType chip: Tag is
+      // excluded from q, so the aggregation still carries Metric.
+      return jsonResponse({
+        hits: { total: { value: 0 }, hits: [] },
+        aggregations: {
+          'sterms#entityType': {
+            buckets: [
+              { key: 'tag', doc_count: 17 },
+              { key: 'metric', doc_count: 2 },
+            ],
+          },
+        },
+      });
+    }
+    if (url.searchParams.get('size') === '0' && url.searchParams.get('q')?.includes('entityType:tag')) {
+      // The per-facet options fetch for the service chip: the service
+      // filter is excluded from q, so other services stay available.
+      return jsonResponse({
+        hits: { total: { value: 0 }, hits: [] },
+        aggregations: {
+          'sterms#service.displayName.keyword': {
+            buckets: [
+              { key: 'mysql', doc_count: 1 },
+              { key: 'postgres', doc_count: 1 },
+            ],
+          },
+        },
+      });
+    }
+    return jsonResponse(SEARCH_BODY);
+  }
+
+  it('keeps Metric in the entityType chip after Tag is selected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => facetOptionsFetch(input)));
+    const { wrapper } = await mountView({ q: 'orders', entityType: 'tag', service: 'mysql' });
+    const select = wrapper
+      .findAllComponents(Select)
+      .find((item) => item.attributes('data-testid') === 'explore-chip-entityType');
+    // Only calls issued by opening the chip count: mounting also issues
+    // size-0 calls (estate presence, estate drill) with overlapping q.
+    const callsBefore = vi.mocked(fetch).mock.calls.length;
+    select?.vm.$emit('dropdownVisibleChange', true);
+    await flushPromises();
+    const facetCalls = vi
+      .mocked(fetch)
+      .mock.calls.slice(callsBefore)
+      .map(([input]) => new URL(String(input), 'http://localhost'))
+      .filter(
+        (url) =>
+          url.searchParams.get('size') === '0' &&
+          url.searchParams.get('q') === 'orders AND service.displayName.keyword:mysql',
+      );
+    expect(facetCalls).toHaveLength(1);
+    expect(facetCalls[0].searchParams.get('q')).not.toContain('entityType:tag');
+    const options = select?.props('options') as { value: string; label: string }[] | undefined;
+    expect(options?.map((option) => option.value)).toEqual(['tag', 'metric']);
+  });
+
+  it('keeps other services in the service chip after one service is selected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => facetOptionsFetch(input)));
+    const { wrapper } = await mountView({ q: 'orders', entityType: 'tag', service: 'mysql' });
+    const select = wrapper
+      .findAllComponents(Select)
+      .find((item) => item.attributes('data-testid') === 'explore-chip-service');
+    const callsBefore = vi.mocked(fetch).mock.calls.length;
+    select?.vm.$emit('dropdownVisibleChange', true);
+    await flushPromises();
+    const facetCalls = vi
+      .mocked(fetch)
+      .mock.calls.slice(callsBefore)
+      .map(([input]) => new URL(String(input), 'http://localhost'))
+      .filter(
+        (url) =>
+          url.searchParams.get('size') === '0' &&
+          url.searchParams.get('q') === 'orders AND entityType:tag',
+      );
+    expect(facetCalls).toHaveLength(1);
+    expect(facetCalls[0].searchParams.get('q')).not.toContain('service.displayName.keyword:mysql');
+    const options = select?.props('options') as { value: string; label: string }[] | undefined;
+    expect(options?.map((option) => option.value)).toEqual(['mysql', 'postgres']);
   });
 });

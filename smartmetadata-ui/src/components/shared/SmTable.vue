@@ -17,7 +17,16 @@ withDefaults(
     columns: TableProps['columns'];
     dataSource: TableProps['dataSource'];
     rowKey?: TableProps['rowKey'];
+    /** Legacy object prop kept for existing callers; antd Table has no
+     *  `expandable` prop, so expansion below uses the top-level props. */
     expandable?: TableProps['expandable'];
+    /** Row expansion, top-level antd Table props (the `expandable`
+     *  object is not an antd prop — verified against ant-design-vue
+     *  4.2.6; passing it silently drops the expansion). */
+    expandedRowKeys?: TableProps['expandedRowKeys'];
+    expandedRowRender?: TableProps['expandedRowRender'];
+    expandIcon?: TableProps['expandIcon'];
+    rowExpandable?: TableProps['rowExpandable'];
     /** Antd Table onExpand prop (expanded, record); SmTable otherwise has no
      *  expansion hook — the `expandable` object prop is not an antd prop. */
     onExpand?: (expanded: boolean, record: unknown) => void;
@@ -28,10 +37,16 @@ withDefaults(
     emptyText?: string;
     testId?: string;
     rowSelection?: TableProps['rowSelection'];
+    /** Antd Table onChange passthrough (pagination / filters / sorter) for server-driven tables. */
+    onChange?: TableProps['onChange'];
   }>(),
   {
     rowKey: 'id',
     expandable: undefined,
+    expandedRowKeys: undefined,
+    expandedRowRender: undefined,
+    expandIcon: undefined,
+    rowExpandable: undefined,
     onExpand: undefined,
     loading: false,
     pagination: undefined,
@@ -40,6 +55,7 @@ withDefaults(
     emptyText: undefined,
     testId: 'sm-table',
     rowSelection: undefined,
+    onChange: undefined,
   },
 );
 </script>
@@ -51,12 +67,17 @@ withDefaults(
     :data-source="dataSource"
     :row-key="rowKey"
     :expandable="expandable"
+    :expanded-row-keys="expandedRowKeys"
+    :expanded-row-render="expandedRowRender"
+    :expand-icon="expandIcon"
+    :row-expandable="rowExpandable"
     :on-expand="onExpand"
     :loading="loading"
     :pagination="pagination"
     :custom-row="customRow"
     :row-selection="rowSelection"
     :size="size"
+    :on-change="onChange"
     :locale="emptyText ? { emptyText } : undefined"
   >
     <!-- Only forward bodyCell when a caller provides it; an empty slot would

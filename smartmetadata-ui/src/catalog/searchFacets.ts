@@ -67,6 +67,19 @@ const AGG_TO_FACET: Record<string, { id: FacetId; field: string }> = {
   'dataProducts.displayName.keyword': { id: 'dataProduct', field: 'dataProducts.displayName.keyword' },
 };
 
+/**
+ * Aggregation names that map to one facet. Official's ExploreQuickFilters
+ * keeps two entity-type filter keys (`entityType`, `entityType.keyword`):
+ * the facet's own aggregation names are this console's record of those
+ * variants, and the self-exclusion in `composeFacetQuery` is derived
+ * from them — never from a hardcoded list.
+ */
+export function aggregationFieldNamesForFacet(id: FacetId): string[] {
+  return Object.entries(AGG_TO_FACET)
+    .filter(([, mapped]) => mapped.id === id)
+    .map(([name]) => name);
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }

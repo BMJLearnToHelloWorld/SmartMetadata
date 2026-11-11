@@ -135,12 +135,12 @@ def _apply_source_config_override(
         try:
             includes, excludes = translate_filter_pattern(override.get(key))
         except TranslationError:
-            # Fail loudly, like deploy-time scope validation (ruling §4.2
-            # T-1/T-2, fix-round N-4): the override is only known at
-            # trigger time, so deploy validation cannot catch it — but
-            # ignoring a narrowing override would run the deployed
-            # (broader) scope. The task fails here; the failure callback
-            # writes the run back as failed. This matches the official
+            # Fail loudly: a malformed override (non-dict pattern,
+            # non-list includes/excludes) is only known at trigger time,
+            # so deploy validation cannot catch it — but ignoring a
+            # narrowing override would run the deployed (broader) scope.
+            # The task fails here; the failure callback writes the run
+            # back as failed. This matches the official
             # apply_source_config_override, whose model_validate raises.
             raise
         if key == "schemaFilterPattern":
@@ -258,6 +258,48 @@ def workflow_operator_class():  # type: ignore[no-untyped-def]
     return WorkflowPythonOperator
 
 
+def _failed_status_payload(
+    rest: Any,
+    fqn: str,
+    run_id: str,
+    start_ms: int | None,
+) -> dict[str, Any]:
+    """The failed writeback payload: the stored status, only flipped.
+
+    Official ``send_failed_status_callback``: fetch the stored status
+    first and change only ``endDate`` + ``pipelineState=failed`` — the
+    step details, startDate and counts the workflow already wrote stay.
+    ``triggeredBy`` is a server audit field the client never writes
+    (``build_pipeline_status``; the PUT handler nulls it anyway), so it
+    is dropped from the body. A missing/unreadable stored status (404,
+    an old stub without the getter) falls back to the bare build.
+    """
+    from smartmetadata_ingestion.pipeline_status import (
+        build_pipeline_status,
+        now_ms,
+    )
+
+    getter = getattr(rest, "get_pipeline_status", None)
+    stored = None
+    if callable(getter):
+        try:
+            stored = getter(str(fqn), str(run_id))
+        except Exception:
+            stored = None
+    if isinstance(stored, dict) and stored:
+        payload = dict(stored)
+        payload.pop("triggeredBy", None)
+        payload["pipelineState"] = "failed"
+        payload["endDate"] = now_ms()
+        return payload
+    return build_pipeline_status(
+        run_id=run_id,
+        pipeline_state="failed",
+        start_ms=start_ms or now_ms(),
+        end_ms=now_ms(),
+    )
+
+
 def _write_failed_status(
     workflow_config: dict[str, Any],
     pipeline: dict[str, Any],
@@ -267,10 +309,6 @@ def _write_failed_status(
     """Best-effort failed writeback; never raises."""
     from smartmetadata_ingestion.client.rest import RestClient
     from smartmetadata_ingestion.config import ServerConfig
-    from smartmetadata_ingestion.pipeline_status import (
-        build_pipeline_status,
-        now_ms,
-    )
 
     try:
         workflow = workflow_config.get("workflow") or {}
@@ -288,12 +326,7 @@ def _write_failed_status(
         server = ServerConfig.model_validate(workflow_config.get("server") or {})
         rest = RestClient(server)
         try:
-            payload = build_pipeline_status(
-                run_id=run_id,
-                pipeline_state="failed",
-                start_ms=start_ms or now_ms(),
-                end_ms=now_ms(),
-            )
+            payload = _failed_status_payload(rest, str(fqn), run_id, start_ms)
             rest.add_pipeline_status(str(fqn), payload)
         finally:
             try:

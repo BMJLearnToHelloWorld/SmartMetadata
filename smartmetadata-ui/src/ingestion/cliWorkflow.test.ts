@@ -58,7 +58,7 @@ describe('CLI workflow export', () => {
     expect(yaml).toContain('source:\n  type: postgres\n  serviceName: warehouse');
     expect(yaml).toContain('password: "${PG_PASSWORD}"');
     expect(yaml).not.toContain('********');
-    expect(yaml).toContain('storeConnectionSecrets: false');
+    expect(yaml).not.toContain('storeConnectionSecrets');
   });
 
   it('maps lineage/usage pipelineTypes to OM-style source.type suffixes', () => {

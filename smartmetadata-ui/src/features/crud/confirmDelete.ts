@@ -14,6 +14,13 @@ export type ConfirmDeleteOptions = {
   content: string;
   okText: string;
   cancelText: string;
+  /**
+   * P-18: async delete run while the confirm stays open. When provided,
+   * Modal.confirm's onOk returns the promise, so antd shows the confirm
+   * button loading and keeps the modal open until it settles; a
+   * rejection keeps it open (retry or cancel), a resolution closes it.
+   */
+  onOk?: () => Promise<void>;
 };
 
 /**
@@ -32,7 +39,13 @@ export function confirmDelete(options: ConfirmDeleteOptions): Promise<boolean> {
       centered: false,
       wrapClassName: 'sm-confirm-delete',
       onOk() {
-        resolve(true);
+        if (!options.onOk) {
+          resolve(true);
+          return;
+        }
+        return options.onOk().then(() => {
+          resolve(true);
+        });
       },
       onCancel() {
         resolve(false);

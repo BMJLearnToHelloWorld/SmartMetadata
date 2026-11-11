@@ -33,7 +33,6 @@ describe('connectionFields', () => {
       'queryStatementSource',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
   });
 
@@ -41,8 +40,7 @@ describe('connectionFields', () => {
     // Target counts (RULING.md R-T1): Postgres 12, MySQL 11, MariaDB 8,
     // Mssql 13, Snowflake 24, Databricks 11, UnityCatalog 11, Doris 9,
     // Redshift 12, Greenplum 10, Timescale 12 — counted as official
-    // de-noised properties covered; storeConnectionSecrets is product-only
-    // and excluded from the count, while password renders authType basicAuth.
+    // de-noised properties covered, while password renders authType basicAuth.
     expect(connectionFieldsForType('Mysql').map((field) => field.key)).toEqual([
       'hostPort',
       'username',
@@ -56,7 +54,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('MariaDB').map((field) => field.key)).toEqual([
       'hostPort',
@@ -66,7 +63,6 @@ describe('connectionFields', () => {
       'password',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Mssql').map((field) => field.key)).toEqual([
       'hostPort',
@@ -84,7 +80,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Snowflake').map((field) => field.key)).toEqual([
       'account',
@@ -113,7 +108,6 @@ describe('connectionFields', () => {
       'policyAgentSupportsMaskedAccess',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Doris').map((field) => field.key)).toEqual([
       'hostPort',
@@ -126,7 +120,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Redshift').map((field) => field.key)).toEqual([
       'hostPort',
@@ -142,7 +135,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Greenplum').map((field) => field.key)).toEqual([
       'hostPort',
@@ -156,7 +148,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Timescale').map((field) => field.key)).toEqual([
       'hostPort',
@@ -172,7 +163,6 @@ describe('connectionFields', () => {
       'queryStatementSource',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Databricks').map((field) => field.key)).toEqual([
       'hostPort',
@@ -194,7 +184,6 @@ describe('connectionFields', () => {
       'policyAgentSupportsMaskedAccess',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('UnityCatalog').map((field) => field.key)).toEqual([
       'hostPort',
@@ -216,7 +205,6 @@ describe('connectionFields', () => {
       'policyAgentSupportsMaskedAccess',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
   });
 
@@ -237,7 +225,6 @@ describe('connectionFields', () => {
     expect(connectionFieldsForType('Mlflow').map((field) => field.key)).toEqual([
       'trackingUri',
       'registryUri',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toContain('hostPort');
     expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toContain('credentialsJson');
@@ -248,7 +235,6 @@ describe('connectionFields', () => {
       'hostPort',
       'username',
       'password',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Rest').map((field) => field.key)).toContain('openApiSchemaUrl');
     // Non-default types in those kinds stay form-less: the wizard must
@@ -340,7 +326,6 @@ describe('connectionFields', () => {
       'sslKey',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     const databricksKeys = connectionFieldsForType('Databricks').map((field) => field.key);
     expect(databricksKeys).toContain('queryHistoryTable');
@@ -369,7 +354,6 @@ describe('connectionFields', () => {
       'schemaRegistrySSLCaCertificate',
       'schemaRegistrySSLCertificate',
       'schemaRegistrySSLKey',
-      'storeConnectionSecrets',
       '',
     ]);
     const redpandaKeys = connectionFieldsForType('Redpanda').map((field) => field.key);
@@ -384,7 +368,6 @@ describe('connectionFields', () => {
       'basicAuthUserInfo',
       'consumerConfig',
       'schemaRegistryConfig',
-      'storeConnectionSecrets',
       '',
     ]);
     expect(connectionFieldsForType('Kafka').find((field) => field.key === 'securityProtocol')).toEqual(
@@ -403,7 +386,6 @@ describe('connectionFields', () => {
       'supersetSSLCaCertificate',
       'supersetSSLCertificate',
       'supersetSSLKey',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('S3').map((field) => field.key)).toEqual([
       'awsRegion',
@@ -420,7 +402,6 @@ describe('connectionFields', () => {
       'connectionOptions',
       'connectionArguments',
       'consoleEndpointURL',
-      'storeConnectionSecrets',
       '',
     ]);
     expect(connectionFieldsForType('Prefect').map((field) => field.key)).toEqual([
@@ -435,7 +416,6 @@ describe('connectionFields', () => {
       'sslCaCertificate',
       'sslCertificate',
       'sslKey',
-      'storeConnectionSecrets',
       '',
     ]);
     // W2-5: no showWhen linkage — the SASL / verifySSL / SSL-leaf fields
@@ -463,7 +443,6 @@ describe('connectionFields', () => {
       'restSSLCaCertificate',
       'restSSLCertificate',
       'restSSLKey',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('OpenMetadata').map((field) => field.key)).toEqual([
       'clusterName',
@@ -480,7 +459,6 @@ describe('connectionFields', () => {
       'enableVersionValidation',
       'omStoreServiceConnection',
       'extraHeaders',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('GoogleDrive').map((field) => field.key)).toEqual([
       'gcpConfigType',
@@ -495,7 +473,6 @@ describe('connectionFields', () => {
       'includeGoogleSheets',
       'connectionOptions',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('ElasticSearch').map((field) => field.key)).toEqual([
       'hostPort',
@@ -514,7 +491,6 @@ describe('connectionFields', () => {
       'sslStagingDir',
       'connectionTimeoutSecs',
       'connectionArguments',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('OpenAI').map((field) => field.key)).toEqual([
       'apiKey',
@@ -522,7 +498,6 @@ describe('connectionFields', () => {
       'baseUrl',
       'openAITimeout',
       'openAIMaxRetries',
-      'storeConnectionSecrets',
     ]);
     expect(connectionFieldsForType('Mcp').map((field) => field.key)).toEqual([
       'discoveryMethod',
@@ -534,7 +509,6 @@ describe('connectionFields', () => {
       'fetchTools',
       'fetchResources',
       'fetchPrompts',
-      'storeConnectionSecrets',
     ]);
     // Mlflow registryUri is a password control (spec format password);
     // the Mcp connectionTimeout lost its min: 1 (§2-11).

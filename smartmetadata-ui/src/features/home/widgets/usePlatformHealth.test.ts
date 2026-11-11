@@ -135,8 +135,8 @@ describe('useIngestionPipelineStats', () => {
     expect(stats.failingServices[0]?.lastRunTs).toBe(2000);
     expect(stats.failingServices[0]?.state).toBe('failed');
     expect(stats.failingServices[2]?.state).toBe('partialSuccess');
-    // The overview filter narrows only the page, never the counts — and the
-    // repeat health param is sent as an array, never String()ed.
+    // The overview filter narrows the page and its total, never the count
+    // maps — and the repeat health param is sent as an array, never String()ed.
     expect(getServicesOverview).toHaveBeenCalledTimes(2);
     expect(getServicesOverview.mock.calls[0]?.[0]).toMatchObject({ health: ['failed'], limit: 10 });
     expect(getServicesOverview.mock.calls[1]?.[0]).toMatchObject({
@@ -146,6 +146,52 @@ describe('useIngestionPipelineStats', () => {
     expect(listIngestionPipelines).toHaveBeenCalledWith(
       expect.objectContaining({ fields: 'pipelineStatuses', limit: 50, serviceFilter: 'svc-a' }),
     );
+  });
+
+  it('derives the estate total from healthCounts when the failed page is empty', async () => {
+    // Live 2026-11-11 case: one not-run service, zero failed — the
+    // health=failed page has paging.total 0, but the estate total is 1.
+    // Reading overview.total here used to show the "no services connected"
+    // empty state although a service exists.
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse([], { databaseService: { notRun: 1 } }, 0),
+    );
+    const wrapper = mount(Harness);
+    await flushPromises();
+    await flushPromises();
+    const stats = (wrapper.vm as unknown as { stats: IngestionPipelineStats }).stats;
+    expect(stats.connectedServices).toBe(1);
+    expect(stats.pendingServices).toBe(1);
+    expect(stats.failedServices).toBe(0);
+    expect(stats.healthyServices).toBe(0);
+    expect(stats.warningServices).toBe(0);
+    expect(stats.failingServices).toEqual([]);
+    expect(getServicesOverview).toHaveBeenCalledTimes(1);
+    expect(getServicesOverview.mock.calls[0]?.[0]).toMatchObject({ health: ['failed'], limit: 10 });
+  });
+
+  it('ignores the filtered paging.total when a service is failing', async () => {
+    // The health=failed page's total is the failed count (1), not the
+    // estate (4): the total must come from healthCounts, never the page.
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('a', 'failed')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 2, notRun: 1 } },
+        1,
+      ),
+    );
+    listIngestionPipelines.mockResolvedValue({ data: [], paging: { total: 0 } });
+    const wrapper = mount(Harness);
+    await flushPromises();
+    await flushPromises();
+    const stats = (wrapper.vm as unknown as { stats: IngestionPipelineStats }).stats;
+    expect(stats.connectedServices).toBe(4);
+    expect(stats.failedServices).toBe(1);
+    expect(stats.healthyServices).toBe(2);
+    expect(stats.pendingServices).toBe(1);
+    expect(stats.warningServices).toBe(0);
+    expect(stats.failingServices.map((row) => row.id)).toEqual(['a']);
+    expect(getServicesOverview).toHaveBeenCalledTimes(1);
   });
 
   it('does not fetch the partial page when the failed page is full', async () => {

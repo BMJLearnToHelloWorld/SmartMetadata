@@ -296,7 +296,6 @@ export function buildCliWorkflowYaml(pipeline: IngestionPipeline, service: Catal
     }
     body += includeList(config.schemaFilterPattern?.includes, 'includeSchemas');
   }
-  body += yamlLine(2, 'storeConnectionSecrets', false);
   body += '\nsink:\n';
   body += yamlLine(2, 'type', 'metadata-rest');
   return header + body;

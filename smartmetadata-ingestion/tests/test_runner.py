@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -22,7 +23,7 @@ from smartmetadata_ingestion.connectors.postgres import (
     SequenceCatalogReader,
     TableRow,
 )
-from smartmetadata_ingestion.errors import RestError
+from smartmetadata_ingestion.errors import RestError, WorkflowExecutionError
 from smartmetadata_ingestion.progress import CollectingHook
 from smartmetadata_ingestion.records import TableRecord
 from smartmetadata_ingestion.runner import run_workflow
@@ -37,6 +38,19 @@ class RecordingTransport(httpx.BaseTransport):
         self.calls.append({"method": request.method, "path": request.url.path, "body": body})
         if request.url.path.endswith("/boom"):
             return httpx.Response(500, text="nope")
+        if request.url.path.endswith("/bulk"):
+            # A real BulkOperationResult shape: one success entry per payload.
+            payloads = json.loads(body) if body else []
+            return httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "successRequest": [
+                        {"request": p, "status": 200, "message": "ok"} for p in payloads
+                    ],
+                    "failedRequest": [],
+                },
+            )
         return httpx.Response(200, json={"id": "ok", "name": "written"})
 
 
@@ -144,3 +158,24 @@ def test_drop_processor_skips_records(workflow_config) -> None:
     assert report.skipped == 1
     assert report.succeeded == 0
     assert transport.calls == []
+
+
+@pytest.mark.parametrize(
+    "workflow_type",
+    ["dbt", "autoClassification", "elasticSearchReindex", "application"],
+)
+def test_runner_fails_loudly_without_a_dedicated_runner(
+    workflow_config, workflow_type
+) -> None:
+    # P-06: the four types deploy and their DAGs import, but no runner
+    # implements them — the run must fail with a diagnostic instead of
+    # succeeding as a metadata ingestion.
+    config = workflow_config.model_copy(
+        update={
+            "workflow": workflow_config.workflow.model_copy(
+                update={"type": workflow_type}
+            )
+        }
+    )
+    with pytest.raises(WorkflowExecutionError, match="no runner implemented"):
+        run_workflow(config)

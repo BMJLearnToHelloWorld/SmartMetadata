@@ -59,4 +59,45 @@ describe('TestSuiteDetailView pipeline tab (A15: wired, no longer residual)', ()
     expect(wrapper.find('[data-testid="add-test-suite-ingestion"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Pipeline');
   });
+
+  it('lands on the Pipelines Tab with ?tab=pipeline and opens the add drawer (P-22)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/quality/test-suites/:id', name: 'quality-test-suite', component: TestSuiteDetailView, props: true },
+        { path: '/quality/test-cases', name: 'quality-test-cases', component: { template: '<div />' } },
+      ],
+    });
+    await router.push({ name: 'quality-test-suite', params: { id: 'ts1' }, query: { tab: 'pipeline' } });
+    await router.isReady();
+    const wrapper = mount(TestSuiteDetailView, {
+      props: { id: 'ts1' },
+      global: { plugins: [router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="add-test-suite-ingestion"]').trigger('click');
+    await flushPromises();
+    // The Drawer teleports to document.body.
+    expect(document.body.textContent).toContain('Add test suite ingestion');
+    vi.unstubAllGlobals();
+  });
 });

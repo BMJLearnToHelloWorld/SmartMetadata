@@ -85,17 +85,19 @@ describe('AddServiceView', () => {
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's9' });
   });
 
-  it('carries entered filter scope into a metadata pipeline (R-17)', async () => {
-    const bodies: Array<{ url: string; body: unknown }> = [];
+  it('carries entered filter scope into the service connection.config (P-12)', async () => {
+    const serviceBodies: Array<{ url: string; body: unknown }> = [];
+    let pipelinePosts = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
+          serviceBodies.push({ url, body: JSON.parse(String(init?.body)) });
           return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
         }
         if (url.includes('/api/v1/services/ingestionPipelines') && init?.method === 'POST') {
-          bodies.push({ url, body: JSON.parse(String(init?.body)) });
+          pipelinePosts += 1;
           return jsonResponse({
             id: 'p1',
             name: 'warehouse-metadata',
@@ -136,19 +138,16 @@ describe('AddServiceView', () => {
     await wrapper.find('[data-testid="wizard-create"]').trigger('click');
     await flushPromises();
 
-    expect(bodies).toHaveLength(1);
-    const pipelineBody = bodies[0].body as {
-      name: string;
-      pipelineType: string;
-      service: { id: string };
-      sourceConfig: { config: { schemaFilterPattern?: { includes: string[] } } };
-      airflowConfig: { pausePipeline: boolean };
+    // P-12: the wizard creates only the service. The entered scope is
+    // merged into the service create request's connection.config (so the
+    // add-ingestion form can prefill from it later, P-08(c)); no
+    // pipeline is created here.
+    expect(serviceBodies).toHaveLength(1);
+    const serviceBody = serviceBodies[0].body as {
+      connection?: { config?: Record<string, unknown> };
     };
-    expect(pipelineBody.name).toBe('warehouse-metadata');
-    expect(pipelineBody.pipelineType).toBe('metadata');
-    expect(pipelineBody.service.id).toBe('s9');
-    expect(pipelineBody.sourceConfig.config.schemaFilterPattern?.includes).toEqual(['public']);
-    expect(pipelineBody.airflowConfig.pausePipeline).toBe(true);
+    expect(serviceBody.connection?.config?.includeSchemas).toBe('public');
+    expect(pipelinePosts).toBe(0);
     expect(router.currentRoute.value.name).toBe('ingestion-service');
   });
 

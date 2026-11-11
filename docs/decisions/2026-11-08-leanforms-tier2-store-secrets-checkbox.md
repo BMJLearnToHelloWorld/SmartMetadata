@@ -1,6 +1,6 @@
 # Kafka, Redpanda and Prefect forms carry the persist-secrets checkbox
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR:2026-11-11-leanforms-save-secrets-as-entered
 - **Revisions:** v1 2026-11-08 (initial)
 - **Deciders:** Bai
 - **Guard:** `connectionFields.test.ts` (tier 2 field sets in spec order)

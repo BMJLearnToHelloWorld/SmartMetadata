@@ -48,8 +48,8 @@ export interface ApiRequestOptions {
   auth?: boolean;
   /** Defaults to application/json when `json` is set. Use for RFC 6902 patches. */
   contentType?: string;
-  /** Defaults to JSON parsing; 'text' returns the raw body (e.g. export results). */
-  response?: 'json' | 'text';
+  /** Defaults to JSON parsing; 'text' returns the raw body (e.g. export results); 'blob' returns the raw Blob (e.g. log downloads). */
+  response?: 'json' | 'text' | 'blob';
   /** Extra headers merged over the defaults (e.g. a SPARQL Accept override). */
   headers?: Record<string, string>;
   /** AbortSignal for cancellable requests (data-mode generations). */
@@ -117,6 +117,12 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     signal: options.signal,
   });
 
+  // A blob body must be read as a Blob, not as text: response.text()
+  // consumes the body, and a second read throws. Error bodies are
+  // always read as text (a failed download still reports its message).
+  if (options.response === 'blob' && response.ok) {
+    return (await response.blob()) as T;
+  }
   const text = await response.text();
   if (!response.ok) {
     if (response.status === 401 && options.auth !== false) {

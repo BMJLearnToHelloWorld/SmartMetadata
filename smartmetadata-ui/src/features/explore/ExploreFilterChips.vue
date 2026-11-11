@@ -21,6 +21,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   change: [id: FacetId, values: string[]];
+  open: [id: FacetId, open: boolean];
 }>();
 
 const { t, te } = useI18n();
@@ -52,6 +53,10 @@ function onChange(id: FacetId, value: unknown): void {
   const values = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
   emit('change', id, values);
 }
+
+function onOpen(id: FacetId, open: boolean): void {
+  emit('open', id, open);
+}
 </script>
 
 <template>
@@ -71,6 +76,7 @@ function onChange(id: FacetId, value: unknown): void {
       :not-found-content="t('explore.chipEmpty')"
       :aria-label="chip.title"
       @change="(value) => onChange(chip.id, value)"
+      @dropdownVisibleChange="(open: boolean) => onOpen(chip.id, open)"
     />
   </div>
 </template>

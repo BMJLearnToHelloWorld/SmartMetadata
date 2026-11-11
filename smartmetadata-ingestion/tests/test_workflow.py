@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from smartmetadata_ingestion.errors import (
+    RestError,
     WorkflowExecutionError,
     WorkflowInitializationError,
     WorkflowTeardownError,
@@ -490,3 +491,124 @@ def test_topology_orders_out_of_order_static_records(workflow_config) -> None:
     workflow.execute()
     # StaticSource yields service first, then configured records reordered
     assert sink.kinds == ["databaseService", "database", "schema", "table"]
+
+
+# -- P-01: only truly-flushed records count as succeeded --------------------
+# The workflow drains the bulk sink's flush result after the run: a bulk
+# 400 means succeeded == 0 and every buffered payload is one failure.
+
+
+class BulkWorkflowClient:
+    """RestClient stand-in answering bulk calls with BulkOperationResult."""
+
+    def __init__(self, *, fail_kinds: frozenset[str] = frozenset()) -> None:
+        self.fail_kinds = fail_kinds
+        self.calls: list[str] = []
+
+    def close(self) -> None:
+        return None
+
+    def _bulk(self, kind: str, payloads: list[dict]) -> dict:
+        self.calls.append(kind)
+        if kind in self.fail_kinds:
+            raise RestError(
+                f"PUT /v1/{kind}s/bulk failed with HTTP 400: Invalid request format",
+                status_code=400,
+            )
+        return {
+            "status": "success",
+            "successRequest": [
+                {"request": p, "status": 200, "message": "ok"} for p in payloads
+            ],
+            "failedRequest": [],
+        }
+
+    def bulk_upsert_databases(self, payloads: list[dict]) -> dict:
+        return self._bulk("database", payloads)
+
+    def bulk_upsert_schemas(self, payloads: list[dict]) -> dict:
+        return self._bulk("schema", payloads)
+
+    def bulk_upsert_tables(self, payloads: list[dict]) -> dict:
+        return self._bulk("table", payloads)
+
+    def bulk_upsert_topics(self, payloads: list[dict]) -> dict:
+        return self._bulk("topic", payloads)
+
+    def bulk_upsert_dashboards(self, payloads: list[dict]) -> dict:
+        return self._bulk("dashboard", payloads)
+
+    def bulk_upsert_charts(self, payloads: list[dict]) -> dict:
+        return self._bulk("chart", payloads)
+
+    def bulk_upsert_containers(self, payloads: list[dict]) -> dict:
+        return self._bulk("container", payloads)
+
+    def bulk_upsert_pipelines(self, payloads: list[dict]) -> dict:
+        return self._bulk("pipeline", payloads)
+
+
+class BulkRecordsSource:
+    def __init__(self, records: list) -> None:
+        self._records = records
+
+    def prepare(self) -> None:
+        return None
+
+    def produce(self):
+        yield from self._records
+
+    def close(self) -> None:
+        return None
+
+
+def test_bulk_flush_400_counts_nothing_as_succeeded(workflow_config) -> None:
+    from smartmetadata_ingestion.pipeline_status import final_pipeline_state
+    from smartmetadata_ingestion.records import TableRecord
+    from smartmetadata_ingestion.sinks.metadata_rest import BulkMetadataRestSink
+
+    workflow_config.lineage = []
+    client = BulkWorkflowClient(fail_kinds=frozenset({"table"}))
+    sink = BulkMetadataRestSink(client, batch_size=50)
+    source = BulkRecordsSource(
+        [
+            TableRecord(name="t1", database_schema="svc.db.public", columns=[]),
+            TableRecord(name="t2", database_schema="svc.db.public", columns=[]),
+        ]
+    )
+    workflow = MetadataWorkflow(workflow_config, client=client, source=source, sink=sink)
+    report = workflow.execute()
+    assert report.succeeded == 0
+    assert report.failed == 2
+    assert [f.label for f in report.failures] == [
+        "table:svc.db.public.t1",
+        "table:svc.db.public.t2",
+    ]
+    assert workflow.sink_status.records == 0
+    assert final_pipeline_state(report) == "failed"
+
+
+def test_bulk_partial_flush_counts_only_landed_records(workflow_config) -> None:
+    from smartmetadata_ingestion.pipeline_status import final_pipeline_state
+    from smartmetadata_ingestion.records import DatabaseRecord, SchemaRecord, TableRecord
+    from smartmetadata_ingestion.sinks.metadata_rest import BulkMetadataRestSink
+
+    workflow_config.lineage = []
+    client = BulkWorkflowClient(fail_kinds=frozenset({"table"}))
+    sink = BulkMetadataRestSink(client, batch_size=50)
+    source = BulkRecordsSource(
+        [
+            DatabaseRecord(name="db", service="svc"),
+            SchemaRecord(name="public", database="svc.db"),
+            SchemaRecord(name="staging", database="svc.db"),
+            TableRecord(name="orders", database_schema="svc.db.public", columns=[]),
+            TableRecord(name="items", database_schema="svc.db.public", columns=[]),
+        ]
+    )
+    workflow = MetadataWorkflow(workflow_config, client=client, source=source, sink=sink)
+    report = workflow.execute()
+    # 1 database + 2 schemas landed; the two tables 400'd.
+    assert report.succeeded == 3
+    assert report.failed == 2
+    assert workflow.sink_status.records == 3
+    assert final_pipeline_state(report) == "partialSuccess"

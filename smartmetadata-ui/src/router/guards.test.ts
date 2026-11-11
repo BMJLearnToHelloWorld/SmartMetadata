@@ -107,6 +107,34 @@ describe('route guards', () => {
     expect(ADMIN_ROUTE_RESOURCE['admin-settings-permission-debugger']).toBeUndefined();
   });
 
+  it('recognizes the ingestion pipeline routes as admin-only (P-17)', () => {
+    // Official keeps only the Pipelines tab admin-only
+    // (ServicesPage.tsx:147-165); the service routes admit viewers and
+    // owners under their own view-permission behaviour, so they are not
+    // admin paths.
+    expect(isAdminPath('/ingestion/pipelines')).toBe(true);
+    expect(isAdminPath('/ingestion/pipelines/p1')).toBe(true);
+    expect(isAdminPath('/ingestion/pipelines/p1/edit')).toBe(true);
+    expect(isAdminPath('/ingestion')).toBe(false);
+    expect(isAdminPath('/ingestion/services')).toBe(false);
+    expect(isAdminPath('/ingestion/services/database/s1')).toBe(false);
+    expect(isAdminPath('/ingestionx')).toBe(false);
+  });
+
+  it('forbids ingestion routes for non-admins, admits admins (P-17)', () => {
+    expect(
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/ingestion/pipelines' }),
+    ).toEqual({ kind: 'forbidden' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/ingestion/pipelines',
+        isAdminUser: true,
+      }),
+    ).toEqual({ kind: 'allow' });
+  });
+
   it('admits mapped admin entry on any view-or-better grant', () => {
     expect(hasAdminEntryGrant({ ViewAll: true })).toBe(true);
     expect(hasAdminEntryGrant({ ViewBasic: true })).toBe(true);

@@ -16,6 +16,8 @@ export interface EntityListColumn {
   width?: number;
   ellipsis?: boolean;
   sorter?: boolean | ((a: unknown, b: unknown) => number);
+  /** Controlled sort direction for server-sorted columns (antd 'ascend' | 'descend'). */
+  sortOrder?: 'ascend' | 'descend' | null;
 }
 
 export interface EntityBreadcrumb {
