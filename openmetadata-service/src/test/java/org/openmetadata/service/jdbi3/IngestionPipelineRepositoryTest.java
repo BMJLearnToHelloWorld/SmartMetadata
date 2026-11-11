@@ -370,8 +370,7 @@ class IngestionPipelineRepositoryTest {
 
     BadRequestException guardException =
         assertThrows(
-            BadRequestException.class,
-            () -> namesakeRepository.assertOwnsRunnerName(namesake));
+            BadRequestException.class, () -> namesakeRepository.assertOwnsRunnerName(namesake));
     assertTrue(guardException.getMessage().contains("'other.my-pipe'"));
     assertTrue(guardException.getMessage().contains("'svc.my-pipe'"));
 
