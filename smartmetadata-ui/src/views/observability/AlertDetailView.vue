@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, InputNumber, Select, Switch, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
@@ -19,6 +20,7 @@ import type { EventSubscription } from '@/types/quality';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
+const router = useRouter();
 /**
  * Official NotificationListPage row gating: edit needs EditAll, delete
  * needs Delete on this alert's entity permission by FQN. A missing or

@@ -3,7 +3,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -12,11 +12,18 @@ import AlertDetailView from './AlertDetailView.vue';
 
 const getEventSubscription = vi.fn();
 const updateEventSubscription = vi.fn();
+const deleteEventSubscription = vi.fn();
+const confirmDelete = vi.fn();
 const getEntityPermissionByFqn = vi.fn();
 
 vi.mock('@/api/eventSubscriptions', () => ({
   getEventSubscription: (...args: unknown[]) => getEventSubscription(...args),
   updateEventSubscription: (...args: unknown[]) => updateEventSubscription(...args),
+  deleteEventSubscription: (...args: unknown[]) => deleteEventSubscription(...args),
+}));
+
+vi.mock('@/features/crud/confirmDelete', () => ({
+  confirmDelete: (...args: unknown[]) => confirmDelete(...args),
 }));
 
 // P1 gating line: edit/delete read the per-alert entity permission.
@@ -45,7 +52,7 @@ async function mountView() {
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
-  return wrapper;
+  return { wrapper, router };
 }
 
 describe('AlertDetailView edit', () => {
@@ -76,7 +83,7 @@ describe('AlertDetailView edit', () => {
   });
 
   it('edits display name, enabled and webhook endpoint through the update API', async () => {
-    const wrapper = await mountView();
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="edit-alert"]').exists()).toBe(true);
     await wrapper.find('[data-testid="edit-alert"]').trigger('click');
     await flushPromises();
@@ -129,7 +136,7 @@ describe('AlertDetailView trigger display (Fix4)', () => {
   });
 
   it('renders trigger resources, filter rules, and owners from the alert (Fix4)', async () => {
-    const wrapper = await mountView();
+    const { wrapper } = await mountView();
     expect(wrapper.text()).toContain('table, testCase');
     expect(wrapper.text()).toContain('matchAnyTag === PII');
     expect(wrapper.text()).toContain('Amy');
@@ -143,8 +150,58 @@ describe('AlertDetailView trigger display (Fix4)', () => {
         { operation: 'Delete', access: 'deny' },
       ],
     });
-    const wrapper = await mountView();
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="edit-alert"]').attributes('disabled')).not.toBeUndefined();
     expect(wrapper.find('[data-testid="delete-alert"]').attributes('disabled')).not.toBeUndefined();
+  });
+});
+
+describe('AlertDetailView delete', () => {
+  beforeEach(() => {
+    getEventSubscription.mockReset();
+    updateEventSubscription.mockReset();
+    deleteEventSubscription.mockReset();
+    confirmDelete.mockReset();
+    getEntityPermissionByFqn.mockReset();
+    getEntityPermissionByFqn.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [
+        { operation: 'EditAll', access: 'allow' },
+        { operation: 'Delete', access: 'allow' },
+      ],
+    });
+    getEventSubscription.mockResolvedValue({
+      id: 'al1',
+      name: 'dq-alert',
+      fullyQualifiedName: 'dq-alert',
+      alertType: 'Observability',
+      enabled: true,
+      destinations: [{ category: 'External', type: 'Webhook', endpoint: 'https://hook.example' }],
+    });
+    deleteEventSubscription.mockResolvedValue(undefined);
+    confirmDelete.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('deletes the alert and navigates back to the alerts list (router defined)', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    const successSpy = vi.spyOn(message, 'success');
+    const { wrapper, router } = await mountView();
+    expect(wrapper.find('[data-testid="delete-alert"]').attributes('disabled')).toBeUndefined();
+    await wrapper.find('[data-testid="delete-alert"]').trigger('click');
+    await flushPromises();
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
+    expect(successSpy).toHaveBeenCalled();
+    // The delete succeeded, so no deleteFailed toast may appear: before
+    // this fix the navigation threw ReferenceError: router is not defined
+    // and the catch showed a spurious deleteFailed error instead.
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe('observability-alerts');
+    errorSpy.mockRestore();
+    successSpy.mockRestore();
   });
 });
