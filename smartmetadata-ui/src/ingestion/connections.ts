@@ -203,7 +203,6 @@ export function createEmptyServiceForm(): ServiceFormValues {
     numberOfStatus: 10,
     dagsterTimeout: 1000,
     stripAssetKeyPrefixLength: 0,
-    storeConnectionSecrets: false,
     trackingUri: '',
     registryUri: '',
     openApiSchemaUrl: '',
@@ -436,7 +435,6 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     dagsterTimeout: typeof config.timeout === 'number' ? config.timeout : 1000,
     stripAssetKeyPrefixLength:
       typeof config.stripAssetKeyPrefixLength === 'number' ? config.stripAssetKeyPrefixLength : 0,
-    storeConnectionSecrets: false,
     // Eight-kind default types (see connectionFields.ts): secrets are never
     // prefilled — the build step preserves a masked previous secret instead.
     trackingUri: typeof config.trackingUri === 'string' ? config.trackingUri : '',
@@ -770,7 +768,7 @@ function applyPassword(
     applyDatabricksAuth(config, form, existing);
     return;
   }
-  if (shouldPersistSecret(typed, Boolean(form.storeConnectionSecrets))) {
+  if (shouldPersistSecret(typed)) {
     if (
       form.serviceType === 'Snowflake' ||
       form.serviceType === 'Kafka' ||
@@ -829,7 +827,7 @@ function applyDatabricksAuth(
       auth.clientId = form.clientId.trim();
     }
     const secret = form.clientSecret?.trim() ?? '';
-    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(secret)) {
       auth.clientSecret = secret;
     } else if (!secret) {
       const prev = existing?.authType?.clientSecret;
@@ -849,7 +847,7 @@ function applyDatabricksAuth(
       auth.azureTenantId = form.azureTenantId.trim();
     }
     const secret = form.azureClientSecret?.trim() ?? '';
-    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(secret)) {
       auth.azureClientSecret = secret;
     } else if (!secret) {
       const prev = existing?.authType?.azureClientSecret;
@@ -861,7 +859,7 @@ function applyDatabricksAuth(
     return;
   }
   const token = form.password?.trim() ?? '';
-  if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+  if (shouldPersistSecret(token)) {
     config.authType = { token };
     return;
   }
@@ -984,17 +982,15 @@ function isJsonObject(element: unknown): element is Record<string, unknown> {
 /**
  * Secret-field discipline shared by the new secret leaves (Snowflake
  * privateKey/passphrase, sslConfig leaves): same rules as applyPassword —
- * a typed literal is sent only when it is an ${ENV} placeholder or
- * storeConnectionSecrets is on; a blank field preserves a masked previous
- * value; anything else is dropped, never sent.
+ * a typed literal is sent as entered; a blank field preserves a masked
+ * previous value; anything else is dropped, never sent.
  */
 function secretFieldValue(
   typed: string | undefined,
-  store: boolean,
   previous: string | undefined,
 ): string | undefined {
   const value = typed?.trim() ?? '';
-  if (shouldPersistSecret(value, store)) {
+  if (shouldPersistSecret(value)) {
     return value;
   }
   if (!value && previous && isMaskedSecret(previous)) {
@@ -1042,10 +1038,9 @@ function sslConfigFromFormKeys(
   keys: SslLeafFormKeys,
   previous?: SslClientConfig,
 ): Record<string, string> | undefined {
-  const store = Boolean(form.storeConnectionSecrets);
   const sslConfig: Record<string, string> = {};
   for (const outKey of ['caCertificate', 'sslCertificate', 'sslKey'] as const) {
-    const value = secretFieldValue(form[keys[outKey]], store, previous?.[outKey]);
+    const value = secretFieldValue(form[keys[outKey]], previous?.[outKey]);
     if (value) {
       sslConfig[outKey] = value;
     }
@@ -1095,26 +1090,21 @@ function elasticSearchSslConfigFromForm(
     (form.sslCaCertValue?.trim() || form.sslClientCertValue?.trim() || form.sslPrivateKeyValue?.trim()
       ? 'values'
       : 'paths');
-  const store = Boolean(form.storeConnectionSecrets);
   const prev = elasticSearchCertificatesFromConfig(existing ?? {});
   const prevValues = prev && 'caCertValue' in prev ? prev : undefined;
   if (mode === 'values') {
     const certificates: EsSslCertValues = {};
-    const caCertValue = secretFieldValue(form.sslCaCertValue, store, prevValues?.caCertValue);
+    const caCertValue = secretFieldValue(form.sslCaCertValue, prevValues?.caCertValue);
     if (caCertValue) {
       certificates.caCertValue = caCertValue;
     }
-    const clientCertValue = secretFieldValue(
-      form.sslClientCertValue,
-      store,
+    const clientCertValue = secretFieldValue(form.sslClientCertValue,
       prevValues?.clientCertValue,
     );
     if (clientCertValue) {
       certificates.clientCertValue = clientCertValue;
     }
-    const privateKeyValue = secretFieldValue(
-      form.sslPrivateKeyValue,
-      store,
+    const privateKeyValue = secretFieldValue(form.sslPrivateKeyValue,
       prevValues?.privateKeyValue,
     );
     if (privateKeyValue) {
@@ -1142,18 +1132,17 @@ function elasticSearchSslConfigFromForm(
  * W3-3A: Mcp servers apiKey retention (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
  * The edit refill puts the masked value in each server's apiKey, so a
  * masked (or blank) apiKey restores the previous value matched by server
- * name. A fresh literal follows the secret discipline. A masked value with
+ * name. A fresh literal is sent as entered. A masked value with
  * no name match — e.g. the server was renamed — is omitted: never store
  * the literal mask, and never claim retention after a rename.
  */
 function mcpServerApiKey(
   typed: string | undefined,
-  store: boolean,
   previousServers: Array<Record<string, unknown>> | undefined,
   name: unknown,
 ): string | undefined {
   const value = typed?.trim() ?? '';
-  if (shouldPersistSecret(value, store)) {
+  if (shouldPersistSecret(value)) {
     return value;
   }
   if (value && !isMaskedSecret(value)) {
@@ -1294,7 +1283,7 @@ export function buildServiceConnection(
     }
     // Wave 0 lean-forms (R-T1.5): single-option scheme is a builder fixed
     // value; privateKey/passphrase follow the secret discipline (typed
-    // literals only with storeConnectionSecrets, masked previous preserved).
+    // literals are sent as entered, masked previous preserved).
     config.scheme = 'snowflake';
     if (form.queryTag?.trim()) {
       config.queryTag = form.queryTag.trim();
@@ -1305,19 +1294,14 @@ export function buildServiceConnection(
     if (typeof form.systemMetricsBatchSize === 'number') {
       config.systemMetricsBatchSize = form.systemMetricsBatchSize;
     }
-    const store = Boolean(form.storeConnectionSecrets);
     const prevConfig = existing?.config;
-    const privateKey = secretFieldValue(
-      form.privateKey,
-      store,
+    const privateKey = secretFieldValue(form.privateKey,
       typeof prevConfig?.privateKey === 'string' ? prevConfig.privateKey : undefined,
     );
     if (privateKey) {
       config.privateKey = privateKey;
     }
-    const passphrase = secretFieldValue(
-      form.snowflakePrivatekeyPassphrase,
-      store,
+    const passphrase = secretFieldValue(form.snowflakePrivatekeyPassphrase,
       typeof prevConfig?.snowflakePrivatekeyPassphrase === 'string'
         ? prevConfig.snowflakePrivatekeyPassphrase
         : undefined,
@@ -1373,11 +1357,8 @@ export function buildServiceConnection(
     if (form.saslUsername?.trim()) {
       config.saslUsername = form.saslUsername.trim();
     }
-    const store = Boolean(form.storeConnectionSecrets);
     const prevConfig = existing?.config;
-    const saslPassword = secretFieldValue(
-      form.saslPassword,
-      store,
+    const saslPassword = secretFieldValue(form.saslPassword,
       typeof prevConfig?.saslPassword === 'string' ? prevConfig.saslPassword : undefined,
     );
     if (saslPassword) {
@@ -1389,9 +1370,7 @@ export function buildServiceConnection(
     if (form.saslMechanism?.trim()) {
       config.saslMechanism = form.saslMechanism.trim();
     }
-    const basicAuthUserInfo = secretFieldValue(
-      form.basicAuthUserInfo,
-      store,
+    const basicAuthUserInfo = secretFieldValue(form.basicAuthUserInfo,
       typeof prevConfig?.basicAuthUserInfo === 'string' ? prevConfig.basicAuthUserInfo : undefined,
     );
     if (basicAuthUserInfo) {
@@ -1614,7 +1593,7 @@ export function buildServiceConnection(
       config.username = form.username.trim();
     }
     const apiKey = form.apiKey?.trim() ?? '';
-    if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(apiKey)) {
       config.apiKey = apiKey;
     } else if (!apiKey) {
       const prev = existing?.config?.apiKey;
@@ -1649,7 +1628,7 @@ export function buildServiceConnection(
       awsConfig.assumeRoleSourceIdentity = form.assumeRoleSourceIdentity.trim();
     }
     const secret = form.awsSecretAccessKey?.trim() ?? '';
-    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(secret)) {
       awsConfig.awsSecretAccessKey = secret;
     } else if (!secret) {
       const prev = existing?.config?.awsConfig?.awsSecretAccessKey;
@@ -1658,7 +1637,7 @@ export function buildServiceConnection(
       }
     }
     const session = form.awsSessionToken?.trim() ?? '';
-    if (shouldPersistSecret(session, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(session)) {
       awsConfig.awsSessionToken = session;
     } else if (!session) {
       const prev = existing?.config?.awsConfig?.awsSessionToken;
@@ -1701,7 +1680,7 @@ export function buildServiceConnection(
         auth.workspaceId = form.prefectWorkspaceId.trim();
       }
       const apiKey = form.apiKey?.trim() ?? '';
-      if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+      if (shouldPersistSecret(apiKey)) {
         auth.apiKey = apiKey;
       } else if (!apiKey) {
         const prev = existing?.config?.authType?.apiKey;
@@ -1713,7 +1692,7 @@ export function buildServiceConnection(
     } else {
       const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
       const authString = form.prefectAuthString?.trim() ?? '';
-      if (shouldPersistSecret(authString, Boolean(form.storeConnectionSecrets))) {
+      if (shouldPersistSecret(authString)) {
         auth.authString = authString;
       } else if (!authString) {
         const prev = existing?.config?.authType?.authString;
@@ -1745,7 +1724,7 @@ export function buildServiceConnection(
     // Dagster group has no password field and formValuesFromService always
     // sets password: '', so it could never fire.
     const token = form.apiKey?.trim() ?? '';
-    if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(token)) {
       config.token = token;
     } else if (!token) {
       const prev = existing?.config?.token;
@@ -1831,10 +1810,7 @@ export function buildServiceConnection(
     if (omSslConfig) {
       config.sslConfig = omSslConfig;
     }
-    const store = Boolean(form.storeConnectionSecrets);
-    const jwtToken = secretFieldValue(
-      form.jwtToken,
-      store,
+    const jwtToken = secretFieldValue(form.jwtToken,
       typeof existing?.config?.securityConfig?.jwtToken === 'string'
         ? existing.config.securityConfig.jwtToken
         : undefined,
@@ -1866,7 +1842,7 @@ export function buildServiceConnection(
       config.openAPISchemaConnection = { openAPISchemaURL: form.openApiSchemaUrl.trim() };
     }
     const token = form.apiKey?.trim() ?? '';
-    if (shouldPersistSecret(token, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(token)) {
       config.token = token;
     } else if (!token) {
       const prev = existing?.config?.token;
@@ -1992,7 +1968,7 @@ export function buildServiceConnection(
     if (esAuthMode === 'apiAuth') {
       const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
       const apiKey = form.apiKey?.trim() ?? '';
-      if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+      if (shouldPersistSecret(apiKey)) {
         auth.apiKey = apiKey;
       } else if (!apiKey || isMaskedSecret(apiKey)) {
         // Blank or masked: restore the stored key (live edit-loss fix —
@@ -2015,7 +1991,7 @@ export function buildServiceConnection(
         auth.username = form.username.trim();
       }
       const secret = form.password?.trim() ?? '';
-      if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+      if (shouldPersistSecret(secret)) {
         auth.password = secret;
       } else if (!secret) {
         const prev = existing?.config?.authType?.password;
@@ -2047,7 +2023,7 @@ export function buildServiceConnection(
       auth.username = form.username.trim();
     }
     const secret = form.password?.trim() ?? '';
-    if (shouldPersistSecret(secret, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(secret)) {
       auth.password = secret;
     } else if (!secret) {
       const prev = existing?.config?.authType?.password;
@@ -2060,7 +2036,7 @@ export function buildServiceConnection(
     }
   } else if (type === 'OpenAI') {
     const apiKey = form.apiKey?.trim() ?? '';
-    if (shouldPersistSecret(apiKey, Boolean(form.storeConnectionSecrets))) {
+    if (shouldPersistSecret(apiKey)) {
       config.apiKey = apiKey;
     } else if (!apiKey) {
       const prev = existing?.config?.apiKey;
@@ -2098,13 +2074,11 @@ export function buildServiceConnection(
     if (rawServers) {
       // W3-3A: each server's apiKey follows the restore-by-name retention
       // (ADR:2026-11-10-leanforms-3a-mcp-servers-api-key).
-      const store = Boolean(form.storeConnectionSecrets);
       const previousServers = existing?.config?.servers;
       config.servers = rawServers.map((server) => {
         const next: Record<string, unknown> = { ...server };
         const apiKey = mcpServerApiKey(
           typeof server.apiKey === 'string' ? server.apiKey : undefined,
-          store,
           previousServers,
           server.name,
         );

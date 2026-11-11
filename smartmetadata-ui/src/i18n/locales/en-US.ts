@@ -2616,7 +2616,7 @@ const enUS = {
     providerDb: 'Database (db)',
     providerLdap: 'LDAP',
     apiKey: 'API key',
-    apiKeyHint: '${METABASE_API_KEY} or literal (persist secrets)',
+    apiKeyHint: '${METABASE_API_KEY} or literal',
     supersetApiNote:
       'P0 wires Superset API connection only (provider/username/password). Database-backed Superset connection modes are deferred.',
     metabaseAuthNote:
@@ -2624,13 +2624,12 @@ const enUS = {
     schemaRegistry: 'Schema Registry URL',
     securityProtocol: 'Security protocol',
     password: "Password or {'${ENV}'} placeholder",
-    persistSecrets: 'Persist a typed literal password on the service entity',
     confluentNote:
       'Confluent REST Proxy URL is a CLI workflow key (restProxyUrl), not a catalog MessagingService field. It appears on the generated smartmetadata-ingest YAML.',
     redpandaNote:
       'P0 wires official redpandaConnection fields (bootstrapServers required, schemaRegistryURL, securityProtocol). Sampling here is metadata-only: schema and statistics, no live message fetch. Live sampling is a next-milestone item.',
     secretHint:
-      "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A literal password is sent only if you check persist secrets — default is off, matching Phase 6–7.",
+      "Stored secrets are not shown. Leave blank to keep an existing password. A {'${VAR}'} placeholder is stored as-is. A typed literal password is saved as entered.",
     httpPath: 'HTTP path',
     catalog: 'Catalog',
     queryHistoryTable: 'Query history table',

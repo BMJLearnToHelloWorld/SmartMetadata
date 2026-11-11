@@ -30,7 +30,6 @@ function postgresForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormVa
     username: 'analyst',
     database: 'analytics',
     password: '',
-    storeConnectionSecrets: false,
     ...overrides,
   };
 }
@@ -49,14 +48,32 @@ describe('service connections', () => {
     });
   });
 
-  it('stores ${ENV} placeholders without enabling storeConnectionSecrets', () => {
+  it('stores ${ENV} placeholders as entered', () => {
     const connection = buildServiceConnection(postgresForm({ password: '${PG_PASSWORD}' }));
     expect(connection?.config?.authType).toEqual({ password: '${PG_PASSWORD}' });
   });
 
-  it('does not persist a typed literal password unless storeConnectionSecrets is on', () => {
+  it('persists a typed literal password as entered', () => {
     const connection = buildServiceConnection(postgresForm({ password: 'hunter2' }));
-    expect(connection?.config?.authType).toBeUndefined();
+    expect(connection?.config?.authType).toEqual({ password: 'hunter2' });
+  });
+
+  it('saves a typed MySQL password as entered (1045 regression)', () => {
+    // ADR:2026-11-11-leanforms-save-secrets-as-entered — the typed password
+    // used to be silently dropped when the persist-secrets checkbox was
+    // unchecked, so Test Connection ran with (using password: NO) and
+    // MySQL answered 1045. The form has no flag anymore: the literal must
+    // reach the payload (authType.password, per mysqlConnection.json).
+    const connection = buildServiceConnection({
+      name: 'icrm',
+      kind: 'database',
+      serviceType: 'Mysql',
+      hostPort: '100.113.205.68:3366',
+      username: 'icrm_monorepo',
+      databaseName: 'icrm',
+      password: 'hunter2',
+    });
+    expect(connection?.config?.authType).toEqual({ password: 'hunter2' });
   });
 
   it('builds the eight previously form-less kinds via their default types (A9)', () => {
@@ -77,7 +94,6 @@ describe('service connections', () => {
       buildServiceConnection({
         name: 'rest', kind: 'api', serviceType: 'Rest',
         openApiSchemaUrl: 'https://example.com/openapi.json', apiKey: '${REST_TOKEN}',
-        storeConnectionSecrets: false,
       }),
     ).toEqual({
       config: {
@@ -109,7 +125,6 @@ describe('service connections', () => {
         name: 'es', kind: 'search', serviceType: 'ElasticSearch',
         hostPort: 'http://localhost:9200', elasticSearchAuthMode: 'basicAuth',
         username: 'elastic', password: '${ES_PASSWORD}',
-        storeConnectionSecrets: false,
       }),
     ).toEqual({
       config: {
@@ -122,7 +137,6 @@ describe('service connections', () => {
       buildServiceConnection({
         name: 'llm', kind: 'llm', serviceType: 'OpenAI',
         apiKey: '${OPENAI_API_KEY}', organization: 'org-1', baseUrl: 'https://api.openai.com/v1',
-        storeConnectionSecrets: false,
       }),
     ).toEqual({
       config: {
@@ -145,7 +159,6 @@ describe('service connections', () => {
       buildServiceConnection({
         name: 'ranger', kind: 'security', serviceType: 'Ranger',
         hostPort: 'http://localhost:6080', username: 'admin', password: '${RANGER_PASSWORD}',
-        storeConnectionSecrets: false,
       }),
     ).toEqual({
       config: {
@@ -262,7 +275,6 @@ describe('service connections', () => {
       databaseName: 'default',
       databaseSchema: 'sales',
       password: '${DORIS_PASSWORD}',
-      storeConnectionSecrets: true,
     });
     expect(doris?.config).toMatchObject({
       type: 'Doris',
@@ -287,7 +299,6 @@ describe('service connections', () => {
       encrypt: false,
       trustServerCertificate: true,
       password: '${MSSQL_PASSWORD}',
-      storeConnectionSecrets: true,
     });
     expect(mssql?.config).toMatchObject({
       type: 'Mssql',
@@ -343,7 +354,6 @@ describe('service connections', () => {
         includeMetricViews: true,
         authMode: 'pat',
         password: 'dapi-secret',
-        storeConnectionSecrets: true,
       }),
     ).toEqual({
       config: {
@@ -382,7 +392,6 @@ describe('service connections', () => {
         database: 'dev',
         ingestAllDatabases: true,
         password: '${REDSHIFT_PASSWORD}',
-        storeConnectionSecrets: true,
       })?.config,
     ).toMatchObject({
       type: 'Redshift',
@@ -402,7 +411,6 @@ describe('service connections', () => {
         username: 'root',
         databaseName: 'default',
         password: '${MARIADB_PASSWORD}',
-        storeConnectionSecrets: true,
       })?.config,
     ).toMatchObject({
       type: 'MariaDB',
@@ -421,7 +429,6 @@ describe('service connections', () => {
         username: 'gpadmin',
         database: 'gpdb',
         password: '${GREENPLUM_PASSWORD}',
-        storeConnectionSecrets: true,
       })?.config,
     ).toMatchObject({
       type: 'Greenplum',
@@ -438,7 +445,6 @@ describe('service connections', () => {
         username: 'tsdb',
         database: 'ts',
         password: '${TIMESCALE_PASSWORD}',
-        storeConnectionSecrets: true,
       })?.config,
     ).toMatchObject({
       type: 'Timescale',
@@ -461,7 +467,6 @@ describe('service connections', () => {
         queryStatementSource: 'my_schema.custom_pg_stat_statements',
         connectionOptions: '{"connect_timeout": "10"}',
         connectionArguments: '{"ssl": "true"}',
-        storeConnectionSecrets: true,
       }),
     );
     expect(connection).toEqual({
@@ -493,7 +498,6 @@ describe('service connections', () => {
       useSlowLogs: true,
       sslCaCertificate: '---CA---',
       connectionOptions: '{"charset": "utf8mb4"}',
-      storeConnectionSecrets: true,
     });
     expect(connection?.config).toMatchObject({
       type: 'Mysql',
@@ -525,21 +529,11 @@ describe('service connections', () => {
       account: 'xy',
       warehouse: 'WH',
     } as const;
-    // A typed literal without persist is dropped, like passwords.
-    expect(
-      buildServiceConnection({ ...base, privateKey: '---KEY---', snowflakePrivatekeyPassphrase: 'pw' })
-        ?.config,
-    ).not.toHaveProperty('privateKey');
-    expect(
-      buildServiceConnection({ ...base, privateKey: '---KEY---', snowflakePrivatekeyPassphrase: 'pw' })
-        ?.config,
-    ).not.toHaveProperty('snowflakePrivatekeyPassphrase');
-    // With persist it is sent.
+    // A typed literal is sent as entered, like passwords.
     const kept = buildServiceConnection({
       ...base,
       privateKey: '---KEY---',
       snowflakePrivatekeyPassphrase: 'pw',
-      storeConnectionSecrets: true,
     })?.config;
     expect(kept?.privateKey).toBe('---KEY---');
     expect(kept?.snowflakePrivatekeyPassphrase).toBe('pw');
@@ -710,7 +704,6 @@ it('builds Superset API connection 1:1 (hostPort + nested provider/username/pass
     username: 'admin',
     provider: 'db',
     password: '${SUPERSET_PASSWORD}',
-    storeConnectionSecrets: false,
   });
   expect(connection).toEqual({
     config: {
@@ -732,7 +725,6 @@ it('builds Metabase connection with hostPort and apiKey', () => {
     serviceType: 'Metabase',
     hostPort: 'http://localhost:3000',
     apiKey: '${METABASE_API_KEY}',
-    storeConnectionSecrets: false,
   });
   expect(connection).toEqual({
     config: {
@@ -753,7 +745,6 @@ it('builds Metabase password auth and Kafka securityProtocol (M-Next B6/B7)', ()
       hostPort: 'http://localhost:3000',
       username: 'admin',
       password: 'mb-secret',
-      storeConnectionSecrets: true,
     }),
   ).toEqual({
     config: {
@@ -824,7 +815,6 @@ it('builds S3 connection with awsConfig + bucketNames 1:1', () => {
     awsSecretAccessKey: '${AWS_SECRET_ACCESS_KEY}',
     bucketNames: 'analytics, raw',
     consoleEndpointURL: 'https://s3.console.aws.amazon.com',
-    storeConnectionSecrets: false,
   });
   expect(connection).toEqual({
     config: {
@@ -869,7 +859,6 @@ it('builds Prefect cloud connection 1:1 (hostPort + authType cloud)', () => {
     prefectWorkspaceId: 'ws',
     apiKey: '${PREFECT_API_KEY}',
     numberOfStatus: 10,
-    storeConnectionSecrets: false,
   });
   expect(connection).toEqual({
     config: {
@@ -894,7 +883,6 @@ it('builds Dagster connection with host + token', () => {
     apiKey: '${DAGSTER_TOKEN}',
     dagsterTimeout: 1000,
     stripAssetKeyPrefixLength: 0,
-    storeConnectionSecrets: false,
   });
   expect(connection).toEqual({
     config: {
@@ -965,7 +953,6 @@ it('builds the full Kafka de-noised set (W2-5 lean-forms tier 2)', () => {
     schemaRegistrySSLCaCertificate: '---REGISTRY-CA---',
     schemaRegistrySSLCertificate: '---REGISTRY-CERT---',
     schemaRegistrySSLKey: '---REGISTRY-KEY---',
-    storeConnectionSecrets: true,
   });
   expect(connection).toEqual({
     config: {
@@ -1087,7 +1074,6 @@ it('builds the full Redpanda de-noised set without SSL groups (W2-5)', () => {
     basicAuthUserInfo: 'reg:secret',
     consumerConfig: '{"group.id": "console"}',
     schemaRegistryConfig: '{"timeout": 5}',
-    storeConnectionSecrets: true,
   });
   expect(connection).toEqual({
     config: {
@@ -1144,7 +1130,6 @@ it('emits a retyped Superset password on edit (W2-5 condition 6)', () => {
       username: 'admin',
       provider: 'db',
       password: 'new-secret',
-      storeConnectionSecrets: true,
     },
     {
       config: {
@@ -1170,7 +1155,6 @@ it('builds Superset verifySSL + nested sslConfig (W2-5)', () => {
     supersetSSLCaCertificate: '---SUPERSET-CA---',
     supersetSSLCertificate: '---SUPERSET-CERT---',
     supersetSSLKey: '---SUPERSET-KEY---',
-    storeConnectionSecrets: true,
   });
   expect(connection).toEqual({
     config: {
@@ -1202,7 +1186,6 @@ it('builds Prefect server auth + top-level verifySSL/sslConfig (W2-5)', () => {
     numberOfStatus: 5,
     verifySSL: 'ignore',
     sslCaCertificate: '---PREFECT-CA---',
-    storeConnectionSecrets: true,
   });
   expect(connection).toEqual({
     config: {
@@ -1384,7 +1367,6 @@ it('ignores a stray Dagster form.password instead of sending it as the token (W2
     hostPort: 'http://localhost:3000',
     password: 'should-be-ignored',
     dagsterTimeout: 1000,
-    storeConnectionSecrets: true,
   });
   expect(connection?.config).not.toHaveProperty('token');
 });
@@ -1423,7 +1405,6 @@ describe('service kind tables', () => {
     expect(form.kind).toBe('database');
     expect(form.serviceType).toBe('Postgres');
     expect(form.includeMetricViews).toBe(true);
-    expect(form.storeConnectionSecrets).toBe(false);
     // Wave 0 lean-forms: spec defaults for the new fields (RULING.md §1.4).
     expect(form.sslMode).toBe('disable');
     expect(form.classificationName).toBe('PostgresPolicyTags');
@@ -1490,7 +1471,6 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           openApiSchemaUrl: 'https://example.com/openapi.json',
           apiKey: '${REST_TOKEN}',
           docURL: 'https://example.com/docs',
-          storeConnectionSecrets: true,
           restSSLCaCertificate: '---CA---',
           restSSLCertificate: '---CERT---',
           restSSLKey: '---KEY---',
@@ -1515,7 +1495,6 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           kind: 'metadata',
           serviceType: 'OpenMetadata',
           hostPort: 'http://localhost:8585/api',
-          storeConnectionSecrets: true,
           jwtToken: 'om-jwt',
           extraHeaders: '{"X-Tenant": "acme"}',
           openMetadataSSLCaCertificate: '---CA---',
@@ -1629,8 +1608,7 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           sslClientCertValue: '---CERT---',
           sslPrivateKeyValue: '---KEY---',
           connectionArguments: '{"a": "b"}',
-          // Literal secret leaves persist only with storeConnectionSecrets.
-          storeConnectionSecrets: true,
+          // Literal secret leaves are sent as entered.
         }),
       ),
     ).toEqual({
@@ -1717,7 +1695,6 @@ describe('lean-forms tier 3A (W3-3A)', () => {
           servers:
             '[{"name": "s1", "url": "https://s1.example.com", "apiKey": "k1"}, {"name": "s2", "url": "https://s2.example.com"}]',
           registryUrl: 'https://registry.example.com',
-          storeConnectionSecrets: true,
         }),
       ),
     ).toEqual({
@@ -2117,13 +2094,12 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     expect(renamed?.config?.servers).toEqual([
       { name: 's1-renamed', url: 'https://s1.example.com' },
     ]);
-    // Retype: a fresh literal with storeConnectionSecrets replaces the old one.
+    // Retype: a fresh literal replaces the old one.
     const retyped = buildServiceConnection(
       tier3AForm({
         kind: 'mcp',
         serviceType: 'Mcp',
         servers: '[{"name": "s1", "url": "https://s1.example.com", "apiKey": "new-key"}]',
-        storeConnectionSecrets: true,
       }),
       {
         config: {
@@ -2162,7 +2138,6 @@ describe('lean-forms tier 3A (W3-3A)', () => {
         hostPort: 'http://localhost:9200',
         elasticSearchAuthMode: 'apiAuth',
         apiKey: 'new-es-key',
-        storeConnectionSecrets: true,
       }),
       { config: { type: 'ElasticSearch', authType: { apiKey: '********' } } },
     );

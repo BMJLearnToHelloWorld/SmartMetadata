@@ -2588,7 +2588,7 @@ const zhCN = {
     providerDb: '数据库 (db)',
     providerLdap: 'LDAP',
     apiKey: 'API 密钥',
-    apiKeyHint: '${METABASE_API_KEY} 或明文（需勾选持久化）',
+    apiKeyHint: '${METABASE_API_KEY} 或明文',
     supersetApiNote:
       'P0 仅接入 Superset API 连接（provider/username/password）。数据库模式的 Superset 连接延后。',
     metabaseAuthNote:
@@ -2596,13 +2596,12 @@ const zhCN = {
     schemaRegistry: 'Schema Registry URL',
     securityProtocol: '安全协议',
     password: "密码或 {'${ENV}'} 占位符",
-    persistSecrets: '将字面密码持久化到服务实体',
     confluentNote:
       'Confluent REST Proxy URL 是 CLI 工作流键（restProxyUrl），不是目录 MessagingService 字段。它会出现在生成的 smartmetadata-ingest YAML 中。',
     redpandaNote:
       'P0 接入官方 redpandaConnection 字段（bootstrapServers 必填、schemaRegistryURL、securityProtocol）。此处采样为 metadata-only：仅采 schema 与统计，不做实时消息拉取。实时采样为下一里程碑事项。',
     secretHint:
-      "已存储密钥不会显示。留空以保留现有密码。{'${VAR}'} 占位符按原样存储。只有勾选持久化密钥时才会发送字面密码 — 默认关闭，与第 6–7 阶段一致。",
+      "已存储密钥不会显示。留空以保留现有密码。{'${VAR}'} 占位符按原样存储。填入的字面密码按原样保存。",
     httpPath: 'HTTP 路径',
     catalog: 'Catalog',
     queryHistoryTable: '查询历史表',

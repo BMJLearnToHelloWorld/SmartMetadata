@@ -28,11 +28,10 @@ describe('ingestion secrets', () => {
     expect(displaySecret('real-password')).toBe('');
   });
 
-  it('persists placeholders always and literals only when asked', () => {
-    expect(shouldPersistSecret('${PG_PASSWORD}', false)).toBe(true);
-    expect(shouldPersistSecret('hunter2', false)).toBe(false);
-    expect(shouldPersistSecret('hunter2', true)).toBe(true);
-    expect(shouldPersistSecret('********', true)).toBe(false);
-    expect(shouldPersistSecret('', true)).toBe(false);
+  it('persists typed literals as entered and never a mask or blank', () => {
+    expect(shouldPersistSecret('${PG_PASSWORD}')).toBe(true);
+    expect(shouldPersistSecret('hunter2')).toBe(true);
+    expect(shouldPersistSecret('********')).toBe(false);
+    expect(shouldPersistSecret('')).toBe(false);
   });
 });

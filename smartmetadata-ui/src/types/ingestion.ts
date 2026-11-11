@@ -420,7 +420,6 @@ export interface ServiceFormValues {
   numberOfStatus?: number;
   dagsterTimeout?: number;
   stripAssetKeyPrefixLength?: number;
-  storeConnectionSecrets?: boolean;
   /** Mlflow (mlmodel): tracking + registry URIs (mlflowConnection, required). */
   trackingUri?: string;
   registryUri?: string;
@@ -460,8 +459,7 @@ export interface ServiceFormValues {
   /** Extra headers as a JSON object (string map). */
   extraHeaders?: string;
   /** Whether to save the service connection when creating the service.
-   * Independent key from storeConnectionSecrets: that key gates whether a
-   * typed literal secret is persisted, this one is the spec's own flag. */
+   * The spec's own flag (openMetadataConnection / storeServiceConnection). */
   omStoreServiceConnection?: boolean;
   /** GoogleDrive (googleDriveConnection.json): which gcpConfig branch the
    * credentials take (gcpCredentials.json oneOf). */
