@@ -75,14 +75,6 @@ const passwordField: Field = {
   hintKey: 'connection.secretHint',
 };
 
-const storeSecretsField: Field = {
-  key: 'storeConnectionSecrets',
-  control: 'checkbox',
-  labelKey: 'connection.persistSecrets',
-  testId: 'service-store-secrets',
-  hideItemLabel: true,
-};
-
 const hostPort = (placeholder: string): Field =>
   requiredText('hostPort', 'connection.hostPort', { testId: 'service-host-port', placeholder });
 
@@ -424,7 +416,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       }),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -453,7 +444,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...sslConfigLeaves(false),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -550,7 +540,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...policyAgentFields,
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -567,7 +556,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...sslConfigLeaves(false),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -607,7 +595,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...sslConfigLeaves(false),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -622,7 +609,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       // option mysql+pymysql — builder already sets it.
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   // Wave 0 lean-forms: the shared Redshift/Greenplum/Timescale group is split
@@ -652,7 +638,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...sslConfigLeaves(true),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -670,7 +655,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...sslConfigLeaves(true),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -696,7 +680,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       }),
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -726,11 +709,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         ['schemaRegistrySSLCertificate', 'connection.schemaRegistrySSLCertificate', 'service-schema-registry-ssl-certificate'],
         ['schemaRegistrySSLKey', 'connection.schemaRegistrySSLKey', 'service-schema-registry-ssl-key'],
       ]),
-      // W2-5 follow-up (persist-secrets checkbox): Kafka carries secret
-      // fields (saslPassword, basicAuthUserInfo, 6 SSL leaves) but had no
-      // storeConnectionSecrets checkbox, so literals could never be saved
-      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
-      storeSecretsField,
       note('connection.confluentNote'),
     ],
   },
@@ -750,11 +728,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       basicAuthUserInfoField,
       consumerConfigField,
       schemaRegistryConfigField,
-      // W2-5 follow-up (persist-secrets checkbox): Redpanda carries secret
-      // fields (saslPassword, basicAuthUserInfo) but had no
-      // storeConnectionSecrets checkbox, so literals could never be saved
-      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
-      storeSecretsField,
       note('connection.redpandaNote'),
     ],
   },
@@ -786,7 +759,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         ['supersetSSLCertificate', 'connection.supersetSSLCertificate', 'service-superset-ssl-certificate'],
         ['supersetSSLKey', 'connection.supersetSSLKey', 'service-superset-ssl-key'],
       ]),
-      storeSecretsField,
     ],
   },
   {
@@ -830,7 +802,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-console-endpoint',
         placeholder: 'https://s3.console.aws.amazon.com',
       }),
-      storeSecretsField,
       note('connection.s3Note'),
     ],
   },
@@ -889,11 +860,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       // Prefect has a single sslConfig, so it uses the single-group keys.
       verifySSLField,
       ...sslConfigLeaves(false),
-      // W2-5 follow-up (persist-secrets checkbox): Prefect carries secret
-      // fields (apiKey, authString, 3 SSL leaves) but had no
-      // storeConnectionSecrets checkbox, so literals could never be saved
-      // via the UI (ADR:2026-11-08-leanforms-tier2-store-secrets-checkbox).
-      storeSecretsField,
       note('connection.prefectNote'),
     ],
   },
@@ -1004,7 +970,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...policyAgentFields,
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -1079,7 +1044,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       ...policyAgentFields,
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   // --- The eight kinds that previously had no form at all. Each group
@@ -1125,7 +1089,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         ],
         false,
       ),
-      storeSecretsField,
     ],
   },
   {
@@ -1146,7 +1109,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         required: true,
         placeholder: 'mysql+pymysql://mlflow:password@localhost:3306/mlflow',
       },
-      storeSecretsField,
     ],
   },
   {
@@ -1248,7 +1210,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         placeholder: '{"X-Custom": "value"}',
         hintKey: 'connection.extraHeadersHint',
       },
-      storeSecretsField,
     ],
   },
   {
@@ -1310,7 +1271,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
       },
       connectionOptionsField,
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -1385,7 +1345,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-connection-timeout-secs',
       },
       connectionArgumentsField,
-      storeSecretsField,
     ],
   },
   {
@@ -1415,7 +1374,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         testId: 'service-openai-max-retries',
         hintKey: 'connection.openAIMaxRetriesHint',
       },
-      storeSecretsField,
     ],
   },
   {
@@ -1486,12 +1444,11 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         labelKey: 'connection.fetchPrompts',
         testId: 'service-fetch-prompts',
       },
-      storeSecretsField,
     ],
   },
   {
     types: ['Ranger'],
-    fields: [hostPort('http://localhost:6080'), usernameRequired, passwordField, storeSecretsField],
+    fields: [hostPort('http://localhost:6080'), usernameRequired, passwordField],
   },
 ];
 

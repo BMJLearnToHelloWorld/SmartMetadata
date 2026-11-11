@@ -14,6 +14,7 @@ from typing import Any
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import WorkflowConfig
 from smartmetadata_ingestion.connectors.base import Source
+from smartmetadata_ingestion.errors import WorkflowExecutionError
 from smartmetadata_ingestion.processors.identity import Processor
 from smartmetadata_ingestion.progress import ProgressHook, RunReport
 from smartmetadata_ingestion.sinks.metadata_rest import Sink
@@ -44,13 +45,32 @@ def run_workflow(
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
 
     ``profiler``, ``TestSuite`` and ``data_diff`` dispatch to their own
-    workflows; every other type keeps the metadata workflow.
+    workflows; every other type keeps the metadata workflow — except
+    ``dbt``, ``autoClassification``, ``elasticSearchReindex`` and
+    ``application``, which have no runner yet and raise instead of
+    silently running a metadata ingestion (P-06; see the ADR).
 
     ``run_id`` pins the id the workflow reports its status under (the
     Airflow plugin passes the id the server already recorded for the run);
     unset, the workflow mints a UUID as before.
     """
     workflow_type = config.workflow.type
+    if workflow_type in (
+        "dbt",
+        "autoClassification",
+        "elasticSearchReindex",
+        "application",
+    ):
+        # No runner implements these types yet (P-06). The builders deploy
+        # and the DAG imports, but the run must fail loudly with a
+        # diagnostic instead of succeeding as a metadata ingestion — the
+        # fake-success class this round exists to eliminate.
+        # (ADR:2026-11-11-pipeline-deep-dive-python)
+        raise WorkflowExecutionError(
+            f"no runner implemented for pipeline type {workflow_type!r}; "
+            "dbt / autoClassification / elasticSearchReindex / application "
+            "runners are future work"
+        )
     if workflow_type == "profiler":
         workflow: MetadataWorkflow = ProfilerWorkflow(
             config,

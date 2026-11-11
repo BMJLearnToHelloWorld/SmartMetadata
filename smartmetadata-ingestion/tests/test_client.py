@@ -154,6 +154,34 @@ def test_http_error_includes_status() -> None:
     assert exc.value.status_code == 409
 
 
+def test_get_pipeline_status_gets_encoded_fqn_and_run_id() -> None:
+    # P-02: the failure callback fetches the stored status before writing
+    # back, so the client needs the GET side of the pipelineStatus resource.
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["raw_path"] = request.url.raw_path.decode("ascii")
+        return httpx.Response(
+            200,
+            json={
+                "runId": "run-1",
+                "pipelineState": "partialSuccess",
+                "startDate": 1,
+                "status": [{"name": "ingest", "executionStatus": "successful"}],
+            },
+        )
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        result = client.get_pipeline_status("service.my pipeline", "run-1")
+    assert result["pipelineState"] == "partialSuccess"
+    assert seen["method"] == "GET"
+    assert (
+        seen["raw_path"]
+        == "/api/v1/services/ingestionPipelines/service.my%20pipeline/pipelineStatus/run-1"
+    )
+
+
 def test_add_pipeline_status_puts_encoded_fqn() -> None:
     seen: dict[str, object] = {}
 

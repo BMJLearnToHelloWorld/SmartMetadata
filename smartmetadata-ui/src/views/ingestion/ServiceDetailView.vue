@@ -6,9 +6,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Descriptions, Tooltip, message} from 'ant-design-vue';
+import {Alert, Button, Descriptions, Dropdown, Menu, Tag, Tooltip, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import { listIngestionPipelines } from '@/api/ingestionPipelines';
+import { getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
+import type { OperationPermissions } from '@/api/permissions';
+import { usePermissionStore } from '@/stores/permissions';
 import { getServiceVersion, listServiceVersions } from '@/api/serviceVersions';
 import type { EntityVersion } from '@/api/entities';
 import {
@@ -25,16 +27,30 @@ import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import { redactConnectionForDisplay } from '@/ingestion/connections';
+import { redactConnectionForDisplay, SERVICE_KIND_BY_ENTITY_TYPE } from '@/ingestion/connections';
 import { cliSourceType } from '@/ingestion/cliWorkflow';
+import {
+  getIngestionStatusCount,
+  renderPipelineState,
+  renderPipelineType,
+  runBadgeColor,
+} from '@/ingestion/pipelineDisplay';
+import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
+import { agentKindsForService } from '@/types/ingestion';
 import { SERVICE_DELETE_API, SERVICE_GET_API } from '@/ingestion/serviceApis';
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
 import type {
   CatalogService,
   IngestionPipeline,
+  OrchestratorStatus,
+  PipelineStatus,
   ServiceKind,
   TestConnectionStepResult,
 } from '@/types/ingestion';
+import IngestionLogsModal from './IngestionLogsModal.vue';
+import IngestionRunDetailsModal from './IngestionRunDetailsModal.vue';
+import KillPipelineModal from './KillPipelineModal.vue';
+import PipelineRowActions from './PipelineRowActions.vue';
 
 const props = defineProps<{ kind: string; id: string; initialTab?: string }>();
 const { t } = useI18n();
@@ -71,10 +87,60 @@ const servicePipelines = ref<IngestionPipeline[]>([]);
 const pipelinesLoading = ref(false);
 const pipelinesError = ref('');
 const pipelinesLoaded = ref(false);
+const servicePipelinePermissions = ref(new Map<string, OperationPermissions>());
+const serviceOrchestrator = ref<OrchestratorStatus | null>(null);
+const serviceOrchestratorChecked = ref(false);
+const serviceRunDetailsStatus = ref<PipelineStatus | null>(null);
+const permissionStore = usePermissionStore();
+
+/** P-24: same orchestrator rule as the list — null/disabled/non-200 once the probe has settled. */
+const serviceOrchestratorUnavailable = computed(
+  () =>
+    serviceOrchestratorChecked.value &&
+    (serviceOrchestrator.value == null ||
+      serviceOrchestrator.value.platform === 'disabled' ||
+      serviceOrchestrator.value.code !== 200),
+);
+
+const serviceOrchestratorBannerMessage = computed(() => {
+  if (!serviceOrchestratorUnavailable.value) {
+    return '';
+  }
+  if (serviceOrchestrator.value?.platform === 'disabled') {
+    return t('ingestion.pipelines.orchestratorDisabled');
+  }
+  if (serviceOrchestrator.value?.reason) {
+    return serviceOrchestrator.value.reason;
+  }
+  return t('ingestion.pipelines.orchestratorUnreachable');
+});
+
+/** P-38: the add-ingestion menu lists the kinds this service supports (official AddIngestionButton), never a hardcoded 'metadata'. */
+const addIngestionKinds = computed(() =>
+  service.value ? agentKindsForService(service.value.serviceType) : [],
+);
+
+const serviceRowActions = usePipelineRowActions({
+  isAdminUser: () => permissionStore.isAdminUser,
+  getOps: (pipeline) => servicePipelinePermissions.value.get(pipeline.id),
+  refresh: () => reloadPipelines(),
+});
+
+/**
+ * Template auto-unwrap applies to top-level refs only (see the list
+ * view): bind the two modal refs at top level, handlers stay on
+ * `serviceRowActions`.
+ */
+const serviceLogsPipeline = serviceRowActions.logsPipeline;
+const serviceKillPipeline = serviceRowActions.killPipeline;
+
 const pipelineColumns = computed<EntityListColumn[]>(() => [
   { title: t('crud.name'), dataIndex: 'name', key: 'name' },
   { title: t('crud.type'), dataIndex: 'pipelineType', key: 'pipelineType', width: 140 },
-  { title: t('crud.enabled'), key: 'enabled', width: 100 },
+  { title: t('ingestion.pipelines.status'), key: 'status', width: 110 },
+  { title: t('ingestion.pipelines.count'), key: 'count', width: 190 },
+  { title: t('ingestion.pipelines.recentRuns'), key: 'recentRuns', width: 210 },
+  { title: '', key: 'rowActions', width: 64 },
 ]);
 const residualByKey = computed(() => {
   const map = new Map<string, string>();
@@ -93,15 +159,83 @@ async function loadPipelines(): Promise<void> {
   pipelinesLoading.value = true;
   pipelinesError.value = '';
   try {
-    const page = await listIngestionPipelines({ service: service.value.fullyQualifiedName, limit: 100 });
+    const [page, orch] = await Promise.all([
+      listIngestionPipelines({
+        service: service.value.fullyQualifiedName,
+        limit: 100,
+        fields: 'owners,pipelineStatuses',
+      }),
+      getOrchestratorStatus().catch(() => null),
+    ]);
     servicePipelines.value = page.data;
+    serviceOrchestrator.value = orch;
+    serviceOrchestratorChecked.value = true;
     pipelinesLoaded.value = true;
+    const results = await Promise.allSettled(
+      page.data
+        .filter((pipeline) => Boolean(pipeline.fullyQualifiedName))
+        .map(async (pipeline) => ({
+          id: pipeline.id,
+          ops: await permissionStore.getEntityPermissionByFqn(
+            'ingestionPipeline',
+            pipeline.fullyQualifiedName as string,
+          ),
+        })),
+    );
+    const next = new Map<string, OperationPermissions>();
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        next.set(result.value.id, result.value.ops);
+      }
+    }
+    servicePipelinePermissions.value = next;
   } catch {
     servicePipelines.value = [];
     pipelinesError.value = t('crud.loadFailed');
   } finally {
     pipelinesLoading.value = false;
   }
+}
+
+async function reloadPipelines(): Promise<void> {
+  pipelinesLoaded.value = false;
+  await loadPipelines();
+}
+
+function openRunDetails(status: PipelineStatus): void {
+  serviceRunDetailsStatus.value = status;
+}
+
+function recentRunBadges(pipeline: IngestionPipeline): PipelineStatus[] {
+  return (pipeline.pipelineStatuses ?? []).slice(0, 5).reverse();
+}
+
+function runTooltip(status: PipelineStatus): string {
+  const parts: string[] = [];
+  if (status.timestamp) {
+    parts.push(`${t('ingestion.pipelines.timestamp')}: ${new Date(status.timestamp).toLocaleString()}`);
+  }
+  if (status.startDate) {
+    parts.push(`${t('ingestion.pipelines.startDate')}: ${new Date(status.startDate).toLocaleString()}`);
+  }
+  if (status.endDate) {
+    parts.push(`${t('ingestion.pipelines.endDate')}: ${new Date(status.endDate).toLocaleString()}`);
+  }
+  return parts.join('\n');
+}
+
+function logEntityTypeFor(pipeline: IngestionPipeline): string {
+  if (pipeline.pipelineType === 'TestSuite') {
+    return 'testSuite';
+  }
+  return SERVICE_KIND_BY_ENTITY_TYPE[pipeline.service?.type ?? ''] ?? '';
+}
+
+function onAddIngestion(ingestionType: string): void {
+  void router.push({
+    name: 'ingestion-service-add-ingestion',
+    params: { kind: props.kind, id: props.id, ingestionType },
+  });
 }
 
 const versions = ref<EntityVersion[]>([]);
@@ -445,19 +579,31 @@ onMounted(() => {
       <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
     </template>
     <template #pipelines>
-      <Button
-        v-if="service"
-        data-testid="add-service-ingestion"
+      <Dropdown v-if="service" :trigger="['click']">
+        <template #overlay>
+          <Menu>
+            <Menu.Item
+              v-for="ingestionType in addIngestionKinds"
+              :key="ingestionType"
+              :data-testid="`add-ingestion-${ingestionType}`"
+              @click="onAddIngestion(ingestionType)"
+            >
+              {{ t(`ingestion.pipelines.types.${ingestionType}`) }}
+            </Menu.Item>
+          </Menu>
+        </template>
+        <Button data-testid="add-service-ingestion" style="margin-bottom: 16px">
+          {{ t('ingestion.pipelines.addIngestion') }}
+        </Button>
+      </Dropdown>
+      <Alert
+        v-if="serviceOrchestratorUnavailable"
+        type="warning"
+        show-icon
+        data-testid="pipeline-orchestrator-banner"
+        :message="serviceOrchestratorBannerMessage"
         style="margin-bottom: 16px"
-        @click="
-          router.push({
-            name: 'ingestion-service-add-ingestion',
-            params: { kind: props.kind, id: props.id, ingestionType: 'metadata' },
-          })
-        "
-      >
-        {{ t('ingestion.pipelines.addIngestion') }}
-      </Button>
+      />
       <SmState
         v-if="pipelinesError"
         state="error"
@@ -473,6 +619,7 @@ onMounted(() => {
         :data-source="servicePipelines"
         :loading="pipelinesLoading"
         :pagination="false"
+        :empty-text="t('ingestion.pipelines.noPipelinesYet')"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
@@ -484,11 +631,107 @@ onMounted(() => {
               {{ entityLabel(record as IngestionPipeline) }}
             </a>
           </template>
-          <template v-else-if="column.key === 'enabled'">
-            {{ (record as IngestionPipeline).enabled === false ? t('crud.no') : t('crud.yes') }}
+          <template v-else-if="column.key === 'pipelineType'">
+            {{ renderPipelineType((record as IngestionPipeline).pipelineType) }}
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <Tag :color="(record as IngestionPipeline).enabled === false ? 'default' : 'success'">
+              {{
+                t(
+                  (record as IngestionPipeline).enabled === false
+                    ? 'ingestion.pipelines.statusPaused'
+                    : 'ingestion.pipelines.statusActive',
+                )
+              }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'count'">
+            <span v-if="getIngestionStatusCount(record as IngestionPipeline)">
+              <Tag
+                v-for="count in getIngestionStatusCount(record as IngestionPipeline)"
+                :key="count.type"
+                :color="count.type === 'success' ? 'success' : count.type === 'failed' ? 'error' : 'warning'"
+              >
+                {{ t(`ingestion.pipelines.count${count.label === 'success' ? 'Success' : count.label === 'failed' ? 'Failed' : 'Warning'}`) }} {{ count.value }}
+              </Tag>
+            </span>
+            <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'recentRuns'">
+            <span v-if="(record as IngestionPipeline).pipelineStatuses?.length">
+              <Tooltip
+                v-for="(status, index) in recentRunBadges(record as IngestionPipeline)"
+                :key="status.runId ?? index"
+                :title="runTooltip(status)"
+              >
+                <Tag
+                  :color="runBadgeColor(status.pipelineState)"
+                  :data-testid="`service-pipeline-status-${status.runId}`"
+                  style="cursor: pointer"
+                  @click="openRunDetails(status)"
+                >
+                  {{
+                    index === recentRunBadges(record as IngestionPipeline).length - 1
+                      ? renderPipelineState(status.pipelineState)
+                      : ''
+                  }}
+                </Tag>
+              </Tooltip>
+            </span>
+            <span v-else>—</span>
+          </template>
+          <template v-else-if="column.key === 'rowActions'">
+            <Dropdown :trigger="['click']">
+              <template #overlay>
+                <Menu>
+                  <PipelineRowActions
+                    show-view
+                    :pipeline="record as IngestionPipeline"
+                    :ops="servicePipelinePermissions.get((record as IngestionPipeline).id)"
+                    :is-admin-user="permissionStore.isAdminUser"
+                    :orchestrator-unavailable="serviceOrchestratorUnavailable"
+                    @view="router.push({ name: 'ingestion-pipeline', params: { id: (record as IngestionPipeline).id } })"
+                    @run="serviceRowActions.onRun"
+                    @deploy="serviceRowActions.onDeploy"
+                    @toggle="serviceRowActions.onToggle"
+                    @logs="serviceRowActions.onLogs"
+                    @edit="serviceRowActions.onEdit"
+                    @kill="serviceRowActions.onKill"
+                    @delete="serviceRowActions.onDelete"
+                  />
+                </Menu>
+              </template>
+              <Button data-testid="service-pipeline-row-overflow" size="small">⋯</Button>
+            </Dropdown>
           </template>
         </template>
       </SmTable>
+      <div
+        v-if="!pipelinesLoading && !pipelinesError && servicePipelines.length === 0"
+        data-testid="service-pipelines-empty-extra"
+        style="margin-top: 16px"
+      >
+        <Typography.Text v-if="serviceOrchestratorUnavailable" type="secondary">
+          {{ serviceOrchestratorBannerMessage }}
+        </Typography.Text>
+        <Dropdown v-else-if="service" :trigger="['click']">
+          <template #overlay>
+            <Menu>
+              <Menu.Item
+                v-for="ingestionType in addIngestionKinds"
+                :key="ingestionType"
+                :data-testid="`empty-add-ingestion-${ingestionType}`"
+                @click="onAddIngestion(ingestionType)"
+              >
+                {{ t(`ingestion.pipelines.types.${ingestionType}`) }}
+              </Menu.Item>
+            </Menu>
+          </template>
+          <Button type="primary" data-testid="empty-add-service-ingestion">
+            {{ t('ingestion.pipelines.addIngestion') }}
+          </Button>
+        </Dropdown>
+      </div>
     </template>
     <template #assets>
       <SmState state="empty" test-id="service-assets-residual" :empty-text="residualByKey.get('assets')" />
@@ -555,6 +798,24 @@ onMounted(() => {
       </template>
     </template>
   </EntityDetailShell>
+  <IngestionLogsModal
+    :open="serviceLogsPipeline !== null"
+    :pipeline="serviceLogsPipeline"
+    :log-entity-type="serviceLogsPipeline ? logEntityTypeFor(serviceLogsPipeline) : ''"
+    @close="serviceLogsPipeline = null"
+  />
+  <KillPipelineModal
+    :open="serviceKillPipeline !== null"
+    :pipeline-id="serviceKillPipeline?.id ?? ''"
+    :pipeline-name="serviceKillPipeline ? entityLabel(serviceKillPipeline) : ''"
+    @close="serviceKillPipeline = null"
+    @killed="serviceRowActions.onKillDone"
+  />
+  <IngestionRunDetailsModal
+    :open="serviceRunDetailsStatus !== null"
+    :status="serviceRunDetailsStatus"
+    @close="serviceRunDetailsStatus = null"
+  />
 </template>
 
 <style scoped>

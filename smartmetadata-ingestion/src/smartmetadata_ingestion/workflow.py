@@ -79,7 +79,7 @@ from smartmetadata_ingestion.records import (
     UsageRecord,
     WorkflowRecord,
 )
-from smartmetadata_ingestion.sinks.metadata_rest import Sink, build_sink
+from smartmetadata_ingestion.sinks.metadata_rest import FlushResult, Sink, build_sink
 from smartmetadata_ingestion.topology import SeenSet, order_records
 
 logger = logging.getLogger(__name__)
@@ -361,15 +361,76 @@ class MetadataWorkflow:
             return
         try:
             self._sink.write(current)
-            self.sink_status.records += 1
-            self.report.succeeded += 1
-            self._notify_record(current, "written")
+            self._count_sink_write(current)
         except Exception as exc:
+            # A flush-then-inner-write failure (sampled topic, service):
+            # the flush outcomes landed first — apply them before
+            # recording this record's own failure.
+            self._drain_flush_result(fail_fast=False)
             failure = self._record_failure(self.sink_status, record.label(), record.kind, exc)
             self.report.failures.append(failure)
             self._notify_record(record, "failed")
             if self.config.workflow.fail_fast:
                 raise
+
+    def _count_sink_write(self, record: WorkflowRecord) -> None:
+        """Count a sink write: immediately, or when its flush reports it.
+
+        A bulk sink only buffers some records (``buffers``): those count
+        only once a flush reports them (drained here and at close), never
+        on ``write()`` returning — the live incident counted 53 buffered
+        tables as succeeded while 0 had landed. A record the bulk sink
+        writes immediately (service, lineage, sampled topic) and any
+        record a non-bulk sink writes count right away, as before.
+        """
+        drain = getattr(self._sink, "take_flush_result", None)
+        if not callable(drain):
+            self.sink_status.records += 1
+            self.report.succeeded += 1
+            self._notify_record(record, "written")
+            return
+        buffers = getattr(self._sink, "buffers", None)
+        buffered = callable(buffers) and buffers(record)
+        self._drain_flush_result()
+        if not buffered:
+            self.sink_status.records += 1
+            self.report.succeeded += 1
+            self._notify_record(record, "written")
+
+    def _drain_flush_result(self, *, fail_fast: bool = True) -> None:
+        """Apply any flush outcomes the sink accumulated, if it reports them."""
+        drain = getattr(self._sink, "take_flush_result", None)
+        if not callable(drain):
+            return
+        result = drain()
+        if not result:
+            return
+        self._apply_flush_result(result)
+        if fail_fast and result.failed and self.config.workflow.fail_fast:
+            raise WorkflowExecutionError(
+                f"bulk flush failed for {len(result.failed)} record(s): "
+                f"{result.failed[0].error}"
+            )
+
+    def _apply_flush_result(self, result: FlushResult) -> None:
+        """Fold one flush outcome into the sink step and the report.
+
+        Only truly-flushed records count as succeeded; each failed
+        payload becomes its own failure, so the run history names the
+        records that did not land instead of one batch error.
+        """
+        for count in result.succeeded.values():
+            self.sink_status.records += count
+            self.report.succeeded += count
+        for failure in result.failed:
+            record_failure = RecordFailure(
+                label=failure.label,
+                kind=failure.kind,
+                message=failure.error,
+                stack_trace=failure.stack_trace,
+            )
+            self.sink_status.failures.append(record_failure)
+            self.report.failures.append(record_failure)
 
     def _notify_record(self, record: WorkflowRecord, status: str) -> None:
         try:
@@ -396,10 +457,15 @@ class MetadataWorkflow:
                 failures.append(exc)
         if self._sink is not None:
             try:
-                self._sink.flush()
+                result = self._sink.flush()
             except Exception as exc:
                 self._record_failure(self.sink_status, "Sink", "sink", exc)
                 failures.append(exc)
+            else:
+                # flush() returns the drained outcome (bulk sink) or None;
+                # its successes count here, its failures are per-record.
+                if result is not None:
+                    self._apply_flush_result(result)
         if failures:
             error = WorkflowTeardownError(f"workflow teardown failed: {failures[0]}")
             error.__cause__ = failures[0]

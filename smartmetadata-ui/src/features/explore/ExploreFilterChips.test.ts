@@ -59,4 +59,13 @@ describe('ExploreFilterChips facetIds', () => {
     await wrapper.findComponent(Select).vm.$emit('change', ['d1']);
     expect(wrapper.emitted('change')).toEqual([['domain', ['d1']]]);
   });
+
+  it('emits open with the facet id when a dropdown opens', async () => {
+    const wrapper = mount(ExploreFilterChips, {
+      props: { facets: FACETS, filters: {}, facetIds: ['domain'] },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    await wrapper.findComponent(Select).vm.$emit('dropdownVisibleChange', true);
+    expect(wrapper.emitted('open')).toEqual([['domain', true]]);
+  });
 });

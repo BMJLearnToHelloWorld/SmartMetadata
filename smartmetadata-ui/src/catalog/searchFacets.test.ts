@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { mapSearchAggregations } from './searchFacets';
+import { aggregationFieldNamesForFacet, mapSearchAggregations } from './searchFacets';
 
 describe('mapSearchAggregations', () => {
   it('reads terms buckets and strips typed ES/OS prefixes', () => {
@@ -72,5 +72,15 @@ describe('mapSearchAggregations', () => {
         },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('aggregationFieldNamesForFacet', () => {
+  it('returns both entity-type aggregation names for the entityType facet', () => {
+    // Official keeps two entity-type filter keys; the self-exclusion is
+    // derived from these names (ADR:2026-11-11-explore-facet-self-exclusion).
+    expect(aggregationFieldNamesForFacet('entityType')).toEqual(['entityType', 'entityType.keyword']);
+    expect(aggregationFieldNamesForFacet('service')).toEqual(['service.displayName.keyword']);
+    expect(aggregationFieldNamesForFacet('tagFqn')).toEqual(['tags.tagFQN']);
   });
 });

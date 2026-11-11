@@ -11,7 +11,9 @@
 Success bodies and failure codes follow the official plugin (ruling §2.1
 and §0.3); the server only accepts HTTP 200 as success and echoes success
 bodies as ``reason`` without parsing them, so the message texts match the
-official ones exactly. Failure mapping is per route, not generic:
+official ones exactly — except the deploy message, which keeps the official
+text as its prefix and appends the ignored source switches when any were
+dropped (P-11), so a successful deploy never silently under-ingests. Failure mapping is per route, not generic:
 ``trigger`` on an unknown DAG is a 500 (the server treats a failed trigger
 as a server error) while ``status``/``enable``/``disable``/``kill``/
 ``last_dag_logs`` on an unknown DAG are 404; ``delete`` on an unknown DAG
@@ -38,6 +40,7 @@ from smartmetadata_airflow_apis.validation import (
     validate_automation_workflow,
     validate_ingestion_pipeline,
 )
+from smartmetadata_airflow_apis.workflows.translation import ignored_source_switches
 
 logger = logging.getLogger(__name__)
 
@@ -100,11 +103,25 @@ def deploy(store: DagStore, payload: dict[str, Any]) -> HandlerResult:
         pipeline = validate_ingestion_pipeline(payload)
     except ValidationError as exc:
         return HandlerResult(400, {"error": "; ".join(exc.problems)})
+    # P-11: switches the runner will ignore are surfaced at deploy time
+    # (log + response), never silently dropped: a successful deploy must
+    # not under-ingest without anyone noticing. The official message
+    # stays the prefix; only the ignored-switch note is appended.
+    ignored = ignored_source_switches(pipeline)
+    if ignored:
+        logger.warning(
+            "deploying pipeline %s with ignored source switches: %s",
+            pipeline.get("name"),
+            ", ".join(ignored),
+        )
     try:
         dag_id = store.deploy(pipeline)
     except DagOperationError:
         return _server_error()
-    return HandlerResult(200, {"message": f"Workflow [{dag_id}] has been created"})
+    message = f"Workflow [{dag_id}] has been created"
+    if ignored:
+        message += f"; ignored source switches: {', '.join(ignored)}"
+    return HandlerResult(200, {"message": message})
 
 
 def trigger(store: DagStore, payload: dict[str, Any]) -> HandlerResult:

@@ -9,11 +9,15 @@
 from __future__ import annotations
 
 import logging
+import traceback
+from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+import httpx
 
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import WorkflowConfig
-from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.errors import RestError, WorkflowError
 from smartmetadata_ingestion.topology import SeenSet
 from smartmetadata_ingestion.records import (
     ChartRecord,
@@ -42,10 +46,60 @@ from smartmetadata_ingestion.records import (
 logger = logging.getLogger(__name__)
 
 
+def _payload_label(kind: str, payload: dict[str, Any]) -> str:
+    """The record label a bulk payload stands for (``kind:fqn``).
+
+    Bulk payloads carry the bare name plus the parent FQN, which is
+    exactly how the record's own ``label()`` reads.
+    """
+    parent = (
+        payload.get("databaseSchema")
+        or payload.get("database")
+        or payload.get("service")
+        or payload.get("fullyQualifiedName")
+        or ""
+    )
+    name = payload.get("name") or ""
+    fqn = f"{parent}.{name}" if parent and name else (name or kind)
+    return f"{kind}:{fqn}"
+
+
+@dataclass
+class FlushFailure:
+    """One record whose flush did not persist it."""
+
+    kind: str
+    payload: dict[str, Any]
+    error: str
+    stack_trace: str | None = None
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.label:
+            self.label = _payload_label(self.kind, self.payload)
+
+
+@dataclass
+class FlushResult:
+    """The outcome of one or more flushes, drained by the caller.
+
+    ``succeeded`` counts truly-flushed records per kind (official
+    ``_flush_buffer``: only ``result.successRequest`` counts);
+    ``failed`` carries one entry per record that did not persist, so the
+    caller can record each as its own failure instead of one batch error.
+    """
+
+    succeeded: dict[str, int] = field(default_factory=dict)
+    failed: list[FlushFailure] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.succeeded or self.failed)
+
+
 class Sink(Protocol):
     def write(self, record: WorkflowRecord) -> Any: ...
 
-    def flush(self) -> None: ...
+    def flush(self) -> Any: ...
 
 
 class MetadataRestSink:
@@ -131,7 +185,15 @@ def build_sink(config: WorkflowConfig, client: RestClient, sink: Sink | None = N
 
 
 class BulkMetadataRestSink:
-    """Buffer create/update payloads and flush via Apache /bulk endpoints."""
+    """Buffer create/update payloads and flush via Apache /bulk endpoints.
+
+    A buffered record is NOT yet persisted when ``write()`` returns:
+    flush outcomes accumulate in :attr:`_flush_result` and the caller
+    drains them with :meth:`take_flush_result` (after each write, and
+    from :meth:`flush` at close). Only records a flush reports in
+    ``successRequest`` count as succeeded; each failed payload becomes
+    one :class:`FlushFailure` (official ``_flush_buffer``).
+    """
 
     def __init__(self, client: RestClient, *, batch_size: int = 50) -> None:
         self._inner = MetadataRestSink(client)
@@ -139,6 +201,7 @@ class BulkMetadataRestSink:
         self._batch_size = batch_size
         self.written: list[str] = self._inner.written
         self.seen = SeenSet()
+        self._flush_result = FlushResult()
         self._buffers: dict[str, list[dict]] = {
             "database": [],
             "schema": [],
@@ -149,6 +212,35 @@ class BulkMetadataRestSink:
             "container": [],
             "pipeline": [],
         }
+
+    def buffers(self, record: WorkflowRecord) -> bool:
+        """Whether ``write()`` only buffers this record (not yet persisted).
+
+        Mirrors ``write()`` exactly: the eight buffered kinds, with a
+        sampled topic taking the immediate path (its sample PUT needs the
+        topic id from the single-write upsert).
+        """
+        if isinstance(record, TopicRecord):
+            return not (record.sample_data and record.sample_data.messages)
+        return isinstance(
+            record,
+            (
+                DatabaseRecord,
+                SchemaRecord,
+                TableRecord,
+                ChartRecord,
+                DashboardRecord,
+                ContainerRecord,
+                PipelineRecord,
+            ),
+        )
+
+    def take_flush_result(self) -> FlushResult | None:
+        """Return and clear the accumulated flush outcomes, if any."""
+        if not self._flush_result:
+            return None
+        result, self._flush_result = self._flush_result, FlushResult()
+        return result
 
     def write(self, record: WorkflowRecord) -> Any:
         self.seen.add(record)
@@ -169,7 +261,7 @@ class BulkMetadataRestSink:
                 # The sample PUT needs the topic id from the upsert
                 # response, which the bulk path does not return per topic:
                 # flush, then single-write (upsert + sample PUT).
-                self.flush()
+                self._flush_all()
                 return self._inner.write(record)
             self._buffers["topic"].append(_topic_payload(record))
             self.written.append(record.label())
@@ -191,14 +283,19 @@ class BulkMetadataRestSink:
             self.written.append(record.label())
             return self._flush_kind("pipeline", force=False)
         # Flush buffered parents before services/lineage so wire order stays parent-first.
-        self.flush()
+        self._flush_all()
         return self._inner.write(record)
 
-    def flush(self) -> None:
+    def flush(self) -> FlushResult | None:
+        """Flush every buffer and return the drained outcome, if any."""
+        self._flush_all()
+        return self.take_flush_result()
+
+    def _flush_all(self) -> None:
         for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container", "pipeline"):
             self._flush_kind(kind, force=True)
 
-    def _flush_kind(self, kind: str, *, force: bool) -> Any:
+    def _flush_kind(self, kind: str, *, force: bool) -> None:
         buf = self._buffers[kind]
         if not buf:
             return None
@@ -206,23 +303,87 @@ class BulkMetadataRestSink:
             return None
         payloads = list(buf)
         buf.clear()
-        if kind == "database":
-            return self._client.bulk_upsert_databases(payloads)
-        if kind == "schema":
-            return self._client.bulk_upsert_schemas(payloads)
-        if kind == "table":
-            return self._client.bulk_upsert_tables(payloads)
-        if kind == "topic":
-            return self._client.bulk_upsert_topics(payloads)
-        if kind == "chart":
-            return self._client.bulk_upsert_charts(payloads)
-        if kind == "dashboard":
-            return self._client.bulk_upsert_dashboards(payloads)
-        if kind == "container":
-            return self._client.bulk_upsert_containers(payloads)
-        if kind == "pipeline":
-            return self._client.bulk_upsert_pipelines(payloads)
-        return None
+        try:
+            if kind == "database":
+                result = self._client.bulk_upsert_databases(payloads)
+            elif kind == "schema":
+                result = self._client.bulk_upsert_schemas(payloads)
+            elif kind == "table":
+                result = self._client.bulk_upsert_tables(payloads)
+            elif kind == "topic":
+                result = self._client.bulk_upsert_topics(payloads)
+            elif kind == "chart":
+                result = self._client.bulk_upsert_charts(payloads)
+            elif kind == "dashboard":
+                result = self._client.bulk_upsert_dashboards(payloads)
+            elif kind == "container":
+                result = self._client.bulk_upsert_containers(payloads)
+            elif kind == "pipeline":
+                result = self._client.bulk_upsert_pipelines(payloads)
+            else:
+                return None
+        except (RestError, httpx.HTTPError) as exc:
+            # The whole batch was refused (the live 400): every payload
+            # in it failed, each as its own failure — not one batch error.
+            for payload in payloads:
+                self._record_flush_failure(
+                    kind, payload, str(exc), traceback.format_exc()
+                )
+            return None
+        self._record_flush_response(kind, payloads, result)
+
+    def _record_flush_response(
+        self, kind: str, payloads: list[dict], result: Any
+    ) -> None:
+        """Count a bulk response (BulkOperationResult) per record.
+
+        ``successRequest`` entries are the records that landed;
+        ``failedRequest`` entries carry the original ``request`` plus a
+        ``message``. A response without either list is a failure for
+        every payload: nothing was observably landed, so nothing counts
+        as succeeded (fail closed — an unobservable flush must not
+        count as a success).
+        """
+        if isinstance(result, dict) and (
+            "successRequest" in result or "failedRequest" in result
+        ):
+            succeeded = result.get("successRequest") or []
+            failed = result.get("failedRequest") or []
+            if succeeded:
+                current = self._flush_result.succeeded.get(kind, 0)
+                self._flush_result.succeeded[kind] = current + len(succeeded)
+            for entry in failed:
+                if isinstance(entry, dict):
+                    request = entry.get("request")
+                    payload = request if isinstance(request, dict) else entry
+                    error = entry.get("message") or str(entry)
+                else:
+                    payload, error = {}, str(entry)
+                self._record_flush_failure(kind, payload, error)
+            return
+        # No result lists at all (e.g. an empty-body 200, which
+        # RestClient.request() returns as None): fail closed, one
+        # failure per payload and zero succeeded.
+        for payload in payloads:
+            self._record_flush_failure(
+                kind, payload, f"unexpected bulk response: {result!r}"
+            )
+
+    def _record_flush_failure(
+        self,
+        kind: str,
+        payload: dict,
+        error: str,
+        stack_trace: str | None = None,
+    ) -> None:
+        self._flush_result.failed.append(
+            FlushFailure(
+                kind=kind,
+                payload=dict(payload),
+                error=error,
+                stack_trace=stack_trace,
+            )
+        )
 
 
 

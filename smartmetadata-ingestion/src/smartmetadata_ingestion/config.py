@@ -81,7 +81,18 @@ class ServerConfig(CamelModel):
 
 class WorkflowSettings(CamelModel):
     name: str
-    type: Literal["metadata", "usage", "lineage", "profiler", "TestSuite", "data_diff"] = "metadata"
+    type: Literal[
+        "metadata",
+        "usage",
+        "lineage",
+        "profiler",
+        "TestSuite",
+        "data_diff",
+        "dbt",
+        "autoClassification",
+        "elasticSearchReindex",
+        "application",
+    ] = "metadata"
     fail_fast: bool = False
     ingestion_pipeline_fqn: str | None = None
     reconcile_stale: bool = False
@@ -131,6 +142,12 @@ class SourceConfig(CamelModel):
     exclude_containers: list[str] = Field(default_factory=list)
     include_pipelines: list[str] = Field(default_factory=list)
     exclude_pipelines: list[str] = Field(default_factory=list)
+    # Table scope (P-11): official FilterPattern regex, passed through
+    # verbatim by the translation layer; include_views decides whether
+    # View / MaterializedView rows are emitted at all.
+    include_tables: list[str] = Field(default_factory=list)
+    exclude_tables: list[str] = Field(default_factory=list)
+    include_views: bool = True
     include_view_lineage: bool = False
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)

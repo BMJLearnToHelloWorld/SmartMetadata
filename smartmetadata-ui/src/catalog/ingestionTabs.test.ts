@@ -10,7 +10,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   INGESTION_PIPELINE_TABS,
-  PIPELINE_ENTITY_TABS,
   SERVICE_CATEGORIES,
   SERVICE_DETAIL_TABS,
   ingestionTabKeys,
@@ -73,9 +72,8 @@ describe('ingestionTabs', () => {
     expect(byKey.get('versions')?.supported).toBe(true);
   });
 
-  it('marks ingestion pipeline trigger as supported and entity DAG tabs as supported', () => {
-    expect(INGESTION_PIPELINE_TABS.find((tab) => tab.key === 'trigger')?.supported).toBe(true);
-    expect(ingestionTabKeys(PIPELINE_ENTITY_TABS)).toEqual(['tasks', 'executions']);
-    expect(PIPELINE_ENTITY_TABS.every((tab) => tab.supported)).toBe(true);
+  it('lists the ingestion pipeline detail tabs the view renders', () => {
+    expect(ingestionTabKeys(INGESTION_PIPELINE_TABS)).toEqual(['overview', 'status']);
+    expect(INGESTION_PIPELINE_TABS.every((tab) => tab.supported)).toBe(true);
   });
 });

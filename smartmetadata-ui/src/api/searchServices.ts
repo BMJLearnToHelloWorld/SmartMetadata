@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString, parsePaged } from '@/api/json';
+import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { mapTestConnectionResult } from '@/api/serviceCommon';
 import type { Paged } from '@/types/admin';
 import type { CatalogService, CreateDatabaseServiceRequest, ServiceConnection } from '@/types/ingestion';
@@ -43,6 +43,7 @@ export function mapSearchService(raw: Record<string, unknown>): CatalogService |
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
     kind: 'search',
     serviceType: asString(raw.serviceType),
+    owners: mapEntityRefs(raw.owners),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
   };

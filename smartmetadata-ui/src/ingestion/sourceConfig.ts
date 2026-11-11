@@ -7,9 +7,14 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import type { PipelineFormValues, PipelineSourceConfig, PipelineType, ServiceKind } from '@/types/ingestion';
+import type { PipelineSourceConfig, PipelineType, ServiceKind } from '@/types/ingestion';
+import {
+  ELASTIC_SEARCH_OMITTED_FIELDS,
+  cleanWorkFlowData,
+  formatAdditionalProperties,
+} from './ingestionSchemas';
 
-function splitCsv(value: string | undefined): string[] {
+export function splitCsv(value: string | undefined): string[] {
   if (!value) {
     return [];
   }
@@ -36,106 +41,72 @@ export function sourceConfigTypeForPipeline(
   if (pipelineType === 'TestSuite') {
     return 'TestSuite';
   }
+  if (pipelineType === 'dbt') {
+    return 'DBT';
+  }
+  if (pipelineType === 'autoClassification') {
+    return 'AutoClassification';
+  }
+  if (pipelineType === 'dataInsight') {
+    return 'dataInsight';
+  }
+  if (pipelineType === 'elasticSearchReindex') {
+    return 'MetadataToElasticSearch';
+  }
   // metadata (default) — kind-specific OM metadata pipeline config types
   return sourceConfigTypeForKind(kind);
 }
 
-export function buildSourceConfig(form: PipelineFormValues): PipelineSourceConfig {
-  const pipelineType = (form.pipelineType || 'metadata') as PipelineType;
-  if (form.serviceKind === 'messaging') {
-    const includes = splitCsv(form.includeTopics);
-    return {
-      config: {
-        type: sourceConfigTypeForPipeline(pipelineType, 'messaging'),
-        ...(includes.length ? { topicFilterPattern: { includes } } : {}),
-        // H track 1: only emitted when checked — official default is false.
-        ...(form.generateSampleData ? { generateSampleData: true } : {}),
-      },
-    };
-  }
-  if (form.serviceKind === 'dashboard') {
-    const dashboards = splitCsv(form.includeDashboards);
-    const charts = splitCsv(form.includeCharts);
-    return {
-      config: {
-        type: sourceConfigTypeForPipeline(pipelineType, 'dashboard'),
-        ...(dashboards.length ? { dashboardFilterPattern: { includes: dashboards } } : {}),
-        ...(charts.length ? { chartFilterPattern: { includes: charts } } : {}),
-      },
-    };
-  }
-  if (form.serviceKind === 'storage') {
-    const containers = splitCsv(form.includeContainers);
-    return {
-      config: {
-        type: sourceConfigTypeForPipeline(pipelineType, 'storage'),
-        ...(containers.length ? { containerFilterPattern: { includes: containers } } : {}),
-      },
-    };
-  }
-  const includes = splitCsv(form.includeSchemas);
-  const configType = sourceConfigTypeForPipeline(pipelineType, form.serviceKind);
-  if (pipelineType === 'lineage' || pipelineType === 'usage') {
-    return {
-      config: {
-        type: configType,
-        ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
-      },
-    };
-  }
-  if (pipelineType === 'profiler' || pipelineType === 'TestSuite') {
-    return {
-      config: {
-        type: configType,
-        ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
-      },
-    };
-  }
-  // Pipeline services (Prefect/Dagster) only offer 'metadata' pipelines
-  // (AGENT_KINDS_BY_SERVICE), and PipelineServiceMetadataPipeline has
-  // additionalProperties: false with no includeViews / includeTables /
-  // schemaFilterPattern — so a pipeline-service metadata config is the
-  // bare type, never the database fallthrough below.
-  if (form.serviceKind === 'pipeline') {
-    return { config: { type: configType } };
+/**
+ * Build the `sourceConfig` for a create or edit from the schema-driven
+ * form data (P-08(d)). The form data is the `sourceConfig.config` object
+ * itself: the schema defaults are already seeded into it, so the old
+ * per-kind hand-written branches (which only knew 7 fields, includes
+ * without excludes, and the wrong `type` for some kinds) are gone.
+ *
+ * The form data starts from the saved config on edit (so keys the form
+ * does not model survive — the P-07 guarantee — and a field the user
+ * clears is genuinely removed), and from the filter-pattern prefill on
+ * create. The `type` always comes from the (pipelineType, kind) mapping
+ * (P-08(a)). Submission follows official's `IngestionWorkflowForm`
+ * submit: `formatAdditionalProperties` drops unfilled `newKey*` map
+ * rows, then `cleanWorkFlowData` drops filter-pattern objects with
+ * empty includes AND excludes. ElasticSearchReindex pipelines
+ * additionally omit the six connection fields official strips on
+ * submit.
+ */
+export function buildSourceConfig({
+  pipelineType,
+  serviceKind,
+  sourceConfigData,
+}: {
+  pipelineType: PipelineType;
+  serviceKind: ServiceKind;
+  sourceConfigData: Record<string, unknown>;
+}): PipelineSourceConfig {
+  // Official clones before formatting (`formatAdditionalProperties(
+  // cloneDeep(formData))`): the formatter mutates nested objects, and
+  // the form's data must not lose its unfilled rows on submit. The clone
+  // is a JSON round-trip, not `structuredClone`: the form data is a Vue
+  // reactive object, and `structuredClone` throws DataCloneError on
+  // reactive proxies (nested values stay reactive even after `toRaw`,
+  // which only unwraps the top level). The data is JSON-shaped by
+  // construction (schema defaults + user input), so the round-trip is
+  // lossless here and additionally drops undefined-valued keys, which
+  // the server must not receive as present keys.
+  const data = cleanWorkFlowData(
+    formatAdditionalProperties(JSON.parse(JSON.stringify(sourceConfigData)) as Record<string, unknown>),
+  );
+  if (pipelineType === 'elasticSearchReindex') {
+    for (const field of ELASTIC_SEARCH_OMITTED_FIELDS) {
+      delete data[field];
+    }
   }
   return {
     config: {
-      type: configType,
-      includeViews: form.includeViews,
-      includeTables: true,
-      ...(includes.length ? { schemaFilterPattern: { includes } } : {}),
+      ...data,
+      type: sourceConfigTypeForPipeline(pipelineType, serviceKind),
     },
-  };
-}
-
-export function formHintsFromSourceConfig(
-  sourceConfig: PipelineSourceConfig | undefined,
-  kind: ServiceKind,
-): Pick<
-  PipelineFormValues,
-  | 'includeViews'
-  | 'includeSchemas'
-  | 'includeTopics'
-  | 'generateSampleData'
-  | 'includeDashboards'
-  | 'includeCharts'
-  | 'includeContainers'
-> {
-  const config = sourceConfig?.config ?? {};
-  const schemaIncludes = config.schemaFilterPattern?.includes ?? [];
-  const topicIncludes = config.topicFilterPattern?.includes ?? [];
-  const dashboardIncludes = config.dashboardFilterPattern?.includes ?? [];
-  const chartIncludes = config.chartFilterPattern?.includes ?? [];
-  const containerIncludes = config.containerFilterPattern?.includes ?? [];
-  return {
-    includeViews: kind === 'database' ? config.includeViews !== false : true,
-    includeSchemas: schemaIncludes.join(', '),
-    includeTopics: topicIncludes.join(', '),
-    generateSampleData: config.generateSampleData === true,
-    includeDashboards: dashboardIncludes.join(', '),
-    includeCharts: chartIncludes.join(', '),
-    includeContainers: containerIncludes.join(', '),
   };
 }
 
@@ -148,6 +119,18 @@ export function sourceConfigTypeForKind(kind: ServiceKind): string {
   }
   if (kind === 'storage') {
     return 'StorageMetadata';
+  }
+  if (kind === 'api') {
+    return 'ApiMetadata';
+  }
+  if (kind === 'mlmodel') {
+    return 'MlModelMetadata';
+  }
+  if (kind === 'search') {
+    return 'SearchMetadata';
+  }
+  if (kind === 'drive') {
+    return 'DriveMetadata';
   }
   // M-Next B2: pipeline services (Prefect/Dagster) take PipelineMetadata —
   // official pipelineServiceMetadataPipeline.json's pipelineMetadataConfigType

@@ -102,7 +102,6 @@ const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
 const EditServiceConnectionView = () => import('@/views/ingestion/EditServiceConnectionView.vue');
 const ServiceDetailView = () => import('@/views/ingestion/ServiceDetailView.vue');
 const AddServiceIngestionView = () => import('@/views/ingestion/AddServiceIngestionView.vue');
-const TestSuiteIngestionView = () => import('@/views/quality/TestSuiteIngestionView.vue');
 const QueryFullScreenView = () => import('@/views/QueryFullScreenView.vue');
 const AddQueryView = () => import('@/views/AddQueryView.vue');
 const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
@@ -772,16 +771,25 @@ export const router = createRouter({
           props: true,
         },
         {
+          // P-22: the add/edit ingestion page is a drawer on the suite
+          // detail Pipelines Tab now (official TestSuiteIngestionRedirect);
+          // the old routes land there instead of a page.
           path: 'quality/test-suites/:id/add-ingestion',
           name: 'quality-test-suite-add-ingestion',
-          component: TestSuiteIngestionView,
-          props: true,
+          redirect: (to) => ({
+            name: 'quality-test-suite',
+            params: { id: to.params.id },
+            query: { tab: 'pipeline' },
+          }),
         },
         {
           path: 'quality/test-suites/:id/edit-ingestion/:ingestionFqn',
           name: 'quality-test-suite-edit-ingestion',
-          component: TestSuiteIngestionView,
-          props: true,
+          redirect: (to) => ({
+            name: 'quality-test-suite',
+            params: { id: to.params.id },
+            query: { tab: 'pipeline' },
+          }),
         },
         {
           path: 'query-view/:fqn/:queryId',

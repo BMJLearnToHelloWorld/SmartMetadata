@@ -62,7 +62,17 @@ import type { OperationPermissions } from '@/api/permissions';
 // a non-admin must never reach the customize route, and the home page
 // only offers the entry to admins with a persona in play.
 // ADR:2026-11-10-my-data-customize-page-drag
-export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements', '/customize-page'] as const;
+// '/ingestion/pipelines' is the ingestion pipeline workspace (P-17):
+// official keeps only the Pipelines tab admin-only
+// (ServicesPage.tsx:147-165) — the Services page itself admits users
+// with category view permission, and the service-detail Ingestion tab
+// admits owner/owner-team/admin (ServiceDetailsPage.tsx:1896). So only
+// the pipeline list/detail/edit routes are admin-gated here; the
+// service routes (/ingestion/services*) keep their existing
+// view-permission behaviour, and the per-action permission bits still
+// gate the buttons inside. No ADMIN_ROUTE_RESOURCE entry: without a
+// determined resource mapping the routes stay admin-only by design.
+export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements', '/customize-page', '/ingestion/pipelines'] as const;
 
 /**
  * Admin route name -> permission resource for the guard's second

@@ -50,6 +50,11 @@ export interface SearchTestCasesQuery {
   includeAllTests?: boolean;
   sortField?: string;
   sortType?: 'asc' | 'desc';
+  /** Scope the search to a suite / entity (pin ListTestCaseParamsBySearch). */
+  testSuiteId?: string;
+  entityLink?: string;
+  entityFQN?: string;
+  columnName?: string;
 }
 
 function mapEntityRef(value: unknown): EntityRef | undefined {
@@ -264,6 +269,10 @@ export function listTestCasesBySearch(query: SearchTestCasesQuery = {}): Promise
       startTimestamp: query.startTimestamp,
       endTimestamp: query.endTimestamp,
       includeAllTests: query.includeAllTests ?? true,
+      testSuiteId: query.testSuiteId,
+      entityLink: query.entityLink,
+      entityFQN: query.entityFQN,
+      columnName: query.columnName,
       sortField: query.sortField,
       sortType: query.sortType,
     },

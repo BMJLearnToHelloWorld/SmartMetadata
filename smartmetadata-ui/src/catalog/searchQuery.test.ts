@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  composeFacetQuery,
   composeSearchQuery,
   filtersFromQuery,
   isIndexNotFoundError,
@@ -16,9 +17,11 @@ import {
   pageSizeFromQuery,
   searchRouteFromLocation,
   searchRouteQuery,
+  selfExcludedFacetIds,
   sortFromQuery,
   toggleFilterValue,
 } from './searchQuery';
+import { aggregationFieldNamesForFacet } from './searchFacets';
 
 describe('searchQuery', () => {
   it('composes documented Lucene q= terms for entity type and tags', () => {
@@ -97,5 +100,37 @@ describe('searchQuery', () => {
     expect(composeSearchQuery('', { dataProduct: ['Finance Mart'] })).toBe(
       'dataProducts.displayName.keyword:"Finance Mart"',
     );
+  });
+
+  it('excludes only the facet own field when composing its options query (ADR:2026-11-11-explore-facet-self-exclusion)', () => {
+    // Selecting Tag must not shrink the entityType chip to just Tag: the
+    // options query drops entityType but keeps the free text and the
+    // service filter, so Metric stays available.
+    expect(
+      composeFacetQuery('orders', { entityType: ['tag'], service: ['mysql'] }, 'entityType'),
+    ).toBe('orders AND service.displayName.keyword:mysql');
+    // The reverse: opening the service chip drops the service filter but
+    // keeps the entityType filter, so other services stay available.
+    expect(
+      composeFacetQuery('orders', { entityType: ['tag'], service: ['mysql'] }, 'service'),
+    ).toBe('orders AND entityType:tag');
+    // A multi-value own filter is dropped as a whole.
+    expect(composeFacetQuery('', { entityType: ['table', 'topic'] }, 'entityType')).toBe('*');
+    // With no other filters, the options query is just the free text.
+    expect(composeFacetQuery('orders', { entityType: ['tag'] }, 'entityType')).toBe('orders');
+  });
+
+  it('derives the excluded ids from the facet own mapping', () => {
+    // The entity-type facet records two aggregation names (official's
+    // `entityType` and `entityType.keyword`), but this console has only
+    // one entity-type filter id, so the exclusion is the singleton —
+    // there is no second filter to exclude.
+    expect(aggregationFieldNamesForFacet('entityType')).toEqual([
+      'entityType',
+      'entityType.keyword',
+    ]);
+    expect(selfExcludedFacetIds('entityType')).toEqual(['entityType']);
+    expect(selfExcludedFacetIds('service')).toEqual(['service']);
+    expect(selfExcludedFacetIds('tagFqn')).toEqual(['tagFqn']);
   });
 });

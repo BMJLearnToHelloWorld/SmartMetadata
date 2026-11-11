@@ -478,6 +478,19 @@ class RestClient:
         )
         return self.request("PUT", path, json=status)
 
+    def get_pipeline_status(self, fqn: str, run_id: str) -> Any:
+        """GET /v1/services/ingestionPipelines/{fqn}/pipelineStatus/{runId}."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("ingestion pipeline fqn is required for pipelineStatus")
+        if not run_id or not str(run_id).strip():
+            raise WorkflowError("pipeline run id is required for pipelineStatus")
+        path = (
+            f"{INGESTION_PIPELINES_PATH}/"
+            f"{encode_path_segment(str(fqn).strip())}/pipelineStatus/"
+            f"{encode_path_segment(str(run_id).strip())}"
+        )
+        return self.request("GET", path)
+
     # --- Automation workflows (test connection) ---------------------------
     # The test-connection runner fetches its definition and patches the
     # workflow with the result (ADR:2026-11-11-test-connection-failed-steps-are-results).

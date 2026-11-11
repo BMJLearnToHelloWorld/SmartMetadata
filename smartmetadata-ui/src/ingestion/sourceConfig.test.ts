@@ -8,201 +8,198 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { buildSourceConfig, formHintsFromSourceConfig, sourceConfigTypeForKind } from './sourceConfig';
+import { reactive } from 'vue';
+import {
+  buildSourceConfig,
+  sourceConfigTypeForKind,
+  sourceConfigTypeForPipeline,
+} from './sourceConfig';
 
+// The per-kind hand-written branches (includeViews / includeSchemas /
+// includeTopics / ...) are superseded by the schema-driven form
+// (P-08(d)): buildSourceConfig now takes the form data — the
+// sourceConfig.config object itself — and only the type mapping, the
+// empty-filter-pattern cleanup, the unfilled-map-row cleanup, and the
+// ElasticSearch submit-time omit remain. The prefill
+// (getDefaultFilterPropertyValues) lives in ingestionSchemas.ts and is
+// tested there.
 describe('pipeline sourceConfig', () => {
   it('maps database pipelines to DatabaseMetadata', () => {
     expect(
+      buildSourceConfig({ pipelineType: 'metadata', serviceKind: 'database', sourceConfigData: {} }),
+    ).toEqual({ config: { type: 'DatabaseMetadata' } });
+  });
+
+  it('maps lineage/usage/profiler/TestSuite/dbt pipelineTypes to OM config types', () => {
+    const cases: Array<[string, string, string]> = [
+      ['lineage', 'database', 'DatabaseLineage'],
+      ['usage', 'database', 'DatabaseUsage'],
+      ['profiler', 'database', 'Profiler'],
+      ['TestSuite', 'database', 'TestSuite'],
+      ['dbt', 'database', 'DBT'],
+      ['autoClassification', 'database', 'AutoClassification'],
+      ['dataInsight', 'database', 'dataInsight'],
+      ['elasticSearchReindex', 'database', 'MetadataToElasticSearch'],
+    ];
+    for (const [pipelineType, kind, type] of cases) {
+      expect(
+        buildSourceConfig({
+          pipelineType: pipelineType as 'metadata',
+          serviceKind: kind as 'database',
+          sourceConfigData: {},
+        }),
+      ).toEqual({ config: { type } });
+    }
+  });
+
+  it('maps api/mlmodel/search/drive/pipeline kinds to their own metadata config types (P-08a)', () => {
+    expect(sourceConfigTypeForKind('api')).toBe('ApiMetadata');
+    expect(sourceConfigTypeForKind('mlmodel')).toBe('MlModelMetadata');
+    expect(sourceConfigTypeForKind('search')).toBe('SearchMetadata');
+    expect(sourceConfigTypeForKind('drive')).toBe('DriveMetadata');
+    expect(sourceConfigTypeForKind('pipeline')).toBe('PipelineMetadata');
+    expect(sourceConfigTypeForPipeline('metadata', 'api')).toBe('ApiMetadata');
+  });
+
+  it('passes the whole form data through — every schema field, not just the old seven', () => {
+    expect(
       buildSourceConfig({
-        name: 'warehouse-metadata',
         pipelineType: 'metadata',
-        serviceId: 'svc1',
         serviceKind: 'database',
-        includeViews: true,
-        includeSchemas: 'public, analytics',
+        sourceConfigData: {
+          includeViews: false,
+          includeTables: true,
+          threads: 4,
+          schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] },
+          tableFilterPattern: { includes: ['^fact_.*$'], excludes: [] },
+          queryLogDuration: 7,
+        },
+      }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseMetadata',
+        includeViews: false,
+        includeTables: true,
+        threads: 4,
+        schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] },
+        tableFilterPattern: { includes: ['^fact_.*$'], excludes: [] },
+        queryLogDuration: 7,
+      },
+    });
+  });
+
+  it('drops filter-pattern objects with empty includes AND excludes (cleanWorkFlowData)', () => {
+    expect(
+      buildSourceConfig({
+        pipelineType: 'metadata',
+        serviceKind: 'database',
+        sourceConfigData: {
+          includeViews: true,
+          schemaFilterPattern: { includes: [], excludes: [] },
+          tableFilterPattern: { includes: ['^fact_.*$'], excludes: [] },
+        },
       }),
     ).toEqual({
       config: {
         type: 'DatabaseMetadata',
         includeViews: true,
-        includeTables: true,
-        schemaFilterPattern: { includes: ['public', 'analytics'] },
+        tableFilterPattern: { includes: ['^fact_.*$'], excludes: [] },
       },
     });
   });
 
-  it('maps messaging pipelines to MessagingMetadata', () => {
+  it('drops unfilled newKey map rows (formatAdditionalProperties)', () => {
     expect(
       buildSourceConfig({
-        name: 'kafka-topics',
         pipelineType: 'metadata',
-        serviceId: 'svc2',
-        serviceKind: 'messaging',
+        serviceKind: 'database',
+        sourceConfigData: {
+          ownerConfig: { database: { sales: 'alice@example.com', newKey1: {} } },
+        },
+      }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseMetadata',
+        ownerConfig: { database: { sales: 'alice@example.com' } },
+      },
+    });
+  });
+
+  it('keeps keys the form does not model (the P-07 edit guarantee)', () => {
+    expect(
+      buildSourceConfig({
+        pipelineType: 'metadata',
+        serviceKind: 'database',
+        sourceConfigData: {
+          includeViews: true,
+          someFutureKey: { nested: true },
+        },
+      }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseMetadata',
         includeViews: true,
-        includeTopics: 'orders',
+        someFutureKey: { nested: true },
+      },
+    });
+  });
+
+  it('omits the six ElasticSearch-connection fields for elasticSearchReindex', () => {
+    expect(
+      buildSourceConfig({
+        pipelineType: 'elasticSearchReindex',
+        serviceKind: 'database',
+        sourceConfigData: {
+          useSSL: true,
+          verifyCerts: true,
+          timeout: 30,
+          caCerts: 'cert',
+          useAwsCredentials: true,
+          regionName: 'us-east-1',
+          batchSize: 100,
+        },
+      }),
+    ).toEqual({
+      config: { type: 'MetadataToElasticSearch', batchSize: 100 },
+    });
+  });
+
+  it('clones Vue reactive form data without throwing (DataCloneError)', () => {
+    // The form data is a Vue reactive object. `structuredClone` throws
+    // DataCloneError on reactive proxies, which killed the create/edit
+    // submit before the request was even built; the clone must be a
+    // JSON round-trip instead.
+    const data = reactive({
+      includeViews: true,
+      schemaFilterPattern: { includes: ['public'], excludes: [] },
+    });
+    expect(
+      buildSourceConfig({ pipelineType: 'metadata', serviceKind: 'database', sourceConfigData: data }),
+    ).toEqual({
+      config: {
+        type: 'DatabaseMetadata',
+        includeViews: true,
+        schemaFilterPattern: { includes: ['public'], excludes: [] },
+      },
+    });
+    // The form's data is untouched by the submit-time formatting.
+    expect(data.schemaFilterPattern).toEqual({ includes: ['public'], excludes: [] });
+  });
+
+  it('carries excludes for every filter field (P-08(b))', () => {
+    expect(
+      buildSourceConfig({
+        pipelineType: 'metadata',
+        serviceKind: 'messaging',
+        sourceConfigData: {
+          topicFilterPattern: { includes: [], excludes: ['^internal_.*$'] },
+        },
       }),
     ).toEqual({
       config: {
         type: 'MessagingMetadata',
-        topicFilterPattern: { includes: ['orders'] },
+        topicFilterPattern: { includes: [], excludes: ['^internal_.*$'] },
       },
     });
   });
-
-  it('emits generateSampleData for messaging only when checked', () => {
-    expect(
-      buildSourceConfig({
-        name: 'kafka-topics',
-        pipelineType: 'metadata',
-        serviceId: 'svc2',
-        serviceKind: 'messaging',
-        includeViews: true,
-        includeTopics: 'orders',
-        generateSampleData: true,
-      }),
-    ).toEqual({
-      config: {
-        type: 'MessagingMetadata',
-        topicFilterPattern: { includes: ['orders'] },
-        generateSampleData: true,
-      },
-    });
-    // Unchecked (or absent) omits the key — official default is false.
-    expect(
-      buildSourceConfig({
-        name: 'kafka-topics',
-        pipelineType: 'metadata',
-        serviceId: 'svc2',
-        serviceKind: 'messaging',
-        includeViews: true,
-        includeTopics: 'orders',
-        generateSampleData: false,
-      }).config?.generateSampleData,
-    ).toBeUndefined();
-  });
-
-  it('reads generateSampleData back into form hints', () => {
-    expect(
-      formHintsFromSourceConfig(
-        { config: { type: 'MessagingMetadata', generateSampleData: true } },
-        'messaging',
-      ).generateSampleData,
-    ).toBe(true);
-    expect(
-      formHintsFromSourceConfig({ config: { type: 'MessagingMetadata' } }, 'messaging')
-        .generateSampleData,
-    ).toBe(false);
-  });
-
-  it('maps dashboard pipelines to DashboardMetadata filters', () => {
-    expect(
-      buildSourceConfig({
-        name: 'dash-meta',
-        serviceId: 'd1',
-        serviceKind: 'dashboard',
-        includeDashboards: 'sales, ops',
-        includeCharts: 'kpi-1',
-      }),
-    ).toEqual({
-      config: {
-        type: 'DashboardMetadata',
-        dashboardFilterPattern: { includes: ['sales', 'ops'] },
-        chartFilterPattern: { includes: ['kpi-1'] },
-      },
-    });
-    expect(sourceConfigTypeForKind('dashboard')).toBe('DashboardMetadata');
-  });
-
-  it('maps storage pipelines to StorageMetadata filters', () => {
-    expect(
-      buildSourceConfig({
-        name: 's3-meta',
-        serviceId: 'st1',
-        serviceKind: 'storage',
-        includeContainers: 'analytics, raw',
-      }),
-    ).toEqual({
-      config: {
-        type: 'StorageMetadata',
-        containerFilterPattern: { includes: ['analytics', 'raw'] },
-      },
-    });
-    expect(sourceConfigTypeForKind('storage')).toBe('StorageMetadata');
-  });
-
-
-  it('maps lineage/usage/profiler/TestSuite pipelineTypes to OM config types', () => {
-    expect(
-      buildSourceConfig({
-        name: 'pg-lineage',
-        pipelineType: 'lineage',
-        serviceId: 'svc1',
-        serviceKind: 'database',
-        includeViews: true,
-        includeSchemas: 'public',
-      }),
-    ).toEqual({
-      config: {
-        type: 'DatabaseLineage',
-        schemaFilterPattern: { includes: ['public'] },
-      },
-    });
-    expect(
-      buildSourceConfig({
-        name: 'pg-usage',
-        pipelineType: 'usage',
-        serviceId: 'svc1',
-        serviceKind: 'database',
-        includeViews: true,
-        includeSchemas: '',
-      }),
-    ).toEqual({
-      config: {
-        type: 'DatabaseUsage',
-      },
-    });
-    expect(
-      buildSourceConfig({
-        name: 'pg-profiler',
-        pipelineType: 'profiler',
-        serviceId: 'svc1',
-        serviceKind: 'database',
-        includeViews: true,
-        includeSchemas: 'public',
-      }).config.type,
-    ).toBe('Profiler');
-    expect(
-      buildSourceConfig({
-        name: 'pg-dq',
-        pipelineType: 'TestSuite',
-        serviceId: 'svc1',
-        serviceKind: 'database',
-        includeViews: true,
-        includeSchemas: '',
-      }).config.type,
-    ).toBe('TestSuite');
-  });
-
-  it('maps pipeline-service metadata pipelines to bare PipelineMetadata', () => {
-    // M-Next B2: official pipelineMetadataConfigType enum is ["PipelineMetadata"].
-    // PipelineServiceMetadataPipeline is additionalProperties:false with no
-    // includeViews/includeTables/schemaFilterPattern, so the config is the
-    // bare type even when the form carries database-scope fields.
-    expect(
-      buildSourceConfig({
-        name: 'prefect-meta',
-        pipelineType: 'metadata',
-        serviceId: 'svc-p',
-        serviceKind: 'pipeline',
-        includeViews: true,
-        includeSchemas: 'public',
-      }),
-    ).toEqual({
-      config: {
-        type: 'PipelineMetadata',
-      },
-    });
-    expect(sourceConfigTypeForKind('pipeline')).toBe('PipelineMetadata');
-  });
-
 });

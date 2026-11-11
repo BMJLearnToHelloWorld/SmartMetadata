@@ -53,4 +53,53 @@ describe('confirmDelete', () => {
       }),
     ).resolves.toBe(false);
   });
+
+  it('runs an async onOk and resolves true only after it succeeds (P-18)', async () => {
+    let ran = false;
+    let capturedOnOk: (() => unknown) | undefined;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
+      capturedOnOk = config.onOk as (() => unknown) | undefined;
+      return { destroy: vi.fn(), update: vi.fn() } as never;
+    });
+    const result = confirmDelete({
+      title: 'Delete',
+      content: 'Are you sure?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        await Promise.resolve();
+        ran = true;
+      },
+    });
+    expect(capturedOnOk).toBeDefined();
+    // antd keeps the modal open while the returned promise is pending.
+    expect(capturedOnOk!()).toBeInstanceOf(Promise);
+    await expect(result).resolves.toBe(true);
+    expect(ran).toBe(true);
+  });
+
+  it('leaves the confirm pending when the async onOk rejects (P-18)', async () => {
+    let capturedOnOk: (() => unknown) | undefined;
+    vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
+      capturedOnOk = config.onOk as (() => unknown) | undefined;
+      return { destroy: vi.fn(), update: vi.fn() } as never;
+    });
+    const result = confirmDelete({
+      title: 'Delete',
+      content: 'Are you sure?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        throw new Error('delete failed');
+      },
+    });
+    // The rejection propagates to antd (modal stays open for retry/cancel);
+    // the caller's promise stays pending.
+    await expect(capturedOnOk!() as Promise<unknown>).rejects.toThrow('delete failed');
+    const raced = await Promise.race([
+      result.then(() => 'resolved'),
+      new Promise((resolve) => setTimeout(() => resolve('pending'), 50)),
+    ]);
+    expect(raced).toBe('pending');
+  });
 });

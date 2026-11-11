@@ -165,16 +165,6 @@ export const SERVICE_DETAIL_TABS: IngestionTab[] = [
 export const INGESTION_PIPELINE_TABS: IngestionTab[] = [
   { key: 'overview', labelKey: 'crud.overview', supported: true },
   { key: 'status', labelKey: 'ingestion.pipelines.statusTab', supported: true },
-  {
-    key: 'trigger',
-    labelKey: 'ingestion.pipelines.triggerTab',
-    supported: true,
-  },
-];
-
-export const PIPELINE_ENTITY_TABS: IngestionTab[] = [
-  { key: 'tasks', labelKey: 'ingestion.pipelines.tasksTab', supported: true },
-  { key: 'executions', labelKey: 'ingestion.pipelines.executionsTab', supported: true },
 ];
 
 /** Tabs a view renders from a registry list (supported + honest residuals). */

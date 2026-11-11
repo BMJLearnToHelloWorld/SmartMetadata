@@ -213,6 +213,23 @@ function sumHealth(overview: ServicesOverview, health: ServiceHealth): number {
   );
 }
 
+/**
+ * The estate total, summed from the server's estate-wide tally. The overview
+ * endpoint's selectors narrow `data` and `paging.total` but never the count
+ * maps, so a filtered page's `total` is that page's size — 0 when nothing
+ * matches the filter — not the estate. Summing every value in `healthCounts`
+ * (all entity types, all health states; the known four are never enumerated,
+ * so an unknown future state cannot undercount) is the only total that stays
+ * true whatever the filter.
+ */
+function sumEstateTotal(overview: ServicesOverview): number {
+  return Object.values(overview.healthCounts ?? {}).reduce(
+    (total, byHealth) =>
+      total + Object.values(byHealth).reduce((subtotal, count) => subtotal + count, 0),
+    0,
+  );
+}
+
 function fetchFailingPage(health: ServiceHealth, limit: number) {
   return getServicesOverview({ ...OVERVIEW_PARAMS, health: [health], limit });
 }
@@ -220,10 +237,12 @@ function fetchFailingPage(health: ServiceHealth, limit: number) {
 /**
  * The health buckets come from the server's own tally — the overview endpoint
  * reduces every service's pipelines worst-wins, exactly as this card used to do
- * client-side over the whole estate. Its `health` filter narrows only the page,
- * never the counts, so the first page of failed services and the estate-wide
- * numbers arrive in one response. Partially failed services are only read when
- * the failed ones leave room in the rows.
+ * client-side over the whole estate. Its `health` filter narrows `data` and
+ * `paging.total` but never the count maps, so the first page of failed services
+ * and the estate-wide numbers arrive in one response — but the estate total
+ * must be summed from `healthCounts`, never read from the filtered page's
+ * `total` (0 when nothing is failing). Partially failed services are only read
+ * when the failed ones leave room in the rows.
  */
 async function fetchPipelineStats(): Promise<IngestionPipelineStats> {
   const overview = await fetchFailingPage('failed', MAX_FAILING_ROWS);
@@ -235,7 +254,7 @@ async function fetchPipelineStats(): Promise<IngestionPipelineStats> {
   const failingServices = await Promise.all([...overview.data, ...partial].map(toFailingService));
 
   return {
-    connectedServices: overview.total,
+    connectedServices: sumEstateTotal(overview),
     failedServices: sumHealth(overview, 'failed'),
     failingServices: sortFailingServices(failingServices),
     healthyServices: sumHealth(overview, 'success'),

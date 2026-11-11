@@ -16,16 +16,31 @@ import {
 
 describe('AGENT_KINDS_BY_SERVICE (OM service_spec mapping)', () => {
   it('exposes the OM PipelineType enum surface used by Agents UX', () => {
-    expect(PIPELINE_TYPES).toEqual(['metadata', 'usage', 'lineage', 'profiler', 'TestSuite']);
+    expect(PIPELINE_TYPES).toEqual([
+      'application',
+      'autoClassification',
+      'dataInsight',
+      'dbt',
+      'elasticSearchReindex',
+      'lineage',
+      'metadata',
+      'policyAgent',
+      'profiler',
+      'reverseMetadata',
+      'TestSuite',
+      'usage',
+    ]);
   });
 
-  it('gives DefaultDB services metadata+lineage+usage+profiler+TestSuite where OM declares usage', () => {
+  it('gives DefaultDB services metadata+lineage+usage+profiler+TestSuite+dbt+autoClassification where OM declares usage', () => {
     expect(agentKindsForService('Postgres')).toEqual([
       'metadata',
       'lineage',
       'usage',
       'profiler',
       'TestSuite',
+      'dbt',
+      'autoClassification',
     ]);
     expect(agentKindsForService('Mysql')).toEqual(AGENT_KINDS_BY_SERVICE.Mysql);
     expect(agentKindsForService('Snowflake')).toEqual([
@@ -34,13 +49,19 @@ describe('AGENT_KINDS_BY_SERVICE (OM service_spec mapping)', () => {
       'usage',
       'profiler',
       'TestSuite',
+      'dbt',
+      'autoClassification',
     ]);
   });
 
-  it('keeps messaging/dashboard/storage metadata-only (no invent)', () => {
-    expect(agentKindsForService('Kafka')).toEqual(['metadata']);
-    expect(agentKindsForService('Redpanda')).toEqual(['metadata']);
-    expect(agentKindsForService('S3')).toEqual(['metadata']);
+  it('gives messaging/storage autoClassification only per getSupportedPipelineTypes, dashboard stays metadata-only', () => {
+    // Pin getSupportedPipelineTypes is flag-driven: kafka/redpanda/s3
+    // connections carry supportsProfiler but no supportsDBTExtraction,
+    // and for messaging/storage services supportsProfiler yields only
+    // autoClassification — never dbt.
+    expect(agentKindsForService('Kafka')).toEqual(['metadata', 'autoClassification']);
+    expect(agentKindsForService('Redpanda')).toEqual(['metadata', 'autoClassification']);
+    expect(agentKindsForService('S3')).toEqual(['metadata', 'autoClassification']);
     expect(agentKindsForService('Superset')).toEqual(['metadata']);
   });
 
@@ -50,6 +71,8 @@ describe('AGENT_KINDS_BY_SERVICE (OM service_spec mapping)', () => {
       'lineage',
       'profiler',
       'TestSuite',
+      'dbt',
+      'autoClassification',
     ]);
     expect(agentKindsForService('Doris')).not.toContain('usage');
     expect(agentKindsForService('Greenplum')).not.toContain('usage');

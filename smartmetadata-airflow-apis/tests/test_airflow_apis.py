@@ -55,6 +55,12 @@ def _deploy_body(source_config: dict | None = None, name: str = "scope_demo") ->
     }
 
 
+def _deploy_body_with_source_config(source_config: Any) -> dict:
+    body = _deploy_body()
+    body["sourceConfig"] = source_config
+    return body
+
+
 def test_contract_covers_java_client_paths() -> None:
     names = {e.name for e in ENDPOINTS}
     for required in {
@@ -174,51 +180,19 @@ def test_deploy_trigger_status_kill_lifecycle() -> None:
     assert deleted.status_code == 200
 
 
-# --- Deploy-time scope validation (ruling §4.2, fix-round B-1) -----------
-# T-1 (tableFilterPattern), T-2 (includeViews false) and non-literal
-# schema/database patterns must fail at deploy with a 400 naming only
-# the field location — before any file is written, so no broken DAG file
-# is left behind for the dag-processor to trip over.
+# --- Deploy-time scope validation (ruling §4.2, fix-round B-1; P-11) ----
+# Since P-11 the whole official scope is expressible — table patterns,
+# ``includeViews: false`` and full regex are honored by the runner — so
+# only malformed structure is rejected at deploy: N-10 (a pattern given
+# as a bare string instead of an object) and N-11 (non-list
+# includes/excludes). The rejection is a 400 naming only the field
+# location — before any file is written, so no broken DAG file is left
+# behind for the dag-processor to trip over.
 
 
 @pytest.mark.parametrize(
     ("config", "field", "leaked"),
     [
-        (
-            {"tableFilterPattern": {"includes": ["orders"]}},
-            "sourceConfig.config.tableFilterPattern",
-            "orders",
-        ),
-        (
-            {"tableFilterPattern": {"excludes": ["tmp_*"]}},
-            "sourceConfig.config.tableFilterPattern",
-            "tmp_*",
-        ),
-        (
-            {"includeViews": False},
-            "sourceConfig.config.includeViews",
-            "False",
-        ),
-        (
-            {"schemaFilterPattern": {"includes": ["prod.*"]}},
-            "sourceConfig.config.schemaFilterPattern",
-            "prod.*",
-        ),
-        (
-            {"schemaFilterPattern": {"includes": ["^my.db$"]}},
-            "sourceConfig.config.schemaFilterPattern",
-            "my.db",
-        ),
-        (
-            {"databaseFilterPattern": {"includes": ["db|other"]}},
-            "sourceConfig.config.databaseFilterPattern",
-            "db|other",
-        ),
-        (
-            {"schemaFilterPattern": {"excludes": [".*"]}},
-            "sourceConfig.config.schemaFilterPattern",
-            ".*",
-        ),
         (
             {"schemaFilterPattern": "sales"},
             "sourceConfig.config.schemaFilterPattern",
@@ -256,24 +230,78 @@ def test_deploy_rejects_out_of_scope_config_before_writing(
 
 
 def test_deploy_scope_reports_all_violations() -> None:
+    # Malformed shapes at several levels report together, never just the
+    # first one — the deployer fixes the whole body in one round.
     store = _RecordingStore()
     client = create_app(store, credentials=CREDS).test_client()
     res = client.post(
         "/api/v1/openmetadata/deploy",
         json=_deploy_body(
             {
-                "tableFilterPattern": {"includes": ["orders"]},
-                "includeViews": False,
-                "schemaFilterPattern": {"includes": ["prod.*"]},
+                "schemaFilterPattern": "sales",
+                "databaseFilterPattern": {"includes": 123},
+                "tableFilterPattern": {"excludes": "tmp"},
             }
         ),
         headers=_auth_headers(),
     )
     assert res.status_code == 400
     error = res.get_json()["error"]
-    assert "sourceConfig.config.tableFilterPattern" in error
-    assert "sourceConfig.config.includeViews" in error
     assert "sourceConfig.config.schemaFilterPattern" in error
+    assert "sourceConfig.config.databaseFilterPattern" in error
+    assert "sourceConfig.config.tableFilterPattern" in error
+    assert store.deploy_calls == []
+
+
+# --- P-32: nested deploy validation -----------------------------------------
+# Top-level checks pass but a nested field is the wrong type (or the
+# pipeline type has no registered builder): a 400 naming the field,
+# before any file is written.
+
+def _deploy_body_mutated(**overrides: Any) -> dict:
+    body = _deploy_body()
+    body.update(overrides)
+    return body
+
+
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        (
+            _deploy_body_mutated(airflowConfig={"scheduleInterval": 5}),
+            "airflowConfig.scheduleInterval",
+        ),
+        (
+            _deploy_body_mutated(
+                service={"type": "noSuchService", "name": "my_sql_test"}
+            ),
+            "service.type",
+        ),
+        (
+            _deploy_body_with_source_config({"config": "oops"}),
+            "sourceConfig.config",
+        ),
+        (
+            _deploy_body_mutated(airflowConfig={"retries": True}),
+            "airflowConfig.retries",
+        ),
+        (
+            _deploy_body_mutated(pipelineType="dataInsight"),
+            "pipelineType",
+        ),
+    ],
+)
+def test_deploy_rejects_nested_type_violations(body: dict, field: str) -> None:
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json=body,
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 400
+    assert field in res.get_json()["error"]
+    # Nothing was written: the store's deploy never ran.
     assert store.deploy_calls == []
 
 
@@ -290,6 +318,21 @@ def test_deploy_scope_reports_all_violations() -> None:
         {"includeViews": True},
         {"tableFilterPattern": {}},
         {"tableFilterPattern": {"includes": [], "excludes": []}},
+        # P-11: the formerly-rejected scopes are expressible now — a
+        # table pattern, includeViews false, and full regex at every level.
+        {"tableFilterPattern": {"includes": ["orders"]}},
+        {"tableFilterPattern": {"excludes": ["tmp_*"]}},
+        {"includeViews": False},
+        {"schemaFilterPattern": {"includes": ["prod.*"]}},
+        {"schemaFilterPattern": {"includes": ["^my.db$"]}},
+        {"databaseFilterPattern": {"includes": ["db|other"]}},
+        {"schemaFilterPattern": {"excludes": [".*"]}},
+        # The report's exact deploy-200 shape.
+        {
+            "tableFilterPattern": {"includes": ["^fact_.*$"]},
+            "includeViews": False,
+            "schemaFilterPattern": {"includes": ["^sales_.*$"]},
+        },
     ],
 )
 def test_deploy_accepts_expressible_scope(config: dict) -> None:
@@ -301,6 +344,24 @@ def test_deploy_accepts_expressible_scope(config: dict) -> None:
         headers=_auth_headers(),
     )
     assert res.status_code == 200
+    assert len(store.deploy_calls) == 1
+
+
+def test_deploy_surfaces_ignored_source_switches() -> None:
+    # P-11: a switch the runner will ignore is named in the deploy
+    # response (and logged), never silently dropped — the official
+    # message stays the prefix.
+    store = _RecordingStore()
+    client = create_app(store, credentials=CREDS).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/deploy",
+        json=_deploy_body({"generateSampleData": True}),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 200
+    message = res.get_json()["message"]
+    assert message.startswith("Workflow [scope_demo] has been created")
+    assert "generateSampleData" in message
     assert len(store.deploy_calls) == 1
 
 
@@ -531,12 +592,6 @@ def test_last_dag_logs_accepts_raw_pipeline_name() -> None:
 # (config), or a silent wrong scope (string includes iterated per char).
 
 
-def _deploy_body_with_source_config(source_config: Any) -> dict:
-    body = _deploy_body()
-    body["sourceConfig"] = source_config
-    return body
-
-
 @pytest.mark.parametrize(
     ("source_config", "field"),
     [
@@ -550,6 +605,10 @@ def _deploy_body_with_source_config(source_config: Any) -> dict:
         (
             {"config": {"databaseFilterPattern": {"excludes": "staging"}}},
             "sourceConfig.config.databaseFilterPattern",
+        ),
+        (
+            {"config": {"tableFilterPattern": {"includes": "orders"}}},
+            "sourceConfig.config.tableFilterPattern",
         ),
         (
             {"config": {"schemaFilterPattern": {"includes": 123}}},

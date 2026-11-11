@@ -14,11 +14,14 @@ workflow configs build). The service-connection fetch is the only seam
 patched: it is an HTTP boundary (the stub server in the live gate answers
 it for real).
 
-Types with no builder (TestSuite, dbt, elasticSearchReindex, application,
-autoClassification, dataInsight, policyAgent, reverseMetadata) are
+Types with no builder (dataInsight, policyAgent, reverseMetadata) are
 asserted absent on purpose — ruling §4.2 records why each has no product
 execution mapping; the absence is the documented behaviour, not a gap in
-this file.
+this file. P-06 added builders for TestSuite, dbt, elasticSearchReindex,
+application and autoClassification; the first four run the metadata
+workflow against the live service (a deliberate partial mapping — see
+ADR:2026-11-11-pipeline-deep-dive-python) and only testSuite has its own
+execution path.
 """
 
 from __future__ import annotations
@@ -183,14 +186,9 @@ def test_source_type_missing_everywhere_fails_loudly(
 
 def test_no_builder_for_unmapped_types() -> None:
     # Ruling §4.2: no product execution mapping exists for these types yet;
-    # deploy fails 500 through the factory instead of running something
-    # invented.
+    # deploy fails 400 at validation instead of running something invented
+    # (P-32). The five P-06 types now have builders (see below).
     for pipeline_type in (
-        "TestSuite",
-        "dbt",
-        "elasticSearchReindex",
-        "application",
-        "autoClassification",
         "dataInsight",
         "policyAgent",
         "reverseMetadata",
@@ -199,7 +197,291 @@ def test_no_builder_for_unmapped_types() -> None:
 
 
 def test_registered_types() -> None:
-    assert registered_types() == ("lineage", "metadata", "profiler", "usage")
+    assert registered_types() == (
+        "TestSuite",
+        "application",
+        "autoClassification",
+        "dbt",
+        "elasticSearchReindex",
+        "lineage",
+        "metadata",
+        "profiler",
+        "usage",
+    )
+
+
+# --- P-06: the five new builders -------------------------------------------
+# Each builder uses the official task name and translate_pipeline for the
+# WorkflowConfig. The four non-testSuite builders pass no raiseOnError
+# override: the pipeline's own value flows through.
+
+
+def _test_suite_pipeline() -> dict[str, Any]:
+    pipeline = _pipeline("suite_demo", "TestSuite")
+    pipeline["service"] = {"type": "testSuite", "name": "suite-1"}
+    pipeline["sourceConfig"] = {
+        "config": {
+            "entityFullyQualifiedName": "warehouse.analytics.public.orders",
+            "testCases": ["orders_email_not_null"],
+        }
+    }
+    return pipeline
+
+
+def _stub_test_suite_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    import smartmetadata_airflow_apis.workflows.translation as translation
+
+    # The derivation (table -> service -> connection) is covered in
+    # test_translation.py; the builder tests only need its outcome.
+    monkeypatch.setattr(
+        translation,
+        "_test_suite_service_connection",
+        lambda pipeline, server_client=None: (dict(CONNECTION), "Mysql"),
+    )
+
+
+def test_dbt_builder_uses_official_task_name() -> None:
+    pytest.importorskip("airflow")
+    builder = get_builder("dbt")
+    assert builder is not None
+    dag = builder(_pipeline("dbt_demo", "dbt", raiseOnError=True))
+    task = _task(dag, "dbt_task")
+    assert task._raise_on_error is True
+    assert task._workflow_config["workflow"]["type"] == "dbt"
+    assert task._workflow_config["source"]["type"] == "mysql"
+
+
+def test_auto_classification_builder_uses_official_task_name() -> None:
+    pytest.importorskip("airflow")
+    builder = get_builder("autoClassification")
+    assert builder is not None
+    dag = builder(_pipeline("ac_demo", "autoClassification", raiseOnError=True))
+    task = _task(dag, "auto_classification_task")
+    assert task._raise_on_error is True
+    assert task._workflow_config["workflow"]["type"] == "autoClassification"
+    assert task._workflow_config["source"]["type"] == "mysql"
+
+
+def test_es_reindex_builder_uses_official_task_name() -> None:
+    pytest.importorskip("airflow")
+    builder = get_builder("elasticSearchReindex")
+    assert builder is not None
+    dag = builder(_pipeline("es_demo", "elasticSearchReindex", raiseOnError=True))
+    task = _task(dag, "elasticsearch_reindex_task")
+    assert task._raise_on_error is True
+    assert task._workflow_config["workflow"]["type"] == "elasticSearchReindex"
+    assert task._workflow_config["source"]["type"] == "mysql"
+
+
+def test_application_builder_uses_official_task_name() -> None:
+    pytest.importorskip("airflow")
+    builder = get_builder("application")
+    assert builder is not None
+    dag = builder(_pipeline("app_demo", "application", raiseOnError=True))
+    task = _task(dag, "application_task")
+    assert task._raise_on_error is True
+    assert task._workflow_config["workflow"]["type"] == "application"
+    assert task._workflow_config["source"]["type"] == "mysql"
+
+
+def test_test_suite_builder_omits_raise_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("airflow")
+    _stub_test_suite_connection(monkeypatch)
+    builder = get_builder("TestSuite")
+    assert builder is not None
+    dag = builder(_test_suite_pipeline())
+    task = _task(dag, "test_suite_task")
+    # Profiler precedent: a testSuite pipeline carrying raiseOnError=true
+    # must not fail the task on a case failure.
+    assert task._raise_on_error is False
+    assert task._workflow_config["workflow"]["type"] == "TestSuite"
+    assert task._workflow_config["workflow"]["fail_fast"] is False
+    assert task._workflow_config["source"]["type"] == "mysql"
+    # The dumped config uses snake_case keys (model_dump(mode="json")).
+    assert (
+        task._workflow_config["source"]["entity_fully_qualified_name"]
+        == "warehouse.analytics.public.orders"
+    )
+    assert task._workflow_config["source"]["test_case_names"] == [
+        "orders_email_not_null"
+    ]
+
+
+# --- P-02: failure callback preserves the stored status --------------------
+# The callback fetches the stored row and only flips pipelineState +
+# endDate; the steps, startDate and counts the workflow wrote stay. A
+# 404 (or a client without the getter) falls back to the bare build.
+
+
+def test_failed_status_payload_preserves_stored_status() -> None:
+    run_id = str(uuid.uuid4())
+    stored = {
+        "runId": run_id,
+        "pipelineState": "partialSuccess",
+        "startDate": 1000,
+        "timestamp": 1000,
+        "triggeredBy": "admin",
+        "status": [{"name": "ingest", "executionStatus": "successful"}],
+    }
+
+    class FakeRest:
+        def get_pipeline_status(self, fqn: str, rid: str) -> dict:
+            return dict(stored)
+
+    payload = common_module._failed_status_payload(
+        FakeRest(), "svc.kill_demo", run_id, start_ms=2000
+    )
+    assert payload["pipelineState"] == "failed"
+    assert payload["startDate"] == 1000
+    assert payload["timestamp"] == 1000
+    assert payload["status"] == stored["status"]
+    assert "triggeredBy" not in payload
+    assert payload["endDate"] >= 2000
+    assert payload["runId"] == run_id
+
+
+def test_failed_status_payload_falls_back_on_fetch_error() -> None:
+    from smartmetadata_ingestion.errors import RestError
+
+    run_id = str(uuid.uuid4())
+
+    class FailingRest:
+        def get_pipeline_status(self, fqn: str, rid: str) -> dict:
+            raise RestError("not found", status_code=404)
+
+    payload = common_module._failed_status_payload(
+        FailingRest(), "svc.kill_demo", run_id, start_ms=2000
+    )
+    assert payload["pipelineState"] == "failed"
+    assert payload["startDate"] == 2000
+    # The bare fallback carries no steps at all — there is nothing to
+    # preserve, so no "status" key is written.
+    assert "status" not in payload
+    assert "triggeredBy" not in payload
+
+
+def test_failed_status_payload_falls_back_without_getter() -> None:
+    # An old stub client without get_pipeline_status keeps working.
+    run_id = str(uuid.uuid4())
+    payload = common_module._failed_status_payload(
+        object(), "svc.kill_demo", run_id, start_ms=2000
+    )
+    assert payload["pipelineState"] == "failed"
+    assert payload["startDate"] == 2000
+
+
+# --- P-06: testSuite translated config executes ----------------------------
+# The full translate -> run chain, against a MockTransport-backed server:
+# the derivation (table -> service -> connection) runs for real, and the
+# translated config executes the not-null case without a 500.
+
+
+def test_test_suite_translated_config_executes() -> None:
+    pytest.importorskip("airflow")
+    import httpx
+
+    from smartmetadata_ingestion.client.rest import RestClient
+    from smartmetadata_ingestion.config import AuthConfig, ServerConfig
+    from smartmetadata_ingestion.runner import run_workflow
+    from smartmetadata_airflow_apis.workflows.translation import translate_pipeline
+
+    table_entity = {
+        "id": "table-1",
+        "name": "orders",
+        "fullyQualifiedName": "warehouse.analytics.public.orders",
+        "service": {"id": "svc-1", "name": "warehouse"},
+        "database": {"name": "analytics"},
+        "databaseSchema": {"name": "public"},
+        "columns": [
+            {"name": "id", "dataType": "INT", "constraint": "PRIMARY_KEY"},
+            {"name": "email", "dataType": "VARCHAR"},
+        ],
+        "testSuite": {"id": "suite-1", "type": "testSuite"},
+    }
+    case_payload = {
+        "id": "case-orders_email_not_null",
+        "name": "orders_email_not_null",
+        "fullyQualifiedName": "warehouse.analytics.public.orders.orders_email_not_null",
+        "entityLink": "<#E::table::warehouse.analytics.public.orders::columns::email>",
+        "testDefinition": {"fullyQualifiedName": "columnValuesToBeNotNull"},
+        "parameterValues": [],
+        "testSuite": {"id": "suite-1", "type": "testSuite"},
+    }
+    service_entity = {
+        "id": "svc-1",
+        "name": "warehouse",
+        "serviceType": "Postgres",
+        "connection": {
+            "config": {
+                "type": "Postgres",
+                "hostPort": "localhost:5432",
+                "username": "ingest",
+                "password": "secret",
+                "database": "analytics",
+            }
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/tables/name/warehouse.analytics.public.orders"):
+            return httpx.Response(200, json=table_entity)
+        if path.endswith("/services/databaseServices/name/warehouse"):
+            return httpx.Response(200, json=service_entity)
+        if path.endswith("/dataQuality/testSuites/suite-1"):
+            return httpx.Response(200, json={"id": "suite-1", "name": "s"})
+        if path.endswith("/dataQuality/testCases"):
+            return httpx.Response(200, json={"data": [case_payload]})
+        return httpx.Response(200, json={})
+
+    server = ServerConfig(
+        host_port="http://127.0.0.1:8585/api",
+        auth=AuthConfig(type="jwt", jwt_token="test-jwt"),
+    )
+    client = RestClient(server, transport=httpx.MockTransport(handler))
+
+    class CollectingSink:
+        def __init__(self) -> None:
+            self.written: list = []
+
+        def write(self, record) -> None:
+            self.written.append(record)
+
+        def flush(self) -> None:
+            return None
+
+    class StubSource:
+        def prepare(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        def produce(self):
+            return iter(())
+
+    def execute(sql: str):
+        if "IS NULL" in sql:
+            return 0
+        if "COUNT(*)" in sql:
+            return 10
+        raise AssertionError(f"unexpected SQL: {sql}")
+
+    config = translate_pipeline(
+        _test_suite_pipeline(), workflow_type="TestSuite", server_client=client
+    )
+    sink = CollectingSink()
+    report = run_workflow(
+        config, client=client, source=StubSource(), sink=sink, execute=execute
+    )
+    assert report.failed == 0
+    assert len(sink.written) == 1
+    record = sink.written[0]
+    assert record.test_case_fqn == "warehouse.analytics.public.orders.orders_email_not_null"
+    assert record.test_case_status == "Success"
+    client.close()
 
 
 # --- on_kill writeback (ruling §1.5.3, fix-round B-2) --------------------
@@ -306,8 +588,11 @@ def test_untranslatable_source_config_override_fails_task(
             dag_run=SimpleNamespace(
                 conf={
                     "pipelineRunId": run_id,
+                    # P-11: a regex pattern is now translatable, so the
+                    # untranslatable shape is a malformed one — a pattern
+                    # given as a bare string instead of an object (N-10).
                     "sourceConfigOverride": {
-                        "schemaFilterPattern": {"includes": ["prod.*"]}
+                        "schemaFilterPattern": "prod.*"
                     },
                 },
                 run_id="manual__2026-11-06T00:00:00+00:00",

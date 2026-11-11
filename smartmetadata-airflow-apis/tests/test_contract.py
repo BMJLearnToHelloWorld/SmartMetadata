@@ -162,7 +162,13 @@ def test_deploy_success_shape_and_validation(client) -> None:
         "/api/v2/openmetadata/deploy", json=_pipeline(), headers=_auth_headers()
     )
     assert res.status_code == 200
-    assert res.get_json() == {"message": "Workflow [my_pipeline] has been created"}
+    # P-11: the fixture pipeline carries generateSampleData on a database
+    # service, which the runner ignores — deploy says so in the message
+    # (official prefix first, ignored switches appended).
+    assert res.get_json() == {
+        "message": "Workflow [my_pipeline] has been created; "
+        "ignored source switches: generateSampleData"
+    }
 
     # Empty body -> 400.
     assert (

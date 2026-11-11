@@ -17,7 +17,7 @@ from typing import Any, Protocol
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors import mysql_common
-from smartmetadata_ingestion.connectors.select import is_selected
+from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
 from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
 from smartmetadata_ingestion.datatypes import map_mysql_type
 from smartmetadata_ingestion.errors import WorkflowError
@@ -212,10 +212,19 @@ class MysqlSource:
             yield SchemaRecord(name=schema.name, database=database_fqn)
             schema_fqn = build_fqn(self._config.service_name, database_name, schema.name)
             for table in reader.list_tables(schema.name):
+                table_type = map_table_type(table.table_type)
+                if not is_selected_table(
+                    table.name,
+                    table_type,
+                    include_tables=self._config.include_tables,
+                    exclude_tables=self._config.exclude_tables,
+                    include_views=self._config.include_views,
+                ):
+                    continue
                 yield TableRecord(
                     name=table.name,
                     database_schema=schema_fqn,
-                    table_type=map_table_type(table.table_type),
+                    table_type=table_type,
                     description=table.comment,
                     columns=self._columns(reader, table),
                 )

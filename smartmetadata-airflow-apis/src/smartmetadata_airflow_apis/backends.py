@@ -158,6 +158,12 @@ def _is_registered(dag_id: str, previous_parse: Any) -> bool:
             return False
         if previous_parse is not None and row.last_parsed_time == previous_parse:
             return False
+        # P-40: a DAG with import errors but an existing serialized row
+        # must NOT count as registered — otherwise deploy reports success
+        # for a DAG the processor keeps failing on (official
+        # _wait_for_dag_registration).
+        if row.has_import_errors:
+            return False
         # SerializedDagModel's PK is a surrogate id, so one dag_id can have
         # several serialized rows (one per dag version); .one_or_none()
         # raises MultipleResultsFound after a re-serialize. This is an
@@ -169,6 +175,24 @@ def _is_registered(dag_id: str, previous_parse: Any) -> bool:
             .first()
         )
         return serialized is not None
+
+
+def _sync_dag_to_db(dag: Any) -> None:
+    """Sync one parsed DAG to the DB (official refresh_session_dag fast path).
+
+    A sync failure is a deploy failure (official returns a server error),
+    never a reason to fall back to waiting — the DAG is broken, not slow.
+    """
+    from airflow.utils.session import create_session
+
+    try:
+        with create_session() as session:
+            dag.sync_to_db(session=session)
+            session.commit()
+    except Exception as exc:  # noqa: BLE001 - mapped to a DAG error
+        raise DagOperationError(
+            f"failed to sync DAG {dag.dag_id} to the database: {exc}"
+        ) from exc
 
 
 def _wait_for_registration(dag_id: str, previous_parse: Any) -> None:
@@ -283,11 +307,16 @@ class AirflowBackend:
 
     # -- deploy ---------------------------------------------------------
     def deploy(self, pipeline: dict[str, Any]) -> str:
+        from smartmetadata_ingestion.secrets import dump_with_safe_jwt
+
         dag_id = clean_dag_id(str(pipeline["name"]))
         config_path = self._configs_dir / f"{dag_id}.json"
         dag_path = self._dags_folder / f"{dag_id}.py"
 
-        config_path.write_text(json.dumps(pipeline, indent=2), encoding="utf-8")
+        # P-39: the JWT is written in its stored form — a secret:<id>
+        # reference when a secrets manager is configured, never the
+        # resolved value (official dump_with_safe_jwt).
+        config_path.write_text(dump_with_safe_jwt(pipeline), encoding="utf-8")
         template = (RESOURCES_DIR / "dag_runner.jinja").read_text(encoding="utf-8")
         rendered = template.replace("{{ config_path }}", json.dumps(str(config_path)))
         dag_path.write_text(rendered, encoding="utf-8")
@@ -295,9 +324,26 @@ class AirflowBackend:
         _import_dag_file(dag_path)
 
         previous_parse = _last_parsed_time(dag_id)
-        self._parse_with_dagbag(dag_path)
+        found = self._parse_with_dagbag(dag_path)
+        dag = next(
+            (parsed for parsed in found if getattr(parsed, "dag_id", None) == dag_id),
+            None,
+        )
+        if dag is None:
+            raise DagOperationError(
+                f"DAG {dag_id} was not loaded from {dag_path}"
+            )
+        # P-40: sync the parsed DAG to the DB when the Airflow version
+        # supports it (Airflow 3.3.2's DAG has no sync_to_db, so the
+        # product deployment takes the wait path there) and skip the
+        # wait on success; only without sync_to_db do we wait for the
+        # processor to register the DAG (official refresh_session_dag).
+        synced = hasattr(dag, "sync_to_db")
+        if synced:
+            _sync_dag_to_db(dag)
         _scan_in_background()
-        _wait_for_registration(dag_id, previous_parse)
+        if not synced:
+            _wait_for_registration(dag_id, previous_parse)
         return dag_id
 
     def _parse_with_dagbag(self, dag_path: Path) -> Any:

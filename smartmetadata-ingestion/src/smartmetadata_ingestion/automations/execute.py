@@ -67,6 +67,10 @@ def _server_client(server_connection: dict[str, Any]):
     """Build the server client from a workflow's server connection."""
     from smartmetadata_ingestion.client.rest import RestClient
     from smartmetadata_ingestion.config import ServerConfig
+    from smartmetadata_ingestion.secrets import (
+        SecretsResolutionError,
+        resolve_secret,
+    )
 
     conn = server_connection or {}
     security = conn.get("securityConfig") or {}
@@ -76,6 +80,17 @@ def _server_client(server_connection: dict[str, Any]):
             "openMetadataServerConnection.securityConfig.jwtToken is required "
             "to fetch the automation workflow"
         )
+    # P-39: resolve a secret:<id> reference to the real Bearer before
+    # building the client, so a rotated secret takes effect without a
+    # re-deploy (same rule as the translation layer's _server_config).
+    try:
+        jwt_token = resolve_secret(
+            jwt_token,
+            provider=conn.get("secretsManagerProvider"),
+            loader=conn.get("secretsManagerLoader"),
+        )
+    except SecretsResolutionError as exc:
+        raise AutomationError(str(exc)) from exc
     try:
         server_config = ServerConfig.model_validate(
             {

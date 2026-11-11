@@ -113,6 +113,61 @@ def test_mysql_database_schema_restricts_scan() -> None:
     assert names == ["app"]
 
 
+# -- P-11: regex FilterPattern matching -------------------------------------
+# include/exclude tables are regexes (fullmatch, case-insensitive);
+# excludes win; include_views=False drops views even when the pattern
+# would match them.
+
+
+def test_mysql_table_filter_pattern_matches_regex() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            include_schemas=["^app$"],
+            include_tables=["^orders$"],
+            include_views=True,
+        ),
+        reader=_reader(),
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert [table.name for table in tables] == ["orders"]
+
+
+def test_mysql_include_views_false_drops_views() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            include_schemas=["app"],
+            include_tables=[".*"],
+            include_views=False,
+        ),
+        reader=_reader(),
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert [table.name for table in tables] == ["orders"]
+
+
+def test_mysql_table_exclude_wins_over_include() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            include_schemas=["app"],
+            include_tables=[".*"],
+            exclude_tables=["^orders_v$"],
+            include_views=True,
+        ),
+        reader=_reader(),
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert [table.name for table in tables] == ["orders"]
+
+
 class FakeCursor:
     def __init__(self, rows):
         self.rows = rows

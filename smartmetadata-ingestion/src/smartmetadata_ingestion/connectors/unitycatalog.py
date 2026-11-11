@@ -20,7 +20,7 @@ from typing import Any
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import databricks_common as dbx
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.connectors.select import is_selected
+from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
 from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
 from smartmetadata_ingestion.datatypes import map_databricks_type
 from smartmetadata_ingestion.fqn import build_fqn
@@ -80,6 +80,14 @@ class UnityCatalogSource:
                     if (
                         not self.include_metric_views
                         and str(table.table_type).upper() == "METRIC_VIEW"
+                    ):
+                        continue
+                    if not is_selected_table(
+                        table.name,
+                        table_type,
+                        include_tables=self._config.include_tables,
+                        exclude_tables=self._config.exclude_tables,
+                        include_views=self._config.include_views,
                     ):
                         continue
                     yield TableRecord(

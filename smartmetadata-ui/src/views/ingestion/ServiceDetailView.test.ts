@@ -47,6 +47,12 @@ async function mountView(initialTab = 'pipelines') {
         component: { template: '<div>pipe</div>' },
         props: true,
       },
+      {
+        path: '/ingestion/services/:kind/:id/add/:ingestionType',
+        name: 'ingestion-service-add-ingestion',
+        component: { template: '<div>add</div>' },
+        props: true,
+      },
     ],
   });
   await router.push('/ingestion/services/database/s1');
@@ -78,6 +84,9 @@ describe('ServiceDetailView', () => {
             connection: { config: { type: 'Postgres', hostPort: 'localhost:5432' } },
           });
         }
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
         if (url.includes('/api/v1/services/ingestionPipelines')) {
           return jsonResponse({
             data: [
@@ -107,6 +116,62 @@ describe('ServiceDetailView', () => {
     expect(wrapper.text()).toContain('daily');
     expect(calls.some((url) => url.includes('/api/v1/services/ingestionPipelines'))).toBe(true);
     expect(calls.some((url) => url.includes('service=pg.warehouse'))).toBe(true);
+    // P-38: the enabled Yes/No column is now the Active/Paused status badge.
+    expect(wrapper.text()).toContain('Active');
+  });
+
+  it('offers per-service ingestion kinds in the add-ingestion menu (P-38)', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="add-service-ingestion"]').trigger('click');
+    await flushPromises();
+    const menu = document.body.querySelector('.ant-dropdown-menu');
+    expect(menu).not.toBeNull();
+    expect(menu!.textContent).toContain('Metadata');
+    expect(menu!.textContent).toContain('Data Quality');
+    const usageItem = [...document.body.querySelectorAll('[data-testid^="add-ingestion-"]')].find(
+      (el) => el.getAttribute('data-testid') === 'add-ingestion-usage',
+    ) as HTMLElement | undefined;
+    expect(usageItem).not.toBeUndefined();
+    usageItem!.click();
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add-ingestion');
+    expect(router.currentRoute.value.params.ingestionType).toBe('usage');
+  });
+
+  it('shows the shared row actions in the pipelines mini-table (P-38)', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="service-pipeline-row-overflow"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="logs-button"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="row-overflow-view"]')).not.toBeNull();
+  });
+
+  it('shows the empty state with a create action when there are no pipelines (P-38)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'warehouse',
+            fullyQualifiedName: 'pg.warehouse',
+            serviceType: 'Postgres',
+            connection: { config: { type: 'Postgres', hostPort: 'localhost:5432' } },
+          });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.text()).toContain('No pipelines set up yet');
+    expect(wrapper.find('[data-testid="empty-add-service-ingestion"]').exists()).toBe(true);
   });
 
   it('routes Edit to the standalone connection page instead of a modal', async () => {

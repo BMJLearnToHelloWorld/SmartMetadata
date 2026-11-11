@@ -22,92 +22,75 @@ and again here; additive extras are logged and skipped.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-_REGEX_META = set(".*+?()|[]{}^$\\")
 
 
 class TranslationError(Exception):
     """The pipeline cannot be expressed as a product WorkflowConfig."""
 
 
-def _is_literal(pattern: str) -> bool:
-    return not any(ch in _REGEX_META for ch in pattern)
-
-
-def _translate_pattern(pattern: str) -> str | None:
-    """One official filter pattern -> a product exact name, or None for all.
-
-    ``.*`` means include-all; ``^name$`` and bare ``name`` are plain names.
-    Anything else is a real regex the product's exact matcher cannot honor.
-    """
-    if pattern == ".*":
-        return None
-    anchored = re.fullmatch(r"\^([^\^$]+)\$", pattern)
-    if anchored is not None:
-        candidate = anchored.group(1)
-        if _is_literal(candidate):
-            return candidate
-        raise TranslationError(f"filter pattern {pattern!r} is not a plain name")
-    if _is_literal(pattern):
-        return pattern
-    raise TranslationError(f"filter pattern {pattern!r} is not a plain name")
-
-
 def translate_filter_pattern(
     pattern: dict[str, Any] | None,
 ) -> tuple[list[str], list[str]]:
-    """(includes, excludes) exact-name lists for a filter-pattern block."""
+    """(includes, excludes) regex lists for a filter-pattern block.
+
+    Official ``FilterPattern`` is a full regex, passed through verbatim
+    into ``WorkflowSource`` — the runner matches it (P-11). Only a
+    malformed block is rejected here: a non-dict pattern or non-list
+    includes/excludes (deploy validation's N-10/N-11, second line of
+    defence at parse time, e.g. for trigger-time overrides).
+    """
     if not pattern:
         return [], []
-    includes: list[str] = []
-    excludes: list[str] = []
-    for entry in pattern.get("includes") or []:
-        name = _translate_pattern(str(entry))
-        if name is not None:
-            includes.append(name)
-    for entry in pattern.get("excludes") or []:
-        name = _translate_pattern(str(entry))
-        if name is not None:
-            excludes.append(name)
-        else:
-            raise TranslationError(
-                "filter pattern .* cannot exclude everything in the product runner"
-            )
-    return includes, excludes
+    if not isinstance(pattern, dict):
+        raise TranslationError("filter pattern must be an object")
+    for sub in ("includes", "excludes"):
+        if sub in pattern and not isinstance(pattern[sub], list):
+            raise TranslationError(f"filter pattern {sub} must be a list")
+    return (
+        [str(entry) for entry in pattern.get("includes") or []],
+        [str(entry) for entry in pattern.get("excludes") or []],
+    )
 
 
-def _is_translatable_include(pattern: str) -> bool:
-    """Whether ``_translate_pattern`` accepts this include pattern.
+def ignored_source_switches(pipeline: dict[str, Any]) -> list[str]:
+    """Source switches the runner will ignore for this pipeline.
 
-    Mirrors ``_translate_pattern`` exactly: ``.*`` (include-all), a
-    ``^literal$`` anchor, or a bare literal name. Anything else is a
-    real regex the product's exact matcher cannot honor.
+    ``generateSampleData`` / ``storeSampleData`` only reach the runner
+    for messaging services (``source.messagingMetadata``);
+    ``sampleDataQuery`` and ``enableDataProfiler`` have no runner
+    capability on any type. Deploy surfaces these (log + response) so a
+    successful deploy never silently under-ingests (P-11).
     """
-    if pattern == ".*":
-        return True
-    anchored = re.fullmatch(r"\^([^\^$]+)\$", pattern)
-    if anchored is not None:
-        return _is_literal(anchored.group(1))
-    return _is_literal(pattern)
-
-
-def _is_translatable_exclude(pattern: str) -> bool:
-    # ".*" cannot exclude everything in the product runner.
-    return pattern != ".*" and _is_translatable_include(pattern)
+    config = (pipeline.get("sourceConfig") or {}).get("config")
+    if not isinstance(config, dict):
+        return []
+    ignored: list[str] = []
+    is_messaging = (pipeline.get("service") or {}).get("type") == "messagingService"
+    if not is_messaging:
+        if config.get("generateSampleData"):
+            ignored.append("generateSampleData")
+        if config.get("storeSampleData"):
+            ignored.append("storeSampleData")
+    if config.get("sampleDataQuery"):
+        ignored.append("sampleDataQuery")
+    if config.get("enableDataProfiler"):
+        ignored.append("enableDataProfiler")
+    return ignored
 
 
 def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
     """Deploy-time scope problems, as field locations only (ruling §4.2).
 
-    T-1 (non-empty ``tableFilterPattern``), T-2 (``includeViews`` false)
-    and non-literal schema/database filter patterns are all rejected
-    here, before deploy writes any file, so a violation is a 400 naming
-    only the field location — never a 500 after partial writes, and
-    never a value (§2.3). Returns the offending field locations.
+    Since P-11 the scope IS expressible — table patterns, ``includeViews``
+    false and full regex are all honored by the runner — so only
+    malformed structure is rejected here, before deploy writes any file:
+    N-10 (a non-dict pattern) and N-11 (non-list includes/excludes),
+    for all three pattern levels. A violation is a 400 naming only the
+    field location — never a 500 after partial writes, and never a value
+    (§2.3). Returns the offending field locations.
     """
     problems: list[str] = []
     if source_config is None:
@@ -125,24 +108,14 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
         # validation, then fails at DAG-parse time after files are written.
         problems.append("sourceConfig.config")
         return problems
-    table_filter = config.get("tableFilterPattern")
-    if table_filter is not None and not isinstance(table_filter, dict):
-        # N-10: a present-but-malformed pattern value (e.g. a string)
-        # slips past validation and fails at DAG-parse time with a 500
-        # after files are written; reject it here as Invalid.
-        problems.append("sourceConfig.config.tableFilterPattern")
-    elif isinstance(table_filter, dict) and (
-        table_filter.get("includes") or table_filter.get("excludes")
-    ):
-        problems.append("sourceConfig.config.tableFilterPattern")
-    if config.get("includeViews") is False:
-        problems.append("sourceConfig.config.includeViews")
-    for key in ("schemaFilterPattern", "databaseFilterPattern"):
+    for key in ("schemaFilterPattern", "databaseFilterPattern", "tableFilterPattern"):
         pattern = config.get(key)
         if pattern is None:
             continue
         if not isinstance(pattern, dict):
-            # N-10, same as tableFilterPattern above.
+            # N-10: a present-but-malformed pattern value (e.g. a string)
+            # slips past validation and fails at DAG-parse time with a 500
+            # after files are written; reject it here as Invalid.
             problems.append(f"sourceConfig.config.{key}")
             continue
         if any(
@@ -153,46 +126,27 @@ def deploy_scope_problems(source_config: dict[str, Any] | None) -> list[str]:
             # parse time (a string "sales" becomes ["s", "a", "l", "e",
             # "s"]) — a silent wrong scope with no error anywhere.
             problems.append(f"sourceConfig.config.{key}")
-            continue
-        untranslatable = any(
-            not _is_translatable_include(str(entry))
-            for entry in pattern.get("includes") or []
-        ) or any(
-            not _is_translatable_exclude(str(entry))
-            for entry in pattern.get("excludes") or []
-        )
-        if untranslatable:
-            problems.append(f"sourceConfig.config.{key}")
     return problems
 
 
 def check_source_config_scope(source_config: dict[str, Any] | None) -> None:
-    """Reject scope restrictions the product runner cannot honor (parse time).
+    """Parse-time scope check (second line behind deploy validation).
 
-    The parse-time second line of defence behind deploy validation
-    (``deploy_scope_problems``); the translation enforces the same
-    rules here again. Additive extras (sample data, profiler flags)
-    are only logged, never rejected: skipping them ingests less, never
-    more.
+    Since P-11 the whole official scope is expressible — regex patterns
+    at all three levels and ``includeViews: false`` are honored by the
+    runner — so there is nothing left to reject here. The hook stays so
+    the translation keeps a parse-time place for scope rules; malformed
+    structure is still caught by ``translate_filter_pattern``.
     """
-    config = (source_config or {}).get("config")
-    if not isinstance(config, dict):
-        return
-    table_filter = config.get("tableFilterPattern")
-    if isinstance(table_filter, dict):
-        if table_filter.get("includes") or table_filter.get("excludes"):
-            raise TranslationError(
-                "sourceConfig.config.tableFilterPattern is not supported "
-                "by the product runner yet"
-            )
-    if config.get("includeViews") is False:
-        raise TranslationError(
-            "sourceConfig.config.includeViews=false is not supported "
-            "by the product runner yet"
-        )
+    return None
 
 
 def _server_config(pipeline: dict[str, Any]) -> dict[str, Any]:
+    from smartmetadata_ingestion.secrets import (
+        SecretsResolutionError,
+        resolve_secret,
+    )
+
     conn = pipeline.get("openMetadataServerConnection") or {}
     security = conn.get("securityConfig") or {}
     jwt_token = security.get("jwtToken")
@@ -200,6 +154,19 @@ def _server_config(pipeline: dict[str, Any]) -> dict[str, Any]:
         raise TranslationError(
             "openMetadataServerConnection.securityConfig.jwtToken is required"
         )
+    # P-39: the stored JWT may be a secret:<id> reference (the server
+    # sends the reference form when a secrets manager is configured).
+    # Resolve it to the real Bearer here, at DAG-parse time, so rotating
+    # the secret takes effect on the next parse without a re-deploy.
+    # The deployed config file itself keeps the reference (dump_with_safe_jwt).
+    try:
+        jwt_token = resolve_secret(
+            jwt_token,
+            provider=conn.get("secretsManagerProvider"),
+            loader=conn.get("secretsManagerLoader"),
+        )
+    except SecretsResolutionError as exc:
+        raise TranslationError(str(exc)) from exc
     return {
         "hostPort": conn.get("hostPort"),
         "auth": {"type": "jwt", "jwtToken": jwt_token},
@@ -218,6 +185,12 @@ _SERVICE_PATHS = {
     "searchService": "searchServices",
     "storageService": "storageServices",
 }
+
+# Service types a deploy body may name (P-32): the live service types
+# above, plus "testSuite" — a testSuite pipeline's service IS the
+# testSuite entity (official TestCasePipelineResolver), which has no
+# entry in _SERVICE_PATHS because its connection is derived, not fetched.
+KNOWN_SERVICE_TYPES = frozenset(_SERVICE_PATHS) | {"testSuite"}
 
 
 def fetch_service_connection(
@@ -270,6 +243,102 @@ def fetch_service_connection(
                 pass
 
 
+def _test_case_names(entries: Any) -> list[str]:
+    """Normalize ``sourceConfig.config.testCases`` to case names.
+
+    The schema (``testSuitePipeline.json``) carries strings; a dict
+    entry is accepted defensively (``name``, else the last segment of
+    ``fullyQualifiedName`` — the pull filter compares against the bare
+    case name). Anything else fails loudly instead of silently running
+    no cases.
+    """
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise TranslationError("sourceConfig.config.testCases must be a list")
+    names: list[str] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            if entry.strip():
+                names.append(entry.strip())
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+                continue
+            fqn = entry.get("fullyQualifiedName")
+            if isinstance(fqn, str) and fqn.strip():
+                names.append(fqn.strip().split(".")[-1])
+                continue
+            raise TranslationError(
+                "testCases entries must name a test case (name or "
+                "fullyQualifiedName)"
+            )
+        else:
+            raise TranslationError(
+                "testCases entries must be strings naming a test case"
+            )
+    return names
+
+
+def _test_suite_service_connection(
+    pipeline: dict[str, Any],
+    server_client: Any | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    """Derive the database connection for a testSuite pipeline (parse time).
+
+    Official ``build_source`` returns ``serviceConnection=None`` for
+    testSuite and the TestSuiteSource resolves the connection at run time
+    from the table named by
+    ``sourceConfig.config.entityFullyQualifiedName``. The product runner
+    consumes a static ``WorkflowConfig``, so the same resolution happens
+    here, at DAG-parse time: table entity -> its service reference ->
+    that service's live connection (so a rotated connection takes effect
+    on the next parse without a re-deploy, like the other types).
+    """
+    from smartmetadata_ingestion.client.rest import RestClient
+    from smartmetadata_ingestion.config import ServerConfig
+    from smartmetadata_ingestion.errors import RestError
+
+    config_block = (pipeline.get("sourceConfig") or {}).get("config") or {}
+    entity_fqn = config_block.get("entityFullyQualifiedName")
+    if not isinstance(entity_fqn, str) or not entity_fqn.strip():
+        raise TranslationError(
+            "testSuite pipeline needs "
+            "sourceConfig.config.entityFullyQualifiedName: the database "
+            "connection is derived from that table's service"
+        )
+    server_config = ServerConfig.model_validate(_server_config(pipeline))
+    rest = server_client if server_client is not None else RestClient(server_config)
+    try:
+        try:
+            table = rest.get_table_by_name(entity_fqn.strip())
+        except RestError as exc:
+            raise TranslationError(
+                f"cannot resolve the testSuite table "
+                f"{entity_fqn.strip()!r}: {exc}"
+            ) from exc
+        service_ref = (table or {}).get("service") or {}
+        service_name = service_ref.get("name")
+        if not service_name:
+            raise TranslationError(
+                f"table {entity_fqn.strip()!r} names no service to derive "
+                "the testSuite connection from"
+            )
+        derived = dict(pipeline)
+        derived["service"] = {
+            "name": service_name,
+            "type": service_ref.get("type") or "databaseService",
+        }
+        return fetch_service_connection(derived, client=rest)
+    finally:
+        if server_client is None:
+            try:
+                rest.close()
+            except Exception:
+                pass
+
+
 def translate_pipeline(
     pipeline: dict[str, Any],
     *,
@@ -299,6 +368,11 @@ def translate_pipeline(
     """
     from smartmetadata_ingestion.config import WorkflowConfig
 
+    # The server spells the pipeline type "TestSuite" (schema enum);
+    # accept the service-type spelling too and normalize it.
+    if workflow_type == "testSuite":
+        workflow_type = "TestSuite"
+
     if raise_on_error is None:
         raise_on_error = bool(pipeline.get("raiseOnError", False))
 
@@ -310,6 +384,9 @@ def translate_pipeline(
     )
     db_includes, db_excludes = translate_filter_pattern(
         config_block.get("databaseFilterPattern")
+    )
+    table_includes, table_excludes = translate_filter_pattern(
+        config_block.get("tableFilterPattern")
     )
     # H track 1: the messaging metadata pipeline's generateSampleData
     # (legacy storeSampleData) travels to the runner as
@@ -329,25 +406,42 @@ def translate_pipeline(
                 )
             if config_block.get("storeSampleData") is not None:
                 messaging_metadata["storeSampleData"] = bool(config_block["storeSampleData"])
-        if config_block.get("sampleDataQuery"):
+    # Switches with no runner capability stay ignored — but warned here
+    # and surfaced again at deploy time (ignored_source_switches), never
+    # silently dropped.
+    for switch in ignored_source_switches(pipeline):
+        if switch == "generateSampleData":
+            logger.warning(
+                "sample data generation is not supported by the product runner yet; "
+                "ignoring generateSampleData for pipeline %s",
+                pipeline.get("name"),
+            )
+        elif switch == "storeSampleData":
+            logger.warning(
+                "storeSampleData is not supported by the product runner yet; "
+                "ignoring it for pipeline %s",
+                pipeline.get("name"),
+            )
+        elif switch == "sampleDataQuery":
             logger.warning(
                 "sampleDataQuery is not supported by the product runner yet; "
                 "ignoring it for pipeline %s",
                 pipeline.get("name"),
             )
-    elif config_block.get("generateSampleData") or config_block.get("sampleDataQuery"):
-        logger.warning(
-            "sample data generation is not supported by the product runner yet; "
-            "ignoring generateSampleData for pipeline %s",
-            pipeline.get("name"),
+        elif switch == "enableDataProfiler":
+            logger.warning(
+                "enableDataProfiler inside a metadata pipeline is not supported by "
+                "the product runner yet; ignoring it for pipeline %s",
+                pipeline.get("name"),
+            )
+    if workflow_type == "TestSuite" and service_connection is None:
+        # Official build_source: testSuite passes sourceConfig through
+        # with serviceConnection=None; the connection is resolved from
+        # the suite's table (see _test_suite_service_connection).
+        service_connection, service_type = _test_suite_service_connection(
+            pipeline, server_client
         )
-    if config_block.get("enableDataProfiler"):
-        logger.warning(
-            "enableDataProfiler inside a metadata pipeline is not supported by "
-            "the product runner yet; ignoring it for pipeline %s",
-            pipeline.get("name"),
-        )
-    if service_connection is None:
+    elif service_connection is None:
         service_connection, service_type = fetch_service_connection(
             pipeline, client=server_client
         )
@@ -387,12 +481,25 @@ def translate_pipeline(
             "excludeSchemas": schema_excludes,
             "includeDatabases": db_includes,
             "excludeDatabases": db_excludes,
+            "includeTables": table_includes,
+            "excludeTables": table_excludes,
+            "includeViews": config_block.get("includeViews", True),
         },
         "processors": [],
         "sink": {"type": "metadata-rest"},
     }
     if messaging_metadata is not None:
         raw["source"]["messagingMetadata"] = messaging_metadata
+    if workflow_type == "TestSuite":
+        # Official build_source passes the testSuite sourceConfig
+        # through untouched; the runner pulls the cases from the table
+        # named here (entityFullyQualifiedName) at run time.
+        entity_fqn = config_block.get("entityFullyQualifiedName")
+        if isinstance(entity_fqn, str) and entity_fqn.strip():
+            raw["source"]["entityFullyQualifiedName"] = entity_fqn.strip()
+        raw["source"]["testCaseNames"] = _test_case_names(
+            config_block.get("testCases")
+        )
     try:
         return WorkflowConfig.model_validate(raw)
     except Exception as exc:
