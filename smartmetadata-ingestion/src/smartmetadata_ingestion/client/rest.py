@@ -117,12 +117,17 @@ class RestClient:
         json: Any = None,
         params: dict[str, Any] | None = None,
         auth: bool = True,
+        headers: dict[str, str] | None = None,
     ) -> Any:
-        headers: dict[str, str] = {}
+        request_headers: dict[str, str] = {}
+        if headers:
+            request_headers.update(headers)
         if auth:
             if not self._token:
                 self.login()
-            headers["Authorization"] = f"Bearer {self._token}"
+            # Auth wins over caller headers (pin REST._request applies auth
+            # last): a caller can never clobber the token.
+            request_headers["Authorization"] = f"Bearer {self._token}"
         attempts = self._server.retry_attempts + 1
         last_error: RestError | None = None
         for attempt in range(attempts):
@@ -131,7 +136,7 @@ class RestClient:
                 path,
                 json=json,
                 params=params,
-                headers=headers,
+                headers=request_headers,
             )
             if response.status_code in _RETRY_STATUSES and attempt + 1 < attempts:
                 time.sleep(min(0.05 * (2**attempt), 0.4))
@@ -146,6 +151,25 @@ class RestClient:
                 return response.json()
             return response.text
         raise last_error or RestError(f"{method} {path} failed")
+
+    def patch(
+        self,
+        path: str,
+        *,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        """PATCH with the JSON Patch media type (pin ``REST.patch``).
+
+        The server's PATCH endpoints consume ``application/json-patch+json``;
+        httpx's ``json=`` default (``application/json``) is rejected with
+        415, so the media type is set here, once, for every PATCH caller —
+        never at the call site.
+        """
+        patch_headers = {"Content-Type": "application/json-patch+json"}
+        if headers:
+            patch_headers.update(headers)
+        return self.request("PATCH", path, json=json, headers=patch_headers)
 
     def iter_collection(
         self,
@@ -478,7 +502,9 @@ class RestClient:
 
         JSON Patch (pin ``patch_automation_workflow_response``): add
         ``/response`` with the TestConnectionResult and add ``/status`` with
-        the workflow status.
+        the workflow status. The JSON Patch media type is set by
+        ``RestClient.patch`` (the server rejects ``application/json`` with
+        415).
         """
         if not workflow_id or not str(workflow_id).strip():
             raise WorkflowError("workflow id is required")
@@ -489,7 +515,7 @@ class RestClient:
         path = (
             f"{AUTOMATIONS_WORKFLOWS_PATH}/{encode_path_segment(str(workflow_id).strip())}"
         )
-        return self.request("PATCH", path, json=ops)
+        return self.patch(path, json=ops)
 
     def upsert_classification(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", CLASSIFICATIONS_PATH, json=payload))
