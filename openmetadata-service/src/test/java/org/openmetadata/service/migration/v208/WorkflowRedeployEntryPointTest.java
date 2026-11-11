@@ -33,6 +33,7 @@ import org.openmetadata.service.jdbi3.MigrationDAO;
 import org.openmetadata.service.migration.api.MigrationProcessImpl;
 import org.openmetadata.service.migration.utils.MigrationFile;
 import org.openmetadata.service.migration.utils.v208.ConnectionSecretsEncryptionMigration;
+import org.openmetadata.service.migration.utils.v208.DataProductDomainContainmentRepair;
 import org.openmetadata.service.migration.utils.v208.MigrationUtil;
 import org.openmetadata.service.migration.utils.v208.WorkflowRedeployMigration;
 
@@ -48,10 +49,10 @@ class WorkflowRedeployEntryPointTest {
     setField(migration, "collectionDAO", mock(CollectionDAO.class));
     setField(migration, "migrationDAO", mock(MigrationDAO.class));
 
-    // No DataProductDomainContainmentRepair mock: that P6 D2 step does not exist in
-    // this fork's v208 migration, so runDataMigration() never calls it.
     try (MockedStatic<ConnectionSecretsEncryptionMigration> secretsEncryption =
             mockStatic(ConnectionSecretsEncryptionMigration.class);
+        MockedStatic<DataProductDomainContainmentRepair> containmentRepair =
+            mockStatic(DataProductDomainContainmentRepair.class);
         MockedStatic<MigrationUtil> migrationUtil = mockStatic(MigrationUtil.class);
         MockedStatic<WorkflowRedeployMigration> workflowRedeploy =
             mockStatic(WorkflowRedeployMigration.class);
