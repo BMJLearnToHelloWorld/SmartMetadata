@@ -460,9 +460,10 @@ def test_run_automation_validates_and_executes(client) -> None:
         ).status_code
         == 400
     )
-    # Well-formed but unexecutable service type -> 500 (execution failure).
+    # Well-formed but unsupported service type -> 400 with the reason in
+    # plaintext (ADR:2026-11-11-test-connection-failed-steps-are-results).
     # Body-direct fetcher (None): no server exists in this test, so the
-    # 500 must come from the executor's type dispatch, not a fetch failure.
+    # 400 must come from the executor's type dispatch, not a fetch failure.
     direct_app = create_app(MemoryDagStore(), credentials=CREDS, automation_fetcher=None)
     direct = direct_app.test_client()
     res = direct.post(
@@ -470,8 +471,10 @@ def test_run_automation_validates_and_executes(client) -> None:
         json=_automation_workflow(),
         headers=_auth_headers(),
     )
-    assert res.status_code == 500
-    assert res.get_json() == {"error": "An unexpected problem occurred"}
+    assert res.status_code == 400
+    error = res.get_json()["error"]
+    assert "NoSuchService" in error
+    assert "An unexpected problem occurred" not in error
     # Non-TEST_CONNECTION workflow type -> 500 (no executor for it).
     res = direct.post(
         "/api/v2/openmetadata/run_automation",
