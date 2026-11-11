@@ -22,8 +22,13 @@ import { apiRequest } from './client';
  * 4. Poll GET /v1/automations/workflows/{id} until the workflow completes;
  *    its `response` carries the TestConnectionResult steps.
  * 5. DELETE the workflow once finished (official cleanup; on trigger
- *    failure too). On a polling timeout the workflow is left in place and
- *    the UI says so — deleting an unfinished run would hide its state.
+ *    failure too). The delete is a HARD delete — a soft-deleted workflow
+ *    keeps its fixed `<Type>.testConnection` name, so the next run would
+ *    fail with 409 Entity already exists — mirroring official's
+ *    `deleteWorkflowById(workflowId, true)`
+ *    (ADR:2026-11-11-test-connection-workflow-hard-delete-cleanup). On a
+ *    polling timeout the workflow is left in place and the UI says so —
+ *    deleting an unfinished run would hide its state.
  * The stored service testConnectionResult is written by the runner, never
  * PUT by this console; the UI reloads the service after completion.
  */
@@ -158,6 +163,7 @@ export async function getTestConnectionWorkflow(id: string): Promise<TestConnect
 export function deleteTestConnectionWorkflow(id: string): Promise<void> {
   return apiRequest<void>(`/v1/automations/workflows/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    query: { hardDelete: true },
   });
 }
 

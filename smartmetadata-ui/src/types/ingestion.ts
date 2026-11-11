@@ -355,6 +355,7 @@ export interface TestConnectionStepResult {
   skipReason?: string;
   diagnosisTitle?: string;
   diagnosisRemediation?: string;
+  resultSummary?: string;
 }
 
 /** Stored TestConnectionResult: status + ordered steps. */

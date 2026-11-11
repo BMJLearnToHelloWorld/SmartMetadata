@@ -249,9 +249,13 @@ def run_automation(
     ``fetch_workflow`` is the workflow fetcher the executor uses to get
     the decrypted workflow from the server; the default is the production
     fetcher. ``None`` executes the posted body directly — a seam for
-    tests without a server, never used in production. Any execution
-    failure is a masked 500 (the server turns it into a
-    ``PipelineServiceClientException``); only a successful test is a 200.
+    tests without a server, never used in production. A completed test is
+    a 200 carrying the ``TestConnectionResult``: a failed connection is a
+    test outcome, not a server error
+    (ADR:2026-11-11-test-connection-failed-steps-are-results). An
+    unsupported service type is a 400 with the reason in plaintext. Only
+    infra failures (workflow fetch, definition fetch, unusable request)
+    are the masked 500.
     """
     try:
         workflow = validate_automation_workflow(payload)
@@ -259,13 +263,16 @@ def run_automation(
         return HandlerResult(400, {"error": "; ".join(exc.problems)})
     try:
         from smartmetadata_ingestion.automations.execute import (
+            UnsupportedServiceTypeError,
             execute_automation_workflow,
         )
 
         kwargs: dict[str, Any] = (
             {} if fetch_workflow is USE_DEFAULT_FETCHER else {"fetch_workflow": fetch_workflow}
         )
-        execute_automation_workflow(workflow, **kwargs)
+        result = execute_automation_workflow(workflow, **kwargs)
+    except UnsupportedServiceTypeError as exc:
+        return HandlerResult(400, {"error": str(exc)})
     except Exception as exc:  # noqa: BLE001 - mapped to the masked 500
         logger.error(
             "run_automation failed for workflow %s: %s",
@@ -274,5 +281,4 @@ def run_automation(
             exc_info=True,
         )
         return _server_error()
-    name = str(workflow["name"])
-    return HandlerResult(200, {"message": f"Workflow [{name}] has been triggered."})
+    return HandlerResult(200, result)

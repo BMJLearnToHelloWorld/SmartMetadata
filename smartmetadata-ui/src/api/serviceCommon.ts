@@ -41,6 +41,7 @@ export function mapTestConnectionResult(value: unknown): TestConnectionResult | 
             skipReason: asString(step.skipReason) || undefined,
             diagnosisTitle: diagnosis ? asString(diagnosis.title) || undefined : undefined,
             diagnosisRemediation: diagnosis ? asString(diagnosis.remediation) || undefined : undefined,
+            resultSummary: asString(step.resultSummary) || undefined,
           },
         ];
       })

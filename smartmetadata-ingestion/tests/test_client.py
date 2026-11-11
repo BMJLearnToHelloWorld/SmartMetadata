@@ -243,3 +243,42 @@ def test_get_profiler_config_settings_returns_none_on_error() -> None:
 
     with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
         assert client.get_profiler_config_settings() is None
+
+
+def test_get_test_connection_definition_path() -> None:
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json={"name": "Mysql", "steps": []})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        definition = client.get_test_connection_definition("Mysql")
+    assert definition == {"name": "Mysql", "steps": []}
+    assert len(seen) == 1
+    assert seen[0][0] == "GET"
+    assert seen[0][1].endswith(
+        "/v1/services/testConnectionDefinitions/name/Mysql.testConnectionDefinition"
+    )
+
+
+def test_patch_automation_workflow_response_sends_json_patch() -> None:
+    import json
+
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["path"] = request.url.path
+        captured["json"] = request.read()
+        return httpx.Response(200, json={"id": "w1"})
+
+    result = {"status": "Failed", "steps": []}
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        client.patch_automation_workflow_response("w1", result, "Failed")
+    assert captured["method"] == "PATCH"
+    assert str(captured["path"]).endswith("/v1/automations/workflows/w1")
+    assert json.loads(captured["json"]) == [  # type: ignore[arg-type]
+        {"op": "add", "path": "/response", "value": result},
+        {"op": "add", "path": "/status", "value": "Failed"},
+    ]

@@ -574,3 +574,119 @@ def test_deploy_rejects_malformed_source_config_shapes(
     # malformed shape can no longer fail — or silently mis-scope, as a
     # string includes would by iterating per character — at DAG-parse time.
     assert store.deploy_calls == []
+
+
+# --- run_automation: test-connection outcomes (ADR:2026-11-11-test-connection-failed-steps-are-results) ---
+# A failed connection is a 200 carrying the TestConnectionResult; an
+# unsupported type is a 400 with the reason in plaintext; only infra
+# failures are the masked 500.
+
+
+def _automation_body(*, service_type: str = "Mysql") -> dict:
+    return {
+        "id": "w1",
+        "name": f"{service_type}.testConnection",
+        "workflowType": "TEST_CONNECTION",
+        "request": {
+            "connection": {
+                "config": {
+                    "type": service_type,
+                    "hostPort": "db.example:3306",
+                    "username": "ingest",
+                    "authType": {"password": "secret"},
+                }
+            },
+            "serviceType": "Database",
+            "connectionType": service_type,
+        },
+        "openMetadataServerConnection": {
+            "hostPort": "http://openmetadata-server:8585/api",
+            "securityConfig": {"jwtToken": "test-jwt"},
+        },
+    }
+
+
+def _fake_test_definition(monkeypatch) -> None:
+    import smartmetadata_ingestion.automations.execute as execute
+
+    monkeypatch.setattr(
+        execute,
+        "fetch_test_connection_definition",
+        lambda service_type, server_connection, *, client=None: {
+            "name": service_type,
+            "steps": [
+                {
+                    "name": "CheckAccess",
+                    "description": "reach the database",
+                    "category": "ConnectionGate",
+                    "mandatory": True,
+                },
+                {
+                    "name": "GetSchemas",
+                    "description": "list schemas",
+                    "category": "Capability",
+                    "mandatory": True,
+                },
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        execute, "patch_workflow_response", lambda *args, **kwargs: None
+    )
+
+
+def test_run_automation_mysql_failure_returns_failed_result(monkeypatch) -> None:
+    from smartmetadata_ingestion.connectors import mysql_common
+    from smartmetadata_ingestion.errors import WorkflowError
+
+    _fake_test_definition(monkeypatch)
+    monkeypatch.setattr(
+        mysql_common,
+        "mysql_connect",
+        lambda config: (_ for _ in ()).throw(WorkflowError("connection refused")),
+    )
+    client = create_app(credentials=CREDS, automation_fetcher=None).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/run_automation",
+        json=_automation_body(),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["status"] == "Failed"
+    assert body["steps"][0]["name"] == "CheckAccess"
+    assert body["steps"][0]["passed"] is False
+    assert body["steps"][0]["status"] == "Failed"
+    assert "connection refused" in (body["steps"][0]["errorLog"] or "")
+    assert body["steps"][1]["status"] == "Skipped"
+    assert body["steps"][1]["skipReason"] == "ConnectionNotEstablished"
+
+
+def test_run_automation_unsupported_type_returns_400_plaintext(monkeypatch) -> None:
+    _fake_test_definition(monkeypatch)
+    client = create_app(credentials=CREDS, automation_fetcher=None).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/run_automation",
+        json=_automation_body(service_type="Doris"),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 400
+    error = res.get_json()["error"]
+    assert "Doris" in error
+    assert "An unexpected problem occurred" not in error
+
+
+def test_run_automation_fetch_failure_is_masked_500() -> None:
+    from smartmetadata_ingestion.automations.execute import AutomationError
+
+    def fetch(name, server_connection):
+        raise AutomationError("server unreachable")
+
+    client = create_app(credentials=CREDS, automation_fetcher=fetch).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/run_automation",
+        json=_automation_body(),
+        headers=_auth_headers(),
+    )
+    assert res.status_code == 500
+    assert res.get_json() == {"error": "An unexpected problem occurred"}

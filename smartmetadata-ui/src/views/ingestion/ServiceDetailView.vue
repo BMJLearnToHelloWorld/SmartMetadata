@@ -224,6 +224,9 @@ async function onTestConnection(): Promise<void> {
     workflowId = workflow.id;
     await triggerTestConnectionWorkflow(workflow.id).catch(async (error) => {
       await deleteTestConnectionWorkflow(workflow.id).catch(() => undefined);
+      // The workflow is gone — clear the id so the outer catch does not
+      // delete it a second time (ADR:2026-11-11-test-connection-workflow-hard-delete-cleanup).
+      workflowId = undefined;
       throw error;
     });
     let completed = false;
@@ -432,7 +435,7 @@ onMounted(() => {
             { title: t('ingestion.services.testConnectionStatus'), dataIndex: 'status', key: 'status', width: 120 },
             { title: t('ingestion.services.testConnectionMessage'), dataIndex: 'message', key: 'message' },
           ]"
-          :data-source="testSteps.map((step) => ({ ...step, message: step.message ?? step.errorLog ?? step.diagnosisTitle ?? '—', status: step.status ?? (step.passed === true ? 'Passed' : step.passed === false ? 'Failed' : '—') }))"
+          :data-source="testSteps.map((step) => ({ ...step, message: step.message ?? step.resultSummary ?? step.errorLog ?? step.diagnosisTitle ?? '—', status: step.status ?? (step.passed === true ? 'Passed' : step.passed === false ? 'Failed' : '—') }))"
           :pagination="false"
         />
       </template>

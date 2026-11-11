@@ -42,6 +42,8 @@ LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
 TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
+TEST_CONNECTION_DEFINITIONS_PATH = "/v1/services/testConnectionDefinitions"
+AUTOMATIONS_WORKFLOWS_PATH = "/v1/automations/workflows"
 TEST_SUITES_PATH = "/v1/dataQuality/testSuites"
 TEST_CASES_PATH = "/v1/dataQuality/testCases"
 TABLES_PROFILE_PATH = TABLES_PATH  # /v1/tables/{id}/tableProfile
@@ -439,6 +441,43 @@ class RestClient:
             f"{encode_path_segment(str(fqn).strip())}/pipelineStatus"
         )
         return self.request("PUT", path, json=status)
+
+    # --- Automation workflows (test connection) ---------------------------
+    # The test-connection runner fetches its definition and patches the
+    # workflow with the result (ADR:2026-11-11-test-connection-failed-steps-are-results).
+
+    def get_test_connection_definition(self, service_type: str) -> dict[str, Any]:
+        """GET /v1/services/testConnectionDefinitions/name/{type}.testConnectionDefinition."""
+        if not service_type or not str(service_type).strip():
+            raise WorkflowError("service type is required")
+        path = (
+            f"{TEST_CONNECTION_DEFINITIONS_PATH}/name/"
+            f"{encode_path_segment(str(service_type).strip())}.testConnectionDefinition"
+        )
+        return self._as_object(self.request("GET", path))
+
+    def patch_automation_workflow_response(
+        self,
+        workflow_id: str,
+        result: dict[str, Any],
+        status: str,
+    ) -> Any:
+        """PATCH /v1/automations/workflows/{id} with the test result + status.
+
+        JSON Patch (pin ``patch_automation_workflow_response``): add
+        ``/response`` with the TestConnectionResult and add ``/status`` with
+        the workflow status.
+        """
+        if not workflow_id or not str(workflow_id).strip():
+            raise WorkflowError("workflow id is required")
+        ops = [
+            {"op": "add", "path": "/response", "value": result},
+            {"op": "add", "path": "/status", "value": status},
+        ]
+        path = (
+            f"{AUTOMATIONS_WORKFLOWS_PATH}/{encode_path_segment(str(workflow_id).strip())}"
+        )
+        return self.request("PATCH", path, json=ops)
 
     def upsert_classification(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", CLASSIFICATIONS_PATH, json=payload))
