@@ -359,6 +359,53 @@ class ProfilerTableSampleSpec(ProfilerSampleSpec):
         return value
 
 
+class SchemaDiffTable(CamelModel):
+    """One side of a schema diff (pin ``SchemaDiffResult``).
+
+    ``schema`` maps each column name to its pulled ``{"type", "constraints"}``
+    pair; the type is the pulled ``dataType`` string verbatim and the
+    constraint is the pulled ``constraint`` or ``""``. Rendered into result
+    values with the pin ``__str__`` shape (``serviceType='...' ...``).
+    """
+
+    __test__ = False
+
+    service_type: str
+    fully_qualified_table_name: str
+    # Pin names this field `schema` (SchemaDiffResult.schema_ with alias
+    # "schema"); the attribute keeps the underscore so it does not shadow
+    # BaseModel.schema.
+    schema_: dict[str, dict[str, str]] = Field(default_factory=dict, alias="schema")
+
+    def render(self) -> str:
+        return " ".join(
+            f"{key}={value!r}" for key, value in self.model_dump(by_alias=True).items()
+        )
+
+
+class SchemaDiff(CamelModel):
+    """Column differences between the two compared tables (pin ``ColumnDiffResult``).
+
+    ``removed`` / ``added`` are non-key columns present on one side only;
+    ``changed`` are columns present on both sides whose types are
+    incomparable (§3.6 family table). A non-empty diff fails the verdict
+    regardless of the row diff. Absent (``None`` on the spec) when the setter
+    found no column difference — or for inline specs, which carry no table
+    metadata and skip schema comparison (disclosed in the message).
+    """
+
+    __test__ = False
+
+    removed: list[str] = Field(default_factory=list)
+    added: list[str] = Field(default_factory=list)
+    changed: list[str] = Field(default_factory=list)
+    schema_table_1: SchemaDiffTable
+    schema_table_2: SchemaDiffTable
+
+    def has_diff(self) -> bool:
+        return bool(self.removed or self.added or self.changed)
+
+
 class DataDiffSideSpec(CamelModel):
     """One side of a data-diff comparison.
 
@@ -366,6 +413,11 @@ class DataDiffSideSpec(CamelModel):
     builders call the segment ``catalog``); ``source_type`` / ``connection``
     default to the workflow's source when omitted, so same-service diffs
     only name the tables while cross-service diffs can override per side.
+    ``extra_columns`` is the value-comparison column set for this side
+    (``None`` = key-set mode, no value comparison); ``key_column_types``
+    carries the pulled ``dataType`` per key column for the SQL Server
+    int-key sampling check; ``service`` is the service name, recorded so
+    abort messages and schema tables can use the full FQN.
     """
 
     __test__ = False
@@ -376,6 +428,9 @@ class DataDiffSideSpec(CamelModel):
     key_columns: list[str]
     source_type: str | None = None
     connection: dict[str, Any] | None = None
+    extra_columns: list[str] | None = None
+    key_column_types: dict[str, str] | None = None
+    service: str | None = None
 
     @field_validator("key_columns")
     @classmethod
@@ -399,6 +454,15 @@ class DataDiffSpec(CamelModel):
     key columns, threshold, optional where clause). ``threshold`` follows the
     official verdict rule: 0 means exactly zero differences are allowed,
     otherwise the diff passes while the total is below the threshold.
+    ``table_profile_config`` is the table1 entity's profiler config carried
+    as raw JSON (only its ``profileSampleConfig`` face is consumed, by P2-2
+    sampling); ``case_sensitive_columns`` is the ``caseSensitiveColumns``
+    parameter (default False, official ``get_bool_test_case_param``);
+    ``schema_diff`` is the setter-computed column diff (``None`` = no column
+    difference, or an inline spec with no table metadata).
+
+    ADR:2026-11-11-table-diff-cross-service-connection-source
+    ADR:2026-11-11-table-diff-sampling-disclosure
     """
 
     __test__ = False
@@ -408,6 +472,9 @@ class DataDiffSpec(CamelModel):
     right: DataDiffSideSpec
     threshold: int = 0
     where_clause: str | None = None
+    table_profile_config: dict[str, Any] | None = None
+    case_sensitive_columns: bool = False
+    schema_diff: SchemaDiff | None = None
 
     @field_validator("threshold")
     @classmethod

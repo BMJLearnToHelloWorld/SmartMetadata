@@ -104,12 +104,14 @@ class DataDiffJob:
         source: Source | None = None,
         sink: Sink | None = None,
         fetch_keys: Any | None = None,
+        fetch_rows: Any | None = None,
     ) -> None:
         self._config = config
         self._client = client
         self._source = source
         self._sink = sink
         self._fetch_keys = fetch_keys
+        self._fetch_rows = fetch_rows
 
     def run(self) -> RunReport:
         config = self._config.model_copy(
@@ -121,4 +123,5 @@ class DataDiffJob:
             source=self._source,
             sink=self._sink,
             fetch_keys=self._fetch_keys,
+            fetch_rows=self._fetch_rows,
         )

@@ -344,6 +344,18 @@ class RestClient:
             TEST_CASES_PATH, limit=limit, extra_params=params
         )
 
+    def get_database_service_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/services/databaseServices/name/{name} (service entity for
+        cross-service tableDiff: the right side's connection comes from the
+        server's copy of the service entity, never from pipeline config).
+
+        ADR:2026-11-11-table-diff-cross-service-connection-source
+        """
+        if not name or not str(name).strip():
+            raise WorkflowError("database service name is required")
+        path = f"{DATABASE_SERVICES_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
     def get_table_by_name(
         self,
         fqn: str,

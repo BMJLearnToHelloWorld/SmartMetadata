@@ -601,10 +601,12 @@ class TestSuiteWorkflow(MetadataWorkflow):
         hook: ProgressHook | None = None,
         execute: Any | None = None,
         fetch_keys: Any | None = None,
+        fetch_rows: Any | None = None,
         run_id: str | None = None,
     ) -> None:
         self._injected_execute = execute
         self._injected_fetch_keys = fetch_keys
+        self._injected_fetch_rows = fetch_rows
         self._pulled_suites: list[PulledSuite] | None = None
         self._validator_builder: ValidatorBuilder | None = None
         super().__init__(
@@ -644,6 +646,8 @@ class TestSuiteWorkflow(MetadataWorkflow):
                 table_resolver=self._client.get_table_by_name,
                 source_connection=self.config.source.connection or {},
                 fetch_keys=self._injected_fetch_keys,
+                fetch_rows=self._injected_fetch_rows,
+                service_resolver=self._client.get_database_service_by_name,
             )
 
     def _execute_scalar(self, sql: str) -> Any:
@@ -702,13 +706,13 @@ class TestSuiteWorkflow(MetadataWorkflow):
 
 
 class DataDiffWorkflow(MetadataWorkflow):
-    """Runs configured key-set data diffs live against the source databases.
+    """Runs configured data diffs live against the source databases.
 
     Tables come from ``config.data_diffs`` (never from the metadata source's
     ``produce()``); each spec compares two table sides and writes one
     :class:`TestCaseResultRecord` — the official tableDiff write-back shape.
-    Key-set comparison only: added / removed rows. Changed-row, schema-diff
-    and sampling comparisons are a later phase.
+    Inline specs carry no table metadata, so schema differences are not
+    compared and the result says so (Q-3 (a)).
     """
 
     def __init__(
@@ -721,9 +725,11 @@ class DataDiffWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         fetch_keys: Any | None = None,
+        fetch_rows: Any | None = None,
         run_id: str | None = None,
     ) -> None:
         self._injected_fetch_keys = fetch_keys
+        self._injected_fetch_rows = fetch_rows
         super().__init__(
             config,
             client=client,
@@ -778,6 +784,10 @@ class DataDiffWorkflow(MetadataWorkflow):
             right_binding=right_binding,
             default_connection=self.config.source.connection or {},
             fetch_keys=self._injected_fetch_keys,
+            fetch_rows=self._injected_fetch_rows,
+            left_source_type=spec.left.source_type or self.config.source.type,
+            right_source_type=spec.right.source_type or self.config.source.type,
+            schema_compared=False,
             timestamp=timestamp,
         )
 
