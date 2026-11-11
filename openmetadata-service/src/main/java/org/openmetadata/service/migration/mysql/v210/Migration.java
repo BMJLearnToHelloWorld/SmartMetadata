@@ -43,6 +43,7 @@ import static org.openmetadata.service.migration.utils.v210.SearchTermBoostRepai
 import org.openmetadata.service.migration.api.MigrationProcessImpl;
 import org.openmetadata.service.migration.utils.MigrationFile;
 import org.openmetadata.service.migration.utils.v208.DataProductDomainContainmentRepair;
+import org.openmetadata.service.migration.utils.v208.McpGrantUserNameIndexes;
 import org.openmetadata.service.migration.utils.v210.AlertBacklogMigration;
 import org.openmetadata.service.migration.utils.v210.AppCreatedAlerts;
 import org.openmetadata.service.migration.utils.v210.AuthenticationSecretsEncryptionMigration;
@@ -171,6 +172,13 @@ public class Migration extends MigrationProcessImpl {
         getVersion(),
         MCP_CONSENT_COLUMNS_STEP,
         () -> addMcpConsentColumnsOnMySql(handle));
+    // Same for the 2.0.8 MCP user-name indexes, on a database that recorded 2.0.8 before they were
+    // added to it.
+    runOnce(
+        migrationDAO,
+        getVersion(),
+        McpGrantUserNameIndexes.STEP_NAME,
+        () -> McpGrantUserNameIndexes.addOnMySql(handle));
     // Same for the 2.0.8 data product domain containment repair. The repair only rewrites links
     // that disagree, so running it after 2.0.8 already did changes nothing.
     runOnce(
