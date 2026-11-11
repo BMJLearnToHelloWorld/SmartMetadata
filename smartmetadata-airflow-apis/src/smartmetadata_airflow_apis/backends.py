@@ -158,10 +158,15 @@ def _is_registered(dag_id: str, previous_parse: Any) -> bool:
             return False
         if previous_parse is not None and row.last_parsed_time == previous_parse:
             return False
+        # SerializedDagModel's PK is a surrogate id, so one dag_id can have
+        # several serialized rows (one per dag version); .one_or_none()
+        # raises MultipleResultsFound after a re-serialize. This is an
+        # existence check, so take the latest row instead.
         serialized = (
             session.query(SerializedDagModel)
             .filter(SerializedDagModel.dag_id == dag_id)
-            .one_or_none()
+            .order_by(SerializedDagModel.last_updated.desc())
+            .first()
         )
         return serialized is not None
 

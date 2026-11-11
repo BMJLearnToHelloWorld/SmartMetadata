@@ -271,6 +271,7 @@ def test_patch_automation_workflow_response_sends_json_patch() -> None:
         captured["method"] = request.method
         captured["path"] = request.url.path
         captured["json"] = request.read()
+        captured["content_type"] = request.headers.get("content-type")
         return httpx.Response(200, json={"id": "w1"})
 
     result = {"status": "Failed", "steps": []}
@@ -278,6 +279,9 @@ def test_patch_automation_workflow_response_sends_json_patch() -> None:
         client.patch_automation_workflow_response("w1", result, "Failed")
     assert captured["method"] == "PATCH"
     assert str(captured["path"]).endswith("/v1/automations/workflows/w1")
+    # The server's WorkflowResource PATCH consumes application/json-patch+json;
+    # application/json (httpx's json= default) is rejected with 415.
+    assert captured["content_type"] == "application/json-patch+json"
     assert json.loads(captured["json"]) == [  # type: ignore[arg-type]
         {"op": "add", "path": "/response", "value": result},
         {"op": "add", "path": "/status", "value": "Failed"},
