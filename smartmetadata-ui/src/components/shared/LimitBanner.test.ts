@@ -7,10 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
 import LimitBanner from './LimitBanner.vue';
 import { useLimitBannerStore } from '@/stores/limitBanner';
@@ -18,6 +18,10 @@ import { useLimitBannerStore } from '@/stores/limitBanner';
 describe('LimitBanner', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--sm-banner-height');
   });
 
   function mountBanner() {
@@ -71,5 +75,46 @@ describe('LimitBanner', () => {
     await wrapper.get('[data-testid="limit-banner"] .ant-alert-close-icon').trigger('click');
     expect(banner.bannerDetails).toBeNull();
     expect(wrapper.find('[data-testid="limit-banner"]').exists()).toBe(false);
+  });
+
+  it('publishes its height as --sm-banner-height, 0 when hidden, removed on unmount', async () => {
+    const banner = useLimitBannerStore();
+    const details = {
+      header: 'Data Assets limit reached',
+      subheader: '8/10 (FREE, 80%)',
+      type: 'warning' as const,
+      softLimitExceed: true,
+      hardLimitExceed: false,
+    };
+    banner.setBannerDetails(details);
+    const wrapper = mountBanner();
+    await flushPromises();
+    // jsdom lays out at 0px; stand in a real banner height at the
+    // prototype so the measurement reads it whatever element it hits.
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      height: 72,
+      width: 0,
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 0,
+      right: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    // Re-trigger the watcher after the mock is in place, so the
+    // measurement definitely runs against it.
+    banner.clearBannerDetails();
+    await flushPromises();
+    expect(document.documentElement.style.getPropertyValue('--sm-banner-height')).toBe('0px');
+    banner.setBannerDetails(details);
+    await flushPromises();
+    expect(document.documentElement.style.getPropertyValue('--sm-banner-height')).toBe('72px');
+    banner.clearBannerDetails();
+    await flushPromises();
+    expect(document.documentElement.style.getPropertyValue('--sm-banner-height')).toBe('0px');
+    wrapper.unmount();
+    expect(document.documentElement.style.getPropertyValue('--sm-banner-height')).toBe('');
+    rectSpy.mockRestore();
   });
 });

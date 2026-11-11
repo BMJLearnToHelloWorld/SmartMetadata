@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fontsCss = readFileSync(join(here, 'fonts.css'), 'utf8');
+const themeCss = readFileSync(join(here, 'theme.css'), 'utf8');
 const mainTs = readFileSync(join(here, '../main.ts'), 'utf8');
 const packageJson = JSON.parse(readFileSync(join(here, '../../package.json'), 'utf8')) as {
   dependencies: Record<string, string>;
@@ -46,5 +47,11 @@ describe('variable webfonts (R8)', () => {
         existsSync(join(here, '../../node_modules', pkg, 'files', file)),
       ).toBe(true);
     }
+  });
+
+  it('keeps CDN @font-face out of theme.css: fonts come from fonts.css only', () => {
+    // ADR:2026-11-11-home-style-compaction-and-tokens — one font copy.
+    expect(themeCss).not.toContain('@font-face');
+    expect(themeCss).not.toContain('cdn.jsdelivr.net');
   });
 });

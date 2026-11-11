@@ -235,6 +235,40 @@ describe('CustomizeMyData', () => {
     expect(domains.getAttribute('checked')).toBeDefined();
   });
 
+  it('a gapped saved layout renders without overlapping cells', async () => {
+    // A saved layout may still carry raw official coordinates
+    // (y=1 under a y=0 card); the editor packs on load and compacts
+    // on render, so no two cells in one column may intersect.
+    // ADR:2026-11-11-home-style-compaction-and-tokens
+    const wrapper = await mountEditor({
+      pageType: 'LandingPage',
+      layout: [
+        { i: 'KnowledgePanel.Domains', x: 0, y: 0, w: 1, h: 3 },
+        { i: 'KnowledgePanel.DataQuality', x: 1, y: 0, w: 1, h: 3 },
+        { i: 'KnowledgePanel.KPI', x: 0, y: 1, w: 1, h: 3 },
+      ],
+    });
+    await flushPromises();
+    const cells = wrapper.findAll('[data-testid^="customize-widget-cell-"]');
+    const ranges = cells.map((cell) => {
+      const style = cell.attributes('style') ?? '';
+      const col = Number(/grid-column: (\d+) \/ span/.exec(style)?.[1]);
+      const row = Number(/grid-row: (\d+) \/ span/.exec(style)?.[1]);
+      const span = Number(/grid-row: \d+ \/ span (\d+)/.exec(style)?.[1]);
+      return { col, start: row, end: row + span };
+    });
+    expect(ranges).toHaveLength(3);
+    for (let a = 0; a < ranges.length; a++) {
+      for (let b = a + 1; b < ranges.length; b++) {
+        if (ranges[a].col !== ranges[b].col) continue;
+        expect(ranges[a].start >= ranges[b].end || ranges[b].start >= ranges[a].end).toBe(true);
+      }
+    }
+    // KPI slides under Domains' packed bottom edge (grid row 4 = y 3).
+    const kpi = wrapper.get(cellTestId('KnowledgePanel.KPI'));
+    expect(kpi.attributes('style')).toContain('grid-row: 4 / span 3');
+  });
+
   it('dragging a widget to another cell reflows the layout live', async () => {
     const wrapper = await mountEditor();
     await flushPromises();

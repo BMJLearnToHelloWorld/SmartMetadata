@@ -7,6 +7,8 @@ import { computed } from 'vue';
 import { DeleteOutlined, DownOutlined, HolderOutlined, UpOutlined } from '@ant-design/icons-vue';
 import { Button, Card, Skeleton, Tag, Tooltip } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
+import { getMyDataWidgetBaseKey } from './landingPageLayout';
+import { getWidgetTone } from './widgetTones';
 
 export interface HomeWidgetStatus {
   label: string;
@@ -97,6 +99,14 @@ const dragKey = computed(() => {
     : props.testId;
 });
 
+/**
+ * The header tone tile (icon + tint) for this widget, from the
+ * official per-widget TONE table (widgetTones.ts). Unknown keys —
+ * the editor's stub cards — render without a tile.
+ * ADR:2026-11-11-home-style-compaction-and-tokens
+ */
+const tone = computed(() => getWidgetTone(getMyDataWidgetBaseKey(dragKey.value)));
+
 function toggleCollapse(): void {
   if (props.collapsible) {
     emit('toggle-collapse');
@@ -122,30 +132,51 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
 <template>
   <Card :data-testid="testId" class="home-widget-card" :bordered="true">
     <template #title>
-      <span
+      <!-- Official TopicCardHeader: tone tile + title over summary +
+           trailing status, and the whole strip is the collapse
+           button when collapsible (the chevron is decorative). -->
+      <component
+        :is="collapsible ? 'button' : 'div'"
+        :type="collapsible ? 'button' : undefined"
         class="home-widget-card__title"
         :class="{ 'home-widget-card__title--collapsible': collapsible }"
+        :data-testid="collapsible ? `${testId}-collapse` : undefined"
+        :aria-label="collapsible ? t(collapsed ? 'home.expand' : 'home.collapse') : undefined"
         @click="toggleCollapse"
       >
-        <span class="home-widget-card__title-text">{{ title }}</span>
-        <Tag v-if="status" :data-testid="`${testId}-status`" :color="statusColor(status.tone)">
-          {{ status.label }}
-        </Tag>
-        <Button
-          v-if="collapsible"
-          type="text"
-          size="small"
-          class="home-widget-card__collapse"
-          :data-testid="`${testId}-collapse`"
-          :aria-label="t(collapsed ? 'home.expand' : 'home.collapse')"
-          @click.stop="toggleCollapse"
+        <span
+          v-if="tone"
+          class="home-widget-card__tone"
+          :style="{ background: tone.bg, color: tone.fg }"
         >
-          <template #icon>
-            <UpOutlined v-if="!collapsed" />
-            <DownOutlined v-else />
-          </template>
-        </Button>
-      </span>
+          <component :is="tone.icon" />
+        </span>
+        <span class="home-widget-card__title-block">
+          <span class="home-widget-card__title-text">{{ title }}</span>
+          <span
+            v-if="summary"
+            :data-testid="`${testId}-summary`"
+            class="home-widget-card__summary"
+          >
+            {{ summary }}
+          </span>
+        </span>
+        <span v-if="status" class="home-widget-card__status" :title="status.label">
+          <Tag :data-testid="`${testId}-status`" :color="statusColor(status.tone)">
+            {{ status.label }}
+          </Tag>
+        </span>
+        <UpOutlined
+          v-if="collapsible && !collapsed"
+          class="home-widget-card__chevron"
+          aria-hidden="true"
+        />
+        <DownOutlined
+          v-if="collapsible && collapsed"
+          class="home-widget-card__chevron"
+          aria-hidden="true"
+        />
+      </component>
     </template>
     <template #extra>
       <div class="home-widget-card__extra">
@@ -178,9 +209,6 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
       </div>
     </template>
     <div v-if="!collapsed" class="home-widget-card__body">
-      <p v-if="summary" :data-testid="`${testId}-summary`" class="home-widget-card__summary">
-        {{ summary }}
-      </p>
       <div v-if="isLoading" :data-testid="`${testId}-loading`" class="home-widget-card__loading">
         <Skeleton :paragraph="{ rows: 3 }" active />
       </div>
@@ -236,15 +264,15 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  border-radius: 16px;
+  border-radius: var(--sm-radius-card);
   border-color: var(--sm-home-card-border);
   box-shadow: var(--sm-shadow-card);
   overflow: hidden;
 }
 .home-widget-card :deep(.ant-card-head) {
   flex: none;
-  min-height: 48px;
-  padding-inline: 16px;
+  min-height: 0;
+  padding: 8px 16px;
   border-bottom-color: var(--sm-border-secondary);
 }
 .home-widget-card :deep(.ant-card-head-wrapper) {
@@ -253,7 +281,7 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
 }
 .home-widget-card :deep(.ant-card-head-title) {
   overflow: hidden;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--sm-text-primary);
   text-overflow: ellipsis;
@@ -265,26 +293,71 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
 .home-widget-card :deep(.ant-card-body) {
   flex: 1;
   min-height: 0;
-  padding: 16px;
   overflow: auto;
 }
 .home-widget-card__title {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  width: 100%;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
 }
 .home-widget-card__title--collapsible {
   cursor: pointer;
 }
+.home-widget-card__tone {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--sm-radius-card);
+  font-size: 20px;
+}
+.home-widget-card__title-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
 .home-widget-card__title-text {
   overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sm-text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-widget-card__collapse {
+.home-widget-card__summary {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--sm-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-widget-card__status {
   flex: none;
-  padding: 0 2px;
+  max-width: 50%;
+  overflow: hidden;
+}
+.home-widget-card__status .ant-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-widget-card__chevron {
+  flex: none;
+  font-size: 12px;
   color: var(--sm-text-secondary);
 }
 .home-widget-card__edit-controls {
@@ -312,11 +385,6 @@ function statusColor(tone: HomeWidgetStatus['tone']): string {
 }
 .home-widget-card__body {
   min-height: 0;
-}
-.home-widget-card__summary {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--sm-text-secondary);
 }
 .home-widget-card__loading {
   padding: 4px 0;

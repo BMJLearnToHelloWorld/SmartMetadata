@@ -34,14 +34,17 @@ describe('useTopicsView', () => {
     expect(topics.widgetHeight(COLLAPSED_WIDGET_HEIGHT)).toBeCloseTo(96, 0);
   });
 
-  it('starts in grid mode with every widget expanded at h*4 / y*4', () => {
+  it('starts in grid mode with every widget expanded at h*4 / y*4, compacted', () => {
     const topics = useTopicsView(LAYOUT);
     expect(topics.viewMode.value).toBe('grid');
     expect(topics.columns.value).toBe(2);
+    // Compaction slides C up to the first free row of its column:
+    // A occupies rows 0–11, so C starts at 12, not at its raw y*4 = 4.
+    // ADR:2026-11-11-home-style-compaction-and-tokens
     expect(topics.displayLayout.value.map((w) => [w.i, w.x, w.y, w.h])).toEqual([
       ['KnowledgePanel.A', 0, 0, 12],
       ['KnowledgePanel.B', 1, 0, 12],
-      ['KnowledgePanel.C', 0, 4, 12],
+      ['KnowledgePanel.C', 0, 12, 12],
     ]);
   });
 
@@ -51,10 +54,38 @@ describe('useTopicsView', () => {
     expect(topics.collapseValue.value.isCollapsed('KnowledgePanel.B')).toBe(true);
     expect(topics.collapseValue.value.isCollapsed('KnowledgePanel.A')).toBe(false);
     expect(topics.isEveryWidgetCollapsed.value).toBe(false);
+    // C is still compacted onto A's bottom edge (row 12).
     expect(topics.displayLayout.value.map((w) => [w.i, w.x, w.y, w.h])).toEqual([
       ['KnowledgePanel.A', 0, 0, 12],
       ['KnowledgePanel.B', 1, 0, 3],
-      ['KnowledgePanel.C', 0, 4, 12],
+      ['KnowledgePanel.C', 0, 12, 12],
+    ]);
+  });
+
+  it('compacts the grid so same-column cards never intersect', () => {
+    const noIntersections = (layout: readonly LandingPageLayoutItem[]) => {
+      const byColumn = new Map<number, [number, number][]>();
+      for (const w of layout) {
+        byColumn.set(w.x, [...(byColumn.get(w.x) ?? []), [w.y, w.y + w.h]]);
+      }
+      for (const ranges of byColumn.values()) {
+        const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+        for (let i = 1; i < sorted.length; i++) {
+          expect(sorted[i][0]).toBeGreaterThanOrEqual(sorted[i - 1][1]);
+        }
+      }
+    };
+    const topics = useTopicsView(LAYOUT);
+    noIntersections(topics.displayLayout.value);
+    topics.collapseValue.value.toggle('KnowledgePanel.B');
+    noIntersections(topics.displayLayout.value);
+    topics.toggleAll();
+    noIntersections(topics.displayLayout.value);
+    // All-collapsed packs tightly: 3 rows per card per column.
+    expect(topics.displayLayout.value.map((w) => [w.i, w.x, w.y, w.h])).toEqual([
+      ['KnowledgePanel.A', 0, 0, 3],
+      ['KnowledgePanel.B', 1, 0, 3],
+      ['KnowledgePanel.C', 0, 3, 3],
     ]);
   });
 
