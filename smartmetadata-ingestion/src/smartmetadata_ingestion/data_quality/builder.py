@@ -53,12 +53,16 @@ class ValidatorBuilder:
         table_resolver: Callable[[str], dict[str, Any]] | None = None,
         source_connection: dict[str, Any] | None = None,
         fetch_keys: (Callable[[dict[str, Any]], Iterable[tuple[Any, ...]]] | None) = None,
+        fetch_rows: (Callable[[dict[str, Any]], Iterable[tuple[Any, ...]]] | None) = None,
+        service_resolver: Callable[[str], dict[str, Any]] | None = None,
     ) -> None:
         self.dialect = dialect
         self._execute = execute
         self._table_resolver = table_resolver
         self._source_connection = source_connection or {}
         self._fetch_keys = fetch_keys
+        self._fetch_rows = fetch_rows
+        self._service_resolver = service_resolver
 
     def build(
         self,
@@ -103,6 +107,8 @@ class ValidatorBuilder:
         setter = TableDiffParamsSetter(
             table_resolver=self._table_resolver,
             source_connection=self._source_connection,
+            service_resolver=self._service_resolver,
+            dialect=self.dialect,
         )
         spec = setter.compile(test_case, table)
         return TableDiffValidator(
@@ -113,4 +119,5 @@ class ValidatorBuilder:
             timestamp=timestamp,
             spec=spec,
             fetch_keys=self._fetch_keys,
+            fetch_rows=self._fetch_rows,
         )

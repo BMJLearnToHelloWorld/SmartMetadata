@@ -98,11 +98,18 @@ class TableColumnInfo:
 
 @dataclass(frozen=True)
 class TableContext:
-    """The table a pulled test case runs against, with its columns."""
+    """The table a pulled test case runs against, with its columns.
+
+    ``table_profiler_config`` is the entity's ``tableProfilerConfig`` carried
+    as raw JSON (only its ``profileSampleConfig`` face is consumed, by P2-2
+    sampling); a non-dict value (or an old entity without the field) reads
+    as ``None``, never an error.
+    """
 
     table: TableRef
     columns: tuple[TableColumnInfo, ...] = ()
     service_name: str = ""
+    table_profiler_config: dict[str, Any] | None = None
 
     @property
     def column_count(self) -> int:
@@ -129,7 +136,15 @@ class TableContext:
         )
         service = payload.get("service") or {}
         service_name = (service.get("name") if isinstance(service, dict) else None) or ""
-        return cls(table=TableRef.parse(fqn), columns=columns, service_name=service_name)
+        profiler_config = payload.get("tableProfilerConfig")
+        return cls(
+            table=TableRef.parse(fqn),
+            columns=columns,
+            service_name=service_name,
+            table_profiler_config=(
+                profiler_config if isinstance(profiler_config, dict) else None
+            ),
+        )
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,7 @@ def run_workflow(
     profile_reader: Any | None = None,
     execute: Any | None = None,
     fetch_keys: Any | None = None,
+    fetch_rows: Any | None = None,
     run_id: str | None = None,
 ) -> RunReport:
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
@@ -71,6 +72,7 @@ def run_workflow(
             hook=hook,
             execute=execute,
             fetch_keys=fetch_keys,
+            fetch_rows=fetch_rows,
             run_id=run_id,
         )
     elif workflow_type == "data_diff":
@@ -82,6 +84,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             fetch_keys=fetch_keys,
+            fetch_rows=fetch_rows,
             run_id=run_id,
         )
     else:

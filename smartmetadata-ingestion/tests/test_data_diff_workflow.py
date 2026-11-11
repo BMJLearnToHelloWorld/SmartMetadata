@@ -26,6 +26,13 @@ from smartmetadata_ingestion.config import (
     WorkflowConfig,
     WorkflowSettings,
 )
+from smartmetadata_ingestion.datadiff import (
+    SqlRowFetcher,
+    _norm_key,
+    _values_equal,
+    datadiff_binding,
+    run_data_diff_spec,
+)
 from smartmetadata_ingestion.errors import WorkflowInitializationError
 from smartmetadata_ingestion.jobs import DataDiffJob
 from smartmetadata_ingestion.records import TestCaseResultRecord
@@ -132,6 +139,61 @@ def _fetch_keys(mapping: dict[str, list[tuple[Any, ...]]]):
         return mapping[side["table"]]
 
     return _fetch
+
+
+def _fetch_rows(mapping: dict[str, list[tuple[Any, ...]]]):
+    """Inject full ``key + extra`` rows per side table (row-mode engine)."""
+
+    def _fetch(side: dict[str, Any]):
+        return mapping[side["table"]]
+
+    return _fetch
+
+
+def _row_spec(
+    test_case_fqn: str,
+    *,
+    threshold: int = 0,
+    extra_columns: list[str] | None = None,
+) -> DataDiffSpec:
+    return DataDiffSpec(
+        test_case_fqn=test_case_fqn,
+        left=_side(
+            "orders",
+            extra_columns=extra_columns if extra_columns is not None else ["email"],
+            key_column_types={"id": "INT"},
+        ),
+        right=_side(
+            "orders_v2",
+            extra_columns=extra_columns if extra_columns is not None else ["email"],
+            key_column_types={"id": "INT"},
+        ),
+        threshold=threshold,
+    )
+
+
+def _run_row_spec(
+    spec: DataDiffSpec,
+    mapping: dict[str, list[tuple[Any, ...]]],
+    *,
+    schema_compared: bool = True,
+    compute_counts: bool = True,
+) -> TestCaseResultRecord:
+    return run_data_diff_spec(
+        spec,
+        left_binding=datadiff_binding("postgres"),
+        right_binding=datadiff_binding("postgres"),
+        default_connection={
+            "hostPort": "localhost:5432",
+            "username": "ingest",
+            "password": "secret",
+            "database": "analytics",
+        },
+        fetch_rows=_fetch_rows(mapping),
+        compute_counts=compute_counts,
+        schema_compared=schema_compared,
+        timestamp=1000,
+    )
 
 
 def test_data_diff_workflow_compares_and_writes_result() -> None:
@@ -531,3 +593,559 @@ dataDiffs:
     assert len(config.data_diffs) == 1
     assert config.data_diffs[0].threshold == 3
     assert config.data_diffs[0].right.table == "orders_copy"
+
+
+# -- P2-1 chunked row engine -----------------------------------------------
+
+
+def test_row_engine_crosses_chunk_boundaries() -> None:
+    """2,500 left rows cross the 1,000-row chunk boundary twice; pass 2
+    finds the added row the left-driven pass can never fetch."""
+    left = [(i, f"user{i}@x") for i in range(1, 2501)]
+    right = [(i, f"user{i}@x") for i in range(1, 2500)]
+    right[1] = (2, "changed@x")  # one changed row
+    right.append((3000, "new@x"))  # one added row (right-only key)
+    record = _run_row_spec(
+        _row_spec("svc.db.public.orders.row_diff"),
+        {"orders": left, "orders_v2": right},
+    )
+    assert record.test_case_status == "Failed"
+    assert record.test_result_value == [
+        {"name": "removedRows", "value": "1"},
+        {"name": "addedRows", "value": "1"},
+        {"name": "changedRows", "value": "1"},
+        {"name": "diffCount", "value": "3"},
+        {"name": "columnDiffCounts", "value": '{"email": 1}'},
+    ]
+    assert record.passed_rows == 2498
+    assert record.failed_rows == 3
+    assert record.passed_rows_percentage == pytest.approx(2498 / 2500 * 100)
+    assert record.failed_rows_percentage == pytest.approx(3 / 2500 * 100)
+
+
+def test_row_engine_right_duplicate_keys_abort() -> None:
+    record = _run_row_spec(
+        _row_spec("svc.db.public.orders.row_diff"),
+        {
+            "orders": [(1, "a"), (2, "b")],
+            "orders_v2": [(1, "a"), (1, "a")],
+        },
+    )
+    assert record.test_case_status == "Aborted"
+    assert "not unique" in (record.result or "")
+
+
+def test_row_engine_unexpected_error_aborts_without_traceback() -> None:
+    def _boom(side: dict[str, Any]):
+        raise RuntimeError("boom")
+
+    record = run_data_diff_spec(
+        _row_spec("svc.db.public.orders.row_diff"),
+        left_binding=datadiff_binding("postgres"),
+        right_binding=datadiff_binding("postgres"),
+        default_connection={
+            "hostPort": "localhost:5432",
+            "username": "ingest",
+            "password": "secret",
+            "database": "analytics",
+        },
+        fetch_rows=_boom,
+        timestamp=1000,
+    )
+    assert record.test_case_status == "Aborted"
+    assert (record.result or "").startswith("ERROR:")
+    assert "Traceback" not in (record.result or "")
+    assert "boom" in (record.result or "")
+
+
+def test_row_engine_unbound_dialect_aborts() -> None:
+    record = run_data_diff_spec(
+        _row_spec("svc.db.public.orders.row_diff"),
+        left_binding=None,
+        right_binding=datadiff_binding("postgres"),
+        default_connection={},
+        fetch_rows=_fetch_rows({"orders": [(1, "a")], "orders_v2": [(1, "a")]}),
+        left_source_type="redshift",
+        timestamp=1000,
+    )
+    assert record.test_case_status == "Aborted"
+    assert "Unsupported dialect on the left side: 'redshift'" in (record.result or "")
+
+
+def test_row_engine_inline_spec_discloses_no_schema_comparison() -> None:
+    record = _run_row_spec(
+        _row_spec("svc.db.public.orders.row_diff"),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+        schema_compared=False,
+    )
+    assert record.test_case_status == "Success"
+    assert "Schema differences are not compared (no table metadata in inline spec)." in (
+        record.result or ""
+    )
+
+
+def test_row_engine_key_set_mode_preserved_without_extra_columns() -> None:
+    """A spec with no extra columns on either side still runs the Phase-1
+    key-set comparison with its original message and values."""
+    spec = _row_spec("svc.db.public.orders.row_diff", extra_columns=[])
+    record = run_data_diff_spec(
+        spec,
+        left_binding=datadiff_binding("postgres"),
+        right_binding=datadiff_binding("postgres"),
+        default_connection={
+            "hostPort": "localhost:5432",
+            "username": "ingest",
+            "password": "secret",
+            "database": "analytics",
+        },
+        fetch_keys=_fetch_keys({"orders": [(1,), (2,)], "orders_v2": [(2,), (3,)]}),
+        timestamp=1000,
+    )
+    assert record.test_case_status == "Failed"
+    assert record.test_result_value == [
+        {"name": "removedRows", "value": "1"},
+        {"name": "addedRows", "value": "1"},
+        {"name": "diffCount", "value": "2"},
+    ]
+    assert "key-set comparison only" in (record.result or "")
+
+
+def test_row_fetcher_sql_per_dialect() -> None:
+    postgres = SqlRowFetcher(lambda: None, quote=lambda name: f'"{name}"', ident_style="three")
+    assert postgres.rows_sql("warehouse", "public", "orders", ["id"], ["email"]) == (
+        'SELECT "id", "email" FROM "warehouse"."public"."orders" ORDER BY "id"'
+    )
+    assert postgres.rows_sql(
+        "warehouse", "public", "orders", ["id"], ["email"], "id > 10"
+    ).endswith('WHERE id > 10 ORDER BY "id"')
+    sql, params = postgres.chunk_sql(
+        "warehouse", "public", "orders", ["id"], [(1,), (2,)], ["email"]
+    )
+    assert sql == ('SELECT "id", "email" FROM "warehouse"."public"."orders" WHERE "id" IN (%s, %s)')
+    assert params == [1, 2]
+
+    mysql = SqlRowFetcher(lambda: None, quote=lambda name: f"`{name}`", ident_style="two")
+    assert mysql.rows_sql("warehouse", "public", "orders", ["id"], ["email"]) == (
+        "SELECT `id`, `email` FROM `public`.`orders` ORDER BY `id`"
+    )
+
+    mssql = SqlRowFetcher(
+        lambda: None,
+        quote=lambda name: f'"{name}"',
+        ident_style="three",
+        paramstyle="qmark",
+    )
+    sql, params = mssql.chunk_sql(
+        "warehouse",
+        "public",
+        "orders",
+        ["id", "region"],
+        [(1, "eu"), (2, "us")],
+        ["email"],
+    )
+    assert sql == (
+        'SELECT "id", "region", "email" FROM "warehouse"."public"."orders" '
+        'WHERE ("id" = ? AND "region" = ?) OR ("id" = ? AND "region" = ?)'
+    )
+    assert params == [1, "eu", 2, "us"]
+
+    # A string key orders by LOWER(column) when the comparison is case
+    # insensitive, so case-variants stay adjacent in the stream.
+    trino = SqlRowFetcher(lambda: None, quote=lambda name: f'"{name}"', ident_style="three")
+    assert trino.rows_sql(
+        "warehouse",
+        "public",
+        "orders",
+        ["code"],
+        ["email"],
+        case_sensitive=False,
+        key_column_types={"code": "VARCHAR"},
+    ).endswith('ORDER BY LOWER("code")')
+    assert trino.rows_sql(
+        "warehouse",
+        "public",
+        "orders",
+        ["code"],
+        ["email"],
+        case_sensitive=True,
+        key_column_types={"code": "VARCHAR"},
+    ).endswith('ORDER BY "code"')
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "case_sensitive", "expected"),
+    [
+        (1, 2, True, False),
+        (1, 1.0, True, True),  # INT == FLOAT
+        (1, True, True, False),  # bool is never numeric
+        (True, True, True, True),
+        (None, None, True, True),
+        (None, 0, True, False),
+        (float("nan"), float("nan"), True, True),
+        (float("nan"), 1.0, True, False),
+        ("a", "A", False, True),  # case-insensitive strings
+        ("a", "A", True, False),
+        ("1", 1, True, False),  # no str() normalisation
+        ('{"b": 1, "a": 2}', '{"a": 2, "b": 1}', True, True),  # JSON objects
+        ('{"a": 1}', '{"a": 2}', True, False),
+        ("[1, 2]", "[1, 2]", True, True),
+        ("not json", "not json", True, True),
+    ],
+)
+def test_value_equality_cases(left, right, case_sensitive, expected) -> None:
+    assert _values_equal(left, right, case_sensitive) is expected
+
+
+def test_value_equality_datetimes() -> None:
+    from datetime import date, datetime, timezone
+
+    aware = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    aware_plus_one = datetime(2026, 1, 1, 13, 0, tzinfo=timezone.utc)
+    naive = datetime(2026, 1, 1, 12, 0)
+    assert _values_equal(aware, aware_plus_one, True) is False
+    assert _values_equal(aware, naive, True) is False  # naive != aware, ever
+    assert _values_equal(naive, naive, True) is True
+    assert _values_equal(date(2026, 1, 1), datetime(2026, 1, 1), True) is False
+
+
+def test_norm_key_numeric_identity() -> None:
+    assert _norm_key((1,), True) == _norm_key((1.0,), True)
+    assert _norm_key((1,), True) != _norm_key((True,), True)
+    assert _norm_key(("A",), False) == _norm_key(("a",), False)
+    assert _norm_key(("A",), True) != _norm_key(("a",), True)
+
+
+# -- P2-2 sampling ----------------------------------------------------------
+
+
+def _sampled_spec(
+    test_case_fqn: str = "svc.db.public.orders.row_diff",
+    *,
+    profile_sample_config: dict[str, Any] | None = None,
+    left_source_type: str | None = None,
+    right_source_type: str | None = None,
+    left_key_types: dict[str, str] | None = None,
+    right_key_types: dict[str, str] | None = None,
+    left_connection: dict[str, Any] | None = None,
+    where: str | None = None,
+) -> DataDiffSpec:
+    return DataDiffSpec(
+        test_case_fqn=test_case_fqn,
+        left=_side(
+            "orders",
+            extra_columns=["email"],
+            key_column_types=left_key_types if left_key_types is not None else {"id": "INT"},
+            **({"source_type": left_source_type} if left_source_type else {}),
+            **({"connection": left_connection} if left_connection else {}),
+        ),
+        right=_side(
+            "orders_v2",
+            extra_columns=["email"],
+            key_column_types=right_key_types if right_key_types is not None else {"id": "INT"},
+            **({"source_type": right_source_type} if right_source_type else {}),
+        ),
+        threshold=0,
+        where_clause=where,
+        table_profile_config=(
+            {"profileSampleConfig": profile_sample_config}
+            if profile_sample_config is not None
+            else None
+        ),
+    )
+
+
+def _static_sample_config(profile_sample, sample_type="PERCENTAGE"):
+    return {
+        "sampleConfigType": "STATIC",
+        "config": {"profileSample": profile_sample, "profileSampleType": sample_type},
+    }
+
+
+def _run_sampled_spec(
+    spec: DataDiffSpec,
+    mapping: dict[str, list[tuple[Any, ...]]],
+    *,
+    left_binding=None,
+    right_binding=None,
+    default_connection: dict[str, Any] | None = None,
+    left_source_type: str | None = None,
+    right_source_type: str | None = None,
+) -> TestCaseResultRecord:
+    return run_data_diff_spec(
+        spec,
+        left_binding=left_binding or datadiff_binding("postgres"),
+        right_binding=right_binding or datadiff_binding("postgres"),
+        default_connection=default_connection
+        or {
+            "hostPort": "localhost:5432",
+            "username": "ingest",
+            "password": "secret",
+            "database": "analytics",
+        },
+        fetch_rows=_fetch_rows(mapping),
+        left_source_type=left_source_type,
+        right_source_type=right_source_type,
+        timestamp=1000,
+    )
+
+
+def test_sample_where_per_dialect() -> None:
+    from smartmetadata_ingestion.datadiff import build_sample_where_clause
+
+    postgres = datadiff_binding("postgres")
+    assert postgres is not None
+    assert build_sample_where_clause(
+        "postgres", postgres, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == (
+        'SUBSTRING(MD5(CAST("id" AS VARCHAR) || \'Ab3x9\') FROM 1 FOR 8) < \'7fffffff\''
+    )
+    assert build_sample_where_clause(
+        "postgres", postgres, key_columns=["id", "code"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == (
+        'SUBSTRING(MD5(CAST("id" AS VARCHAR) || CAST("code" AS VARCHAR) || \'Ab3x9\') '
+        "FROM 1 FOR 8) < '7fffffff'"
+    )
+    mysql = datadiff_binding("mysql")
+    assert mysql is not None
+    assert build_sample_where_clause(
+        "mysql", mysql, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == "SUBSTR(MD5(CONCAT(CAST(`id` AS CHAR), 'Ab3x9')), 1, 8) < '7fffffff'"
+    snowflake = datadiff_binding("snowflake")
+    assert snowflake is not None
+    assert build_sample_where_clause(
+        "snowflake", snowflake, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == (
+        'SUBSTR(MD5(CAST("id" AS VARCHAR) || \'Ab3x9\'), 1, 8) < \'7fffffff\''
+    )
+    databricks = datadiff_binding("databricks")
+    assert databricks is not None
+    assert build_sample_where_clause(
+        "databricks", databricks, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == "substring(md5(CAST(`id` AS STRING) || 'Ab3x9'), 1, 8) < '7fffffff'"
+    trino = datadiff_binding("trino")
+    assert trino is not None
+    assert build_sample_where_clause(
+        "trino", trino, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == (
+        "substr(to_hex(md5(CAST(CAST(\"id\" AS VARCHAR) || 'Ab3x9' AS VARBINARY))), 1, 8)"
+        " < '7fffffff'"
+    )
+    mssql = datadiff_binding("mssql")
+    assert mssql is not None
+    assert build_sample_where_clause(
+        "mssql", mssql, key_columns=["id"], salt="Ab3x9", hex_nonce="7fffffff"
+    ) == (
+        "SUBSTRING(LOWER(CONVERT(VARCHAR(32), HASHBYTES('MD5', CAST([id] AS VARCHAR)"
+        " + 'Ab3x9'), 2)), 1, 8) < '7fffffff'"
+    )
+
+
+def test_combine_where() -> None:
+    from smartmetadata_ingestion.datadiff import _combine_where
+
+    assert _combine_where("id > 10", "SUBSTRING(...) < '7fffffff'") == (
+        "(id > 10) AND (SUBSTRING(...) < '7fffffff')"
+    )
+    assert _combine_where("id > 10", None) == "id > 10"
+    assert _combine_where(None, "SUBSTRING(...) < '7fffffff'") == "SUBSTRING(...) < '7fffffff'"
+    assert _combine_where(None, None) is None
+    assert _combine_where("  ", "  ") is None
+
+
+def test_sampling_disclosure_percentage_and_rows() -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(profile_sample_config=_static_sample_config(50)),
+        {"orders": [(1, "a"), (2, "b")], "orders_v2": [(1, "a"), (2, "b")]},
+    )
+    assert record.test_case_status == "Success"
+    assert (
+        "Sampled comparison: 50% of the table (MD5 key-hash sampling); the verdict "
+        "is an estimate over the sample, not a full-table conclusion."
+        in (record.result or "")
+    )
+
+    record = _run_sampled_spec(
+        _sampled_spec(profile_sample_config=_static_sample_config(2, "ROWS")),
+        {
+            "orders": [(1, "a"), (2, "b"), (3, "c"), (4, "d")],
+            "orders_v2": [(1, "a"), (2, "b"), (3, "c"), (4, "d")],
+        },
+    )
+    assert "Sampled comparison: 2 rows of the table" in (record.result or "")
+
+
+def test_sampling_off_at_percentage_100_and_without_config() -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(profile_sample_config=_static_sample_config(100)),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+    )
+    assert "Sampled comparison" not in (record.result or "")
+
+    record = _run_sampled_spec(
+        _sampled_spec(),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+    )
+    assert "Sampled comparison" not in (record.result or "")
+
+
+def test_sampling_dynamic_thresholds_via_engine() -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config={
+                "sampleConfigType": "DYNAMIC",
+                "config": {
+                    "smartSampling": False,
+                    "thresholds": [
+                        {
+                            "rowCountThreshold": 2,
+                            "profileSample": 50,
+                            "profileSampleType": "PERCENTAGE",
+                        },
+                    ],
+                },
+            }
+        ),
+        {
+            "orders": [(1, "a"), (2, "b"), (3, "c"), (4, "d"), (5, "e")],
+            "orders_v2": [(1, "a"), (2, "b"), (3, "c"), (4, "d"), (5, "e")],
+        },
+    )
+    assert "Sampled comparison: 50% of the table" in (record.result or "")
+
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config={
+                "sampleConfigType": "DYNAMIC",
+                "config": {
+                    "smartSampling": False,
+                    "thresholds": [
+                        {
+                            "rowCountThreshold": 100,
+                            "profileSample": 50,
+                            "profileSampleType": "PERCENTAGE",
+                        },
+                    ],
+                },
+            }
+        ),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+    )
+    assert "Sampled comparison" not in (record.result or "")
+
+
+def test_sampling_same_salt_and_nonce_both_sides(monkeypatch) -> None:
+    """Q-2 (b): one salt and one nonce per run, the same where shape on
+    both sides — the deterministic assertion behind same-run identity."""
+    import smartmetadata_ingestion.datadiff as datadiff_module
+
+    calls: list[tuple[str, str, str]] = []
+    real = datadiff_module.build_sample_where_clause
+
+    def _recording(source_type, binding, *, key_columns, salt, hex_nonce):
+        calls.append((source_type, salt, hex_nonce))
+        return real(
+            source_type, binding, key_columns=key_columns, salt=salt, hex_nonce=hex_nonce
+        )
+
+    monkeypatch.setattr(datadiff_module, "build_sample_where_clause", _recording)
+    record = _run_sampled_spec(
+        _sampled_spec(profile_sample_config=_static_sample_config(50)),
+        {"orders": [(1, "a"), (2, "b")], "orders_v2": [(1, "a"), (2, "b")]},
+        left_source_type="postgres",
+        right_source_type="postgres",
+    )
+    assert record.test_case_status == "Success"
+    assert len(calls) == 2
+    assert calls[0][0] == "postgres" and calls[1][0] == "postgres"
+    assert calls[0][1] == calls[1][1]  # same salt
+    assert calls[0][2] == calls[1][2] == "7fffffff"  # 50% nonce, deterministic
+    assert len(calls[0][1]) == 5 and calls[0][1].isalnum()
+
+
+def test_sampling_sql_server_non_integer_key_warns_and_compares_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config=_static_sample_config(50),
+            left_source_type="mssql",
+            right_source_type="postgres",
+            left_key_types={"id": "VARCHAR"},
+            left_connection={"database": "analytics"},
+        ),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+        left_binding=datadiff_binding("mssql"),
+        left_source_type="mssql",
+        right_source_type="postgres",
+    )
+    assert record.test_case_status == "Success"
+    assert "Sampled comparison" not in (record.result or "")
+    assert (
+        "Skipping sampling: a SQL Server table can only be sampled on integer key columns"
+        in caplog.text
+    )
+    assert "Not supported: id (VARCHAR)" in caplog.text
+    assert "Comparing all the rows instead." in caplog.text
+
+
+def test_sampling_sql_server_missing_key_type_warns_and_compares_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config=_static_sample_config(50),
+            left_source_type="mssql",
+            right_source_type="postgres",
+            left_key_types={},
+            left_connection={"database": "analytics"},
+        ),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+        left_binding=datadiff_binding("mssql"),
+        left_source_type="mssql",
+        right_source_type="postgres",
+    )
+    assert "Sampled comparison" not in (record.result or "")
+    assert "Not supported: id (unknown)" in caplog.text
+
+
+def test_sampling_sql_server_integer_keys_do_sample() -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config=_static_sample_config(50),
+            left_source_type="mssql",
+            right_source_type="mssql",
+            left_connection={"database": "analytics"},
+        ),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+        left_binding=datadiff_binding("mssql"),
+        right_binding=datadiff_binding("mssql"),
+        default_connection={"database": "analytics"},
+        left_source_type="mssql",
+        right_source_type="mssql",
+    )
+    assert "Sampled comparison: 50% of the table" in (record.result or "")
+
+
+def test_sampling_clickzetta_warns_and_compares_all(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = _run_sampled_spec(
+        _sampled_spec(
+            profile_sample_config=_static_sample_config(50),
+            left_source_type="clickzetta",
+            right_source_type="postgres",
+            left_connection={
+                "hostPort": "https://ws.clickzetta.test:443",
+                "username": "ingest",
+                "databaseName": "workspace",
+                "virtualCluster": "vc",
+            },
+        ),
+        {"orders": [(1, "a")], "orders_v2": [(1, "a")]},
+        left_binding=datadiff_binding("clickzetta"),
+        left_source_type="clickzetta",
+        right_source_type="postgres",
+    )
+    assert record.test_case_status == "Success"
+    assert "Sampled comparison" not in (record.result or "")
+    assert "Skipping sampling: ClickZetta has no verified MD5 function" in caplog.text

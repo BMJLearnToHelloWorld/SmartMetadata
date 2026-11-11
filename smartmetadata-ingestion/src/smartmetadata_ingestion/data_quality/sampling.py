@@ -26,8 +26,9 @@ ADR:2026-11-10-profiler-window-hybrid-metrics
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from smartmetadata_ingestion.errors import WorkflowError
 
@@ -75,6 +76,89 @@ def resolve_sample_config(
     for config in configs:
         if config is not None:
             return config
+    return None
+
+
+# -- tableDiff sampling (P2-2, ruling §4.1) ----------------------------------
+# The tableDiff sampling config comes from ONE place only — table1's
+# ``table_profile_config.profileSampleConfig`` (a raw server dict, camelCase
+# keys) — and resolves through the official ``resolve_static_sampling_config``
+# semantics (pin ``sampler/config.py:230-255``). It shares the STATIC/DYNAMIC
+# tier table with the profiler path, but NOT ``resolve_sample_config``'s
+# hierarchy: there is no per-table -> workflow-default fallback here.
+#
+# ADR:2026-11-11-table-diff-sampling-disclosure
+
+
+def _static_from_dict(config: dict[str, Any]) -> StaticSampleConfig | None:
+    """One static tier (a threshold entry or a STATIC config) as a
+    ``StaticSampleConfig``; ``None`` when it carries no sample value."""
+    profile_sample = config.get("profileSample")
+    if profile_sample is None:
+        return None
+    sample_type = config.get("profileSampleType")
+    if sample_type == "ROWS":
+        resolved_type: SampleType = "ROW_COUNT"
+    elif sample_type == "PERCENTAGE":
+        resolved_type = "PERCENTAGE"
+    else:
+        # An unknown type never silently samples: no sampling, full compare.
+        return None
+    method = config.get("samplingMethodType")
+    return StaticSampleConfig(
+        profile_sample=float(profile_sample),
+        sample_type=resolved_type,
+        sampling_method=method if method in ("SYSTEM", "BERNOULLI") else None,
+    )
+
+
+def _tiered_sample(row_count: int) -> StaticSampleConfig:
+    """The official ``get_tiered_sample`` tiers (pin ``sampler/config.py``),
+    verbatim: ≤100k → 100%, ≤1M → 50%, ≤10M → 10%, ≤100M → 5%, ≤1B → 1%,
+    larger → 0.1%."""
+    if row_count <= 100_000:
+        return StaticSampleConfig(profile_sample=100, sample_type="PERCENTAGE")
+    if row_count <= 1_000_000:
+        return StaticSampleConfig(profile_sample=50, sample_type="PERCENTAGE")
+    if row_count <= 10_000_000:
+        return StaticSampleConfig(profile_sample=10, sample_type="PERCENTAGE")
+    if row_count <= 100_000_000:
+        return StaticSampleConfig(profile_sample=5, sample_type="PERCENTAGE")
+    if row_count <= 1_000_000_000:
+        return StaticSampleConfig(profile_sample=1, sample_type="PERCENTAGE")
+    return StaticSampleConfig(profile_sample=0.1, sample_type="PERCENTAGE")
+
+
+def resolve_table_diff_sample_config(
+    profile_sample_config: dict[str, Any] | None,
+    *,
+    row_count_fn: Callable[[], int | None],
+) -> StaticSampleConfig | None:
+    """Resolve a tableDiff sampling config to a static config (or ``None``
+    for no sampling). ``row_count_fn`` (the left-table ``COUNT(*)``) is
+    called only for DYNAMIC configs — a STATIC + PERCENTAGE config never
+    needs the row count."""
+    if not profile_sample_config:
+        return None
+    config_type = profile_sample_config.get("sampleConfigType")
+    config = profile_sample_config.get("config") or {}
+    if not isinstance(config, dict):
+        return None
+    if config_type == "DYNAMIC":
+        row_count = row_count_fn() or 0
+        if config.get("smartSampling"):
+            return _tiered_sample(row_count)
+        thresholds = config.get("thresholds") or []
+        for threshold in sorted(
+            thresholds,
+            key=lambda item: item.get("rowCountThreshold", 0),
+            reverse=True,
+        ):
+            if row_count >= threshold.get("rowCountThreshold", 0):
+                return _static_from_dict(threshold)
+        return None
+    if config_type == "STATIC":
+        return _static_from_dict(config)
     return None
 
 

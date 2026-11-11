@@ -21,6 +21,7 @@ from smartmetadata_ingestion.data_quality.sampling import (
     StaticSampleConfig,
     dataset_sql,
     resolve_sample_config,
+    resolve_table_diff_sample_config,
 )
 from smartmetadata_ingestion.errors import WorkflowError
 
@@ -136,3 +137,150 @@ def test_table_sample_spec_requires_fqn() -> None:
     assert spec.to_static() == StaticSampleConfig(profile_sample=25.0)
     with pytest.raises(ValueError, match="tableFqn is required"):
         ProfilerTableSampleSpec.model_validate({"tableFqn": "  ", "profileSample": 25})
+
+
+# -- tableDiff sampling (P2-2, ruling §4.1) ---------------------------------
+
+
+def _static(profile_sample, sample_type="PERCENTAGE", method=None):
+    config = {
+        "sampleConfigType": "STATIC",
+        "config": {
+            "profileSample": profile_sample,
+            "profileSampleType": sample_type,
+            **({"samplingMethodType": method} if method else {}),
+        },
+    }
+    return config
+
+
+def _dynamic(thresholds=None, smart=False):
+    return {
+        "sampleConfigType": "DYNAMIC",
+        "config": {
+            "smartSampling": smart,
+            **({"thresholds": thresholds} if thresholds is not None else {}),
+        },
+    }
+
+
+def test_resolve_table_diff_sample_config_missing_is_none() -> None:
+    assert resolve_table_diff_sample_config(None, row_count_fn=lambda: 10) is None
+    assert resolve_table_diff_sample_config({}, row_count_fn=lambda: 10) is None
+    assert (
+        resolve_table_diff_sample_config(
+            {"sampleConfigType": "STATIC", "config": {}},
+            row_count_fn=lambda: 10,
+        )
+        is None
+    )
+
+
+def test_resolve_table_diff_sample_config_static() -> None:
+    assert resolve_table_diff_sample_config(
+        _static(50), row_count_fn=lambda: 10
+    ) == StaticSampleConfig(profile_sample=50, sample_type="PERCENTAGE")
+    # ROWS maps to the product ROW_COUNT name.
+    assert resolve_table_diff_sample_config(
+        _static(1000, "ROWS"), row_count_fn=lambda: 10
+    ) == StaticSampleConfig(profile_sample=1000, sample_type="ROW_COUNT")
+    assert resolve_table_diff_sample_config(
+        _static(25, method="BERNOULLI"), row_count_fn=lambda: 10
+    ) == StaticSampleConfig(
+        profile_sample=25, sample_type="PERCENTAGE", sampling_method="BERNOULLI"
+    )
+    # No sample value / unknown type -> no sampling, never a crash.
+    assert (
+        resolve_table_diff_sample_config(
+            _static(None), row_count_fn=lambda: 10
+        )
+        is None
+    )
+    assert (
+        resolve_table_diff_sample_config(
+            _static(50, "WEEKLY"), row_count_fn=lambda: 10
+        )
+        is None
+    )
+
+
+def test_resolve_table_diff_sample_config_static_never_counts_rows() -> None:
+    """STATIC + PERCENTAGE must not take the row count."""
+
+    def _boom() -> int:
+        raise AssertionError("row_count_fn must not be called for STATIC")
+
+    assert resolve_table_diff_sample_config(_static(50), row_count_fn=_boom) is not None
+
+
+def test_resolve_table_diff_sample_config_dynamic_thresholds() -> None:
+    calls = []
+
+    def _count() -> int:
+        calls.append(1)
+        return 750_000
+
+    config = resolve_table_diff_sample_config(
+        _dynamic(
+            [
+                {
+                "rowCountThreshold": 100_000,
+                "profileSample": 50,
+                "profileSampleType": "PERCENTAGE",
+            },
+                {
+                "rowCountThreshold": 1_000_000,
+                "profileSample": 10,
+                "profileSampleType": "PERCENTAGE",
+            },
+                {
+                "rowCountThreshold": 500_000,
+                "profileSample": 25,
+                "profileSampleType": "PERCENTAGE",
+            },
+            ]
+        ),
+        row_count_fn=_count,
+    )
+    # Thresholds sort descending; 750k matches the 500k tier, not the 100k one.
+    assert config == StaticSampleConfig(profile_sample=25, sample_type="PERCENTAGE")
+    assert len(calls) == 1  # the row count is taken once, for DYNAMIC only
+
+    assert (
+        resolve_table_diff_sample_config(
+            _dynamic(
+                [
+                    {
+                        "rowCountThreshold": 1_000_000,
+                        "profileSample": 10,
+                        "profileSampleType": "PERCENTAGE",
+                    }
+                ]
+            ),
+            row_count_fn=lambda: 10,
+        )
+        is None
+    )  # no tier matches
+
+
+@pytest.mark.parametrize(
+    ("row_count", "expected"),
+    [
+        (50_000, 100),
+        (100_000, 100),
+        (500_000, 50),
+        (1_000_000, 50),
+        (5_000_000, 10),
+        (10_000_000, 10),
+        (50_000_000, 5),
+        (100_000_000, 5),
+        (500_000_000, 1),
+        (1_000_000_000, 1),
+        (2_000_000_000, 0.1),
+    ],
+)
+def test_resolve_table_diff_sample_config_smart_sampling_tiers(row_count, expected) -> None:
+    config = resolve_table_diff_sample_config(
+        _dynamic(smart=True), row_count_fn=lambda: row_count
+    )
+    assert config == StaticSampleConfig(profile_sample=expected, sample_type="PERCENTAGE")
