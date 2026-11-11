@@ -22,7 +22,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(initialTab = 'pipelines') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -52,7 +52,7 @@ async function mountView() {
   await router.push('/ingestion/services/database/s1');
   await router.isReady();
   const wrapper = mount(ServiceDetailView, {
-    props: { kind: 'database', id: 's1', initialTab: 'pipelines' },
+    props: { kind: 'database', id: 's1', initialTab },
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
@@ -132,5 +132,118 @@ describe('ServiceDetailView', () => {
     expect(wrapper.text()).toContain('Versions');
     expect(wrapper.find('[data-testid="service-versions-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="service-versions-empty"]').exists()).toBe(true);
+  });
+
+  it('deletes the test-connection workflow exactly once (hard) when triggering fails', async () => {
+    // ADR:2026-11-11-test-connection-workflow-hard-delete-cleanup — the
+    // trigger catch deletes the workflow and clears the id, so the outer
+    // catch must not delete it a second time; the delete is hard so the
+    // fixed `<Type>.testConnection` name is freed for the next run.
+    const calls: { method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        calls.push({ method, url });
+        if (url.includes('/api/v1/services/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'mydb',
+            displayName: 'My DB',
+            fullyQualifiedName: 'mysql.mydb',
+            serviceType: 'Mysql',
+            connection: { config: { type: 'Mysql', hostPort: 'db.example:3306' } },
+          });
+        }
+        if (url.includes('/api/v1/services/testConnectionDefinitions/name/Mysql.testConnectionDefinition')) {
+          return jsonResponse({
+            name: 'Mysql',
+            steps: [{ name: 'CheckAccess', description: 'reach', mandatory: true }],
+          });
+        }
+        if (url.includes('/api/v1/automations/workflows/trigger/')) {
+          return new Response('bad request', { status: 400 });
+        }
+        if (url.includes('/api/v1/automations/workflows') && method === 'POST') {
+          return jsonResponse({ id: 'w1', status: 'Pending' });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView('connection');
+    await wrapper.find('[data-testid="test-service-connection"]').trigger('click');
+    await flushPromises();
+    const deletes = calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('/api/v1/automations/workflows/w1');
+    expect(deletes[0].url).toContain('hardDelete=true');
+    expect(wrapper.find('[data-testid="test-connection-error"]').exists()).toBe(true);
+  });
+
+  it('renders the test steps and deletes the workflow once (hard) on success', async () => {
+    const calls: { method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        calls.push({ method, url });
+        if (url.includes('/api/v1/services/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'mydb',
+            displayName: 'My DB',
+            fullyQualifiedName: 'mysql.mydb',
+            serviceType: 'Mysql',
+            connection: { config: { type: 'Mysql', hostPort: 'db.example:3306' } },
+          });
+        }
+        if (url.includes('/api/v1/services/testConnectionDefinitions/name/Mysql.testConnectionDefinition')) {
+          return jsonResponse({
+            name: 'Mysql',
+            steps: [{ name: 'CheckAccess', description: 'reach', mandatory: true }],
+          });
+        }
+        if (url.includes('/api/v1/automations/workflows/trigger/')) {
+          return jsonResponse({ code: 200, status: 'success', reason: '{}' });
+        }
+        if (url.includes('/api/v1/automations/workflows/w1')) {
+          if (method === 'DELETE') {
+            return jsonResponse({});
+          }
+          return jsonResponse({
+            id: 'w1',
+            status: 'Successful',
+            response: {
+              status: 'Successful',
+              steps: [
+                {
+                  name: 'CheckAccess',
+                  mandatory: true,
+                  passed: true,
+                  status: 'Passed',
+                  resultSummary: 'connection established',
+                },
+              ],
+            },
+          });
+        }
+        if (url.includes('/api/v1/automations/workflows') && method === 'POST') {
+          return jsonResponse({ id: 'w1', status: 'Pending' });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView('connection');
+    await wrapper.find('[data-testid="test-service-connection"]').trigger('click');
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    await flushPromises();
+    expect(wrapper.find('[data-testid="test-connection-steps-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('CheckAccess');
+    expect(wrapper.text()).toContain('connection established');
+    const deletes = calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('hardDelete=true');
   });
 });
