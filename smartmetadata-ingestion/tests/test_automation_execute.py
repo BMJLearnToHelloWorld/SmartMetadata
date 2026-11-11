@@ -326,6 +326,67 @@ def test_fetched_workflow_is_authoritative(monkeypatch, fake_definition, patch_c
     assert calls[0][1]["securityConfig"]["jwtToken"] == "jwt"
 
 
+def test_fetched_workflow_without_server_connection_uses_payload_connection(
+    monkeypatch, fake_definition
+) -> None:
+    """Regression (#201 follow-up): the stored workflow never carries
+    openMetadataServerConnection (WorkflowRepository strips it from
+    storage), so the client for the definition fetch + PATCH-back must
+    come from the trigger payload. Reading it from the fetched workflow
+    builds _server_client({}) and the trigger answers a masked 500.
+    """
+    seen_hosts: list[str] = []
+
+    def fake_connect(config):
+        seen_hosts.append(str(config.get("hostPort")))
+        return lambda: FakeConnection(FakeCursor())
+
+    monkeypatch.setattr(mysql_common, "mysql_connect", fake_connect)
+    fetched = _workflow(
+        service_type="Mysql", password="real-secret", host_port="fetched.example:3307"
+    )
+    del fetched["openMetadataServerConnection"]
+    fetch_calls: list[tuple[str, dict]] = []
+
+    def fetch(name, server_connection):
+        fetch_calls.append((name, server_connection))
+        return fetched
+
+    patch_connections: list[dict] = []
+    patch_statuses: list[str] = []
+
+    def record_patch(workflow_id, result, status, server_connection, *, client=None):
+        patch_connections.append(dict(server_connection))
+        patch_statuses.append(status)
+
+    monkeypatch.setattr(execute, "patch_workflow_response", record_patch)
+
+    result = execute_automation_workflow(_workflow(), fetch_workflow=fetch)
+
+    assert result["status"] == "Successful"
+    assert [step["name"] for step in result["steps"]] == [
+        "CheckAccess",
+        "GetSchemas",
+        "GetTables",
+        "GetViews",
+        "GetQueries",
+    ]
+    assert all(step["passed"] for step in result["steps"])
+    # The fetch used the payload's connection (the only JWT available).
+    assert len(fetch_calls) == 1
+    assert fetch_calls[0][0] == "test_conn"
+    assert fetch_calls[0][1]["securityConfig"]["jwtToken"] == "jwt"
+    # The decrypted request came from the fetched workflow, not the payload.
+    assert seen_hosts == ["fetched.example:3307"]
+    # The PATCH-back used the payload's connection, not the fetched (empty) one.
+    assert patch_statuses == ["Running"] * 5 + ["Successful"]
+    assert patch_connections
+    assert all(
+        conn.get("securityConfig", {}).get("jwtToken") == "jwt"
+        for conn in patch_connections
+    )
+
+
 def test_fetch_failure_is_a_500() -> None:
     def fetch(name, server_connection):
         raise AutomationError("server unreachable")

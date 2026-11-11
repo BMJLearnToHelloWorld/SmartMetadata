@@ -169,8 +169,15 @@ def execute_automation_workflow(
     workflow_type = workflow.get("workflowType")
     if workflow_type is not None and workflow_type != "TEST_CONNECTION":
         raise AutomationError(f"unsupported automation workflowType {workflow_type!r}")
+    # The stored workflow never carries openMetadataServerConnection
+    # (WorkflowRepository strips it from storage), so capture the trigger
+    # payload's connection BEFORE the fetch reassigns `workflow`. The
+    # fetched workflow is authoritative for the decrypted request only;
+    # the payload's connection builds the client for the definition fetch
+    # and the PATCH-back.
+    server_connection = workflow.get("openMetadataServerConnection") or {}
     if fetch_workflow is not None:
-        workflow = fetch_workflow(str(name), workflow.get("openMetadataServerConnection") or {})
+        workflow = fetch_workflow(str(name), server_connection)
     request = workflow.get("request")
     if not isinstance(request, dict):
         raise AutomationError("automation workflow request is missing")
@@ -183,7 +190,6 @@ def execute_automation_workflow(
     service_type = config.get("type")
     if not isinstance(service_type, str) or not service_type.strip():
         raise AutomationError("automation workflow connection config has no type")
-    server_connection = workflow.get("openMetadataServerConnection") or {}
     workflow_id = workflow.get("id")
     client = None
     if fetch_workflow is not None:
