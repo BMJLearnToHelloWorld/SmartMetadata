@@ -3788,7 +3788,12 @@ public class DataProductResourceIT extends BaseEntityIT<DataProduct, CreateDataP
         table1.getId(),
         JsonUtils.convertValue(result.getFailedRequest().get(0).getRequest(), EntityReference.class)
             .getId());
-    assertTrue(result.getFailedRequest().get(0).getMessage().contains("is already an input port of this data product"));
+    assertTrue(
+        result
+            .getFailedRequest()
+            .get(0)
+            .getMessage()
+            .contains("is already an input port of this data product"));
 
     // Verify output ports only contain table3
     ResultList<Map<String, Object>> outputPorts = getOutputPorts(dataProduct.getId(), 10, 0);
@@ -3832,7 +3837,12 @@ public class DataProductResourceIT extends BaseEntityIT<DataProduct, CreateDataP
     assertEquals(ApiStatus.FAILURE, result.getStatus());
     assertEquals(1, result.getNumberOfRowsFailed());
     assertEquals(0, result.getNumberOfRowsPassed());
-    assertTrue(result.getFailedRequest().get(0).getMessage().contains("is already an output port of this data product"));
+    assertTrue(
+        result
+            .getFailedRequest()
+            .get(0)
+            .getMessage()
+            .contains("is already an output port of this data product"));
   }
 
   @Test
