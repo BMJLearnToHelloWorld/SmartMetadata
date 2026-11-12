@@ -152,7 +152,7 @@ def main() -> int:
         raise SystemExit(
             f"tables missing in {schema_fqn}: {missing} (found: {sorted(found)})"
         )
-    for name, columns in EXPECT_TABLES.items():
+    for name, columns in EXPECTED_TABLES.items():
         actual = {str(c.get("name")) for c in found[name].get("columns", [])}
         absent = sorted(set(columns) - actual)
         if absent:
