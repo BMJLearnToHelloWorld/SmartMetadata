@@ -19,7 +19,7 @@ from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors import mysql_common
 from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
 from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
-from smartmetadata_ingestion.datatypes import map_mysql_type
+from smartmetadata_ingestion.datatypes import check_col_length, map_mysql_type
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.records import (
@@ -270,17 +270,20 @@ class MysqlSource:
         ]
 
     def _columns(self, reader: CatalogReader, table: TableRow) -> list[ColumnRecord]:
-        return [
-            ColumnRecord(
-                name=column.name,
-                data_type=map_mysql_type(column.data_type),
-                data_type_display=column.data_type,
-                description=column.comment,
-                ordinal_position=column.ordinal_position,
-                data_length=column.char_length,
+        columns = []
+        for column in reader.list_columns(table.schema_name, table.name):
+            data_type = map_mysql_type(column.data_type)
+            columns.append(
+                ColumnRecord(
+                    name=column.name,
+                    data_type=data_type,
+                    data_type_display=column.data_type,
+                    description=column.comment,
+                    ordinal_position=column.ordinal_position,
+                    data_length=check_col_length(data_type, column.char_length),
+                )
             )
-            for column in reader.list_columns(table.schema_name, table.name)
-        ]
+        return columns
 
     def _view_lineage(self, reader: CatalogReader, database_name: str) -> Iterable[LineageRecord]:
         known_tables = {

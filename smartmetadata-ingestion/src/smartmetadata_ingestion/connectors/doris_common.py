@@ -226,6 +226,28 @@ def run_connection_test(connection: dict[str, Any]) -> list[str]:
     return steps
 
 
+def test_live_connection(connection: dict[str, Any], *, connect=None) -> None:
+    """Open the connection and run ``SELECT 1``; raises WorkflowError on failure.
+
+    This is the live half of a test connection (``run_connection_test``
+    above only checks the shape). ``connect`` is the injectable factory
+    used by tests; production uses :func:`doris_connect`.
+    """
+    factory = connect or doris_connect(connection)
+    try:
+        with factory() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            finally:
+                cursor.close()
+    except WorkflowError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surfaced as a workflow error
+        raise WorkflowError(f"doris test connection failed: {exc}") from exc
+
+
 def build_service_connection_config(
     *,
     raw: dict[str, Any],
@@ -234,12 +256,34 @@ def build_service_connection_config(
     if not raw:
         return None
     config: dict[str, Any] = {"type": "Doris", "scheme": raw.get("scheme") or "doris"}
-    for key in ("hostPort", "username", "databaseName", "databaseSchema"):
+    for key in (
+        "hostPort",
+        "username",
+        "databaseName",
+        "databaseSchema",
+        "supportsMetadataExtraction",
+        "supportsDBTExtraction",
+        "supportsProfiler",
+        "supportsAutoPartitionDetection",
+        "supportsQueryComment",
+        "supportsViewLineageExtraction",
+    ):
         if raw.get(key) is not None and raw.get(key) != "":
             config[key] = raw[key]
+    for key in (
+        "schemaFilterPattern",
+        "tableFilterPattern",
+        "databaseFilterPattern",
+        "sslConfig",
+        "connectionOptions",
+        "connectionArguments",
+    ):
+        if isinstance(raw.get(key), dict) and raw.get(key):
+            config[key] = dict(raw[key])
     if store_secrets:
         pwd = password_of(raw)
         if pwd:
+            # Doris has no authType: the schema carries a top-level password.
             config["password"] = pwd
     return {"config": config}
 

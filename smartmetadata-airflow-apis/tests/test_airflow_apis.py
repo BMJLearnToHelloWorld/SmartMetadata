@@ -721,17 +721,49 @@ def test_run_automation_mysql_failure_returns_failed_result(monkeypatch) -> None
     assert body["steps"][1]["skipReason"] == "ConnectionNotEstablished"
 
 
-def test_run_automation_unsupported_type_returns_400_plaintext(monkeypatch) -> None:
+def test_run_automation_doris_failure_returns_failed_result(monkeypatch) -> None:
+    # Doris is a supported type now: a failed Doris connection is a 200
+    # carrying the Failed TestConnectionResult, like MySQL.
+    from smartmetadata_ingestion.connectors import doris_common
+    from smartmetadata_ingestion.errors import WorkflowError
+
     _fake_test_definition(monkeypatch)
+    monkeypatch.setattr(
+        doris_common,
+        "doris_connect",
+        lambda config: (_ for _ in ()).throw(WorkflowError("connection refused")),
+    )
     client = create_app(credentials=CREDS, automation_fetcher=None).test_client()
     res = client.post(
         "/api/v1/openmetadata/run_automation",
         json=_automation_body(service_type="Doris"),
         headers=_auth_headers(),
     )
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["status"] == "Failed"
+    assert body["steps"][0]["name"] == "CheckAccess"
+    assert body["steps"][0]["passed"] is False
+    assert body["steps"][0]["status"] == "Failed"
+    assert "connection refused" in (body["steps"][0]["errorLog"] or "")
+    assert body["steps"][1]["status"] == "Skipped"
+    assert body["steps"][1]["skipReason"] == "ConnectionNotEstablished"
+
+
+def test_run_automation_unsupported_type_returns_400_plaintext(monkeypatch) -> None:
+    # Retargeted (intended behavior change, same strength): Doris used to
+    # be the unsupported example; it has checks now, so a genuinely
+    # unsupported type carries the 400 assertion instead.
+    _fake_test_definition(monkeypatch)
+    client = create_app(credentials=CREDS, automation_fetcher=None).test_client()
+    res = client.post(
+        "/api/v1/openmetadata/run_automation",
+        json=_automation_body(service_type="NoSuchService"),
+        headers=_auth_headers(),
+    )
     assert res.status_code == 400
     error = res.get_json()["error"]
-    assert "Doris" in error
+    assert "NoSuchService" in error
     assert "An unexpected problem occurred" not in error
 
 

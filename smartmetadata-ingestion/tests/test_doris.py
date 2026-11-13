@@ -22,6 +22,7 @@ from smartmetadata_ingestion.connectors.doris_common import (
     LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
+    build_service_connection_config,
     run_connection_test,
 )
 from smartmetadata_ingestion.connectors.doris_lineage import DorisLineageSource
@@ -165,3 +166,106 @@ def test_doris_quality() -> None:
         test_case_fqn="tc", timestamp=1, expression="select 1", expected=True
     )
     assert result.test_case_status == "Success"
+
+
+def test_doris_source_maps_versioned_and_native_types() -> None:
+    # V-suffixed spellings strip to their base (pin _parse_type) and
+    # Doris natives map through the Doris map, not the MySQL map; the
+    # dataLength gate reads the mapped type, so only VARCHAR keeps one.
+    reader = SequenceCatalogReader(
+        schemas=[SchemaRow("sales")],
+        tables=[TableRow("sales", "events", "BASE TABLE")],
+        columns=[
+            ColumnRow("sales", "events", "d", "datev2", 1),
+            ColumnRow("sales", "events", "ts", "datetimev2", 2),
+            ColumnRow("sales", "events", "amount", "decimalv3", 3),
+            ColumnRow("sales", "events", "big", "largeint", 4),
+            ColumnRow("sales", "events", "addr", "ipv4", 5),
+            ColumnRow("sales", "events", "sketch", "hll", 6),
+            ColumnRow("sales", "events", "name", "varchar", 7, 128),
+            ColumnRow("sales", "events", "note", "varchar", 8),
+        ],
+        views=[],
+    )
+    source = DorisSource(
+        SourceConfig(
+            type="doris",
+            service_name="doris-svc",
+            connection=_conn(),
+            include_schemas=["sales"],
+        ),
+        reader=reader,
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert len(tables) == 1
+    columns = tables[0].columns
+    assert [(c.data_type, c.data_length) for c in columns] == [
+        ("DATE", None),
+        ("DATETIME", None),
+        ("DECIMAL", None),
+        ("LARGEINT", None),
+        ("IPV4", None),
+        ("HLL", None),
+        ("VARCHAR", 128),
+        ("VARCHAR", 1),
+    ]
+
+
+def test_doris_service_connection_builder_carries_schema_keys() -> None:
+    raw = {
+        "hostPort": "fe.example:9030",
+        "username": "root",
+        "databaseName": "default",
+        "databaseSchema": "sales",
+        "supportsMetadataExtraction": True,
+        "supportsDBTExtraction": False,
+        "supportsProfiler": True,
+        "supportsAutoPartitionDetection": False,
+        "supportsQueryComment": True,
+        "supportsViewLineageExtraction": False,
+        "schemaFilterPattern": {"includes": ["sales"]},
+        "tableFilterPattern": {"includes": ["orders"]},
+        "databaseFilterPattern": {"includes": ["default"]},
+        "sslConfig": {"caCertificate": "---CERT---"},
+        "connectionOptions": {"opt": "1"},
+        "connectionArguments": {"arg": "2"},
+        "password": "secret",
+    }
+    built = build_service_connection_config(raw=raw, store_secrets=True)
+    assert built is not None
+    config = built["config"]
+    assert config["type"] == "Doris"
+    assert config["scheme"] == "doris"
+    assert config["hostPort"] == "fe.example:9030"
+    assert config["username"] == "root"
+    assert config["databaseName"] == "default"
+    assert config["databaseSchema"] == "sales"
+    assert config["supportsMetadataExtraction"] is True
+    # A False supports flag must survive the `is not None and != ""` guard.
+    assert config["supportsDBTExtraction"] is False
+    assert config["supportsProfiler"] is True
+    assert config["supportsAutoPartitionDetection"] is False
+    assert config["supportsQueryComment"] is True
+    assert config["supportsViewLineageExtraction"] is False
+    assert config["schemaFilterPattern"] == {"includes": ["sales"]}
+    assert config["tableFilterPattern"] == {"includes": ["orders"]}
+    assert config["databaseFilterPattern"] == {"includes": ["default"]}
+    assert config["sslConfig"] == {"caCertificate": "---CERT---"}
+    assert config["connectionOptions"] == {"opt": "1"}
+    assert config["connectionArguments"] == {"arg": "2"}
+    # Doris has no authType: the password stays top-level.
+    assert config["password"] == "secret"
+    assert "authType" not in config
+
+    unstored = build_service_connection_config(raw=raw, store_secrets=False)
+    assert unstored is not None
+    assert "password" not in unstored["config"]
+    assert unstored["config"]["sslConfig"] == {"caCertificate": "---CERT---"}
+
+    # Empty dicts are dropped, like the MySQL builder's dict loop.
+    sparse = build_service_connection_config(
+        raw={"hostPort": "fe.example:9030", "sslConfig": {}}, store_secrets=False
+    )
+    assert sparse is not None
+    assert "sslConfig" not in sparse["config"]
+    assert build_service_connection_config(raw={}, store_secrets=True) is None

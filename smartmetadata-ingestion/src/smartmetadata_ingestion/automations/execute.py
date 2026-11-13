@@ -231,10 +231,18 @@ def _run_test_connection(
     client=None,
 ) -> dict[str, Any]:
     normalized = service_type.strip().lower()
-    if normalized != "mysql":
-        raise UnsupportedServiceTypeError(f"unsupported service connection type {service_type!r}")
-    from smartmetadata_ingestion.automations.mysql_checks import MysqlChecks
+    if normalized == "mysql":
+        from smartmetadata_ingestion.automations.mysql_checks import MysqlChecks
 
+        checks_class = MysqlChecks
+    elif normalized == "doris":
+        from smartmetadata_ingestion.automations.doris_checks import DorisChecks
+
+        checks_class = DorisChecks
+    else:
+        raise UnsupportedServiceTypeError(
+            f"unsupported service connection type {service_type!r}"
+        )
     definition = fetch_test_connection_definition(service_type, server_connection, client=client)
     steps = definition.get("steps") if isinstance(definition, dict) else None
     if (
@@ -243,7 +251,7 @@ def _run_test_connection(
         or any(not isinstance(step, dict) or not step.get("name") for step in steps)
     ):
         raise AutomationError(f"test connection definition for {service_type!r} has no steps")
-    checks = MysqlChecks(config).checks()
+    checks = checks_class(config).checks()
 
     def _patch(result: dict[str, Any], *, final: bool) -> None:
         if not workflow_id:

@@ -113,6 +113,43 @@ def test_mysql_database_schema_restricts_scan() -> None:
     assert names == ["app"]
 
 
+def test_mysql_data_length_gated_by_mapped_type() -> None:
+    # LONGTEXT/LONGBLOB report character_maximum_length 4294967295,
+    # which overflows the server's Java Integer; only lengthed types
+    # may carry a dataLength (ADR:2026-11-13-column-data-length-gate).
+    reader = SequenceCatalogReader(
+        schemas=[SchemaRow("app")],
+        tables=[TableRow("app", "flows", "BASE TABLE")],
+        columns=[
+            ColumnRow("app", "flows", "payload", "longtext", 1, 4294967295),
+            ColumnRow("app", "flows", "blob", "longblob", 2, 4294967295),
+            ColumnRow("app", "flows", "name", "varchar", 3, 128),
+            ColumnRow("app", "flows", "note", "varchar", 4),
+        ],
+        views=[],
+    )
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            include_schemas=["app"],
+        ),
+        reader=reader,
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert len(tables) == 1
+    columns = tables[0].columns
+    assert columns[0].data_type == "TEXT"
+    assert columns[0].data_length is None
+    assert columns[1].data_type == "LONGBLOB"
+    assert columns[1].data_length is None
+    assert columns[2].data_type == "VARCHAR"
+    assert columns[2].data_length == 128
+    assert columns[3].data_type == "VARCHAR"
+    assert columns[3].data_length == 1
+
+
 # -- P-11: regex FilterPattern matching -------------------------------------
 # include/exclude tables are regexes (fullmatch, case-insensitive);
 # excludes win; include_views=False drops views even when the pattern

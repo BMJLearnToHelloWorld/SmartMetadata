@@ -10,7 +10,8 @@
 
 The runner is definition-driven (ADR:2026-11-11-test-connection-failed-steps-are-results):
 it fetches the TestConnectionDefinition from the server, runs its steps in
-order against the MySQL checks, and patches the workflow with the result.
+order against the service type's checks, and patches the workflow with the
+result.
 These tests pin that contract with injected connection factories, a fake
 definition, and a recording patch — the live MySQL path (real pymysql
 against a protocol stub) is covered by the step-4 gate.
@@ -26,7 +27,7 @@ from smartmetadata_ingestion.automations.execute import (
     UnsupportedServiceTypeError,
     execute_automation_workflow,
 )
-from smartmetadata_ingestion.connectors import mysql_common
+from smartmetadata_ingestion.connectors import doris_common, mysql_common
 from smartmetadata_ingestion.errors import WorkflowError
 
 # Pin-faithful MySQL definition
@@ -211,6 +212,127 @@ def _fake_mysql(monkeypatch, cursor: FakeCursor):
         mysql_common, "mysql_connect", lambda config: lambda: FakeConnection(cursor)
     )
     return cursor
+
+
+# Pin-faithful Doris definition
+# (openmetadata-service/.../json/data/testConnections/database/doris.json):
+# 4 steps, no GetQueries, no ConnectionGate category.
+DORIS_DEFINITION = {
+    "name": "Doris",
+    "steps": [
+        {
+            "name": "CheckAccess",
+            "description": (
+                "Validate that we can properly reach the database and "
+                "authenticate with the given credentials."
+            ),
+            "errorMessage": "Failed to connect to doris, please validate the credentials",
+            "shortCircuit": True,
+            "mandatory": True,
+        },
+        {
+            "name": "GetSchemas",
+            "description": "List all the schemas available to the user.",
+            "errorMessage": (
+                "Failed to fetch schemas, please validate if the user has "
+                "enough privilege to fetch schemas."
+            ),
+            "mandatory": True,
+        },
+        {
+            "name": "GetTables",
+            "description": (
+                "From a given schema, list the tables belonging to that schema. "
+                "If no schema is specified, we'll list the tables of a random schema."
+            ),
+            "errorMessage": (
+                "Failed to fetch tables, please validate if the user has "
+                "enough privilege to fetch tables."
+            ),
+            "mandatory": True,
+        },
+        {
+            "name": "GetViews",
+            "description": (
+                "From a given schema, list the views belonging to that schema. "
+                "If no schema is specified, we'll list the tables of a random schema."
+            ),
+            "errorMessage": (
+                "Failed to fetch views, please validate if the user has "
+                "enough privilege to fetch views."
+            ),
+            "mandatory": False,
+        },
+    ],
+}
+
+
+def _doris_workflow() -> dict:
+    """A Doris trigger payload: top-level password, no authType."""
+    return {
+        "id": "w1",
+        "name": "test_conn",
+        "workflowType": "TEST_CONNECTION",
+        "request": {
+            "connection": {
+                "config": {
+                    "type": "Doris",
+                    "hostPort": "db.example:9030",
+                    "username": "root",
+                    "password": "secret",
+                }
+            },
+            "serviceType": "Database",
+            "connectionType": "Doris",
+        },
+        "openMetadataServerConnection": {
+            "hostPort": "http://server:8585/api",
+            "authProvider": "no-auth",
+            "securityConfig": {"jwtToken": "jwt"},
+        },
+    }
+
+
+def _fake_doris(monkeypatch, cursor: FakeCursor):
+    """Point doris_connect at a fake factory returning FakeConnection."""
+    monkeypatch.setattr(
+        doris_common, "doris_connect", lambda config: lambda: FakeConnection(cursor)
+    )
+    return cursor
+
+
+def test_doris_success_runs_four_steps(monkeypatch, patch_calls) -> None:
+    cursor = _fake_doris(monkeypatch, FakeCursor())
+    monkeypatch.setattr(
+        execute,
+        "fetch_test_connection_definition",
+        lambda service_type, server_connection, *, client=None: DORIS_DEFINITION,
+    )
+    result = execute_automation_workflow(_doris_workflow(), fetch_workflow=None)
+    assert result["status"] == "Successful"
+    assert [step["name"] for step in result["steps"]] == [
+        "CheckAccess",
+        "GetSchemas",
+        "GetTables",
+        "GetViews",
+    ]
+    assert all(step["passed"] for step in result["steps"])
+    assert all(step["status"] == "Passed" for step in result["steps"])
+    assert result["steps"][0]["executedCommand"] == "SELECT 1"
+    assert result["steps"][0]["resultSummary"] == "connection established"
+    assert result["steps"][1]["resultSummary"] == "3 schemas enumerated"
+    assert result["steps"][2]["resultSummary"] == (
+        "1 table in schema 'mydb', auto-selected because no databaseSchema was configured"
+    )
+    assert result["steps"][3]["resultSummary"] == (
+        "1 view in schema 'mydb', auto-selected because no databaseSchema was configured"
+    )
+    assert any("SELECT 1" in sql for sql in cursor.statements)
+    assert cursor.closed is True
+    # The workflow is patched after each step (Running) and finally (Successful).
+    assert [call["status"] for call in patch_calls] == ["Running"] * 4 + ["Successful"]
+    assert all(call["workflow_id"] == "w1" for call in patch_calls)
+    assert patch_calls[-1]["result_status"] == "Successful"
 
 
 def test_unknown_service_type_fails(monkeypatch, fake_definition) -> None:

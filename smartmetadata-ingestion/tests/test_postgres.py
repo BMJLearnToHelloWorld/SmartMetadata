@@ -92,6 +92,43 @@ def test_postgres_source_emits_hierarchy_and_view_lineage() -> None:
     assert lineage.source == "ViewLineage"
 
 
+def test_postgres_data_length_gated_by_mapped_type() -> None:
+    # Same gate as MySQL, through the shared helper: TEXT/BYTEA carry
+    # no dataLength even when the catalog reports a length; VARCHAR
+    # keeps its length, unbounded VARCHAR defaults to 1.
+    reader = SequenceCatalogReader(
+        schemas=[SchemaRow("public")],
+        tables=[TableRow("public", "docs", "BASE TABLE")],
+        columns=[
+            ColumnRow("public", "docs", "body", "text", 1, 4294967295),
+            ColumnRow("public", "docs", "raw", "bytea", 2, 4294967295),
+            ColumnRow("public", "docs", "title", "character varying", 3, 128),
+            ColumnRow("public", "docs", "note", "character varying", 4),
+        ],
+        views=[],
+    )
+    source = PostgresSource(
+        SourceConfig(
+            type="postgres",
+            service_name="warehouse",
+            connection={"hostPort": "localhost:5432", "username": "u", "database": "analytics"},
+            include_schemas=["public"],
+        ),
+        reader=reader,
+    )
+    tables = [record for record in source.produce() if isinstance(record, TableRecord)]
+    assert len(tables) == 1
+    columns = tables[0].columns
+    assert columns[0].data_type == "TEXT"
+    assert columns[0].data_length is None
+    assert columns[1].data_type == "BYTEA"
+    assert columns[1].data_length is None
+    assert columns[2].data_type == "VARCHAR"
+    assert columns[2].data_length == 128
+    assert columns[3].data_type == "VARCHAR"
+    assert columns[3].data_length == 1
+
+
 def test_store_connection_secrets_is_opt_in() -> None:
     source = PostgresSource(
         SourceConfig(

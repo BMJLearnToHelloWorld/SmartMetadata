@@ -20,9 +20,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
+from smartmetadata_ingestion.automations.checks_common import (
+    Caveat,
+    Evidence,
+    _empty_caveat,
+    _enumerated,
+    _in_schema,
+    _one_line,
+)
 from smartmetadata_ingestion.connectors import mysql_common
 from smartmetadata_ingestion.errors import WorkflowError
 
@@ -43,65 +50,6 @@ _LIST_VIEWS_SQL = """
 # Pin MYSQL_TEST_GET_QUERIES / MYSQL_TEST_GET_QUERIES_SLOW_LOGS verbatim.
 _GENERAL_LOG_SQL = "SELECT `argument` from {table} limit 1;"
 _SLOW_LOG_SQL = "SELECT `sql_text` from {table} limit 1;"
-
-
-@dataclass(frozen=True, slots=True)
-class Caveat:
-    """Non-blocking advisory for an empty scope: a warning, never a failure."""
-
-    title: str
-    remediation: str
-
-
-@dataclass(frozen=True, slots=True)
-class Evidence:
-    """What a check found: a human summary, the statement it ran, and an
-    optional caveat (pin ``Evidence``)."""
-
-    summary: str
-    command: str | None = None
-    caveat: Caveat | None = None
-
-
-def _count(number: int, noun: str) -> str:
-    """``3 tables`` / ``1 table`` (pin ``summary.count``)."""
-    return f"{number} {noun if number == 1 else noun + 's'}"
-
-
-def _enumerated(number: int, noun: str) -> str:
-    """``3 tables enumerated`` / ``no tables enumerated`` (pin ``summary.enumerated``)."""
-    if not number:
-        return f"no {noun}s enumerated"
-    return f"{_count(number, noun)} enumerated"
-
-
-def _in_schema(kind: str, number: int, schema: str | None, auto_selected: bool) -> str:
-    """``3 tables in schema 'sales'``; falls back to ``enumerated`` with no schema."""
-    if schema is None:
-        return _enumerated(number, kind)
-    counted = _count(number, kind)
-    if auto_selected:
-        return (
-            f"{counted} in schema '{schema}', "
-            "auto-selected because no databaseSchema was configured"
-        )
-    return f"{counted} in schema '{schema}'"
-
-
-def _empty_caveat(kind: str, scope: str) -> Caveat:
-    """An empty reflection never raises: the catalog filters what the login
-    cannot see, so "none visible" and "none exist" read identically."""
-    return Caveat(
-        title=f"No {kind}s visible in {scope}",
-        remediation=(
-            f"Verify the login can see the {kind}s (object permissions), "
-            f"or confirm {scope} is not empty."
-        ),
-    )
-
-
-def _one_line(sql: str) -> str:
-    return " ".join(sql.split())
 
 
 def _queries_statement(config: dict[str, Any]) -> str:
