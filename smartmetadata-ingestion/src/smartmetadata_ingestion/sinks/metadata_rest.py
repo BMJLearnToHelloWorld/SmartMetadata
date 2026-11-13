@@ -32,6 +32,8 @@ from smartmetadata_ingestion.records import (
     LineageRecord,
     MessagingServiceRecord,
     SchemaRecord,
+    ColumnRecord,
+    TablePartitionRecord,
     TableRecord,
     TopicRecord,
     UsageRecord,
@@ -295,12 +297,22 @@ class BulkMetadataRestSink:
         for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container", "pipeline"):
             self._flush_kind(kind, force=True)
 
+    # Official topology flushes parents at stage end before children.
+    # A per-kind batch_size trip must do the same, or tables can go out
+    # while database/schema payloads are still sitting in their buffers.
+    _KIND_PARENTS: dict[str, tuple[str, ...]] = {
+        "schema": ("database",),
+        "table": ("database", "schema"),
+    }
+
     def _flush_kind(self, kind: str, *, force: bool) -> None:
         buf = self._buffers[kind]
         if not buf:
             return None
         if not force and len(buf) < self._batch_size:
             return None
+        for parent in self._KIND_PARENTS.get(kind, ()):
+            self._flush_kind(parent, force=True)
         payloads = list(buf)
         buf.clear()
         try:
@@ -675,33 +687,54 @@ def _schema_payload(record: SchemaRecord) -> dict[str, Any]:
     return payload
 
 
+def _column_payload(column: ColumnRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": column.name,
+        "dataType": column.data_type,
+    }
+    if column.data_type_display:
+        payload["dataTypeDisplay"] = column.data_type_display
+    if column.description:
+        payload["description"] = column.description
+    if column.ordinal_position is not None:
+        payload["ordinalPosition"] = column.ordinal_position
+    if column.data_length is not None:
+        payload["dataLength"] = column.data_length
+    if column.array_data_type:
+        payload["arrayDataType"] = column.array_data_type
+    if column.children:
+        payload["children"] = [_column_payload(child) for child in column.children]
+    if column.precision is not None:
+        payload["precision"] = column.precision
+    if column.scale is not None:
+        payload["scale"] = column.scale
+    return payload
+
+
+def _table_partition_payload(record: TablePartitionRecord) -> dict[str, Any]:
+    columns = []
+    for column in record.columns:
+        item: dict[str, Any] = {
+            "columnName": column.column_name,
+            "intervalType": column.interval_type,
+        }
+        if column.interval is not None:
+            item["interval"] = column.interval
+        columns.append(item)
+    return {"columns": columns}
+
+
 def _table_payload(record: TableRecord) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": record.name,
         "databaseSchema": record.database_schema,
         "tableType": record.table_type,
-        "columns": [
-            {
-                "name": column.name,
-                "dataType": column.data_type,
-                **(
-                    {"dataTypeDisplay": column.data_type_display}
-                    if column.data_type_display
-                    else {}
-                ),
-                **({"description": column.description} if column.description else {}),
-                **(
-                    {"ordinalPosition": column.ordinal_position}
-                    if column.ordinal_position is not None
-                    else {}
-                ),
-                **({"dataLength": column.data_length} if column.data_length is not None else {}),
-            }
-            for column in record.columns
-        ],
+        "columns": [_column_payload(column) for column in record.columns],
     }
     if record.description:
         payload["description"] = record.description
+    if record.table_partition is not None:
+        payload["tablePartition"] = _table_partition_payload(record.table_partition)
     return payload
 
 def _storage_service_payload(record: StorageServiceRecord) -> dict[str, Any]:

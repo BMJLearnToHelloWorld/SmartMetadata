@@ -122,3 +122,24 @@ def test_doris_mapping_is_case_insensitive() -> None:
     assert map_doris_type("LargeInt") == "LARGEINT"
     assert map_doris_type("IPV4") == "IPV4"
     assert map_doris_type("Array<String>") == "ARRAY"
+
+
+def test_mysql_year_bit_geometry_point_follow_official_parser() -> None:
+    # Official column_type_parser._SOURCE_TYPE_TO_OM_TYPE.
+    assert map_mysql_type("year") == "YEAR"
+    assert map_mysql_type("YEAR") == "YEAR"
+    assert map_mysql_type("bit") == "BIT"
+    assert map_mysql_type("geometry") == "GEOMETRY"
+    assert map_mysql_type("point") == "GEOMETRY"
+
+
+def test_doris_point_stays_self_name() -> None:
+    # Official Doris _parse_type puts the parsed name into dataType, so
+    # POINT stays POINT. The MySQL typemap underneath maps point ->
+    # GEOMETRY; the Doris layer overrides it.
+    assert map_doris_type("point") == "POINT"
+    assert map_doris_type("POINT") == "POINT"
+    assert map_doris_type("geometry") == "GEOMETRY"
+    assert map_doris_type("year") == "YEAR"
+    assert map_doris_type("bit") == "BIT"
+

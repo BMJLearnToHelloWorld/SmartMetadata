@@ -21,11 +21,14 @@ from smartmetadata_ingestion.records import (
     LineageEndpoint,
     LineageRecord,
     MessagingServiceRecord,
+    PartitionColumnRecord,
     SchemaRecord,
+    TablePartitionRecord,
     TableRecord,
     TopicRecord,
 )
 from smartmetadata_ingestion.sinks.metadata_rest import (
+    BulkMetadataRestSink,
     MetadataRestSink,
     _table_payload,
     build_sink,
@@ -217,3 +220,73 @@ def test_sink_sample_put_failure_fails_the_record(workflow_config) -> None:
                 sample_data=TopicSampleData(messages=['{"id": 1}']),
             )
         )
+
+
+def test_table_payload_emits_children_array_type_and_partition() -> None:
+    payload = _table_payload(
+        TableRecord(
+            name="events",
+            database_schema="svc.db.sales",
+            columns=[
+                ColumnRecord(
+                    name="tags",
+                    data_type="ARRAY",
+                    array_data_type="INT",
+                ),
+                ColumnRecord(
+                    name="addr",
+                    data_type="STRUCT",
+                    children=[
+                        ColumnRecord(name="s_id", data_type="INT", ordinal_position=0),
+                        ColumnRecord(
+                            name="s_name",
+                            data_type="VARCHAR",
+                            data_length=20,
+                            ordinal_position=1,
+                        ),
+                    ],
+                ),
+            ],
+            table_partition=TablePartitionRecord(
+                columns=[
+                    PartitionColumnRecord(column_name="dt", interval_type="TIME-UNIT"),
+                ]
+            ),
+        )
+    )
+    assert payload["columns"][0]["arrayDataType"] == "INT"
+    assert "children" not in payload["columns"][0]
+    assert payload["columns"][1]["children"][0]["name"] == "s_id"
+    assert payload["columns"][1]["children"][1]["dataLength"] == 20
+    assert payload["tablePartition"] == {
+        "columns": [{"columnName": "dt", "intervalType": "TIME-UNIT"}]
+    }
+
+
+def test_bulk_table_flush_sends_pending_database_and_schema_first() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def bulk_upsert_databases(self, payloads):
+            self.calls.append("database")
+            return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
+
+        def bulk_upsert_schemas(self, payloads):
+            self.calls.append("schema")
+            return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
+
+        def bulk_upsert_tables(self, payloads):
+            self.calls.append("table")
+            return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
+
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=3)
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(SchemaRecord(name="public", database="svc.db"))
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
+    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
+    assert client.calls == []
+    sink.write(TableRecord(name="t3", database_schema="svc.db.public", columns=[]))
+    assert client.calls == ["database", "schema", "table"]
+

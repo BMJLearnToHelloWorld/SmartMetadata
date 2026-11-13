@@ -15,6 +15,7 @@ OSS: pydoris (locked); live reads use PyMySQL (MySQL protocol / OM ADR).
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -26,8 +27,30 @@ from smartmetadata_ingestion.connectors.profile_sql import (
 )
 from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.records import PartitionColumnRecord, TablePartitionRecord
 
 _SYSTEM_SCHEMAS = frozenset({"information_schema", "mysql", "__internal_schema", "sys"})
+
+# Official DorisSource.RELKIND_MAP (doris/metadata.py). Keys are case-
+# sensitive ENGINE values as INFORMATION_SCHEMA reports them.
+_DORIS_ENGINE_TO_TABLE_TYPE = {
+    "Doris": "Regular",
+    "View": "View",
+    "MEMORY": "View",
+    "OLAP": "MaterializedView",
+    "Iceberg": "Iceberg",
+    "ICEBERG": "Iceberg",
+}
+
+
+def map_doris_table_type(engine: str | None) -> str:
+    """Map a Doris ENGINE value to an official tableType, else Regular."""
+    return _DORIS_ENGINE_TO_TABLE_TYPE.get(engine or "", "Regular")
+
+
+def qualified_identifier(*identifiers: str | None) -> str:
+    """Official `_qualified_identifier`: quote each name part, join with `.`."""
+    return ".".join(quote_mysql(identifier) for identifier in identifiers if identifier is not None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +146,10 @@ class CatalogReader(Protocol):
 
     def list_views(self) -> Sequence[ViewRow]: ...
 
+    def get_table_partition_details(
+        self, schema: str, table: str
+    ) -> TablePartitionRecord | None: ...
+
 
 class LineageReader(Protocol):
     def list_edges(self) -> Sequence[LineageEdgeRow]: ...
@@ -149,11 +176,13 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        partitions: dict[tuple[str, str], str] | None = None,
     ) -> None:
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._partitions = dict(partitions or {})
 
     def list_schemas(self) -> Sequence[SchemaRow]:
         return self._schemas
@@ -170,6 +199,21 @@ class SequenceCatalogReader:
 
     def list_views(self) -> Sequence[ViewRow]:
         return self._views
+
+    def get_table_partition_details(
+        self, schema: str, table: str
+    ) -> TablePartitionRecord | None:
+        if (schema, table) not in self._partitions:
+            return None
+        key = self._partitions[(schema, table)]
+        if key == "":
+            return None
+        return TablePartitionRecord(
+            columns=[
+                PartitionColumnRecord(column_name=part)
+                for part in key.split(", ")
+            ]
+        )
 
 
 class SequenceLineageReader:
@@ -309,14 +353,19 @@ def doris_connect(connection: dict[str, Any]):
         or connection.get("database")
     )
 
+    ssl = pymysql_ssl_from_config(connection)
+
     def connect():
-        return pymysql.connect(
-            host=host,
-            port=port,
-            user=connection.get("username"),
-            password=password_of(connection),
-            database=database,
-        )
+        kwargs: dict[str, Any] = {
+            "host": host,
+            "port": port,
+            "user": connection.get("username"),
+            "password": password_of(connection),
+            "database": database,
+        }
+        if ssl:
+            kwargs["ssl"] = ssl
+        return pymysql.connect(**kwargs)
 
     return connect
 
@@ -332,9 +381,12 @@ class CursorCatalogReader:
         return [SchemaRow(name=row[0]) for row in rows]
 
     def list_tables(self, schema: str) -> Sequence[TableRow]:
+        # Official DORIS_GET_TABLE_NAMES reads ENGINE, not table_type.
+        # table_comment is kept from the existing fork probe (official
+        # fetches comments separately via DORIS_TABLE_COMMENTS).
         rows = self._fetch(
             """
-            SELECT table_schema, table_name, table_type, table_comment
+            SELECT table_schema, table_name, engine, table_comment
             FROM information_schema.tables
             WHERE table_schema = %s
             ORDER BY table_name
@@ -345,17 +397,22 @@ class CursorCatalogReader:
             TableRow(
                 schema_name=row[0],
                 name=row[1],
-                table_type=row[2] or "BASE TABLE",
+                table_type=row[2] or "",
                 comment=_blank_to_none(row[3]),
             )
             for row in rows
         ]
 
     def list_columns(self, schema: str, table: str) -> Sequence[ColumnRow]:
+        # Official DorisSource._get_columns uses SHOW FULL COLUMNS, whose
+        # Type field is the full type string (ARRAY<INT(11)>, VARCHAR(20)).
+        # information_schema.columns.column_type is that same string and
+        # stays parameterized. character_maximum_length is kept for the
+        # dataLength gate when the type string has no explicit length.
         rows = self._fetch(
             """
-            SELECT table_schema, table_name, column_name, data_type, ordinal_position,
-                   character_maximum_length, column_comment
+            SELECT table_schema, table_name, column_name, column_type, ordinal_position,
+                   character_maximum_length, column_comment, data_type
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s
             ORDER BY ordinal_position
@@ -367,7 +424,7 @@ class CursorCatalogReader:
                 schema_name=row[0],
                 table_name=row[1],
                 name=row[2],
-                data_type=row[3] or "STRING",
+                data_type=row[3] or row[7] or "STRING",
                 ordinal_position=int(row[4]),
                 char_length=row[5],
                 comment=_blank_to_none(row[6]),
@@ -376,6 +433,10 @@ class CursorCatalogReader:
         ]
 
     def list_views(self) -> Sequence[ViewRow]:
+        # Official DORIS_VIEW_DEFINITIONS selects '' as view_def and uses
+        # invalid SQL (`engine in ['MaterializedView', 'View']`). The
+        # fork keeps information_schema.views.view_definition instead of
+        # inventing SHOW CREATE VIEW or copying that empty query.
         rows = self._fetch(
             """
             SELECT table_schema, table_name, view_definition
@@ -388,12 +449,44 @@ class CursorCatalogReader:
             for row in rows
         ]
 
+    def get_table_partition_details(
+        self, schema: str, table: str
+    ) -> TablePartitionRecord | None:
+        # Official DorisSource.get_table_partition_details: SHOW PARTITIONS
+        # FROM the qualified table; if the first row's PartitionKey is not
+        # empty, emit TIME-UNIT columns split on ", ". Any exception is
+        # (False, None).
+        try:
+            qualified = qualified_identifier(schema, table)
+            rows, description = self._fetch_described(
+                f"SHOW PARTITIONS FROM {qualified}"
+            )
+        except Exception:
+            return None
+        if not rows:
+            return None
+        key = _partition_key(rows[0], description)
+        if key is None or key == "":
+            return None
+        return TablePartitionRecord(
+            columns=[
+                PartitionColumnRecord(column_name=part)
+                for part in key.split(", ")
+            ]
+        )
+
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
+        rows, _description = self._fetch_described(sql, params)
+        return rows
+
+    def _fetch_described(
+        self, sql: str, params: tuple[Any, ...] = ()
+    ) -> tuple[list[tuple[Any, ...]], Any]:
         with self._connect() as connection:
             cursor = connection.cursor()
             try:
                 cursor.execute(sql, params)
-                return list(cursor.fetchall())
+                return list(cursor.fetchall()), cursor.description
             finally:
                 cursor.close()
 
@@ -403,6 +496,72 @@ def _blank_to_none(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _partition_key(row: Any, description: Any) -> str | None:
+    """Read PartitionKey from a DB-API row (tuple or mapping)."""
+    if isinstance(row, dict):
+        for key, value in row.items():
+            if str(key).lower() == "partitionkey":
+                return "" if value is None else str(value)
+        return None
+    if description:
+        for index, col in enumerate(description):
+            name = col[0] if isinstance(col, (tuple, list)) else getattr(col, "name", None)
+            if name is not None and str(name).lower() == "partitionkey":
+                return "" if row[index] is None else str(row[index])
+    if hasattr(row, "PartitionKey"):
+        value = row.PartitionKey
+        return "" if value is None else str(value)
+    return None
+
+
+def _write_ssl_temp_file(content: str) -> str:
+    """Materialise a certificate for the life of the process.
+
+    Official SSLManager.write_secret_temp_file writes a temp file and
+    keeps the path until cleanup; callers hold the path across connects.
+    """
+    handle = tempfile.NamedTemporaryFile(
+        prefix="sm-doris-ssl-", suffix=".pem", delete=False, mode="w", encoding="utf-8"
+    )
+    with handle:
+        handle.write(content)
+    return handle.name
+
+
+def pymysql_ssl_from_config(connection: dict[str, Any]) -> dict[str, Any] | None:
+    """Build a PyMySQL `ssl=` dict from official sslConfig field names.
+
+    Official check_ssl_and_init / setup_ssl (Doris shares the MySQL
+    registration) writes caCertificate / sslCertificate / sslKey to temp
+    files and puts the paths on connectionArguments.ssl as ssl_ca /
+    ssl_cert / ssl_key. SQLAlchemy then maps those to PyMySQL's ca /
+    cert / key. This helper applies the same material to the live
+    `pymysql.connect(..., ssl=...)` path used by catalog, profile, and
+    test-connection. Existing connectionArguments.ssl entries are kept.
+    """
+    raw_ssl = {}
+    arguments = connection.get("connectionArguments")
+    if isinstance(arguments, dict) and isinstance(arguments.get("ssl"), dict):
+        raw_ssl.update(arguments["ssl"])
+    ssl_config = connection.get("sslConfig")
+    if isinstance(ssl_config, dict):
+        mapping = (
+            ("caCertificate", "ca"),
+            ("sslCertificate", "cert"),
+            ("sslKey", "key"),
+        )
+        for config_key, pymysql_key in mapping:
+            value = ssl_config.get(config_key)
+            if value:
+                raw_ssl[pymysql_key] = _write_ssl_temp_file(str(value))
+    # Official SQLAlchemy mysql dialect maps ssl_ca -> ca, etc.
+    aliases = {"ssl_ca": "ca", "ssl_cert": "cert", "ssl_key": "key"}
+    ssl_args: dict[str, Any] = {}
+    for key, value in raw_ssl.items():
+        ssl_args[aliases.get(str(key), key)] = value
+    return ssl_args or None
 
 
 class CursorProfileReader:

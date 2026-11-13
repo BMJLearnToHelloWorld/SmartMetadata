@@ -65,6 +65,24 @@ class ColumnRecord(BaseModel):
     description: str | None = None
     ordinal_position: int | None = None
     data_length: int | None = None
+    array_data_type: str | None = None
+    children: list[ColumnRecord] | None = None
+    precision: int | None = None
+    scale: int | None = None
+
+
+class PartitionColumnRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column_name: str
+    interval_type: str = "TIME-UNIT"
+    interval: str | None = None
+
+
+class TablePartitionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    columns: list[PartitionColumnRecord] = Field(default_factory=list)
 
 
 class TableRecord(Record):
@@ -74,6 +92,7 @@ class TableRecord(Record):
     columns: list[ColumnRecord] = Field(default_factory=list)
     table_type: str = "Regular"
     description: str | None = None
+    table_partition: TablePartitionRecord | None = None
 
     def label(self) -> str:
         return f"table:{self.database_schema}.{self.name}"
