@@ -175,13 +175,60 @@ _MSSQL_TO_OM: dict[str, str] = {
 }
 
 
-def map_doris_type(data_type: str | None) -> str:
-    """Doris uses MySQL-compatible type names."""
-    return map_mysql_type(data_type)
-
-
 def map_mssql_type(data_type: str | None) -> str:
     return _map_simple(data_type, _MSSQL_TO_OM)
+
+
+# Doris names are MySQL-compatible plus Doris natives. The pin's
+# DorisSource._parse_type strips args at "("/"<" and a version suffix
+# (parse_type[-2] == "v" -> split("v")[0]: DATEV2 -> DATE, DECIMALV3 ->
+# DECIMAL), and its output goes DIRECTLY into Column.dataType — no
+# get_column_type pass — so native names map to themselves (HLL,
+# BITMAP, QUANTILE_STATE, AGG_STATE, LARGEINT, VARIANT are all valid
+# spec-enum members). Unmapped names fall back to UNKNOWN: the pin
+# drops such columns, and the fork never drops columns on type
+# mapping, so UNKNOWN is the honest equivalent.
+# ADR:2026-11-13-doris-source-and-pipeline
+_DORIS_TO_OM: dict[str, str] = {
+    **_MYSQL_TO_OM,
+    "largeint": "LARGEINT",
+    "variant": "VARIANT",
+    "ipv4": "IPV4",
+    "ipv6": "IPV6",
+    "hll": "HLL",
+    "bitmap": "BITMAP",
+    "quantile_state": "QUANTILE_STATE",
+    "agg_state": "AGG_STATE",
+    "map": "MAP",
+    "struct": "STRUCT",
+    "string": "STRING",
+    "array": "ARRAY",
+}
+
+
+def map_doris_type(data_type: str | None) -> str:
+    if not data_type:
+        return "UNKNOWN"
+    key = data_type.strip().lower()
+    if key.endswith("[]"):
+        return "ARRAY"
+    if key.startswith("array"):
+        return "ARRAY"
+    if key.startswith("map"):
+        return "MAP"
+    if key.startswith("struct"):
+        return "STRUCT"
+    base = key.split("(")[0].split("<")[0]
+    mapped = _DORIS_TO_OM.get(base)
+    if mapped is not None:
+        return mapped
+    # The version strip runs only when the unstripped name is unmapped:
+    # applied blindly it would eat IPV4/IPV6 ("ipv4"[-2] == "v" -> "i").
+    # The pin drops those columns; the map carries them explicitly so the
+    # fork keeps them with the correct enum type instead.
+    if len(base) >= 2 and base[-2] == "v":
+        return _DORIS_TO_OM.get(base.split("v")[0], "UNKNOWN")
+    return "UNKNOWN"
 
 
 
@@ -235,3 +282,20 @@ def _map_simple(data_type: str | None, mapping: dict[str, str]) -> str:
     if key.startswith("array"):
         return "ARRAY"
     return mapping.get(key, "STRING")
+
+
+# Lengths are defined only for char/varchar/binary/varbinary columns
+# (openmetadata-spec schema/entity/data/table.json, column.dataLength:
+# "else null"). Sending a raw character_maximum_length for any other
+# type overflows the server's Java Integer for LONGTEXT/LONGBLOB
+# (4294967295) and fails the whole bulk request at deserialization.
+# Port of the pin's SqlColumnHandler._check_col_length
+# (ingestion/src/metadata/ingestion/source/database/sql_column_handler.py).
+# ADR:2026-11-13-column-data-length-gate
+_LENGTHED_DATA_TYPES: frozenset[str] = frozenset({"CHAR", "VARCHAR", "BINARY", "VARBINARY"})
+
+
+def check_col_length(data_type: str, char_length: int | None) -> int | None:
+    if data_type and data_type.upper() in _LENGTHED_DATA_TYPES:
+        return char_length if char_length else 1
+    return None

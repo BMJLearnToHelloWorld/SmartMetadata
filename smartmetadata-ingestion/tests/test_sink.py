@@ -25,7 +25,11 @@ from smartmetadata_ingestion.records import (
     TableRecord,
     TopicRecord,
 )
-from smartmetadata_ingestion.sinks.metadata_rest import MetadataRestSink, build_sink
+from smartmetadata_ingestion.sinks.metadata_rest import (
+    MetadataRestSink,
+    _table_payload,
+    build_sink,
+)
 
 
 def test_sink_sends_optional_fields(workflow_config) -> None:
@@ -93,6 +97,21 @@ def test_sink_sends_optional_fields(workflow_config) -> None:
     assert any("messageSchema" in body for body in bodies)
     assert any('"partitions": 3' in body or '"partitions":3' in body for body in bodies)
     assert build_sink(workflow_config, client).written == []
+
+
+def test_table_payload_omits_data_length_when_none() -> None:
+    payload = _table_payload(
+        TableRecord(
+            name="orders",
+            database_schema="warehouse.analytics.public",
+            columns=[
+                ColumnRecord(name="body", data_type="TEXT", data_length=None),
+                ColumnRecord(name="email", data_type="VARCHAR", data_length=20),
+            ],
+        )
+    )
+    assert "dataLength" not in payload["columns"][0]
+    assert payload["columns"][1]["dataLength"] == 20
 
 
 def test_unknown_processor_and_sink_are_rejected(workflow_config) -> None:
