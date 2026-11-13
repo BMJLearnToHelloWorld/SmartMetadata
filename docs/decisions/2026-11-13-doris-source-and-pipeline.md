@@ -87,7 +87,10 @@ flags from the stored service.
   `GEOMETRY`); top-level Doris `arrayDataType` uses
   `map_doris_type` so the recorded IPV4/IPV6 lookup-before-strip
   correction still applies. The dataLength gate remains on the mapped
-  type (lengthed types only).
+  type (lengthed types only). Official _get_column also sets
+  precision / scale when the mapped type is DECIMAL and the raw
+  type has (p, s) (extract_number); the Doris column builder now
+  does the same.
 - **MySQL typemap drifts (v2, sink-adjacent).** Official
   `column_type_parser._SOURCE_TYPE_TO_OM_TYPE` maps `YEAR` ->
   `YEAR`, `BIT` -> `BIT`, `GEOMETRY` / `POINT` -> `GEOMETRY`.

@@ -152,6 +152,13 @@ class DorisSource:
             elif data_type == "STRUCT":
                 children = _children_from_complex(raw_type)
             char_length = _doris_char_length(data_type, raw_type, column.char_length)
+            precision = None
+            scale = None
+            # Official _get_column sets precision/scale when DECIMAL has (p, s).
+            if data_type == 'DECIMAL':
+                numbers = extract_number(raw_type)
+                if len(numbers) == 2:
+                    precision, scale = numbers
             columns.append(
                 ColumnRecord(
                     name=column.name,
@@ -162,6 +169,8 @@ class DorisSource:
                     data_length=check_col_length(data_type, char_length),
                     array_data_type=array_data_type,
                     children=children,
+                    precision=precision,
+                    scale=scale,
                 )
             )
         return columns

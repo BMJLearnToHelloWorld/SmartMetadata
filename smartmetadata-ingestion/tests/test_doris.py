@@ -185,7 +185,7 @@ def test_doris_source_maps_versioned_and_native_types() -> None:
         columns=[
             ColumnRow("sales", "events", "d", "datev2", 1),
             ColumnRow("sales", "events", "ts", "datetimev2", 2),
-            ColumnRow("sales", "events", "amount", "decimalv3", 3),
+            ColumnRow("sales", "events", "amount", "decimalv3(9, 0)", 3),
             ColumnRow("sales", "events", "big", "largeint", 4),
             ColumnRow("sales", "events", "addr", "ipv4", 5),
             ColumnRow("sales", "events", "sketch", "hll", 6),
@@ -216,6 +216,10 @@ def test_doris_source_maps_versioned_and_native_types() -> None:
         ("VARCHAR", 128),
         ("VARCHAR", 1),
     ]
+    amount = next(c for c in columns if c.name == "amount")
+    assert amount.precision == 9
+    assert amount.scale == 0
+    assert amount.data_type_display == "decimalv3(9, 0)"
 
 
 def test_doris_service_connection_builder_carries_schema_keys() -> None:
