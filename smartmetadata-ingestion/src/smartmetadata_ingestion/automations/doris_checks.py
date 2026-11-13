@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 _LIST_SCHEMAS_SQL = "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name"
 _LIST_TABLES_SQL = """
-    SELECT table_schema, table_name, table_type, table_comment
+    SELECT table_schema, table_name, engine, table_comment
     FROM information_schema.tables
     WHERE table_schema = %s
     ORDER BY table_name

@@ -56,7 +56,7 @@ _MYSQL_TO_OM: dict[str, str] = {
     "float": "FLOAT",
     "double": "DOUBLE",
     "double precision": "DOUBLE",
-    "bit": "BINARY",
+    "bit": "BIT",
     "char": "CHAR",
     "varchar": "VARCHAR",
     "tinytext": "TEXT",
@@ -74,13 +74,13 @@ _MYSQL_TO_OM: dict[str, str] = {
     "datetime": "DATETIME",
     "timestamp": "TIMESTAMP",
     "time": "TIME",
-    "year": "NUMBER",
+    "year": "YEAR",
     "enum": "ENUM",
     "set": "SET",
     "boolean": "BOOLEAN",
     "bool": "BOOLEAN",
-    "geometry": "GEOGRAPHY",
-    "point": "GEOGRAPHY",
+    "geometry": "GEOMETRY",
+    "point": "GEOMETRY",
 }
 
 _SNOWFLAKE_TO_OM: dict[str, str] = {
@@ -203,6 +203,10 @@ _DORIS_TO_OM: dict[str, str] = {
     "struct": "STRUCT",
     "string": "STRING",
     "array": "ARRAY",
+    # Official Doris _parse_type puts the parsed name itself into
+    # dataType, so POINT stays POINT here. The official shared parser
+    # maps POINT -> GEOMETRY (used only for complex-type children).
+    "point": "POINT",
 }
 
 

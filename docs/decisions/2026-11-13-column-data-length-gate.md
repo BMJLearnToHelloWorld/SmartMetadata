@@ -1,7 +1,7 @@
 # Column dataLength is gated to char/varchar/binary/varbinary at construction
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-11-13 (initial)
+- **Revisions:** v1 2026-11-13 (initial); v2 2026-11-13 (flush-order residual closed in the Doris official-gaps landing; the sink still uses per-kind buffers, not official single-buffer)
 - **Deciders:** Bai (ruling: tables bulk 400, `dataLength` overflow)
 - **Guard:** `smartmetadata-ingestion/tests/test_datatypes.py`, `smartmetadata-ingestion/tests/test_mysql.py`, `smartmetadata-ingestion/tests/test_postgres.py`, `smartmetadata-ingestion/tests/test_sink.py`
 - **Related:** upstream pin `a3012259ca` (`ingestion/src/metadata/ingestion/source/database/sql_column_handler.py:386-394` `_check_col_length`, `ingestion/src/metadata/ingestion/source/database/column_type_parser.py:440`); `openmetadata-spec/.../schema/entity/data/table.json` (`column.properties.dataLength`)
@@ -45,7 +45,10 @@ every other type.
   on the wire, so the bulk 400 cannot recur from a raw catalog
   length. Lengthed columns keep their exact length, and unbounded
   varchar keeps the pin's `1`.
-- The sink's per-kind flush ordering (a tables bulk can precede its
-  unflushed parents) is a separate residual, not fixed here: fixing
-  it means restructuring the sink to official's single-buffer design,
-  its own round with its own review.
+- The earlier residual that a tables bulk could precede still-buffered
+  database/schema parents is closed in the 2026-11-13 Doris official-gaps
+  landing: `BulkMetadataRestSink` force-flushes parent kinds
+  (database, then schema) before a table flush, matching official
+  topology order. The sink still uses per-kind buffers and the same
+  `batch_size`; it was not restructured to official's single-buffer
+  design. See `docs/decisions/2026-11-13-doris-source-and-pipeline.md`.
