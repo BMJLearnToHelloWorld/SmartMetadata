@@ -12,6 +12,14 @@ Maps a ``source.type`` to the connector's profiler interface, test-suite
 interface, live connect factory and live profile reader. A type with no entry
 here has no profiler implementation and the workflows reject it explicitly
 instead of silently running a metadata pass.
+
+The sampler registry below maps the same types to their sample helpers
+for the autoClassification workflow: each sampler reads rows through
+the type's profile reader, and the registry records whether its
+``sample`` takes the database name (most dialects) or only
+schema + table (MySQL-family dialects, where schema and database are
+the same thing).
+ADR:2026-11-14-autoclassification-engine
 """
 
 from __future__ import annotations
@@ -137,3 +145,53 @@ PROFILER_BINDINGS: dict[str, ProfilerBinding] = {
 
 def profiler_binding(source_type: str) -> ProfilerBinding | None:
     return PROFILER_BINDINGS.get(source_type.strip().lower())
+
+
+@dataclass(frozen=True)
+class SamplerBinding:
+    sampler: type
+    takes_database: bool
+
+
+SAMPLER_BINDINGS: dict[str, SamplerBinding] = {
+    "databricks": SamplerBinding(
+        databricks_profiler.DatabricksSamplerInterface, True
+    ),
+    "doris": SamplerBinding(doris_profiler.DorisSampleHelper, False),
+    "greenplum": SamplerBinding(
+        greenplum_profiler.GreenplumSampleHelper, True
+    ),
+    "mariadb": SamplerBinding(mariadb_profiler.MariaDBSampleHelper, False),
+    "mssql": SamplerBinding(mssql_profiler.MssqlSampler, True),
+    "mysql": SamplerBinding(mysql_profiler.MysqlSampler, False),
+    "postgres": SamplerBinding(postgres_profiler.PostgresSampler, True),
+    "redshift": SamplerBinding(redshift_profiler.RedshiftSampleHelper, True),
+    "snowflake": SamplerBinding(snowflake_profiler.SnowflakeSampler, True),
+    "timescale": SamplerBinding(timescale_profiler.TimescaleSampler, True),
+    "unitycatalog": SamplerBinding(
+        databricks_profiler.UnityCatalogSamplerInterface, True
+    ),
+}
+
+
+def sampler_binding(source_type: str) -> SamplerBinding | None:
+    return SAMPLER_BINDINGS.get(source_type.strip().lower())
+
+
+def build_database_sampler(
+    source_type: str, connection: dict[str, Any]
+) -> tuple[Any, bool] | None:
+    """Build the live sampler for a database source type, or None.
+
+    Returns ``(sampler, takes_database)``: the caller passes
+    ``(database, schema, table)`` when ``takes_database`` is true,
+    else ``(schema, table)``. None when the type has no profiler
+    binding or no sampler — the caller records the gap per entity
+    instead of failing the run before enumeration.
+    """
+    binding = profiler_binding(source_type)
+    sampler = sampler_binding(source_type)
+    if binding is None or sampler is None:
+        return None
+    reader = binding.profile_reader(binding.connect(connection))
+    return sampler.sampler(reader), sampler.takes_database

@@ -162,14 +162,16 @@ def test_drop_processor_skips_records(workflow_config) -> None:
 
 @pytest.mark.parametrize(
     "workflow_type",
-    ["dbt", "autoClassification", "elasticSearchReindex", "application"],
+    ["dbt", "elasticSearchReindex", "application"],
 )
 def test_runner_fails_loudly_without_a_dedicated_runner(
     workflow_config, workflow_type
 ) -> None:
-    # P-06: the four types deploy and their DAGs import, but no runner
+    # P-06: the three types deploy and their DAGs import, but no runner
     # implements them — the run must fail with a diagnostic instead of
-    # succeeding as a metadata ingestion.
+    # succeeding as a metadata ingestion. autoClassification used to
+    # be in this set; the clean-room engine supersedes P-06 for it
+    # alone (ADR:2026-11-14-autoclassification-engine).
     config = workflow_config.model_copy(
         update={
             "workflow": workflow_config.workflow.model_copy(
@@ -179,3 +181,42 @@ def test_runner_fails_loudly_without_a_dedicated_runner(
     )
     with pytest.raises(WorkflowExecutionError, match="no runner implemented"):
         run_workflow(config)
+
+
+def test_runner_dispatches_auto_classification_to_its_workflow(
+    workflow_config,
+) -> None:
+    # The supersession: an autoClassification run reaches the real
+    # engine workflow, which enumerates (here: nothing) and succeeds
+    # without ever touching the metadata workflow or the fail-loud
+    # raise. The stub client lists no entities and no candidates, so
+    # no model is loaded and no network is touched.
+    class _EmptyClient:
+        def iter_collection(self, path, *, limit=100, extra_params=None):
+            return iter([])
+
+        def get_profiler_config_settings(self):
+            return None
+
+        def get_database_service_by_name(self, name):
+            return {}
+
+        def get_messaging_service_by_name(self, name):
+            return {}
+
+        def get_storage_service_by_name(self, name):
+            return {}
+
+    config = workflow_config.model_copy(
+        update={
+            "workflow": workflow_config.workflow.model_copy(
+                update={"type": "autoClassification"}
+            ),
+            "source": workflow_config.source.model_copy(
+                update={"type": "kafka", "service_name": "demo"}
+            ),
+        }
+    )
+    report = run_workflow(config, client=_EmptyClient())
+    assert report.succeeded == 0
+    assert report.failed == 0

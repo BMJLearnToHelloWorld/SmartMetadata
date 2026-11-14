@@ -11,13 +11,28 @@ from __future__ import annotations
 import logging
 import traceback
 import uuid
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from typing import Any
 
-from smartmetadata_ingestion.client.rest import RestClient
+from smartmetadata_ingestion.classification.columns import iter_leaf_columns
+from smartmetadata_ingestion.classification.engine import (
+    ClassificationEngine,
+    resolve_store_sample_data,
+)
+from smartmetadata_ingestion.classification.patching import (
+    patch_column_tags,
+    store_tabular_sample_data,
+    store_topic_sample_data,
+)
+from smartmetadata_ingestion.client.rest import (
+    CONTAINERS_PATH,
+    TABLES_PATH,
+    TOPICS_PATH,
+    RestClient,
+)
 from smartmetadata_ingestion.config import (
     AppSpec,
     ClassificationSpec,
@@ -26,13 +41,16 @@ from smartmetadata_ingestion.config import (
     LineageSpec,
     ProfilerMetricParamSpec,
     ProfileSpec,
+    SourceConfig,
     TagSpec,
     TestCaseResultSpec,
     UsageSpec,
     WorkflowConfig,
 )
 from smartmetadata_ingestion.connectors.base import Source, build_source
+from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
 from smartmetadata_ingestion.data_quality.builder import ValidatorBuilder
+from smartmetadata_ingestion.data_quality.models import split_fqn
 from smartmetadata_ingestion.data_quality.sampling import resolve_sample_config
 from smartmetadata_ingestion.data_quality.source import (
     PulledSuite,
@@ -58,7 +76,11 @@ from smartmetadata_ingestion.pipeline_status import (
     now_ms,
 )
 from smartmetadata_ingestion.processors.identity import Processor, build_processors
-from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
+from smartmetadata_ingestion.profiler import (
+    ProfilerBinding,
+    build_database_sampler,
+    profiler_binding,
+)
 from smartmetadata_ingestion.profiler_plan import (
     ProfilerTablePlan,
     clamp_thread_count,
@@ -1254,4 +1276,543 @@ def _app_from_spec(spec: AppSpec) -> AppRecord:
         supports_interrupt=spec.supports_interrupt,
         allow_bot_impersonation=spec.allow_bot_impersonation,
     )
+
+
+# ---------------------------------------------------------------------------
+# AutoClassification
+# ---------------------------------------------------------------------------
+# ADR:2026-11-14-autoclassification-engine
+
+# Source types whose entities are topics (messaging) or containers
+# (storage). Every other recognized type is a database whose entities are
+# tables, resolved through the profiler binding table: a type the fork
+# executes database work against IS a database type, so the category
+# follows the binding table instead of a second enumeration that could
+# drift from it.
+_AC_MESSAGING_TYPES = frozenset({"kafka", "redpanda"})
+_AC_STORAGE_TYPES = frozenset({"s3"})
+
+# Catalog enumeration per entity kind: the collection path plus the fields
+# the run needs — the columns for classification, the tags for the
+# classification filter. The service scope travels as ?service= on the
+# listing, so enumeration never sees another service's entities.
+_AC_ENTITY_COLLECTION: dict[str, tuple[str, str]] = {
+    "table": (TABLES_PATH, "columns,tags"),
+    "topic": (TOPICS_PATH, "messageSchema,tags"),
+    "container": (CONTAINERS_PATH, "dataModel,tags"),
+}
+
+# Service-existence check per entity kind: the RestClient getter whose
+# GET proves the configured service exists. The check runs in prepare,
+# before enumeration, so a bad service name fails loudly instead of
+# "succeeding" over an empty listing. The database getter already
+# existed (cross-service tableDiff); messaging/storage mirror it.
+_AC_SERVICE_GETTERS: dict[str, str] = {
+    "table": "get_database_service_by_name",
+    "topic": "get_messaging_service_by_name",
+    "container": "get_storage_service_by_name",
+}
+
+
+def _validate_service_exists(client: Any, kind: str, service_name: str) -> None:
+    """Prove the run's service exists via the category-appropriate GET.
+
+    The getter raises on a missing service (the catalog answers 404)
+    and the caller lets that failure propagate: an unknown service is
+    a configuration error, never an empty run. Other catalog failures
+    propagate unchanged, with their own status and body intact.
+    """
+    getter = getattr(client, _AC_SERVICE_GETTERS[kind])
+    getter(service_name)
+
+
+def _ac_entity_type(source_type: str) -> str:
+    """The catalog entity kind an autoClassification run classifies.
+
+    A type the fork executes no database work against, and that is
+    neither messaging nor storage, is unknown — the run fails here,
+    before enumeration, rather than succeeding over zero entities.
+    """
+    key = source_type.strip().lower()
+    if key in _AC_MESSAGING_TYPES:
+        return "topic"
+    if key in _AC_STORAGE_TYPES:
+        return "container"
+    if profiler_binding(key) is not None:
+        return "table"
+    raise WorkflowInitializationError(
+        f"autoClassification has no entity category for source type "
+        f"{source_type!r}: the fork knows no database, messaging, or "
+        "storage sampler for it"
+    )
+
+
+@dataclass
+class _EntitySample:
+    """What one entity's sampler produced: tabular rows, or topic
+    messages. Exactly one side is populated: messages carry no field
+    attribution, so topics classify by column name only."""
+
+    rows: list[dict[str, Any]] | None
+    messages: list[str] | None
+
+
+def _sample_field_names(rows: list[dict[str, Any]]) -> list[str]:
+    """The stored sample's column order: first-seen key order across
+    the rows. The TableData payload is positional, so a key that
+    appears only in later rows still gets a column (earlier rows read
+    null for it) instead of silently dropping that field."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                seen.add(key)
+                names.append(key)
+    return names
+
+
+def _database_sample_adapter(
+    sampler: Any, takes_database: bool, limit: int
+) -> Callable[[dict[str, Any]], _EntitySample]:
+    """Adapt a database sampler's non-uniform arity behind the one
+    sample shape the workflow drives. The FQN must carry exactly the
+    database/schema/table segments; anything else is corrupt catalog
+    data and fails the entity loudly instead of guessing segments."""
+
+    def sample(entity: dict[str, Any]) -> _EntitySample:
+        fqn = entity.get("fullyQualifiedName") or ""
+        parts = split_fqn(fqn)
+        if len(parts) != 4:
+            raise WorkflowExecutionError(
+                f"table FQN {fqn!r} has no database/schema/table segments"
+            )
+        _, database, schema, table = parts
+        if takes_database:
+            rows = sampler.sample(database, schema, table, limit=limit)
+        else:
+            rows = sampler.sample(schema, table, limit=limit)
+        return _EntitySample(rows=list(rows), messages=None)
+
+    return sample
+
+
+def _messaging_sample_adapter(
+    sampler: Any, limit: int
+) -> Callable[[dict[str, Any]], _EntitySample]:
+    """Adapt a topic sampler: messages by topic name, no rows."""
+
+    def sample(entity: dict[str, Any]) -> _EntitySample:
+        topic = entity.get("name") or ""
+        return _EntitySample(
+            rows=None, messages=list(sampler.sample(topic=topic, limit=limit))
+        )
+
+    return sample
+
+
+def _storage_sample_adapter(
+    sampler: Any, limit: int
+) -> Callable[[dict[str, Any]], _EntitySample]:
+    """Adapt the storage sampler: the bucket is the FQN's second
+    segment, the prefix everything after it. A bare service-level FQN
+    names no bucket and fails the entity loudly."""
+
+    def sample(entity: dict[str, Any]) -> _EntitySample:
+        fqn = entity.get("fullyQualifiedName") or ""
+        parts = split_fqn(fqn)
+        if len(parts) < 2:
+            raise WorkflowExecutionError(f"container FQN {fqn!r} has no bucket segment")
+        bucket = parts[1]
+        prefix = "/".join(parts[2:])
+        rows = sampler.sample(bucket=bucket, prefix=prefix, limit=limit)
+        return _EntitySample(rows=list(rows), messages=None)
+
+    return sample
+
+
+def _messaging_sampler(source: SourceConfig) -> Any:
+    """The live topic sampler for a messaging source type. The imports
+    stay local: the messaging connector modules pull broker client
+    libraries the core suite runs without."""
+    from smartmetadata_ingestion.connectors.kafka import KafkaSampler
+    from smartmetadata_ingestion.connectors.redpanda import RedpandaSampler
+
+    samplers = {"kafka": KafkaSampler, "redpanda": RedpandaSampler}
+    try:
+        sampler_cls = samplers[source.type.strip().lower()]
+    except KeyError as exc:
+        raise WorkflowInitializationError(
+            f"no messaging sampler for source type {source.type!r}"
+        ) from exc
+    return sampler_cls(source)
+
+
+class AutoClassificationWorkflow(MetadataWorkflow):
+    """Runs an ``autoClassification`` pipeline: enumerate the service's
+    catalog entities, sample each one live, classify its columns
+    against the PII candidate tags, persist the samples when
+    configured, and PATCH the suggested labels onto the columns.
+
+    The metadata source/sink/processor chain is not used — enumeration
+    reads the catalog, sampling reads the live source, and the writes
+    are sample-data PUTs plus JSON Patch calls — so ``prepare`` builds
+    only the sampler adapter and the classification engine. The engine
+    exists only when the pipeline flag is on and a sampler was built;
+    with the flag off the run still samples and stores, tagging
+    nothing. Unknown source types fail in ``prepare``; per-entity
+    sampling failures are recorded and the run's final state follows
+    the fork's rule, so a run that classified nothing never reports
+    success.
+    """
+
+    def __init__(
+        self,
+        config: WorkflowConfig,
+        *,
+        client: RestClient | None = None,
+        source: Source | None = None,
+        sink: Sink | None = None,
+        processors: list[Processor] | None = None,
+        hook: ProgressHook | None = None,
+        run_id: str | None = None,
+        sample_entity: Callable[[dict[str, Any]], _EntitySample] | None = None,
+        engine: ClassificationEngine | None = None,
+    ) -> None:
+        # Injection seams for tests: a sample function standing in for
+        # the live sampler adapter, and a pre-built engine. Production
+        # always builds both from the config.
+        self._injected_sample_entity = sample_entity
+        self._injected_engine = engine
+        self._entity_type: str | None = None
+        self._sample_entity: Callable[[dict[str, Any]], _EntitySample] | None = None
+        self._sampler: Any | None = None
+        self._engine: ClassificationEngine | None = None
+        self._store_sample_data = False
+        self._skipped_entities = 0
+        self._patch_warnings = 0
+        super().__init__(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+            run_id=run_id,
+        )
+
+    def prepare(self) -> None:
+        if self._prepared:
+            return
+        try:
+            source = self.config.source
+            self._entity_type = _ac_entity_type(source.type)
+            _validate_service_exists(self._client, self._entity_type, source.service_name)
+            self._sample_entity, self._sampler = self._build_sampler(source)
+            self._store_sample_data = resolve_store_sample_data(
+                pipeline_store=source.store_sample_data,
+                settings_reader=getattr(
+                    self._client, "get_profiler_config_settings", None
+                ),
+            )
+            if source.enable_auto_classification and self._sample_entity is not None:
+                self._engine = self._injected_engine or ClassificationEngine(
+                    self._client,
+                    language=source.classification_language,
+                    confidence=source.confidence,
+                )
+            elif not source.enable_auto_classification:
+                logger.info(
+                    "autoClassification disabled by enableAutoClassification=false; "
+                    "sampling and storing only, tagging nothing"
+                )
+            else:
+                logger.warning(
+                    "no sampler for source type %r; classification disabled, "
+                    "entities will fail per-entity",
+                    source.type,
+                )
+            self._prepared = True
+        except Exception as exc:
+            self._record_failure(self.source_status, "Source", "source", exc)
+            raise WorkflowInitializationError(
+                f"could not prepare autoClassification workflow: {exc}"
+            ) from exc
+
+    def _build_sampler(
+        self, source: SourceConfig
+    ) -> tuple[Callable[[dict[str, Any]], _EntitySample] | None, Any | None]:
+        if self._injected_sample_entity is not None:
+            return self._injected_sample_entity, None
+        limit = source.sample_data_count
+        if self._entity_type == "table":
+            built = build_database_sampler(source.type, source.connection or {})
+            if built is None:
+                return None, None
+            sampler, takes_database = built
+            return _database_sample_adapter(sampler, takes_database, limit), sampler
+        if self._entity_type == "topic":
+            sampler = _messaging_sampler(source)
+            return _messaging_sample_adapter(sampler, limit), sampler
+        from smartmetadata_ingestion.connectors.s3 import S3Sampler
+
+        sampler = S3Sampler(source)
+        return _storage_sample_adapter(sampler, limit), sampler
+
+    def _execute_records(self) -> None:
+        if self._entity_type is None:
+            raise WorkflowInitializationError("workflow source is not prepared")
+        if self._engine is not None:
+            # Model provisioning is verified here, after the "running"
+            # writeback: a missing model fails the run loudly at run
+            # start instead of mid-run after partial work, and a run
+            # with the flag off never touches the models.
+            self._engine.warm_up()
+        entities = self._enumerate_entities()
+        # Enumeration streams like the usage workflow's source: entities
+        # are processed as pages arrive, never materialized, so a large
+        # service does not hold every entity dict in memory. The source
+        # step's total grows per entity in _process_entity (expect),
+        # since no upfront total exists for a stream.
+        for entity in entities:
+            self._process_entity(entity)
+
+    def _enumerate_entities(self) -> Iterator[dict[str, Any]]:
+        source = self.config.source
+        kind = self._entity_type
+        if kind is None:
+            raise WorkflowInitializationError("workflow source is not prepared")
+        path, fields = _AC_ENTITY_COLLECTION[kind]
+        for entity in self._client.iter_collection(
+            path, extra_params={"service": source.service_name, "fields": fields}
+        ):
+            if self._entity_in_scope(source, entity):
+                yield entity
+
+    def _entity_in_scope(
+        self, source: SourceConfig, entity: dict[str, Any]
+    ) -> bool:
+        """The enumeration scope: the classification filter first (an
+        entity's existing tags decide it), then the per-level name
+        patterns. A malformed FQN cannot be scoped and is skipped
+        with a warning — corrupt catalog data must not fail the run
+        before any entity is classified."""
+        fqn = entity.get("fullyQualifiedName") or ""
+        if not table_passes_classification_filter(source, entity):
+            return False
+        use_fqn = source.use_fqn_for_filtering
+        if self._entity_type == "table":
+            parts = split_fqn(fqn)
+            if len(parts) != 4:
+                logger.warning("skipping table with malformed FQN %r", fqn)
+                return False
+            _, database, schema, table = parts
+            if not is_selected(
+                database,
+                include=source.include_databases,
+                exclude=source.exclude_databases,
+                fqn=fqn,
+                use_fqn=use_fqn,
+            ):
+                return False
+            if not is_selected(
+                schema,
+                include=source.include_schemas,
+                exclude=source.exclude_schemas,
+                fqn=fqn,
+                use_fqn=use_fqn,
+            ):
+                return False
+            return is_selected_table(
+                table,
+                entity.get("tableType") or "Regular",
+                include_tables=source.include_tables,
+                exclude_tables=source.exclude_tables,
+                include_views=source.include_views,
+                include_tables_enabled=source.include_tables_enabled,
+                fqn=fqn,
+                use_fqn=use_fqn,
+            )
+        if self._entity_type == "topic":
+            return is_selected(
+                entity.get("name") or "",
+                include=source.include_topics,
+                exclude=source.exclude_topics,
+                fqn=fqn,
+                use_fqn=use_fqn,
+            )
+        return is_selected(
+            entity.get("name") or "",
+            include=source.include_containers,
+            exclude=source.exclude_containers,
+            fqn=fqn,
+            use_fqn=use_fqn,
+        )
+
+    def _process_entity(self, entity: dict[str, Any]) -> None:
+        kind = self._entity_type
+        if kind is None:
+            raise WorkflowInitializationError("workflow source is not prepared")
+        fqn = entity.get("fullyQualifiedName") or ""
+        self.source_status.records += 1
+        self.source_status.expect(kind)
+        self.source_status.complete(kind)
+        self.processor_status.expect(kind)
+        if not iter_leaf_columns(entity, kind):
+            # An entity with no columns has nothing to classify; the
+            # sampler is never consulted for it.
+            logger.warning("skipping %s %s: no columns", kind, fqn)
+            self._skip_entity(kind)
+            return
+        sample = self._sample(entity, kind, fqn)
+        if sample is None:
+            return
+        column_tags = self._classify(entity, kind, sample)
+        self._write_results(entity, kind, fqn, sample, column_tags)
+
+    def _skip_entity(self, kind: str) -> None:
+        """Count a skipped entity: filtered on the processor step, and
+        complete — the step finished with it by deciding not to run
+        it, which is not a failure."""
+        self._skipped_entities += 1
+        self.report.skipped += 1
+        self.processor_status.filtered += 1
+        self.processor_status.complete(kind)
+
+    def _sample(
+        self, entity: dict[str, Any], kind: str, fqn: str
+    ) -> _EntitySample | None:
+        try:
+            if self._sample_entity is None:
+                raise WorkflowExecutionError(
+                    f"no sampler for source type {self.config.source.type!r}"
+                )
+            sample = self._sample_entity(entity)
+        except NotImplementedError:
+            # A sampler that declines an entity skips it like a
+            # no-columns entity: the gap is the sampler's coverage,
+            # not a failure of the run.
+            logger.warning(
+                "skipping %s %s: sampler does not support it", kind, fqn
+            )
+            self._skip_entity(kind)
+            return None
+        except Exception as exc:
+            failure = self._record_failure(self.processor_status, fqn, kind, exc)
+            self.report.failures.append(failure)
+            return None
+        self.processor_status.records += 1
+        self.processor_status.complete(kind)
+        return sample
+
+    def _classify(
+        self, entity: dict[str, Any], kind: str, sample: _EntitySample
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Classify one entity's columns, grouping the labels by
+        column FQN for the PATCH. Per-column failures become failed
+        step entries — they never abort the remaining columns, and
+        the run's final state follows from them honestly."""
+        if self._engine is None:
+            return {}
+        classification = self._engine.classify_entity(entity, kind, sample.rows)
+        for failure in classification.failures:
+            record = RecordFailure(
+                label=failure.column_fqn,
+                kind=kind,
+                message=failure.message,
+                stack_trace=failure.stack_trace,
+            )
+            self.processor_status.failures.append(record)
+            self.report.failures.append(record)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for tag in classification.column_tags:
+            grouped.setdefault(tag.column_fqn, []).append(tag.tag_label)
+        return grouped
+
+    def _write_results(
+        self,
+        entity: dict[str, Any],
+        kind: str,
+        fqn: str,
+        sample: _EntitySample,
+        column_tags: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """The sink step: persist the sample when configured, then
+        PATCH the labels. The two writes are independent — a failed
+        sample ingest is a failed step entry but never blocks the
+        PATCH, and a failed PATCH is a warning, never a failure."""
+        self.sink_status.expect(kind)
+        failed = False
+        if self._store_sample_data:
+            try:
+                self._store_sample(entity, kind, sample)
+            except Exception as exc:
+                failure = self._record_failure(self.sink_status, fqn, kind, exc)
+                self.report.failures.append(failure)
+                failed = True
+        if column_tags:
+            try:
+                patched = patch_column_tags(
+                    self._client,
+                    entity_type=kind,
+                    entity_fqn=fqn,
+                    column_tags=column_tags,
+                )
+            except Exception as exc:
+                logger.warning("tag PATCH failed for %s %s: %s", kind, fqn, exc)
+                self._patch_warnings += 1
+            else:
+                if patched is None:
+                    self._patch_warnings += 1
+        self.sink_status.records += 1
+        self.sink_status.complete(kind)
+        if not failed:
+            self.report.succeeded += 1
+
+    def _store_sample(
+        self, entity: dict[str, Any], kind: str, sample: _EntitySample
+    ) -> None:
+        entity_id = entity.get("id") or ""
+        if kind == "topic":
+            store_topic_sample_data(
+                self._client, entity_id=entity_id, messages=sample.messages or []
+            )
+            return
+        rows = sample.rows or []
+        store_tabular_sample_data(
+            self._client,
+            entity_type=kind,
+            entity_id=entity_id,
+            field_names=_sample_field_names(rows),
+            rows=rows,
+        )
+
+    def close_steps(self) -> None:
+        # The sampler holds the run's live connection or consumer; it
+        # closes once, at run end — never per entity, where closing
+        # the shared consumer would break the remaining entities.
+        # Taking and clearing the reference makes the close
+        # idempotent: execute() and stop() both reach here.
+        sampler, self._sampler = self._sampler, None
+        try:
+            super().close_steps()
+        finally:
+            close = getattr(sampler, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:
+                    self._record_failure(
+                        self.processor_status, "Sampler", "sampler", exc
+                    )
+                    raise WorkflowTeardownError(
+                        f"sampler close failed: {exc}"
+                    ) from exc
+
+    def _collect_warnings(self) -> None:
+        """Fold the run's counted warning events (C-11/B-4 item 6):
+        skipped entities on the processor step, tag-PATCH warnings on
+        the sink step. Pure count reads, like the usage fold."""
+        self.processor_status.warn(self._skipped_entities)
+        self.sink_status.warn(self._patch_warnings)
 
