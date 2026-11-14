@@ -857,6 +857,7 @@ onMounted(() => {
         ref="createSchemaFormRef"
         :schema="createSchema"
         v-model="form.sourceConfigData"
+        :supports-auto-partition="form.pipelineType === 'profiler'"
         @validity-change="(valid) => (createSchemaFormValid = valid)"
       />
       <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">

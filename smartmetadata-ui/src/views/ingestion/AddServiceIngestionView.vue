@@ -378,6 +378,7 @@ onMounted(() => {
             ref="schemaFormRef"
             :schema="sourceSchema"
             v-model="sourceConfigData"
+            :supports-auto-partition="pipelineType === 'profiler'"
             @validity-change="(valid) => (schemaFormValid = valid)"
           />
         </Form>

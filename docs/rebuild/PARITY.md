@@ -25,7 +25,7 @@ ship placeholder/half-wired “parity”.
 | Surface | Command / path | Result |
 |---|---|---|
 | Official connectors | `ingestion/src/metadata/ingestion/source/**/service_spec.py` | **106** files |
-| Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `sql_views`, `*_common`) | **6** families (`postgres`, `mysql`, `kafka`, `snowflake`, `databricks`, `unitycatalog`) |
+| Product connectors | `smartmetadata-ingestion/src/smartmetadata_ingestion/connectors/*.py` (excluding `base`, `registry`, `select`, `*_common`) | **6** families (`postgres`, `mysql`, `kafka`, `snowflake`, `databricks`, `unitycatalog`) |
 | Official MCP tools | `openmetadata-mcp/src/main/resources/json/data/mcp/tools.json` `tools[].name` | **21** |
 | Product MCP tools | smartmetadata-mcp/src/tools.ts TOOL_NAMES | **14** |
 | Product UI routes | `smartmetadata-ui/src/router/index.ts` | Login, **My Data / home** (`/my-data` post-login default), Explore, Insights, lineage, 13 wired catalog asset types, admin (users/teams/roles/bots/settings hub + system + **policies** + **custom property defs** + **apps**), governance, quality, observability, ingestion console, collaboration |

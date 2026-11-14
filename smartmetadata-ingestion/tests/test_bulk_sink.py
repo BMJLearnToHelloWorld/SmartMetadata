@@ -26,20 +26,20 @@ class FakeClient:
         self.calls.append(("svc", payload))
         return payload
 
-    def bulk_upsert_databases(self, payloads):
+    def bulk_upsert_databases(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_db", payloads))
         return _bulk_result(payloads)
 
-    def bulk_upsert_schemas(self, payloads):
+    def bulk_upsert_schemas(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_schema", payloads))
         return _bulk_result(payloads)
 
-    def bulk_upsert_tables(self, payloads):
+    def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_table", payloads))
         return _bulk_result(payloads)
 
 
-    def bulk_upsert_topics(self, payloads):
+    def bulk_upsert_topics(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_topic", payloads))
         return _bulk_result(payloads)
 
@@ -219,13 +219,13 @@ class BulkResultClient(FakeClient):
             ],
         }
 
-    def bulk_upsert_databases(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_databases(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("database", payloads)
 
-    def bulk_upsert_schemas(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_schemas(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("schema", payloads)
 
-    def bulk_upsert_tables(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("table", payloads)
 
 
@@ -268,7 +268,7 @@ class NoListBulkResponseClient(FakeClient):
         super().__init__()
         self.response = response
 
-    def bulk_upsert_tables(self, payloads):
+    def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_table", payloads))
         return self.response
 

@@ -8,12 +8,21 @@
 
 from __future__ import annotations
 
+import time
+
+import pytest
+
 from smartmetadata_ingestion.pipeline_status import (
     build_pipeline_status,
     final_pipeline_state,
     step_summary,
 )
-from smartmetadata_ingestion.progress import RecordFailure, RunReport, StepStatus
+from smartmetadata_ingestion.progress import (
+    RecordFailure,
+    RunReport,
+    StepProgress,
+    StepStatus,
+)
 
 
 def test_step_summary_includes_sampled_failures() -> None:
@@ -41,7 +50,66 @@ def test_final_pipeline_state_matrix() -> None:
     assert final_pipeline_state(ok, stopped=True) == "stopped"
 
 
-def test_build_pipeline_status_omits_triggered_by_and_running_steps() -> None:
+def test_step_summary_reports_true_warnings_and_updates() -> None:
+    status = StepStatus(name="Sink", records=2, warnings=3, updated_records=1)
+    summary = step_summary(status)
+    assert summary["warnings"] == 3
+    assert summary["updated_records"] == 1
+
+
+def test_step_status_warn_increments_warnings() -> None:
+    status = StepStatus(name="Source")
+    status.warn()
+    status.warn(2)
+    status.warn(0)
+    assert status.warnings == 3
+    assert step_summary(status)["warnings"] == 3
+
+
+def test_step_status_warn_rejects_negative_counts() -> None:
+    status = StepStatus(name="Source")
+    with pytest.raises(ValueError, match="must not be negative"):
+        status.warn(-1)
+    assert status.warnings == 0
+
+
+def test_step_summary_progress_map_and_eta() -> None:
+    status = StepStatus(name="Source")
+    status.set_total("table", 4)
+    status.complete("table")
+    # Nothing processed yet for schemas: no estimate is emitted.
+    status.set_total("schema", 2)
+    summary = step_summary(status)
+    assert summary["progress"]["schema"] == {"total": 2, "processed": 0}
+    # Nothing processed means no rate to extrapolate: no estimate.
+    assert "estimatedRemainingSeconds" not in summary["progress"]["schema"]
+    # Nothing left means no estimate either.
+    status.complete("table", 3)
+    assert "estimatedRemainingSeconds" not in step_summary(status)["progress"]["table"]
+    status.progress["table"].processed = 1
+    # With elapsed time against a known total, the estimate extrapolates
+    # the observed rate: 10s for 1 of 4 leaves ~30s for the other 3.
+    status.progress["table"].started_monotonic = time.monotonic() - 10
+    summary = step_summary(status)
+    eta = summary["progress"]["table"]["estimatedRemainingSeconds"]
+    assert 25 <= eta <= 35
+
+
+def test_step_summary_omits_empty_progress() -> None:
+    assert "progress" not in step_summary(StepStatus(name="Processor"))
+
+
+def test_step_progress_helpers_track_totals() -> None:
+    status = StepStatus(name="Sink")
+    status.expect("table")
+    status.expect("table")
+    status.complete("table")
+    entry = status.progress["table"]
+    assert isinstance(entry, StepProgress)
+    assert (entry.total, entry.processed) == (2, 1)
+
+
+def test_build_pipeline_status_includes_steps_while_running() -> None:
     payload = build_pipeline_status(
         run_id="r1",
         pipeline_state="running",
@@ -51,7 +119,8 @@ def test_build_pipeline_status_omits_triggered_by_and_running_steps() -> None:
     )
     assert payload["runId"] == "r1"
     assert payload["pipelineState"] == "running"
-    assert "status" not in payload
+    # C-11: steps are present while running, not only when finished.
+    assert payload["status"][0]["name"] == "Source"
     assert "triggeredBy" not in payload
 
     final = build_pipeline_status(

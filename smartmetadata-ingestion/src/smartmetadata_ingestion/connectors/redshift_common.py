@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Shared Redshift connection, catalog/usage/lineage readers, and helpers.
+"""Shared Redshift connection, catalog/usage readers, and helpers.
 
 Clean-room alignment to Apache OpenMetadata RedshiftConnection / service_spec.
 service_spec: metadata + lineage + usage + profiler + connection. No sampler_class / data_diff invent.
@@ -19,8 +19,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.constraints import nullable_flag
 from smartmetadata_ingestion.connectors.profile_sql import (
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_ansi,
 )
@@ -63,6 +65,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,26 +74,6 @@ class ViewRow:
     schema_name: str
     name: str
     definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_database: str
-    source_schema: str
-    source_table: str
-    target_database: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    database: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +113,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,14 +133,6 @@ class CatalogReader(Protocol):
     def list_views(self, database: str) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -162,6 +142,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -211,22 +192,6 @@ class SequenceCatalogReader:
         return [row for row in self._views if row.database_name == database]
 
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
-
-
 class SequenceProfileReader:
     def __init__(
         self,
@@ -245,6 +210,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -410,7 +376,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT table_schema, table_name, column_name, data_type,
-                   ordinal_position, character_maximum_length
+                   ordinal_position, character_maximum_length, is_nullable
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s
             ORDER BY ordinal_position
@@ -426,6 +392,7 @@ class CursorCatalogReader:
                 data_type=row[3] or "STRING",
                 ordinal_position=int(row[4]),
                 char_length=row[5],
+                is_nullable=nullable_flag(row[6]),
             )
             for row in rows
         ]
@@ -487,9 +454,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            database, schema, table, metric_params=metric_params, sample_config=sample_config
+            database,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(

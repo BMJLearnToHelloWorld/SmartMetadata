@@ -6,31 +6,50 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Databricks lineage source (system.access.table_lineage edges)."""
+"""Databricks lineage source: view/query channels over the live
+catalog and the shared query-log base. The former
+``system.access.table_lineage`` read is replaced by the query-log
+channel (cleanup K-7)."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import databricks_common as dbx
+from smartmetadata_ingestion.connectors.databricks_query_log import (
+    DATABRICKS_QUERY_LOG_SPEC,
+    databricks_connect_builder,
+    databricks_engines,
+)
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.fqn import build_fqn
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.query_filters import lineage_spec_for
+from smartmetadata_ingestion.lineage.source import LineageSource
+from smartmetadata_ingestion.lineage.view_lineage import (
+    MultiDatabaseViewEnumerator,
+    ViewEnumerator,
+)
+from smartmetadata_ingestion.usage.query_log import ConnectFactory, QueryLogSource
 
 
 @register_source("databricks-lineage")
-class DatabricksLineageSource:
+class DatabricksLineageSource(LineageSource):
     def __init__(
         self,
         config: SourceConfig,
         *,
-        reader: dbx.LineageReader | None = None,
-        connect=None,
+        catalog: dbx.CatalogReader | None = None,
+        connect: ConnectFactory | None = None,
+        query_log_connect: ConnectFactory | None = None,
     ) -> None:
-        self._config = config
-        self._reader = reader or (
-            dbx.CursorLineageReader(connect) if connect is not None else None
+        self._catalog = catalog
+        self._connect = connect
+        self._query_log_connect = query_log_connect
+        super().__init__(
+            config,
+            engine_key="databricks",
+            dialect=dialect_for_connection_type("databricks"),
+            view_enumerator_factory=self._build_view_enumerator,
+            query_log_source_factory=self._build_query_log_source,
         )
 
     def prepare(self) -> None:
@@ -39,36 +58,18 @@ class DatabricksLineageSource:
             require_http_path=True,
         )
 
-    def close(self) -> None:
-        return None
+    def _build_view_enumerator(self) -> ViewEnumerator:
+        catalog = self._catalog or dbx.CursorCatalogReader(
+            self._connect
+            or dbx.databricks_connect(self._config.connection or {})
+        )
+        return MultiDatabaseViewEnumerator(catalog)
 
-    def produce(self) -> Iterable[WorkflowRecord]:
-        reader = self._require_reader()
-        for edge in reader.list_edges():
-            from_fqn = build_fqn(
-                self._config.service_name,
-                edge.source_catalog,
-                edge.source_schema,
-                edge.source_table,
-            )
-            to_fqn = build_fqn(
-                self._config.service_name,
-                edge.target_catalog,
-                edge.target_schema,
-                edge.target_table,
-            )
-            if from_fqn == to_fqn:
-                continue
-            yield LineageRecord(
-                from_entity=LineageEndpoint(type="table", fqn=from_fqn),
-                to_entity=LineageEndpoint(type="table", fqn=to_fqn),
-                source="QueryLineage",
-                sql_query=edge.sql_query,
-            )
-
-    def _require_reader(self) -> dbx.LineageReader:
-        if self._reader is not None:
-            return self._reader
-        return dbx.CursorLineageReader(
-            dbx.databricks_connect(self._config.connection or {})
+    def _build_query_log_source(self) -> QueryLogSource:
+        return QueryLogSource(
+            self._config,
+            lineage_spec_for(DATABRICKS_QUERY_LOG_SPEC),
+            databricks_connect_builder,
+            databricks_engines,
+            connect=self._query_log_connect,
         )

@@ -56,9 +56,10 @@ def test_cursor_reader_uses_information_schema() -> None:
     assert tables[0].name == "orders"
     assert cursor.params == ("public",)
 
-    cursor.rows = [("public", "orders", "id", "integer", 1, None)]
+    cursor.rows = [("public", "orders", "id", "integer", 1, None, "NO")]
     columns = reader.list_columns("public", "orders")
     assert columns[0].name == "id"
+    assert columns[0].is_nullable is False
 
     cursor.rows = [("public", "orders_v", "SELECT 1")]
     views = reader.list_views()

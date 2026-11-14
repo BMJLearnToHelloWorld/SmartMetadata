@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from smartmetadata_ingestion.connectors import (
@@ -91,7 +93,14 @@ def _script(
     if not percentiles:
         id_row = (0, 10, 1, 10, 5.5, 10, 0, 55, 2.87, None, None)
         name_row = (1, 9, "a", "z", None, 9, 1, 27, 1.5, 5, 1)
+    # Table-stats queries, first so no other needle can shadow them; the
+    # row proves size + creation time land on the table stat row (dialects
+    # without a stats query never execute these and stay None).
+    stats_row = (16384, datetime(2026, 1, 2, 3, 4, 5))
     return [
+        ("pg_total_relation_size", [stats_row], None),
+        ("information_schema.tables", [stats_row], None),
+        ("sys.allocation_units", [stats_row], None),
         (f"GROUP BY {wrap('id')}", [(1,)], None),
         (f"GROUP BY {wrap('name')}", [(1,)], None),
         ("SELECT COUNT(*) FROM", [(10,)], None),
@@ -111,12 +120,20 @@ def _connect(cursor: FakeCursor):
     return lambda: FakeConnection(cursor)
 
 
-def _assert_profile(stats, cursor: FakeCursor, *, ident: str, window: bool = True) -> None:
+def _assert_profile(
+    stats, cursor: FakeCursor, *, ident: str, window: bool = True, table_stats: bool = True
+) -> None:
     assert len(stats) == 3
     assert stats[0].column_name is None
     assert stats[0].row_count == 10
     assert stats[0].column_count == 2
     assert stats[0].column_names == ["id", "name"]
+    if table_stats:
+        assert stats[0].size_in_byte == 16384
+        assert stats[0].create_date_time == "2026-01-02T03:04:05"
+    else:
+        assert stats[0].size_in_byte is None
+        assert stats[0].create_date_time is None
     assert stats[1].column_name == "id"
     assert stats[1].null_count == 0
     assert stats[1].distinct_count == 10
@@ -223,7 +240,12 @@ def test_postgres_family_readers_share_dialect() -> None:
         cursor = FakeCursor(_script(wrap=lambda name: f'"{name}"'))
         reader = module.CursorProfileReader(_connect(cursor))
         stats = reader.profile_table("analytics", "public", "orders")
-        _assert_profile(stats, cursor, ident='"analytics"."public"."orders"')
+        _assert_profile(
+            stats,
+            cursor,
+            ident='"analytics"."public"."orders"',
+            table_stats=module is not redshift_common,
+        )
 
 
 def test_mysql_cursor_profile_reader() -> None:
@@ -242,7 +264,7 @@ def test_mysql_family_readers_share_dialect() -> None:
     cursor = FakeCursor(_script(wrap=lambda name: f"`{name}`"))
     reader = doris_common.CursorProfileReader(_connect(cursor))
     stats = reader.profile_table("mydb", "orders")
-    _assert_profile(stats, cursor, ident="`mydb`.`orders`")
+    _assert_profile(stats, cursor, ident="`mydb`.`orders`", table_stats=False)
     cursor = FakeCursor(
         _script(
             wrap=lambda name: f"`{name}`",
@@ -284,7 +306,7 @@ def test_databricks_cursor_profile_reader() -> None:
     cursor = FakeCursor(_script(wrap=lambda name: f"`{name}`"))
     reader = databricks_common.CursorProfileReader(_connect(cursor))
     stats = reader.profile_table("catalog", "default", "orders")
-    _assert_profile(stats, cursor, ident="`catalog`.`default`.`orders`")
+    _assert_profile(stats, cursor, ident="`catalog`.`default`.`orders`", table_stats=False)
     columns_sql, params = next(
         (sql, p) for sql, p in cursor.executed if "information_schema.columns" in sql
     )

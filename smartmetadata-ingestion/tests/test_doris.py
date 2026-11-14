@@ -15,11 +15,9 @@ from smartmetadata_ingestion.connectors.doris_common import (
     ColumnRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
     SequenceProfileReader,
     TableRow,
     ViewRow,
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
     build_service_connection_config,
@@ -29,7 +27,6 @@ from smartmetadata_ingestion.connectors.doris_common import (
     qualified_identifier,
     run_connection_test,
 )
-from smartmetadata_ingestion.connectors.doris_lineage import DorisLineageSource
 from smartmetadata_ingestion.connectors.doris_profiler import (
     DorisProfilerInterface,
     DorisSampleHelper,
@@ -131,22 +128,6 @@ def test_doris_metadata_tree_and_view_lineage() -> None:
     assert lineage.from_entity.fqn.endswith(".sales.orders")
     assert lineage.to_entity.fqn.endswith(".sales.orders_v")
     assert lineage.source == "ViewLineage"
-
-
-def test_doris_lineage_source_injected_edges() -> None:
-    source = DorisLineageSource(
-        SourceConfig(type="doris-lineage", service_name="d", connection=_conn()),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow("sales", "orders", "sales", "orders_v", "select 1"),
-            ]
-        ),
-    )
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert isinstance(edges[0], LineageRecord)
-    assert edges[0].sql_query == "select 1"
 
 
 def test_doris_profiler_and_sample() -> None:
@@ -520,7 +501,10 @@ def test_cursor_reader_engine_query_and_partitions() -> None:
     cursor = _ScriptedCursor(
         [
             (
-                [("sales", "orders", "Doris", "fact"), ("sales", "orders_v", "View", None)],
+                [
+                    ("sales", "orders", "Doris", "fact", None, None),
+                    ("sales", "orders_v", "View", None, None, None),
+                ],
                 None,
                 None,
             ),

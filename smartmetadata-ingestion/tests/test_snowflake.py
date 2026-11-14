@@ -162,9 +162,10 @@ def test_snowflake_cursor_reader_scopes_information_schema() -> None:
     tables = reader.list_tables("ANALYTICS", "PUBLIC")
     assert tables[0].name == "ORDERS"
     assert cursor.params == ("PUBLIC",)
-    cursor.rows = [("ANALYTICS", "PUBLIC", "ORDERS", "ID", "NUMBER", 1, None, None)]
+    cursor.rows = [("ANALYTICS", "PUBLIC", "ORDERS", "ID", "NUMBER", 1, None, None, "YES")]
     columns = reader.list_columns("ANALYTICS", "PUBLIC", "ORDERS")
     assert columns[0].name == "ID"
+    assert columns[0].is_nullable is True
     cursor.rows = [("ANALYTICS", "PUBLIC", "ORDERS_V", "SELECT 1")]
     assert reader.list_views("ANALYTICS")[0].name == "ORDERS_V"
     assert cursor.closed is True
@@ -191,16 +192,11 @@ def test_snowflake_live_reader_requires_extra(monkeypatch) -> None:
 
 
 from smartmetadata_ingestion.connectors.snowflake_common import (
-    LineageEdgeRow as SfLineageEdgeRow,
     ProfileStatRow as SfProfileStatRow,
     SampleRow as SfSampleRow,
-    SequenceLineageReader as SfSequenceLineageReader,
     SequenceProfileReader as SfSequenceProfileReader,
-    SequenceUsageReader as SfSequenceUsageReader,
-    UsageEventRow as SfUsageEventRow,
     run_connection_test as sf_run_connection_test,
 )
-from smartmetadata_ingestion.connectors.snowflake_lineage import SnowflakeLineageSource
 from smartmetadata_ingestion.connectors.snowflake_profiler import (
     SnowflakeProfilerInterface,
     SnowflakeSampler,
@@ -211,7 +207,7 @@ from smartmetadata_ingestion.connectors.snowflake_data_diff import (
     SnowflakeDataDiff,
     SnowflakeTableParameter,
 )
-from smartmetadata_ingestion.records import ProfileRecord
+from smartmetadata_ingestion.records import ProfileRecord, TableQueryRecord
 
 
 def _sf_conn(**extra):
@@ -240,24 +236,7 @@ def test_snowflake_common_connection_test_requires_fields() -> None:
     ]
 
 
-def test_snowflake_lineage_source_injected_edges() -> None:
-    source = SnowflakeLineageSource(
-        SourceConfig(type="snowflake-lineage", service_name="sf", connection=_sf_conn()),
-        reader=SfSequenceLineageReader(
-            [
-                SfLineageEdgeRow(
-                    "ANALYTICS", "PUBLIC", "ORDERS",
-                    "ANALYTICS", "PUBLIC", "ORDERS_V",
-                    "select 1",
-                )
-            ]
-        ),
-    )
-    source.prepare()
-    assert len(list(source.produce())) == 1
-
-
-def test_snowflake_profiler_sampler_quality_usage_data_diff() -> None:
+def test_snowflake_profiler_sampler_quality_usage_data_diff(tmp_path) -> None:
     reader = SfSequenceProfileReader(
         stats=[SfProfileStatRow(None, row_count=9), SfProfileStatRow("ID", null_count=0, distinct_count=9)],
         samples=[SfSampleRow({"ID": 1})],
@@ -270,14 +249,25 @@ def test_snowflake_profiler_sampler_quality_usage_data_diff() -> None:
     assert SnowflakeTestSuiteInterface(execute=lambda e: True).run_test_case(
         test_case_fqn="tc", timestamp=1, expression="select 1"
     ).test_case_status == "Success"
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM ANALYTICS.PUBLIC.ORDERS,alice,2026-10-30 09:00:00.000,,5,\n",
+        encoding="utf-8",
+    )
     usage = SnowflakeUsageSource(
-        SourceConfig(type="snowflake-usage", service_name="sf", connection=_sf_conn()),
-        reader=SfSequenceUsageReader(
-            [SfUsageEventRow("ANALYTICS", "PUBLIC", "ORDERS", "2026-10-30", 7)]
+        SourceConfig(
+            type="snowflake-usage",
+            service_name="sf",
+            connection=_sf_conn(),
+            query_log_file_path=str(log_file),
         ),
     )
     usage.prepare()
-    assert list(usage.produce())[0].count == 7
+    events = list(usage.produce())
+    assert len(events) == 1
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM ANALYTICS.PUBLIC.ORDERS"
     param = SnowflakeTableParameter.build(
         _sf_conn(privateKey="PEM"),
         database="ANALYTICS",

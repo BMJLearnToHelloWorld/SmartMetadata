@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlparse
 
 import yaml
@@ -106,13 +106,199 @@ class MessagingMetadataPipelineConfig(CamelModel):
     pipeline gate reads ``generateSampleData`` and, for legacy pipeline
     configs, ``storeSampleData`` (official ``common_broker_source.py``
     ``getattr`` order). No other pipeline config lives here: filter
-    patterns are translated into the ``include_*`` lists above, and
-    ``markDeletedTopics``/``overrideMetadata`` stay server-side.
+    patterns are translated into the ``include_*`` lists above,
+    ``markDeletedTopics`` is carried on ``SourceConfig`` and honored
+    by reconcile, and ``overrideMetadata`` is carried there and
+    honored bulk-only by the sink.
     ADR:2026-11-08-sampler-messaging-config-surface
     """
 
     generate_sample_data: bool = False
     store_sample_data: bool | None = None
+
+
+# --- Per-type pipeline knobs (capability batch 1, C-3) ---------------------
+# The five pipeline schemas' knobs, carried typed on SourceConfig so the
+# runners read them instead of the translation silently dropping them.
+# Defaults are the schema defaults; where two schemas disagree on one
+# shared field, the translation applies the pipeline's own schema default
+# and SourceConfig keeps the common one (see translation.py).
+# ADR:2026-11-14-agent-capability-batch1
+
+# The profiler schema's default metric list, in schema order: an absent
+# ``metrics`` key means this list, while an explicitly empty list means
+# "compute all metrics" — the two must stay distinguishable, so the
+# translation passes this constant only when the key is absent.
+DEFAULT_PROFILER_METRICS: tuple[str, ...] = (
+    "mean",
+    "valuesCount",
+    "columnCount",
+    "distinctCount",
+    "distinctProportion",
+    "max",
+    "min",
+    "nullCount",
+    "rowCount",
+    "stddev",
+    "sum",
+    "uniqueCount",
+    "uniqueProportion",
+    "columnNames",
+    "nullProportion",
+    "median",
+    "firstQuartile",
+    "thirdQuartile",
+    "interQuartileRange",
+    "nonParametricSkew",
+)
+
+
+class QueryParserConfig(CamelModel):
+    """``parserconfig/queryParserConfig.json``: which SQL parser the cascade tries.
+
+    ``SqlParse`` is deliberately absent from the enum: it is the cascade's
+    implicit universal fallback, never a selectable type.
+    """
+
+    type: Literal["Auto", "SqlGlot", "SqlFluff"] = "Auto"
+
+
+class IncrementalConfig(CamelModel):
+    """The database metadata schema's ``incremental`` object."""
+
+    enabled: bool = False
+    lookback_days: int = 7
+    safety_margin_days: int = 1
+
+
+OwnerValue = str | list[str]
+
+
+class OwnerConfig(CamelModel):
+    """``type/ownerConfig.json``: owners per hierarchy level, with inheritance.
+
+    A level is one owner for everything or a map from entity name/FQN to
+    its owner(s); the schema's business rule (users and teams mutually
+    exclusive, at most one team) is enforced by the server at pipeline
+    creation, not re-checked here.
+    """
+
+    default: str | None = None
+    service: str | None = None
+    database: str | dict[str, OwnerValue] | None = None
+    database_schema: str | dict[str, OwnerValue] | None = None
+    table: str | dict[str, OwnerValue] | None = None
+    enable_inheritance: bool = True
+
+
+class ShardedTablesConfig(CamelModel):
+    """BigQuery daily-shard grouping. Present only in the UI schema copy
+    (``smartmetadata-ui/src/ingestion/schemas/``); the in-repo spec copy
+    lacks it (C-15 stale snapshot). Omitted configuration stays disabled.
+    """
+
+    enabled: bool = False
+
+
+class LineageInformationConfig(CamelModel):
+    """The dashboard/ML/pipeline metadata schemas' ``lineageInformation``."""
+
+    db_service_prefixes: list[str] = Field(default_factory=list)
+
+
+class NativeEngineConfig(CamelModel):
+    """The profiler schema's native processing engine (the default)."""
+
+    type: Literal["Native"]
+
+
+class SparkEngineInnerConfig(CamelModel):
+    """The Spark engine's ``config`` object."""
+
+    temp_path: str = "/tmp/openmetadata"
+    extra_config: dict[str, Any] | None = None
+
+
+class SparkEngineConfig(CamelModel):
+    """The profiler schema's Spark processing engine. Carried typed; no
+    Spark runner exists yet, so selecting it is a recorded residual, not
+    a silent no-op (the value reaches the runner, which fails loud on
+    an engine it cannot run)."""
+
+    type: Literal["Spark"]
+    remote: str
+    config: SparkEngineInnerConfig | None = None
+
+
+ProcessingEngineConfig = Annotated[
+    NativeEngineConfig | SparkEngineConfig,
+    Field(discriminator="type"),
+]
+
+
+class StaticSamplingConfig(CamelModel):
+    """``type/staticSamplingConfig.json``: one fixed sample size.
+
+    The schema spells the row-count type ``ROWS``; the runner's
+    ``StaticSampleConfig`` spells it ``ROW_COUNT`` — the profiler worker
+    maps between them, following the existing ``_static_from_dict``.
+    """
+
+    profile_sample: float | None = None
+    profile_sample_type: Literal["PERCENTAGE", "ROWS"] | None = None
+    sampling_method_type: Literal["SYSTEM", "BERNOULLI"] | None = None
+
+
+class DynamicSamplingThreshold(CamelModel):
+    """One row-count tier of ``type/dynamicSamplingConfig.json``."""
+
+    row_count_threshold: int = Field(ge=1)
+    profile_sample: float | None = None
+    profile_sample_type: Literal["PERCENTAGE", "ROWS"] | None = None
+    sampling_method_type: Literal["SYSTEM", "BERNOULLI"] | None = None
+
+
+class DynamicSamplingConfig(CamelModel):
+    """``type/dynamicSamplingConfig.json``: sample size from row-count tiers."""
+
+    smart_sampling: bool = True
+    thresholds: list[DynamicSamplingThreshold] = Field(default_factory=list)
+
+
+class ProfileSampleConfig(CamelModel):
+    """``type/samplingConfig.json#/definitions/profileSampleConfig``.
+
+    The schema's ``config`` is a ``oneOf`` over the static and dynamic
+    shapes that does not consult ``sampleConfigType``: a config shaped
+    like the other arm is still schema-valid. Resolution therefore tries
+    the declared arm first and the other arm second, and fails only when
+    neither shape validates.
+    """
+
+    sample_config_type: Literal["STATIC", "DYNAMIC"] = "DYNAMIC"
+    config: StaticSamplingConfig | DynamicSamplingConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_config_arm(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("config")
+        if not isinstance(raw, dict):
+            return data
+        declared = data.get("sampleConfigType", data.get("sample_config_type", "DYNAMIC"))
+        arms: tuple[type[StaticSamplingConfig] | type[DynamicSamplingConfig], ...] = (
+            (DynamicSamplingConfig, StaticSamplingConfig)
+            if declared != "STATIC"
+            else (StaticSamplingConfig, DynamicSamplingConfig)
+        )
+        for arm in arms:
+            try:
+                resolved = arm.model_validate(raw)
+            except Exception:
+                continue
+            return {**data, "config": resolved}
+        return data
 
 
 class SourceConfig(CamelModel):
@@ -142,6 +328,38 @@ class SourceConfig(CamelModel):
     exclude_containers: list[str] = Field(default_factory=list)
     include_pipelines: list[str] = Field(default_factory=list)
     exclude_pipelines: list[str] = Field(default_factory=list)
+    # Further filter-pattern levels (one include/exclude pair per schema
+    # pattern key; the translation splits each FilterPattern into them).
+    # ``include_classifications`` matches an entity's tags/tiers/glossary
+    # terms (the classificationFilterPattern semantic), not entity names.
+    include_stored_procedures: list[str] = Field(default_factory=list)
+    exclude_stored_procedures: list[str] = Field(default_factory=list)
+    include_data_models: list[str] = Field(default_factory=list)
+    exclude_data_models: list[str] = Field(default_factory=list)
+    include_projects: list[str] = Field(default_factory=list)
+    exclude_projects: list[str] = Field(default_factory=list)
+    include_api_collections: list[str] = Field(default_factory=list)
+    exclude_api_collections: list[str] = Field(default_factory=list)
+    include_api_endpoints: list[str] = Field(default_factory=list)
+    exclude_api_endpoints: list[str] = Field(default_factory=list)
+    include_ml_models: list[str] = Field(default_factory=list)
+    exclude_ml_models: list[str] = Field(default_factory=list)
+    include_search_indexes: list[str] = Field(default_factory=list)
+    exclude_search_indexes: list[str] = Field(default_factory=list)
+    include_directories: list[str] = Field(default_factory=list)
+    exclude_directories: list[str] = Field(default_factory=list)
+    include_files: list[str] = Field(default_factory=list)
+    exclude_files: list[str] = Field(default_factory=list)
+    include_spreadsheets: list[str] = Field(default_factory=list)
+    exclude_spreadsheets: list[str] = Field(default_factory=list)
+    include_worksheets: list[str] = Field(default_factory=list)
+    exclude_worksheets: list[str] = Field(default_factory=list)
+    include_buckets: list[str] = Field(default_factory=list)
+    exclude_buckets: list[str] = Field(default_factory=list)
+    include_servers: list[str] = Field(default_factory=list)
+    exclude_servers: list[str] = Field(default_factory=list)
+    include_classifications: list[str] = Field(default_factory=list)
+    exclude_classifications: list[str] = Field(default_factory=list)
     # Table scope (P-11): official FilterPattern regex, passed through
     # verbatim by the translation layer; include_views decides whether
     # View / MaterializedView rows are emitted at all.
@@ -151,6 +369,115 @@ class SourceConfig(CamelModel):
     include_view_lineage: bool = False
     store_connection_secrets: bool = False
     records: list[dict[str, Any]] = Field(default_factory=list)
+
+    # --- Per-type pipeline knobs (capability batch 1, C-3) ---------------
+    # Carried typed from the pipeline schemas by the translation; the
+    # runners honor them in the batch-1/2 work. Where a boolean toggle
+    # and a filter-pattern list would share a name, the list keeps the
+    # plain name and the toggle takes the ``_enabled`` suffix
+    # (``includeTables`` -> ``include_tables_enabled`` and siblings).
+    # ADR:2026-11-14-agent-capability-batch1
+    # Metadata: deletion flags. These carry the schema values for the
+    # per-kind reconcile work (D-C7); ``workflow.reconcileStale`` is
+    # derived from the service family's flags at translation time, so
+    # the gate opens exactly when a family flag is true.
+    mark_deleted_tables: bool = True
+    mark_deleted_stored_procedures: bool = True
+    mark_deleted_schemas: bool = False
+    mark_deleted_databases: bool = False
+    mark_deleted_topics: bool = True
+    mark_deleted_containers: bool = True
+    mark_deleted_dashboards: bool = True
+    mark_deleted_data_models: bool = True
+    mark_deleted_charts: bool = True
+    mark_deleted_api_collections: bool = True
+    mark_deleted_ml_models: bool = True
+    mark_deleted_pipelines: bool = True
+    mark_deleted_search_indexes: bool = True
+    mark_deleted_directories: bool = True
+    mark_deleted_files: bool = True
+    mark_deleted_spreadsheets: bool = True
+    mark_deleted_worksheets: bool = True
+    # Metadata: inclusion toggles and overrides.
+    include_tables_enabled: bool = True
+    include_tags: bool = True
+    include_custom_properties: bool = False
+    include_owners: bool = False
+    include_stored_procedures_enabled: bool = True
+    # The alias generator would spell this ``includeDdl``; the schema
+    # key is ``includeDDL``.
+    include_ddl: bool = Field(default=False, alias="includeDDL")
+    override_metadata: bool = False
+    override_lineage: bool = False
+    include_data_models_enabled: bool = True
+    include_metrics: bool = False
+    include_draft_dashboard: bool = True
+    include_usage: bool = True
+    include_lineage: bool = True
+    # The alias generator would spell this ``includeUndeployedPipelines``;
+    # the schema key capitalizes the D.
+    include_undeployed_pipelines: bool = Field(
+        default=True, alias="includeUnDeployedPipelines"
+    )
+    include_sample_data: bool = True
+    include_index_template: bool = False
+    include_directories_enabled: bool = True
+    include_files_enabled: bool = True
+    include_spreadsheets_enabled: bool = True
+    include_worksheets_enabled: bool = True
+    owner_config: OwnerConfig | None = None
+    lineage_information: LineageInformationConfig | None = None
+    default_manifest: str | None = None
+    sharded_tables: ShardedTablesConfig | None = None
+    # Metadata: extraction behavior.
+    use_fqn_for_filtering: bool = False
+    threads: int = 1
+    incremental: IncrementalConfig | None = None
+    extract_json_schema: bool = False
+    json_schema_sample_size: int = Field(default=10, ge=1, le=1000)
+    max_schema_inference_depth: int | None = Field(default=None, ge=0)
+    max_children_per_column: int | None = Field(default=None, ge=0)
+    query_parsing_timeout_limit: int = 300
+    ownership_update_mode: Literal["replace", "append"] = "replace"
+    status_lookback_days: int = 1
+    sample_size: int = 10
+    # Usage + lineage: query-log reading and parsing.
+    query_log_duration: int = 1
+    stage_file_location: str = "/tmp/query_log"
+    filter_condition: str | None = None
+    result_limit: int = 1000
+    query_log_file_path: str | None = None
+    # Dead knob (D-C6): carried so the config round-trips, but no reader
+    # may honor it — the pin leaves it unread too and the cost pipeline
+    # runs unconditionally.
+    process_query_cost_analysis: bool = True
+    parsing_timeout_limit: int = 300
+    query_parser_config: QueryParserConfig | None = None
+    override_view_lineage: bool = False
+    process_view_lineage: bool = True
+    process_query_lineage: bool = True
+    process_stored_procedure_lineage: bool = True
+    process_cross_database_lineage: bool = False
+    cross_database_service_names: list[str] = Field(default_factory=list)
+    enable_temp_table_lineage: bool = False
+    incremental_lineage_processing: bool = True
+    # Profiler.
+    processing_engine: ProcessingEngineConfig | None = None
+    compute_table_metrics: bool = True
+    compute_column_metrics: bool = True
+    use_statistics: bool = False
+    enable_auto_partition_detection: bool = True
+    profile_sample_config: ProfileSampleConfig | None = None
+    randomized_sample: bool = False
+    thread_count: int | None = None
+    timeout_seconds: int = 43200
+    metrics: list[str] = Field(default_factory=lambda: list(DEFAULT_PROFILER_METRICS))
+    # AutoClassification (all three category schemas).
+    store_sample_data: bool = False
+    enable_auto_classification: bool = True
+    confidence: float = Field(default=80, ge=0, le=100)
+    sample_data_count: int = Field(default=50, ge=1, le=1000)
+    classification_language: str = "en"
 
     # --- TestSuite server pull (Wave 2 H track 3) ---
     # ADR:2026-11-08-test-suite-server-pull — mirrors official

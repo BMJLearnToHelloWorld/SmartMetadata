@@ -64,7 +64,16 @@ class FakeCursor:
     """DB-API cursor serving canned rows keyed by SQL substring."""
 
     def __init__(self, script: list[tuple[str, list, list | None]]) -> None:
-        self._script = script
+        # Table-stats queries are ambient enrichment (size/creation time),
+        # not the metric SQL under test here: serve them with unknowns so
+        # every script stays focused on its own queries. The stats query
+        # itself is asserted in test_cursor_profile_reader.py.
+        self._script = [
+            ("pg_total_relation_size", [(None, None)], None),
+            ("information_schema.tables", [(None, None)], None),
+            ("sys.allocation_units", [(None, None)], None),
+            *script,
+        ]
         self.executed: list[tuple[str, tuple]] = []
         self.description: list | None = None
         self._rows: list = []
@@ -592,10 +601,14 @@ class _RecordingReader:
         self._stats = list(stats)
         self.seen_metric_params = None
         self.seen_sample_config = None
+        self.seen_options = None
 
-    def profile_table(self, database, schema, table, *, metric_params=None, sample_config=None):
+    def profile_table(
+        self, database, schema, table, *, metric_params=None, sample_config=None, options=None
+    ):
         self.seen_metric_params = metric_params
         self.seen_sample_config = sample_config
+        self.seen_options = options
         return self._stats
 
     def sample_table(self, database, schema, table, *, limit=50):

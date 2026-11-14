@@ -6,103 +6,51 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""MariaDB lineage source (official MariaDBLineageSource = view lineage edges)."""
+"""MariaDB lineage source: view channel over the live catalog.
+
+MariaDB's connection model declares only
+``supportsViewLineageExtraction``, so the query channel warns and
+skips; there is no query-log spec for this engine."""
 
 from __future__ import annotations
-
-from collections.abc import Iterable
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import mariadb_common as mariadb
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.fqn import build_fqn
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.source import LineageSource
+from smartmetadata_ingestion.lineage.view_lineage import (
+    SingleDatabaseViewEnumerator,
+    ViewEnumerator,
+)
+from smartmetadata_ingestion.usage.query_log import ConnectFactory
 
 
 @register_source("mariadb-lineage")
-class MariaDBLineageSource:
+class MariaDBLineageSource(LineageSource):
     def __init__(
         self,
         config: SourceConfig,
         *,
-        reader: mariadb.LineageReader | None = None,
         catalog: mariadb.CatalogReader | None = None,
-        connect=None,
+        connect: ConnectFactory | None = None,
     ) -> None:
-        self._config = config
-        self._reader = reader
-        self._catalog = catalog or (
-            mariadb.CursorCatalogReader(connect) if connect is not None else None
+        self._catalog = catalog
+        self._connect = connect
+        super().__init__(
+            config,
+            engine_key="mariadb",
+            dialect=dialect_for_connection_type("mariadb"),
+            view_enumerator_factory=self._build_view_enumerator,
         )
 
     def prepare(self) -> None:
         mariadb.run_connection_test(self._config.connection or {})
 
-    def close(self) -> None:
-        return None
-
-    def produce(self) -> Iterable[WorkflowRecord]:
-        database_name = str(
-            (self._config.connection or {}).get("databaseName")
-            or (self._config.connection or {}).get("database")
-            or "default"
+    def _build_view_enumerator(self) -> ViewEnumerator:
+        raw = self._config.connection or {}
+        catalog = self._catalog or mariadb.CursorCatalogReader(
+            self._connect or mariadb.mariadb_connect(raw)
         )
-        if self._reader is not None:
-            for edge in self._reader.list_edges():
-                from_fqn = build_fqn(
-                    self._config.service_name,
-                    database_name,
-                    edge.source_schema,
-                    edge.source_table,
-                )
-                to_fqn = build_fqn(
-                    self._config.service_name,
-                    database_name,
-                    edge.target_schema,
-                    edge.target_table,
-                )
-                if from_fqn == to_fqn:
-                    continue
-                yield LineageRecord(
-                    from_entity=LineageEndpoint(type="table", fqn=from_fqn),
-                    to_entity=LineageEndpoint(type="table", fqn=to_fqn),
-                    source="ViewLineage",
-                    sql_query=edge.sql_query,
-                )
-            return
-        # Fall back: derive view lineage from catalog views (OM MariaDBLineageSource).
-        from smartmetadata_ingestion.connectors.sql_views import parse_view_parents
-
-        catalog = self._require_catalog()
-        known = {
-            (t.schema_name, t.name)
-            for schema in catalog.list_schemas()
-            for t in catalog.list_tables(schema.name)
-        }
-        for view in catalog.list_views():
-            if (view.schema_name, view.name) not in known:
-                continue
-            to_fqn = build_fqn(
-                self._config.service_name, database_name, view.schema_name, view.name
-            )
-            for schema_name, table_name in parse_view_parents(
-                view.definition, view.schema_name
-            ):
-                if (schema_name, table_name) not in known:
-                    continue
-                if schema_name == view.schema_name and table_name == view.name:
-                    continue
-                from_fqn = build_fqn(
-                    self._config.service_name, database_name, schema_name, table_name
-                )
-                yield LineageRecord(
-                    from_entity=LineageEndpoint(type="table", fqn=from_fqn),
-                    to_entity=LineageEndpoint(type="table", fqn=to_fqn),
-                    source="ViewLineage",
-                    sql_query=view.definition,
-                )
-
-    def _require_catalog(self) -> mariadb.CatalogReader:
-        if self._catalog is not None:
-            return self._catalog
-        return mariadb.CursorCatalogReader(mariadb.mariadb_connect(self._config.connection or {}))
+        database = str(raw.get("databaseName") or raw.get("database") or "default")
+        return SingleDatabaseViewEnumerator(catalog, database)

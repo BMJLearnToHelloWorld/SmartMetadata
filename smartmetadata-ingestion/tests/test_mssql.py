@@ -16,20 +16,15 @@ from smartmetadata_ingestion.connectors.mssql_common import (
     DatabaseRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
     SequenceProfileReader,
-    SequenceUsageReader,
     TableRow,
     ViewRow,
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
-    UsageEventRow,
     normalize_scheme,
     run_connection_test,
 )
 from smartmetadata_ingestion.connectors.mssql_data_diff import MssqlDataDiff, MssqlTableParameter
-from smartmetadata_ingestion.connectors.mssql_lineage import MssqlLineageSource
 from smartmetadata_ingestion.connectors.mssql_profiler import MssqlProfilerInterface, MssqlSampler
 from smartmetadata_ingestion.connectors.mssql_quality import MssqlTestSuiteInterface
 from smartmetadata_ingestion.connectors.mssql_usage import MssqlUsageSource
@@ -40,8 +35,8 @@ from smartmetadata_ingestion.records import (
     LineageRecord,
     ProfileRecord,
     SchemaRecord,
+    TableQueryRecord,
     TableRecord,
-    UsageRecord,
 )
 
 
@@ -137,41 +132,26 @@ def test_mssql_metadata_tree_and_view_lineage() -> None:
     assert lineage[0].to_entity.fqn.endswith(".Sales.Orders_V")
 
 
-def test_mssql_lineage_injected() -> None:
-    source = MssqlLineageSource(
-        SourceConfig(type="mssql-lineage", service_name="s", connection=_conn()),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow(
-                    "AdventureWorks",
-                    "Sales",
-                    "Orders",
-                    "AdventureWorks",
-                    "Sales",
-                    "Orders_V",
-                    "select 1",
-                )
-            ]
-        ),
+def test_mssql_usage(tmp_path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM Sales.Orders,alice,2026-10-01 09:00:00.000,,5,\n",
+        encoding="utf-8",
     )
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert edges[0].source == "QueryLineage"
-
-
-def test_mssql_usage() -> None:
     source = MssqlUsageSource(
-        SourceConfig(type="mssql-usage", service_name="s", connection=_conn()),
-        reader=SequenceUsageReader(
-            [UsageEventRow("AdventureWorks", "Sales", "Orders", "2026-10-01", 7)]
+        SourceConfig(
+            type="mssql-usage",
+            service_name="s",
+            connection=_conn(),
+            query_log_file_path=str(log_file),
         ),
     )
     source.prepare()
     records = list(source.produce())
     assert len(records) == 1
-    assert isinstance(records[0], UsageRecord)
-    assert records[0].date == "2026-10-01"
-    assert records[0].count == 7
+    assert isinstance(records[0], TableQueryRecord)
+    assert records[0].query == "SELECT * FROM Sales.Orders"
 
 
 def test_mssql_profiler_sampler() -> None:

@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Shared Greenplum connection, catalog/lineage/profiler readers, and helpers.
+"""Shared Greenplum connection, catalog/profiler readers, and helpers.
 
 Clean-room alignment to Apache OpenMetadata GreenplumConnection / service_spec.
 service_spec: metadata + lineage + connection; schema supportsProfiler/ViewLineage.
@@ -16,12 +16,17 @@ OSS: COMMONS["postgres"] → pymysql, psycopg2-binary, GeoAlchemy2, packaging. N
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.constraints import ConstraintRow, nullable_flag
+from smartmetadata_ingestion.connectors.json_schema import quote_double_ident
+from smartmetadata_ingestion.connectors.procedures import ProcedureRow
 from smartmetadata_ingestion.connectors.profile_sql import (
+    POSTGRES_TABLE_STATS_SQL,
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_ansi,
 )
@@ -64,6 +69,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,17 +78,6 @@ class ViewRow:
     schema_name: str
     name: str
     definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_database: str
-    source_schema: str
-    source_table: str
-    target_database: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +117,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,10 +137,6 @@ class CatalogReader(Protocol):
     def list_views(self, database: str) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -150,6 +146,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -166,12 +163,18 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        procedures: Sequence[ProcedureRow] = (),
+        constraints: Sequence[ConstraintRow] = (),
+        samples: Mapping[tuple[str, str, str], list[Any]] | None = None,
     ) -> None:
         self._databases = list(databases)
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._procedures = list(procedures)
+        self._constraints = list(constraints)
+        self._samples = dict(samples or {})
 
     def list_databases(self) -> Sequence[DatabaseRow]:
         return self._databases
@@ -198,13 +201,24 @@ class SequenceCatalogReader:
     def list_views(self, database: str) -> Sequence[ViewRow]:
         return [row for row in self._views if row.database_name == database]
 
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        return [
+            row
+            for row in self._procedures
+            if row.database_name == database and row.schema_name == schema
+        ]
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        return [
+            row
+            for row in self._constraints
+            if row.database_name == database and row.schema_name == schema
+        ]
 
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
+    def sample_column_values(
+        self, database: str, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        return list(self._samples.get((database, schema, table, column), ()))[:limit]
 
 
 class SequenceProfileReader:
@@ -225,6 +239,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -368,7 +383,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT table_schema, table_name, column_name, data_type,
-                   ordinal_position, character_maximum_length
+                   ordinal_position, character_maximum_length, is_nullable
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s
             ORDER BY ordinal_position
@@ -384,6 +399,7 @@ class CursorCatalogReader:
                 data_type=row[3] or "STRING",
                 ordinal_position=int(row[4]),
                 char_length=row[5],
+                is_nullable=nullable_flag(row[6]),
             )
             for row in rows
         ]
@@ -405,6 +421,82 @@ class CursorCatalogReader:
             )
             for row in rows
         ]
+
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        rows = self._fetch(
+            """
+            SELECT routine_schema, routine_name, routine_type, external_language,
+                   routine_definition
+            FROM information_schema.routines
+            WHERE routine_schema = %s
+            ORDER BY routine_name
+            """,
+            (schema,),
+        )
+        return [
+            ProcedureRow(
+                database_name=database,
+                schema_name=row[0],
+                name=row[1],
+                routine_type=row[2],
+                language=row[3],
+                definition=row[4],
+            )
+            for row in rows
+        ]
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        rows = self._fetch(
+            """
+            SELECT tc.table_schema, tc.table_name, tc.constraint_name, tc.constraint_type,
+                   kcu.column_name, kcu.ordinal_position,
+                   kcu2.table_schema, kcu2.table_name, kcu2.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON kcu.constraint_schema = tc.constraint_schema
+             AND kcu.constraint_name = tc.constraint_name
+             AND kcu.table_schema = tc.table_schema
+             AND kcu.table_name = tc.table_name
+            LEFT JOIN information_schema.referential_constraints rc
+              ON rc.constraint_schema = tc.constraint_schema
+             AND rc.constraint_name = tc.constraint_name
+            LEFT JOIN information_schema.key_column_usage kcu2
+              ON kcu2.constraint_schema = rc.unique_constraint_schema
+             AND kcu2.constraint_name = rc.unique_constraint_name
+             AND kcu2.ordinal_position = kcu.ordinal_position
+            WHERE tc.table_schema = %s
+              AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
+            ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+            """,
+            (schema,),
+        )
+        return [
+            ConstraintRow(
+                database_name=database,
+                schema_name=row[0],
+                table_name=row[1],
+                constraint_name=row[2],
+                constraint_type=row[3],
+                column_name=row[4],
+                ordinal_position=int(row[5]),
+                referred_schema=row[6],
+                referred_table=row[7],
+                referred_column=row[8],
+            )
+            for row in rows
+        ]
+
+    def sample_column_values(
+        self, database: str, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        # The connection is database-scoped (as for list_tables); the
+        # database argument only keeps the multi-database reader shape.
+        ident = quote_double_ident(column)
+        rows = self._fetch(
+            f"SELECT {ident} FROM {quote_double_ident(schema)}.{quote_double_ident(table)} "
+            f"WHERE {ident} IS NOT NULL LIMIT %s",
+            (limit,),
+        )
+        return [row[0] for row in rows]
 
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
         with self._connect() as connection:
@@ -435,6 +527,10 @@ class CursorProfileReader:
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
             dialect="postgres",
+            table_stats_sql=POSTGRES_TABLE_STATS_SQL,
+            table_stats_params=lambda database, schema, table: (
+                f"{quote_ansi(schema)}.{quote_ansi(table)}",
+            ),
         )
 
     def profile_table(
@@ -445,9 +541,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            database, schema, table, metric_params=metric_params, sample_config=sample_config
+            database,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(

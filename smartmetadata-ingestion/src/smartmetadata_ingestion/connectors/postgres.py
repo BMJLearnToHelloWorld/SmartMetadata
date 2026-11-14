@@ -10,19 +10,40 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
-from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors import postgres_common
+from smartmetadata_ingestion.connectors.constraints import (
+    ConstraintRow,
+    column_constraint_from_nullable,
+    nullable_flag,
+    schema_constraints_for_schema,
+)
+from smartmetadata_ingestion.connectors.ddl import (
+    require_ddl_support,
+    table_ddl_for_schema,
+)
+from smartmetadata_ingestion.connectors.json_schema import (
+    attach_json_schemas_for_schema,
+    quote_double_ident,
+    require_json_sampling_support,
+)
+from smartmetadata_ingestion.connectors.owners import (
+    owner_names_resolver,
+    resolve_owner_names,
+)
+from smartmetadata_ingestion.connectors.procedures import ProcedureRow, procedures_for_schema
+from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
-from smartmetadata_ingestion.connectors.sql_views import map_table_type as _map_table_type
-from smartmetadata_ingestion.connectors.sql_views import parse_view_parents
+from smartmetadata_ingestion.connectors.table_types import map_table_type as _map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_postgres_type
 from smartmetadata_ingestion.errors import WorkflowError
-from smartmetadata_ingestion.fqn import build_fqn
+from smartmetadata_ingestion.fqn import build_fqn, quote_name
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.resolution import view_parent_schema_tables
 from smartmetadata_ingestion.records import (
     ColumnRecord,
     DatabaseRecord,
@@ -59,6 +80,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,11 +110,17 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        procedures: Sequence[ProcedureRow] = (),
+        constraints: Sequence[ConstraintRow] = (),
+        samples: Mapping[tuple[str, str], list[Any]] | None = None,
     ) -> None:
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._procedures = list(procedures)
+        self._constraints = list(constraints)
+        self._samples = dict(samples or {})
 
     def list_schemas(self) -> Sequence[SchemaRow]:
         return self._schemas
@@ -107,6 +135,17 @@ class SequenceCatalogReader:
 
     def list_views(self) -> Sequence[ViewRow]:
         return self._views
+
+    def list_procedures(self, schema: str) -> Sequence[ProcedureRow]:
+        return [row for row in self._procedures if row.schema_name == schema]
+
+    def list_constraints(self, schema: str) -> Sequence[ConstraintRow]:
+        return [row for row in self._constraints if row.schema_name == schema]
+
+    def sample_column_values(
+        self, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        return list(self._samples.get((schema, table, column), ()))[:limit]
 
 
 class CursorCatalogReader:
@@ -137,7 +176,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT table_schema, table_name, column_name, data_type, ordinal_position,
-                   character_maximum_length
+                   character_maximum_length, is_nullable
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s
             ORDER BY ordinal_position
@@ -152,6 +191,7 @@ class CursorCatalogReader:
                 data_type=row[3],
                 ordinal_position=int(row[4]),
                 char_length=row[5],
+                is_nullable=nullable_flag(row[6]),
             )
             for row in rows
         ]
@@ -165,6 +205,78 @@ class CursorCatalogReader:
             """
         )
         return [ViewRow(schema_name=row[0], name=row[1], definition=row[2] or "") for row in rows]
+
+    def list_procedures(self, schema: str) -> Sequence[ProcedureRow]:
+        rows = self._fetch(
+            """
+            SELECT routine_schema, routine_name, routine_type, external_language,
+                   routine_definition
+            FROM information_schema.routines
+            WHERE routine_schema = %s
+            ORDER BY routine_name
+            """,
+            (schema,),
+        )
+        return [
+            ProcedureRow(
+                schema_name=row[0],
+                name=row[1],
+                routine_type=row[2],
+                language=row[3],
+                definition=row[4],
+            )
+            for row in rows
+        ]
+    def list_constraints(self, schema: str) -> Sequence[ConstraintRow]:
+        rows = self._fetch(
+            """
+            SELECT tc.table_schema, tc.table_name, tc.constraint_name, tc.constraint_type,
+                   kcu.column_name, kcu.ordinal_position,
+                   kcu2.table_schema, kcu2.table_name, kcu2.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON kcu.constraint_schema = tc.constraint_schema
+             AND kcu.constraint_name = tc.constraint_name
+             AND kcu.table_schema = tc.table_schema
+             AND kcu.table_name = tc.table_name
+            LEFT JOIN information_schema.referential_constraints rc
+              ON rc.constraint_schema = tc.constraint_schema
+             AND rc.constraint_name = tc.constraint_name
+            LEFT JOIN information_schema.key_column_usage kcu2
+              ON kcu2.constraint_schema = rc.unique_constraint_schema
+             AND kcu2.constraint_name = rc.unique_constraint_name
+             AND kcu2.ordinal_position = kcu.ordinal_position
+            WHERE tc.table_schema = %s
+              AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
+            ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+            """,
+            (schema,),
+        )
+        return [
+            ConstraintRow(
+                schema_name=row[0],
+                table_name=row[1],
+                constraint_name=row[2],
+                constraint_type=row[3],
+                column_name=row[4],
+                ordinal_position=int(row[5]),
+                referred_schema=row[6],
+                referred_table=row[7],
+                referred_column=row[8],
+            )
+            for row in rows
+        ]
+
+    def sample_column_values(
+        self, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        ident = quote_double_ident(column)
+        rows = self._fetch(
+            f"SELECT {ident} FROM {quote_double_ident(schema)}.{quote_double_ident(table)} "
+            f"WHERE {ident} IS NOT NULL LIMIT %s",
+            (limit,),
+        )
+        return [row[0] for row in rows]
 
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
         with self._connect() as connection:
@@ -197,12 +309,30 @@ class PostgresSource:
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         database_name = self._database_name()
+        if not is_selected(
+            database_name,
+            include=self._config.include_databases,
+            exclude=self._config.exclude_databases,
+            fqn=build_fqn(self._config.service_name, database_name),
+            use_fqn=self._config.use_fqn_for_filtering,
+        ):
+            # A filtered-out single database yields the service
+            # record only: nothing below it was listed.
+            return
         yield DatabaseRecord(name=database_name, service=self._config.service_name)
         reader = self._require_reader()
-        for schema in self._selected_schemas(reader):
+        require_ddl_support(reader, "Postgres", enabled=self._config.include_ddl)
+        require_json_sampling_support(reader, "Postgres", enabled=self._config.extract_json_schema)
+        for schema in self._selected_schemas(reader, database_name):
             database_fqn = build_fqn(self._config.service_name, database_name)
             yield SchemaRecord(name=schema.name, database=database_fqn)
             schema_fqn = build_fqn(self._config.service_name, database_name, schema.name)
+            constraints = schema_constraints_for_schema(
+                reader,
+                service_name=self._config.service_name,
+                database_name=database_name,
+                schema_name=schema.name,
+            )
             for table in reader.list_tables(schema.name):
                 table_type = _map_table_type(table.table_type)
                 if not is_selected_table(
@@ -211,15 +341,62 @@ class PostgresSource:
                     include_tables=self._config.include_tables,
                     exclude_tables=self._config.exclude_tables,
                     include_views=self._config.include_views,
+                    include_tables_enabled=self._config.include_tables_enabled,
+                    fqn=f"{schema_fqn}.{quote_name(table.name)}",
+                    use_fqn=self._config.use_fqn_for_filtering,
                 ):
                     continue
+                columns = self._columns(reader, table)
+                constraints.apply(table.name, columns)
+                ddl = table_ddl_for_schema(
+                    reader,
+                    "Postgres",
+                    schema_name=schema.name,
+                    table_name=table.name,
+                    enabled=self._config.include_ddl,
+                )
+                attach_json_schemas_for_schema(
+                    reader,
+                    "Postgres",
+                    schema.name,
+                    table.name,
+                    columns,
+                    self._config,
+                )
+                owner_names = resolve_owner_names(
+                    self._config.owner_config,
+                    include_owners=self._config.include_owners,
+                    service_name=self._config.service_name,
+                    database_name=database_name,
+                    schema_name=schema.name,
+                    entity_name=table.name,
+                )
                 yield TableRecord(
                     name=table.name,
                     database_schema=schema_fqn,
                     table_type=table_type,
                     description=table.comment,
-                    columns=self._columns(reader, table),
+                    columns=columns,
+                    table_constraints=constraints.for_table(table.name),
+                    owner_names=owner_names,
+                    schema_definition=ddl,
                 )
+            yield from procedures_for_schema(
+                reader,
+                schema_fqn=schema_fqn,
+                schema_name=schema.name,
+                include=self._config.include_stored_procedures,
+                exclude=self._config.exclude_stored_procedures,
+                enabled=self._config.include_stored_procedures_enabled,
+                use_fqn=self._config.use_fqn_for_filtering,
+                owner_names_for=owner_names_resolver(
+                    self._config.owner_config,
+                    include_owners=self._config.include_owners,
+                    service_name=self._config.service_name,
+                    database_name=database_name,
+                    schema_name=schema.name,
+                ),
+            )
         if self._config.include_view_lineage:
             yield from self._view_lineage(reader, database_name)
 
@@ -248,12 +425,20 @@ class PostgresSource:
             return self._reader
         return CursorCatalogReader(_psycopg_connect(self._config.connection))
 
-    def _selected_schemas(self, reader: CatalogReader) -> list[SchemaRow]:
+    def _selected_schemas(
+        self, reader: CatalogReader, database_name: str
+    ) -> list[SchemaRow]:
         exclude = list(self._config.exclude_schemas) + list(_SYSTEM_SCHEMAS)
         return [
             schema
             for schema in reader.list_schemas()
-            if is_selected(schema.name, include=self._config.include_schemas, exclude=exclude)
+            if is_selected(
+                schema.name,
+                include=self._config.include_schemas,
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database_name, schema.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _columns(self, reader: CatalogReader, table: TableRow) -> list[ColumnRecord]:
@@ -263,6 +448,7 @@ class PostgresSource:
             columns.append(
                 ColumnRecord(
                     name=column.name,
+                    constraint=column_constraint_from_nullable(column.is_nullable),
                     data_type=data_type,
                     data_type_display=column.data_type,
                     description=column.comment,
@@ -275,7 +461,7 @@ class PostgresSource:
     def _view_lineage(self, reader: CatalogReader, database_name: str) -> Iterable[LineageRecord]:
         known_tables = {
             (table.schema_name, table.name)
-            for schema in self._selected_schemas(reader)
+            for schema in self._selected_schemas(reader, database_name)
             for table in reader.list_tables(schema.name)
         }
         for view in reader.list_views():
@@ -284,7 +470,9 @@ class PostgresSource:
             to_fqn = build_fqn(
                 self._config.service_name, database_name, view.schema_name, view.name
             )
-            for schema_name, table_name in parse_view_parents(view.definition, view.schema_name):
+            for schema_name, table_name in view_parent_schema_tables(
+                view.definition, dialect_for_connection_type("postgres"), view.schema_name
+            ):
                 if (schema_name, table_name) not in known_tables:
                     continue
                 if schema_name == view.schema_name and table_name == view.name:

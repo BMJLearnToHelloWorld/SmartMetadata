@@ -868,6 +868,8 @@ onMounted(() => {
             :usage-series="usageSeries"
             :column-null-series="columnNullSeries"
             :entity-type="entityType"
+            :table-id="asset.id"
+            :columns="asset.schemaRows"
           />
           <AssetSamplePanel
             :table-sample="tableSample"
@@ -988,6 +990,8 @@ onMounted(() => {
             :usage-series="usageSeries"
             :column-null-series="columnNullSeries"
             :entity-type="entityType"
+            :table-id="asset.id"
+            :columns="asset.schemaRows"
           />
       </template>
       <template v-if="asset" #table_queries>

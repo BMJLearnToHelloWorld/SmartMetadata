@@ -13,9 +13,12 @@ from __future__ import annotations
 from typing import Any
 
 from smartmetadata_ingestion.connectors import snowflake_common as snowflake
-from smartmetadata_ingestion.connectors.profile_sql import MetricParamsByColumn
+from smartmetadata_ingestion.connectors.profile_sql import (
+    MetricParamsByColumn,
+    ProfileOptions,
+    build_profile_record,
+)
 from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
-from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.records import ProfileRecord
 
 
@@ -33,67 +36,26 @@ class SnowflakeProfilerInterface:
         timestamp: int,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> ProfileRecord:
         stats = list(
             self._reader.profile_table(
-                database, schema, table, metric_params=metric_params, sample_config=sample_config
+                database,
+                schema,
+                table,
+                metric_params=metric_params,
+                sample_config=sample_config,
+                options=options,
             )
         )
-        table_stat = next((s for s in stats if s.column_name is None), None)
-        column_profile = [
-            {
-                "name": s.column_name,
-                "nullCount": s.null_count,
-                "distinctCount": s.distinct_count,
-                "min": s.min_value,
-                "max": s.max_value,
-                "mean": s.mean,
-                "valuesCount": s.values_count,
-                "countInSet": s.count_in_set,
-                "likeCount": s.like_count,
-                "iLikeCount": s.ilike_count,
-                "notLikeCount": s.not_like_count,
-                "regexCount": s.regex_count,
-                "notRegexCount": s.not_regex_count,
-                "maxLength": s.max_length,
-                "minLength": s.min_length,
-                "stddev": s.stddev,
-                "sum": s.sum_value,
-                "uniqueCount": s.unique_count,
-                "nullMissingCount": s.null_missing_count,
-                "distinctProportion": s.distinct_proportion,
-                "uniqueProportion": s.unique_proportion,
-                "nullProportion": s.null_proportion,
-                "duplicateCount": s.duplicate_count,
-                "likeRatio": s.like_ratio,
-                "iLikeRatio": s.ilike_ratio,
-                "median": s.median,
-                "firstQuartile": s.first_quartile,
-                "thirdQuartile": s.third_quartile,
-                "interQuartileRange": s.inter_quartile_range,
-                "nonParametricSkew": s.non_parametric_skew,
-                "histogram": s.histogram,
-                "cardinalityDistribution": s.cardinality_distribution,
-            }
-            for s in stats
-            if s.column_name
-        ]
-        fqn = build_fqn(service, database, schema, table)
-        return ProfileRecord(
-            entity_type="table",
-            fqn=fqn,
-            profile_type="table",
+        return build_profile_record(
+            stats,
+            service=service,
+            database=database,
+            schema=schema,
+            table=table,
             timestamp=timestamp,
-            profile_data={
-                "timestamp": timestamp,
-                "rowCount": table_stat.row_count if table_stat else None,
-            },
-            table_profile={
-                "timestamp": timestamp,
-                "rowCount": table_stat.row_count if table_stat else None,
-                "columnCount": table_stat.column_count if table_stat else None,
-            },
-            column_profile=column_profile,
+            options=options,
         )
 
 

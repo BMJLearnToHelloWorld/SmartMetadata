@@ -20,10 +20,15 @@ from smartmetadata_ingestion.records import (
     DatabaseRecord,
     DatabaseServiceRecord,
     EntityRef,
+    LifeCycleAccessRecord,
+    LifeCycleRecord,
     LineageEndpoint,
     LineageRecord,
     SchemaRecord,
+    StoredProcedureRecord,
+    TableConstraintRecord,
     TableRecord,
+    TagLabelRecord,
     UsageRecord,
     ProfileRecord,
     TestCaseResultRecord,
@@ -67,6 +72,64 @@ class StaticSource:
             yield parse_static_record(raw, default_service=self._config.service_name)
 
 
+def _tag_labels(raw: Any) -> list[TagLabelRecord]:
+    labels: list[TagLabelRecord] = []
+    for entry in raw or []:
+        if isinstance(entry, dict):
+            labels.append(
+                TagLabelRecord(
+                    tag_fqn=entry["tagFqn"] if "tagFqn" in entry else entry["tag_fqn"],
+                    source=entry["source"],
+                    label_type=entry.get("labelType") or entry.get("label_type"),
+                    state=entry["state"],
+                )
+            )
+    return labels
+
+
+def _life_cycle(raw: Any) -> LifeCycleRecord | None:
+    if not isinstance(raw, dict):
+        return None
+    parts: dict[str, LifeCycleAccessRecord] = {}
+    for key in ("created", "updated", "accessed"):
+        detail = raw.get(key)
+        if isinstance(detail, dict) and detail.get("timestamp") is not None:
+            parts[key] = LifeCycleAccessRecord(
+                timestamp=int(detail["timestamp"]),
+                accessed_by_a_process=detail.get("accessedByAProcess")
+                or detail.get("accessed_by_a_process"),
+            )
+    return LifeCycleRecord(**parts) if parts else None
+
+
+def _table_constraints(raw: Any) -> list[TableConstraintRecord]:
+    constraints: list[TableConstraintRecord] = []
+    for entry in raw or []:
+        if isinstance(entry, dict):
+            constraints.append(
+                TableConstraintRecord(
+                    constraint_type=entry.get("constraintType")
+                    or entry["constraint_type"],
+                    columns=list(entry.get("columns") or []),
+                    referred_columns=entry.get("referredColumns")
+                    or entry.get("referred_columns"),
+                    relationship_type=entry.get("relationshipType")
+                    or entry.get("relationship_type"),
+                )
+            )
+    return constraints
+
+
+def _owner_names(raw: Any) -> list[str]:
+    names: list[str] = []
+    for entry in raw or []:
+        if isinstance(entry, str):
+            names.append(entry)
+        elif isinstance(entry, dict) and entry.get("name"):
+            names.append(str(entry["name"]))
+    return names
+
+
 def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
     kind = raw.get("kind")
     if kind == "database":
@@ -89,6 +152,8 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
                 data_type_display=column.get("dataTypeDisplay"),
                 description=column.get("description"),
                 ordinal_position=column.get("ordinalPosition"),
+                constraint=column.get("constraint"),
+                tags=_tag_labels(column.get("tags")),
             )
             for column in raw.get("columns", [])
         ]
@@ -98,6 +163,41 @@ def parse_static_record(raw: dict, *, default_service: str) -> WorkflowRecord:
             columns=columns,
             table_type=raw.get("tableType", "Regular"),
             description=raw.get("description"),
+            tags=_tag_labels(raw.get("tags")),
+            owner_names=_owner_names(
+                raw.get("ownerNames", raw.get("owners"))
+            ),
+            schema_definition=raw.get("schemaDefinition")
+            or raw.get("schema_definition"),
+            table_constraints=_table_constraints(
+                raw.get("tableConstraints", raw.get("table_constraints"))
+            ),
+            life_cycle=_life_cycle(raw.get("lifeCycle", raw.get("life_cycle"))),
+            extension=raw.get("extension"),
+        )
+    if kind in {"storedProcedure", "stored_procedure"}:
+        code_block = raw.get("storedProcedureCode")
+        code = raw.get("code", "")
+        if isinstance(code_block, dict) and code_block.get("code") is not None:
+            code = code_block["code"]
+        language = raw.get("language", "SQL")
+        if isinstance(code_block, dict) and code_block.get("language"):
+            language = code_block["language"]
+        return StoredProcedureRecord(
+            name=raw["name"],
+            database_schema=raw["databaseSchema"],
+            stored_procedure_type=raw.get(
+                "storedProcedureType", raw.get("stored_procedure_type", "StoredProcedure")
+            ),
+            language=language,
+            code=code,
+            description=raw.get("description"),
+            tags=_tag_labels(raw.get("tags")),
+            owner_names=_owner_names(
+                raw.get("ownerNames", raw.get("owners"))
+            ),
+            life_cycle=_life_cycle(raw.get("lifeCycle", raw.get("life_cycle"))),
+            extension=raw.get("extension"),
         )
     if kind == "lineage":
         from_entity = raw["fromEntity"]

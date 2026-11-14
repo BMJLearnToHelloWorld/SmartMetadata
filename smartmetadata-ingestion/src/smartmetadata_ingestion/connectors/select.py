@@ -30,20 +30,37 @@ def _matches(pattern: str, name: str) -> bool:
         raise ValueError(f"invalid filter pattern {pattern!r}: {exc}") from exc
 
 
-def is_selected(name: str, *, include: Iterable[str], exclude: Iterable[str]) -> bool:
+def _candidate(name: str, fqn: str | None, use_fqn: bool) -> str:
+    """The string patterns match against: the FQN when the pipeline asks
+    for FQN filtering and the caller supplied one, else the raw name."""
+    if use_fqn and fqn:
+        return fqn
+    return name
+
+
+def is_selected(
+    name: str,
+    *,
+    include: Iterable[str],
+    exclude: Iterable[str],
+    fqn: str | None = None,
+    use_fqn: bool = False,
+) -> bool:
     """Whether ``name`` passes an include/exclude regex pair.
 
     Excludes win: a name matching any exclude is out even if an include
     matches it. An empty include list means "everything" (``.*`` does
     the same explicitly). An invalid regex fails loudly instead of
-    silently selecting nothing.
+    silently selecting nothing. With ``use_fqn`` the patterns match the
+    entity FQN instead of the raw name (``useFqnForFiltering``).
     """
-    if any(_matches(pattern, name) for pattern in exclude):
+    candidate = _candidate(name, fqn, use_fqn)
+    if any(_matches(pattern, candidate) for pattern in exclude):
         return False
     includes = list(include)
     if not includes:
         return True
-    return any(_matches(pattern, name) for pattern in includes)
+    return any(_matches(pattern, candidate) for pattern in includes)
 
 
 def is_selected_table(
@@ -53,13 +70,28 @@ def is_selected_table(
     include_tables: Iterable[str],
     exclude_tables: Iterable[str],
     include_views: bool = True,
+    include_tables_enabled: bool = True,
+    fqn: str | None = None,
+    use_fqn: bool = False,
 ) -> bool:
-    """Whether a table row is emitted: view gate first, then the table regex.
+    """Whether a table row is emitted: type gates first, then the table regex.
 
     ``mapped_table_type`` is the ``map_table_type`` value (``"View"`` /
     ``"MaterializedView"`` / ``"Regular"``). With ``include_views`` false,
-    views never reach the sink however the table pattern reads.
+    views never reach the sink however the table pattern reads; with
+    ``include_tables_enabled`` false, regular tables never do. Views are
+    not tables for the ``includeTables`` gate: turning tables off while
+    leaving views on still emits views.
     """
-    if not include_views and mapped_table_type in {"View", "MaterializedView"}:
+    is_view = mapped_table_type in {"View", "MaterializedView"}
+    if not include_views and is_view:
         return False
-    return is_selected(name, include=include_tables, exclude=exclude_tables)
+    if not include_tables_enabled and not is_view:
+        return False
+    return is_selected(
+        name,
+        include=include_tables,
+        exclude=exclude_tables,
+        fqn=fqn,
+        use_fqn=use_fqn,
+    )

@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from smartmetadata_ingestion.errors import (
@@ -17,7 +19,12 @@ from smartmetadata_ingestion.errors import (
     WorkflowTeardownError,
 )
 from smartmetadata_ingestion.progress import CollectingHook
-from smartmetadata_ingestion.records import DatabaseServiceRecord
+from smartmetadata_ingestion.records import (
+    DatabaseRecord,
+    DatabaseServiceRecord,
+    SchemaRecord,
+    TableRecord,
+)
 from smartmetadata_ingestion.runner import run_workflow
 from smartmetadata_ingestion.workflow import MetadataWorkflow
 
@@ -333,9 +340,149 @@ def test_pipeline_status_writeback_running_then_success(workflow_config) -> None
     assert [item["pipelineState"] for item in statuses] == ["running", "success"]
     assert statuses[0]["fqn"] == "svc.meta"
     assert statuses[0]["runId"] == statuses[1]["runId"]
-    assert "status" not in statuses[0]
+    # C-11: steps ride along while running (zero counts: nothing has been
+    # collected yet), so live cards can attach before the run finishes.
+    assert [step["name"] for step in statuses[0]["status"]] == [
+        "Source",
+        "Processor",
+        "Sink",
+    ]
+    assert statuses[0]["status"][0]["records"] == 0
     assert statuses[1]["status"][0]["name"] == "Source"
     assert "triggeredBy" not in statuses[1]
+    # The finished source step carries real per-kind progress: one
+    # discovered service record, processed.
+    source_progress = statuses[1]["status"][0]["progress"]["databaseService"]
+    assert source_progress == {"total": 1, "processed": 1}
+    sink_progress = statuses[1]["status"][2]["progress"]["databaseService"]
+    assert sink_progress == {"total": 1, "processed": 1}
+
+
+class ListingSource(RecordingSource):
+    """A source that enumerates a database, schema, and table."""
+
+    def produce(self):
+        self.events.append("source.produce")
+        yield DatabaseServiceRecord(name="warehouse", service_type="Postgres")
+        yield DatabaseRecord(name="analytics", service="warehouse")
+        yield SchemaRecord(name="public", database="warehouse.analytics")
+        yield TableRecord(
+            name="orders",
+            database_schema="warehouse.analytics.public",
+        )
+
+
+def test_reconcile_failures_fail_the_run(workflow_config) -> None:
+    # D-C7: a reconcile whose deleteStale calls fail fails the run —
+    # execute() raises, and the failure is a sink-step failure in the
+    # run history. The final state is partialSuccess (the records
+    # landed; only the reconcile failed), the same shape as any other
+    # post-record failure — never success-with-warnings.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    # A complete listing: the fixture's includeSchemas pattern would
+    # narrow the run and the reconcile gate would (correctly) skip it.
+    # This test exercises reconcile failure mechanics, not the gate.
+    workflow_config.source.include_schemas = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow_config.workflow.reconcile_stale = True
+    client = StatusClient(events, statuses)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=ListingSource(events),
+        sink=RecordingSink(events),
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="stale reconcile failed"):
+        workflow.execute()
+
+    assert statuses[-1]["pipelineState"] == "partialSuccess"
+    assert workflow.sink_status.failures
+
+
+def test_reconcile_skipped_when_run_failed(workflow_config) -> None:
+    # A failed run's seen set is partial: reconciling against it would
+    # delete live entities the run never reached.
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.reconcile_stale = True
+    client = ReconcileClient(events)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=RecordingSource(events, failure=RuntimeError("source blew up")),
+        sink=RecordingSink(events),
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="source execution failed"):
+        workflow.execute()
+
+    assert client.delete_calls == []
+
+
+@pytest.mark.parametrize("workflow_type", ["usage", "lineage", "profiler"])
+def test_reconcile_never_runs_for_non_metadata_workflows(
+    workflow_config, workflow_type: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Defense in depth (M-F8): a YAML config pairing reconcileStale
+    # with a usage/lineage/profiler type must not delete. The listing
+    # is complete, so only the workflow-type check can be what skips
+    # reconcile here — the gate itself would allow it.
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.source.include_schemas = []
+    workflow_config.workflow.type = workflow_type
+    workflow_config.workflow.reconcile_stale = True
+    client = ReconcileClient(events)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=ListingSource(events),
+        sink=RecordingSink(events),
+    )
+    with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.workflow"):
+        workflow.execute()
+    assert client.delete_calls == []
+    assert any(
+        "never reconciles" in record.message for record in caplog.records
+    )
+    # The skipped reconcile counts one sink-step warning (B-4 item 2).
+    assert workflow.sink_status.warnings == 1
+
+
+def test_reconcile_runs_after_non_exception_partial_failure(workflow_config) -> None:
+    # Implemented behavior (M-F6): per-record failures recorded in the
+    # report with fail_fast=False do NOT skip reconcile. Records join
+    # the seen set before sink writes, so the seen set is the complete
+    # produced listing — including the record whose write failed — and
+    # reconciling against it is safe-direction. Only an escaping
+    # exception (a listing cut short) skips reconcile. No
+    # failures-empty gate: none is warranted on the evidence.
+    class _TableFailingSink(RecordingSink):
+        def write(self, record) -> None:
+            if record.kind == "table":
+                raise RuntimeError("table write failed")
+            super().write(record)
+
+    events: list[str] = []
+    workflow_config.lineage = []
+    # A complete listing, as in the other reconcile tests: the
+    # fixture's includeSchemas pattern would gate reconcile off.
+    workflow_config.source.include_schemas = []
+    workflow_config.workflow.reconcile_stale = True
+    client = ReconcileClient(events)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=ListingSource(events),
+        sink=_TableFailingSink(events),
+    )
+    workflow.execute()
+    assert len(workflow.report.failures) == 1
+    assert [call["path"] for call in client.delete_calls] == ["/v1/tables"]
+    assert client.delete_calls[0]["seen_fqns"] == ["warehouse.analytics.public.orders"]
 
 
 def test_pipeline_status_skipped_without_fqn(workflow_config) -> None:
@@ -440,19 +587,24 @@ class ReconcileClient(StatusClient):
 def test_reconcile_stale_is_invoked_when_configured(workflow_config) -> None:
     events: list[str] = []
     workflow_config.lineage = []
+    # A complete listing, as in test_reconcile_failures_fail_the_run:
+    # the fixture's includeSchemas pattern would gate reconcile off.
+    workflow_config.source.include_schemas = []
     workflow_config.workflow.reconcile_stale = True
     workflow_config.workflow.reconcile_dry_run = True
     client = ReconcileClient(events)
     workflow = MetadataWorkflow(
         workflow_config,
         client=client,
-        source=RecordingSource(events),
+        source=ListingSource(events),
         sink=RecordingSink(events),
     )
     workflow.execute()
-    assert any(item.startswith("deleteStale:") for item in events)
-    assert client.delete_calls
+    # Only the table kind reconciles: schemas/databases default off,
+    # and stored procedures have an empty listing (guarded).
+    assert [call["path"] for call in client.delete_calls] == ["/v1/tables"]
     assert client.delete_calls[0]["dry_run"] is True
+    assert client.delete_calls[0]["seen_fqns"] == ["warehouse.analytics.public.orders"]
 
 
 def test_topology_orders_out_of_order_static_records(workflow_config) -> None:
@@ -523,28 +675,28 @@ class BulkWorkflowClient:
             "failedRequest": [],
         }
 
-    def bulk_upsert_databases(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_databases(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("database", payloads)
 
-    def bulk_upsert_schemas(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_schemas(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("schema", payloads)
 
-    def bulk_upsert_tables(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("table", payloads)
 
-    def bulk_upsert_topics(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_topics(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("topic", payloads)
 
-    def bulk_upsert_dashboards(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_dashboards(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("dashboard", payloads)
 
-    def bulk_upsert_charts(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_charts(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("chart", payloads)
 
-    def bulk_upsert_containers(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_containers(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("container", payloads)
 
-    def bulk_upsert_pipelines(self, payloads: list[dict]) -> dict:
+    def bulk_upsert_pipelines(self, payloads, *, override_metadata: bool = False) -> dict:
         return self._bulk("pipeline", payloads)
 
 
@@ -612,3 +764,70 @@ def test_bulk_partial_flush_counts_only_landed_records(workflow_config) -> None:
     assert report.failed == 2
     assert workflow.sink_status.records == 3
     assert final_pipeline_state(report) == "partialSuccess"
+
+
+def test_reconcile_skips_count_as_sink_warnings_in_writeback(workflow_config) -> None:
+    # C-11/B-4: the workflow itself increments warnings — gate-skipped
+    # kinds land on the sink step, and the serialized writeback
+    # carries the count. The empty-listing fold is covered by the
+    # companion test below.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow_config.workflow.reconcile_stale = True
+    # The fixture narrows schemas (includeSchemas=["public"]): the
+    # M-F1 ancestor gate excludes all three flag-on database-family
+    # kinds — schema at its own level, table and storedProcedure via
+    # their narrowed schema ancestor (+3). No kind reaches
+    # reconcile_stale, so no empty-listing skip occurs here.
+    workflow_config.source.mark_deleted_schemas = True
+    client = ReconcileClient(events, statuses)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=ListingSource(events),
+        sink=RecordingSink(events),
+    )
+    workflow.execute()
+    assert workflow.sink_status.warnings == 3
+    assert workflow.source_status.warnings == 0
+    assert workflow.processor_status.warnings == 0
+    sink_step = statuses[-1]["status"][2]
+    assert sink_step["name"] == "Sink"
+    assert sink_step["warnings"] == 3
+    assert [call["path"] for call in client.delete_calls] == []
+
+
+def test_reconcile_empty_listing_counts_as_sink_warning_in_writeback(
+    workflow_config,
+) -> None:
+    # C-11/B-4 companion: with a complete listing the gate reports
+    # nothing, but an enabled kind with no seen FQNs is skipped inside
+    # reconcile_stale, and that skip folds into the sink step's
+    # warnings through the finally in _reconcile_if_configured.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow_config.workflow.reconcile_stale = True
+    workflow_config.source.include_schemas = []
+    workflow_config.source.mark_deleted_schemas = True
+    client = ReconcileClient(events, statuses)
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=client,
+        source=ListingSource(events),
+        sink=RecordingSink(events),
+    )
+    workflow.execute()
+    assert workflow.sink_status.warnings == 1
+    assert workflow.source_status.warnings == 0
+    assert workflow.processor_status.warnings == 0
+    sink_step = statuses[-1]["status"][2]
+    assert sink_step["name"] == "Sink"
+    assert sink_step["warnings"] == 1
+    assert [call["path"] for call in client.delete_calls] == [
+        "/v1/tables",
+        "/v1/databaseSchemas",
+    ]

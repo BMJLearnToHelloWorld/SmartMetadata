@@ -266,19 +266,76 @@ export interface TopicSampleData {
   messages: string[];
 }
 
+export interface ProfileHistogram {
+  boundaries: string[];
+  frequencies: number[];
+}
+
+export interface CardinalityDistribution {
+  categories?: unknown[];
+  counts?: number[];
+  percentages?: number[];
+  allValuesUnique?: boolean;
+}
+
+export interface CustomMetricValue {
+  name: string;
+  value?: number;
+}
+
+export interface ExecutionSource {
+  databaseName?: string;
+  schemaName?: string;
+  tableName?: string;
+}
+
 export interface ColumnProfile {
   name: string;
+  timestamp?: number;
+  executionSource?: ExecutionSource;
   nullCount?: number;
   uniqueCount?: number;
   distinctCount?: number;
   min?: string;
   max?: string;
   mean?: string;
+  valuesCount?: number;
+  countInSet?: number;
+  likeCount?: number;
+  iLikeCount?: number;
+  notLikeCount?: number;
+  regexCount?: number;
+  notRegexCount?: number;
+  maxLength?: number;
+  minLength?: number;
+  stddev?: number;
+  sum?: number;
+  nullMissingCount?: number;
+  distinctProportion?: number;
+  uniqueProportion?: number;
+  nullProportion?: number;
+  duplicateCount?: number;
+  likeRatio?: number;
+  iLikeRatio?: number;
+  median?: number;
+  firstQuartile?: number;
+  thirdQuartile?: number;
+  interQuartileRange?: number;
+  nonParametricSkew?: number;
+  histogram?: ProfileHistogram;
+  cardinalityDistribution?: CardinalityDistribution;
+  customMetrics?: CustomMetricValue[];
 }
 
 export interface TableProfile {
   timestamp?: number;
   rowCount?: number;
   columnCount?: number;
+  sizeInByte?: number;
+  createDateTime?: string;
+  profileSample?: number;
+  profileSampleType?: string;
+  executionSource?: ExecutionSource;
+  customMetrics?: CustomMetricValue[];
   columns: ColumnProfile[];
 }

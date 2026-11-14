@@ -22,6 +22,11 @@ dependencies = [
   "httpx>=0.27,<1",
   "pydantic>=2.6,<3",
   "pyyaml>=6,<7",
+  # SQL parsing engine for the usage/lineage clean-room chain (MIT; the
+  # same version the pin uses, so cascade behavior matches). Core, not
+  # an extra: usage/lineage run for every database connector.
+  # ADR:2026-11-14-agent-capability-batch1
+  "collate-sqllineage==2.1.9",
 ]
 
 [project.optional-dependencies]

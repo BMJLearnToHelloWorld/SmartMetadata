@@ -268,15 +268,15 @@ def test_bulk_table_flush_sends_pending_database_and_schema_first() -> None:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def bulk_upsert_databases(self, payloads):
+        def bulk_upsert_databases(self, payloads, *, override_metadata: bool = False):
             self.calls.append("database")
             return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
 
-        def bulk_upsert_schemas(self, payloads):
+        def bulk_upsert_schemas(self, payloads, *, override_metadata: bool = False):
             self.calls.append("schema")
             return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
 
-        def bulk_upsert_tables(self, payloads):
+        def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False):
             self.calls.append("table")
             return {"successRequest": [{"request": p} for p in payloads], "failedRequest": []}
 

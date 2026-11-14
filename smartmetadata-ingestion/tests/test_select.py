@@ -86,3 +86,59 @@ def test_is_selected_table_view_gate() -> None:
         )
         is True
     )
+
+
+def test_include_tables_gate_drops_tables_but_keeps_views() -> None:
+    assert (
+        is_selected_table(
+            "orders",
+            "Regular",
+            include_tables=[".*"],
+            exclude_tables=[],
+            include_tables_enabled=False,
+        )
+        is False
+    )
+    assert (
+        is_selected_table(
+            "orders_v",
+            "View",
+            include_tables=[".*"],
+            exclude_tables=[],
+            include_tables_enabled=False,
+        )
+        is True
+    )
+    assert (
+        is_selected_table(
+            "orders",
+            "Regular",
+            include_tables=[".*"],
+            exclude_tables=[],
+            include_tables_enabled=True,
+        )
+        is True
+    )
+
+
+def test_fqn_filtering_matches_fqn_candidate_only_when_enabled() -> None:
+    fqn = "warehouse.analytics.public.orders"
+    assert (
+        is_selected(
+            "orders", include=[r"warehouse\.analytics.*"], exclude=[], fqn=fqn, use_fqn=True
+        )
+        is True
+    )
+    assert (
+        is_selected("orders", include=[r"warehouse\.analytics.*"], exclude=[], fqn=fqn)
+        is False
+    )
+    assert (
+        is_selected("orders", include=[r"^orders$"], exclude=[], fqn=fqn, use_fqn=True)
+        is False
+    )
+    assert is_selected("orders", include=[r"^orders$"], exclude=[], fqn=fqn) is True
+    assert (
+        is_selected("orders", include=[r"warehouse.*"], exclude=[], use_fqn=True)
+        is False
+    )
