@@ -83,6 +83,34 @@ async function tryRefreshSession(accessToken: string): Promise<RefreshResponse |
   }
 }
 
+/**
+ * One silent-refresh attempt against the stored session, persisting
+ * the new tokens on success. Returns true when the session was
+ * refreshed. Never clears the session or dispatches expiry: callers
+ * that cannot retry (the SSE progress stream) decide their own
+ * failure path, and the next regular API call runs the normal expiry
+ * flow. Shared by apiRequest's 401 retry and the stream's first-401
+ * policy, mirroring official LoginAPI renewToken.
+ */
+export async function refreshStoredSession(): Promise<boolean> {
+  const stored = loadSession(window.localStorage);
+  if (!stored?.refreshToken) {
+    return false;
+  }
+  const refreshed = await tryRefreshSession(stored.accessToken);
+  if (!refreshed) {
+    return false;
+  }
+  persistSession(window.localStorage, {
+    ...stored,
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken ?? stored.refreshToken,
+    tokenType: refreshed.tokenType ?? stored.tokenType,
+    expiryDuration: refreshed.expiryDuration ?? stored.expiryDuration,
+  });
+  return true;
+}
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const url = new URL(`${apiBaseUrl()}${path}`, window.location.origin);
   if (options.query) {
@@ -133,19 +161,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       // nor clear the session itself; on failure the pre-existing
       // expiry path below runs unchanged, and no empty token is stored.
       if (!options.retried) {
-        const stored = loadSession(window.localStorage);
-        if (stored?.refreshToken) {
-          const refreshed = await tryRefreshSession(stored.accessToken);
-          if (refreshed) {
-            persistSession(window.localStorage, {
-              ...stored,
-              accessToken: refreshed.accessToken,
-              refreshToken: refreshed.refreshToken ?? stored.refreshToken,
-              tokenType: refreshed.tokenType ?? stored.tokenType,
-              expiryDuration: refreshed.expiryDuration ?? stored.expiryDuration,
-            });
-            return apiRequest<T>(path, { ...options, retried: true });
-          }
+        if (await refreshStoredSession()) {
+          return apiRequest<T>(path, { ...options, retried: true });
         }
       }
       clearSession(window.localStorage);

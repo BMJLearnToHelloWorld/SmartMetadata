@@ -129,7 +129,9 @@ export const SERVICE_TYPE_BY_CLI_SOURCE: Record<string, SupportedServiceType> = 
  * `lineage`, `metadata`, `policyAgent`, `profiler`, `reverseMetadata`,
  * `TestSuite`, `usage`. `dataInsight` / `elasticSearchReindex` are
  * settings pipelines (no parent service of their own — they are created
- * under the OpenMetadata metadata service; see agentKindsForService).
+ * under the OpenMetadata metadata service; see getSupportedPipelineTypes,
+ * whose connection-flag mapping offers them only where the connection
+ * declares the matching supports* flag).
  */
 export const PIPELINE_TYPES = [
   'application',
@@ -146,53 +148,6 @@ export const PIPELINE_TYPES = [
   'usage',
 ] as const;
 export type PipelineType = (typeof PIPELINE_TYPES)[number];
-
-/**
- * Agent / ingestion pipeline kinds offered per serviceType, derived 1:1 from OM
- * service_spec class fields that map to PipelineType (metadata_source_class,
- * lineage_source_class, usage_source_class, profiler_class, test_suite_class)
- * plus the two schema-driven kinds official offers by service category
- * (`getSupportedPipelineTypes`, IngestionConfigUtils.ts): `supportsProfiler`
- * yields profiler + autoClassification on database services and
- * autoClassification alone on messaging / storage services, and
- * `supportsDBTExtraction` yields dbt. Sampler / data_diff are
- * capabilities, not pipelineType agents.
- */
-export const AGENT_KINDS_BY_SERVICE: Record<SupportedServiceType, readonly PipelineType[]> = {
-  Postgres: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Mysql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Snowflake: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Databricks: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  UnityCatalog: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Doris: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Mssql: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Redshift: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  MariaDB: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Greenplum: ['metadata', 'lineage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Timescale: ['metadata', 'lineage', 'usage', 'profiler', 'TestSuite', 'dbt', 'autoClassification'],
-  Kafka: ['metadata', 'autoClassification'],
-  Redpanda: ['metadata', 'autoClassification'],
-  Superset: ['metadata'],
-  Metabase: ['metadata'],
-  S3: ['metadata', 'autoClassification'],
-  Prefect: ['metadata'],
-  Dagster: ['metadata'],
-};
-
-export function agentKindsForService(serviceType: string): readonly PipelineType[] {
-  // Settings pipelines live under the OpenMetadata metadata service
-  // (official `supportsDataInsightExtraction` /
-  // `supportsElasticSearchReindexingExtraction` are flags on the
-  // OpenMetadata connection; the settings pages route creation through
-  // that service). 'OpenMetadata' is outside SUPPORTED_SERVICE_TYPES by
-  // design (no CLI source mapping), so it is handled here rather than in
-  // the table above.
-  if (serviceType === 'OpenMetadata') {
-    return ['metadata', 'dataInsight', 'elasticSearchReindex'];
-  }
-  const kinds = AGENT_KINDS_BY_SERVICE[serviceType as SupportedServiceType];
-  return kinds ?? (['metadata'] as const);
-}
 
 export interface ServiceConnectionConfig {
   type?: string;
@@ -316,6 +271,20 @@ export interface ServiceConnectionConfig {
   /** Kafka's two sslConfig groups (validateSSLClientConfig each). */
   consumerConfigSSL?: SslClientConfig;
   schemaRegistrySSL?: SslClientConfig;
+  /**
+   * Capability flags the server applies as schema defaults on store.
+   * `getSupportedPipelineTypes` (ADR:2026-11-14-autopilot-agents-ui-parity)
+   * reads them to derive the addable agent kinds; a flag absent from a
+   * connection schema reads as not offered.
+   */
+  supportsMetadataExtraction?: boolean;
+  supportsUsageExtraction?: boolean;
+  supportsLineageExtraction?: boolean;
+  supportsViewLineageExtraction?: boolean;
+  supportsProfiler?: boolean;
+  supportsDBTExtraction?: boolean;
+  supportsDataInsightExtraction?: boolean;
+  supportsElasticSearchReindexingExtraction?: boolean;
   [key: string]: unknown;
 }
 
@@ -754,6 +723,28 @@ export interface PipelineStepStatus {
   /** Error count for this step (official StepSummary.errors). */
   errors?: number;
   failures?: PipelineStepFailure[];
+  /**
+   * Detailed progress tracking by entity type (official StepSummary
+   * `progress` map). Every step of a run carries an identical copy of
+   * the whole map — the agent mapper collapses it per entity type
+   * before summing, never sums across steps.
+   */
+  progress?: Record<string, StepProgress>;
+}
+
+/**
+ * One entry of StepSummary.progress (openmetadata-spec
+ * entity/services/ingestionPipelines/pipelineStatus.json, `Progress`):
+ * entities processed of the total discovered for one entity type, plus
+ * the estimated remaining seconds for that type.
+ */
+export interface StepProgress {
+  /** Number of entities processed. */
+  processed?: number;
+  /** Total number of entities discovered. */
+  total?: number;
+  /** Estimated remaining time in seconds for this entity type. */
+  estimatedRemainingSeconds?: number;
 }
 
 export interface PipelineStepFailure {
@@ -762,6 +753,141 @@ export interface PipelineStepFailure {
   error?: string;
   /** Raw stack trace for the failure (official StepSummary failure stackTrace). */
   stackTrace?: string;
+}
+
+/**
+ * Agent view-model (official AgentsPage.interface.ts `Agent`): an
+ * IngestionPipeline rendered as a service agent card. "Agent" is the
+ * display name only — there is no Agent entity, table, or API.
+ */
+export type AgentStatus = 'running' | 'success' | 'failed' | 'queued' | 'none';
+
+export type RunStatus = 'success' | 'partial' | 'failed' | 'running' | 'skipped';
+
+export interface AgentRecentRun {
+  id: string;
+  status: RunStatus;
+}
+
+export interface AgentActionPermissions {
+  trigger: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
+export interface Agent {
+  id: string;
+  fqn: string;
+  pipelineType: string;
+  name: string;
+  /** Stable machine key for the icon/label lookup ('Metadata', 'Usage', 'dbt', …); display strings are localized separately. */
+  type: string;
+  /** Counted unit ('queries' | 'assets' | 'models'). */
+  unit: string;
+  /** Past-tense verb for the unit ('scanned' | 'processed' | 'ingested' | 'profiled' | 'parsed'). */
+  verb: string;
+  status: AgentStatus;
+  pct: number;
+  eta: number | null;
+  assets: number;
+  target: number;
+  errors: number;
+  warnings: number;
+  recentRuns: AgentRecentRun[];
+  // Latest run of any state, including the one in progress — `recentRuns`
+  // only keeps completed runs, so it cannot identify a run that is still
+  // going. This is what binds the log tail to a run.
+  currentRunId?: string;
+  schedule?: string;
+  after?: string;
+  finishedAt?: string;
+  /**
+   * Epoch ms of the run every count above describes, so consumers
+   * comparing two agents can tell whose numbers are newer. `finishedAt`
+   * cannot serve: it is a pre-formatted relative string and is absent
+   * while a run is in flight.
+   */
+  lastRunAt?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Service progress stream frames (openmetadata-spec
+ * entity/services/ingestionPipelines/serviceProgressEvent.json): one
+ * SSE `data:` frame per ProgressUpdate, pushed over
+ * GET /v1/services/ingestionPipelines/progress/service/{type}/{fqn}/stream.
+ */
+export type ProgressUpdateType =
+  | 'DISCOVERY'
+  | 'PROCESSING'
+  | 'STEP_COMPLETE'
+  | 'PIPELINE_COMPLETE'
+  | 'ERROR';
+
+/** Run-level counter that survives scope pruning; `total` is null while unknown. */
+export interface GlobalCounter {
+  done?: number;
+  entityType?: string;
+  total?: number | null;
+}
+
+/** One node of the hierarchical progress tree for a run. */
+export interface ProgressNode {
+  /** Opened and not yet complete. */
+  active?: boolean;
+  /** Active or relevant child nodes only. */
+  children?: ProgressNode[];
+  /** Type of children this node counts (Database, DatabaseSchema, Table, …). */
+  entityType?: string;
+  /** Number of children, or null when the producer was iterated lazily. */
+  expected?: number | null;
+  /** Display name of this node (database or schema name; empty for the run root). */
+  label?: string;
+  /** Active children beyond the per-parent display cap. */
+  overflow?: number;
+  /** Children completed. */
+  processed?: number;
+}
+
+/** The per-run progress update carried by one stream frame. */
+export interface ProgressUpdate {
+  /** FQN of the entity currently being processed. */
+  currentEntity?: string;
+  /** Estimated seconds until the run completes; null when not yet computable. */
+  estimatedSecondsRemaining?: number | null;
+  /** Run-level counters that survive scope pruning. */
+  globalCounters?: GlobalCounter[];
+  /** Human-readable status message. */
+  message?: string;
+  /** Root of the hierarchical progress tree for this run. */
+  progress?: ProgressNode;
+  /** Pipeline run ID. */
+  runId: string;
+  /** Name of the current step. */
+  stepName?: string;
+  /** When this update was created (epoch ms). */
+  timestamp: number;
+  /**
+   * Monotonic count of leaf assets ingested so far. Survives scope
+   * pruning and is present on the terminal PIPELINE_COMPLETE event, so
+   * it carries the run's final asset total.
+   */
+  totalAssetsIngested?: number | null;
+  updateType: ProgressUpdateType;
+}
+
+export interface ServiceProgressEvent {
+  event: ProgressUpdate;
+  /**
+   * The ingestion pipeline (agent) this run belongs to. Populated on
+   * the DISCOVERY event that opens a run, so the UI can discover a
+   * newly created agent without a separate lookup.
+   */
+  ingestionPipeline?: IngestionPipeline;
+  /** Fully qualified name of the ingestion pipeline this event belongs to. */
+  pipelineFqn: string;
+  /** Pipeline run ID. */
+  runId: string;
 }
 
 export interface OrchestratorStatus {

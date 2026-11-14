@@ -20,6 +20,7 @@ import type {
   PipelineSourceConfig,
   PipelineStatus,
   PipelineStepStatus,
+  StepProgress,
 } from '@/types/ingestion';
 import { apiRequest } from './client';
 
@@ -56,6 +57,13 @@ export interface ListIngestionPipelinesQuery {
   fields?: string;
   /** Service FQN filter — official `serviceFilter`, sent as `service`. */
   serviceFilter?: string;
+  /**
+   * Agent grouping filter (official `agentType`, agentType.json enum).
+   * `metadata` resolves server-side to the eight service agent types;
+   * TestSuite / dataInsight / elasticSearchReindex belong to neither
+   * group and are filtered out of the Agents tab list.
+   */
+  agentType?: 'metadata' | 'application';
 }
 
 function mapSourceConfig(value: unknown): PipelineSourceConfig | undefined {
@@ -161,6 +169,28 @@ export function mapIngestionPipeline(raw: Record<string, unknown>): IngestionPip
   };
 }
 
+function mapStepProgress(value: unknown): Record<string, StepProgress> | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const mapped: Record<string, StepProgress> = {};
+  let found = false;
+  for (const [entityType, entry] of Object.entries(rec)) {
+    const progress = asRecord(entry);
+    if (!progress) {
+      continue;
+    }
+    found = true;
+    mapped[entityType] = {
+      processed: asNumber(progress.processed),
+      total: asNumber(progress.total),
+      estimatedRemainingSeconds: asNumber(progress.estimatedRemainingSeconds),
+    };
+  }
+  return found ? mapped : undefined;
+}
+
 function mapPipelineStepStatus(value: unknown): PipelineStepStatus | null {
   const rec = asRecord(value);
   if (!rec) {
@@ -186,6 +216,7 @@ function mapPipelineStepStatus(value: unknown): PipelineStepStatus | null {
     warnings: asNumber(rec.warnings),
     errors: asNumber(rec.errors),
     failures: failures?.length ? failures : undefined,
+    progress: mapStepProgress(rec.progress),
   };
 }
 
@@ -222,6 +253,7 @@ export function listIngestionPipelines(
       service: query.serviceFilter ?? query.service,
       pipelineType: query.pipelineType,
       serviceType: query.serviceType,
+      agentType: query.agentType,
       // Official toSortOrder guard: only the two legal values are
       // forwarded; anything else is dropped, never sent.
       sortField: query.sortField === 'displayName' ? 'displayName' : undefined,
