@@ -29,4 +29,6 @@ export interface EntityDetailTab {
   key: string;
   label: string;
   testId?: string;
+  /** Live count badge; rendered when defined, including zero. */
+  count?: number;
 }

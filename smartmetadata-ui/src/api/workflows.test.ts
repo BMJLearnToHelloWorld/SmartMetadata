@@ -98,4 +98,28 @@ describe('workflows API', () => {
     expect(created.id).toBe('w2');
     expect(lastFetch().url).toContain('/api/v1/governance/workflowDefinitions');
   });
+
+  it('forwards the entityLink + window params for the AutoPilot running check', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [{ id: 'i1', status: 'RUNNING', startedAt: 1700000000000 }],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listWorkflowInstances('AutoPilotWorkflow', {
+      startTs: 1000,
+      endTs: 2000,
+      entityLink: '<#E::databaseService::pg.warehouse>',
+    });
+    expect(lastFetch().url).toContain('workflowDefinitionName=AutoPilotWorkflow');
+    expect(lastFetch().url).toContain('startTs=1000');
+    expect(lastFetch().url).toContain('endTs=2000');
+    expect(lastFetch().url).toContain(
+      'entityLink=%3C%23E%3A%3AdatabaseService%3A%3Apg.warehouse%3E',
+    );
+    expect(page.data[0]?.status).toBe('RUNNING');
+  });
 });

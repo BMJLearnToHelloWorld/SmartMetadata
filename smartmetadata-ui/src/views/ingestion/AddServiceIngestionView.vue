@@ -25,7 +25,7 @@ import {
 import { ApiError } from '@/api/client';
 import { SERVICE_GET_API } from '@/ingestion/serviceApis';
 import { entityTypeForKind } from '@/ingestion/connections';
-import { agentKindsForService } from '@/types/ingestion';
+import { getSupportedPipelineTypes } from '@/ingestion/supportedPipelines';
 import { generateUUID, getIngestionName } from '@/ingestion/uuid';
 import {
   DEFAULT_SCHEDULE_CRON_DAILY,
@@ -120,7 +120,9 @@ const kind = computed<ServiceKind>(() =>
     : 'database',
 );
 const typeOptions = computed<readonly PipelineType[]>(() =>
-  service.value ? agentKindsForService(service.value.serviceType) : (['metadata'] as const),
+  service.value
+    ? getSupportedPipelineTypes(service.value, kind.value)
+    : (['metadata'] as const),
 );
 const settingsPipeline = computed(() => isSettingsPipelineType(pipelineType.value));
 const ownersRequired = computed(() => !settingsPipeline.value);

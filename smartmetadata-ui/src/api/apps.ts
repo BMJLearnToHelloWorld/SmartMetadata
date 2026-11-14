@@ -71,3 +71,17 @@ export async function getAppByName(name: string): Promise<AdminApp> {
   }
   return mapped;
 }
+
+/**
+ * Trigger an on-demand application run, ported from official
+ * rest/applicationAPI.ts `triggerOnDemandApp` (pin a3012259ca):
+ * POST /v1/apps/trigger/{name} with the trigger payload (for
+ * AutoPilot, `{ entityLink }`). The server answers an empty 200,
+ * which apiRequest returns as undefined; callers only await/catch.
+ */
+export async function triggerOnDemandApp(
+  name: string,
+  data?: Record<string, unknown>,
+): Promise<void> {
+  await apiRequest(`/v1/apps/trigger/${encodeURIComponent(name)}`, { json: data ?? {} });
+}

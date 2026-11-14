@@ -23,6 +23,8 @@
  * the product view actually wires it; anything else carries a residual
  * reason and must not be rendered as if it worked.
  */
+import type { ServiceKind } from '@/types/ingestion';
+
 export interface IngestionTab {
   key: string;
   /** i18n key for the tab label. */
@@ -30,6 +32,10 @@ export interface IngestionTab {
   supported: boolean;
   /** Why the tab is residual; absent for supported tabs. */
   residualReason?: string;
+  /** Live count badge; rendered when defined, including zero. */
+  count?: number;
+  /** Service kinds the tab never renders for, whatever the user. */
+  excludedKinds?: readonly ServiceKind[];
 }
 
 export interface ServiceCategoryRow {
@@ -136,7 +142,14 @@ export const SERVICE_CATEGORIES: ServiceCategoryRow[] = [
 export const SERVICE_DETAIL_TABS: IngestionTab[] = [
   { key: 'overview', labelKey: 'crud.overview', supported: true },
   { key: 'connection', labelKey: 'ingestion.services.connectionTab', supported: true },
-  { key: 'pipelines', labelKey: 'ingestion.services.pipelinesTab', supported: true },
+  {
+    key: 'agents',
+    labelKey: 'ingestion.services.agentsTab',
+    supported: true,
+    // Official ServiceDetailsPage pushes the Agents tab only for
+    // non-security services; security services get no agents tab.
+    excludedKinds: ['security'],
+  },
   {
     key: 'assets',
     labelKey: 'ingestion.services.assetsTab',
@@ -148,12 +161,6 @@ export const SERVICE_DETAIL_TABS: IngestionTab[] = [
     labelKey: 'ingestion.services.insightsTab',
     supported: false,
     residualReason: 'No service-insights workflow API is wired.',
-  },
-  {
-    key: 'agents',
-    labelKey: 'ingestion.services.agentsTab',
-    supported: false,
-    residualReason: 'No metadata-agent API is wired for services.',
   },
   {
     key: 'versions',

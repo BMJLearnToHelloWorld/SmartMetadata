@@ -140,7 +140,22 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
             :active-key="currentTab"
             @change="(key: string | number) => emit('update:activeTab', String(key))"
           >
-            <Tabs.TabPane v-for="tab in tabs" :key="tab.key" :tab="tab.label" force-render :data-testid="tab.testId">
+            <Tabs.TabPane v-for="tab in tabs" :key="tab.key" force-render :data-testid="tab.testId">
+              <!-- No :tab prop: antd's parseTabList prefers the prop over
+                   the slot, so the label (and the count pill) must come
+                   from this slot for every tab. -->
+              <template #tab>
+                <template v-if="tab.count !== undefined">
+                  <span class="entity-detail-tab-label">{{ tab.label }}</span>
+                  <span
+                    class="entity-detail-tab-count"
+                    :data-testid="tab.testId ? `${tab.testId}-count` : undefined"
+                  >
+                    {{ tab.count }}
+                  </span>
+                </template>
+                <template v-else>{{ tab.label }}</template>
+              </template>
               <slot :name="tab.key" />
             </Tabs.TabPane>
           </Tabs>
@@ -161,5 +176,16 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
 
 .entity-detail__actions {
   flex-shrink: 0;
+}
+
+.entity-detail-tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--sm-border-radius);
+  background: var(--sm-color-primary-bg);
+  color: var(--sm-brand);
+  font-size: 12px;
+  line-height: 18px;
 }
 </style>

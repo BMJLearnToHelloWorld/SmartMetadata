@@ -51,9 +51,9 @@ import {
   splitSearchHighlight,
 } from '@/ingestion/pipelineDisplay';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
+import { getSupportedPipelineTypes } from '@/ingestion/supportedPipelines';
 import {
   PIPELINE_TYPES,
-  agentKindsForService,
   type CatalogService,
   type IngestionPipeline,
   type OrchestratorStatus,
@@ -160,7 +160,10 @@ const availablePipelineTypes = computed<readonly PipelineType[]>(() => {
   if (!service) {
     return ['metadata'] as const;
   }
-  return agentKindsForService(service.serviceType);
+  // The list records carry the stored connection config, so the
+  // flag-driven kinds derive synchronously — no extra GET per
+  // selection (ADR:2026-11-14-autopilot-agents-ui-parity).
+  return getSupportedPipelineTypes(service);
 });
 
 const columns = computed<EntityListColumn[]>(() => [
@@ -461,7 +464,7 @@ function onServiceChange(id: unknown): void {
   const service = catalogServices.value.find((item) => item.id === id);
   if (service) {
     form.serviceKind = service.kind;
-    const kinds = agentKindsForService(service.serviceType);
+    const kinds = getSupportedPipelineTypes(service);
     if (!kinds.includes(form.pipelineType as PipelineType)) {
       form.pipelineType = kinds[0] ?? 'metadata';
     }

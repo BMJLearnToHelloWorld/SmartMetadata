@@ -8,10 +8,11 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { message } from 'ant-design-vue';
+import Antd, { message, Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import type { VNode } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import PipelinesListView from './PipelinesListView.vue';
 
@@ -201,7 +202,57 @@ describe('PipelinesListView', () => {
     expect(wrapper.find('[data-testid="bulk-deploy-pipelines"]').attributes('disabled')).toBeDefined();
   });
 
-  it('shows pipelineType select with Postgres agent kinds from service_spec', async () => {
+  it('shows pipelineType select with the flag-driven kinds of the chosen service (D-7)', async () => {
+    // The list record carries the stored connection config, so the
+    // create modal derives its kinds from the supports* flags — no
+    // static per-service table, and never TestSuite.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/services/databaseServices')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 's1',
+                name: 'warehouse',
+                serviceType: 'Postgres',
+                connection: {
+                  config: {
+                    type: 'Postgres',
+                    supportsMetadataExtraction: true,
+                    supportsUsageExtraction: true,
+                    supportsLineageExtraction: true,
+                    supportsProfiler: true,
+                    supportsDBTExtraction: true,
+                  },
+                },
+              },
+            ],
+          });
+        }
+        if (
+          url.includes('/api/v1/services/messagingServices') ||
+          url.includes('/api/v1/services/dashboardServices') ||
+          url.includes('/api/v1/services/storageServices')
+        ) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/api/v1/permissions/ingestionPipeline')) {
+          return jsonResponse({
+            resource: 'ingestionPipeline',
+            permissions: [{ operation: 'Create', access: 'allow' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="create-pipeline"]').trigger('click');
     await flushPromises();
@@ -210,8 +261,36 @@ describe('PipelinesListView', () => {
     expect(typeSelect).not.toBeNull();
     const nameInput = document.body.querySelector('[data-testid="create-pipeline-name"]');
     expect(nameInput).not.toBeNull();
-    // Default form.pipelineType is metadata; Postgres agent kinds include lineage/usage/profiler/TestSuite.
-    expect(wrapper.vm).toBeTruthy();
+
+    // Choose the warehouse service: the type options follow its flags.
+    const selects = wrapper.findAllComponents(Select);
+    const serviceSelect = selects.find(
+      (component) => component.attributes('data-testid') === 'create-pipeline-service',
+    );
+    expect(serviceSelect).not.toBeUndefined();
+    await serviceSelect!.vm.$emit('update:value', 's1');
+    await flushPromises();
+    // The type options are slot content (the parent's tree), so read
+    // them through the Select's default slot: the six flag-driven
+    // kinds, in pin order, with no TestSuite.
+    const typeSelectComponent = wrapper
+      .findAllComponents(Select)
+      .find((component) => component.attributes('data-testid') === 'create-pipeline-type');
+    expect(typeSelectComponent).not.toBeUndefined();
+    // The slot returns one fragment VNode wrapping the v-for options.
+    const collectValues = (vnodes: VNode[]): unknown[] => {
+      const values: unknown[] = [];
+      for (const vnode of vnodes) {
+        if (Array.isArray(vnode.children)) {
+          values.push(...collectValues(vnode.children as VNode[]));
+        } else if (vnode.props && 'value' in vnode.props) {
+          values.push((vnode.props as Record<string, unknown>).value);
+        }
+      }
+      return values;
+    };
+    const values = collectValues(typeSelectComponent!.vm.$slots.default?.() ?? []);
+    expect(values).toEqual(['metadata', 'usage', 'lineage', 'profiler', 'autoClassification', 'dbt']);
   });
 
   it('creates a pipeline without pausePipeline (born unpaused)', async () => {

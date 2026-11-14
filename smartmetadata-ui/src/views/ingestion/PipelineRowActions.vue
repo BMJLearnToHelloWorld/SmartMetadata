@@ -25,6 +25,17 @@ const props = defineProps<{
   orchestratorUnavailable: boolean;
   /** The list view's View item lives in EntityListShell; the service mini-table needs its own. */
   showView?: boolean;
+  /**
+   * 'card' renders the official AgentOverflowMenu composition
+   * (pause/resume + kill-or-redeploy + edit + delete) for the agent
+   * card: no View, Logs, or Run item — the card carries its own
+   * Logs and Run buttons. Gating stays the fork's per-item disabled
+   * presentation, including edit/delete staying enabled while the
+   * orchestrator is down (catalog operations, not Airflow calls).
+   */
+  variant?: 'row' | 'card';
+  /** Card variant: the agent is running or queued, so Kill replaces Re-deploy. */
+  active?: boolean;
 }>();
 const emit = defineEmits<{
   view: [pipeline: IngestionPipeline];
@@ -48,14 +59,15 @@ const { t } = useI18n();
  * (deployed -> Run + Re-deploy, undeployed -> Deploy, both only while
  * enabled); every item carries its official permission bit plus the
  * P-24 orchestrator gate. One component serves the global list and
- * the service-detail mini-table — no second Run/Deploy/Edit/Delete/
+ * the agent card (variant="card" renders the official
+ * AgentOverflowMenu composition) — no second Run/Deploy/Edit/Delete/
  * Logs implementation.
  */
 </script>
 
 <template>
   <Menu.Item
-    v-if="showView"
+    v-if="showView && variant !== 'card'"
     key="view"
     data-testid="row-overflow-view"
     @click="emit('view', pipeline)"
@@ -75,6 +87,7 @@ const { t } = useI18n();
     {{ t(pipeline.enabled === false ? 'ingestion.pipelines.resume' : 'ingestion.pipelines.pause') }}
   </Menu.Item>
   <Menu.Item
+    v-if="variant !== 'card'"
     key="logs"
     data-testid="logs-button"
     :disabled="orchestratorUnavailable"
@@ -82,7 +95,27 @@ const { t } = useI18n();
   >
     {{ t('ingestion.pipelines.logs') }}
   </Menu.Item>
-  <template v-if="pipeline.enabled !== false">
+  <template v-if="variant === 'card'">
+    <Menu.Item
+      v-if="active"
+      key="kill"
+      data-testid="kill-button"
+      :disabled="!canKillPipeline(isAdminUser, ops) || orchestratorUnavailable"
+      @click="emit('kill', pipeline)"
+    >
+      {{ t('ingestion.pipelines.kill') }}
+    </Menu.Item>
+    <Menu.Item
+      v-else
+      key="deploy"
+      :data-testid="pipeline.deployed === true ? 're-deploy-button' : 'deploy-button'"
+      :disabled="!canDeployPipeline(isAdminUser, ops, pipeline) || orchestratorUnavailable"
+      @click="emit('deploy', pipeline)"
+    >
+      {{ t(pipeline.deployed === true ? 'ingestion.pipelines.redeploy' : 'ingestion.pipelines.deploy') }}
+    </Menu.Item>
+  </template>
+  <template v-else-if="pipeline.enabled !== false">
     <Menu.Item
       v-if="pipeline.deployed === true"
       key="run"
@@ -103,13 +136,14 @@ const { t } = useI18n();
   </template>
   <Menu.Item
     key="edit"
-    data-testid="row-overflow-edit"
+    :data-testid="variant === 'card' ? 'edit-button' : 'row-overflow-edit'"
     :disabled="!canEditPipeline(isAdminUser, ops)"
     @click="emit('edit', pipeline)"
   >
     {{ t('crud.edit') }}
   </Menu.Item>
   <Menu.Item
+    v-if="variant !== 'card'"
     key="kill"
     data-testid="kill-button"
     :disabled="!canKillPipeline(isAdminUser, ops) || orchestratorUnavailable"
@@ -120,7 +154,7 @@ const { t } = useI18n();
   <Menu.Item
     key="delete"
     danger
-    data-testid="row-overflow-delete"
+    :data-testid="variant === 'card' ? 'delete-button' : 'row-overflow-delete'"
     :disabled="!canDeletePipeline(isAdminUser, ops)"
     @click="emit('delete', pipeline)"
   >

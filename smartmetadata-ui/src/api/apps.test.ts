@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { getApp, listApps, mapApp } from './apps';
+import { getApp, listApps, mapApp, triggerOnDemandApp } from './apps';
 
 function lastFetch(): string {
   const call = vi.mocked(fetch).mock.calls.at(-1);
@@ -75,5 +75,39 @@ describe('apps API', () => {
     const app = await getApp('a1');
     expect(app.displayName).toBe('Data Insights');
     expect(lastFetch()).toContain('/api/v1/apps/a1');
+  });
+
+  it('triggers an on-demand app with the JSON body the pin sends', async () => {
+    let seenInit: RequestInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        seenInit = init;
+        return new Response('', { status: 200 });
+      }),
+    );
+    const result = await triggerOnDemandApp('AutoPilotApplication', {
+      entityLink: '<#E::databaseService::pg.warehouse>',
+    });
+    expect(result).toBeUndefined();
+    expect(lastFetch()).toContain('/api/v1/apps/trigger/AutoPilotApplication');
+    expect(seenInit?.method).toBe('POST');
+    expect(JSON.parse(String(seenInit?.body))).toEqual({
+      entityLink: '<#E::databaseService::pg.warehouse>',
+    });
+  });
+
+  it('URL-encodes the app name and defaults the body to an empty object', async () => {
+    let seenInit: RequestInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        seenInit = init;
+        return new Response('', { status: 200 });
+      }),
+    );
+    await triggerOnDemandApp('My App');
+    expect(lastFetch()).toContain('/api/v1/apps/trigger/My%20App');
+    expect(JSON.parse(String(seenInit?.body))).toEqual({});
   });
 });

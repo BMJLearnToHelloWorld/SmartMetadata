@@ -35,6 +35,12 @@ export interface ListWorkflowsQuery {
   offset?: string;
   startTs?: number;
   endTs?: number;
+  /**
+   * Entity-link filter (WorkflowInstanceResource `entityLink` query
+   * param): restricts instances to runs for one entity, e.g. the
+   * AutoPilot runs of one service.
+   */
+  entityLink?: string;
 }
 
 function mapWorkflowDefinition(raw: Record<string, unknown>): WorkflowDefinition | null {
@@ -244,6 +250,7 @@ export function listWorkflowInstances(
       offset: query.offset,
       startTs: query.startTs,
       endTs: query.endTs,
+      entityLink: query.entityLink,
     },
   }).then((payload) => parsePaged(payload, mapWorkflowInstance));
 }

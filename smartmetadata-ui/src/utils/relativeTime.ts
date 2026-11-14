@@ -30,3 +30,45 @@ export function getRelativeTime(timestamp?: number): string {
     .locale(locale === 'zh-CN' ? 'zh-cn' : 'en')
     .fromNow();
 }
+
+/**
+ * Short unit words for the relative-time shortening below, ported from
+ * official enums/common.enum.ts `DATE_TIME_SHORT_UNITS` (pin
+ * a3012259ca). Only English unit words shorten: a Chinese relative
+ * string has no matching words and passes through unchanged, exactly
+ * as in official (Luxon renders the same Chinese long form there).
+ */
+const DATE_TIME_SHORT_UNITS: Record<string, string> = {
+  YEAR: 'yr',
+  YEARS: 'yrs',
+  MONTH: 'mo',
+  MONTHS: 'mos',
+  DAY: 'day',
+  DAYS: 'days',
+  HOUR: 'hr',
+  HOURS: 'hrs',
+  MINUTE: 'min',
+  MINUTES: 'mins',
+  SECOND: 'sec',
+  SECONDS: 'secs',
+};
+
+/**
+ * Short relative time ("10 mins ago"), ported from official
+ * utils/date-time/DateTimeUtils.ts `getShortRelativeTime`: the long
+ * form with each unit word replaced by its short form. Falls back to
+ * "" when the timestamp is missing or the long form is empty.
+ */
+export function getShortRelativeTime(timestamp?: number): string {
+  if (timestamp === undefined || timestamp === null) {
+    return '';
+  }
+  const longForm = getRelativeTime(timestamp);
+  if (!longForm) {
+    return '';
+  }
+  return longForm
+    .split(' ')
+    .map((word) => DATE_TIME_SHORT_UNITS[word.toUpperCase()] || word)
+    .join(' ');
+}

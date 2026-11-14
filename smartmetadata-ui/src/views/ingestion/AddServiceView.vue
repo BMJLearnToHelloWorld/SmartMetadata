@@ -13,12 +13,19 @@ import ServiceFilterFields from '@/components/ingestion/ServiceFilterFields.vue'
 import { serviceFilterFieldsForKind, type ServiceFilterValues } from '@/ingestion/serviceFilterFields';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import { triggerOnDemandApp } from '@/api/apps';
+import {
+  AUTO_PILOT_APP_NAME,
+  isExcludedAutoPilotServiceType,
+} from '@/ingestion/autoPilot';
 import {
   SERVICE_KIND_DEFAULT_TYPE,
   SERVICE_TYPES_BY_KIND,
   buildServiceConnection,
   createEmptyServiceForm,
+  entityTypeForKind,
 } from '@/ingestion/connections';
+import { getEntityFeedLink } from '@/utils/entityLink';
 import { hasConnectionForm } from '@/ingestion/connectionFields';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
 import type { ServiceFormValues, ServiceKind } from '@/types/ingestion';
@@ -75,6 +82,14 @@ function onBack(): void {
  * carried (includeViews only when false, text fields only when
  * non-blank, generateSampleData only when true), so a plain service
  * create stores no filter keys at all.
+ *
+ * D-11 reconciliation (ADR:2026-11-14-autopilot-agents-ui-parity):
+ * official parity overrides P-12's rationale FOR THE WIZARD PATH
+ * ONLY, and only via the AutoPilot trigger below — the wizard still
+ * makes no direct createIngestionPipeline call. Official's wizard
+ * triggers AutoPilot after a successful create, and AutoPilot (not
+ * the wizard) decides which agents to generate from the connection
+ * flags. The filter-scope carrying above is unaffected.
  */
 function enteredFilterValues(): Record<string, unknown> {
   const values: Record<string, unknown> = {};
@@ -99,6 +114,23 @@ function enteredFilterValues(): Record<string, unknown> {
   return values;
 }
 
+/**
+ * Official AddServicePage.triggerTheAutoPilotApplication (pin
+ * a3012259ca): the trigger failure is caught here and toasted, so
+ * the caller still shows the triggered message and navigates — the
+ * pin's own quirk, ported exactly (both toasts appear when the
+ * trigger fails).
+ */
+async function triggerAutoPilotApplication(entityType: string, fqn?: string): Promise<void> {
+  try {
+    await triggerOnDemandApp(AUTO_PILOT_APP_NAME, {
+      entityLink: getEntityFeedLink(entityType, fqn),
+    });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  }
+}
+
 async function onCreate(): Promise<void> {
   if (connectionFormMissing.value) {
     message.error(t('ingestion.services.wizard.noConnectionForm'));
@@ -120,7 +152,16 @@ async function onCreate(): Promise<void> {
           }
         : undefined,
     });
-    message.success(t('ingestion.services.created', { name: created.name }));
+    // Official AddServicePage: after a successful create, every
+    // service type except security triggers AutoPilot, then shows
+    // the triggered message (5s — antd takes seconds, the pin's
+    // 5000 is milliseconds) and navigates. Security services get no
+    // trigger and no toast; the navigation is the confirmation.
+    const entityType = entityTypeForKind(form.kind);
+    if (!isExcludedAutoPilotServiceType(entityType)) {
+      await triggerAutoPilotApplication(entityType, created.fullyQualifiedName);
+      message.success(t('ingestion.agents.autoPilotTriggeredMessage'), 5);
+    }
     await router.push({ name: 'ingestion-service', params: { kind: form.kind, id: created.id } });
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.createFailed'));

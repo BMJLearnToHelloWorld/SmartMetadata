@@ -409,4 +409,66 @@ describe('ingestionPipelines API', () => {
     );
     await expect(toggleIngestionPipeline('p1')).rejects.toThrow('Pipeline Client Disabled');
   });
+
+  it('forwards the agentType grouping filter (official agentType param)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await listIngestionPipelines({ agentType: 'metadata', service: 'pg.warehouse' });
+    expect(lastFetch().url).toContain('agentType=metadata');
+    expect(lastFetch().url).toContain('service=pg.warehouse');
+  });
+
+  it('maps step progress records and drops non-record step entries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'p1',
+                name: 'pg-metadata',
+                pipelineType: 'metadata',
+                pipelineStatuses: [
+                  {
+                    runId: 'r1',
+                    pipelineState: 'running',
+                    status: [
+                      {
+                        name: 'metadata',
+                        progress: {
+                          Table: { processed: 5, total: 10, estimatedRemainingSeconds: 30 },
+                          Database: 'junk',
+                        },
+                      },
+                      'junk-step',
+                      { name: 'no-progress', progress: 'not-a-record' },
+                      { name: 'empty-progress', progress: {} },
+                    ],
+                  },
+                ],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listIngestionPipelines({ limit: 50 });
+    const steps = page.data[0]?.pipelineStatuses?.[0]?.status;
+    expect(steps).toHaveLength(3);
+    expect(steps?.[0]?.progress).toEqual({
+      Table: { processed: 5, total: 10, estimatedRemainingSeconds: 30 },
+    });
+    expect(steps?.[1]?.progress).toBeUndefined();
+    expect(steps?.[2]?.progress).toBeUndefined();
+  });
 });
