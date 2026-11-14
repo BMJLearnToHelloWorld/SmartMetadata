@@ -110,6 +110,12 @@ class StepStatus:
            one source-step warning for the run. The queries may have
            touched no catalog tables; the shape is suspicious, not
            clean, and must not report zero warnings on that alone.
+        6. AutoClassification skips and tag-PATCH warnings: one
+           processor-step warning per entity skipped before
+           classification (no columns, or a sampler that declines
+           it), and one sink-step warning per entity whose computed
+           tags did not land (a PATCH that exhausted its retries or
+           failed — a failed PATCH warns, never fails the run).
 
         Deliberately NOT counted (log-only): malformed query-log rows
         and unreadable CSV files, per-view/per-procedure outcome skips
