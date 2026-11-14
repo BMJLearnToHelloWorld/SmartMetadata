@@ -18,10 +18,11 @@ Types with no builder (dataInsight, policyAgent, reverseMetadata) are
 asserted absent on purpose — ruling §4.2 records why each has no product
 execution mapping; the absence is the documented behaviour, not a gap in
 this file. P-06 added builders for TestSuite, dbt, elasticSearchReindex,
-application and autoClassification; the first four run the metadata
-workflow against the live service (a deliberate partial mapping — see
-ADR:2026-11-11-pipeline-deep-dive-python) and only testSuite has its own
-execution path.
+application and autoClassification. TestSuite has its own execution
+path, and autoClassification gained one with the clean-room engine
+(ADR:2026-11-14-autoclassification-engine); dbt, elasticSearchReindex
+and application still have no runner and fail loudly at run time
+instead of succeeding as a metadata ingestion.
 """
 
 from __future__ import annotations

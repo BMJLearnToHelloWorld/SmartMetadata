@@ -95,6 +95,21 @@ s3 = [
   "py7zr>=0.20,<2",
   "brotli>=1.0,<2",
 ]
+# autoclassification: clean-room PII engine (Presidio + spaCy, both MIT;
+# python-dateutil, dual Apache-2.0/BSD-3-Clause). The date rules are
+# defined by the dateutil parser (supplement §4), so it is declared
+# here rather than emulated; without it the engine falls back to the
+# stdlib emulation with a loud warning.
+# Optional: the core suite runs without it; an autoClassification run fails
+# loud when the engine is needed but the extra is absent, and a missing
+# spaCy model fails loud at run start (no runtime download).
+# ADR:2026-11-14-autoclassification-engine
+autoclassification = [
+  "presidio-analyzer==2.2.358",
+  "python-dateutil==2.9.0.post0",
+  "spacy>=3.8.2,<3.9",
+  "preshed<3.0.14",
+]
 dev = [
   "pytest>=8,<9",
   "pytest-cov>=5,<7",

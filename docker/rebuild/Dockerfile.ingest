@@ -12,6 +12,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends wget \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir '.[postgres,mysql,kafka,snowflake]'
+    && pip install --no-cache-dir '.[postgres,mysql,kafka,snowflake,autoclassification]'
+# The classification models are provisioned INTO the image: a deployed
+# run must never download a model at runtime, and a missing model fails
+# the run loudly at warm-up. The wheel URL is absolute (github.com), so
+# a build-time GitHub outage fails this layer loudly instead of
+# shipping an image that cannot classify.
+# ADR:2026-11-14-autoclassification-engine
+RUN python -m smartmetadata_ingestion.cli install-classification-models --languages en
 ENTRYPOINT ["smartmetadata-ingest"]
 CMD ["--help"]

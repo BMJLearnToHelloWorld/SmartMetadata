@@ -468,6 +468,26 @@ class RestClient:
         path = f"{DATABASE_SERVICES_PATH}/name/{encode_path_segment(str(name).strip())}"
         return self._as_object(self.request("GET", path))
 
+    def get_messaging_service_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/services/messagingServices/name/{name} (service entity
+        for the autoClassification service-existence check: a run over a
+        messaging service proves the service exists before enumerating
+        its topics)."""
+        if not name or not str(name).strip():
+            raise WorkflowError("messaging service name is required")
+        path = f"{MESSAGING_SERVICES_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
+    def get_storage_service_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/services/storageServices/name/{name} (service entity
+        for the autoClassification service-existence check: a run over a
+        storage service proves the service exists before enumerating
+        its containers)."""
+        if not name or not str(name).strip():
+            raise WorkflowError("storage service name is required")
+        path = f"{STORAGE_SERVICES_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
     def get_table_by_name(
         self,
         fqn: str,
@@ -478,6 +498,32 @@ class RestClient:
         if not fqn or not str(fqn).strip():
             raise WorkflowError("table fqn is required")
         path = f"{TABLES_PATH}/name/{encode_path_segment(str(fqn).strip())}"
+        params = {"fields": fields} if fields else None
+        return self._as_object(self.request("GET", path, params=params))
+
+    def get_topic_by_name(
+        self,
+        fqn: str,
+        *,
+        fields: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /v1/topics/name/{fqn} (topic entity for the AC patch fetch)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("topic fqn is required")
+        path = f"{TOPICS_PATH}/name/{encode_path_segment(str(fqn).strip())}"
+        params = {"fields": fields} if fields else None
+        return self._as_object(self.request("GET", path, params=params))
+
+    def get_container_by_name(
+        self,
+        fqn: str,
+        *,
+        fields: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /v1/containers/name/{fqn} (container entity for the AC patch fetch)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("container fqn is required")
+        path = f"{CONTAINERS_PATH}/name/{encode_path_segment(str(fqn).strip())}"
         params = {"fields": fields} if fields else None
         return self._as_object(self.request("GET", path, params=params))
 
@@ -579,6 +625,24 @@ class RestClient:
     ) -> Any:
         """PUT /v1/topics/{id}/sampleData (official topic_mixin ingest_topic_sample_data)."""
         path = f"{TOPICS_PATH}/{encode_path_segment(topic_id)}/sampleData"
+        return self.request("PUT", path, json=payload)
+
+    def ingest_table_sample_data(
+        self,
+        table_id: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """PUT /v1/tables/{id}/sampleData (TableData payload)."""
+        path = f"{TABLES_PATH}/{encode_path_segment(table_id)}/sampleData"
+        return self.request("PUT", path, json=payload)
+
+    def ingest_container_sample_data(
+        self,
+        container_id: str,
+        payload: dict[str, Any],
+    ) -> Any:
+        """PUT /v1/containers/{id}/sampleData (TableData payload)."""
+        path = f"{CONTAINERS_PATH}/{encode_path_segment(container_id)}/sampleData"
         return self.request("PUT", path, json=payload)
 
     def get_profiler_config_settings(self) -> dict[str, Any] | None:

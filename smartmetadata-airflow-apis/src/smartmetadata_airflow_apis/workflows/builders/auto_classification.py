@@ -11,10 +11,11 @@
 Mirrors official ``build_auto_classification_dag``: task id
 ``auto_classification_task``; the source type is the live service type
 itself (no ``-usage`` / ``-lineage`` suffix) and raiseOnError follows
-the pipeline. The product has no auto-classification runner yet, so the
-task runs the metadata workflow against the live service
-(ADR:2026-11-11-pipeline-deep-dive-python): the DAG deploys and runs,
-but it performs a metadata ingestion, not the official PII tagging run.
+the pipeline. The task dispatches through ``run_workflow`` to the
+clean-room classification engine, which enumerates the service's
+catalog entities, samples each one, and PATCHes suggested PII labels
+onto the matching columns
+(ADR:2026-11-14-autoclassification-engine).
 """
 
 from __future__ import annotations

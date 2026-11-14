@@ -21,6 +21,7 @@ from smartmetadata_ingestion.progress import ProgressHook, RunReport
 from smartmetadata_ingestion.sinks.metadata_rest import Sink
 from smartmetadata_ingestion.usage.workflow import UsageWorkflow
 from smartmetadata_ingestion.workflow import (
+    AutoClassificationWorkflow,
     DataDiffWorkflow,
     MetadataWorkflow,
     ProfilerWorkflow,
@@ -47,12 +48,14 @@ def run_workflow(
 ) -> RunReport:
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
 
-    ``profiler``, ``TestSuite``, ``data_diff``, ``usage`` and
-    ``lineage`` dispatch to their own workflows; every other type keeps the metadata
-    workflow — except ``dbt``, ``autoClassification``,
+    ``profiler``, ``TestSuite``, ``data_diff``, ``usage``, ``lineage``
+    and ``autoClassification`` dispatch to their own workflows; every
+    other type keeps the metadata workflow — except ``dbt``,
     ``elasticSearchReindex`` and ``application``, which have no runner
     yet and raise instead of silently running a metadata ingestion
-    (P-06; see the ADR).
+    (P-06; see the ADR). ``autoClassification`` used to be in that
+    fail-loud set; the clean-room engine supersedes P-06 for it alone
+    (ADR:2026-11-14-autoclassification-engine).
 
     ``run_id`` pins the id the workflow reports its status under (the
     Airflow plugin passes the id the server already recorded for the run);
@@ -61,7 +64,6 @@ def run_workflow(
     workflow_type = config.workflow.type
     if workflow_type in (
         "dbt",
-        "autoClassification",
         "elasticSearchReindex",
         "application",
     ):
@@ -72,7 +74,7 @@ def run_workflow(
         # (ADR:2026-11-11-pipeline-deep-dive-python)
         raise WorkflowExecutionError(
             f"no runner implemented for pipeline type {workflow_type!r}; "
-            "dbt / autoClassification / elasticSearchReindex / application "
+            "dbt / elasticSearchReindex / application "
             "runners are future work"
         )
     if workflow_type == "profiler":
@@ -124,6 +126,16 @@ def run_workflow(
         )
     elif workflow_type == "lineage":
         workflow = LineageWorkflow(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+            run_id=run_id,
+        )
+    elif workflow_type == "autoClassification":
+        workflow = AutoClassificationWorkflow(
             config,
             client=client,
             source=source,
