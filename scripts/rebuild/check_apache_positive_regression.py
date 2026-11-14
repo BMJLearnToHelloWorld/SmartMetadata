@@ -109,9 +109,13 @@ REQUIRED_STAGE_ORDER = {
     "schema": 2,
     "dashboard": 2,
     "table": 3,
+    # Procedures: schema children, flush with tables (ADR:2026-11-14-agent-capability-batch1).
+    "storedProcedure": 3,
     "usage": 4,
     "profile": 4,
     "testCaseResult": 4,
+    # Queries: reference tables, land with usage (ADR:2026-11-14-agent-capability-batch1).
+    "query": 4,
     "lineage": 5,
 }
 
