@@ -52,6 +52,21 @@ _RANDOM_SQL: dict[SqlDialect, str] = {
     "databricks": "ABS(RANDOM()) * 100 % 100",
 }
 
+# Raw random expression per dialect, for ORDER BY randomization of a
+# ROW_COUNT sample (``randomizedSample``). Distinct from ``_RANDOM_SQL``
+# (the modulo-100 filter for PERCENTAGE sampling): Snowflake needs none
+# here because TABLESAMPLE ROW is already random, and MSSQL orders by
+# NEWID() since it has no RAND() row function.
+_RANDOM_ORDER_SQL: dict[SqlDialect, str] = {
+    "postgres": "RANDOM()",
+    "mysql": "RAND()",
+    "mariadb": "RAND()",
+    "doris": "RAND()",
+    "mssql": "NEWID()",
+    "snowflake": "RANDOM()",
+    "databricks": "RAND()",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class StaticSampleConfig:
@@ -129,15 +144,22 @@ def _tiered_sample(row_count: int) -> StaticSampleConfig:
     return StaticSampleConfig(profile_sample=0.1, sample_type="PERCENTAGE")
 
 
-def resolve_table_diff_sample_config(
+def resolve_dict_sample_config(
     profile_sample_config: dict[str, Any] | None,
-    *,
-    row_count_fn: Callable[[], int | None],
+    row_count: int,
 ) -> StaticSampleConfig | None:
-    """Resolve a tableDiff sampling config to a static config (or ``None``
-    for no sampling). ``row_count_fn`` (the left-table ``COUNT(*)``) is
-    called only for DYNAMIC configs — a STATIC + PERCENTAGE config never
-    needs the row count."""
+    """Resolve a raw ``profileSampleConfig`` dict (camelCase keys) to a
+    static config, or ``None`` for no sampling.
+
+    The shared STATIC/DYNAMIC semantics for every consumer of the schema
+    shape (tableDiff, the profiler's per-table config, the profiler
+    pipeline config once dumped to a dict): DYNAMIC with ``smartSampling``
+    takes the tiered sample for the row count; DYNAMIC with thresholds
+    takes the largest threshold at or below the row count; STATIC takes
+    its one tier; anything else (or a tier with no sample value) means no
+    sampling. ``row_count`` is only meaningful for DYNAMIC configs —
+    callers that resolve lazily must not fetch it for STATIC ones.
+    """
     if not profile_sample_config:
         return None
     config_type = profile_sample_config.get("sampleConfigType")
@@ -145,7 +167,6 @@ def resolve_table_diff_sample_config(
     if not isinstance(config, dict):
         return None
     if config_type == "DYNAMIC":
-        row_count = row_count_fn() or 0
         if config.get("smartSampling"):
             return _tiered_sample(row_count)
         thresholds = config.get("thresholds") or []
@@ -162,6 +183,22 @@ def resolve_table_diff_sample_config(
     return None
 
 
+def resolve_table_diff_sample_config(
+    profile_sample_config: dict[str, Any] | None,
+    *,
+    row_count_fn: Callable[[], int | None],
+) -> StaticSampleConfig | None:
+    """Resolve a tableDiff sampling config to a static config (or ``None``
+    for no sampling). ``row_count_fn`` (the left-table ``COUNT(*)``) is
+    called only for DYNAMIC configs — a STATIC + PERCENTAGE config never
+    needs the row count."""
+    if not profile_sample_config:
+        return None
+    if profile_sample_config.get("sampleConfigType") != "DYNAMIC":
+        return resolve_dict_sample_config(profile_sample_config, 0)
+    return resolve_dict_sample_config(profile_sample_config, row_count_fn() or 0)
+
+
 def _format_number(value: float) -> str:
     if value == int(value):
         return str(int(value))
@@ -173,13 +210,19 @@ def dataset_sql(
     table_ident: str,
     *,
     sample_config: StaticSampleConfig | None,
+    randomized: bool = False,
 ) -> str:
     """Render the FROM source for the profiler dataset.
 
     No config -> the table itself. PERCENTAGE -> a derived table filtered
     on the dialect's random expression (Snowflake: TABLESAMPLE on the
     table). ROW_COUNT -> a LIMIT / TOP derived table (Snowflake:
-    TABLESAMPLE ROW).
+    TABLESAMPLE ROW). ``randomized`` (``randomizedSample``) only changes
+    ROW_COUNT sampling: the rows are ordered by the dialect's random
+    expression before the limit, so the sample is random instead of
+    whatever order the engine returns. PERCENTAGE sampling is already
+    random (the filter itself is random) and Snowflake TABLESAMPLE ROW
+    is already random, so the flag is a no-op for those.
     """
     if sample_config is None:
         return table_ident
@@ -205,5 +248,7 @@ def dataset_sql(
     if dialect == "snowflake":
         return f"{table_ident} TABLESAMPLE ROW ({count} ROWS)"
     if dialect == "mssql":
-        return f"(SELECT TOP ({count}) * FROM {table_ident}) AS _sample"
-    return f"(SELECT * FROM {table_ident} LIMIT {count}) AS _sample"
+        order = f" ORDER BY {_RANDOM_ORDER_SQL[dialect]}" if randomized else ""
+        return f"(SELECT TOP ({count}) * FROM {table_ident}{order}) AS _sample"
+    order = f" ORDER BY {_RANDOM_ORDER_SQL[dialect]}" if randomized else ""
+    return f"(SELECT * FROM {table_ident}{order} LIMIT {count}) AS _sample"

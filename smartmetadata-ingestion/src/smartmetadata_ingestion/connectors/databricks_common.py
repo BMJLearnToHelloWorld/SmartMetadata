@@ -16,12 +16,15 @@ Uses official OSS clients: databricks-sql-connector / databricks-sdk.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.constraints import nullable_flag
+from smartmetadata_ingestion.connectors.ddl import quote_backtick_ident
 from smartmetadata_ingestion.connectors.profile_sql import (
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
 )
 from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
@@ -66,6 +69,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,26 +78,6 @@ class ViewRow:
     schema_name: str
     name: str
     definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_catalog: str
-    source_schema: str
-    source_table: str
-    target_catalog: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    catalog: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +117,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,14 +141,6 @@ class CatalogReader(Protocol):
     def list_views(self, database: str) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -169,6 +150,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -185,12 +167,14 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        ddls: Mapping[tuple[str, str, str], str] | None = None,
     ) -> None:
         self._databases = list(databases)
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._ddls = dict(ddls or {})
 
     def list_databases(self) -> Sequence[DatabaseRow]:
         return self._databases
@@ -217,21 +201,8 @@ class SequenceCatalogReader:
     def list_views(self, database: str) -> Sequence[ViewRow]:
         return [row for row in self._views if row.database_name == database]
 
-
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
+    def get_table_ddl(self, database: str, schema: str, table: str) -> str | None:
+        return self._ddls.get((database, schema, table))
 
 
 class SequenceProfileReader:
@@ -252,6 +223,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -468,7 +440,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT table_catalog, table_schema, table_name, column_name, full_data_type,
-                   ordinal_position, character_maximum_length, comment
+                   ordinal_position, character_maximum_length, comment, is_nullable
             FROM system.information_schema.columns
             WHERE table_catalog = ? AND table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
@@ -485,6 +457,7 @@ class CursorCatalogReader:
                 ordinal_position=int(row[5]),
                 char_length=row[6],
                 comment=_blank_to_none(row[7]),
+                is_nullable=nullable_flag(row[8]),
             )
             for row in rows
         ]
@@ -509,6 +482,15 @@ class CursorCatalogReader:
             for row in rows
         ]
 
+    def get_table_ddl(self, database: str, schema: str, table: str) -> str | None:
+        ident = ".".join(
+            quote_backtick_ident(part) for part in (database, schema, table)
+        )
+        rows = self._fetch(f"SHOW CREATE TABLE {ident}")
+        if not rows:
+            return None
+        return rows[0][0]
+
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
         with self._connect() as connection:
             cursor = connection.cursor()
@@ -517,75 +499,6 @@ class CursorCatalogReader:
                 return list(cursor.fetchall())
             finally:
                 cursor.close()
-
-
-class CursorLineageReader:
-    def __init__(self, connect) -> None:
-        self._connect = connect
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        rows = self._fetch(
-            """
-            SELECT source_table_full_name, target_table_full_name
-            FROM system.access.table_lineage
-            WHERE source_table_full_name IS NOT NULL
-              AND target_table_full_name IS NOT NULL
-            """
-        )
-        edges: list[LineageEdgeRow] = []
-        for source_full, target_full in rows:
-            source = _split_fqn(source_full)
-            target = _split_fqn(target_full)
-            if source is None or target is None:
-                continue
-            edges.append(
-                LineageEdgeRow(
-                    source_catalog=source[0],
-                    source_schema=source[1],
-                    source_table=source[2],
-                    target_catalog=target[0],
-                    target_schema=target[1],
-                    target_table=target[2],
-                )
-            )
-        return edges
-
-    def _fetch(self, sql: str) -> list[tuple[Any, ...]]:
-        with self._connect() as connection:
-            cursor = connection.cursor()
-            try:
-                cursor.execute(sql)
-                return list(cursor.fetchall())
-            finally:
-                cursor.close()
-
-
-class CursorUsageReader:
-    """Live query-history aggregation.
-
-    Unit BehaviorMatched uses ``SequenceUsageReader``. The live cursor path
-    validates ``queryHistoryTable`` and probes connectivity with ``LIMIT 0``;
-    full statement→table aggregation is IntegrationVerified against a real
-    workspace (runtime history schemas differ by DBSQL version).
-    """
-
-    def __init__(self, connect, *, query_history_table: str = "system.query.history") -> None:
-        self._connect = connect
-        self._table = query_history_table
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        table = self._table
-        if _UNSAFE_IDENT.search(table) or " " in table:
-            raise WorkflowError(f"unsafe queryHistoryTable {table!r}")
-        parts = table.split(".")
-        safe = ".".join(quote_ident(part) for part in parts)
-        with self._connect() as connection:
-            cursor = connection.cursor()
-            try:
-                cursor.execute(f"SELECT 1 FROM {safe} LIMIT 0")
-            finally:
-                cursor.close()
-        return []
 
 
 class CursorProfileReader:
@@ -617,9 +530,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            database, schema, table, metric_params=metric_params, sample_config=sample_config
+            database,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(

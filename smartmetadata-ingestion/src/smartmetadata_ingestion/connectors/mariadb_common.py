@@ -15,12 +15,17 @@ OSS: PyMySQL (mysql-family; no dedicated plugins["mariadb"] key in setup.py).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.constraints import ConstraintRow, nullable_flag
+from smartmetadata_ingestion.connectors.ddl import quote_backtick_ident
+from smartmetadata_ingestion.connectors.procedures import ProcedureRow, epoch_ms
 from smartmetadata_ingestion.connectors.profile_sql import (
+    MYSQL_TABLE_STATS_SQL,
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_mysql,
 )
@@ -42,6 +47,8 @@ class TableRow:
     name: str
     table_type: str
     comment: str | None = None
+    created_ms: int | None = None
+    updated_ms: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +60,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,15 +68,6 @@ class ViewRow:
     schema_name: str
     name: str
     definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_schema: str
-    source_table: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +107,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,10 +126,6 @@ class CatalogReader(Protocol):
     def list_views(self) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -134,6 +134,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]: ...
 
@@ -146,11 +147,19 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        procedures: Sequence[ProcedureRow] = (),
+        constraints: Sequence[ConstraintRow] = (),
+        ddls: Mapping[tuple[str, str], str] | None = None,
+        samples: Mapping[tuple[str, str], list[Any]] | None = None,
     ) -> None:
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._procedures = list(procedures)
+        self._constraints = list(constraints)
+        self._ddls = dict(ddls or {})
+        self._samples = dict(samples or {})
 
     def list_schemas(self) -> Sequence[SchemaRow]:
         return self._schemas
@@ -168,13 +177,19 @@ class SequenceCatalogReader:
     def list_views(self) -> Sequence[ViewRow]:
         return self._views
 
+    def list_procedures(self, schema: str) -> Sequence[ProcedureRow]:
+        return [row for row in self._procedures if row.schema_name == schema]
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
+    def list_constraints(self, schema: str) -> Sequence[ConstraintRow]:
+        return [row for row in self._constraints if row.schema_name == schema]
 
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
+    def get_table_ddl(self, schema: str, table: str) -> str | None:
+        return self._ddls.get((schema, table))
+
+    def sample_column_values(
+        self, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        return list(self._samples.get((schema, table, column), ()))[:limit]
 
 
 class SequenceProfileReader:
@@ -194,6 +209,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -289,7 +305,7 @@ class CursorCatalogReader:
     def list_tables(self, schema: str) -> Sequence[TableRow]:
         rows = self._fetch(
             """
-            SELECT table_schema, table_name, table_type, table_comment
+            SELECT table_schema, table_name, table_type, table_comment, create_time, update_time
             FROM information_schema.tables
             WHERE table_schema = %s
             ORDER BY table_name
@@ -302,6 +318,8 @@ class CursorCatalogReader:
                 name=row[1],
                 table_type=row[2] or "BASE TABLE",
                 comment=_blank_to_none(row[3]),
+                created_ms=epoch_ms(row[4]),
+                updated_ms=epoch_ms(row[5]),
             )
             for row in rows
         ]
@@ -310,7 +328,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT table_schema, table_name, column_name, data_type, ordinal_position,
-                   character_maximum_length, column_comment
+                   character_maximum_length, column_comment, is_nullable
             FROM information_schema.columns
             WHERE table_schema = %s AND table_name = %s
             ORDER BY ordinal_position
@@ -326,6 +344,7 @@ class CursorCatalogReader:
                 ordinal_position=int(row[4]),
                 char_length=row[5],
                 comment=_blank_to_none(row[6]),
+                is_nullable=nullable_flag(row[7]),
             )
             for row in rows
         ]
@@ -342,6 +361,82 @@ class CursorCatalogReader:
             ViewRow(schema_name=row[0], name=row[1], definition=row[2] or "")
             for row in rows
         ]
+
+    def list_procedures(self, schema: str) -> Sequence[ProcedureRow]:
+        rows = self._fetch(
+            """
+            SELECT routine_schema, routine_name, routine_type, external_language,
+                   routine_definition, routine_comment, created, last_altered
+            FROM information_schema.routines
+            WHERE routine_schema = %s
+            ORDER BY routine_name
+            """,
+            (schema,),
+        )
+        return [
+            ProcedureRow(
+                schema_name=row[0],
+                name=row[1],
+                routine_type=row[2],
+                language=row[3],
+                definition=row[4],
+                comment=row[5],
+                created_ms=epoch_ms(row[6]),
+                updated_ms=epoch_ms(row[7]),
+            )
+            for row in rows
+        ]
+    def list_constraints(self, schema: str) -> Sequence[ConstraintRow]:
+        rows = self._fetch(
+            """
+            SELECT tc.table_schema, tc.table_name, tc.constraint_name, tc.constraint_type,
+                   kcu.column_name, kcu.ordinal_position,
+                   kcu.referenced_table_schema, kcu.referenced_table_name,
+                   kcu.referenced_column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON kcu.constraint_schema = tc.constraint_schema
+             AND kcu.constraint_name = tc.constraint_name
+             AND kcu.table_schema = tc.table_schema
+             AND kcu.table_name = tc.table_name
+            WHERE tc.table_schema = %s
+              AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
+            ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+            """,
+            (schema,),
+        )
+        return [
+            ConstraintRow(
+                schema_name=row[0],
+                table_name=row[1],
+                constraint_name=row[2],
+                constraint_type=row[3],
+                column_name=row[4],
+                ordinal_position=int(row[5]),
+                referred_schema=row[6],
+                referred_table=row[7],
+                referred_column=row[8],
+            )
+            for row in rows
+        ]
+
+    def get_table_ddl(self, schema: str, table: str) -> str | None:
+        ident = f"{quote_backtick_ident(schema)}.{quote_backtick_ident(table)}"
+        rows = self._fetch(f"SHOW CREATE TABLE {ident}")
+        if not rows:
+            return None
+        return rows[0][1]
+
+    def sample_column_values(
+        self, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        ident = quote_backtick_ident(column)
+        rows = self._fetch(
+            f"SELECT {ident} FROM {quote_backtick_ident(schema)}.{quote_backtick_ident(table)} "
+            f"WHERE {ident} IS NOT NULL LIMIT %s",
+            (limit,),
+        )
+        return [row[0] for row in rows]
 
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
         with self._connect() as connection:
@@ -379,6 +474,8 @@ class CursorProfileReader:
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
             dialect="mariadb",
+            table_stats_sql=MYSQL_TABLE_STATS_SQL,
+            table_stats_params=lambda database, schema, table: (schema, table),
         )
 
     def profile_table(
@@ -388,9 +485,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            None, schema, table, metric_params=metric_params, sample_config=sample_config
+            None,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]:

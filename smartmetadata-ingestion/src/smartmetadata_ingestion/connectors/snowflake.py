@@ -11,18 +11,43 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.config import SourceConfig
-from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors import snowflake_common
+from smartmetadata_ingestion.connectors.constraints import (
+    ConstraintRow,
+    column_constraint_from_nullable,
+    nullable_flag,
+    schema_constraints_for_database_schema,
+)
+from smartmetadata_ingestion.connectors.ddl import (
+    require_ddl_support,
+    table_ddl_for_database_schema,
+)
+from smartmetadata_ingestion.connectors.json_schema import (
+    attach_json_schemas_for_database_schema,
+    require_json_sampling_support,
+)
+from smartmetadata_ingestion.connectors.owners import (
+    owner_names_resolver,
+    resolve_owner_names,
+)
+from smartmetadata_ingestion.connectors.procedures import (
+    ProcedureRow,
+    epoch_ms,
+    procedures_for_database_schema,
+)
+from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
-from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
+from smartmetadata_ingestion.connectors.table_types import map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_snowflake_type
 from smartmetadata_ingestion.errors import WorkflowError
-from smartmetadata_ingestion.fqn import build_fqn
+from smartmetadata_ingestion.fqn import build_fqn, quote_name
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.resolution import view_parent_schema_tables
 from smartmetadata_ingestion.records import (
     ColumnRecord,
     DatabaseRecord,
@@ -69,6 +94,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,12 +126,20 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        procedures: Sequence[ProcedureRow] = (),
+        constraints: Sequence[ConstraintRow] = (),
+        ddls: Mapping[tuple[str, str, str], str] | None = None,
+        samples: Mapping[tuple[str, str, str], list[Any]] | None = None,
     ) -> None:
         self._databases = list(databases)
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._procedures = list(procedures)
+        self._constraints = list(constraints)
+        self._ddls = dict(ddls or {})
+        self._samples = dict(samples or {})
 
     def list_databases(self) -> Sequence[DatabaseRow]:
         return self._databases
@@ -131,6 +165,28 @@ class SequenceCatalogReader:
 
     def list_views(self, database: str) -> Sequence[ViewRow]:
         return [row for row in self._views if row.database_name == database]
+
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        return [
+            row
+            for row in self._procedures
+            if row.database_name == database and row.schema_name == schema
+        ]
+
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        return [
+            row
+            for row in self._constraints
+            if row.database_name == database and row.schema_name == schema
+        ]
+
+    def get_table_ddl(self, database: str, schema: str, table: str) -> str | None:
+        return self._ddls.get((database, schema, table))
+
+    def sample_column_values(
+        self, database: str, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        return list(self._samples.get((database, schema, table, column), ()))[:limit]
 
 
 class CursorCatalogReader:
@@ -180,7 +236,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             f"""
             SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE,
-                   ORDINAL_POSITION, CHARACTER_MAXIMUM_LENGTH, COMMENT
+                   ORDINAL_POSITION, CHARACTER_MAXIMUM_LENGTH, COMMENT, IS_NULLABLE
             FROM {ident}.INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
             ORDER BY ORDINAL_POSITION
@@ -197,6 +253,7 @@ class CursorCatalogReader:
                 ordinal_position=int(row[5]),
                 char_length=row[6],
                 comment=_blank_to_none(row[7]),
+                is_nullable=nullable_flag(row[8]),
             )
             for row in rows
         ]
@@ -219,6 +276,93 @@ class CursorCatalogReader:
             )
             for row in rows
         ]
+
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        ident = quote_snowflake_ident(database)
+        rows = self._fetch(
+            f"""
+            SELECT PROCEDURE_CATALOG, PROCEDURE_SCHEMA, PROCEDURE_NAME, 'PROCEDURE',
+                   PROCEDURE_LANGUAGE, PROCEDURE_DEFINITION, COMMENT, CREATED, LAST_ALTERED
+            FROM {ident}.INFORMATION_SCHEMA.PROCEDURES
+            WHERE PROCEDURE_SCHEMA = %s
+            UNION ALL
+            SELECT FUNCTION_CATALOG, FUNCTION_SCHEMA, FUNCTION_NAME, 'FUNCTION',
+                   FUNCTION_LANGUAGE, FUNCTION_DEFINITION, COMMENT, CREATED, LAST_ALTERED
+            FROM {ident}.INFORMATION_SCHEMA.FUNCTIONS
+            WHERE FUNCTION_SCHEMA = %s
+            ORDER BY 3
+            """,
+            (schema, schema),
+        )
+        return [
+            ProcedureRow(
+                database_name=row[0],
+                schema_name=row[1],
+                name=row[2],
+                routine_type=row[3],
+                language=row[4],
+                definition=row[5],
+                comment=_blank_to_none(row[6]),
+                created_ms=epoch_ms(row[7]),
+                updated_ms=epoch_ms(row[8]),
+            )
+            for row in rows
+        ]
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        # No referential join: the INFORMATION_SCHEMA referential view is
+        # unverified for Snowflake, so foreign keys carry no referred
+        # columns (schema-valid: nothing in tableConstraint is required).
+        ident = quote_snowflake_ident(database)
+        rows = self._fetch(
+            f"""
+            SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE,
+                   kcu.COLUMN_NAME, kcu.ORDINAL_POSITION
+            FROM {ident}.INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+            JOIN {ident}.INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+              ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+             AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+             AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
+             AND kcu.TABLE_NAME = tc.TABLE_NAME
+            WHERE tc.TABLE_SCHEMA = %s
+              AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
+            ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+            """,
+            (schema,),
+        )
+        return [
+            ConstraintRow(
+                database_name=database,
+                schema_name=row[0],
+                table_name=row[1],
+                constraint_name=row[2],
+                constraint_type=row[3],
+                column_name=row[4],
+                ordinal_position=int(row[5]),
+            )
+            for row in rows
+        ]
+
+    def get_table_ddl(self, database: str, schema: str, table: str) -> str | None:
+        name = ".".join(
+            quote_snowflake_ident(part) for part in (database, schema, table)
+        )
+        rows = self._fetch("SELECT GET_DDL('TABLE', %s)", (name,))
+        if not rows:
+            return None
+        return rows[0][0]
+
+    def sample_column_values(
+        self, database: str, schema: str, table: str, column: str, limit: int
+    ) -> list[Any]:
+        ident = quote_snowflake_ident(column)
+        table_ident = ".".join(
+            quote_snowflake_ident(part) for part in (database, schema, table)
+        )
+        rows = self._fetch(
+            f"SELECT {ident} FROM {table_ident} WHERE {ident} IS NOT NULL LIMIT %s",
+            (limit,),
+        )
+        return [row[0] for row in rows]
 
     def _fetch(self, sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
         with self._connect() as connection:
@@ -251,12 +395,20 @@ class SnowflakeSource:
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         reader = self._require_reader()
+        require_ddl_support(reader, "Snowflake", enabled=self._config.include_ddl)
+        require_json_sampling_support(reader, "Snowflake", enabled=self._config.extract_json_schema)
         for database in self._selected_databases(reader):
             yield DatabaseRecord(name=database.name, service=self._config.service_name)
             database_fqn = build_fqn(self._config.service_name, database.name)
             for schema in self._selected_schemas(reader, database.name):
                 yield SchemaRecord(name=schema.name, database=database_fqn)
                 schema_fqn = build_fqn(self._config.service_name, database.name, schema.name)
+                constraints = schema_constraints_for_database_schema(
+                    reader,
+                    database.name,
+                    service_name=self._config.service_name,
+                    schema_name=schema.name,
+                )
                 for table in reader.list_tables(database.name, schema.name):
                     table_type = map_table_type(table.table_type)
                     if not is_selected_table(
@@ -265,15 +417,65 @@ class SnowflakeSource:
                         include_tables=self._config.include_tables,
                         exclude_tables=self._config.exclude_tables,
                         include_views=self._config.include_views,
+                        include_tables_enabled=self._config.include_tables_enabled,
+                        fqn=f"{schema_fqn}.{quote_name(table.name)}",
+                        use_fqn=self._config.use_fqn_for_filtering,
                     ):
                         continue
+                    columns = self._columns(reader, table)
+                    constraints.apply(table.name, columns)
+                    ddl = table_ddl_for_database_schema(
+                        reader,
+                        "Snowflake",
+                        database.name,
+                        schema_name=schema.name,
+                        table_name=table.name,
+                        enabled=self._config.include_ddl,
+                    )
+                    attach_json_schemas_for_database_schema(
+                        reader,
+                        "Snowflake",
+                        database.name,
+                        schema.name,
+                        table.name,
+                        columns,
+                        self._config,
+                    )
+                    owner_names = resolve_owner_names(
+                        self._config.owner_config,
+                        include_owners=self._config.include_owners,
+                        service_name=self._config.service_name,
+                        database_name=database.name,
+                        schema_name=schema.name,
+                        entity_name=table.name,
+                    )
                     yield TableRecord(
                         name=table.name,
                         database_schema=schema_fqn,
                         table_type=table_type,
                         description=table.comment,
-                        columns=self._columns(reader, table),
+                        columns=columns,
+                        table_constraints=constraints.for_table(table.name),
+                        owner_names=owner_names,
+                        schema_definition=ddl,
                     )
+                yield from procedures_for_database_schema(
+                    reader,
+                    database.name,
+                    schema_fqn=schema_fqn,
+                    schema_name=schema.name,
+                    include=self._config.include_stored_procedures,
+                    exclude=self._config.exclude_stored_procedures,
+                    enabled=self._config.include_stored_procedures_enabled,
+                    use_fqn=self._config.use_fqn_for_filtering,
+                    owner_names_for=owner_names_resolver(
+                        self._config.owner_config,
+                        include_owners=self._config.include_owners,
+                        service_name=self._config.service_name,
+                        database_name=database.name,
+                        schema_name=schema.name,
+                    ),
+                )
             if self._config.include_view_lineage:
                 yield from self._view_lineage(reader, database.name)
 
@@ -306,7 +508,13 @@ class SnowflakeSource:
         return [
             database
             for database in reader.list_databases()
-            if is_selected(database.name, include=self._include_databases(), exclude=exclude)
+            if is_selected(
+                database.name,
+                include=self._include_databases(),
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _selected_schemas(self, reader: CatalogReader, database: str) -> list[SchemaRow]:
@@ -314,7 +522,13 @@ class SnowflakeSource:
         return [
             schema
             for schema in reader.list_schemas(database)
-            if is_selected(schema.name, include=self._config.include_schemas, exclude=exclude)
+            if is_selected(
+                schema.name,
+                include=self._config.include_schemas,
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database, schema.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _columns(self, reader: CatalogReader, table: TableRow) -> list[ColumnRecord]:
@@ -324,6 +538,7 @@ class SnowflakeSource:
             columns.append(
                 ColumnRecord(
                     name=column.name,
+                    constraint=column_constraint_from_nullable(column.is_nullable),
                     data_type=data_type,
                     data_type_display=column.data_type,
                     description=column.comment,
@@ -345,7 +560,9 @@ class SnowflakeSource:
             to_fqn = build_fqn(
                 self._config.service_name, database_name, view.schema_name, view.name
             )
-            for schema_name, table_name in parse_view_parents(view.definition, view.schema_name):
+            for schema_name, table_name in view_parent_schema_tables(
+                view.definition, dialect_for_connection_type("snowflake"), view.schema_name
+            ):
                 if (schema_name, table_name) not in known_tables:
                     continue
                 if schema_name == view.schema_name and table_name == view.name:

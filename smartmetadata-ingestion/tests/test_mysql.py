@@ -242,13 +242,16 @@ def test_mysql_cursor_reader_uses_information_schema() -> None:
     reader = CursorCatalogReader(lambda: FakeConnection(cursor))
     assert [row.name for row in reader.list_schemas()] == ["app"]
     assert "information_schema.schemata" in cursor.sql
-    cursor.rows = [("app", "orders", "BASE TABLE", "")]
+    cursor.rows = [("app", "orders", "BASE TABLE", "", None, None)]
     tables = reader.list_tables("app")
     assert tables[0].name == "orders"
+    assert tables[0].created_ms is None
+    assert tables[0].updated_ms is None
     assert "information_schema.tables" in cursor.sql
-    cursor.rows = [("app", "orders", "id", "int", 1, None, "pk")]
+    cursor.rows = [("app", "orders", "id", "int", 1, None, "pk", "NO")]
     columns = reader.list_columns("app", "orders")
     assert columns[0].comment == "pk"
+    assert columns[0].is_nullable is False
     cursor.rows = [("app", "orders_v", "SELECT 1")]
     assert reader.list_views()[0].name == "orders_v"
     assert cursor.closed is True
@@ -310,21 +313,16 @@ def test_mysql_live_reader_requires_extra(monkeypatch) -> None:
 
 
 from smartmetadata_ingestion.connectors.mysql_common import (
-    LineageEdgeRow as MyLineageEdgeRow,
     ProfileStatRow as MyProfileStatRow,
     SampleRow as MySampleRow,
-    SequenceLineageReader as MySequenceLineageReader,
     SequenceProfileReader as MySequenceProfileReader,
-    SequenceUsageReader as MySequenceUsageReader,
-    UsageEventRow as MyUsageEventRow,
     run_connection_test as my_run_connection_test,
 )
-from smartmetadata_ingestion.connectors.mysql_lineage import MysqlLineageSource
 from smartmetadata_ingestion.connectors.mysql_profiler import MysqlProfilerInterface, MysqlSampler
 from smartmetadata_ingestion.connectors.mysql_quality import MysqlTestSuiteInterface
 from smartmetadata_ingestion.connectors.mysql_usage import MysqlUsageSource
 from smartmetadata_ingestion.connectors.mysql_data_diff import MysqlDataDiff, MysqlTableParameter
-from smartmetadata_ingestion.records import ProfileRecord
+from smartmetadata_ingestion.records import ProfileRecord, TableQueryRecord
 
 
 def _my_conn(**extra):
@@ -341,20 +339,7 @@ def test_mysql_common_connection_test_requires_fields() -> None:
     assert "CheckHostPort" in steps
 
 
-def test_mysql_lineage_source_injected_edges() -> None:
-    source = MysqlLineageSource(
-        SourceConfig(type="mysql-lineage", service_name="my", connection=_my_conn()),
-        reader=MySequenceLineageReader(
-            [MyLineageEdgeRow("shop", "orders", "shop", "orders_v", "select 1")]
-        ),
-    )
-    # mysql lineage from mariadb may use schema-only edges — adapt if dataclass differs
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-
-
-def test_mysql_profiler_sampler_quality_usage_data_diff() -> None:
+def test_mysql_profiler_sampler_quality_usage_data_diff(tmp_path) -> None:
     # ProfileReader signature from mariadb: profile_table(schema, table) without database
     reader = MySequenceProfileReader(
         stats=[MyProfileStatRow(None, row_count=5), MyProfileStatRow("id", null_count=0, distinct_count=5)],
@@ -368,12 +353,25 @@ def test_mysql_profiler_sampler_quality_usage_data_diff() -> None:
     assert MysqlTestSuiteInterface(execute=lambda e: True).run_test_case(
         test_case_fqn="tc", timestamp=1, expression="select 1"
     ).test_case_status == "Success"
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM shop.orders,alice,2026-10-30 09:00:00.000,,5,\n",
+        encoding="utf-8",
+    )
     usage = MysqlUsageSource(
-        SourceConfig(type="mysql-usage", service_name="my", connection=_my_conn()),
-        reader=MySequenceUsageReader([MyUsageEventRow("shop", "shop", "orders", "2026-10-30", 2)]),
+        SourceConfig(
+            type="mysql-usage",
+            service_name="my",
+            connection=_my_conn(),
+            query_log_file_path=str(log_file),
+        ),
     )
     usage.prepare()
-    assert list(usage.produce())[0].count == 2
+    events = list(usage.produce())
+    assert len(events) == 1
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM shop.orders"
     param = MysqlTableParameter.build(_my_conn(), database="shop", schema="shop", table="orders", key_columns=["id"])
     assert param["dialect"] == "mysql"
     diff = MysqlDataDiff(fetch_keys=lambda side: [1] if side["table"] == "orders" else [1, 2])

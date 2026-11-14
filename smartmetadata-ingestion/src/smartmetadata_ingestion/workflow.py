@@ -12,6 +12,9 @@ import logging
 import traceback
 import uuid
 from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 from typing import Any
 
 from smartmetadata_ingestion.client.rest import RestClient
@@ -41,6 +44,7 @@ from smartmetadata_ingestion.datadiff import (
     run_data_diff_spec,
 )
 from smartmetadata_ingestion.errors import (
+    RestError,
     WorkflowError,
     WorkflowExecutionError,
     WorkflowInitializationError,
@@ -55,6 +59,13 @@ from smartmetadata_ingestion.pipeline_status import (
 )
 from smartmetadata_ingestion.processors.identity import Processor, build_processors
 from smartmetadata_ingestion.profiler import ProfilerBinding, profiler_binding
+from smartmetadata_ingestion.profiler_plan import (
+    ProfilerTablePlan,
+    clamp_thread_count,
+    resolve_table_plan,
+    table_passes_classification_filter,
+    validate_pipeline_config,
+)
 from smartmetadata_ingestion.progress import (
     NullHook,
     ProgressHook,
@@ -62,7 +73,11 @@ from smartmetadata_ingestion.progress import (
     RunReport,
     StepStatus,
 )
-from smartmetadata_ingestion.reconcile import reconcile_stale
+from smartmetadata_ingestion.reconcile import (
+    enabled_reconcile_kinds,
+    reconcile_stale,
+    service_family_for_source_type,
+)
 from smartmetadata_ingestion.records import (
     AppRecord,
     ClassificationRecord,
@@ -142,6 +157,22 @@ class MetadataWorkflow:
     def prepare(self) -> None:
         if self._prepared:
             return
+        # ADR:2026-11-14-agent-capability-batch1
+        # Incremental metadata ingestion has no audit-table reader in
+        # this runner: enabling it must fail loudly, never run a full
+        # ingestion while reporting incremental semantics. The gate is
+        # metadata-only; lineage/usage incremental knobs are separate.
+        incremental = self.config.source.incremental
+        if (
+            self.config.workflow.type == "metadata"
+            and incremental is not None
+            and incremental.enabled
+        ):
+            raise WorkflowError(
+                "incremental metadata ingestion is not supported: "
+                "source.incremental.enabled=true needs an audit-table "
+                "incremental reader; disable incremental for a full run"
+            )
         try:
             self._source = build_source(
                 self.config,
@@ -190,10 +221,26 @@ class MetadataWorkflow:
         except BaseException as exc:
             if pending is None:
                 pending = exc
-        try:
-            self._reconcile_if_configured()
-        except Exception as exc:
-            logger.warning("stale reconcile failed: %s", exc)
+        if pending is None:
+            # Reconcile runs when no exception escaped the record run:
+            # the listing then ran to completion, so the seen set is
+            # complete even when individual records failed (their
+            # failures are recorded in the report, not escaping). An
+            # escaping exception means the listing was cut short, and
+            # reconciling against that partial seen set would delete
+            # live entities the run never reached. A reconcile failure
+            # fails the run (D-C7): it is recorded as a sink-step
+            # failure, never swallowed as a warning.
+            # ADR:2026-11-14-agent-capability-batch1
+            try:
+                self._reconcile_if_configured()
+            except Exception as exc:
+                failure = self._record_failure(self.sink_status, "Sink", "sink", exc)
+                self.report.failures.append(failure)
+                pending = exc
+        # Warning counts fold in on both paths: a failed run's partial
+        # warnings still belong in its final status.
+        self._collect_warnings()
         final_state = final_pipeline_state(
             self.report,
             stopped=isinstance(pending, KeyboardInterrupt),
@@ -234,11 +281,10 @@ class MetadataWorkflow:
             )
             return
         end_ms = now_ms() if finished else None
-        steps = (
-            [self.source_status, self.processor_status, self.sink_status]
-            if finished
-            else None
-        )
+        # Steps are reported in every state: the running writeback carries
+        # the (still zero) step skeletons so live cards can attach, and
+        # the finished writeback carries the final counts.
+        steps = [self.source_status, self.processor_status, self.sink_status]
         payload = build_pipeline_status(
             run_id=self.run_id,
             pipeline_state=pipeline_state,
@@ -263,33 +309,64 @@ class MetadataWorkflow:
             )
 
 
+    def _collect_warnings(self) -> None:
+        """Fold component warning counts into the step statuses.
+
+        The counted set and the single increment path live on
+        ``StepStatus.warn`` (C-11/B-4): components expose counts, and
+        the workflow folds them in here via ``warn``. The base
+        workflow has none beyond reconcile, which folds its own skips
+        in ``_reconcile_if_configured``; subclasses override to add
+        theirs. Implementations must be pure count reads that cannot
+        raise — this runs on success and failure paths alike, just
+        before the final status writeback.
+        """
+        return None
+
     def _reconcile_if_configured(self) -> None:
         if not self.config.workflow.reconcile_stale:
             return
+        # Defense in depth: only metadata runs reconcile. Translation
+        # already closes the gate for other workflow types, but a YAML
+        # config may pair reconcileStale with any type, and a
+        # usage/lineage/profiler run must never delete catalog
+        # entities because a config said so.
+        if self.config.workflow.type != "metadata":
+            logger.warning(
+                "reconcile skipped: workflow type %s never reconciles; "
+                "reconcileStale=true is ignored",
+                self.config.workflow.type,
+            )
+            # One sink-step warning for the skipped reconcile itself
+            # (counted set item 2): the run asked for reconcile and
+            # its type can never have it.
+            self.sink_status.warn(1)
+            return
         scope_fqn = self.config.source.service_name
-        source_type = self.config.source.type
-        if source_type in {"kafka", "redpanda"}:
-            scope_entity_type = "messagingService"
-        elif source_type in {"superset", "metabase"}:
-            scope_entity_type = "dashboardService"
-        elif source_type in {"s3"}:
-            scope_entity_type = "storageService"
-        elif source_type in {"prefect", "dagster"}:
-            scope_entity_type = "pipelineService"
-        else:
-            scope_entity_type = "databaseService"
+        scope_entity_type = service_family_for_source_type(self.config.source.type)
         seen = getattr(self._sink, "seen", None)
         if isinstance(seen, SeenSet):
             for kind, fqns in seen.by_kind.items():
                 for fqn in fqns:
                     self.seen.by_kind.setdefault(kind, set()).add(fqn)
-        reconcile_stale(
-            self._client,
-            scope_fqn=scope_fqn,
-            scope_entity_type=scope_entity_type,
-            seen=self.seen,
-            dry_run=self.config.workflow.reconcile_dry_run,
-        )
+        gate_skipped: list[str] = []
+        enabled = enabled_reconcile_kinds(self.config.source, skipped=gate_skipped)
+        # Gate-excluded kinds count even when the reconcile itself
+        # then fails: the skips already happened.
+        self.sink_status.warn(len(gate_skipped))
+        empty_skipped: list[str] = []
+        try:
+            reconcile_stale(
+                self._client,
+                scope_fqn=scope_fqn,
+                scope_entity_type=scope_entity_type,
+                seen=self.seen,
+                enabled_kinds=enabled,
+                dry_run=self.config.workflow.reconcile_dry_run,
+                skipped=empty_skipped,
+            )
+        finally:
+            self.sink_status.warn(len(empty_skipped))
 
     def _execute_records(self) -> None:
         if self._source is None:
@@ -319,8 +396,17 @@ class MetadataWorkflow:
         produced.extend(self._configured_classifications())
         produced.extend(self._configured_tags())
         produced.extend(self._configured_apps())
+        # The source step's progress totals are known once everything is
+        # collected: per-kind discovered counts, completed as each record
+        # is taken up for handling.
+        totals: dict[str, int] = {}
+        for record in produced:
+            totals[record.kind] = totals.get(record.kind, 0) + 1
+        for kind, total in totals.items():
+            self.source_status.set_total(kind, total)
         for record in order_records(produced):
             self.source_status.records += 1
+            self.source_status.complete(record.kind)
             self._handle_record(record)
 
     def _close_iterator(self, iterator: Iterator[WorkflowRecord]) -> Exception | None:
@@ -359,6 +445,10 @@ class MetadataWorkflow:
             self.source_status.filtered += 1
             self._notify_record(record, "skipped")
             return
+        # The record reached the sink: it counts toward the sink step's
+        # expected total now, and toward processed only once its write
+        # (or flush) actually lands.
+        self.sink_status.expect(current.kind)
         try:
             self._sink.write(current)
             self._count_sink_write(current)
@@ -386,6 +476,7 @@ class MetadataWorkflow:
         drain = getattr(self._sink, "take_flush_result", None)
         if not callable(drain):
             self.sink_status.records += 1
+            self.sink_status.complete(record.kind)
             self.report.succeeded += 1
             self._notify_record(record, "written")
             return
@@ -394,6 +485,7 @@ class MetadataWorkflow:
         self._drain_flush_result()
         if not buffered:
             self.sink_status.records += 1
+            self.sink_status.complete(record.kind)
             self.report.succeeded += 1
             self._notify_record(record, "written")
 
@@ -419,8 +511,9 @@ class MetadataWorkflow:
         payload becomes its own failure, so the run history names the
         records that did not land instead of one batch error.
         """
-        for count in result.succeeded.values():
+        for kind, count in result.succeeded.items():
             self.sink_status.records += count
+            self.sink_status.complete(kind, count)
             self.report.succeeded += count
         for failure in result.failed:
             record_failure = RecordFailure(
@@ -553,11 +646,35 @@ def _profiler_metric_params(
     return params
 
 
+# A profiler run succeeds only when at least 80% of its attempted tables
+# produced a profile (the pin ProfilerWorkflow successThreshold): below
+# that, the run fails loudly instead of reporting partial success as if
+# the catalog were fully profiled. Profiles already written stay written.
+PROFILER_SUCCESS_THRESHOLD_PCT = 80
+
+
+@dataclass
+class _ProfileWork:
+    """One table queued for profiling, with its resolved plan."""
+
+    database: str
+    schema: str
+    table: str
+    fqn: str
+    plan: ProfilerTablePlan
+
+
 class ProfilerWorkflow(MetadataWorkflow):
     """Runs the connector's profiler interface live against the source database.
 
     Table enumeration reuses the metadata source's ``produce()``; only
     ``TableRecord`` entries are profiled, nothing is re-ingested as metadata.
+    Each table is enriched with its catalog entity (tableProfilerConfig,
+    custom metrics, tags, partition) and resolved against the pipeline
+    knobs and the global profiler configuration before compute; a table
+    whose fetch, plan, or compute fails is recorded and skipped, and the
+    run fails only when fewer than the success threshold of attempted
+    tables produced a profile.
     """
 
     def __init__(
@@ -570,9 +687,15 @@ class ProfilerWorkflow(MetadataWorkflow):
         processors: list[Processor] | None = None,
         hook: ProgressHook | None = None,
         profile_reader: Any | None = None,
+        table_fetcher: Any | None = None,
         run_id: str | None = None,
     ) -> None:
         self._injected_reader = profile_reader
+        # A fetcher maps a table FQN to its catalog entity dict (or None
+        # when the table is not cataloged yet); tests inject one to avoid
+        # the network. Production always uses the REST client.
+        self._injected_fetcher = table_fetcher
+        self._workers: int | None = None
         super().__init__(
             config,
             client=client,
@@ -586,6 +709,25 @@ class ProfilerWorkflow(MetadataWorkflow):
     def prepare(self) -> None:
         if self._prepared:
             return
+        # Config the runner cannot honor fails the run before any source
+        # or sink is built, never mid-run after partial work.
+        validate_pipeline_config(self.config.source)
+        requested_threads = self.config.source.thread_count
+        self._workers = clamp_thread_count(requested_threads)
+        if requested_threads is not None and self._workers != requested_threads:
+            logger.warning(
+                "profiler threadCount %s clamped to %s",
+                requested_threads,
+                self._workers,
+            )
+        if self._injected_fetcher is None and not callable(
+            getattr(self._client, "get_table_by_name", None)
+        ):
+            raise WorkflowInitializationError(
+                "profiler workflow requires a catalog client with "
+                "get_table_by_name (or an injected table_fetcher) to "
+                "resolve per-table profiler configuration"
+            )
         super().prepare()
         self._profiler_binding = _require_binding(self.config, "profiler")
         reader = self._injected_reader
@@ -626,22 +768,168 @@ class ProfilerWorkflow(MetadataWorkflow):
         table_samples = {
             spec.table_fqn: spec.to_static() for spec in self.config.profiler_table_samples
         }
+        global_settings = self._fetch_global_settings()
+        work_items, early_failures = self._plan_tables(
+            tables, global_settings, default_sample, table_samples
+        )
+        self.source_status.set_total("table", len(work_items))
+        computed = self._compute_profiles(work_items, timestamp, metric_params)
+        for _work, profile in computed:
+            if profile is None:
+                continue
+            self.source_status.complete("table")
+            self._handle_record(profile)
+        # Fetch/plan failures count toward the denominator: a run whose
+        # tables mostly failed before compute must trip the threshold,
+        # not report 100% over the survivors. Classification-filtered
+        # tables are not counted — the filter is scope, not failure, and
+        # an all-filtered run has nothing to fail.
+        attempted = len(work_items) + early_failures
+        succeeded = sum(1 for _, profile in computed if profile is not None)
+        if attempted and succeeded * 100 < PROFILER_SUCCESS_THRESHOLD_PCT * attempted:
+            raise WorkflowExecutionError(
+                f"profiler run failed: {succeeded} of {attempted} tables "
+                f"produced a profile, below the {PROFILER_SUCCESS_THRESHOLD_PCT}% "
+                "success threshold"
+            )
+
+    def _plan_tables(
+        self,
+        tables: list[tuple[str, str, str]],
+        global_settings: dict[str, Any] | None,
+        default_sample: Any,
+        table_samples: dict[str, Any],
+    ) -> tuple[list[_ProfileWork], int]:
+        """Resolve each table's plan, sequentially: entity fetches are
+        REST calls and plan resolution is pure, so neither benefits from
+        threads. A fetch or plan failure isolates to its table. Returns
+        the queued work plus the count of tables that failed before
+        compute, so the success threshold counts them as attempted."""
+        source = self.config.source
+        work_items: list[_ProfileWork] = []
+        early_failures = 0
         for database, schema, table in tables:
-            # Per-table override wins over the workflow default; the server
-            # levels (entity tableProfilerConfig / schema / database) are
-            # not pulled by the workflow yet (R-W3H-6-sampler-server-config).
-            table_fqn = build_fqn(self.config.source.service_name, database, schema, table)
-            sample_config = resolve_sample_config(table_samples.get(table_fqn), default_sample)
-            profile = self._profiler.profile(
-                service=self.config.source.service_name,
-                database=database,
-                schema=schema,
-                table=table,
+            table_fqn = build_fqn(source.service_name, database, schema, table)
+            try:
+                entity = self._fetch_table_entity(table_fqn)
+            except Exception as exc:
+                self._record_table_failure(table_fqn, exc)
+                early_failures += 1
+                continue
+            if not table_passes_classification_filter(source, entity):
+                self.source_status.filtered += 1
+                continue
+            try:
+                plan = resolve_table_plan(
+                    source,
+                    entity,
+                    global_settings,
+                    fallback_sample=resolve_sample_config(
+                        table_samples.get(table_fqn), default_sample
+                    ),
+                )
+            except Exception as exc:
+                self._record_table_failure(table_fqn, exc)
+                early_failures += 1
+                continue
+            work_items.append(
+                _ProfileWork(
+                    database=database,
+                    schema=schema,
+                    table=table,
+                    fqn=table_fqn,
+                    plan=plan,
+                )
+            )
+        return work_items, early_failures
+
+    def _compute_profiles(
+        self,
+        work_items: list[_ProfileWork],
+        timestamp: int,
+        metric_params: dict[str, dict[str, dict[str, Any]]],
+    ) -> list[tuple[_ProfileWork, ProfileRecord | None]]:
+        """Compute profiles, in submission order. Compute is the only
+        parallel stage: records reach the sink sequentially afterwards,
+        because sinks may buffer. A single worker still runs through the
+        executor so the per-table timeout applies to every run. A thread
+        that outlives its timeout cannot be killed mid-query; it is
+        abandoned (shutdown does not wait) and the table is already
+        recorded as failed."""
+        timeout = self.config.source.timeout_seconds
+        service = self.config.source.service_name
+
+        def _compute(work: _ProfileWork) -> ProfileRecord:
+            return self._profiler.profile(
+                service=service,
+                database=work.database,
+                schema=work.schema,
+                table=work.table,
                 timestamp=timestamp,
                 metric_params=metric_params,
-                sample_config=sample_config,
+                options=work.plan.to_options(),
             )
-            self._handle_record(profile)
+
+        executor = ThreadPoolExecutor(
+            max_workers=self._workers or 1, thread_name_prefix="profiler"
+        )
+        try:
+            futures = [executor.submit(_compute, work) for work in work_items]
+            computed: list[tuple[_ProfileWork, ProfileRecord | None]] = []
+            for work, future in zip(work_items, futures, strict=True):
+                try:
+                    computed.append((work, future.result(timeout=timeout)))
+                except FutureTimeoutError:
+                    self._record_table_failure(
+                        work.fqn,
+                        TimeoutError(
+                            f"profiling timed out after {timeout} seconds"
+                        ),
+                    )
+                    computed.append((work, None))
+                except Exception as exc:
+                    self._record_table_failure(work.fqn, exc)
+                    computed.append((work, None))
+            return computed
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    def _record_table_failure(self, table_fqn: str, exc: Exception) -> None:
+        failure = self._record_failure(
+            self.processor_status, table_fqn, "table", exc
+        )
+        self.report.failures.append(failure)
+
+    def _fetch_global_settings(self) -> dict[str, Any] | None:
+        """The global ProfilerConfiguration settings, once per run. An
+        unreadable settings endpoint leaves metric filtering to the
+        pipeline and table configs, with a warning — the settings read
+        is advisory, never a run blocker."""
+        reader = getattr(self._client, "get_profiler_config_settings", None)
+        if not callable(reader):
+            return None
+        try:
+            return reader()
+        except Exception as exc:
+            logger.warning("could not read profilerConfiguration settings: %s", exc)
+            return None
+
+    def _fetch_table_entity(self, table_fqn: str) -> dict[str, Any] | None:
+        """One table's catalog entity, or None when the table is not
+        cataloged yet (HTTP 404): uncataloged tables profile with
+        pipeline config only. Any other fetch error isolates to the
+        table."""
+        try:
+            if self._injected_fetcher is not None:
+                return self._injected_fetcher(table_fqn)
+            return self._client.get_table_by_name(
+                table_fqn,
+                fields="tableProfilerConfig,columns,customMetrics,tags,tablePartition",
+            )
+        except RestError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
 
 
 class TestSuiteWorkflow(MetadataWorkflow):

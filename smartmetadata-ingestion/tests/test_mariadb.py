@@ -15,16 +15,13 @@ from smartmetadata_ingestion.connectors.mariadb_common import (
     ColumnRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
     SequenceProfileReader,
     TableRow,
     ViewRow,
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
     run_connection_test,
 )
-from smartmetadata_ingestion.connectors.mariadb_lineage import MariaDBLineageSource
 from smartmetadata_ingestion.connectors.mariadb_profiler import (
     MariaDBProfilerInterface,
     MariaDBSampleHelper,
@@ -123,22 +120,6 @@ def test_mariadb_metadata_tree_and_view_lineage() -> None:
     assert lineage.from_entity.fqn.endswith(".sales.orders")
     assert lineage.to_entity.fqn.endswith(".sales.orders_v")
     assert lineage.source == "ViewLineage"
-
-
-def test_mariadb_lineage_source_injected_edges() -> None:
-    source = MariaDBLineageSource(
-        SourceConfig(type="mariadb-lineage", service_name="d", connection=_conn()),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow("sales", "orders", "sales", "orders_v", "select 1"),
-            ]
-        ),
-    )
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert isinstance(edges[0], LineageRecord)
-    assert edges[0].sql_query == "select 1"
 
 
 def test_mariadb_profiler_and_sample() -> None:

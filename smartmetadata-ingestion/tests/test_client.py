@@ -314,3 +314,50 @@ def test_patch_automation_workflow_response_sends_json_patch() -> None:
         {"op": "add", "path": "/response", "value": result},
         {"op": "add", "path": "/status", "value": "Failed"},
     ]
+
+
+def test_lineage_reads_and_delete_paths() -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, str(request.url.query)))
+        if request.method == "DELETE":
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"entity": {}, "nodes": []})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        client.get_lineage_by_name(
+            "table", "svc.db.public.orders", upstream_depth=1, downstream_depth=0
+        )
+        client.delete_lineage_by_source("table", "svc.db.public.orders_v", "ViewLineage")
+        client.get_query_by_name("abc123")
+        client.get_stored_procedure_by_name("svc.db.public.load_orders", fields="*")
+    assert seen[0][0] == "GET"
+    assert seen[0][1].endswith("/v1/lineage/table/name/svc.db.public.orders")
+    assert "upstreamDepth=1" in seen[0][2]
+    assert "downstreamDepth=0" in seen[0][2]
+    assert seen[1][0] == "DELETE"
+    assert seen[1][1].endswith(
+        "/v1/lineage/source/name/table/svc.db.public.orders_v/type/ViewLineage"
+    )
+    assert seen[2][0] == "GET"
+    assert seen[2][1].endswith("/v1/queries/name/abc123")
+    assert seen[3][0] == "GET"
+    assert seen[3][1].endswith("/v1/storedProcedures/name/svc.db.public.load_orders")
+    assert "fields=" in seen[3][2]
+
+
+def test_lineage_reads_require_fqn_and_surface_404() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "not found"})
+
+    with RestClient(_jwt_server(), transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RestError) as excinfo:
+            client.get_query_by_name("missing")
+        assert excinfo.value.status_code == 404
+        with pytest.raises(Exception, match="fqn is required"):
+            client.get_lineage_by_name("table", "  ")
+        with pytest.raises(Exception, match="query name is required"):
+            client.get_query_by_name("")
+        with pytest.raises(Exception, match="fqn is required"):
+            client.get_stored_procedure_by_name("")

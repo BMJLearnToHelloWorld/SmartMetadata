@@ -9,12 +9,14 @@
 """Usage pipeline builder: a single usage_task DAG.
 
 Mirrors official ``build_usage_dag``'s source-type rule (source type
-``<base>-usage``); the official query-parser processor, table-usage stage
-and metadata-usage bulkSink have no product counterparts — the product
-``<base>-usage`` source produces UsageRecords itself, so the translation
-keeps processors empty. raiseOnError follows the pipeline value: official
-usage builds its WorkflowConfig with ``build_workflow_config_property``,
-which carries it.
+``<base>-usage``). The product counterparts of the official query-parser
+processor, table-usage stage and metadata-usage bulkSink live in the
+runner's ``smartmetadata_ingestion.usage`` package (processor, stage,
+bulk sink) and run inside ``UsageWorkflow``; the ``<base>-usage`` source
+produces raw ``TableQuery`` records, so the translation keeps processors
+empty. raiseOnError follows the pipeline value: official usage builds
+its WorkflowConfig with ``build_workflow_config_property``, which
+carries it.
 """
 
 from __future__ import annotations

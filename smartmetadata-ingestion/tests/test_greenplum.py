@@ -17,16 +17,13 @@ from smartmetadata_ingestion.connectors.greenplum_common import (
     DatabaseRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
     SequenceProfileReader,
     TableRow,
     ViewRow,
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
     run_connection_test,
 )
-from smartmetadata_ingestion.connectors.greenplum_lineage import GreenplumLineageSource
 from smartmetadata_ingestion.connectors.greenplum_profiler import (
     GreenplumProfilerInterface,
     GreenplumSampleHelper,
@@ -123,26 +120,6 @@ def test_greenplum_metadata_tree_and_view_lineage() -> None:
     assert lineage.source == "ViewLineage"
 
 
-def test_greenplum_lineage_source_injected_edges() -> None:
-    source = GreenplumLineageSource(
-        SourceConfig(type="greenplum-lineage", service_name="s", connection=_conn()),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow(
-                    "analytics", "public", "orders",
-                    "analytics", "public", "orders_v",
-                    "select 1",
-                ),
-            ]
-        ),
-    )
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert isinstance(edges[0], LineageRecord)
-    assert edges[0].sql_query == "select 1"
-
-
 def test_greenplum_profiler_and_sample() -> None:
     reader = SequenceProfileReader(
         stats=[
@@ -176,7 +153,6 @@ def test_greenplum_has_no_usage_scaffolding() -> None:
         assert not hasattr(common, name), f"unexpected invent: {name}"
     for name in (
         "SequenceCatalogReader",
-        "SequenceLineageReader",
         "SequenceProfileReader",
         "run_connection_test",
         "CursorCatalogReader",

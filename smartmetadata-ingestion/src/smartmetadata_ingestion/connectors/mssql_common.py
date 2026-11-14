@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Shared MSSQL connection, catalog/usage/lineage readers, and helpers.
+"""Shared MSSQL connection, catalog/usage readers, and helpers.
 
 Clean-room alignment to Apache OpenMetadata MssqlConnection / service_spec
 (metadata, lineage, usage, sampler, data_diff, connection).
@@ -19,8 +19,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from smartmetadata_ingestion.connectors.constraints import ConstraintRow, nullable_flag
+from smartmetadata_ingestion.connectors.procedures import ProcedureRow
 from smartmetadata_ingestion.connectors.profile_sql import (
+    MSSQL_TABLE_STATS_SQL,
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_mssql,
 )
@@ -67,6 +71,7 @@ class ColumnRow:
     ordinal_position: int
     char_length: int | None = None
     comment: str | None = None
+    is_nullable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,26 +80,6 @@ class ViewRow:
     schema_name: str
     name: str
     definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_database: str
-    source_schema: str
-    source_table: str
-    target_database: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    database: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +119,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,14 +143,6 @@ class CatalogReader(Protocol):
     def list_views(self, database: str) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -170,6 +152,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -186,12 +169,16 @@ class SequenceCatalogReader:
         tables: Sequence[TableRow] = (),
         columns: Sequence[ColumnRow] = (),
         views: Sequence[ViewRow] = (),
+        procedures: Sequence[ProcedureRow] = (),
+        constraints: Sequence[ConstraintRow] = (),
     ) -> None:
         self._databases = list(databases)
         self._schemas = list(schemas)
         self._tables = list(tables)
         self._columns = list(columns)
         self._views = list(views)
+        self._procedures = list(procedures)
+        self._constraints = list(constraints)
 
     def list_databases(self) -> Sequence[DatabaseRow]:
         return self._databases
@@ -218,21 +205,19 @@ class SequenceCatalogReader:
     def list_views(self, database: str) -> Sequence[ViewRow]:
         return [row for row in self._views if row.database_name == database]
 
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        return [
+            row
+            for row in self._procedures
+            if row.database_name == database and row.schema_name == schema
+        ]
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        return [
+            row
+            for row in self._constraints
+            if row.database_name == database and row.schema_name == schema
+        ]
 
 
 class SequenceProfileReader:
@@ -253,6 +238,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -453,7 +439,7 @@ class CursorCatalogReader:
         rows = self._fetch(
             """
             SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE,
-                   ORDINAL_POSITION, CHARACTER_MAXIMUM_LENGTH
+                   ORDINAL_POSITION, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
             ORDER BY ORDINAL_POSITION
@@ -469,6 +455,7 @@ class CursorCatalogReader:
                 data_type=row[3] or "STRING",
                 ordinal_position=int(row[4]),
                 char_length=row[5],
+                is_nullable=nullable_flag(row[6]),
             )
             for row in rows
         ]
@@ -487,6 +474,67 @@ class CursorCatalogReader:
                 schema_name=row[0],
                 name=row[1],
                 definition=row[2] or "",
+            )
+            for row in rows
+        ]
+
+    def list_procedures(self, database: str, schema: str) -> Sequence[ProcedureRow]:
+        rows = self._fetch(
+            """
+            SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, ROUTINE_DEFINITION
+            FROM INFORMATION_SCHEMA.ROUTINES
+            WHERE ROUTINE_SCHEMA = ?
+            ORDER BY ROUTINE_NAME
+            """,
+            (schema,),
+        )
+        return [
+            ProcedureRow(
+                database_name=database,
+                schema_name=row[0],
+                name=row[1],
+                routine_type=row[2],
+                definition=row[3],
+            )
+            for row in rows
+        ]
+    def list_constraints(self, database: str, schema: str) -> Sequence[ConstraintRow]:
+        rows = self._fetch(
+            """
+            SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, tc.CONSTRAINT_NAME, tc.CONSTRAINT_TYPE,
+                   kcu.COLUMN_NAME, kcu.ORDINAL_POSITION,
+                   kcu2.TABLE_SCHEMA, kcu2.TABLE_NAME, kcu2.COLUMN_NAME
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+              ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+             AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+             AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
+             AND kcu.TABLE_NAME = tc.TABLE_NAME
+            LEFT JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+              ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+             AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+            LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu2
+              ON kcu2.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA
+             AND kcu2.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME
+             AND kcu2.ORDINAL_POSITION = kcu.ORDINAL_POSITION
+            WHERE tc.TABLE_SCHEMA = ?
+              AND tc.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
+            ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION
+            """,
+            (schema,),
+        )
+        return [
+            ConstraintRow(
+                database_name=database,
+                schema_name=row[0],
+                table_name=row[1],
+                constraint_name=row[2],
+                constraint_type=row[3],
+                column_name=row[4],
+                ordinal_position=int(row[5]),
+                referred_schema=row[6],
+                referred_table=row[7],
+                referred_column=row[8],
             )
             for row in rows
         ]
@@ -526,6 +574,8 @@ class CursorProfileReader:
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
             dialect="mssql",
+            table_stats_sql=MSSQL_TABLE_STATS_SQL,
+            table_stats_params=lambda database, schema, table: (schema, table),
         )
 
     def profile_table(
@@ -536,9 +586,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            database, schema, table, metric_params=metric_params, sample_config=sample_config
+            database,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(

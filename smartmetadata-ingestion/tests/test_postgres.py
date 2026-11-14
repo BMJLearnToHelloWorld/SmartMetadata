@@ -20,7 +20,6 @@ from smartmetadata_ingestion.connectors.postgres import (
     SequenceCatalogReader,
     TableRow,
     ViewRow,
-    parse_view_parents,
 )
 from smartmetadata_ingestion.records import (
     DatabaseRecord,
@@ -150,29 +149,19 @@ def test_store_connection_secrets_is_opt_in() -> None:
     assert service.connection["config"]["authType"]["password"] == "secret"
 
 
-def test_parse_view_parents_reads_from_and_join() -> None:
-    sql = 'SELECT * FROM public.orders JOIN "other" o ON o.id = orders.id'
-    assert parse_view_parents(sql, "public") == [("public", "orders"), ("public", "other")]
-
-
 # --- OM DefaultDatabaseSpec full-chain BehaviorMatched (unit) ---
 from smartmetadata_ingestion.connectors.postgres_common import (
     ColumnRow as PgColumnRow,
     DatabaseRow as PgDatabaseRow,
-    LineageEdgeRow as PgLineageEdgeRow,
     ProfileStatRow as PgProfileStatRow,
     SampleRow as PgSampleRow,
     SchemaRow as PgSchemaRow,
     SequenceCatalogReader as PgSequenceCatalogReader,
-    SequenceLineageReader as PgSequenceLineageReader,
     SequenceProfileReader as PgSequenceProfileReader,
-    SequenceUsageReader as PgSequenceUsageReader,
     TableRow as PgTableRow,
-    UsageEventRow as PgUsageEventRow,
     ViewRow as PgViewRow,
     run_connection_test as pg_run_connection_test,
 )
-from smartmetadata_ingestion.connectors.postgres_lineage import PostgresLineageSource
 from smartmetadata_ingestion.connectors.postgres_profiler import (
     PostgresProfilerInterface,
     PostgresSampler,
@@ -183,7 +172,7 @@ from smartmetadata_ingestion.connectors.postgres_data_diff import (
     PostgresDataDiff,
     PostgresTableParameter,
 )
-from smartmetadata_ingestion.records import ProfileRecord, UsageRecord
+from smartmetadata_ingestion.records import ProfileRecord, TableQueryRecord
 
 
 def _pg_conn(**extra):
@@ -229,26 +218,7 @@ def test_postgres_live_connection_uses_auth_type_password(monkeypatch) -> None:
     assert calls[0]["password"] == "from-auth-type"
 
 
-def test_postgres_lineage_source_injected_edges() -> None:
-    source = PostgresLineageSource(
-        SourceConfig(type="postgres-lineage", service_name="pg", connection=_pg_conn()),
-        reader=PgSequenceLineageReader(
-            [
-                PgLineageEdgeRow(
-                    "warehouse", "public", "orders",
-                    "warehouse", "public", "orders_v",
-                    "select 1",
-                )
-            ]
-        ),
-    )
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert edges[0].sql_query == "select 1"
-
-
-def test_postgres_profiler_sampler_quality_usage_data_diff() -> None:
+def test_postgres_profiler_sampler_quality_usage_data_diff(tmp_path) -> None:
     reader = PgSequenceProfileReader(
         stats=[
             PgProfileStatRow(None, row_count=10),
@@ -266,13 +236,25 @@ def test_postgres_profiler_sampler_quality_usage_data_diff() -> None:
     dq = PostgresTestSuiteInterface(execute=lambda expr: True)
     assert dq.run_test_case(test_case_fqn="tc", timestamp=1, expression="select 1").test_case_status == "Success"
 
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM warehouse.public.orders,alice,2026-10-30 09:00:00.000,,5,\n",
+        encoding="utf-8",
+    )
     usage = PostgresUsageSource(
-        SourceConfig(type="postgres-usage", service_name="pg", connection=_pg_conn()),
-        reader=PgSequenceUsageReader([PgUsageEventRow("warehouse", "public", "orders", "2026-10-30", 4)]),
+        SourceConfig(
+            type="postgres-usage",
+            service_name="pg",
+            connection=_pg_conn(),
+            query_log_file_path=str(log_file),
+        ),
     )
     usage.prepare()
     events = list(usage.produce())
-    assert len(events) == 1 and events[0].count == 4
+    assert len(events) == 1
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM warehouse.public.orders"
 
     param = PostgresTableParameter.build(
         _pg_conn(), database="warehouse", schema="public", table="orders", key_columns=["id"]

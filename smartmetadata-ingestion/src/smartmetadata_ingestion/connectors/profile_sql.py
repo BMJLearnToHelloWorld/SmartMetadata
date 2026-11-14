@@ -28,6 +28,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, Literal
@@ -37,6 +38,8 @@ from smartmetadata_ingestion.data_quality.sampling import (
     dataset_sql,
 )
 from smartmetadata_ingestion.errors import WorkflowError
+from smartmetadata_ingestion.fqn import build_fqn
+from smartmetadata_ingestion.records import ProfileRecord
 
 ParamStyle = Literal["format", "qmark"]
 
@@ -218,10 +221,209 @@ PARAMETERIZED_METRICS: tuple[str, ...] = (
     "countInSet",
 )
 
+# The metric vocabulary: ``metricType`` enum of
+# ``configuration/profilerConfiguration.json`` (36 values). A pipeline
+# ``metrics`` entry outside this set is a configuration error, never a
+# silently skipped name.
+METRIC_TYPE_NAMES: frozenset[str] = frozenset(
+    {
+        "mean",
+        "valuesCount",
+        "countInSet",
+        "columnCount",
+        "distinctCount",
+        "distinctProportion",
+        "iLikeCount",
+        "likeCount",
+        "notLikeCount",
+        "regexCount",
+        "notRegexCount",
+        "max",
+        "maxLength",
+        "min",
+        "minLength",
+        "nullCount",
+        "rowCount",
+        "stddev",
+        "sum",
+        "uniqueCount",
+        "uniqueProportion",
+        "columnNames",
+        "duplicateCount",
+        "iLikeRatio",
+        "likeRatio",
+        "nullProportion",
+        "interQuartileRange",
+        "nonParametricSkew",
+        "median",
+        "firstQuartile",
+        "thirdQuartile",
+        "system",
+        "histogram",
+        "cardinalityDistribution",
+        "valueRank",
+        "nullMissingCount",
+    }
+)
+
+# Table-level metrics: computed once per table, not per column.
+# ``columnNames`` has no TableProfile field in either schema copy and the
+# pin's write-back never maps it, so selecting it changes nothing
+# observable — it is accepted (it is a real metric name) and its value,
+# the column listing, stays on the table stat row.
+TABLE_METRIC_NAMES: frozenset[str] = frozenset({"rowCount", "columnCount", "columnNames"})
+
+# ``system`` is not a column metric: it selects system profiles, which no
+# dialect has a wired computer for (bounded residual — requesting it fails
+# loud at workflow prepare). ``valueRank`` never lands as a metric of its
+# own; it only ranks values inside the cardinalityDistribution CTE.
+SYSTEM_METRIC = "system"
+VALUE_RANK_METRIC = "valueRank"
+
+# Composed/hybrid metrics and the static metrics they are derived from.
+# A selected composed metric pulls its prerequisites into the effective
+# set (the closure below), and the write-back carries that effective set:
+# selecting distinctProportion also writes distinctCount and valuesCount,
+# as the pin's unfiltered write-back does — the pin writes every computed
+# result, never filtering back to the requested names. The run computes
+# what is selected, plus exactly the inputs those selections need, never
+# a second data pass.
+_METRIC_DEPENDENCIES: dict[str, frozenset[str]] = {
+    "distinctProportion": frozenset({"distinctCount", "valuesCount"}),
+    "uniqueProportion": frozenset({"uniqueCount", "valuesCount"}),
+    "nullProportion": frozenset({"nullCount", "valuesCount"}),
+    "duplicateCount": frozenset({"valuesCount", "distinctCount"}),
+    "likeRatio": frozenset({"likeCount", "valuesCount"}),
+    "iLikeRatio": frozenset({"iLikeCount", "valuesCount"}),
+    "interQuartileRange": frozenset({"firstQuartile", "thirdQuartile"}),
+    "nonParametricSkew": frozenset({"mean", "median", "stddev"}),
+    "histogram": frozenset({"min", "max", "interQuartileRange", "valuesCount"}),
+    "cardinalityDistribution": frozenset({"valuesCount", "distinctCount"}),
+}
+
+
+def metric_closure(selected: frozenset[str] | None) -> frozenset[str] | None:
+    """Expand a selected metric set with its derivation prerequisites.
+
+    ``None`` means "all metrics" (an empty pipeline ``metrics`` list) and
+    stays ``None``. Unknown names are rejected here too: a set that
+    reached the reader was already validated, and a second line of
+    defence keeps a typo from silently computing nothing.
+    """
+    if selected is None:
+        return None
+    unknown = sorted(selected - METRIC_TYPE_NAMES)
+    if unknown:
+        raise WorkflowError(f"unknown profiler metric(s): {', '.join(unknown)}")
+    closure = set(selected)
+    pending = list(selected)
+    while pending:
+        metric = pending.pop()
+        for prerequisite in _METRIC_DEPENDENCIES.get(metric, ()):
+            if prerequisite not in closure:
+                closure.add(prerequisite)
+                pending.append(prerequisite)
+    return frozenset(closure)
+
+
+def validate_pipeline_metrics(metrics: Sequence[str]) -> frozenset[str] | None:
+    """Validate the pipeline ``metrics`` list: empty means "compute all"
+    (the schema's rule), otherwise every name must be a known metric."""
+    if not metrics:
+        return None
+    return metric_closure(frozenset(metrics))
+
 # Per-column runtime props, keyed by official metric name:
 # {"likeCount": {"expression": "J%"}, "countInSet": {"values": ["a", "b"]}}.
 ColumnMetricParams = Mapping[str, Mapping[str, Any]]
 MetricParamsByColumn = Mapping[str, ColumnMetricParams]
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionFilter:
+    """One resolved partition scope: the predicate applied to the dataset.
+
+    ``time_unit`` scopes to rows at or after a cutoff the planner computed
+    from the current time minus the configured interval (the pin's
+    ``col >= now - interval`` filter, with the cutoff bound as a parameter
+    instead of dialect date arithmetic). ``integer_range`` scopes to the
+    configured start/end bounds; ``column_value`` to the listed values.
+    """
+
+    column: str
+    kind: Literal["time_unit", "integer_range", "column_value"]
+    cutoff: Any | None = None
+    range_start: int | None = None
+    range_end: int | None = None
+    values: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CustomMetricRequest:
+    """One registered custom metric: a SQL expression returning a single
+    numerical value, evaluated over the profiler dataset. ``column_name``
+    binds it to a column profile; ``None`` binds it to the table profile
+    (the ``customMetric`` schema shape)."""
+
+    name: str
+    column_name: str | None
+    expression: str
+
+
+@dataclass(frozen=True)
+class ProfileOptions:
+    """The resolved per-table profiler plan, as the reader consumes it.
+
+    Built by ``profiler_plan`` from the pipeline knobs, the table entity's
+    ``tableProfilerConfig``/``customMetrics``, and the global
+    ``ProfilerConfiguration``. ``metrics=None`` means "all metrics" (the
+    schema's empty-list rule); per-column entries of ``None`` likewise.
+    A reader called without options keeps the legacy behavior: every
+    metric, both toggles on, no sampling/partition/query beyond the
+    explicit ``sample_config`` argument.
+    """
+
+    metrics: frozenset[str] | None = None
+    per_column_metrics: Mapping[str, frozenset[str] | None] = field(default_factory=dict)
+    compute_table_metrics: bool = True
+    compute_column_metrics: bool = True
+    include_columns: frozenset[str] | None = None
+    exclude_columns: frozenset[str] = frozenset()
+    sample_resolver: Callable[[int], StaticSampleConfig | None] | None = None
+    partition: PartitionFilter | None = None
+    profile_query: str | None = None
+    custom_metrics: tuple[CustomMetricRequest, ...] = ()
+    randomized: bool = False
+
+
+# Table-size / creation-time queries, one per engine family that exposes
+# both through a stable system catalog. Each returns one row
+# ``(size_in_bytes, create_time)`` and uses ``{ph}`` placeholders in the
+# order its connector's ``table_stats_params`` supplies. Engines without
+# an entry (Redshift, Doris, Databricks/UnityCatalog) have no verified
+# query: their readers pass no stats SQL and the fields stay ``None`` —
+# a bounded residual per dialect, never a guessed query.
+# MySQL/MariaDB: information_schema.tables carries both columns.
+MYSQL_TABLE_STATS_SQL = (
+    "SELECT data_length + index_length, create_time FROM information_schema.tables "
+    "WHERE table_schema = {ph} AND table_name = {ph}"
+)
+# Postgres family: pg_total_relation_size takes the qualified relation
+# name; Postgres keeps no creation time, so the second column is NULL.
+POSTGRES_TABLE_STATS_SQL = "SELECT pg_total_relation_size({ph}), NULL"
+# Snowflake: information_schema.tables carries BYTES and CREATED.
+SNOWFLAKE_TABLE_STATS_SQL = (
+    "SELECT bytes, created FROM information_schema.tables "
+    "WHERE table_catalog = {ph} AND table_schema = {ph} AND table_name = {ph}"
+)
+# MSSQL: allocation-unit pages summed per table (8 KiB pages) + create_date.
+MSSQL_TABLE_STATS_SQL = (
+    "SELECT (SELECT SUM(a.total_pages) * 8192 FROM sys.partitions AS p "
+    "JOIN sys.allocation_units AS a ON p.partition_id = a.container_id "
+    "WHERE p.object_id = t.object_id), t.create_date "
+    "FROM sys.tables AS t JOIN sys.schemas AS s ON t.schema_id = s.schema_id "
+    "WHERE s.name = {ph} AND t.name = {ph}"
+)
 
 # Substrings that mark a column type as numeric (AVG applies). Matched
 # case-insensitively against the ``data_type`` reported by information_schema.
@@ -374,6 +576,8 @@ class SqlProfileReader:
         stat_row: Callable[..., Any],
         sample_row: Callable[..., Any],
         dialect: SqlDialect,
+        table_stats_sql: str | None = None,
+        table_stats_params: Callable[[str | None, str, str], tuple[Any, ...]] | None = None,
     ) -> None:
         self._connect = connect
         self._quote = quote
@@ -385,6 +589,10 @@ class SqlProfileReader:
         self._stat_row = stat_row
         self._sample_row = sample_row
         self._dialect = dialect
+        self._table_stats_sql = (
+            table_stats_sql.format(ph=self._placeholder) if table_stats_sql else None
+        )
+        self._table_stats_params = table_stats_params
 
     def profile(
         self,
@@ -394,25 +602,287 @@ class SqlProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[Any]:
+        opts = options or ProfileOptions()
+        metrics = metric_closure(opts.metrics)
         ident = self._ident(database, schema, table)
-        dataset = dataset_sql(self._dialect, ident, sample_config=sample_config)
-        row_count = self._fetch_scalar(f"SELECT COUNT(*) FROM {ident}")
-        columns = self._fetch_columns(database, schema, table)
-        stats = [
+        # The row count runs on the whole table even under sampling (the
+        # pin's rule), and DYNAMIC tier resolution needs it too — but a
+        # run that selected neither rowCount nor a resolver skips the
+        # COUNT(*) entirely instead of paying for an unreported number.
+        needs_row_count = (
+            metrics is None or "rowCount" in metrics or opts.sample_resolver is not None
+        )
+        row_count = self._fetch_scalar(f"SELECT COUNT(*) FROM {ident}") if needs_row_count else None
+        resolved_sample = (
+            opts.sample_resolver(row_count)
+            if opts.sample_resolver is not None and row_count is not None
+            else None
+        )
+        # The plan resolver wins over the legacy explicit sample config:
+        # the plan already folds the config-file fallback into its own
+        # precedence chain, so letting the explicit argument win would
+        # shadow the table entity's and pipeline's sampling choices.
+        effective_sample = (
+            resolved_sample
+            if opts.sample_resolver is not None
+            else sample_config
+        )
+        dataset, dataset_params = self._dataset(
+            ident,
+            effective_sample,
+            partition=opts.partition,
+            profile_query=opts.profile_query,
+            randomized=opts.randomized,
+        )
+        columns = self._fetch_columns_for_dataset(
+            database, schema, table, profile_query=opts.profile_query
+        )
+        profiled_columns = [
+            (name, data_type)
+            for name, data_type in columns
+            if (opts.include_columns is None or name in opts.include_columns)
+            and name not in opts.exclude_columns
+        ]
+        size_in_byte, create_date_time = self._fetch_table_stats(
+            database, schema, table
+        ) if opts.compute_table_metrics else (None, None)
+        # Custom metrics follow their level's toggle: table-bound customs
+        # are table metrics, column-bound customs are column metrics.
+        active_customs = tuple(
+            metric
+            for metric in opts.custom_metrics
+            if (metric.column_name is None and opts.compute_table_metrics)
+            or (metric.column_name is not None and opts.compute_column_metrics)
+        )
+        custom_results = self._compute_custom_metrics(
+            dataset,
+            dataset_params,
+            active_customs,
+            profiled_names={name for name, _ in profiled_columns},
+        )
+        # The table row always exists: it carries the dataset metadata
+        # (column listing, resolved sample, stats) even when table
+        # metrics are off — only rowCount/columnCount are gated.
+        stats: list[Any] = [
             self._stat_row(
                 column_name=None,
-                row_count=row_count,
-                column_count=len(columns),
+                row_count=(
+                    row_count
+                    if opts.compute_table_metrics and (metrics is None or "rowCount" in metrics)
+                    else None
+                ),
+                column_count=(
+                    len(columns)
+                    if opts.compute_table_metrics and (metrics is None or "columnCount" in metrics)
+                    else None
+                ),
                 column_names=[name for name, _ in columns],
+                size_in_byte=size_in_byte,
+                create_date_time=create_date_time,
+                profile_sample=(
+                    effective_sample.profile_sample if effective_sample is not None else None
+                ),
+                profile_sample_type=(
+                    _sample_type_name(effective_sample) if effective_sample is not None else None
+                ),
+                custom_metrics=custom_results.get(None) or None,
             )
         ]
-        for column_name, data_type in columns:
-            column_params = (metric_params or {}).get(column_name)
-            stats.append(
-                self._profile_column(dataset, column_name, data_type, params=column_params)
+        column_stats: list[Any] = []
+        if opts.compute_column_metrics:
+            for column_name, data_type in profiled_columns:
+                column_params = (metric_params or {}).get(column_name)
+                column_metrics = metric_closure(
+                    opts.per_column_metrics.get(column_name, metrics)
+                )
+                if column_metrics is not None and not column_metrics:
+                    # Every metric filtered out for this column (e.g. the
+                    # global config disables its data type): no query, no
+                    # profile entry — the pin drops such columns from the
+                    # results the same way.
+                    continue
+                if column_metrics is not None and column_metrics <= (
+                    TABLE_METRIC_NAMES | {VALUE_RANK_METRIC}
+                ):
+                    # A set naming only table metrics (or valueRank, which
+                    # only ranks values inside the cardinality CTE) selects
+                    # no column computation: no query, no profile entry —
+                    # the same outcome the plan resolver produces for a
+                    # cataloged table by stripping table metrics from the
+                    # column set. Without this, an uncataloged table falls
+                    # back to the pipeline set and reaches the column query
+                    # with an empty SELECT list.
+                    continue
+                column_stats.append(
+                    self._profile_column(
+                        dataset,
+                        dataset_params,
+                        column_name,
+                        data_type,
+                        params=column_params,
+                        metrics=column_metrics,
+                        custom_metrics=custom_results.get(column_name) or None,
+                    )
+                )
+        stats.extend(column_stats)
+        if (
+            not opts.compute_table_metrics
+            and not column_stats
+            and not custom_results
+        ):
+            # The pin's empty-profile guard: a run that computed nothing
+            # (both toggles off, or every column filtered out) fails the
+            # table loudly instead of writing an empty profile.
+            raise WorkflowError(
+                f"no profile data computed for {schema}.{table}: "
+                "table and column metrics are both disabled or no columns remain"
             )
         return stats
+
+    def _dataset(
+        self,
+        ident: str,
+        sample_config: StaticSampleConfig | None,
+        *,
+        partition: PartitionFilter | None,
+        profile_query: str | None,
+        randomized: bool,
+    ) -> tuple[str, tuple[Any, ...]]:
+        """Render the dataset FROM source and its bound parameters.
+
+        A user query defines the dataset whole: sampling and partition
+        scoping do not apply to it. Otherwise the partition scope applies
+        first (the sample is drawn from the scoped rows), except on
+        Snowflake, where TABLESAMPLE can only attach to the base table —
+        there the sample is taken first and the partition predicate wraps
+        it. Partition values are always bound parameters, never
+        interpolated: a COLUMN-VALUE list comes from stored config.
+        """
+        if profile_query:
+            return f"({profile_query}) AS _sample", ()
+        predicate, params = self._partition_predicate(partition) if partition else ("", ())
+        if not partition:
+            return (
+                dataset_sql(
+                    self._dialect, ident, sample_config=sample_config, randomized=randomized
+                ),
+                (),
+            )
+        if self._dialect == "snowflake":
+            sampled = dataset_sql(
+                self._dialect, ident, sample_config=sample_config, randomized=randomized
+            )
+            return f"(SELECT * FROM {sampled} WHERE {predicate}) AS _partition", params
+        scoped = f"(SELECT * FROM {ident} WHERE {predicate}) AS _partition"
+        return (
+            dataset_sql(
+                self._dialect, scoped, sample_config=sample_config, randomized=randomized
+            ),
+            params,
+        )
+
+    def _partition_predicate(self, partition: PartitionFilter) -> tuple[str, tuple[Any, ...]]:
+        column = self._quote(partition.column)
+        ph = self._placeholder
+        if partition.kind == "column_value":
+            placeholders = ", ".join(ph for _ in partition.values)
+            return f"{column} IN ({placeholders})", tuple(partition.values)
+        if partition.kind == "integer_range":
+            return (
+                f"{column} BETWEEN {ph} AND {ph}",
+                (partition.range_start, partition.range_end),
+            )
+        return f"{column} >= {ph}", (partition.cutoff,)
+
+    def _fetch_columns_for_dataset(
+        self,
+        database: str | None,
+        schema: str,
+        table: str,
+        *,
+        profile_query: str | None,
+    ) -> list[tuple[str, str | None]]:
+        """Column names + types for the dataset.
+
+        Normally the table's cataloged columns. Under a user query the
+        dataset's own columns win (names from the query's cursor
+        description), with types looked up from the catalog by name — a
+        query column the catalog does not know keeps no type, so its
+        type-gated metrics resolve to None instead of failing.
+        """
+        cataloged = self._fetch_columns(database, schema, table)
+        if not profile_query:
+            return cataloged
+        types = {name: data_type for name, data_type in cataloged}
+        names = self._fetch_query_column_names(profile_query)
+        if not names:
+            raise WorkflowError("profileQuery returned no columns to profile")
+        return [(name, types.get(name)) for name in names]
+
+    def _fetch_query_column_names(self, query: str) -> list[str]:
+        with self._connect() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(query)
+                return [str(col[0]) for col in (cursor.description or [])]
+            finally:
+                cursor.close()
+
+    def _fetch_table_stats(
+        self, database: str | None, schema: str, table: str
+    ) -> tuple[int | None, str | None]:
+        """Table size + creation time, when the dialect exposes them.
+
+        Dialects without a stats query report ``(None, None)``: the
+        fields stay unset rather than guessed.
+        """
+        if self._table_stats_sql is None or self._table_stats_params is None:
+            return None, None
+        row = self._fetch_one(
+            self._table_stats_sql, self._table_stats_params(database, schema, table)
+        )
+        if not row:
+            return None, None
+        size = row[0]
+        created = _typed_value(row[1]) if len(row) > 1 else None
+        return (
+            int(size) if size is not None else None,
+            str(created) if created is not None else None,
+        )
+
+    def _compute_custom_metrics(
+        self,
+        dataset: str,
+        dataset_params: tuple[Any, ...],
+        custom_metrics: tuple[CustomMetricRequest, ...],
+        *,
+        profiled_names: set[str],
+    ) -> dict[str | None, list[dict[str, Any]]]:
+        """Evaluate each registered custom metric over the dataset.
+
+        One scalar query per metric; the expression is server-stored
+        user SQL (the ``customMetric`` schema shape), evaluated as the
+        SELECT list over the dataset. A metric bound to a column that is
+        not being profiled is a configuration error, not a skipped
+        metric. Results group by binding: ``None`` for table-level.
+        """
+        results: dict[str | None, list[dict[str, Any]]] = {}
+        for metric in custom_metrics:
+            if metric.column_name is not None and metric.column_name not in profiled_names:
+                raise WorkflowError(
+                    f"custom metric {metric.name!r} binds to column "
+                    f"{metric.column_name!r}, which is not profiled"
+                )
+            row = self._fetch_one(
+                f"SELECT {metric.expression} FROM {dataset}", dataset_params
+            )
+            value = _as_float(row[0]) if row else None
+            results.setdefault(metric.column_name, []).append(
+                {"name": metric.name, "value": value}
+            )
+        return results
 
     def sample(
         self, database: str | None, schema: str, table: str, *, limit: int = 50
@@ -449,10 +919,13 @@ class SqlProfileReader:
     def _profile_column(
         self,
         dataset: str,
+        dataset_params: tuple[Any, ...],
         column_name: str,
         data_type: str | None,
         *,
         params: ColumnMetricParams | None = None,
+        metrics: frozenset[str] | None = None,
+        custom_metrics: list[dict[str, Any]] | None = None,
     ) -> Any:
         column = self._quote(column_name)
         numeric = is_numeric_type(data_type)
@@ -460,6 +933,11 @@ class SqlProfileReader:
         length = _LENGTH_SQL[self._dialect].format(col=column)
         ph = self._placeholder
         validated = _validate_column_params(column_name, params)
+        # ``metrics`` is the closure (selected names + derivation inputs):
+        # SQL runs only for names in it, so a run computes what is
+        # selected. ``None`` means every metric, the legacy behavior.
+        def wanted(name: str) -> bool:
+            return metrics is None or name in metrics
 
         selects: list[str] = []
         slots: list[str] = []
@@ -470,69 +948,89 @@ class SqlProfileReader:
             slots.append(slot)
             sql_params.extend(args)
 
-        add("null_count", f"COUNT(*) - COUNT({column})")
-        add("distinct_count", f"COUNT(DISTINCT {column})")
-        add("min_value", f"MIN({column})")
-        add("max_value", f"MAX({column})")
-        add("mean", f"AVG({column})" if numeric else "NULL")
-        add("values_count", f"COUNT({column})")
-        if string:
-            add(
-                "null_missing_count",
-                f"SUM(CASE WHEN {column} IS NULL THEN 1 WHEN {column} = '' THEN 1 ELSE 0 END)",
-            )
-        else:
-            add(
-                "null_missing_count",
-                f"SUM(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END)",
-            )
-        if numeric:
-            add("sum_value", f"SUM({column})")
-            add("stddev", _STDDEV_SQL[self._dialect].format(col=column))
-        elif string:
-            # Official Sum/StdDev on a concatenable column aggregate its length.
-            add("sum_value", f"SUM({length})")
-            add("stddev", _STDDEV_SQL[self._dialect].format(col=length))
-        else:
-            add("sum_value", "NULL")
-            add("stddev", "NULL")
-        if self._dialect not in MEDIAN_UNSUPPORTED_DIALECTS and (numeric or string):
+        if wanted("nullCount"):
+            add("null_count", f"COUNT(*) - COUNT({column})")
+        if wanted("distinctCount"):
+            add("distinct_count", f"COUNT(DISTINCT {column})")
+        if wanted("min"):
+            add("min_value", f"MIN({column})")
+        if wanted("max"):
+            add("max_value", f"MAX({column})")
+        if wanted("mean"):
+            add("mean", f"AVG({column})" if numeric else "NULL")
+        if wanted("valuesCount"):
+            add("values_count", f"COUNT({column})")
+        if wanted("nullMissingCount"):
+            if string:
+                add(
+                    "null_missing_count",
+                    f"SUM(CASE WHEN {column} IS NULL THEN 1 WHEN {column} = '' THEN 1 ELSE 0 END)",
+                )
+            else:
+                add(
+                    "null_missing_count",
+                    f"SUM(CASE WHEN {column} IS NULL THEN 1 ELSE 0 END)",
+                )
+        if wanted("sum"):
+            if numeric:
+                add("sum_value", f"SUM({column})")
+            elif string:
+                # Official Sum/StdDev on a concatenable column aggregate its length.
+                add("sum_value", f"SUM({length})")
+            else:
+                add("sum_value", "NULL")
+        if wanted("stddev"):
+            if numeric:
+                add("stddev", _STDDEV_SQL[self._dialect].format(col=column))
+            elif string:
+                add("stddev", _STDDEV_SQL[self._dialect].format(col=length))
+            else:
+                add("stddev", "NULL")
+        if (
+            self._dialect not in MEDIAN_UNSUPPORTED_DIALECTS
+            and (numeric or string)
+            and (wanted("median") or wanted("firstQuartile") or wanted("thirdQuartile"))
+        ):
             # Official window metrics (median / firstQuartile / thirdQuartile):
             # quantifiable columns direct, concatenable columns over their
             # length; other types resolve to None without failing the query.
             percentile_column = column if numeric else length
-            add("median", percentile_sql(self._dialect, percentile_column, 0.5, table_sql=dataset))
-            add(
-                "first_quartile",
-                percentile_sql(self._dialect, percentile_column, 0.25, table_sql=dataset),
-            )
-            add(
-                "third_quartile",
-                percentile_sql(self._dialect, percentile_column, 0.75, table_sql=dataset),
-            )
-        if string:
-            add("max_length", f"MAX({length})")
-            add("min_length", f"MIN({length})")
-        else:
-            add("max_length", "NULL")
-            add("min_length", "NULL")
+            if wanted("median"):
+                add(
+                    "median",
+                    percentile_sql(self._dialect, percentile_column, 0.5, table_sql=dataset),
+                )
+            if wanted("firstQuartile"):
+                add(
+                    "first_quartile",
+                    percentile_sql(self._dialect, percentile_column, 0.25, table_sql=dataset),
+                )
+            if wanted("thirdQuartile"):
+                add(
+                    "third_quartile",
+                    percentile_sql(self._dialect, percentile_column, 0.75, table_sql=dataset),
+                )
+        if wanted("maxLength"):
+            add("max_length", f"MAX({length})" if string else "NULL")
+        if wanted("minLength"):
+            add("min_length", f"MIN({length})" if string else "NULL")
         if string:
             # LIKE / ILIKE / REGEXP are string predicates: on any other type
             # the metric resolves to None instead of failing the column query.
-            if "likeCount" in validated:
+            if "likeCount" in validated and wanted("likeCount"):
                 add(
                     "like_count",
                     f"SUM(CASE WHEN {column} LIKE {ph} THEN 1 ELSE 0 END)",
                     validated["likeCount"]["expression"],
                 )
-            if "iLikeCount" in validated:
+            if "iLikeCount" in validated and wanted("iLikeCount"):
                 op = _ILIKE_OP[self._dialect]
                 add(
                     "ilike_count",
                     f"SUM(CASE WHEN {column} {op} {ph} THEN 1 ELSE 0 END)",
                     validated["iLikeCount"]["expression"],
                 )
-            if "notLikeCount" in validated:
+            if "notLikeCount" in validated and wanted("notLikeCount"):
                 # Official formula verbatim (pin not_like_count.py +
                 # test_not_like_count): the CASE counts rows matching the
                 # pattern (NULL rows included), not rows failing it.
@@ -544,20 +1042,20 @@ class SqlProfileReader:
             regex_sql = _REGEX_SQL[self._dialect]
             if regex_sql is not None:
                 predicate = regex_sql.format(col=column, ph=ph)
-                if "regexCount" in validated:
+                if "regexCount" in validated and wanted("regexCount"):
                     add(
                         "regex_count",
                         f"SUM(CASE WHEN {predicate} THEN 1 ELSE 0 END)",
                         validated["regexCount"]["expression"],
                     )
-                if "notRegexCount" in validated:
+                if "notRegexCount" in validated and wanted("notRegexCount"):
                     # Same inverted official shape as notLikeCount.
                     add(
                         "not_regex_count",
                         f"SUM(CASE WHEN NOT ({predicate}) THEN 0 ELSE 1 END)",
                         validated["notRegexCount"]["expression"],
                     )
-        if "countInSet" in validated:
+        if "countInSet" in validated and wanted("countInSet"):
             values = validated["countInSet"]["values"]
             placeholders = ", ".join(ph for _ in values)
             add(
@@ -566,9 +1064,24 @@ class SqlProfileReader:
                 *values,
             )
 
-        row = self._fetch_one(f"SELECT {', '.join(selects)} FROM {dataset}", tuple(sql_params))
-        got = dict(zip(slots, row, strict=True)) if row else {}
-        unique_count = self._unique_count(dataset, column, data_type)
+        # Dataset parameters come after the SELECT-list parameters: the
+        # dataset subquery sits in the FROM clause, textually after them.
+        # An empty SELECT list (e.g. only uniqueCount was selected, which
+        # runs its own grouped query below) never renders: the slots stay
+        # unset and the independently gated queries still run.
+        if selects:
+            row = self._fetch_one(
+                f"SELECT {', '.join(selects)} FROM {dataset}",
+                tuple(sql_params) + dataset_params,
+            )
+            got = dict(zip(slots, row, strict=True)) if row else {}
+        else:
+            got = {}
+        unique_count = (
+            self._unique_count(dataset, dataset_params, column, data_type)
+            if wanted("uniqueCount")
+            else None
+        )
         values_count = _as_int(got.get("values_count"))
         distinct_count = _as_int(got.get("distinct_count"))
         mean_value = _as_float(got.get("mean"))
@@ -595,14 +1108,22 @@ class SqlProfileReader:
         )
         histogram = (
             self._histogram(
-                dataset, column, values_count, min_value, max_value, inter_quartile_range
+                dataset,
+                dataset_params,
+                column,
+                values_count,
+                min_value,
+                max_value,
+                inter_quartile_range,
             )
-            if numeric
+            if numeric and wanted("histogram")
             else None
         )
         cardinality_distribution = (
-            self._cardinality_distribution(dataset, column, values_count, distinct_count)
-            if string
+            self._cardinality_distribution(
+                dataset, dataset_params, column, values_count, distinct_count
+            )
+            if string and wanted("cardinalityDistribution")
             else None
         )
         return self._stat_row(
@@ -638,9 +1159,12 @@ class SqlProfileReader:
             non_parametric_skew=non_parametric_skew,
             histogram=histogram,
             cardinality_distribution=cardinality_distribution,
+            custom_metrics=custom_metrics,
         )
 
-    def _unique_count(self, dataset: str, column: str, data_type: str | None) -> int | None:
+    def _unique_count(
+        self, dataset: str, dataset_params: tuple[Any, ...], column: str, data_type: str | None
+    ) -> int | None:
         """Count of values appearing exactly once (official UniqueCount).
 
         One grouped subquery: ``SELECT COUNT(*) FROM (SELECT col ... GROUP BY
@@ -651,13 +1175,15 @@ class SqlProfileReader:
             return None
         row = self._fetch_one(
             f"SELECT COUNT(*) FROM (SELECT {column} FROM {dataset} "
-            f"GROUP BY {column} HAVING COUNT(*) = 1) AS only_once"
+            f"GROUP BY {column} HAVING COUNT(*) = 1) AS only_once",
+            dataset_params,
         )
         return _as_int(row[0]) if row else None
 
     def _histogram(
         self,
         dataset: str,
+        dataset_params: tuple[Any, ...],
         column: str,
         values_count: int | None,
         min_value: Any,
@@ -704,7 +1230,7 @@ class SqlProfileReader:
                 )
             labels.append(label)
             lower = upper
-        row = self._fetch_one(f"SELECT {', '.join(case_exprs)} FROM {dataset}")
+        row = self._fetch_one(f"SELECT {', '.join(case_exprs)} FROM {dataset}", dataset_params)
         if not row:
             return None
         return {
@@ -715,6 +1241,7 @@ class SqlProfileReader:
     def _cardinality_distribution(
         self,
         dataset: str,
+        dataset_params: tuple[Any, ...],
         column: str,
         values_count: int | None,
         distinct_count: int | None,
@@ -747,7 +1274,7 @@ class SqlProfileReader:
             f"SELECT category, SUM(category_count) AS {sum_alias} FROM categories "
             f"GROUP BY category ORDER BY {sum_alias} DESC"
         )
-        rows = self._fetch(sql)
+        rows = self._fetch(sql, dataset_params)
         if not rows:
             return None
         categories = [row[0] for row in rows]
@@ -777,6 +1304,12 @@ class SqlProfileReader:
                 return list(cursor.fetchall())
             finally:
                 cursor.close()
+
+
+def _sample_type_name(sample: StaticSampleConfig) -> str:
+    """The schema spelling of a resolved sample's type: the runner spells
+    the row-count type ``ROW_COUNT``, the schema spells it ``ROWS``."""
+    return "ROWS" if sample.sample_type == "ROW_COUNT" else "PERCENTAGE"
 
 
 def _as_int(value: Any) -> int | None:
@@ -833,3 +1366,128 @@ def _difference(values_count: int | None, distinct_count: int | None) -> int | N
     if values_count is not None and distinct_count is not None:
         return values_count - distinct_count
     return None
+
+
+# Column-profile field per metric name: the 31 computed fields the runner
+# writes back, keyed by the official metric name, valued by the stat-row
+# attribute. One table drives every connector's mapping, so a field can
+# never drift between dialects.
+_COLUMN_FIELD_BY_METRIC: dict[str, str] = {
+    "nullCount": "null_count",
+    "distinctCount": "distinct_count",
+    "min": "min_value",
+    "max": "max_value",
+    "mean": "mean",
+    "valuesCount": "values_count",
+    "countInSet": "count_in_set",
+    "likeCount": "like_count",
+    "iLikeCount": "ilike_count",
+    "notLikeCount": "not_like_count",
+    "regexCount": "regex_count",
+    "notRegexCount": "not_regex_count",
+    "maxLength": "max_length",
+    "minLength": "min_length",
+    "stddev": "stddev",
+    "sum": "sum_value",
+    "uniqueCount": "unique_count",
+    "nullMissingCount": "null_missing_count",
+    "distinctProportion": "distinct_proportion",
+    "uniqueProportion": "unique_proportion",
+    "nullProportion": "null_proportion",
+    "duplicateCount": "duplicate_count",
+    "likeRatio": "like_ratio",
+    "iLikeRatio": "ilike_ratio",
+    "median": "median",
+    "firstQuartile": "first_quartile",
+    "thirdQuartile": "third_quartile",
+    "interQuartileRange": "inter_quartile_range",
+    "nonParametricSkew": "non_parametric_skew",
+    "histogram": "histogram",
+    "cardinalityDistribution": "cardinality_distribution",
+}
+
+
+def build_profile_record(
+    stats: Sequence[Any],
+    *,
+    service: str,
+    database: str,
+    schema: str,
+    table: str,
+    timestamp: int,
+    options: ProfileOptions | None = None,
+    system_profile: Sequence[dict[str, Any]] = (),
+) -> ProfileRecord:
+    """Map stat rows to the full ``TableProfile`` write-back shape.
+
+    The table profile always carries timestamp, executionSource (the
+    physical target, or ``None`` when a user query defined the dataset —
+    the pin's rule), profileSample/profileSampleType (the type defaults
+    to PERCENTAGE when nothing was sampled, as the pin's does), sizeInByte,
+    createDateTime, and customMetrics; rowCount/columnCount appear only
+    when computed (table metrics on and the metric selected). Column
+    profiles carry name, timestamp, executionSource, and the effective
+    metric set — the selected names plus the derivation prerequisites the
+    closure pulled in, so selecting distinctProportion also writes
+    distinctCount and valuesCount (the pin writes every computed result
+    without filtering back to the requested names). Names outside the
+    effective set are omitted, never written as ``None`` — plus
+    customMetrics when the column has any. ``columnNames``
+    is deliberately not written: no TableProfile field exists for it in
+    either schema copy and the pin's write-back never maps it.
+    """
+    opts = options or ProfileOptions()
+    table_stat = next((s for s in stats if s.column_name is None), None)
+    execution_source: dict[str, Any] | None = None
+    if not opts.profile_query:
+        execution_source = {
+            "databaseName": database,
+            "schemaName": schema,
+            "tableName": table,
+        }
+    table_profile: dict[str, Any] = {
+        "timestamp": timestamp,
+        "executionSource": execution_source,
+        "profileSample": getattr(table_stat, "profile_sample", None),
+        "profileSampleType": getattr(table_stat, "profile_sample_type", None) or "PERCENTAGE",
+        "sizeInByte": getattr(table_stat, "size_in_byte", None),
+        "createDateTime": getattr(table_stat, "create_date_time", None),
+        "customMetrics": getattr(table_stat, "custom_metrics", None),
+    }
+    if table_stat is not None:
+        if table_stat.row_count is not None:
+            table_profile["rowCount"] = table_stat.row_count
+        if table_stat.column_count is not None:
+            table_profile["columnCount"] = table_stat.column_count
+    column_profile: list[dict[str, Any]] = []
+    for stat in stats:
+        if not stat.column_name:
+            continue
+        selected = opts.per_column_metrics.get(stat.column_name, opts.metrics)
+        if selected is not None and not selected:
+            # Every metric filtered out for this column: no entry, the
+            # same outcome as the reader skipping the column outright.
+            continue
+        entry: dict[str, Any] = {
+            "name": stat.column_name,
+            "timestamp": timestamp,
+            "executionSource": execution_source,
+        }
+        for metric, attr in _COLUMN_FIELD_BY_METRIC.items():
+            if selected is None or metric in selected:
+                entry[metric] = getattr(stat, attr)
+        custom_metrics = getattr(stat, "custom_metrics", None)
+        if custom_metrics:
+            entry["customMetrics"] = list(custom_metrics)
+        column_profile.append(entry)
+    fqn = build_fqn(service, database, schema, table)
+    return ProfileRecord(
+        entity_type="table",
+        fqn=fqn,
+        profile_type="table",
+        timestamp=timestamp,
+        profile_data=dict(table_profile),
+        table_profile=table_profile,
+        column_profile=column_profile,
+        system_profile=list(system_profile),
+    )

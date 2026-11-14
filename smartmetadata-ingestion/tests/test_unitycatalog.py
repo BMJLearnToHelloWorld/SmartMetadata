@@ -12,21 +12,16 @@ from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.databricks_common import (
     ColumnRow,
     DatabaseRow,
-    LineageEdgeRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
-    SequenceUsageReader,
     TableRow,
-    UsageEventRow,
     ViewRow,
     run_connection_test,
 )
 from smartmetadata_ingestion.connectors.unitycatalog import UnityCatalogSource
 from smartmetadata_ingestion.connectors.unitycatalog_data_diff import UnityCatalogTableParameter
-from smartmetadata_ingestion.connectors.unitycatalog_lineage import UnityCatalogLineageSource
 from smartmetadata_ingestion.connectors.unitycatalog_usage import UnityCatalogUsageSource
-from smartmetadata_ingestion.records import DatabaseServiceRecord, TableRecord, UsageRecord
+from smartmetadata_ingestion.records import DatabaseServiceRecord, TableQueryRecord, TableRecord
 
 
 def _conn(**extra):
@@ -100,27 +95,26 @@ def test_unitycatalog_http_path_optional_for_connection_test() -> None:
     assert "CheckAuthType" in steps
 
 
-def test_unitycatalog_lineage_usage_data_diff() -> None:
-    edges = list(
-        UnityCatalogLineageSource(
-            SourceConfig(type="unitycatalog-lineage", service_name="uc", connection=_conn()),
-            reader=SequenceLineageReader(
-                [LineageEdgeRow("main", "default", "ORDERS", "main", "default", "GMV")]
-            ),
-        ).produce()
+def test_unitycatalog_usage_data_diff(tmp_path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM main.default.ORDERS,alice,2026-10-29 09:00:00.000,,5,\n",
+        encoding="utf-8",
     )
-    assert edges[0].to_entity.fqn == "uc.main.default.GMV"
     events = list(
         UnityCatalogUsageSource(
-            SourceConfig(type="unitycatalog-usage", service_name="uc", connection=_conn()),
-            reader=SequenceUsageReader(
-                [UsageEventRow("main", "default", "ORDERS", "2026-10-29", 3)]
+            SourceConfig(
+                type="unitycatalog-usage",
+                service_name="uc",
+                connection=_conn(),
+                query_log_file_path=str(log_file),
             ),
         ).produce()
     )
-    assert events[0] == UsageRecord(
-        entity_type="table", fqn="uc.main.default.ORDERS", date="2026-10-29", count=3
-    )
+    assert len(events) == 1
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM main.default.ORDERS"
     payload = UnityCatalogTableParameter.build(
         _conn(httpPath="/sql/1.0/warehouses/x"),
         catalog="main",

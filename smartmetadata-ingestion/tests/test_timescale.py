@@ -17,16 +17,13 @@ from smartmetadata_ingestion.connectors.timescale_common import (
     DatabaseRow,
     SchemaRow,
     SequenceCatalogReader,
-    SequenceLineageReader,
     SequenceProfileReader,
     TableRow,
     ViewRow,
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
     run_connection_test,
 )
-from smartmetadata_ingestion.connectors.timescale_lineage import TimescaleLineageSource
 from smartmetadata_ingestion.connectors.timescale_profiler import (
     TimescaleProfilerInterface,
     TimescaleSampler,
@@ -40,6 +37,7 @@ from smartmetadata_ingestion.records import (
     LineageRecord,
     ProfileRecord,
     SchemaRecord,
+    TableQueryRecord,
     TableRecord,
     UsageRecord,
 )
@@ -125,26 +123,6 @@ def test_timescale_metadata_tree_and_view_lineage() -> None:
     assert lineage.source == "ViewLineage"
 
 
-def test_timescale_lineage_source_injected_edges() -> None:
-    source = TimescaleLineageSource(
-        SourceConfig(type="timescale-lineage", service_name="s", connection=_conn()),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow(
-                    "analytics", "public", "orders",
-                    "analytics", "public", "orders_v",
-                    "select 1",
-                ),
-            ]
-        ),
-    )
-    source.prepare()
-    edges = list(source.produce())
-    assert len(edges) == 1
-    assert isinstance(edges[0], LineageRecord)
-    assert edges[0].sql_query == "select 1"
-
-
 def test_timescale_profiler_and_sample() -> None:
     reader = SequenceProfileReader(
         stats=[
@@ -171,17 +149,24 @@ def test_timescale_quality() -> None:
     assert result.test_case_status == "Success"
 
 
-def test_timescale_usage() -> None:
-    from smartmetadata_ingestion.connectors.timescale_common import SequenceUsageReader, UsageEventRow
+def test_timescale_usage(tmp_path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM analytics.public.orders,alice,2026-10-30 09:00:00.000,,5,\n",
+        encoding="utf-8",
+    )
     source = TimescaleUsageSource(
-        SourceConfig(type="timescale-usage", service_name="s", connection=_conn()),
-        reader=SequenceUsageReader(
-            [UsageEventRow("analytics", "public", "orders", "2026-10-30", 3)]
+        SourceConfig(
+            type="timescale-usage",
+            service_name="s",
+            connection=_conn(),
+            query_log_file_path=str(log_file),
         ),
     )
     source.prepare()
     events = list(source.produce())
     assert len(events) == 1
-    assert events[0].count == 3
-    assert events[0].fqn.endswith(".public.orders")
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM analytics.public.orders"
 

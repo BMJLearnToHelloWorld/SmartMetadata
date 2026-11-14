@@ -42,12 +42,14 @@ class ProfilerJob:
         source: Source | None = None,
         sink: Sink | None = None,
         profile_reader: Any | None = None,
+        table_fetcher: Any | None = None,
     ) -> None:
         self._config = config
         self._client = client
         self._source = source
         self._sink = sink
         self._profile_reader = profile_reader
+        self._table_fetcher = table_fetcher
 
     def run(self) -> RunReport:
         config = self._config.model_copy(
@@ -59,6 +61,7 @@ class ProfilerJob:
             source=self._source,
             sink=self._sink,
             profile_reader=self._profile_reader,
+            table_fetcher=self._table_fetcher,
         )
 
 

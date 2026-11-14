@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Shared Postgres connection, catalog/usage/lineage readers, and helpers.
+"""Shared Postgres connection, catalog/usage readers, and helpers.
 
 Clean-room alignment to Apache OpenMetadata PostgresConnection / DefaultDatabaseSpec.
 service_spec: metadata + lineage + usage + connection; DefaultDB adds profiler/sampler/DQ/data_diff.
@@ -20,7 +20,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors.profile_sql import (
+    POSTGRES_TABLE_STATS_SQL,
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_ansi,
 )
@@ -74,26 +76,6 @@ class ViewRow:
 
 
 @dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_database: str
-    source_schema: str
-    source_table: str
-    target_database: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    database: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
 class ProfileStatRow:
     column_name: str | None
     row_count: int | None = None
@@ -130,6 +112,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,14 +132,6 @@ class CatalogReader(Protocol):
     def list_views(self, database: str) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -162,6 +141,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
 
     def sample_table(
@@ -211,22 +191,6 @@ class SequenceCatalogReader:
         return [row for row in self._views if row.database_name == database]
 
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
-
-
 class SequenceProfileReader:
     def __init__(
         self,
@@ -245,6 +209,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -476,6 +441,10 @@ class CursorProfileReader:
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
             dialect="postgres",
+            table_stats_sql=POSTGRES_TABLE_STATS_SQL,
+            table_stats_params=lambda database, schema, table: (
+                f"{quote_ansi(schema)}.{quote_ansi(table)}",
+            ),
         )
 
     def profile_table(
@@ -486,9 +455,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            database, schema, table, metric_params=metric_params, sample_config=sample_config
+            database,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(

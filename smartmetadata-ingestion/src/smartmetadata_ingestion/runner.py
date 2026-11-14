@@ -15,9 +15,11 @@ from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import WorkflowConfig
 from smartmetadata_ingestion.connectors.base import Source
 from smartmetadata_ingestion.errors import WorkflowExecutionError
+from smartmetadata_ingestion.lineage.workflow import LineageWorkflow
 from smartmetadata_ingestion.processors.identity import Processor
 from smartmetadata_ingestion.progress import ProgressHook, RunReport
 from smartmetadata_ingestion.sinks.metadata_rest import Sink
+from smartmetadata_ingestion.usage.workflow import UsageWorkflow
 from smartmetadata_ingestion.workflow import (
     DataDiffWorkflow,
     MetadataWorkflow,
@@ -37,6 +39,7 @@ def run_workflow(
     processors: list[Processor] | None = None,
     hook: ProgressHook | None = None,
     profile_reader: Any | None = None,
+    table_fetcher: Any | None = None,
     execute: Any | None = None,
     fetch_keys: Any | None = None,
     fetch_rows: Any | None = None,
@@ -44,11 +47,12 @@ def run_workflow(
 ) -> RunReport:
     """Run the workflow for ``config.workflow.type`` through the canonical lifecycle.
 
-    ``profiler``, ``TestSuite`` and ``data_diff`` dispatch to their own
-    workflows; every other type keeps the metadata workflow — except
-    ``dbt``, ``autoClassification``, ``elasticSearchReindex`` and
-    ``application``, which have no runner yet and raise instead of
-    silently running a metadata ingestion (P-06; see the ADR).
+    ``profiler``, ``TestSuite``, ``data_diff``, ``usage`` and
+    ``lineage`` dispatch to their own workflows; every other type keeps the metadata
+    workflow — except ``dbt``, ``autoClassification``,
+    ``elasticSearchReindex`` and ``application``, which have no runner
+    yet and raise instead of silently running a metadata ingestion
+    (P-06; see the ADR).
 
     ``run_id`` pins the id the workflow reports its status under (the
     Airflow plugin passes the id the server already recorded for the run);
@@ -80,6 +84,7 @@ def run_workflow(
             processors=processors,
             hook=hook,
             profile_reader=profile_reader,
+            table_fetcher=table_fetcher,
             run_id=run_id,
         )
     elif workflow_type == "TestSuite":
@@ -105,6 +110,26 @@ def run_workflow(
             hook=hook,
             fetch_keys=fetch_keys,
             fetch_rows=fetch_rows,
+            run_id=run_id,
+        )
+    elif workflow_type == "usage":
+        workflow = UsageWorkflow(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
+            run_id=run_id,
+        )
+    elif workflow_type == "lineage":
+        workflow = LineageWorkflow(
+            config,
+            client=client,
+            source=source,
+            sink=sink,
+            processors=processors,
+            hook=hook,
             run_id=run_id,
         )
     else:

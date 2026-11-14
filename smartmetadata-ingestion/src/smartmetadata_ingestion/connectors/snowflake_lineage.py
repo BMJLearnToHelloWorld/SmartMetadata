@@ -6,117 +6,82 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 
-"""Snowflake lineage source (view lineage + optional injected edges)."""
+"""Snowflake lineage source: view/procedure/query channels over the
+live catalog, the CALL-history provider, and the shared query-log
+base. Snowflake is the first (and in this batch only) engine with a
+stored-procedure provider."""
 
 from __future__ import annotations
-
-from collections.abc import Iterable
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import snowflake_common as snowflake
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.connectors.sql_views import parse_view_parents
-from smartmetadata_ingestion.fqn import build_fqn
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.connectors.snowflake_query_log import (
+    SNOWFLAKE_QUERY_LOG_SPEC,
+    snowflake_connect_builder,
+    snowflake_engines,
+)
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.procedure_lineage import (
+    ProcedureProvider,
+    SnowflakeProcedureProvider,
+)
+from smartmetadata_ingestion.lineage.query_filters import lineage_spec_for
+from smartmetadata_ingestion.lineage.source import LineageSource
+from smartmetadata_ingestion.lineage.view_lineage import (
+    MultiDatabaseViewEnumerator,
+    ViewEnumerator,
+)
+from smartmetadata_ingestion.usage.query_log import ConnectFactory, QueryLogSource
 
 
 @register_source("snowflake-lineage")
-class SnowflakeLineageSource:
+class SnowflakeLineageSource(LineageSource):
     def __init__(
         self,
         config: SourceConfig,
         *,
-        reader: snowflake.LineageReader | None = None,
         catalog: snowflake.CatalogReader | None = None,
-        connect=None,
+        connect: ConnectFactory | None = None,
+        query_log_connect: ConnectFactory | None = None,
+        procedure_connect: ConnectFactory | None = None,
     ) -> None:
-        self._config = config
-        self._reader = reader
-        raw = config.connection or {}
-        if catalog is not None:
-            self._catalog = catalog
-        elif connect is not None:
-            self._catalog = snowflake.CursorCatalogReader(
-                connect,
-                ingest_all=bool(raw.get("ingestAllDatabases")),
-                entry_database=str(raw.get("database") or "") or None,
-            )
-        else:
-            self._catalog = None
+        self._catalog = catalog
+        self._connect = connect
+        self._query_log_connect = query_log_connect
+        self._procedure_connect = procedure_connect
+        super().__init__(
+            config,
+            engine_key="snowflake",
+            dialect=dialect_for_connection_type("snowflake"),
+            view_enumerator_factory=self._build_view_enumerator,
+            query_log_source_factory=self._build_query_log_source,
+            procedure_provider_factory=self._build_procedure_provider,
+        )
 
     def prepare(self) -> None:
         snowflake.run_connection_test(self._config.connection or {})
 
-    def close(self) -> None:
-        return None
-
-    def produce(self) -> Iterable[WorkflowRecord]:
-        if self._reader is not None:
-            for edge in self._reader.list_edges():
-                from_fqn = build_fqn(
-                    self._config.service_name,
-                    edge.source_database,
-                    edge.source_schema,
-                    edge.source_table,
-                )
-                to_fqn = build_fqn(
-                    self._config.service_name,
-                    edge.target_database,
-                    edge.target_schema,
-                    edge.target_table,
-                )
-                if from_fqn == to_fqn:
-                    continue
-                yield LineageRecord(
-                    from_entity=LineageEndpoint(type="table", fqn=from_fqn),
-                    to_entity=LineageEndpoint(type="table", fqn=to_fqn),
-                    source="QueryLineage",
-                    sql_query=edge.sql_query,
-                )
-            return
-        catalog = self._require_catalog()
-        for database in catalog.list_databases():
-            known = {
-                (t.schema_name, t.name)
-                for schema in catalog.list_schemas(database.name)
-                for t in catalog.list_tables(database.name, schema.name)
-            }
-            for view in catalog.list_views(database.name):
-                if (view.schema_name, view.name) not in known:
-                    continue
-                to_fqn = build_fqn(
-                    self._config.service_name,
-                    database.name,
-                    view.schema_name,
-                    view.name,
-                )
-                for schema_name, table_name in parse_view_parents(
-                    view.definition, view.schema_name
-                ):
-                    if (schema_name, table_name) not in known:
-                        continue
-                    if schema_name == view.schema_name and table_name == view.name:
-                        continue
-                    from_fqn = build_fqn(
-                        self._config.service_name,
-                        database.name,
-                        schema_name,
-                        table_name,
-                    )
-                    yield LineageRecord(
-                        from_entity=LineageEndpoint(type="table", fqn=from_fqn),
-                        to_entity=LineageEndpoint(type="table", fqn=to_fqn),
-                        source="ViewLineage",
-                        sql_query=view.definition,
-                    )
-
-    def _require_catalog(self) -> snowflake.CatalogReader:
-        if self._catalog is not None:
-            return self._catalog
+    def _build_view_enumerator(self) -> ViewEnumerator:
         raw = self._config.connection or {}
-        connect = snowflake.snowflake_connect(raw)
-        return snowflake.CursorCatalogReader(
-            connect,
+        catalog = self._catalog or snowflake.CursorCatalogReader(
+            self._connect or snowflake.snowflake_connect(raw),
             ingest_all=bool(raw.get("ingestAllDatabases")),
             entry_database=str(raw.get("database") or "") or None,
+        )
+        return MultiDatabaseViewEnumerator(catalog)
+
+    def _build_query_log_source(self) -> QueryLogSource:
+        return QueryLogSource(
+            self._config,
+            lineage_spec_for(SNOWFLAKE_QUERY_LOG_SPEC),
+            snowflake_connect_builder,
+            snowflake_engines,
+            connect=self._query_log_connect,
+        )
+
+    def _build_procedure_provider(self) -> ProcedureProvider:
+        raw = self._config.connection or {}
+        return SnowflakeProcedureProvider(
+            self._procedure_connect or snowflake.snowflake_connect(raw)
         )

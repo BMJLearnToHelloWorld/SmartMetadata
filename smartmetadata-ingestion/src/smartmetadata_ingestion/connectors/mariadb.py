@@ -18,11 +18,30 @@ from typing import Any
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import mariadb_common as mariadb
+from smartmetadata_ingestion.connectors.constraints import (
+    column_constraint_from_nullable,
+    schema_constraints_for_schema,
+)
+from smartmetadata_ingestion.connectors.ddl import (
+    require_ddl_support,
+    table_ddl_for_schema,
+)
+from smartmetadata_ingestion.connectors.json_schema import (
+    attach_json_schemas_for_schema,
+    require_json_sampling_support,
+)
+from smartmetadata_ingestion.connectors.owners import (
+    owner_names_resolver,
+    resolve_owner_names,
+)
+from smartmetadata_ingestion.connectors.procedures import procedures_for_schema
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
-from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
+from smartmetadata_ingestion.connectors.table_types import map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_mysql_type
-from smartmetadata_ingestion.fqn import build_fqn
+from smartmetadata_ingestion.fqn import build_fqn, quote_name
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.resolution import view_parent_schema_tables
 from smartmetadata_ingestion.records import (
     ColumnRecord,
     DatabaseRecord,
@@ -32,6 +51,7 @@ from smartmetadata_ingestion.records import (
     SchemaRecord,
     TableRecord,
     WorkflowRecord,
+    life_cycle_from_ms,
 )
 
 
@@ -60,12 +80,30 @@ class MariaDBSource:
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         database_name = self._database_name()
+        if not is_selected(
+            database_name,
+            include=self._config.include_databases,
+            exclude=self._config.exclude_databases,
+            fqn=build_fqn(self._config.service_name, database_name),
+            use_fqn=self._config.use_fqn_for_filtering,
+        ):
+            # A filtered-out single database yields the service
+            # record only: nothing below it was listed.
+            return
         yield DatabaseRecord(name=database_name, service=self._config.service_name)
         reader = self._require_reader()
-        for schema in self._selected_schemas(reader):
+        require_ddl_support(reader, "MariaDB", enabled=self._config.include_ddl)
+        require_json_sampling_support(reader, "MariaDB", enabled=self._config.extract_json_schema)
+        for schema in self._selected_schemas(reader, database_name):
             database_fqn = build_fqn(self._config.service_name, database_name)
             yield SchemaRecord(name=schema.name, database=database_fqn)
             schema_fqn = build_fqn(self._config.service_name, database_name, schema.name)
+            constraints = schema_constraints_for_schema(
+                reader,
+                service_name=self._config.service_name,
+                database_name=database_name,
+                schema_name=schema.name,
+            )
             for table in reader.list_tables(schema.name):
                 table_type = map_table_type(table.table_type)
                 if not is_selected_table(
@@ -74,15 +112,63 @@ class MariaDBSource:
                     include_tables=self._config.include_tables,
                     exclude_tables=self._config.exclude_tables,
                     include_views=self._config.include_views,
+                    include_tables_enabled=self._config.include_tables_enabled,
+                    fqn=f"{schema_fqn}.{quote_name(table.name)}",
+                    use_fqn=self._config.use_fqn_for_filtering,
                 ):
                     continue
+                columns = self._columns(reader, table)
+                constraints.apply(table.name, columns)
+                ddl = table_ddl_for_schema(
+                    reader,
+                    "MariaDB",
+                    schema_name=schema.name,
+                    table_name=table.name,
+                    enabled=self._config.include_ddl,
+                )
+                attach_json_schemas_for_schema(
+                    reader,
+                    "MariaDB",
+                    schema.name,
+                    table.name,
+                    columns,
+                    self._config,
+                )
+                owner_names = resolve_owner_names(
+                    self._config.owner_config,
+                    include_owners=self._config.include_owners,
+                    service_name=self._config.service_name,
+                    database_name=database_name,
+                    schema_name=schema.name,
+                    entity_name=table.name,
+                )
                 yield TableRecord(
                     name=table.name,
                     database_schema=schema_fqn,
                     table_type=table_type,
                     description=table.comment,
-                    columns=self._columns(reader, table),
+                    columns=columns,
+                    table_constraints=constraints.for_table(table.name),
+                    owner_names=owner_names,
+                    schema_definition=ddl,
+                    life_cycle=life_cycle_from_ms(table.created_ms, table.updated_ms),
                 )
+            yield from procedures_for_schema(
+                reader,
+                schema_fqn=schema_fqn,
+                schema_name=schema.name,
+                include=self._config.include_stored_procedures,
+                exclude=self._config.exclude_stored_procedures,
+                enabled=self._config.include_stored_procedures_enabled,
+                use_fqn=self._config.use_fqn_for_filtering,
+                owner_names_for=owner_names_resolver(
+                    self._config.owner_config,
+                    include_owners=self._config.include_owners,
+                    service_name=self._config.service_name,
+                    database_name=database_name,
+                    schema_name=schema.name,
+                ),
+            )
         if self._config.include_view_lineage:
             yield from self._view_lineage(reader, database_name)
 
@@ -113,12 +199,20 @@ class MariaDBSource:
         schema = (self._config.connection or {}).get("databaseSchema")
         return [str(schema)] if schema else []
 
-    def _selected_schemas(self, reader: mariadb.CatalogReader) -> list[mariadb.SchemaRow]:
+    def _selected_schemas(
+        self, reader: mariadb.CatalogReader, database_name: str
+    ) -> list[mariadb.SchemaRow]:
         exclude = list(self._config.exclude_schemas) + list(mariadb.system_schemas())
         return [
             schema
             for schema in reader.list_schemas()
-            if is_selected(schema.name, include=self._include_schemas(), exclude=exclude)
+            if is_selected(
+                schema.name,
+                include=self._include_schemas(),
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database_name, schema.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _columns(
@@ -130,6 +224,7 @@ class MariaDBSource:
             columns.append(
                 ColumnRecord(
                     name=column.name,
+                    constraint=column_constraint_from_nullable(column.is_nullable),
                     data_type=data_type,
                     data_type_display=column.data_type,
                     description=column.comment,
@@ -144,7 +239,7 @@ class MariaDBSource:
     ) -> Iterable[LineageRecord]:
         known_tables = {
             (table.schema_name, table.name)
-            for schema in self._selected_schemas(reader)
+            for schema in self._selected_schemas(reader, database_name)
             for table in reader.list_tables(schema.name)
         }
         for view in reader.list_views():
@@ -153,8 +248,8 @@ class MariaDBSource:
             to_fqn = build_fqn(
                 self._config.service_name, database_name, view.schema_name, view.name
             )
-            for schema_name, table_name in parse_view_parents(
-                view.definition, view.schema_name
+            for schema_name, table_name in view_parent_schema_tables(
+                view.definition, dialect_for_connection_type("mariadb"), view.schema_name
             ):
                 if (schema_name, table_name) not in known_tables:
                     continue

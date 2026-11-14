@@ -20,7 +20,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors.profile_sql import (
+    MYSQL_TABLE_STATS_SQL,
     MetricParamsByColumn,
+    ProfileOptions,
     SqlProfileReader,
     quote_mysql,
 )
@@ -63,24 +65,6 @@ class ViewRow:
 
 
 @dataclass(frozen=True, slots=True)
-class LineageEdgeRow:
-    source_schema: str
-    source_table: str
-    target_schema: str
-    target_table: str
-    sql_query: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class UsageEventRow:
-    database: str
-    schema_name: str
-    table_name: str
-    date: str
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
 class ProfileStatRow:
     column_name: str | None
     row_count: int | None = None
@@ -117,6 +101,11 @@ class ProfileStatRow:
     non_parametric_skew: float | None = None
     histogram: dict | None = None
     cardinality_distribution: dict | None = None
+    size_in_byte: int | None = None
+    create_date_time: str | None = None
+    profile_sample: float | None = None
+    profile_sample_type: str | None = None
+    custom_metrics: list[dict] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,14 +120,6 @@ class CatalogReader(Protocol):
     def list_views(self) -> Sequence[ViewRow]: ...
 
 
-class LineageReader(Protocol):
-    def list_edges(self) -> Sequence[LineageEdgeRow]: ...
-
-
-class UsageReader(Protocol):
-    def list_usage(self) -> Sequence[UsageEventRow]: ...
-
-
 class ProfileReader(Protocol):
     def profile_table(
         self,
@@ -147,6 +128,7 @@ class ProfileReader(Protocol):
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]: ...
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]: ...
 
@@ -182,22 +164,6 @@ class SequenceCatalogReader:
         return self._views
 
 
-class SequenceLineageReader:
-    def __init__(self, edges: Sequence[LineageEdgeRow] = ()) -> None:
-        self._edges = list(edges)
-
-    def list_edges(self) -> Sequence[LineageEdgeRow]:
-        return self._edges
-
-
-class SequenceUsageReader:
-    def __init__(self, events: Sequence[UsageEventRow] = ()) -> None:
-        self._events = list(events)
-
-    def list_usage(self) -> Sequence[UsageEventRow]:
-        return self._events
-
-
 class SequenceProfileReader:
     def __init__(
         self,
@@ -215,6 +181,7 @@ class SequenceProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._stats
 
@@ -452,6 +419,8 @@ class CursorProfileReader:
             stat_row=ProfileStatRow,
             sample_row=SampleRow,
             dialect="mysql",
+            table_stats_sql=MYSQL_TABLE_STATS_SQL,
+            table_stats_params=lambda database, schema, table: (schema, table),
         )
 
     def profile_table(
@@ -461,9 +430,15 @@ class CursorProfileReader:
         *,
         metric_params: MetricParamsByColumn | None = None,
         sample_config: StaticSampleConfig | None = None,
+        options: ProfileOptions | None = None,
     ) -> Sequence[ProfileStatRow]:
         return self._reader.profile(
-            None, schema, table, metric_params=metric_params, sample_config=sample_config
+            None,
+            schema,
+            table,
+            metric_params=metric_params,
+            sample_config=sample_config,
+            options=options,
         )
 
     def sample_table(self, schema: str, table: str, *, limit: int = 50) -> Sequence[SampleRow]:

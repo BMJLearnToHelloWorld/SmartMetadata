@@ -33,6 +33,7 @@ PIPELINE_SERVICES_PATH = "/v1/services/pipelineServices"
 DATABASES_PATH = "/v1/databases"
 SCHEMAS_PATH = "/v1/databaseSchemas"
 TABLES_PATH = "/v1/tables"
+STORED_PROCEDURES_PATH = "/v1/storedProcedures"
 TOPICS_PATH = "/v1/topics"
 DASHBOARDS_PATH = "/v1/dashboards"
 CHARTS_PATH = "/v1/charts"
@@ -40,6 +41,9 @@ CONTAINERS_PATH = "/v1/containers"
 PIPELINES_PATH = "/v1/pipelines"
 LINEAGE_PATH = "/v1/lineage"
 USAGE_PATH = "/v1/usage"
+QUERIES_PATH = "/v1/queries"
+QUERY_COST_RECORD_PATH = "/v1/queryCostRecord"
+USERS_PATH = "/v1/users"
 ENTITY_PROFILES_PATH = "/v1/entity/profiles"
 TEST_CASE_RESULTS_PATH = "/v1/dataQuality/testCases/testCaseResults"
 TEST_CONNECTION_DEFINITIONS_PATH = "/v1/services/testConnectionDefinitions"
@@ -52,6 +56,7 @@ INGESTION_PIPELINES_PATH = "/v1/services/ingestionPipelines"
 CLASSIFICATIONS_PATH = "/v1/classifications"
 TAGS_PATH = "/v1/tags"
 APPS_PATH = "/v1/apps"
+TEAMS_PATH = "/v1/teams"
 
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 
@@ -62,6 +67,15 @@ def encode_login_password(password: str) -> str:
 
 def encode_path_segment(value: str) -> str:
     return quote(value, safe="")
+
+
+def _bulk_params(override_metadata: bool) -> dict[str, Any] | None:
+    """The bulk ``overrideMetadata`` query param, only when true.
+
+    The server reads it from the bulk request URI; absent means false.
+    Sending it only when true keeps every other bulk call byte-identical.
+    """
+    return {"overrideMetadata": "true"} if override_metadata else None
 
 
 class RestClient:
@@ -208,6 +222,9 @@ class RestClient:
     def upsert_table(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", TABLES_PATH, json=payload))
 
+    def upsert_stored_procedure(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._as_object(self.request("PUT", STORED_PROCEDURES_PATH, json=payload))
+
     def upsert_messaging_service(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._as_object(self.request("PUT", MESSAGING_SERVICES_PATH, json=payload))
 
@@ -279,6 +296,77 @@ class RestClient:
             f"/name/{encode_path_segment(fqn)}"
         )
         return self.request("PUT", path, json={"date": date, "count": int(count)})
+
+    # --- Usage bulk sink (capability batch 1: usage five writes) --------
+    # Fresh implementations against the Apache server API (design §5.5).
+    # The lifecycle patch reuses RestClient.patch(), which owns the
+    # JSON-Patch media type — never set it at the call site.
+
+    def get_user_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/users/name/{name} (raises RestError on 404 — the
+        caller decides whether absence is data or failure)."""
+        if not name or not str(name).strip():
+            raise WorkflowError("user name is required")
+        path = f"{USERS_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
+    def upsert_query(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """PUT /v1/queries (createOrUpdate; the server derives the
+        query name as the MD5 of the stored text when omitted)."""
+        return self._as_object(self.request("PUT", QUERIES_PATH, json=payload))
+
+    def add_query_usage(self, query_id: str, table_refs: list[dict[str, Any]]) -> Any:
+        """PUT /v1/queries/{id}/usage with EntityReferences."""
+        path = f"{QUERIES_PATH}/{encode_path_segment(query_id)}/usage"
+        return self.request("PUT", path, json=table_refs)
+
+    def add_query_users(self, query_id: str, user_fqns: list[str]) -> Any:
+        """PUT /v1/queries/{id}/users with user FQNs."""
+        path = f"{QUERIES_PATH}/{encode_path_segment(query_id)}/users"
+        return self.request("PUT", path, json=user_fqns)
+
+    def add_query_used_by(self, query_id: str, names: list[str]) -> Any:
+        """PUT /v1/queries/{id}/usedBy with raw user names."""
+        path = f"{QUERIES_PATH}/{encode_path_segment(query_id)}/usedBy"
+        return self.request("PUT", path, json=names)
+
+    def put_table_joins(self, table_id: str, payload: dict[str, Any]) -> Any:
+        """PUT /v1/tables/{id}/joins with a TableJoins body."""
+        path = f"{TABLES_PATH}/{encode_path_segment(table_id)}/joins"
+        return self.request("PUT", path, json=payload)
+
+    def patch_table_life_cycle(self, table_id: str, life_cycle: dict[str, Any]) -> Any:
+        """JSON-Patch the table entity's /lifeCycle (add replaces any
+        existing value with the fresh one)."""
+        path = f"{TABLES_PATH}/{encode_path_segment(table_id)}"
+        return self.patch(
+            path,
+            json=[{"op": "add", "path": "/lifeCycle", "value": life_cycle}],
+        )
+
+    def post_table_usage(self, table_id: str, *, date: str, count: int) -> Any:
+        """POST /v1/usage/table/{id} with a UsageRequest body (the
+        by-id form; put_usage_by_name stays for the static-spec path)."""
+        if count < 0:
+            raise WorkflowError("usage count must be >= 0")
+        path = f"{USAGE_PATH}/table/{encode_path_segment(table_id)}"
+        return self.request("POST", path, json={"date": date, "count": int(count)})
+
+    def post_query_cost_record(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST /v1/queryCostRecord (CreateQueryCostRecord)."""
+        return self._as_object(self.request("POST", QUERY_COST_RECORD_PATH, json=payload))
+
+    def compute_percentile(self, entity_type: str, date: str) -> Any:
+        """POST /v1/usage/compute.percentile/{entity}/{date} with no
+        body: ask the server to recompute usage percentiles for one
+        entity type as of one day. Callers treat failures as
+        non-fatal — the percentiles are a derived view, not the
+        run's published data."""
+        path = (
+            f"{USAGE_PATH}/compute.percentile/"
+            f"{encode_path_segment(entity_type)}/{encode_path_segment(date)}"
+        )
+        return self.request("POST", path)
 
     def post_entity_profile_by_name(
         self,
@@ -393,6 +481,92 @@ class RestClient:
         params = {"fields": fields} if fields else None
         return self._as_object(self.request("GET", path, params=params))
 
+    # --- Lineage reads (capability batch 1: C-6) --------------------------
+    # The REST-only adaptation of the pin's ES-backed lineage reads
+    # (design §5.4, D-C5): lineage graphs for incremental/override
+    # checks, Query entities for processed-lineage checks, and stored
+    # procedures for procedure/UDF body resolution. Fresh
+    # implementations against the Apache server API; no existing
+    # method is modified.
+    # ADR:2026-11-14-agent-capability-batch1
+
+    def get_lineage_by_name(
+        self,
+        entity_type: str,
+        fqn: str,
+        *,
+        upstream_depth: int = 1,
+        downstream_depth: int = 1,
+    ) -> dict[str, Any]:
+        """GET /v1/lineage/{entity}/name/{fqn} (EntityLineage: entity,
+        nodes, upstreamEdges, downstreamEdges). Depths are capped by
+        the server at 3; callers asking for a one-hop neighborhood
+        pass 1/0 explicitly."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("lineage entity fqn is required")
+        path = (
+            f"{LINEAGE_PATH}/{encode_path_segment(entity_type)}"
+            f"/name/{encode_path_segment(str(fqn).strip())}"
+        )
+        params = {"upstreamDepth": upstream_depth, "downstreamDepth": downstream_depth}
+        return self._as_object(self.request("GET", path, params=params))
+
+    def delete_lineage_by_source(
+        self,
+        entity_type: str,
+        fqn: str,
+        source: str,
+    ) -> Any:
+        """DELETE /v1/lineage/source/name/{entityType}/{fqn}/type/{source}.
+
+        Removes only the entity's UPSTREAM edges carrying that lineage
+        source, so deleting a view's ViewLineage edges never clobbers
+        edges a query wrote into the view (the override guard)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("lineage entity fqn is required")
+        path = (
+            f"{LINEAGE_PATH}/source/name/{encode_path_segment(entity_type)}"
+            f"/{encode_path_segment(str(fqn).strip())}"
+            f"/type/{encode_path_segment(source)}"
+        )
+        return self.request("DELETE", path)
+
+    def get_query_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/queries/name/{name} (raises RestError on 404 — the
+        caller decides whether absence is data or failure). Query
+        names are the MD5 checksum of the stored query text, so a
+        lookup by checksum finds the entity a previous run stored."""
+        if not name or not str(name).strip():
+            raise WorkflowError("query name is required")
+        path = f"{QUERIES_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
+    def get_stored_procedure_by_name(
+        self,
+        fqn: str,
+        *,
+        fields: str | None = None,
+    ) -> dict[str, Any]:
+        """GET /v1/storedProcedures/name/{fqn} (raises RestError on
+        404). The entity carries ``storedProcedureCode`` (language +
+        code) and ``storedProcedureType`` (StoredProcedure/UDF/
+        StoredPackage/Function)."""
+        if not fqn or not str(fqn).strip():
+            raise WorkflowError("stored procedure fqn is required")
+        path = f"{STORED_PROCEDURES_PATH}/name/{encode_path_segment(str(fqn).strip())}"
+        params = {"fields": fields} if fields else None
+        return self._as_object(self.request("GET", path, params=params))
+    # --- Owner resolution (capability batch 1: C-8) -----------------------
+    # Team lookup for owner resolution (the user lookup lives with the
+    # query methods above — one definition only, no duplicates).
+
+    def get_team_by_name(self, name: str) -> dict[str, Any]:
+        """GET /v1/teams/name/{name} (owner resolution needs the id)."""
+        if not name or not str(name).strip():
+            raise WorkflowError("team name is required")
+        path = f"{TEAMS_PATH}/name/{encode_path_segment(str(name).strip())}"
+        return self._as_object(self.request("GET", path))
+
     # --- Sample data (H track 1: sampler messaging chain) -----------------
     # First Wave 2 H track to extend RestClient. Later tracks add their
     # methods under their own section headers in this same file; no track
@@ -422,29 +596,95 @@ class RestClient:
         return payload if isinstance(payload, dict) else None
 
 
-    def bulk_upsert_databases(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{DATABASES_PATH}/bulk", json=payloads)
+    def bulk_upsert_databases(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{DATABASES_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_schemas(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{SCHEMAS_PATH}/bulk", json=payloads)
+    def bulk_upsert_schemas(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{SCHEMAS_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_tables(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{TABLES_PATH}/bulk", json=payloads)
+    def bulk_upsert_tables(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{TABLES_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_topics(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{TOPICS_PATH}/bulk", json=payloads)
+    def bulk_upsert_stored_procedures(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{STORED_PROCEDURES_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_dashboards(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{DASHBOARDS_PATH}/bulk", json=payloads)
+    def bulk_upsert_topics(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{TOPICS_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_charts(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{CHARTS_PATH}/bulk", json=payloads)
+    def bulk_upsert_dashboards(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{DASHBOARDS_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_containers(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{CONTAINERS_PATH}/bulk", json=payloads)
+    def bulk_upsert_charts(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{CHARTS_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
-    def bulk_upsert_pipelines(self, payloads: list[dict[str, Any]]) -> Any:
-        return self.request("PUT", f"{PIPELINES_PATH}/bulk", json=payloads)
+    def bulk_upsert_containers(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{CONTAINERS_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
+
+    def bulk_upsert_pipelines(
+        self, payloads: list[dict[str, Any]], *, override_metadata: bool = False
+    ) -> Any:
+        return self.request(
+            "PUT",
+            f"{PIPELINES_PATH}/bulk",
+            json=payloads,
+            params=_bulk_params(override_metadata),
+        )
 
     def delete_stale(
         self,

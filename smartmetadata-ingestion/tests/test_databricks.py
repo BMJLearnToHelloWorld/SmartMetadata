@@ -26,7 +26,6 @@ from smartmetadata_ingestion.connectors.databricks_common import (
     run_connection_test,
 )
 from smartmetadata_ingestion.connectors.databricks_data_diff import DatabricksTableParameter
-from smartmetadata_ingestion.connectors.databricks_lineage import DatabricksLineageSource
 from smartmetadata_ingestion.connectors.databricks_profiler import (
     DatabricksProfilerInterface,
     DatabricksSamplerInterface,
@@ -34,13 +33,9 @@ from smartmetadata_ingestion.connectors.databricks_profiler import (
 from smartmetadata_ingestion.connectors.databricks_quality import DatabricksTestSuiteInterface
 from smartmetadata_ingestion.connectors.databricks_usage import DatabricksUsageSource
 from smartmetadata_ingestion.connectors.databricks_common import (
-    LineageEdgeRow,
     ProfileStatRow,
     SampleRow,
-    SequenceLineageReader,
     SequenceProfileReader,
-    SequenceUsageReader,
-    UsageEventRow,
 )
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
@@ -49,8 +44,8 @@ from smartmetadata_ingestion.records import (
     LineageRecord,
     ProfileRecord,
     SchemaRecord,
+    TableQueryRecord,
     TableRecord,
-    UsageRecord,
 )
 
 
@@ -150,38 +145,25 @@ def test_auth_classification() -> None:
     assert server_hostname("https://dbc.example.com/") == "dbc.example.com"
 
 
-def test_databricks_lineage_and_usage_sources() -> None:
-    lineage = DatabricksLineageSource(
-        SourceConfig(
-            type="databricks-lineage",
-            service_name="lakehouse",
-            connection=_pat_conn(),
-        ),
-        reader=SequenceLineageReader(
-            [
-                LineageEdgeRow("main", "default", "ORDERS", "main", "default", "ORDERS_V"),
-            ]
-        ),
+def test_databricks_usage_source(tmp_path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM main.default.ORDERS,alice,2026-10-30 09:00:00.000,,5,\n",
+        encoding="utf-8",
     )
-    edges = list(lineage.produce())
-    assert len(edges) == 1
-    assert edges[0].source == "QueryLineage"
-    assert edges[0].from_entity.fqn.endswith("ORDERS")
-
     usage = DatabricksUsageSource(
         SourceConfig(
             type="databricks-usage",
             service_name="lakehouse",
             connection=_pat_conn(queryHistoryTable="system.query.history"),
-        ),
-        reader=SequenceUsageReader(
-            [UsageEventRow("main", "default", "ORDERS", "2026-10-30", 7)]
+            query_log_file_path=str(log_file),
         ),
     )
     events = list(usage.produce())
-    assert events == [
-        UsageRecord(entity_type="table", fqn="lakehouse.main.default.ORDERS", date="2026-10-30", count=7)
-    ]
+    assert len(events) == 1
+    assert isinstance(events[0], TableQueryRecord)
+    assert events[0].query == "SELECT * FROM main.default.ORDERS"
 
 
 def test_profiler_sampler_quality_data_diff() -> None:

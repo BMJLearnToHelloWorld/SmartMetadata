@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -29,14 +30,19 @@ from smartmetadata_ingestion.records import (
     PipelineRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
+    LifeCycleRecord,
     LineageRecord,
     MessagingServiceRecord,
     SchemaRecord,
     ColumnRecord,
+    StoredProcedureRecord,
+    TableConstraintRecord,
     TablePartitionRecord,
     TableRecord,
+    TagLabelRecord,
     TopicRecord,
     UsageRecord,
+    QueryRecord,
     ProfileRecord,
     TestCaseResultRecord,
     ClassificationRecord,
@@ -46,6 +52,67 @@ from smartmetadata_ingestion.records import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Owner names resolve to EntityReference ids once per run; the cache is
+# bounded so a run with many distinct owners cannot grow it without limit.
+_OWNER_CACHE_MAX = 512
+
+
+class OwnerResolver:
+    """Resolve ownerConfig owner names to EntityReference dicts.
+
+    The create-request schema requires ``id`` on every EntityReference,
+    so a bare name is never sent: each name is looked up as a user,
+    then as a team, and a name matching neither fails the run loudly
+    instead of landing an unresolvable owner.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+
+    def resolve(self, names: list[str]) -> list[dict[str, Any]]:
+        refs: list[dict[str, Any]] = []
+        for name in names:
+            ref = self._cache.get(name)
+            if ref is None:
+                ref = self._lookup(name)
+                self._cache[name] = ref
+                while len(self._cache) > _OWNER_CACHE_MAX:
+                    self._cache.popitem(last=False)
+            refs.append(ref)
+        return refs
+
+    def _lookup(self, name: str) -> dict[str, Any]:
+        get_user = getattr(self._client, "get_user_by_name", None)
+        get_team = getattr(self._client, "get_team_by_name", None)
+        if not callable(get_user) or not callable(get_team):
+            raise WorkflowError(
+                f"cannot resolve owner {name!r}: the catalog client "
+                "has no user/team lookup"
+            )
+        for getter, entity_type in ((get_user, "user"), (get_team, "team")):
+            try:
+                entity = getter(name)
+            except RestError as exc:
+                if exc.status_code == 404:
+                    continue
+                raise
+            entity_id = entity.get("id") if isinstance(entity, dict) else None
+            if not entity_id:
+                raise WorkflowError(
+                    f"owner lookup for {name!r} returned no id"
+                )
+            return {
+                "id": entity_id,
+                "type": entity_type,
+                "name": entity.get("name") or name,
+                "fullyQualifiedName": entity.get("fullyQualifiedName") or name,
+            }
+        raise WorkflowError(
+            f"owner {name!r} matches no user or team in the catalog"
+        )
 
 
 def _payload_label(kind: str, payload: dict[str, Any]) -> str:
@@ -104,10 +171,25 @@ class Sink(Protocol):
     def flush(self) -> Any: ...
 
 
+def _owners_for(
+    resolver: OwnerResolver, record: TableRecord | StoredProcedureRecord
+) -> list[dict[str, Any]]:
+    """Resolved owner references for a record, or [] when it names none."""
+    if not record.owner_names:
+        return []
+    return resolver.resolve(list(record.owner_names))
+
+
 class MetadataRestSink:
-    def __init__(self, client: RestClient):
+    def __init__(self, client: RestClient, *, owner_resolver: OwnerResolver | None = None):
         self._client = client
+        self._owner_resolver = owner_resolver or OwnerResolver(client)
         self.written: list[str] = []
+        # Query-link dedupe for QueryRecord writes: one usage/users/
+        # usedBy PUT per (query, table) per run. Bounded — when full
+        # it clears and re-PUTs (idempotent), rather than growing
+        # with the query-log size.
+        self._query_links: set[tuple[str, str]] = set()
 
     def write(self, record: WorkflowRecord) -> Any:
         if isinstance(record, DatabaseServiceRecord):
@@ -125,7 +207,15 @@ class MetadataRestSink:
         elif isinstance(record, SchemaRecord):
             result = self._client.upsert_schema(_schema_payload(record))
         elif isinstance(record, TableRecord):
-            result = self._client.upsert_table(_table_payload(record))
+            result = self._client.upsert_table(
+                _table_payload(record, owners=_owners_for(self._owner_resolver, record))
+            )
+        elif isinstance(record, StoredProcedureRecord):
+            result = self._client.upsert_stored_procedure(
+                _stored_procedure_payload(
+                    record, owners=_owners_for(self._owner_resolver, record)
+                )
+            )
         elif isinstance(record, TopicRecord):
             result = self._client.upsert_topic(_topic_payload(record))
             _write_topic_sample_data(self._client, record, result)
@@ -152,6 +242,8 @@ class MetadataRestSink:
                 date=record.date,
                 count=record.count,
             )
+        elif isinstance(record, QueryRecord):
+            result = _write_query(self._client, record, self._query_links)
         elif isinstance(record, ProfileRecord):
             result = _write_profile(self._client, record)
         elif isinstance(record, TestCaseResultRecord):
@@ -182,7 +274,11 @@ def build_sink(config: WorkflowConfig, client: RestClient, sink: Sink | None = N
     if config.sink.type != "metadata-rest":
         raise WorkflowError(f"unsupported sink type {config.sink.type}")
     if config.sink.use_bulk:
-        return BulkMetadataRestSink(client, batch_size=config.sink.bulk_batch_size)
+        return BulkMetadataRestSink(
+            client,
+            batch_size=config.sink.bulk_batch_size,
+            override_metadata=config.source.override_metadata,
+        )
     return MetadataRestSink(client)
 
 
@@ -197,10 +293,22 @@ class BulkMetadataRestSink:
     one :class:`FlushFailure` (official ``_flush_buffer``).
     """
 
-    def __init__(self, client: RestClient, *, batch_size: int = 50) -> None:
-        self._inner = MetadataRestSink(client)
+    def __init__(
+        self,
+        client: RestClient,
+        *,
+        batch_size: int = 50,
+        override_metadata: bool = False,
+        owner_resolver: OwnerResolver | None = None,
+    ) -> None:
+        self._owner_resolver = owner_resolver or OwnerResolver(client)
+        self._inner = MetadataRestSink(client, owner_resolver=self._owner_resolver)
         self._client = client
         self._batch_size = batch_size
+        # The bulk overrideMetadata query param: the server reads it from
+        # the bulk URI to allow overwriting user-curated fields. The
+        # single-write path has no server support for it.
+        self._override_metadata = override_metadata
         self.written: list[str] = self._inner.written
         self.seen = SeenSet()
         self._flush_result = FlushResult()
@@ -208,6 +316,7 @@ class BulkMetadataRestSink:
             "database": [],
             "schema": [],
             "table": [],
+            "storedProcedure": [],
             "topic": [],
             "chart": [],
             "dashboard": [],
@@ -218,7 +327,7 @@ class BulkMetadataRestSink:
     def buffers(self, record: WorkflowRecord) -> bool:
         """Whether ``write()`` only buffers this record (not yet persisted).
 
-        Mirrors ``write()`` exactly: the eight buffered kinds, with a
+        Mirrors ``write()`` exactly: the nine buffered kinds, with a
         sampled topic taking the immediate path (its sample PUT needs the
         topic id from the single-write upsert).
         """
@@ -230,6 +339,7 @@ class BulkMetadataRestSink:
                 DatabaseRecord,
                 SchemaRecord,
                 TableRecord,
+                StoredProcedureRecord,
                 ChartRecord,
                 DashboardRecord,
                 ContainerRecord,
@@ -255,9 +365,19 @@ class BulkMetadataRestSink:
             self.written.append(record.label())
             return self._flush_kind("schema", force=False)
         if isinstance(record, TableRecord):
-            self._buffers["table"].append(_table_payload(record))
+            self._buffers["table"].append(
+                _table_payload(record, owners=_owners_for(self._owner_resolver, record))
+            )
             self.written.append(record.label())
             return self._flush_kind("table", force=False)
+        if isinstance(record, StoredProcedureRecord):
+            self._buffers["storedProcedure"].append(
+                _stored_procedure_payload(
+                    record, owners=_owners_for(self._owner_resolver, record)
+                )
+            )
+            self.written.append(record.label())
+            return self._flush_kind("storedProcedure", force=False)
         if isinstance(record, TopicRecord):
             if record.sample_data and record.sample_data.messages:
                 # The sample PUT needs the topic id from the upsert
@@ -294,7 +414,18 @@ class BulkMetadataRestSink:
         return self.take_flush_result()
 
     def _flush_all(self) -> None:
-        for kind in ("database", "schema", "table", "topic", "chart", "dashboard", "container", "pipeline"):
+        kinds = (
+            "database",
+            "schema",
+            "table",
+            "storedProcedure",
+            "topic",
+            "chart",
+            "dashboard",
+            "container",
+            "pipeline",
+        )
+        for kind in kinds:
             self._flush_kind(kind, force=True)
 
     # Official topology flushes parents at stage end before children.
@@ -303,6 +434,7 @@ class BulkMetadataRestSink:
     _KIND_PARENTS: dict[str, tuple[str, ...]] = {
         "schema": ("database",),
         "table": ("database", "schema"),
+        "storedProcedure": ("database", "schema"),
     }
 
     def _flush_kind(self, kind: str, *, force: bool) -> None:
@@ -315,23 +447,44 @@ class BulkMetadataRestSink:
             self._flush_kind(parent, force=True)
         payloads = list(buf)
         buf.clear()
+        override = self._override_metadata
         try:
             if kind == "database":
-                result = self._client.bulk_upsert_databases(payloads)
+                result = self._client.bulk_upsert_databases(
+                    payloads, override_metadata=override
+                )
             elif kind == "schema":
-                result = self._client.bulk_upsert_schemas(payloads)
+                result = self._client.bulk_upsert_schemas(
+                    payloads, override_metadata=override
+                )
             elif kind == "table":
-                result = self._client.bulk_upsert_tables(payloads)
+                result = self._client.bulk_upsert_tables(
+                    payloads, override_metadata=override
+                )
+            elif kind == "storedProcedure":
+                result = self._client.bulk_upsert_stored_procedures(
+                    payloads, override_metadata=override
+                )
             elif kind == "topic":
-                result = self._client.bulk_upsert_topics(payloads)
+                result = self._client.bulk_upsert_topics(
+                    payloads, override_metadata=override
+                )
             elif kind == "chart":
-                result = self._client.bulk_upsert_charts(payloads)
+                result = self._client.bulk_upsert_charts(
+                    payloads, override_metadata=override
+                )
             elif kind == "dashboard":
-                result = self._client.bulk_upsert_dashboards(payloads)
+                result = self._client.bulk_upsert_dashboards(
+                    payloads, override_metadata=override
+                )
             elif kind == "container":
-                result = self._client.bulk_upsert_containers(payloads)
+                result = self._client.bulk_upsert_containers(
+                    payloads, override_metadata=override
+                )
             elif kind == "pipeline":
-                result = self._client.bulk_upsert_pipelines(payloads)
+                result = self._client.bulk_upsert_pipelines(
+                    payloads, override_metadata=override
+                )
             else:
                 return None
         except (RestError, httpx.HTTPError) as exc:
@@ -561,6 +714,96 @@ def _test_case_result_payload(record: TestCaseResultRecord) -> dict[str, Any]:
     return payload
 
 
+# Query-link dedupe cap for QueryRecord writes (see MetadataRestSink).
+MAX_QUERY_LINK_DEDUPE = 10000
+
+
+def _query_payload(record: QueryRecord) -> dict[str, Any]:
+    """A ``CreateQueryRequest`` dict. The name is omitted — the server
+    derives it as the MD5 of the stored text — and the service is the
+    service name, resolved server-side to the service reference."""
+    payload: dict[str, Any] = {
+        "query": record.query,
+        "service": record.service_name,
+        "exclude_usage": record.exclude_usage,
+        "processedLineage": record.processed_lineage,
+    }
+    if record.dialect is not None:
+        payload["dialect"] = record.dialect
+    if record.query_type is not None:
+        payload["query_type"] = record.query_type
+    if record.duration is not None:
+        payload["duration"] = record.duration
+    if record.query_date_ms is not None:
+        payload["queryDate"] = record.query_date_ms
+    if record.triggered_by_fqn is not None:
+        payload["triggeredBy"] = {
+            "type": "storedProcedure",
+            "fullyQualifiedName": record.triggered_by_fqn,
+        }
+    return payload
+
+
+def _write_query(
+    client: RestClient,
+    record: QueryRecord,
+    link_dedupe: set[tuple[str, str]],
+) -> Any:
+    """Upsert the Query entity, then link its tables and user.
+
+    Usage links need table ids, resolved by FQN (a table that cannot
+    be resolved drops out of the links with a warning — the query
+    itself is still stored). User resolution mirrors the usage stage:
+    a catalog user becomes BOTH a ``users`` FQN and a raw ``usedBy``
+    name; anything else becomes only a ``usedBy`` name. Link PUTs
+    are idempotent, so dedupe is a traffic saving, not a correctness
+    requirement."""
+    created = client.upsert_query(_query_payload(record))
+    query_id = str(created.get("id", ""))
+    if not query_id:
+        raise WorkflowError("query create response has no id")
+    query_key = str(created.get("fullyQualifiedName") or created.get("name") or query_id)
+    for table_fqn in record.table_fqns:
+        link_key = (query_key, table_fqn)
+        if link_key in link_dedupe:
+            continue
+        link_dedupe.add(link_key)
+        if len(link_dedupe) > MAX_QUERY_LINK_DEDUPE:
+            link_dedupe.clear()
+            link_dedupe.add(link_key)
+        try:
+            table = client.get_table_by_name(table_fqn)
+        except RestError as exc:
+            if exc.status_code == 404:
+                logger.warning(
+                    "skipping query usage link to unresolvable table %s", table_fqn
+                )
+                continue
+            raise
+        table_id = str(table.get("id", ""))
+        if table_id:
+            client.add_query_usage(query_id, [{"id": table_id, "type": "table"}])
+    if record.user_name:
+        user_key = (query_key, f"user:{record.user_name}")
+        if user_key not in link_dedupe:
+            link_dedupe.add(user_key)
+            try:
+                user = client.get_user_by_name(record.user_name)
+            except RestError as exc:
+                if exc.status_code == 404:
+                    client.add_query_used_by(query_id, [record.user_name])
+                else:
+                    raise
+            else:
+                user_fqn = user.get("fullyQualifiedName")
+                if isinstance(user_fqn, str) and user_fqn:
+                    client.add_query_users(query_id, [user_fqn])
+                    client.add_query_used_by(query_id, [record.user_name])
+                else:
+                    client.add_query_used_by(query_id, [record.user_name])
+    return created
+
+
 def _lineage_details(record: LineageRecord) -> dict[str, Any]:
     details: dict[str, Any] = {"source": record.source}
     if record.sql_query:
@@ -687,6 +930,43 @@ def _schema_payload(record: SchemaRecord) -> dict[str, Any]:
     return payload
 
 
+def _tag_label_payload(record: TagLabelRecord) -> dict[str, Any]:
+    return {
+        "tagFQN": record.tag_fqn,
+        "source": record.source,
+        "labelType": record.label_type,
+        "state": record.state,
+    }
+
+
+def _life_cycle_payload(record: LifeCycleRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, access in (
+        ("created", record.created),
+        ("updated", record.updated),
+        ("accessed", record.accessed),
+    ):
+        if access is None:
+            continue
+        detail: dict[str, Any] = {"timestamp": access.timestamp}
+        if access.accessed_by_a_process is not None:
+            detail["accessedByAProcess"] = access.accessed_by_a_process
+        payload[key] = detail
+    return payload
+
+
+def _table_constraint_payload(record: TableConstraintRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "constraintType": record.constraint_type,
+        "columns": list(record.columns),
+    }
+    if record.referred_columns is not None:
+        payload["referredColumns"] = list(record.referred_columns)
+    if record.relationship_type is not None:
+        payload["relationshipType"] = record.relationship_type
+    return payload
+
+
 def _column_payload(column: ColumnRecord) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": column.name,
@@ -708,6 +988,10 @@ def _column_payload(column: ColumnRecord) -> dict[str, Any]:
         payload["precision"] = column.precision
     if column.scale is not None:
         payload["scale"] = column.scale
+    if column.constraint is not None:
+        payload["constraint"] = column.constraint
+    if column.tags:
+        payload["tags"] = [_tag_label_payload(tag) for tag in column.tags]
     return payload
 
 
@@ -724,7 +1008,9 @@ def _table_partition_payload(record: TablePartitionRecord) -> dict[str, Any]:
     return {"columns": columns}
 
 
-def _table_payload(record: TableRecord) -> dict[str, Any]:
+def _table_payload(
+    record: TableRecord, *, owners: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": record.name,
         "databaseSchema": record.database_schema,
@@ -735,6 +1021,45 @@ def _table_payload(record: TableRecord) -> dict[str, Any]:
         payload["description"] = record.description
     if record.table_partition is not None:
         payload["tablePartition"] = _table_partition_payload(record.table_partition)
+    if record.tags:
+        payload["tags"] = [_tag_label_payload(tag) for tag in record.tags]
+    if owners:
+        payload["owners"] = list(owners)
+    if record.schema_definition is not None:
+        payload["schemaDefinition"] = record.schema_definition
+    if record.table_constraints:
+        payload["tableConstraints"] = [
+            _table_constraint_payload(item) for item in record.table_constraints
+        ]
+    if record.life_cycle is not None:
+        payload["lifeCycle"] = _life_cycle_payload(record.life_cycle)
+    if record.extension is not None:
+        payload["extension"] = dict(record.extension)
+    return payload
+
+
+def _stored_procedure_payload(
+    record: StoredProcedureRecord, *, owners: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "name": record.name,
+        "databaseSchema": record.database_schema,
+        "storedProcedureCode": {
+            "language": record.language,
+            "code": record.code,
+        },
+        "storedProcedureType": record.stored_procedure_type,
+    }
+    if record.description:
+        payload["description"] = record.description
+    if record.tags:
+        payload["tags"] = [_tag_label_payload(tag) for tag in record.tags]
+    if owners:
+        payload["owners"] = list(owners)
+    if record.life_cycle is not None:
+        payload["lifeCycle"] = _life_cycle_payload(record.life_cycle)
+    if record.extension is not None:
+        payload["extension"] = dict(record.extension)
     return payload
 
 def _storage_service_payload(record: StorageServiceRecord) -> dict[str, Any]:

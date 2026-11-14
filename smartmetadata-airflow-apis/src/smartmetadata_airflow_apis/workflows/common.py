@@ -28,8 +28,8 @@ from typing import Any
 
 from smartmetadata_airflow_apis.run_id import clean_dag_id, resolve_run_id
 from smartmetadata_airflow_apis.workflows.translation import (
-    TranslationError,
-    translate_filter_pattern,
+    reconcile_gate_for_source,
+    translate_source_config_override,
 )
 
 logger = logging.getLogger(__name__)
@@ -118,48 +118,92 @@ def _resolve_run_id(dag_id: str, dag_run: Any) -> str | None:
     return resolve_run_id(dag_id, run_id, conf if isinstance(conf, dict) else {})
 
 
+def _spelling_twins(model_cls: type) -> dict[str, str]:
+    """Alias <-> field-name twins for a CamelModel's fields.
+
+    Each field has two valid spellings (``markDeletedTables`` and
+    ``mark_deleted_tables``); the map runs both directions so a merge
+    can drop whichever twin the incoming key displaces, including the
+    fields whose alias is not the mechanical camelCase
+    (``includeDDL``, ``includeUnDeployedPipelines``).
+    """
+    twins: dict[str, str] = {}
+    for name, field in model_cls.model_fields.items():
+        alias = field.alias
+        if alias and alias != name:
+            twins[alias] = name
+            twins[name] = alias
+    return twins
+
+
+def _merge_single_spelling(
+    target: dict[str, Any], updates: dict[str, Any], model_cls: type
+) -> None:
+    """Merge ``updates`` into ``target`` keeping one spelling per field.
+
+    The baked config may spell a field either way (builders dump
+    snake_case, the raw translation uses camelCase), while override
+    updates always arrive aliased. Carrying both spellings makes
+    ``WorkflowConfig`` validation fail — ``extra="forbid"`` rejects
+    the displaced spelling — so the twin of every updated key is
+    dropped before the update lands. Keys with no twin in the model
+    pass through untouched and fail loudly at validation, as before.
+    """
+    twins = _spelling_twins(model_cls)
+    for key, value in updates.items():
+        twin = twins.get(key)
+        if twin is not None:
+            target.pop(twin, None)
+        target[key] = value
+
+
 def _apply_source_config_override(
     workflow_config: dict[str, Any], override: dict[str, Any]
 ) -> dict[str, Any]:
     """Apply a trigger conf sourceConfigOverride to the baked config.
 
-    Only this run is affected. Overridden filter patterns are re-translated
-    through the same rule as deploy time; unknown keys are ignored with a
-    warning (they belong to other pipeline types' configs).
+    Only this run is affected. Every knob the translation owns is
+    honored through the same knob tables as deploy time (filter
+    patterns re-translated, scalars carried to their SourceConfig
+    alias); keys no knob owns are ignored with a warning. A malformed
+    filter pattern fails loudly: it is only known at trigger time, so
+    deploy validation cannot catch it — but ignoring a narrowing
+    override would run the deployed (broader) scope. This matches the
+    official apply_source_config_override, whose model_validate raises.
+
+    The merge keeps a single spelling per field: the baked dict's
+    spelling of an overridden key is dropped, so the merged dict
+    still validates under ``extra="forbid"`` (a duplicated
+    snake_case/camelCase pair used to crash scoped runs before they
+    started).
+
+    When the override carries markDeleted* keys on a metadata run, the
+    reconcile gate is recomputed from the merged source: a scoped run
+    (the server's MetadataScoper sets all four database flags false)
+    must not reconcile, while an override that leaves a family flag
+    true keeps the gate open.
+    ADR:2026-11-14-agent-capability-batch1
     """
+    from smartmetadata_ingestion.config import SourceConfig, WorkflowSettings
+    from smartmetadata_ingestion.reconcile import service_family_for_source_type
+
     config = dict(workflow_config)
     source = dict(config.get("source") or {})
-    for key in ("schemaFilterPattern", "databaseFilterPattern"):
-        if key not in override:
-            continue
-        try:
-            includes, excludes = translate_filter_pattern(override.get(key))
-        except TranslationError:
-            # Fail loudly: a malformed override (non-dict pattern,
-            # non-list includes/excludes) is only known at trigger time,
-            # so deploy validation cannot catch it — but ignoring a
-            # narrowing override would run the deployed (broader) scope.
-            # The task fails here; the failure callback writes the run
-            # back as failed. This matches the official
-            # apply_source_config_override, whose model_validate raises.
-            raise
-        if key == "schemaFilterPattern":
-            source["includeSchemas"] = includes
-            source["excludeSchemas"] = excludes
-        else:
-            source["includeDatabases"] = includes
-            source["excludeDatabases"] = excludes
-    if "markDeletedTables" in override:
+    updates, ignored = translate_source_config_override(override)
+    _merge_single_spelling(source, updates, SourceConfig)
+    for key in ignored:
+        logger.warning("ignoring sourceConfigOverride key %s", key)
+    if any(key.startswith("markDeleted") for key in override):
         workflow = dict(config.get("workflow") or {})
-        workflow["reconcileStale"] = bool(override["markDeletedTables"])
-        config["workflow"] = workflow
-    for key in override:
-        if key not in {
-            "schemaFilterPattern",
-            "databaseFilterPattern",
-            "markDeletedTables",
-        }:
-            logger.warning("ignoring sourceConfigOverride key %s", key)
+        workflow_type = workflow.get("type")
+        if workflow_type in (None, "metadata"):
+            family = service_family_for_source_type(source.get("type") or "")
+            _merge_single_spelling(
+                workflow,
+                {"reconcileStale": reconcile_gate_for_source(source, family)},
+                WorkflowSettings,
+            )
+            config["workflow"] = workflow
     config["source"] = source
     return config
 
@@ -414,7 +458,7 @@ def build_dag(
         ),
         **configs,
     )
-    operator = workflow_operator_class()(
+    workflow_operator_class()(
         task_id=task_name,
         workflow_config=workflow_config,
         pipeline=pipeline,

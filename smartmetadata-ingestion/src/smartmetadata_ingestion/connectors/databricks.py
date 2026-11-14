@@ -18,11 +18,26 @@ from typing import Any
 
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors import databricks_common as dbx
+from smartmetadata_ingestion.connectors.constraints import (
+    column_constraint_from_nullable,
+    schema_constraints_for_database_schema,
+)
+from smartmetadata_ingestion.connectors.ddl import (
+    require_ddl_support,
+    table_ddl_for_database_schema,
+)
+from smartmetadata_ingestion.connectors.json_schema import (
+    attach_json_schemas_for_database_schema,
+    require_json_sampling_support,
+)
+from smartmetadata_ingestion.connectors.owners import resolve_owner_names
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
-from smartmetadata_ingestion.connectors.sql_views import map_table_type, parse_view_parents
+from smartmetadata_ingestion.connectors.table_types import map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_databricks_type
-from smartmetadata_ingestion.fqn import build_fqn
+from smartmetadata_ingestion.fqn import build_fqn, quote_name
+from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
+from smartmetadata_ingestion.lineage.resolution import view_parent_schema_tables
 from smartmetadata_ingestion.records import (
     ColumnRecord,
     DatabaseRecord,
@@ -60,12 +75,22 @@ class DatabricksSource:
     def produce(self) -> Iterable[WorkflowRecord]:
         yield self._service_record()
         reader = self._require_reader()
+        require_ddl_support(reader, "Databricks", enabled=self._config.include_ddl)
+        require_json_sampling_support(
+            reader, "Databricks", enabled=self._config.extract_json_schema
+        )
         for database in self._selected_databases(reader):
             yield DatabaseRecord(name=database.name, service=self._config.service_name)
             database_fqn = build_fqn(self._config.service_name, database.name)
             for schema in self._selected_schemas(reader, database.name):
                 yield SchemaRecord(name=schema.name, database=database_fqn)
                 schema_fqn = build_fqn(self._config.service_name, database.name, schema.name)
+                constraints = schema_constraints_for_database_schema(
+                    reader,
+                    database.name,
+                    service_name=self._config.service_name,
+                    schema_name=schema.name,
+                )
                 for table in reader.list_tables(database.name, schema.name):
                     table_type = map_table_type(table.table_type)
                     if not is_selected_table(
@@ -74,14 +99,47 @@ class DatabricksSource:
                         include_tables=self._config.include_tables,
                         exclude_tables=self._config.exclude_tables,
                         include_views=self._config.include_views,
+                        include_tables_enabled=self._config.include_tables_enabled,
+                        fqn=f"{schema_fqn}.{quote_name(table.name)}",
+                        use_fqn=self._config.use_fqn_for_filtering,
                     ):
                         continue
+                    columns = self._columns(reader, table)
+                    constraints.apply(table.name, columns)
+                    ddl = table_ddl_for_database_schema(
+                        reader,
+                        "Databricks",
+                        database.name,
+                        schema_name=schema.name,
+                        table_name=table.name,
+                        enabled=self._config.include_ddl,
+                    )
+                    attach_json_schemas_for_database_schema(
+                        reader,
+                        "Databricks",
+                        database.name,
+                        schema.name,
+                        table.name,
+                        columns,
+                        self._config,
+                    )
+                    owner_names = resolve_owner_names(
+                        self._config.owner_config,
+                        include_owners=self._config.include_owners,
+                        service_name=self._config.service_name,
+                        database_name=database.name,
+                        schema_name=schema.name,
+                        entity_name=table.name,
+                    )
                     yield TableRecord(
                         name=table.name,
                         database_schema=schema_fqn,
                         table_type=table_type,
                         description=table.comment,
-                        columns=self._columns(reader, table),
+                        columns=columns,
+                        table_constraints=constraints.for_table(table.name),
+                        owner_names=owner_names,
+                        schema_definition=ddl,
                     )
             if self._config.include_view_lineage:
                 yield from self._view_lineage(reader, database.name)
@@ -115,7 +173,13 @@ class DatabricksSource:
         return [
             database
             for database in reader.list_databases()
-            if is_selected(database.name, include=self._include_databases(), exclude=exclude)
+            if is_selected(
+                database.name,
+                include=self._include_databases(),
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _selected_schemas(
@@ -129,7 +193,13 @@ class DatabricksSource:
         return [
             row
             for row in reader.list_schemas(database)
-            if is_selected(row.name, include=include, exclude=exclude)
+            if is_selected(
+                row.name,
+                include=include,
+                exclude=exclude,
+                fqn=build_fqn(self._config.service_name, database, row.name),
+                use_fqn=self._config.use_fqn_for_filtering,
+            )
         ]
 
     def _columns(
@@ -143,6 +213,7 @@ class DatabricksSource:
             columns.append(
                 ColumnRecord(
                     name=column.name,
+                    constraint=column_constraint_from_nullable(column.is_nullable),
                     data_type=data_type,
                     data_type_display=column.data_type,
                     description=column.comment,
@@ -166,8 +237,8 @@ class DatabricksSource:
             to_fqn = build_fqn(
                 self._config.service_name, database_name, view.schema_name, view.name
             )
-            for schema_name, table_name in parse_view_parents(
-                view.definition, view.schema_name
+            for schema_name, table_name in view_parent_schema_tables(
+                view.definition, dialect_for_connection_type("databricks"), view.schema_name
             ):
                 if (schema_name, table_name) not in known_tables:
                     continue
