@@ -6,10 +6,9 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Button, Tabs, message } from 'ant-design-vue';
+import { Button, Switch, Tabs } from 'ant-design-vue';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import { getServicesOverview, type ServiceHealth, type ServiceSummary } from '@/api/services';
-import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
@@ -17,7 +16,7 @@ import {
   KIND_BY_ENTITY_TYPE,
   OVERVIEW_PARAMS,
 } from '@/features/home/widgets/usePlatformHealth';
-import { SERVICE_DELETE_API, SERVICE_LIST_API } from '@/ingestion/serviceApis';
+import { SERVICE_LIST_API } from '@/ingestion/serviceApis';
 import type { CatalogService, ServiceKind } from '@/types/ingestion';
 
 const { t } = useI18n();
@@ -28,6 +27,13 @@ const errorMessage = ref('');
 const services = ref<CatalogService[]>([]);
 const total = ref<number | undefined>();
 const activeKind = ref<string>('all');
+/**
+ * Pin settings-services show-deleted switch (D-F9): on, the list
+ * requests Include.Deleted; off, Include.NonDeleted. The health-filter
+ * path reads the overview endpoint, which takes no include, so the
+ * toggle only affects the per-kind list calls below.
+ */
+const showDeleted = ref(false);
 
 /**
  * The `?health=` filter the PlatformHealth widget links with (condition 8):
@@ -92,7 +98,11 @@ async function load(): Promise<void> {
       return;
     }
     const kinds = supportedCategories.value.map((row) => row.key as ServiceKind);
-    const settled = await Promise.allSettled(kinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })));
+    const settled = await Promise.allSettled(
+      kinds.map((kind) =>
+        SERVICE_LIST_API[kind]({ limit: 100, include: showDeleted.value ? 'deleted' : 'non-deleted' }),
+      ),
+    );
     const pages = settled.map((result) =>
       result.status === 'fulfilled' ? result.value : { data: [], total: undefined },
     );
@@ -144,28 +154,13 @@ function openDetail(service: CatalogService): void {
   });
 }
 
-async function onDelete(service: CatalogService): Promise<void> {
-  const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('ingestion.services.deleteConfirm', { name: service.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await SERVICE_DELETE_API[service.kind](service.id);
-    message.success(t('ingestion.services.deleted', { name: service.name }));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
-  }
-}
-
 onMounted(() => {
   void load();
   void loadHealthCounts();
+});
+
+watch(showDeleted, () => {
+  void load();
 });
 
 watch(healthFilter, () => {
@@ -186,12 +181,10 @@ watch(healthFilter, () => {
     table-test-id="services-table"
     show-row-actions
     show-edit-action
-    show-delete-action
     :total="displayedTotal"
     @refresh="load"
     @view="openDetail($event as CatalogService)"
     @edit="openDetail($event as CatalogService)"
-    @delete="onDelete($event as CatalogService)"
   >
     <template #actions>
       <Button type="primary" data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add' })">
@@ -199,6 +192,14 @@ watch(healthFilter, () => {
       </Button>
     </template>
     <template #filters>
+      <div class="services-list__show-deleted">
+        <Switch
+          v-model:checked="showDeleted"
+          data-testid="services-show-deleted"
+          :aria-label="t('ingestion.services.showDeleted')"
+        />
+        <span>{{ t('ingestion.services.showDeleted') }}</span>
+      </div>
       <div class="services-list__health" data-testid="services-health-filter" role="group" :aria-label="t('ingestion.services.health')">
         <button
           type="button"
@@ -247,6 +248,13 @@ watch(healthFilter, () => {
 </template>
 
 <style scoped>
+.services-list__show-deleted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .services-list__health {
   display: flex;
   flex-wrap: wrap;

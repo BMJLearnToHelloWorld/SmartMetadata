@@ -9,6 +9,8 @@
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
+import { mapTableJoins } from '@/catalog/tableJoins';
+import { mapUsageSummary } from '@/catalog/usagePercentile';
 import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
@@ -73,12 +75,21 @@ export function mapTags(value: unknown): TagRef[] {
     const tagFQN = asString(rec.tagFQN);
     const name = asString(rec.name) || tagFQN;
     const source = asString(rec.source);
+    const labelType = asString(rec.labelType);
     return name || tagFQN
       ? [
           {
             tagFQN: tagFQN || name,
             name: name || tagFQN,
             source: source === 'Glossary' || source === 'Classification' ? source : undefined,
+            labelType:
+              labelType === 'Automated' ||
+              labelType === 'Derived' ||
+              labelType === 'Generated' ||
+              labelType === 'Manual' ||
+              labelType === 'Propagated'
+                ? labelType
+                : undefined,
           },
         ]
       : [];
@@ -214,13 +225,29 @@ function mapRef(value: unknown): EntityRef | undefined {
   };
 }
 
-export async function fetchAssetDetail(entityType: string, fqn: string): Promise<AssetDetail> {
+export interface FetchAssetDetailOptions {
+  /**
+   * Permission-gated fields appended to the endpoint's field set (e.g.
+   * `usageSummary`, only when the viewer holds VIEW_USAGE). The caller
+   * decides; this function never requests a gated field on its own.
+   */
+  extraFields?: string[];
+}
+
+export async function fetchAssetDetail(
+  entityType: string,
+  fqn: string,
+  options: FetchAssetDetailOptions = {},
+): Promise<AssetDetail> {
   const endpoint = resolveDetailEndpoint(entityType, fqn);
   if (!endpoint) {
     throw new Error(`No Phase 1 detail endpoint for entity type "${entityType}"`);
   }
+  const fields = [...endpoint.fields.split(','), ...(options.extraFields ?? [])]
+    .filter((field, index, all) => field && all.indexOf(field) === index)
+    .join(',');
   const body = await apiRequest<Record<string, unknown>>(endpoint.path, {
-    query: { fields: endpoint.fields },
+    query: { fields },
   });
   const schema = schemaRowsFor(entityType, body);
   const code =
@@ -286,6 +313,9 @@ export async function fetchAssetDetail(entityType: string, fqn: string): Promise
     apiRequestSchema: asRecord(body.requestSchema) || undefined,
     apiResponseSchema: asRecord(body.responseSchema) || undefined,
     extension: asRecord(body.extension) || undefined,
+    usageSummary: mapUsageSummary(body.usageSummary),
+    joins: mapTableJoins(body.joins),
+    deleted: typeof body.deleted === 'boolean' ? body.deleted : undefined,
   };
 }
 

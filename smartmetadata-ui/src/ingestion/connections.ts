@@ -101,6 +101,36 @@ export const SERVICE_KIND_BY_ENTITY_TYPE: Record<string, ServiceKind> = {
   securityService: 'security',
 };
 
+/**
+ * Kind to localized service-type label key, for the delete/restore
+ * modals: the pin delete header, radio descriptions, and restore title
+ * all use the kind-specific name (DeleteEntityModal.tsx,
+ * ManageButton.tsx via getFormattedEntityType), never a generic
+ * "Service". Values are the pin `label.*-service` keys for the ten
+ * kinds that have one; drive/llm/mcp have no dedicated key, so their
+ * values compose the pin `label.entity-service` template
+ * (`{{entity}} Service` / `{{entity}} 服务`) with the kind label —
+ * drive exactly as the pin builds it (EntityNameUtils, entity-service
+ * + `label.drive`), llm/mcp with the fork kind label, since the pin
+ * has neither an entry nor a label for them and its
+ * `capitalize(entityType)` fallback must not be replicated.
+ */
+export const SERVICE_TYPE_LABEL_KEY_BY_KIND: Record<ServiceKind, string> = {
+  database: 'ingestion.services.serviceTypeLabels.database',
+  messaging: 'ingestion.services.serviceTypeLabels.messaging',
+  dashboard: 'ingestion.services.serviceTypeLabels.dashboard',
+  storage: 'ingestion.services.serviceTypeLabels.storage',
+  pipeline: 'ingestion.services.serviceTypeLabels.pipeline',
+  api: 'ingestion.services.serviceTypeLabels.api',
+  mlmodel: 'ingestion.services.serviceTypeLabels.mlmodel',
+  metadata: 'ingestion.services.serviceTypeLabels.metadata',
+  drive: 'ingestion.services.serviceTypeLabels.drive',
+  search: 'ingestion.services.serviceTypeLabels.search',
+  llm: 'ingestion.services.serviceTypeLabels.llm',
+  mcp: 'ingestion.services.serviceTypeLabels.mcp',
+  security: 'ingestion.services.serviceTypeLabels.security',
+};
+
 /** Password placeholder shown in connection forms, per service type. */
 export const PASSWORD_PLACEHOLDERS: Record<string, string> = {
   Postgres: '${PG_PASSWORD}',

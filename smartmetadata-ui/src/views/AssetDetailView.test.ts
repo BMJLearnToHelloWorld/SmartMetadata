@@ -79,7 +79,7 @@ describe('AssetDetailView governance', () => {
             fullyQualifiedName: 'svc.db.schema.orders',
             description: 'Orders fact',
             owners: [{ id: 'u1', name: 'alice', type: 'user' }],
-            tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' }],
+            tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Generated' }],
             domains: [{ id: 'd1', name: 'Marketing', type: 'domain' }],
             columns: [{ name: 'id', dataType: 'BIGINT' }],
             extension: { retentionDays: 7 },
@@ -313,6 +313,62 @@ describe('AssetDetailView governance', () => {
     expect(body.some((op) => op.path === '/owners')).toBe(true);
     expect(body.some((op) => op.path === '/domains')).toBe(true);
   });
+
+  it('preserves a Generated labelType when governance is saved', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="edit-governance"]').trigger('click');
+    await flushPromises();
+    const ok = wrapper.findAll('button').find((button) => button.text() === 'Save');
+    expect(ok).toBeTruthy();
+    await ok!.trigger('click');
+    await flushPromises();
+    const patch = lastMatchingFetch((url, init) => url.includes('/api/v1/tables/tbl-1') && init?.method === 'PATCH');
+    const body = JSON.parse(String(patch.init?.body)) as Array<{ path: string; value?: unknown }>;
+    expect(body.find((op) => op.path === '/tags')?.value).toEqual([
+      {
+        tagFQN: 'PII.Sensitive',
+        source: 'Classification',
+        labelType: 'Generated',
+        state: 'Confirmed',
+      },
+    ]);
+  });
+
+  it('preserves a Generated labelType when the tag is absent from the catalog (existing-tag fallback)', async () => {
+    // The stub catalog serves PII.Sensitive, so the test above exercises the
+    // catalog-branch overlay. Empty the /api/v1/tags page here so the
+    // existing-tag fallback overlay in selectedTagOptions is the branch
+    // that carries the labelType onto the PATCH; all other requests fall
+    // through to the shared stub, including the table GET that carries
+    // the Generated tag and the PATCH itself.
+    const baseFetch = vi.mocked(fetch);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/api/v1/tags')) {
+          return jsonResponse({ data: [] });
+        }
+        return baseFetch(input, init);
+      }),
+    );
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="edit-governance"]').trigger('click');
+    await flushPromises();
+    const ok = wrapper.findAll('button').find((button) => button.text() === 'Save');
+    expect(ok).toBeTruthy();
+    await ok!.trigger('click');
+    await flushPromises();
+    const patch = lastMatchingFetch((url, init) => url.includes('/api/v1/tables/tbl-1') && init?.method === 'PATCH');
+    const body = JSON.parse(String(patch.init?.body)) as Array<{ path: string; value?: unknown }>;
+    expect(body.find((op) => op.path === '/tags')?.value).toEqual([
+      {
+        tagFQN: 'PII.Sensitive',
+        source: 'Classification',
+        labelType: 'Generated',
+        state: 'Confirmed',
+      },
+    ]);
+  });
 });
 
 async function mountTypedView(entityType: string, fqn: string) {
@@ -482,11 +538,13 @@ describe('AssetDetailView non-table shells', () => {
   });
 
   // R8: same parallel-load timeout allowance as the table GET test above.
-  it('loads chart / metric / dashboardDataModel / database / schema GETs and keeps query unwired', async () => {
+  it('loads chart / metric / dashboardDataModel / database / schema GETs and wires query detail (C-14)', async () => {
+    const urls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        urls.push(url);
         if (url.includes('/api/v1/charts/name/')) {
           return jsonResponse({
             id: 'ch-1',
@@ -536,6 +594,15 @@ describe('AssetDetailView non-table shells', () => {
         if (url.includes('/api/v1/lineage/') || url.includes('/api/v1/activity/') || url.includes('/api/v1/conversations') || url.includes('/customProperties') || url.includes('/testCases')) {
           return jsonResponse({ data: [], paging: { total: 0 } });
         }
+        if (url.includes('/api/v1/queries/name/')) {
+          return jsonResponse({
+            id: 'q-1',
+            name: 'q1',
+            fullyQualifiedName: 'analytics.q1',
+            query: 'SELECT 1',
+            description: 'quarterly query',
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -576,8 +643,12 @@ describe('AssetDetailView non-table shells', () => {
     schema.wrapper.unmount();
 
     const query = await mountTypedView('query', 'analytics.q1');
-    expect(query.wrapper.text()).toContain('No detail page is wired');
-    expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(false);
+    expect(query.wrapper.text()).toContain('q1');
+    expect(query.wrapper.text()).not.toContain('No detail page is wired');
+    expect(query.wrapper.find('[data-testid="asset-tabs"]').exists()).toBe(true);
+    const queryDetailUrl = urls.find((url) => url.includes('/api/v1/queries/name/'));
+    expect(queryDetailUrl).toContain('fields=owners');
+    expect(queryDetailUrl).toContain('queryUsedIn');
     query.wrapper.unmount();
   }, 20000);
 });
@@ -760,5 +831,124 @@ describe('AssetDetailView API collection and endpoint (P2 B5)', () => {
     expect(wrapper.find('[data-testid="asset-api-request-schema"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('/pets/{id}');
     expect(wrapper.text()).toContain('GET');
+  }, 20000);
+});
+
+describe('AssetDetailView usage percentile header (C-F02/C-F03)', () => {
+  const USAGE_SUMMARY = {
+    dailyStats: { count: 12 },
+    weeklyStats: { count: 40, percentileRank: 45 },
+  };
+
+  function stubFetch(viewUsage: 'allow' | 'deny' | 'fail'): string[] {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.includes('/api/v1/permissions/')) {
+          if (viewUsage === 'fail') {
+            return new Response('not found', { status: 404 });
+          }
+          return jsonResponse({
+            resource: 'entity',
+            permissions: [
+              { operation: 'ViewBasic', access: 'allow' },
+              { operation: 'ViewUsage', access: viewUsage === 'allow' ? 'allow' : 'deny' },
+            ],
+          });
+        }
+        if (/\/api\/v1\/(tables|dashboards|pipelines|mlmodels|topics)\/name\//.test(url)) {
+          // Mirror the server's field gating: usageSummary is returned
+          // only when the request asked for it.
+          const wantsUsage = decodeURIComponent(url).includes('usageSummary');
+          return jsonResponse({
+            id: 'e1',
+            name: 'thing',
+            fullyQualifiedName: 'svc.thing',
+            owners: [],
+            tags: [],
+            domains: [],
+            ...(wantsUsage ? { usageSummary: USAGE_SUMMARY } : {}),
+          });
+        }
+        if (url.includes('/api/v1/dataQuality/testCases')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/customProperties')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/lineage/')) {
+          return jsonResponse({ entity: { id: 'e1', type: 'table', name: 'thing' }, nodes: [] });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    return urls;
+  }
+
+  function detailUrl(urls: string[], collection: string): string {
+    const found = urls.find((url) => url.includes(`/api/v1/${collection}/name/`));
+    if (!found) {
+      throw new Error(`no ${collection} detail fetch`);
+    }
+    return decodeURIComponent(found);
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it.each([
+    ['table', 'tables', 'svc.db.schema.orders'],
+    ['dashboard', 'dashboards', 'bi.sales'],
+    ['pipeline', 'pipelines', 'airflow.daily_etl'],
+    ['mlmodel', 'mlmodels', 'ml.churn'],
+  ])(
+    'requests usageSummary with ViewUsage and labels the header percentile for %s',
+    async (entityType, collection, fqn) => {
+      const urls = stubFetch('allow');
+      const { wrapper } = await mountTypedView(entityType, fqn);
+      expect(detailUrl(urls, collection)).toContain('usageSummary');
+      const percentile = wrapper.find('[data-testid="asset-usage-percentile"]');
+      expect(percentile.exists()).toBe(true);
+      expect(percentile.text()).toContain('Usage');
+      expect(percentile.text()).toContain('45th pctile');
+      wrapper.unmount();
+    },
+    20000,
+  );
+
+  it('omits usageSummary when ViewUsage is denied, and shows no percentile', async () => {
+    const urls = stubFetch('deny');
+    const { wrapper } = await mountTypedView('dashboard', 'bi.sales');
+    expect(detailUrl(urls, 'dashboards')).not.toContain('usageSummary');
+    expect(wrapper.find('[data-testid="asset-usage-percentile"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('fails closed when the permission read fails', async () => {
+    const urls = stubFetch('fail');
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    expect(detailUrl(urls, 'pipelines')).not.toContain('usageSummary');
+    expect(wrapper.find('[data-testid="asset-usage-percentile"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('never requests usageSummary for entity types without a pin header site', async () => {
+    const urls = stubFetch('allow');
+    const { wrapper } = await mountTypedView('topic', 'kafka.events');
+    expect(detailUrl(urls, 'topics')).not.toContain('usageSummary');
+    expect(urls.some((url) => url.includes('/api/v1/permissions/'))).toBe(false);
+    wrapper.unmount();
   }, 20000);
 });

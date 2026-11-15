@@ -419,4 +419,60 @@ describe('tasks API', () => {
     const task = await getTask('t3');
     expect(task.payload).toBeUndefined();
   });
+
+  it('requests availableTransitions and resolution explicitly, and maps the feedback payload', async () => {
+    let requestedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        requestedUrl = String(input);
+        return new Response(
+          JSON.stringify({
+            id: 't4',
+            type: 'RecognizerFeedbackApproval',
+            status: 'Open',
+            comments: [],
+            payload: {
+              suggestedValue: '[{"tagFQN":"PII.Sensitive"}]',
+              feedback: {
+                entityLink: '<#E::table::db.schema.orders::columns::email>',
+                feedbackType: 'FALSE_POSITIVE',
+                userComments: 'not sensitive',
+                createdBy: { id: 'u1', type: 'user', name: 'admin' },
+                createdAt: 1701686127533,
+              },
+              recognizer: { recognizerName: 'PII Recognizer' },
+            },
+            availableTransitions: [
+              {
+                id: 'approve',
+                label: 'Approve',
+                resolutionType: 'Approved',
+                targetStageId: 'approved',
+                targetTaskStatus: 'Approved',
+              },
+            ],
+            resolution: {
+              type: 'Approved',
+              resolvedBy: { id: 'u2', type: 'user', name: 'amy' },
+              resolvedAt: 1701686128000,
+              comment: 'looks right',
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const task = await getTask('t4');
+    expect(requestedUrl).toContain('availableTransitions');
+    expect(requestedUrl).toContain('resolution');
+    expect(task.availableTransitions?.[0]?.id).toBe('approve');
+    expect(task.feedbackPayload?.feedback.feedbackType).toBe('FALSE_POSITIVE');
+    expect(task.feedbackPayload?.feedback.userComments).toBe('not sensitive');
+    expect(task.feedbackPayload?.recognizerName).toBe('PII Recognizer');
+    expect(task.resolution?.type).toBe('Approved');
+    expect(task.resolution?.resolvedBy?.name).toBe('amy');
+    expect(task.resolution?.resolvedAt).toBe(1701686128000);
+    expect(task.resolution?.comment).toBe('looks right');
+  });
 });

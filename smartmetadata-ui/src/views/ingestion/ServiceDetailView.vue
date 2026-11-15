@@ -10,7 +10,7 @@ import { Alert, Button, Descriptions, Tooltip, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { triggerOnDemandApp } from '@/api/apps';
 import { getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
-import type { OperationPermissions } from '@/api/permissions';
+import { permissionFlags, type OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { listWorkflowInstances } from '@/api/workflows';
@@ -29,7 +29,8 @@ import SmState from '@/components/shared/SmState.vue';
 import AirflowMessageBanner from '@/components/ingestion/AirflowMessageBanner.vue';
 import DeploymentSummaryCard from '@/components/ingestion/DeploymentSummaryCard.vue';
 import MetadataAgentsView from '@/components/ingestion/MetadataAgentsView.vue';
-import { confirmDelete } from '@/features/crud/confirmDelete';
+import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
+import RestoreEntityModal from '@/features/crud/RestoreEntityModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -37,6 +38,7 @@ import {
   entityTypeForKind,
   redactConnectionForDisplay,
   SERVICE_KIND_BY_ENTITY_TYPE,
+  SERVICE_TYPE_LABEL_KEY_BY_KIND,
 } from '@/ingestion/connections';
 import { cliSourceType } from '@/ingestion/cliWorkflow';
 import {
@@ -51,7 +53,8 @@ import { getIngestionTypes, getSupportedPipelineTypes } from '@/ingestion/suppor
 import { useMetadataAgents } from '@/ingestion/useMetadataAgents';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
 import { getEntityFeedLink } from '@/utils/entityLink';
-import { SERVICE_DELETE_API, SERVICE_GET_API } from '@/ingestion/serviceApis';
+import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_RESTORE_API } from '@/ingestion/serviceApis';
+import { waitForServiceDelete, type DeleteType } from '@/ingestion/serviceDelete';
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
 import type {
   Agent,
@@ -74,12 +77,28 @@ const errorMessage = ref('');
 const service = ref<CatalogService | null>(null);
 const activeTab = ref(props.initialTab ?? 'overview');
 const deleting = ref(false);
+const deleteModalOpen = ref(false);
+const restoreModalOpen = ref(false);
+const restoring = ref(false);
+const servicePermission = ref<OperationPermissions>({});
+
+/**
+ * Pin ManageButton / DataAssetsHeader gating (D-F9): the delete entry
+ * is omitted when Operation.Delete is denied, and restore rides the
+ * ungated EditAll flag. No isAdminUser check gates either. The flags
+ * come from the service entity's own permission (fetched in load);
+ * until it arrives the entries stay hidden (fail-closed).
+ */
+const canDeleteService = computed(() => permissionFlags(servicePermission.value).canDelete);
+const canRestoreService = computed(() => permissionFlags(servicePermission.value).canEditAll);
 
 const kind = computed<ServiceKind>(() =>
   (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)
     ? (props.kind as ServiceKind)
     : 'database',
 );
+/** Kind-specific service-type label for the delete/restore modals (pin: never a generic "Service"). */
+const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]));
 const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
 const connectionJson = computed(() =>
   JSON.stringify(redactConnectionForDisplay(service.value?.connection) ?? {}, null, 2),
@@ -592,7 +611,10 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    service.value = await SERVICE_GET_API[kind.value](props.id);
+    // Include.All (pin ServiceDetailsPage): the server default is
+    // non-deleted, so opening a soft-deleted service would 404 without
+    // it (D-F9). The mapper carries the deleted flag to the shell badge.
+    service.value = await SERVICE_GET_API[kind.value](props.id, 'all');
     pipelinesLoaded.value = false;
     servicePipelines.value = [];
     pipelinesTotal.value = 0;
@@ -605,13 +627,22 @@ async function load(): Promise<void> {
     versionSnapshot.value = null;
     // Resource gates for the Agents tab, fail-closed on any fetch
     // failure: the ingestionPipeline Create bit and the APPLICATION
-    // Trigger bit the header button merges onto the service.
-    const [createOps, triggerOps] = await Promise.all([
+    // Trigger bit the header button merges onto the service. The third
+    // fetch is the service entity's OWN permission, scoped to its FQN
+    // (pin ServiceDetailsPage.fetchServicePermission), which gates the
+    // delete/restore entries; it fails closed the same way.
+    const [createOps, triggerOps, serviceOps] = await Promise.all([
       permissionStore.getResourcePermission('ingestionPipeline').catch(() => null),
       permissionStore.getResourcePermission('application').catch(() => null),
+      service.value.fullyQualifiedName
+        ? permissionStore
+            .getEntityPermissionByFqn(serviceEntityType.value, service.value.fullyQualifiedName)
+            .catch(() => null)
+        : Promise.resolve(null),
     ]);
     ingestionPipelineCreateAllowed.value = createOps?.Create === true;
     applicationTriggerAllowed.value = triggerOps?.Trigger === true;
+    servicePermission.value = serviceOps ?? {};
     // Page-level pipeline fetch: the Agents tab count badge needs the
     // total on every tab, matching official's page-level list fetch.
     await loadPipelines();
@@ -623,34 +654,99 @@ async function load(): Promise<void> {
     }
   } catch (error) {
     service.value = null;
+    servicePermission.value = {};
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;
   }
 }
 
-async function onDelete(): Promise<void> {
+/**
+ * Delete confirm (D-F5/D-F6): the shared modal supplies the soft/hard
+ * choice; the request goes to the async endpoint with recursive=true
+ * (pin service surfaces always pass it). The server's job message is
+ * toasted on submit (pin AsyncDeleteProvider), then the bounded
+ * re-read confirms the end state in place of the pin's websocket
+ * completion, and only then does the D-F6 landing rule run. The modal
+ * closes at job creation (pin async branch), but `deleting` stays set
+ * through the re-read and the landing, so the page Delete button spins
+ * for the whole wait — the metrics precedent holds its deleting flag
+ * the same way (MetricsListView clears it only after its re-read). A
+ * failed submit toasts and stays; the modal closes either way, as in
+ * the pin.
+ */
+async function onDeleteConfirm(deleteType: DeleteType): Promise<void> {
   if (!service.value) {
     return;
   }
-  const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('ingestion.services.deleteConfirm', { name: service.value.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
+  const target = service.value;
+  const hardDelete = deleteType === 'hard-delete';
   deleting.value = true;
   try {
-    await SERVICE_DELETE_API[kind.value](service.value.id);
-    message.success(t('ingestion.services.deleted', { name: service.value.name }));
-    await router.push({ name: 'ingestion-services' });
+    const job = await SERVICE_DELETE_API[kind.value](target.id, { hardDelete, recursive: true });
+    const jobMessage = job?.message?.trim();
+    message.success(
+      jobMessage ? jobMessage : t('ingestion.services.asyncDeleteSubmitted', { name: target.name }),
+    );
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+    message.error(
+      error instanceof Error
+        ? error.message
+        : t('ingestion.services.deleteError', { entity: target.name }),
+    );
+    deleting.value = false;
+    return;
+  } finally {
+    deleteModalOpen.value = false;
+  }
+  try {
+    const confirmed = await waitForServiceDelete(hardDelete, () =>
+      SERVICE_GET_API[kind.value](target.id, 'all'),
+    );
+    if (confirmed) {
+      message.success(t('ingestion.services.deletedSuccessfully', { entity: target.name }));
+    } else {
+      message.warning(t('ingestion.services.deleteTimeoutWarning'));
+    }
+    // D-F6 (classic counterpart): navigate to the list ONLY on hard
+    // delete; on soft delete, stay and refetch with include=all so the
+    // Deleted badge + restore affordance appear. Delete Q2 stays open
+    // as a live check against the pin classic page.
+    if (hardDelete) {
+      await router.push({ name: 'ingestion-services' });
+    } else {
+      await load();
+    }
   } finally {
     deleting.value = false;
+  }
+}
+
+/**
+ * Restore confirm (D-F9): the restore endpoint revives the service;
+ * the page refetches (pin connections-surface pattern) since restoring
+ * revives children too. A failure keeps the modal open for a retry,
+ * mirroring the pin (the modal closes only on a successful restore).
+ */
+async function onRestoreConfirm(): Promise<void> {
+  if (!service.value) {
+    return;
+  }
+  const target = service.value;
+  restoring.value = true;
+  try {
+    await SERVICE_RESTORE_API[kind.value](target.id);
+    message.success(
+      t('ingestion.services.restoreSuccess', { entity: t('ingestion.services.service') }),
+    );
+    restoreModalOpen.value = false;
+    await load();
+  } catch {
+    message.error(
+      t('ingestion.services.restoreError', { entity: t('ingestion.services.service') }),
+    );
+  } finally {
+    restoring.value = false;
   }
 }
 
@@ -680,6 +776,7 @@ onMounted(() => {
     :title="entityLabel(service) || t('ingestion.services.title')"
     :name="service?.name"
     :fqn="service?.fullyQualifiedName"
+    :deleted="service?.deleted ?? false"
     :lead="t('ingestion.services.lead')"
     :loading="loading"
     :error="errorMessage"
@@ -703,16 +800,29 @@ onMounted(() => {
       <Button data-testid="edit-service" :disabled="!service" @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })">
         {{ t('crud.edit') }}
       </Button>
-      <Tooltip :title="t('crud.deleteHelp')">
+      <Tooltip v-if="canDeleteService" :title="t('ingestion.services.deleteActionHelp')">
         <Button
           data-testid="delete-service"
           danger
           :disabled="!service"
           :loading="deleting"
-          :aria-label="t('crud.deleteHelp')"
-          @click="onDelete"
+          :aria-label="t('ingestion.services.deleteActionHelp')"
+          @click="deleteModalOpen = true"
         >
           {{ t('crud.delete') }}
+        </Button>
+      </Tooltip>
+      <Tooltip
+        v-if="service?.deleted"
+        :title="canRestoreService ? undefined : t('crud.noPermissionForAction')"
+      >
+        <Button
+          data-testid="restore-service"
+          :disabled="!canRestoreService"
+          :loading="restoring"
+          @click="restoreModalOpen = true"
+        >
+          {{ t('crud.restore') }}
         </Button>
       </Tooltip>
     </template>
@@ -917,6 +1027,23 @@ onMounted(() => {
     :open="serviceRunDetailsStatus !== null"
     :status="serviceRunDetailsStatus"
     @close="serviceRunDetailsStatus = null"
+  />
+  <DeleteEntityModal
+    :open="deleteModalOpen"
+    :entity-name="service ? (service.displayName ?? service.name) : ''"
+    :entity-type-label="serviceTypeLabel"
+    :allow-soft-delete="!service?.deleted"
+    :loading="deleting"
+    @cancel="deleteModalOpen = false"
+    @confirm="onDeleteConfirm"
+  />
+  <RestoreEntityModal
+    :open="restoreModalOpen"
+    :entity-name="service?.name ?? ''"
+    :entity-type-label="serviceTypeLabel"
+    :loading="restoring"
+    @cancel="restoreModalOpen = false"
+    @confirm="onRestoreConfirm"
   />
 </template>
 

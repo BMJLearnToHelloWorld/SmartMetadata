@@ -30,6 +30,17 @@ export interface GovernanceCatalog {
   domains: Domain[];
 }
 
+/**
+ * The Classification slice of the catalog: pin tag containers are
+ * scoped by tagType, and the query right panel uses
+ * `tagType=Classification` (glossary labels are a separate surface
+ * that the panel must neither offer nor drop). The shared catalog
+ * itself still carries both sources for callers that edit them.
+ */
+export function classificationTagOptions(catalog: GovernanceCatalog | null): AssetTagOption[] {
+  return (catalog?.tags ?? []).filter((tag) => tag.source === 'Classification');
+}
+
 export function ownerKey(id: string, type: string): string {
   return `${type}:${id}`;
 }

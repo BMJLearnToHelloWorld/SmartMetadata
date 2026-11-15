@@ -11,6 +11,7 @@ import { mapSearchResponse } from '@/catalog/searchHits';
 import { asNumber, asRecord } from '@/api/json';
 import type { SearchPage } from '@/types/api';
 import { apiRequest } from './client';
+import { mapQuerySearchPage, type QuerySearchPage } from './queries';
 
 export interface SearchAssetsOptions {
   index?: string;
@@ -283,4 +284,40 @@ export function mapAggregateBuckets(payload: unknown, fieldName: string): Aggreg
     });
   }
   return [];
+}
+
+export interface SearchQueriesOptions {
+  sortField?: string;
+  sortOrder?: 'asc' | 'desc';
+  /** Already-serialized createQueryFilter JSON (see SearchAssetsOptions). */
+  query_filter?: string;
+}
+
+/**
+ * Pin TableQueries list call: GET /v1/search/query with index=query, the
+ * same endpoint and parameters searchAssets sends, but a Query-field-
+ * preserving mapper — mapSearchResponse drops every Query-specific field
+ * (query text, date, duration, votes, queryUsedIn, users, usedBy), so the
+ * tab needs this call instead of sharing the generic one. searchAssets
+ * and mapSearchResponse are unchanged for all other callers.
+ */
+export async function searchQueries(
+  query: string,
+  from = 0,
+  size = 15,
+  options: SearchQueriesOptions = {},
+): Promise<QuerySearchPage> {
+  const q = query.trim().length > 0 ? query.trim() : '*';
+  const payload = await apiRequest<unknown>('/v1/search/query', {
+    query: {
+      q,
+      index: 'query',
+      from,
+      size,
+      sort_field: options.sortField,
+      sort_order: options.sortOrder,
+      query_filter: options.query_filter,
+    },
+  });
+  return mapQuerySearchPage(payload);
 }

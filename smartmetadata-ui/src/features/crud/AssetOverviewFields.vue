@@ -6,7 +6,8 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Descriptions, Empty, Space, Table, Tag, Typography } from 'ant-design-vue';
-import type { AssetDetail } from '@/types/api';
+import { StarOutlined } from '@ant-design/icons-vue';
+import type { AssetDetail, TagRef } from '@/types/api';
 
 const props = defineProps<{
   asset: AssetDetail;
@@ -14,6 +15,16 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+
+/**
+ * Pin TagsViewer gate, fork form: only Generated labels get the distinct
+ * chip, and only here (the TagsContainerV2 equivalent — this surface always
+ * carries entity context, so the pin's entityFqn guard is structural). Every
+ * other labelType renders as a plain chip, as the pin does.
+ */
+function isGeneratedTag(tag: TagRef): boolean {
+  return tag.labelType === 'Generated';
+}
 
 const refColumns = computed(() => [
   { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
@@ -109,7 +120,14 @@ const showRelated = computed(
       </Descriptions.Item>
       <Descriptions.Item :label="t('asset.fields.tags')">
         <Space wrap>
-          <Tag v-for="tag in asset.tags" :key="tag.tagFQN">{{ tag.name }}</Tag>
+          <Tag
+            v-for="tag in asset.tags"
+            :key="tag.tagFQN"
+            :class="isGeneratedTag(tag) ? 'asset-overview__generated-tag' : undefined"
+          >
+            <StarOutlined v-if="isGeneratedTag(tag)" class="asset-overview__generated-tag-icon" />
+            {{ tag.name }}
+          </Tag>
           <Typography.Text v-if="!asset.tags.length" type="secondary">—</Typography.Text>
         </Space>
       </Descriptions.Item>
@@ -145,5 +163,19 @@ const showRelated = computed(
 <style scoped>
 .detail__schema-title {
   margin-top: 24px;
+}
+
+/* Generated-tag badge (D-F4): visual distinction only — the product primary
+   tint on the same antd Tag, so shape and height match the sibling chips.
+   The icon reuses the fork's Auto Classification icon role (agentsUtils). */
+.asset-overview__generated-tag.ant-tag {
+  color: var(--sm-color-primary);
+  background: var(--sm-color-primary-bg);
+  border-color: var(--sm-color-primary-50);
+}
+
+.asset-overview__generated-tag-icon {
+  font-size: 12px;
+  margin-inline-end: 4px;
 }
 </style>

@@ -15,6 +15,7 @@
 import {
   createApiService,
   deleteApiService,
+  restoreApiService,
   getApiService,
   listApiServices,
   mapApiService,
@@ -23,6 +24,7 @@ import {
 import {
   createDashboardService,
   deleteDashboardService,
+  restoreDashboardService,
   getDashboardService,
   listDashboardServices,
   mapDashboardService,
@@ -31,6 +33,7 @@ import {
 import {
   createDatabaseService,
   deleteDatabaseService,
+  restoreDatabaseService,
   getDatabaseService,
   listDatabaseServices,
   mapDatabaseService,
@@ -39,6 +42,7 @@ import {
 import {
   createDriveService,
   deleteDriveService,
+  restoreDriveService,
   getDriveService,
   listDriveServices,
   mapDriveService,
@@ -47,6 +51,7 @@ import {
 import {
   createLlmService,
   deleteLlmService,
+  restoreLlmService,
   getLlmService,
   listLlmServices,
   mapLlmService,
@@ -55,6 +60,7 @@ import {
 import {
   createMcpService,
   deleteMcpService,
+  restoreMcpService,
   getMcpService,
   listMcpServices,
   mapMcpService,
@@ -63,6 +69,7 @@ import {
 import {
   createMessagingService,
   deleteMessagingService,
+  restoreMessagingService,
   getMessagingService,
   listMessagingServices,
   mapMessagingService,
@@ -71,6 +78,7 @@ import {
 import {
   createMetadataService,
   deleteMetadataService,
+  restoreMetadataService,
   getMetadataService,
   listMetadataServices,
   mapMetadataService,
@@ -79,6 +87,7 @@ import {
 import {
   createMlModelService,
   deleteMlModelService,
+  restoreMlModelService,
   getMlModelService,
   listMlModelServices,
   mapMlModelService,
@@ -87,6 +96,7 @@ import {
 import {
   createPipelineService,
   deletePipelineService,
+  restorePipelineService,
   getPipelineService,
   listPipelineServices,
   mapPipelineService,
@@ -95,6 +105,7 @@ import {
 import {
   createSearchService,
   deleteSearchService,
+  restoreSearchService,
   getSearchService,
   listSearchServices,
   mapSearchService,
@@ -103,6 +114,7 @@ import {
 import {
   createSecurityService,
   deleteSecurityService,
+  restoreSecurityService,
   getSecurityService,
   listSecurityServices,
   mapSecurityService,
@@ -111,23 +123,26 @@ import {
 import {
   createStorageService,
   deleteStorageService,
+  restoreStorageService,
   getStorageService,
   listStorageServices,
   mapStorageService,
   updateStorageService,
 } from '@/api/storageServices';
+import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
 import type {
   CatalogService,
   CreateDatabaseServiceRequest,
   ServiceKind,
 } from '@/types/ingestion';
-import type { Paged } from '@/types/admin';
+import type { IncludeFilter, Paged } from '@/types/admin';
 
 type CreateFn = (body: CreateDatabaseServiceRequest) => Promise<CatalogService>;
 type UpdateFn = (body: CreateDatabaseServiceRequest) => Promise<CatalogService>;
-type GetFn = (id: string) => Promise<CatalogService>;
-type DeleteFn = (id: string) => Promise<void>;
-type ListFn = (query?: { limit?: number; after?: string }) => Promise<Paged<CatalogService>>;
+type GetFn = (id: string, include?: IncludeFilter) => Promise<CatalogService>;
+type DeleteFn = (id: string, options?: ServiceDeleteOptions) => Promise<AsyncDeleteJob>;
+type RestoreFn = (id: string) => Promise<CatalogService>;
+type ListFn = (query?: { limit?: number; after?: string; include?: IncludeFilter }) => Promise<Paged<CatalogService>>;
 type MapFn = (raw: Record<string, unknown>) => CatalogService | null;
 
 export const SERVICE_CREATE_API: Record<ServiceKind, CreateFn> = {
@@ -192,6 +207,22 @@ export const SERVICE_DELETE_API: Record<ServiceKind, DeleteFn> = {
   llm: deleteLlmService,
   mcp: deleteMcpService,
   security: deleteSecurityService,
+};
+
+export const SERVICE_RESTORE_API: Record<ServiceKind, RestoreFn> = {
+  database: restoreDatabaseService,
+  messaging: restoreMessagingService,
+  dashboard: restoreDashboardService,
+  storage: restoreStorageService,
+  pipeline: restorePipelineService,
+  api: restoreApiService,
+  mlmodel: restoreMlModelService,
+  metadata: restoreMetadataService,
+  drive: restoreDriveService,
+  search: restoreSearchService,
+  llm: restoreLlmService,
+  mcp: restoreMcpService,
+  security: restoreSecurityService,
 };
 
 export const SERVICE_LIST_API: Record<ServiceKind, ListFn> = {

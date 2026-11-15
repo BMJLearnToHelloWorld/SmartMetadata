@@ -62,4 +62,72 @@ describe('asset governance patches', () => {
       { op: 'replace', path: '/extension', value: { retentionDays: 30, stewardNote: 'ok' } },
     ]);
   });
+
+  it('preserves a Generated labelType through toTagLabel', () => {
+    expect(
+      toTagLabel({ tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' }),
+    ).toEqual({
+      tagFQN: 'PII.Email',
+      source: 'Classification',
+      labelType: 'Generated',
+      state: 'Confirmed',
+    });
+  });
+
+  it('preserves a Suggested state through toTagLabel instead of flipping it to Confirmed', () => {
+    expect(
+      toTagLabel({
+        tagFQN: 'PII.Email',
+        name: 'Email',
+        source: 'Classification',
+        labelType: 'Generated',
+        state: 'Suggested',
+      }),
+    ).toEqual({
+      tagFQN: 'PII.Email',
+      source: 'Classification',
+      labelType: 'Generated',
+      state: 'Suggested',
+    });
+  });
+
+  it('preserves any incoming labelType instead of special-casing Generated', () => {
+    expect(
+      toTagLabel({ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Derived' }),
+    ).toMatchObject({ labelType: 'Derived' });
+    expect(
+      toTagLabel({ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Automated' }),
+    ).toMatchObject({ labelType: 'Automated' });
+  });
+
+  it('preserves Generated labels and defaults fresh picks to Manual in tagsPatch', () => {
+    expect(
+      tagsPatch(
+        [],
+        [
+          { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+          { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
+        ],
+      ),
+    ).toEqual([
+      {
+        op: 'replace',
+        path: '/tags',
+        value: [
+          {
+            tagFQN: 'PII.Email',
+            source: 'Classification',
+            labelType: 'Generated',
+            state: 'Confirmed',
+          },
+          {
+            tagFQN: 'PII.Sensitive',
+            source: 'Classification',
+            labelType: 'Manual',
+            state: 'Confirmed',
+          },
+        ],
+      },
+    ]);
+  });
 });

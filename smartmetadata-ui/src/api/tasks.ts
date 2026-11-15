@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { parseRecognizerFeedbackPayload } from '@/catalog/recognizerFeedback';
 import { parseTaskSuggestionPayload } from '@/catalog/taskSuggestions';
 import type { Paged } from '@/types/admin';
 import type {
@@ -18,12 +19,18 @@ import type {
   ResolveTaskRequest,
   TaskAvailableTransition,
   TaskComment,
+  TaskResolutionDetail,
 } from '@/types/collaboration';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { apiRequest } from './client';
 
 export const TASK_LIST_FIELDS = 'assignees,about,createdBy';
-export const TASK_DETAIL_FIELDS = 'assignees,reviewers,watchers,about,domains,comments,createdBy,payload';
+// availableTransitions + resolution are requested explicitly (D-F13):
+// the server's single-GET default field set carries availableTransitions
+// but not resolution, and an explicit fields param replaces the default
+// outright — without them here the detail view never sees either.
+export const TASK_DETAIL_FIELDS =
+  'assignees,reviewers,watchers,about,domains,comments,createdBy,payload,availableTransitions,resolution';
 
 export interface ListTasksQuery {
   limit?: number;
@@ -131,6 +138,20 @@ function mapReviewPayload(value: unknown): MemoryConflictReviewPayload | undefin
   return { disputes };
 }
 
+function mapTaskResolution(value: unknown): TaskResolutionDetail | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  return {
+    type: asString(rec.type) || undefined,
+    resolvedBy: mapEntityRefs(rec.resolvedBy ? [rec.resolvedBy] : [])[0],
+    resolvedAt: asNumber(rec.resolvedAt),
+    comment: asString(rec.comment) || undefined,
+    newValue: asString(rec.newValue) || undefined,
+  };
+}
+
 function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
   const id = asString(raw.id);
   if (!id) {
@@ -156,6 +177,8 @@ function mapTask(raw: Record<string, unknown>): CollaborationTask | null {
     reviewPayload: isReview ? mapReviewPayload(raw.payload) : undefined,
     rawPayload: isDar ? undefined : (asRecord(raw.payload) ?? undefined),
     availableTransitions: mapAvailableTransitions(raw.availableTransitions),
+    feedbackPayload: parseRecognizerFeedbackPayload(raw.payload),
+    resolution: mapTaskResolution(raw.resolution),
   };
 }
 

@@ -199,4 +199,52 @@ describe('taskResolve', () => {
       tagsToRemove: [],
     });
   });
+
+  it('resolves a recognizer-feedback task with the approved sentinel and the raw echo', () => {
+    const feedback = task({
+      id: 'f',
+      type: 'RecognizerFeedbackApproval',
+      rawPayload: {
+        suggestedValue: '[{"tagFQN":"PII.Sensitive"}]',
+        feedback: { entityLink: '<#E::table::db.schema.orders>', feedbackType: 'FALSE_POSITIVE' },
+        recognizer: { recognizerName: 'PII Recognizer' },
+      },
+    });
+    const [approve, reject] = getTaskResolveActions(feedback, LABELS);
+    const approveBody = buildResolveBody(approve, feedback);
+    expect(approveBody.resolutionType).toBe('Approved');
+    expect(approveBody.newValue).toBe('approved');
+    expect(approveBody.payload).toEqual(feedback.rawPayload);
+    const rejectBody = buildResolveBody(reject, feedback);
+    expect(rejectBody).toEqual({ resolutionType: 'Rejected', newValue: 'rejected' });
+  });
+
+  it('resolves a DataQualityReview task with a feedback payload with the same sentinels', () => {
+    const feedback = task({
+      id: 'f',
+      type: 'DataQualityReview',
+      rawPayload: {
+        suggestedValue: '[{"tagFQN":"PII.Sensitive"}]',
+        feedback: { entityLink: '<#E::table::db.schema.orders>', feedbackType: 'OVERLY_BROAD' },
+      },
+    });
+    const [approve, reject] = getTaskResolveActions(feedback, LABELS);
+    expect(buildResolveBody(approve, feedback).newValue).toBe('approved');
+    expect(buildResolveBody(reject, feedback)).toEqual({
+      resolutionType: 'Rejected',
+      newValue: 'rejected',
+    });
+  });
+
+  it('falls through to the suggestion value for a recognizer task with no feedback payload', () => {
+    const noFeedback = task({
+      id: 'f',
+      type: 'RecognizerFeedbackApproval',
+      rawPayload: { suggestedValue: '[{"tagFQN":"PII.Sensitive"}]' },
+      suggestionPayload: { newDescription: '[{"tagFQN":"PII.Sensitive"}]' },
+    });
+    const [approve, reject] = getTaskResolveActions(noFeedback, LABELS);
+    expect(buildResolveBody(approve, noFeedback).newValue).toBe('[{"tagFQN":"PII.Sensitive"}]');
+    expect(buildResolveBody(reject, noFeedback).newValue).toBeUndefined();
+  });
 });

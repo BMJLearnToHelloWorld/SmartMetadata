@@ -39,10 +39,15 @@ describe('entityDetailTabs', () => {
   });
 
   it('marks tabs without a product API as residual with a reason key', () => {
-    expect(entityDetailTabDef('table', 'table_queries')?.residual).toBe('asset.tabResidual.tableQueries');
     expect(entityDetailTabDef('topic', 'config')?.residual).toBe('asset.tabResidual.config');
     expect(entityDetailTabDef('dashboard', 'contract')?.residual).toBe('asset.tabResidual.contract');
     expect(entityDetailTabDef('table', 'schema')?.residual).toBeUndefined();
+  });
+
+  it('wires table_queries to its real slot now that the query list is served', () => {
+    const tab = entityDetailTabDef('table', 'table_queries');
+    expect(tab?.slot).toBe('tableQueries');
+    expect(tab?.residual).toBeUndefined();
   });
 
   it('matches the official tab ids for the R2 entities', () => {

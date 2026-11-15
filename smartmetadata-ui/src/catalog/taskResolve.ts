@@ -8,6 +8,10 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import {
+  buildFeedbackApprovalResolution,
+  isRecognizerFeedbackTask,
+} from '@/catalog/recognizerFeedback';
+import {
   asStringOrUndefined,
   getTaskResolutionNewValue,
   normalizeTaskSuggestion,
@@ -190,11 +194,19 @@ function buildEditableTaskPayload(task: CollaborationTask): Record<string, unkno
  * handler's approved/rejected sentinel, suggestion types to the value
  * being applied. With no schema, shouldRequireTaskResolutionValue is
  * false, so approve is never dropped for an empty value here.
+ * Recognizer-feedback tasks take the shared feedbackApproval handler
+ * FIRST (official getDefaultTaskFormHandler checks
+ * isRecognizerFeedbackTask before the per-type handler lookup):
+ * approve 'approved' + raw payload echo, reject 'rejected' with no
+ * payload — never the suggested-value JSON.
  */
 function buildLegacyResolution(
   task: CollaborationTask,
   kind: 'approve' | 'reject',
 ): LegacyResolution {
+  if (isRecognizerFeedbackTask(task)) {
+    return buildFeedbackApprovalResolution(task, kind);
+  }
   // DataAccessRequest has no entry in official
   // DEFAULT_TASK_FORM_HANDLERS, so its handler is 'custom', not
   // 'approval': its approve carries no newValue sentinel, only the

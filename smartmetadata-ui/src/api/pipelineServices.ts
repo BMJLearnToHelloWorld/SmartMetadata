@@ -7,9 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { mapTestConnectionResult } from '@/api/serviceCommon';
-import type { Paged } from '@/types/admin';
+import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
+import type { IncludeFilter, Paged } from '@/types/admin';
 import type { CatalogService, CreatePipelineServiceRequest, ServiceConnection } from '@/types/ingestion';
 import { apiRequest } from './client';
 
@@ -18,6 +19,7 @@ export const PIPELINE_SERVICE_FIELDS = 'owners';
 export interface ListPipelineServicesQuery {
   limit?: number;
   after?: string;
+  include?: IncludeFilter;
 }
 
 function mapConnection(value: unknown): ServiceConnection | undefined {
@@ -46,6 +48,7 @@ export function mapPipelineService(raw: Record<string, unknown>): CatalogService
     owners: mapEntityRefs(raw.owners),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
+    deleted: asBoolean(raw.deleted),
   };
 }
 
@@ -55,14 +58,15 @@ export function listPipelineServices(query: ListPipelineServicesQuery = {}): Pro
       fields: PIPELINE_SERVICE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
+      include: query.include,
     },
   }).then((payload) => parsePaged(payload, mapPipelineService));
 }
 
-export async function getPipelineService(id: string): Promise<CatalogService> {
+export async function getPipelineService(id: string, include?: IncludeFilter): Promise<CatalogService> {
   const raw = await apiRequest<Record<string, unknown>>(
     `/v1/services/pipelineServices/${encodeURIComponent(id)}`,
-    { query: { fields: PIPELINE_SERVICE_FIELDS } },
+    { query: { fields: PIPELINE_SERVICE_FIELDS, include } },
   );
   const mapped = mapPipelineService(raw);
   if (!mapped) {
@@ -95,8 +99,33 @@ export async function updatePipelineService(body: CreatePipelineServiceRequest):
   return mapped;
 }
 
-export function deletePipelineService(id: string): Promise<void> {
-  return apiRequest<void>(`/v1/services/pipelineServices/${encodeURIComponent(id)}`, {
+/**
+ * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
+ * through the async endpoint with hardDelete + recursive; the pin
+ * passes recursive=true from both service detail surfaces. Returns
+ * the async job record (its message is toasted on submit); completion
+ * is observed through the bounded re-read in serviceDelete.ts (D-F5).
+ */
+export function deletePipelineService(id: string, options: ServiceDeleteOptions = {}): Promise<AsyncDeleteJob> {
+  return apiRequest<AsyncDeleteJob>(`/v1/services/pipelineServices/async/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    query: { hardDelete: options.hardDelete ?? false, recursive: options.recursive ?? true },
   });
+}
+
+/**
+ * Official restoreService (rest/serviceAPI.ts): PUT /services/pipelineServices/restore
+ * with JSON body { id }; returns the restored service. Restoring
+ * revives the service's children too, so callers refetch after a restore.
+ */
+export async function restorePipelineService(id: string): Promise<CatalogService> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/services/pipelineServices/restore', {
+    method: 'PUT',
+    json: { id },
+  });
+  const mapped = mapPipelineService(raw);
+  if (!mapped) {
+    throw new Error('Restore pipeline service succeeded but the response had no service');
+  }
+  return mapped;
 }

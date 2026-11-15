@@ -38,6 +38,7 @@ import {
 import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
 import { CHIP_FACET_IDS, type FacetId, type SearchFacet } from '@/catalog/searchFacets';
 import { entityTypeColor, hitLocation } from '@/catalog/searchHits';
+import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
   DEFAULT_EXPLORE_PAGE_SIZE,
   DEFAULT_SORT,
@@ -207,6 +208,14 @@ const recordRange = computed(() => {
 function entityLabel(entityType: string): string {
   const key = `explore.entity.${entityType}`;
   return te(key) ? t(key) : entityType;
+}
+
+function usagePercentileText(hit: SearchHit): string {
+  return getUsagePercentile(
+    hit.usageSummary?.weeklyStats?.percentileRank ?? 0,
+    true,
+    (key) => t(key),
+  );
 }
 
 function facetTitle(id: FacetId): string {
@@ -705,6 +714,12 @@ watch(expandedKeys, (keys) => {
               </Typography.Text>
               <Typography.Text v-if="hit.serviceType" type="secondary">{{ hit.serviceType }}</Typography.Text>
               <Typography.Text v-if="hit.tier" type="secondary">{{ hit.tier }}</Typography.Text>
+              <!-- Pin explore card: the literal "Usage Nth pctile" form
+                   shows whenever the hit carries the usageSummary key,
+                   with a missing rank falling back to 0. -->
+              <Typography.Text v-if="hit.usageSummary" type="secondary" data-testid="explore-card-usage-percentile">
+                {{ usagePercentileText(hit) }}
+              </Typography.Text>
               <router-link
                 v-if="parentTableLocation(hit.entityType, hit.tableFqn)"
                 :to="parentTableTo(hit)"

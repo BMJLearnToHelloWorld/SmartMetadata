@@ -208,7 +208,6 @@ describe('i18n catalogs', () => {
     expect(enUS.crud.empty).toBe('No data');
     expect(enUS.crud.emptyHint).toBe('Adding a new record is easy, just give it a spin!');
     expect(enUS.crud.deleteTitle).toBe('Delete');
-    expect(enUS.ingestion.services.deleteConfirm).toMatch(/cannot be undone/);
     expect(enUS.observability.incidents.statusAck).toBe('Acknowledged');
     expect(enUS.observability.incidents.statusResolved).toBe('Resolved');
     expect(enUS.home.hiUser).toBe('Hi {user}');

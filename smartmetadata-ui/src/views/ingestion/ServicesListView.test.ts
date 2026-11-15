@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { Modal } from 'ant-design-vue';
+import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -124,25 +124,34 @@ describe('ServicesListView', () => {
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's1' });
   });
 
-  it('deletes a service from the overflow menu after confirm', async () => {
-    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
-      expect(config.okType).toBe('danger');
-      void Promise.resolve(config.onOk?.());
-      return { destroy: vi.fn(), update: vi.fn() } as never;
-    });
+  it('offers no row delete action (D-F7: the pin has no list-level service delete)', async () => {
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="row-overflow-s1"]').trigger('click');
     await flushPromises();
-    document.querySelector<HTMLElement>('[data-testid="row-overflow-delete"]')?.click();
-    await flushPromises();
-    expect(confirmSpy).toHaveBeenCalled();
-    const deleted = vi.mocked(fetch).mock.calls.some(([input, init]) => {
-      const url = String(input);
+    expect(document.querySelector('[data-testid="row-overflow-delete"]')).toBeNull();
+    const deleted = vi.mocked(fetch).mock.calls.some(([, init]) => {
       const method = typeof init === 'object' && init && 'method' in init ? String(init.method) : 'GET';
-      return url.includes('/api/v1/services/databaseServices/s1') && method === 'DELETE';
+      return method === 'DELETE';
     });
-    expect(deleted).toBe(true);
-    confirmSpy.mockRestore();
+    expect(deleted).toBe(false);
+  });
+
+  it('requests non-deleted services by default and deleted ones when the switch is on', async () => {
+    const { wrapper } = await mountView();
+    const urls = () => vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(
+      urls().some(
+        (url) =>
+          url.includes('/api/v1/services/databaseServices') && url.includes('include=non-deleted'),
+      ),
+    ).toBe(true);
+    await wrapper.find('[data-testid="services-show-deleted"]').trigger('click');
+    await flushPromises();
+    expect(
+      urls().some(
+        (url) => url.includes('/api/v1/services/databaseServices') && url.includes('include=deleted'),
+      ),
+    ).toBe(true);
   });
 
   it('keeps sibling services when storage list 404s (Promise.allSettled)', async () => {

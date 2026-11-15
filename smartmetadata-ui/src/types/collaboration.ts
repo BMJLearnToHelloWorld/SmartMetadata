@@ -146,6 +146,52 @@ export interface TaskSuggestionPayload {
 }
 
 /**
+ * Recognizer feedback as the approval-task UI reads it, mirroring
+ * openmetadata-spec type/recognizerFeedback.json — but ONLY the fields
+ * the pin renders (FeedbackApprovalTask.tsx): entityLink, feedbackType,
+ * userComments, createdBy, createdAt. tagFQN, suggestedTag, userReason,
+ * sampleValues, recognizerInfo, status and resolution are deliberately
+ * NOT carried: the pin UI never renders them, and carrying them would
+ * invite inventing a score/evidence display the pin does not have.
+ * All fields are optional defensively; the renderer gates every row on
+ * presence, exactly as the pin does.
+ */
+export interface RecognizerFeedback {
+  entityLink?: string;
+  feedbackType?: string;
+  userComments?: string;
+  createdBy?: EntityRef;
+  createdAt?: number;
+}
+
+/**
+ * The workflow-created task payload, mirroring the server's
+ * RecognizerFeedbackTaskPayload record (CreateTask.buildWorkflowPayload):
+ * the feedback plus a SIBLING recognizer object (TagLabelRecognizerMetadata,
+ * resolved from the entity's tag label — never from
+ * feedback.recognizerInfo). The record is NON_NULL, so `recognizer` may be
+ * absent; only its name is read, and only when present.
+ */
+export interface RecognizerFeedbackPayload {
+  feedback: RecognizerFeedback;
+  recognizerName?: string;
+}
+
+/**
+ * Resolution details when a task is completed, mirroring
+ * openmetadata-spec entity/tasks/task.json#/definitions/taskResolution.
+ * The structured `payload` member is not carried: no reader in this
+ * batch needs resolution-time form data.
+ */
+export interface TaskResolutionDetail {
+  type?: string;
+  resolvedBy?: EntityRef;
+  resolvedAt?: number;
+  comment?: string;
+  newValue?: string;
+}
+
+/**
  * Workflow transition, mirroring openmetadata-spec entity/tasks/task.json
  * TaskAvailableTransition: id + label are required; resolutionType is
  * present only on terminal transitions (non-terminal ack/assign must
@@ -197,6 +243,16 @@ export interface CollaborationTask {
    */
   rawPayload?: Record<string, unknown>;
   availableTransitions?: TaskAvailableTransition[];
+  /**
+   * Typed recognizer-feedback payload, parsed from the raw payload on the
+   * mapTask pattern (see parseRecognizerFeedbackPayload). Present only
+   * when the payload carries a `feedback` object; the predicate in
+   * catalog/recognizerFeedback.ts still gates on the raw `feedback` key
+   * plus the task type, exactly as the pin does.
+   */
+  feedbackPayload?: RecognizerFeedbackPayload;
+  /** Resolution details, requested explicitly via TASK_DETAIL_FIELDS. */
+  resolution?: TaskResolutionDetail;
 }
 
 /** Official MemoryConflictReviewPayload (generated/type/memoryConflictReviewPayload.ts). */

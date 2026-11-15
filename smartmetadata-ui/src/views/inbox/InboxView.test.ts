@@ -87,4 +87,23 @@ describe('InboxView', () => {
     expect(wrapper.find('[data-testid="inbox-tasks-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Review orders');
   });
+
+  it('shows localized type labels for mapped types and the raw string otherwise', async () => {
+    listTasks.mockResolvedValue({
+      data: [
+        { id: 't1', name: 'Feedback review', type: 'RecognizerFeedbackApproval', status: 'Open', assignees: [] },
+        { id: 't2', name: 'Custom work', type: 'CustomTask', status: 'Open', assignees: [] },
+        { id: 't3', name: 'Unknown work', type: 'weirdType', status: 'Open', assignees: [] },
+      ],
+      total: 3,
+    });
+    const { wrapper } = await mountView('tasks');
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    await tabs[1].trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Recognizer feedback');
+    expect(wrapper.text()).toContain('Custom task');
+    expect(wrapper.text()).toContain('weirdType');
+    expect(wrapper.text()).not.toContain('RecognizerFeedbackApproval');
+  });
 });

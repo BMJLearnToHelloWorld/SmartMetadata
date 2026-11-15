@@ -16,6 +16,8 @@ import {
   resolveDetailEndpoint,
   resolvePatchPath,
   resolveVersionsPath,
+  resolveVotePath,
+  USAGE_SUMMARY_ENTITY_TYPES,
 } from './entityRoutes';
 
 describe('entityRoutes', () => {
@@ -35,7 +37,7 @@ describe('entityRoutes', () => {
   it('maps wired catalog types onto documented collections', () => {
     expect(resolveDetailEndpoint('table', 'svc.db.schema.orders')).toEqual({
       path: `/v1/tables/name/${encodeURIComponent('svc.db.schema.orders')}`,
-      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes',
+      fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins',
     });
     expect(resolveDetailEndpoint('topic', 'kafka.events')).toEqual({
       path: `/v1/topics/name/${encodeURIComponent('kafka.events')}`,
@@ -95,10 +97,20 @@ describe('entityRoutes', () => {
   });
 
   it('does not invent endpoints for unwired entity types', () => {
-    expect(resolveDetailEndpoint('query', 'analytics.q1')).toBeNull();
     expect(resolveDetailEndpoint('kpi', 'retention')).toBeNull();
     expect(resolveDetailEndpoint('', 'x')).toBeNull();
-    expect(resolvePatchPath('query', 'id-1')).toBeNull();
+    expect(resolvePatchPath('kpi', 'id-1')).toBeNull();
+  });
+
+  // C-14: queries are wired for vote/patch and GET by name (QueryResource).
+  it('maps queries onto their collection for detail, vote, patch, and versions', () => {
+    expect(resolveDetailEndpoint('query', 'analytics.q1')).toEqual({
+      path: `/v1/queries/name/${encodeURIComponent('analytics.q1')}`,
+      fields: 'owners,votes,tags,queryUsedIn,users',
+    });
+    expect(resolvePatchPath('query', 'id-1')).toBe('/v1/queries/id-1');
+    expect(resolveVotePath('query', 'id-1')).toBe('/v1/queries/id-1/vote');
+    expect(resolveVersionsPath('query', 'q-1')).toBe('/v1/queries/q-1/versions');
   });
 
   it('maps wired types onto PATCH /v1/{collection}/{id}', () => {
@@ -109,7 +121,7 @@ describe('entityRoutes', () => {
   it('maps wired types onto GET /v1/{collection}/{id}/versions', () => {
     expect(resolveVersionsPath('table', 'tbl-1')).toBe('/v1/tables/tbl-1/versions');
     expect(resolveVersionsPath('dashboard', 'd-1')).toBe('/v1/dashboards/d-1/versions');
-    expect(resolveVersionsPath('query', 'q-1')).toBeNull();
+    expect(resolveVersionsPath('kpi', 'q-1')).toBeNull();
     expect(resolveVersionsPath('table', '')).toBeNull();
   });
 
@@ -133,5 +145,12 @@ describe('entityRoutes', () => {
     expect(parentTableLocation('tableColumn', undefined)).toBeNull();
     expect(parentTableLocation('tableColumn', '')).toBeNull();
     expect(parentTableLocation('table', 'svc.db.schema.orders')).toBeNull();
+  });
+
+  it('gates usageSummary requests to the four pin header-percentile entity types', () => {
+    expect(USAGE_SUMMARY_ENTITY_TYPES).toEqual(['table', 'dashboard', 'pipeline', 'mlmodel']);
+    expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('topic');
+    expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('chart');
+    expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('database');
   });
 });

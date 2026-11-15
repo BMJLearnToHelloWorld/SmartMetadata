@@ -6,16 +6,17 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Card, Descriptions, Dropdown, Form, Input, Menu, Select, Space, Spin, Tooltip, Typography, message } from 'ant-design-vue';
 import { addTaskComment, closeTask, deleteTask, getTask, patchTask, resolveTask } from '@/api/tasks';
 import type { OperationPermissions } from '@/api/permissions';
+import { buildFeedbackApprovalResolution, isRecognizerFeedbackTask } from '@/catalog/recognizerFeedback';
 import { TASK_ACTIONS, isTaskActionable, type TaskActionMode } from '@/catalog/taskActions';
 import { getTaskResolutionNewValue, normalizeTaskSuggestion } from '@/catalog/taskSuggestions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
-import { TASK_RESOLUTIONS, type CollaborationTask } from '@/types/collaboration';
+import { TASK_RESOLUTIONS, type CollaborationTask, type ResolveTaskRequest } from '@/types/collaboration';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import {
   loadGovernanceCatalog,
@@ -27,6 +28,7 @@ import {
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmDrawer from '@/components/shared/SmDrawer.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import FeedbackApprovalTask from './FeedbackApprovalTask.vue';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -85,6 +87,41 @@ const title = computed(
 
 const actionable = computed(() => isTaskActionable(task.value?.status));
 
+const isFeedbackTask = computed(() => (task.value ? isRecognizerFeedbackTask(task.value) : false));
+
+const hasTransitions = computed(() => (task.value?.availableTransitions?.length ?? 0) > 0);
+
+/**
+ * Ownership flags shared by the generic gate and the feedback gate so
+ * the two rules can never drift apart on what "assignee" means.
+ *
+ * Deliberate fork convention: assignee and creator match by id OR
+ * name, and team membership by team id OR name. The pin's
+ * computeTaskOwnershipFlags (TaskTab.utils.ts) matches assignee and
+ * team by id only and creator by name only, so a name-only match
+ * grants the affordance here where the pin would disable it. The
+ * broader matching predates this batch and is shared with the generic
+ * `canAct` gate; narrowing it would risk P1 permission behavior, and
+ * the server still enforces task writes.
+ */
+function taskOwnership(
+  taskValue: CollaborationTask | null,
+  user: { id?: string; name?: string; teams?: Array<{ id?: string; name?: string }> } | null,
+): { isAssignee: boolean; isPartOfAssigneeTeam: boolean; isCreator: boolean } {
+  const matches = (ref?: { id?: string; name?: string }) =>
+    Boolean(
+      user && ref && ((ref.id && ref.id === user.id) || (ref.name && ref.name === user.name)),
+    );
+  const isAssignee = (taskValue?.assignees ?? []).some((ref) => matches(ref));
+  const isPartOfAssigneeTeam = (taskValue?.assignees ?? []).some(
+    (ref) =>
+      ref.type === 'team' &&
+      (user?.teams ?? []).some((team) => team.id === ref.id || team.name === ref.name),
+  );
+  const isCreator = matches(taskValue?.createdBy);
+  return { isAssignee, isPartOfAssigneeTeam, isCreator };
+}
+
 /**
  * Official TaskFeedCard getHasTaskEditAccess: an admin on a
  * non-approval task, an assignee, or a member of an assignee team
@@ -102,20 +139,50 @@ const canAct = computed(() => {
   if (!user) {
     return true;
   }
-  const matches = (ref?: { id?: string; name?: string }) =>
-    Boolean(ref && ((ref.id && ref.id === user.id) || (ref.name && ref.name === user.name)));
-  const isAssignee = (task.value?.assignees ?? []).some((ref) => matches(ref));
-  const isPartOfAssigneeTeam = (task.value?.assignees ?? []).some(
-    (ref) =>
-      ref.type === 'team' &&
-      (user.teams ?? []).some((team) => team.id === ref.id || team.name === ref.name),
-  );
-  const isCreator = matches(task.value?.createdBy);
+  const { isAssignee, isPartOfAssigneeTeam, isCreator } = taskOwnership(task.value, user);
   const isAdminNonApproval =
     usePermissionStore().isAdminUser && task.value?.type !== 'RequestApproval';
   const taskGrant = taskOps.value?.EditAll === true;
   return isAdminNonApproval || taskGrant || isAssignee || (isPartOfAssigneeTeam && !isCreator);
 });
+
+/**
+ * Official TaskTabNew approvalWorkflowActions gate (the TASK-TAB rule,
+ * D-F10): assignee, or member of an assignee team who is not the
+ * creator. No admin line and no permission-API line — an admin who is
+ * not a reviewer gets the DISABLED split button plus the
+ * only-reviewers tooltip. An unknown user fails closed: unlike the
+ * generic gate, there is no "profile not loaded yet" fallback here,
+ * matching the pin, where the flags are computed from a loaded user.
+ */
+const canFeedbackAct = computed(() => {
+  if (!actionable.value) {
+    return false;
+  }
+  const user = useAuthStore().user;
+  if (!user) {
+    return false;
+  }
+  const { isAssignee, isPartOfAssigneeTeam, isCreator } = taskOwnership(task.value, user);
+  return isAssignee || (isPartOfAssigneeTeam && !isCreator);
+});
+
+const feedbackTooltip = computed(() =>
+  canFeedbackAct.value ? undefined : t('collaboration.task.onlyReviewersCanApproveOrReject'),
+);
+
+/**
+ * The pin's legacy approval surface offers ONLY approve/reject: no
+ * suggestion editing, no resolve-with-a-pick, no close without
+ * resolution. For feedback tasks the action menu keeps just the
+ * maintenance items (edit description, re-assign); view/resolve/close
+ * are suppressed. Non-feedback tasks keep the full menu.
+ */
+const menuActions = computed(() =>
+  isFeedbackTask.value
+    ? TASK_ACTIONS.filter((action) => action.key === 'edit' || action.key === 're-assign')
+    : TASK_ACTIONS,
+);
 
 async function onClose(): Promise<void> {
   if (!canAct.value) {
@@ -157,8 +224,8 @@ async function onDelete(): Promise<void> {
   }
 }
 
-function onActionMenuClick(info: { key: string }): void {
-  const action = TASK_ACTIONS.find((item) => item.key === (info.key as TaskActionMode));
+function onActionMenuClick(info: { key: string | number }): void {
+  const action = TASK_ACTIONS.find((item) => item.key === (String(info.key) as TaskActionMode));
   if (!action || !action.wired || !canAct.value) {
     return;
   }
@@ -186,21 +253,63 @@ function onActionMenuClick(info: { key: string }): void {
  * operative field for the plain description/tag kinds.
  */
 async function onAcceptSuggestion(): Promise<void> {
-  if (!canAct.value || !task.value || !suggestion.value || suggestion.value.isSuggestionEmpty) {
+  if (!canAct.value || !task.value) {
+    return;
+  }
+  // Feedback tasks skip the empty-suggestion guard (the pin skips the
+  // empty-value guard for approval-workflow tasks) and resolve with
+  // the feedbackApproval sentinel + payload echo, never the
+  // suggested-value JSON — via the shared handler, as on every path.
+  const feedbackBody = isFeedbackTask.value
+    ? buildFeedbackApprovalResolution(task.value, 'approve')
+    : null;
+  if (!feedbackBody && (!suggestion.value || suggestion.value.isSuggestionEmpty)) {
     return;
   }
   saving.value = true;
   try {
-    task.value = await resolveTask(props.id, {
+    const body: ResolveTaskRequest = feedbackBody ?? {
       resolutionType: 'Approved',
       newValue: getTaskResolutionNewValue(task.value),
       comment: form.comment.trim() || undefined,
-    });
+    };
+    task.value = await resolveTask(props.id, body);
     message.success(t('collaboration.task.resolved'));
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
   } finally {
     saving.value = false;
+  }
+}
+
+/**
+ * The split button's decision. No comment is required or sent: the
+ * pin's legacy approve/reject paths send no comment, and the generic
+ * resolve form (with its comment input) is suppressed for feedback
+ * tasks. Bodies come from the shared feedbackApproval handler.
+ */
+async function onFeedbackDecision(decision: 'approve' | 'reject'): Promise<void> {
+  if (!canFeedbackAct.value || !task.value) {
+    return;
+  }
+  saving.value = true;
+  try {
+    task.value = await resolveTask(
+      props.id,
+      buildFeedbackApprovalResolution(task.value, decision),
+    );
+    message.success(t('collaboration.task.resolved'));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
+  } finally {
+    saving.value = false;
+  }
+}
+
+function onFeedbackMenuClick(info: { key: string | number }): void {
+  const key = String(info.key);
+  if (key === 'approve' || key === 'reject') {
+    void onFeedbackDecision(key);
   }
 }
 
@@ -311,6 +420,32 @@ async function onResolve(): Promise<void> {
   if (!canAct.value) {
     return;
   }
+  if (isFeedbackTask.value && task.value) {
+    // The generic resolve form is suppressed for feedback tasks, so
+    // this is a defensive path only. A feedback task resolves solely
+    // through the feedbackApproval sentinels; a Completed/Cancelled
+    // pick has no sentinel meaning and is refused rather than sent
+    // without a newValue.
+    if (form.resolutionType !== 'Approved' && form.resolutionType !== 'Rejected') {
+      return;
+    }
+    saving.value = true;
+    try {
+      task.value = await resolveTask(
+        props.id,
+        buildFeedbackApprovalResolution(
+          task.value,
+          form.resolutionType === 'Approved' ? 'approve' : 'reject',
+        ),
+      );
+      message.success(t('collaboration.task.resolved'));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t('collaboration.task.resolveFailed'));
+    } finally {
+      saving.value = false;
+    }
+    return;
+  }
   saving.value = true;
   try {
     task.value = await resolveTask(props.id, {
@@ -358,9 +493,46 @@ watch(
     <Alert v-if="errorMessage" type="warning" show-icon :message="errorMessage" class="collab-alert" />
     <template v-if="task">
       <Space class="collab-actions" wrap>
-        <Button data-testid="resolve-task" type="primary" :loading="saving" :disabled="!canAct" @click="onResolve">
+        <Button v-if="!isFeedbackTask" data-testid="resolve-task" type="primary" :loading="saving" :disabled="!canAct" @click="onResolve">
           {{ t('collaboration.task.resolve') }}
         </Button>
+        <!--
+          Official glossary approve/reject split button (TaskTabNew
+          approvalWorkflowActions). Q1: the pin's initial selected
+          action for a recognizer task is the generic list's
+          accept-suggestion entry (latestAction only special-cases
+          approval requests), so a first primary press only relabels
+          the button to Approve and resolves nothing — confirmed by a
+          static read of TaskTabNew + handleGlossaryTaskMenuClick, but
+          asserted by NO pin test (the recognizer approve/reject tests
+          only assert the dropdown exists). The quirk is NOT
+          replicated: this button defaults to approve-first, and the
+          primary press approves. Hidden for workflow-driven tasks:
+          the pin's actionButtons precedence shows the transition
+          menu instead of the split button there.
+        -->
+        <Tooltip v-if="isFeedbackTask && actionable && !hasTransitions" :title="feedbackTooltip">
+          <Dropdown.Button
+            type="primary"
+            data-testid="feedback-approve-reject"
+            :trigger="['click']"
+            :disabled="!canFeedbackAct"
+            :loading="saving"
+            @click="onFeedbackDecision('approve')"
+          >
+            {{ t('collaboration.task.approve') }}
+            <template #overlay>
+              <Menu @click="onFeedbackMenuClick">
+                <Menu.Item key="approve" data-testid="feedback-action-approve">
+                  {{ t('collaboration.task.approve') }}
+                </Menu.Item>
+                <Menu.Item key="reject" data-testid="feedback-action-reject">
+                  {{ t('collaboration.task.reject') }}
+                </Menu.Item>
+              </Menu>
+            </template>
+          </Dropdown.Button>
+        </Tooltip>
         <Button data-testid="delete-task" danger :loading="saving" :disabled="!canAct" @click="onDelete">
           {{ t('collaboration.task.delete') }}
         </Button>
@@ -371,7 +543,7 @@ watch(
           <template #overlay>
             <Menu @click="onActionMenuClick">
               <Menu.Item
-                v-for="action in TASK_ACTIONS"
+                v-for="action in menuActions"
                 :key="action.key"
                 :data-testid="`task-action-menu-item-${action.key}`"
                 :disabled="!actionable || !action.wired"
@@ -388,7 +560,7 @@ watch(
       <Typography.Paragraph v-else-if="task.type === 'DataAccessRequest' && task.status === 'Approved'" type="secondary" data-testid="task-dar-approved-note">
         {{ t('collaboration.dataAccess.awaitingGrantNote') }}
       </Typography.Paragraph>
-      <Typography.Paragraph v-else-if="suggestion && suggestion.isSuggestionEmpty" type="secondary" data-testid="task-suggestion-empty">
+      <Typography.Paragraph v-else-if="suggestion && suggestion.isSuggestionEmpty && !isFeedbackTask" type="secondary" data-testid="task-suggestion-empty">
         {{ t('collaboration.task.emptySuggestionNote') }}
       </Typography.Paragraph>
       <Descriptions bordered :column="1" size="small">
@@ -404,7 +576,8 @@ watch(
         </Descriptions.Item>
         <Descriptions.Item :label="t('collaboration.task.description')">{{ task.description || '—' }}</Descriptions.Item>
       </Descriptions>
-      <template v-if="suggestion && !suggestion.isSuggestionEmpty">
+      <FeedbackApprovalTask v-if="isFeedbackTask" :task="task" />
+      <template v-if="suggestion && !suggestion.isSuggestionEmpty && !isFeedbackTask">
         <Typography.Title :level="5" class="collab-section" data-testid="task-suggestion-title">{{ t('collaboration.task.suggestionTitle') }}</Typography.Title>
         <Descriptions bordered :column="1" size="small">
           <Descriptions.Item :label="t('collaboration.task.suggestionCurrent')">
@@ -465,18 +638,20 @@ watch(
           {{ t('collaboration.dataAccess.manualGrantReason', { reason: task.payload.manualGrantReason }) }}
         </Typography.Paragraph>
       </template>
-      <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.resolve') }}</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        {{ t('collaboration.task.resolveLead') }}
-      </Typography.Paragraph>
-      <Space>
-        <Select v-model:value="form.resolutionType" style="width: 180px">
-          <Select.Option v-for="resolution in TASK_RESOLUTIONS" :key="resolution" :value="resolution">
-            {{ resolution }}
-          </Select.Option>
-        </Select>
-        <Input v-model:value="form.comment" :placeholder="t('collaboration.task.commentPlaceholder')" style="width: 280px" />
-      </Space>
+      <template v-if="!isFeedbackTask">
+        <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.resolve') }}</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          {{ t('collaboration.task.resolveLead') }}
+        </Typography.Paragraph>
+        <Space>
+          <Select v-model:value="form.resolutionType" style="width: 180px">
+            <Select.Option v-for="resolution in TASK_RESOLUTIONS" :key="resolution" :value="resolution">
+              {{ resolution }}
+            </Select.Option>
+          </Select>
+          <Input v-model:value="form.comment" :placeholder="t('collaboration.task.commentPlaceholder')" style="width: 280px" />
+        </Space>
+      </template>
       <Typography.Title :level="5" class="collab-section">{{ t('collaboration.task.comments') }}</Typography.Title>
       <SmTable
         row-key="id"

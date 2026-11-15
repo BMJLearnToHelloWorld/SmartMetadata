@@ -22,6 +22,7 @@ import {
   severityPatch,
 } from '@/api/testIncidents';
 import { getUserByName } from '@/api/users';
+import { splitFqn } from '@/catalog/fqn';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityRef } from '@/types/api';
 import type { ResolveTaskRequest } from '@/types/collaboration';
@@ -266,32 +267,6 @@ export async function submitIncidentStatusChange(
 export function severityLevel(severity?: string): string | undefined {
   const level = (severity ?? '').replace(/\D/g, '');
   return level === '' ? undefined : level;
-}
-
-/**
- * Split an FQN on dots, keeping double-quoted segments whole —
- * the same rule official's Fqn.split applies, so a table named
- * `"a.b"` does not split into two parts. The product has no shared
- * quote-aware FQN splitter; this local one serves the table-column
- * derivation only.
- */
-export function splitFqn(fqn: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-  let quoted = false;
-  for (const char of fqn) {
-    if (char === '"') {
-      quoted = !quoted;
-      current += char;
-    } else if (char === '.' && !quoted) {
-      parts.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  parts.push(current);
-  return parts.filter((part) => part.length > 0);
 }
 
 /**
