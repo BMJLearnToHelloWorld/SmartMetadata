@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { EntityRef, SearchHit, SearchPage, TagRef } from '@/types/api';
+import { mapUsageSummary } from './usagePercentile';
 import { mapSearchAggregations } from './searchFacets';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -43,6 +44,8 @@ function mapOwners(value: unknown): EntityRef[] {
   });
 }
 
+// labelType is intentionally dropped here: search surfaces render Generated
+// tags plain per the pin gate (D-F1), and ES payload carriage is unverified (Q4).
 function mapTags(value: unknown): TagRef[] {
   if (!Array.isArray(value)) {
     return [];
@@ -145,41 +148,46 @@ export function mapSearchResponse(payload: unknown): SearchPage {
       nestedName(source.service, 'displayName', 'name', 'fullyQualifiedName') ||
       asString(source.serviceName) ||
       undefined;
-    return [
-      {
-        id: asString(source.id) || asString(hit._id) || undefined,
-        name: name || fullyQualifiedName,
-        displayName: asString(source.displayName) || undefined,
-        fullyQualifiedName,
-        entityType: asString(source.entityType) || entityTypeFromIndex(index),
-        description: asString(source.description) || undefined,
-        serviceType: asString(source.serviceType) || undefined,
-        serviceName,
-        databaseName: nestedName(source.database, 'displayName', 'name') || undefined,
-        schemaName: nestedName(source.databaseSchema, 'displayName', 'name') || undefined,
-        tier: mapTier(source),
-        owners: mapOwners(source.owners),
-        tags: mapTags(source.tags),
-        domains: mapOwners(source.domains),
-        dataProducts: mapOwners(source.dataProducts),
-        dataType: asString(source.dataType) || undefined,
-        tableName: nestedName(source.table, 'displayName', 'name') || asString(source.tableName) || undefined,
-        tableFqn: asString(asRecord(source.table)?.fullyQualifiedName) || undefined,
-        constraint: asString(source.constraint) || undefined,
-        updatedAt:
-          typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
-            ? source.updatedAt
-            : undefined,
-        entityStatus: asString(source.entityStatus) || undefined,
-        parent: mapOwners(source.parent ? [source.parent] : [])[0],
-        metricType: asString(source.metricType) || undefined,
-        granularity: asString(source.granularity) || undefined,
-        childrenCount:
-          typeof source.childrenCount === 'number' && Number.isFinite(source.childrenCount)
-            ? source.childrenCount
-            : undefined,
-      },
-    ];
+    // Pin explore card rule: the percentile shows when the _source carries
+    // the usageSummary key at all, even with no weekly rank (which then
+    // falls back to 0). A present-but-unmappable value still counts.
+    const usageSummary =
+      'usageSummary' in source ? (mapUsageSummary(source.usageSummary) ?? {}) : undefined;
+    const mapped: SearchHit = {
+      id: asString(source.id) || asString(hit._id) || undefined,
+      name: name || fullyQualifiedName,
+      displayName: asString(source.displayName) || undefined,
+      fullyQualifiedName,
+      entityType: asString(source.entityType) || entityTypeFromIndex(index),
+      description: asString(source.description) || undefined,
+      serviceType: asString(source.serviceType) || undefined,
+      serviceName,
+      databaseName: nestedName(source.database, 'displayName', 'name') || undefined,
+      schemaName: nestedName(source.databaseSchema, 'displayName', 'name') || undefined,
+      tier: mapTier(source),
+      owners: mapOwners(source.owners),
+      tags: mapTags(source.tags),
+      domains: mapOwners(source.domains),
+      dataProducts: mapOwners(source.dataProducts),
+      dataType: asString(source.dataType) || undefined,
+      tableName: nestedName(source.table, 'displayName', 'name') || asString(source.tableName) || undefined,
+      tableFqn: asString(asRecord(source.table)?.fullyQualifiedName) || undefined,
+      constraint: asString(source.constraint) || undefined,
+      updatedAt:
+        typeof source.updatedAt === 'number' && Number.isFinite(source.updatedAt)
+          ? source.updatedAt
+          : undefined,
+      entityStatus: asString(source.entityStatus) || undefined,
+      parent: mapOwners(source.parent ? [source.parent] : [])[0],
+      metricType: asString(source.metricType) || undefined,
+      granularity: asString(source.granularity) || undefined,
+      childrenCount:
+        typeof source.childrenCount === 'number' && Number.isFinite(source.childrenCount)
+          ? source.childrenCount
+          : undefined,
+      usageSummary,
+    };
+    return [mapped];
   });
 
   return { total: readTotal(hitsNode), hits, facets };

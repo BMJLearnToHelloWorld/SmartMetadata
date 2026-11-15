@@ -7,9 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { mapTestConnectionResult } from '@/api/serviceCommon';
-import type { Paged } from '@/types/admin';
+import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
+import type { IncludeFilter, Paged } from '@/types/admin';
 import type { CatalogService, CreateMessagingServiceRequest, ServiceConnection } from '@/types/ingestion';
 import { apiRequest } from './client';
 
@@ -18,6 +19,7 @@ export const MESSAGING_SERVICE_FIELDS = 'owners';
 export interface ListMessagingServicesQuery {
   limit?: number;
   after?: string;
+  include?: IncludeFilter;
 }
 
 function mapConnection(value: unknown): ServiceConnection | undefined {
@@ -46,6 +48,7 @@ export function mapMessagingService(raw: Record<string, unknown>): CatalogServic
     owners: mapEntityRefs(raw.owners),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
+    deleted: asBoolean(raw.deleted),
   };
 }
 
@@ -55,14 +58,15 @@ export function listMessagingServices(query: ListMessagingServicesQuery = {}): P
       fields: MESSAGING_SERVICE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
+      include: query.include,
     },
   }).then((payload) => parsePaged(payload, mapMessagingService));
 }
 
-export async function getMessagingService(id: string): Promise<CatalogService> {
+export async function getMessagingService(id: string, include?: IncludeFilter): Promise<CatalogService> {
   const raw = await apiRequest<Record<string, unknown>>(
     `/v1/services/messagingServices/${encodeURIComponent(id)}`,
-    { query: { fields: MESSAGING_SERVICE_FIELDS } },
+    { query: { fields: MESSAGING_SERVICE_FIELDS, include } },
   );
   const mapped = mapMessagingService(raw);
   if (!mapped) {
@@ -95,8 +99,33 @@ export async function updateMessagingService(body: CreateMessagingServiceRequest
   return mapped;
 }
 
-export function deleteMessagingService(id: string): Promise<void> {
-  return apiRequest<void>(`/v1/services/messagingServices/${encodeURIComponent(id)}`, {
+/**
+ * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
+ * through the async endpoint with hardDelete + recursive; the pin
+ * passes recursive=true from both service detail surfaces. Returns
+ * the async job record (its message is toasted on submit); completion
+ * is observed through the bounded re-read in serviceDelete.ts (D-F5).
+ */
+export function deleteMessagingService(id: string, options: ServiceDeleteOptions = {}): Promise<AsyncDeleteJob> {
+  return apiRequest<AsyncDeleteJob>(`/v1/services/messagingServices/async/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    query: { hardDelete: options.hardDelete ?? false, recursive: options.recursive ?? true },
   });
+}
+
+/**
+ * Official restoreService (rest/serviceAPI.ts): PUT /services/messagingServices/restore
+ * with JSON body { id }; returns the restored service. Restoring
+ * revives the service's children too, so callers refetch after a restore.
+ */
+export async function restoreMessagingService(id: string): Promise<CatalogService> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/services/messagingServices/restore', {
+    method: 'PUT',
+    json: { id },
+  });
+  const mapped = mapMessagingService(raw);
+  if (!mapped) {
+    throw new Error('Restore messaging service succeeded but the response had no service');
+  }
+  return mapped;
 }

@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { tagsPatch } from '@/governance/assetPatch';
-import { fetchAssetDetail, patchAsset } from './entities';
+import { fetchAssetDetail, mapTags, patchAsset } from './entities';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -345,5 +345,105 @@ describe('asset entity writes', () => {
     expect((lastFetch().init?.headers as Record<string, string>)['Content-Type']).toBe(
       'application/json-patch+json',
     );
+  });
+});
+
+describe('mapTags labelType', () => {
+  it('preserves each of the five pin labelType values', () => {
+    for (const labelType of ['Automated', 'Derived', 'Generated', 'Manual', 'Propagated'] as const) {
+      expect(
+        mapTags([{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType }]),
+      ).toEqual([{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType }]);
+    }
+  });
+
+  it('leaves labelType undefined when the payload omits it', () => {
+    const [tag] = mapTags([{ tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' }]);
+    expect(tag?.labelType).toBeUndefined();
+    expect(tag).toMatchObject({ tagFQN: 'PII.Sensitive', name: 'Sensitive' });
+  });
+
+  it('drops labelType values outside the five-value union', () => {
+    for (const labelType of ['generated', 'Bogus', '', 42, null]) {
+      const [tag] = mapTags([
+        { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType },
+      ]);
+      expect(tag?.labelType).toBeUndefined();
+    }
+  });
+
+  it('validates labelType independently of source', () => {
+    const [tag] = mapTags([
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Tag', labelType: 'Generated' },
+    ]);
+    expect(tag?.source).toBeUndefined();
+    expect(tag?.labelType).toBe('Generated');
+  });
+
+  it('returns no tags for non-array payloads', () => {
+    expect(mapTags(undefined)).toEqual([]);
+    expect(mapTags(null)).toEqual([]);
+    expect(mapTags('PII.Sensitive')).toEqual([]);
+  });
+});
+
+describe('fetchAssetDetail usage and joins fields', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('requests joins for tables and maps usageSummary plus joins when present', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return new Response(
+          JSON.stringify({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            deleted: true,
+            usageSummary: { weeklyStats: { count: 20, percentileRank: 45 } },
+            joins: {
+              columnJoins: [
+                { columnName: 'id', joinedWith: [{ fullyQualifiedName: 'svc.db.schema.customers.id', joinCount: 3 }] },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders');
+    expect(urls[0]).toContain('joins');
+    expect(urls[0]).not.toContain('usageSummary');
+    expect(asset.usageSummary?.weeklyStats?.percentileRank).toBe(45);
+    expect(asset.joins?.columnJoins).toHaveLength(1);
+    expect(asset.deleted).toBe(true);
+  });
+
+  it('appends gated extra fields without duplicating the base set', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return new Response(
+          JSON.stringify({ id: 'tbl-1', name: 'orders', fullyQualifiedName: 'svc.db.schema.orders' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    await fetchAssetDetail('table', 'svc.db.schema.orders', { extraFields: ['usageSummary', 'joins'] });
+    const fields = new URL(urls[0] as string).searchParams.get('fields') ?? '';
+    expect(fields.split(',')).toContain('usageSummary');
+    expect(fields.split(',').filter((field) => field === 'joins')).toHaveLength(1);
   });
 });

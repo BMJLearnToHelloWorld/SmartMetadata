@@ -14,6 +14,7 @@ import SmTable from '@/components/shared/SmTable.vue';
 import { listActivityEvents } from '@/api/activity';
 import { filterEventsByRange, getInboxCounts, markInboxSeenNow } from '@/api/inbox';
 import { listTasks } from '@/api/tasks';
+import { getTaskTypeLabelKey } from '@/catalog/taskTypeLabels';
 import type { ActivityEvent } from '@/types/collaboration';
 import type { CollaborationTask } from '@/types/collaboration';
 
@@ -70,6 +71,16 @@ function eventTime(event: ActivityEvent): string {
 
 function taskAssignees(task: CollaborationTask): string {
   return task.assignees.map((ref) => refName(ref)).join(', ') || '—';
+}
+
+/**
+ * Official inbox type badge label (TASK_TYPE_BADGE, label column
+ * only): a localized label for mapped types, the raw type string
+ * otherwise. Label only — no detail panel, no resolve parity.
+ */
+function taskTypeLabel(task: CollaborationTask): string {
+  const key = getTaskTypeLabelKey(task.type);
+  return key ? t(key) : (task.type ?? '—');
 }
 
 async function loadActivity(): Promise<void> {
@@ -187,7 +198,7 @@ onMounted(() => {
                   {{ (record as CollaborationTask).displayName || (record as CollaborationTask).name || (record as CollaborationTask).id }}
                 </a>
               </template>
-              <template v-else-if="column.key === 'type'">{{ (record as CollaborationTask).type ?? '—' }}</template>
+              <template v-else-if="column.key === 'type'">{{ taskTypeLabel(record as CollaborationTask) }}</template>
               <template v-else-if="column.key === 'status'">{{ (record as CollaborationTask).status ?? '—' }}</template>
               <template v-else-if="column.key === 'assignees'">{{ taskAssignees(record as CollaborationTask) }}</template>
             </template>

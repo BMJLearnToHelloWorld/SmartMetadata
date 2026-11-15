@@ -8,22 +8,40 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { entityRefValue, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
+import type { TagLabelState, TagLabelType } from '@/types/api';
 import type { AssetTagOption, TagSource } from '@/types/governance';
 
 export interface TagLabelValue {
   tagFQN: string;
   source: TagSource;
-  labelType: 'Manual';
-  state: 'Confirmed';
+  labelType: TagLabelType;
+  state: TagLabelState;
 }
 
-/** TagLabel required keys from openmetadata-spec type/tagLabel.json. */
-export function toTagLabel(option: AssetTagOption): TagLabelValue {
+/**
+ * Picker/write option carrying the incoming labelType and state when the
+ * tag already has them. The catalog itself carries neither; callers
+ * overlay the existing tag's values onto the option so an edit preserves
+ * them — a retained Suggested label must not flip to Confirmed.
+ */
+export type TagLabelInput = AssetTagOption & {
+  labelType?: TagLabelType;
+  state?: TagLabelState;
+};
+
+/**
+ * TagLabel required keys from openmetadata-spec type/tagLabel.json. The
+ * incoming labelType and state are preserved (pin entity editing
+ * preserves them; pin pickers spread the incoming label and default
+ * only the missing pieces); a fresh pick without them defaults to
+ * Manual / Confirmed, as pin pickers build new labels.
+ */
+export function toTagLabel(option: TagLabelInput): TagLabelValue {
   return {
     tagFQN: option.tagFQN,
     source: option.source,
-    labelType: 'Manual',
-    state: 'Confirmed',
+    labelType: option.labelType ?? 'Manual',
+    state: option.state ?? 'Confirmed',
   };
 }
 
@@ -42,7 +60,7 @@ export function ownersPatch(
   );
 }
 
-export function tagsPatch(current: unknown, tags: AssetTagOption[]): JsonPatchOp[] {
+export function tagsPatch(current: unknown, tags: TagLabelInput[]): JsonPatchOp[] {
   return setFieldPatch('/tags', current, tags.map(toTagLabel));
 }
 

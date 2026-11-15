@@ -89,7 +89,8 @@ onMounted(() => {
     <Card v-else>
       <Descriptions bordered :column="1" size="small" style="margin-bottom: 16px">
         <Descriptions.Item :label="t('crud.fqn')">{{ fqn }}</Descriptions.Item>
-        <Descriptions.Item :label="t('query.service')">{{ queryData.service || '—' }}</Descriptions.Item>
+        <!-- C-14: DataQuery.service is an EntityRef now (F-8 fix); render its name. -->
+        <Descriptions.Item :label="t('query.service')">{{ queryData.service?.displayName || queryData.service?.name || '—' }}</Descriptions.Item>
         <Descriptions.Item :label="t('query.votes')">
           {{
             queryData.votes

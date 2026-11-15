@@ -8,12 +8,13 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { Tooltip } from 'ant-design-vue';
+import Antd, { Tooltip, message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { createTestI18n } from '@/test/i18n';
+import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
 import ServiceDetailView from './ServiceDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -509,5 +510,339 @@ describe('ServiceDetailView', () => {
     const deletes = localCalls.filter((call) => call.method === 'DELETE');
     expect(deletes).toHaveLength(1);
     expect(deletes[0].url).toContain('hardDelete=true');
+  });
+});
+
+describe('ServiceDetailView delete/restore (D-C14)', () => {
+  interface DeleteFixture {
+    deleted: boolean;
+    gone: boolean;
+    permissionOps: string[];
+    restoreStatus: number;
+    permissionStatus: number;
+    deleteStatus: number;
+    neverConfirm: boolean;
+    calls: FetchCall[];
+  }
+
+  function serviceBody(fixture: DeleteFixture): Record<string, unknown> {
+    return {
+      id: 's1',
+      name: 'warehouse',
+      displayName: 'Warehouse',
+      fullyQualifiedName: 'pg.warehouse',
+      serviceType: 'Postgres',
+      deleted: fixture.deleted,
+      connection: { config: { ...DEFAULT_CONFIG } },
+    };
+  }
+
+  function stubDeleteFetch(fixture: DeleteFixture): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        fixture.calls.push({ method, url, body: String(init?.body ?? '') });
+        if (url.includes('/progress/service/')) {
+          return new Response('no tracking', { status: 503 });
+        }
+        if (url.includes('/api/v1/permissions/databaseService/name/')) {
+          if (fixture.permissionStatus !== 200) {
+            return new Response('boom', { status: fixture.permissionStatus });
+          }
+          return jsonResponse(permissionBody('databaseService', fixture.permissionOps));
+        }
+        if (url.includes('/api/v1/permissions/ingestionPipeline')) {
+          return jsonResponse(permissionBody('ingestionPipeline', ['Create']));
+        }
+        if (url.includes('/api/v1/permissions/application')) {
+          return jsonResponse(permissionBody('application', []));
+        }
+        if (url.includes('/api/v1/services/databaseServices/async/s1') && method === 'DELETE') {
+          if (fixture.deleteStatus !== 200) {
+            return new Response('delete exploded', { status: fixture.deleteStatus });
+          }
+          const params = new URL(url).searchParams;
+          if (!fixture.neverConfirm) {
+            if (params.get('hardDelete') === 'true') {
+              fixture.gone = true;
+            } else {
+              fixture.deleted = true;
+            }
+          }
+          return jsonResponse({ jobId: 'j1', message: 'Delete job started' });
+        }
+        if (url.includes('/api/v1/services/databaseServices/restore') && method === 'PUT') {
+          if (fixture.restoreStatus !== 200) {
+            return new Response('boom', { status: fixture.restoreStatus });
+          }
+          fixture.deleted = false;
+          return jsonResponse(serviceBody(fixture));
+        }
+        if (url.includes('/api/v1/services/databaseServices/s1')) {
+          if (fixture.gone) {
+            return new Response('not found', { status: 404 });
+          }
+          return jsonResponse(serviceBody(fixture));
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  function newFixture(overrides: Partial<DeleteFixture> = {}): DeleteFixture {
+    return {
+      deleted: false,
+      gone: false,
+      permissionOps: ['Delete', 'EditAll', 'ViewAll'],
+      restoreStatus: 200,
+      permissionStatus: 200,
+      deleteStatus: 200,
+      neverConfirm: false,
+      calls: [],
+      ...overrides,
+    };
+  }
+
+  async function clickModalOk(): Promise<void> {
+    const ok = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(ok).not.toBeNull();
+    ok!.click();
+    await flushPromises();
+    await flushPromises();
+  }
+
+  beforeEach(() => {
+    // A previous suite's body wipe orphans antd's message holder; destroy
+    // it so the job-message toast assertions render into a live holder.
+    message.destroy();
+  });
+
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) {
+      wrapper.unmount();
+    }
+    vi.unstubAllGlobals();
+    message.destroy();
+    document.body.innerHTML = '';
+  });
+
+  it('fetches the service with include=all and shows the delete button when Delete is allowed', async () => {
+    const fixture = newFixture();
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(true);
+    expect(
+      fixture.calls.some(
+        (call) =>
+          call.url.includes('/api/v1/services/databaseServices/s1') &&
+          call.url.includes('include=all'),
+      ),
+    ).toBe(true);
+    expect(
+      fixture.calls.some((call) =>
+        call.url.includes('/api/v1/permissions/databaseService/name/pg.warehouse'),
+      ),
+    ).toBe(true);
+  });
+
+  it('omits the delete button entirely when Operation.Delete is denied', async () => {
+    const fixture = newFixture({ permissionOps: ['EditAll', 'ViewAll'] });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(false);
+  });
+
+  it('soft-deletes through the async endpoint, stays, and shows the Deleted badge + restore', async () => {
+    const fixture = newFixture();
+    stubDeleteFetch(fixture);
+    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    await wrapper.find('[data-testid="delete-service"]').trigger('click');
+    await flushPromises();
+    expect(document.body.textContent).toContain('Delete "Warehouse" Database Service');
+    expect(document.body.textContent).toContain(
+      'Turn off this database service. You can restore it later.',
+    );
+    await clickModalOk();
+    await flushPromises();
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('/api/v1/services/databaseServices/async/s1');
+    expect(deletes[0].url).toContain('hardDelete=false');
+    expect(deletes[0].url).toContain('recursive=true');
+    // The server's job message is toasted on submit (pin AsyncDeleteProvider).
+    expect(document.body.textContent).toContain('Delete job started');
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="restore-service"]').exists()).toBe(true);
+  });
+
+  it('hard-deletes through the async endpoint and navigates to the list', async () => {
+    const fixture = newFixture();
+    stubDeleteFetch(fixture);
+    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    await wrapper.find('[data-testid="delete-service"]').trigger('click');
+    await flushPromises();
+    const hard = document.body.querySelector('[data-testid="delete-option-hard"]') as HTMLElement | null;
+    expect(hard).not.toBeNull();
+    hard!.click();
+    await flushPromises();
+    await clickModalOk();
+    await flushPromises();
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('hardDelete=true');
+    expect(deletes[0].url).toContain('recursive=true');
+    expect(router.currentRoute.value.name).toBe('ingestion-services');
+  });
+
+  it('shows the hard-only variant for an already soft-deleted service', async () => {
+    const fixture = newFixture({ deleted: true });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="delete-service"]').trigger('click');
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="delete-type-options"]')).toBeNull();
+    // Pin DeleteModal header for the hard-only variant: no quotes, no type.
+    expect(document.body.textContent).toContain('Delete Warehouse');
+    expect(document.body.textContent).not.toContain('Delete "Warehouse"');
+    expect(document.body.textContent).toContain(
+      "Delete this warehouse and all its metadata forever. This can't be undone.",
+    );
+    await clickModalOk();
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].url).toContain('hardDelete=true');
+  });
+
+  it('restores a soft-deleted service and refetches so the badge clears', async () => {
+    const fixture = newFixture({ deleted: true });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const restore = wrapper.find('[data-testid="restore-service"]');
+    expect(restore.exists()).toBe(true);
+    expect((restore.element as HTMLButtonElement).disabled).toBe(false);
+    await restore.trigger('click');
+    await flushPromises();
+    expect(document.body.textContent).toContain('Restore Database Service');
+    expect(document.body.textContent).toContain('Are you sure you want to restore warehouse?');
+    await clickModalOk();
+    await flushPromises();
+    const restores = fixture.calls.filter(
+      (call) => call.method === 'PUT' && call.url.includes('/restore'),
+    );
+    expect(restores).toHaveLength(1);
+    expect(restores[0].url).toContain('/api/v1/services/databaseServices/restore');
+    expect(JSON.parse(restores[0].body ?? '{}')).toEqual({ id: 's1' });
+    expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(false);
+  });
+
+  it('disables restore when EditAll is denied', async () => {
+    const fixture = newFixture({ deleted: true, permissionOps: ['Delete', 'ViewAll'] });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const restore = wrapper.find('[data-testid="restore-service"]');
+    expect(restore.exists()).toBe(true);
+    expect((restore.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps the restore modal open when the restore fails', async () => {
+    const fixture = newFixture({ deleted: true, restoreStatus: 500 });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    await wrapper.find('[data-testid="restore-service"]').trigger('click');
+    await flushPromises();
+    await clickModalOk();
+    await flushPromises();
+    expect(document.body.textContent).toContain('Are you sure you want to restore warehouse?');
+    expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(true);
+  });
+
+  it('fails closed when the service-permission fetch fails: no delete entry, restore disabled', async () => {
+    const fixture = newFixture({ deleted: true, permissionStatus: 500 });
+    stubDeleteFetch(fixture);
+    const { wrapper } = await mountView({ initialTab: 'overview' });
+    expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(false);
+    const restore = wrapper.find('[data-testid="restore-service"]');
+    expect(restore.exists()).toBe(true);
+    expect((restore.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('warns and stays (soft) when the bounded re-read never confirms', async () => {
+    const fixture = newFixture({ neverConfirm: true });
+    stubDeleteFetch(fixture);
+    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    vi.useFakeTimers();
+    try {
+      await wrapper.find('[data-testid="delete-service"]').trigger('click');
+      await flushPromises();
+      await clickModalOk();
+      // D-L2: the Delete button keeps spinning through the re-read.
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushPromises();
+      expect(wrapper.find('[data-testid="delete-service"]').classes()).toContain('ant-btn-loading');
+      await vi.advanceTimersByTimeAsync(31000);
+      await flushPromises();
+      expect(document.body.textContent).toContain(
+        'The deletion may not have finished yet; refresh to confirm.',
+      );
+      expect(router.currentRoute.value.name).toBe('ingestion-service');
+      expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="delete-service"]').classes()).not.toContain(
+        'ant-btn-loading',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('warns and navigates to the list (hard) when the bounded re-read never confirms', async () => {
+    const fixture = newFixture({ neverConfirm: true });
+    stubDeleteFetch(fixture);
+    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    vi.useFakeTimers();
+    try {
+      await wrapper.find('[data-testid="delete-service"]').trigger('click');
+      await flushPromises();
+      const hard = document.body.querySelector(
+        '[data-testid="delete-option-hard"]',
+      ) as HTMLElement | null;
+      expect(hard).not.toBeNull();
+      hard!.click();
+      await flushPromises();
+      await clickModalOk();
+      await vi.advanceTimersByTimeAsync(32000);
+      await flushPromises();
+      expect(document.body.textContent).toContain(
+        'The deletion may not have finished yet; refresh to confirm.',
+      );
+      expect(router.currentRoute.value.name).toBe('ingestion-services');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('toasts the server error, stays, and closes the modal when the delete submit fails', async () => {
+    const fixture = newFixture({ deleteStatus: 500 });
+    stubDeleteFetch(fixture);
+    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    await wrapper.find('[data-testid="delete-service"]').trigger('click');
+    await flushPromises();
+    await clickModalOk();
+    await flushPromises();
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE');
+    expect(deletes).toHaveLength(1);
+    expect(document.body.textContent).toContain('delete exploded');
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(wrapper.findComponent(DeleteEntityModal).props('open')).toBe(false);
+    expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(false);
   });
 });

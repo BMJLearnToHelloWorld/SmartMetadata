@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { Button, Empty, Tag, Typography } from 'ant-design-vue';
 import { isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
 import { entityTypeColor } from '@/catalog/searchHits';
+import { getUsageData } from '@/catalog/usagePercentile';
 import type { SearchHit } from '@/types/api';
 
 const props = defineProps<{
@@ -42,7 +43,7 @@ const overviewRows = computed(() => {
   if (!hit) {
     return [];
   }
-  return [
+  const rows = [
     { key: 'dataType', label: t('explore.dataType'), value: hit.dataType },
     { key: 'table', label: t('explore.table'), value: hit.tableName },
     { key: 'service', label: t('asset.fields.service'), value: hit.serviceName },
@@ -50,7 +51,18 @@ const overviewRows = computed(() => {
     { key: 'database', label: t('asset.fields.database'), value: hit.databaseName },
     { key: 'schema', label: t('asset.fields.schema'), value: hit.schemaName },
     { key: 'constraint', label: t('explore.constraint'), value: hit.constraint },
-  ].filter((row) => Boolean(row.value));
+  ];
+  // Pin summary panel (the only NO_DATA site): the Usage row appears
+  // when the hit carries usageSummary, showing '-' when the weekly
+  // rank itself is missing instead of a zero percentile.
+  if (hit.usageSummary) {
+    rows.push({
+      key: 'usage',
+      label: t('usage.usage'),
+      value: getUsageData(hit.usageSummary.weeklyStats?.percentileRank, (key) => t(key)),
+    });
+  }
+  return rows.filter((row) => Boolean(row.value));
 });
 </script>
 

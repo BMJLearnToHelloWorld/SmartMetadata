@@ -148,6 +148,55 @@ describe('SearchView', () => {
     expect(wrapper.get('[data-testid="explore-preview"]').text()).toContain('Finance');
   });
 
+  it('shows the literal usage percentile on cards whose hit carries usageSummary (C-14)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          ...SEARCH_BODY,
+          hits: {
+            total: { value: 2 },
+            hits: [
+              {
+                _id: 't1',
+                _index: 'table_search_index',
+                _source: {
+                  name: 'orders',
+                  fullyQualifiedName: 'svc.db.schema.orders',
+                  entityType: 'table',
+                  usageSummary: { weeklyStats: { count: 20, percentileRank: 45 } },
+                },
+              },
+              {
+                _id: 't2',
+                _index: 'table_search_index',
+                _source: {
+                  name: 'raw',
+                  fullyQualifiedName: 'svc.db.schema.raw',
+                  entityType: 'table',
+                  usageSummary: {},
+                },
+              },
+              {
+                _id: 't3',
+                _index: 'table_search_index',
+                _source: { name: 'plain', fullyQualifiedName: 'svc.db.schema.plain', entityType: 'table' },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const { wrapper } = await mountView();
+    const withRank = wrapper.get('[data-testid="search-card-svc.db.schema.orders"]');
+    expect(withRank.find('[data-testid="explore-card-usage-percentile"]').text()).toContain('Usage 45th pctile');
+    // Key present but no rank: the pin explore card falls back to 0.
+    const withoutRank = wrapper.get('[data-testid="search-card-svc.db.schema.raw"]');
+    expect(withoutRank.find('[data-testid="explore-card-usage-percentile"]').text()).toContain('Usage 0th pctile');
+    const plain = wrapper.get('[data-testid="search-card-svc.db.schema.plain"]');
+    expect(plain.find('[data-testid="explore-card-usage-percentile"]').exists()).toBe(false);
+  });
+
   it('filters from Browse Estate and composes Lucene q= for the category entity types', async () => {
     const { wrapper, router } = await mountView({ q: 'orders' });
     const tree = wrapper.findComponent({ name: 'ExploreEstateTree' });

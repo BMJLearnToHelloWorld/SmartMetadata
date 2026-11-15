@@ -7,9 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import { mapTestConnectionResult } from '@/api/serviceCommon';
-import type { Paged } from '@/types/admin';
+import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
+import type { IncludeFilter, Paged } from '@/types/admin';
 import type { CatalogService, CreateDatabaseServiceRequest, ServiceConnection } from '@/types/ingestion';
 import { apiRequest } from './client';
 
@@ -18,6 +19,7 @@ export const METADATA_SERVICE_FIELDS = 'owners,pipelines';
 export interface ListMetadataServicesQuery {
   limit?: number;
   after?: string;
+  include?: IncludeFilter;
 }
 
 function mapConnection(value: unknown): ServiceConnection | undefined {
@@ -46,6 +48,7 @@ export function mapMetadataService(raw: Record<string, unknown>): CatalogService
     owners: mapEntityRefs(raw.owners),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
+    deleted: asBoolean(raw.deleted),
   };
 }
 
@@ -55,14 +58,15 @@ export function listMetadataServices(query: ListMetadataServicesQuery = {}): Pro
       fields: METADATA_SERVICE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
+      include: query.include,
     },
   }).then((payload) => parsePaged(payload, mapMetadataService));
 }
 
-export async function getMetadataService(id: string): Promise<CatalogService> {
+export async function getMetadataService(id: string, include?: IncludeFilter): Promise<CatalogService> {
   const raw = await apiRequest<Record<string, unknown>>(
     `/v1/services/metadataServices/${encodeURIComponent(id)}`,
-    { query: { fields: METADATA_SERVICE_FIELDS } },
+    { query: { fields: METADATA_SERVICE_FIELDS, include } },
   );
   const mapped = mapMetadataService(raw);
   if (!mapped) {
@@ -95,8 +99,33 @@ export async function updateMetadataService(body: CreateDatabaseServiceRequest):
   return mapped;
 }
 
-export function deleteMetadataService(id: string): Promise<void> {
-  return apiRequest<void>(`/v1/services/metadataServices/${encodeURIComponent(id)}`, {
+/**
+ * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
+ * through the async endpoint with hardDelete + recursive; the pin
+ * passes recursive=true from both service detail surfaces. Returns
+ * the async job record (its message is toasted on submit); completion
+ * is observed through the bounded re-read in serviceDelete.ts (D-F5).
+ */
+export function deleteMetadataService(id: string, options: ServiceDeleteOptions = {}): Promise<AsyncDeleteJob> {
+  return apiRequest<AsyncDeleteJob>(`/v1/services/metadataServices/async/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    query: { hardDelete: options.hardDelete ?? false, recursive: options.recursive ?? true },
   });
+}
+
+/**
+ * Official restoreService (rest/serviceAPI.ts): PUT /services/metadataServices/restore
+ * with JSON body { id }; returns the restored service. Restoring
+ * revives the service's children too, so callers refetch after a restore.
+ */
+export async function restoreMetadataService(id: string): Promise<CatalogService> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/services/metadataServices/restore', {
+    method: 'PUT',
+    json: { id },
+  });
+  const mapped = mapMetadataService(raw);
+  if (!mapped) {
+    throw new Error('Restore metadata service succeeded but the response had no service');
+  }
+  return mapped;
 }

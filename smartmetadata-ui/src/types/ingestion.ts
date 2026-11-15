@@ -348,6 +348,8 @@ export interface CatalogService {
    * displays it and triggers a fresh run through an automations workflow.
    */
   testConnectionResult?: TestConnectionResult;
+  /** Soft-deleted flag; the detail shell renders its deleted Tag from this. */
+  deleted?: boolean;
 }
 
 /** One step of a stored TestConnectionResult. */

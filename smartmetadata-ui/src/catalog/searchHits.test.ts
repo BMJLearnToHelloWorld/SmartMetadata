@@ -32,7 +32,7 @@ describe('mapSearchResponse', () => {
               databaseSchema: { name: 'marts' },
               tier: { tagFQN: 'Tier.Tier1' },
               owners: [{ name: 'data-eng', displayName: 'Data Eng', type: 'team' }],
-              tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive' }],
+              tags: [{ tagFQN: 'PII.Sensitive', name: 'Sensitive', labelType: 'Generated' }],
               domains: [{ name: 'finance', displayName: 'Finance' }],
               dataProducts: [{ name: 'mart', displayName: 'Orders Mart' }],
               dataType: 'varchar(50)',
@@ -69,6 +69,9 @@ describe('mapSearchResponse', () => {
     });
     expect(mapped.hits[0].owners[0].name).toBe('data-eng');
     expect(mapped.hits[0].tags[0].tagFQN).toBe('PII.Sensitive');
+    // Pin gate (D-F1): search surfaces render Generated plain, so the
+    // search mapper drops labelType even when the ES payload carries it.
+    expect(mapped.hits[0].tags[0].labelType).toBeUndefined();
     expect(mapped.hits[0]).toMatchObject({
       serviceType: 'BigQuery',
       serviceName: 'BigQuery Prod',
@@ -203,5 +206,43 @@ describe('mapSearchResponse', () => {
       childrenCount: 2,
     });
     expect(mapped.hits[0]?.parent).toMatchObject({ fullyQualifiedName: 'kpi.mau-root' });
+  });
+
+  it('carries usageSummary only when the _source carries the key', () => {
+    const mapped = mapSearchResponse({
+      hits: {
+        total: { value: 3 },
+        hits: [
+          {
+            _id: 't1',
+            _index: 'table_search_index',
+            _source: {
+              name: 'orders',
+              fullyQualifiedName: 'svc.db.schema.orders',
+              entityType: 'table',
+              usageSummary: { weeklyStats: { count: 20, percentileRank: 45.5 } },
+            },
+          },
+          {
+            _id: 't2',
+            _index: 'table_search_index',
+            _source: { name: 'raw', fullyQualifiedName: 'svc.db.schema.raw', entityType: 'table' },
+          },
+          {
+            _id: 't3',
+            _index: 'table_search_index',
+            _source: {
+              name: 'empty',
+              fullyQualifiedName: 'svc.db.schema.empty',
+              entityType: 'table',
+              usageSummary: null,
+            },
+          },
+        ],
+      },
+    });
+    expect(mapped.hits[0]?.usageSummary?.weeklyStats?.percentileRank).toBe(45.5);
+    expect(mapped.hits[1]?.usageSummary).toBeUndefined();
+    expect(mapped.hits[2]?.usageSummary).toEqual({});
   });
 });

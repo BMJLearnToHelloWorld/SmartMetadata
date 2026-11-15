@@ -11,11 +11,36 @@
 /**
  * Catalog types with a slim GET /v1/{collection}/name/{fqn}. Search hits for
  * any other type stay navigable but unwired — do not invent collections.
+ *
+ * `usageSummary` is deliberately NOT in any field set below: the pin
+ * requests it only when the viewer holds VIEW_USAGE, appending it to the
+ * detail field set of exactly the four entity types whose detail header
+ * renders the usage percentile (table, dashboard, pipeline, ML model —
+ * DataAssetsHeader.utils.tsx header sites). Callers append
+ * TABLE_USAGE_SUMMARY_FIELD through fetchAssetDetail's extraFields once
+ * the permission is known; `joins` is in the VIEW_BASIC group and is
+ * requested unconditionally for tables.
  */
+export const TABLE_USAGE_SUMMARY_FIELD = 'usageSummary';
+
+/**
+ * Entity types whose pin detail page appends `usageSummary` to the
+ * detail request when ViewUsage is granted (TableDetailsPageV1,
+ * DashboardDetailsPage, PipelineDetailsPage, MlModelPage) and whose
+ * header renders the percentile. Server-side, Table/Dashboard/MlModel
+ * resources gate the field on VIEW_USAGE via addViewOperation;
+ * PipelineResource has no such mapping (its repository still fetches
+ * the field when requested), so the client-side ViewUsage gate is the
+ * operative one for pipelines — the pin UI gates it identically.
+ * Other VIEW_USAGE-gated resources (chart, database, databaseSchema,
+ * drive entities) have no pin header percentile site and stay out.
+ */
+export const USAGE_SUMMARY_ENTITY_TYPES: readonly string[] = ['table', 'dashboard', 'pipeline', 'mlmodel'];
+
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
     collection: 'tables',
-    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes',
+    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins',
   },
   topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes' },
   dashboard: {
@@ -72,6 +97,14 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   apiEndpoint: {
     collection: 'apiEndpoints',
     fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes',
+  },
+  // C-14: queries are wired for vote/patch (PUT /v1/queries/{id}/vote,
+  // PATCH /v1/queries/{id}) and for GET /v1/queries/name/{fqn}, all
+  // verified on QueryResource. The field set is the pin vote-refetch set
+  // (owners, votes, tags, queryUsedIn, users).
+  query: {
+    collection: 'queries',
+    fields: 'owners,votes,tags,queryUsedIn,users',
   },
 };
 

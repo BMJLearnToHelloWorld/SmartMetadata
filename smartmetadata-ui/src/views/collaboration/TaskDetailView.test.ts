@@ -40,7 +40,10 @@ async function mountView(sessionUser?: { id: string; name: string }) {
   }
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/tasks/:id', name: 'task', component: TaskDetailView, props: true }],
+    routes: [
+      { path: '/tasks/:id', name: 'task', component: TaskDetailView, props: true },
+      { path: '/assets/:entityType/:fqn', name: 'asset', component: { template: '<div>asset</div>' } },
+    ],
   });
   await router.push('/tasks/t1');
   await router.isReady();
@@ -350,5 +353,218 @@ describe('TaskDetailView suggestion and transitions', () => {
       resolutionType: 'Approved',
       transitionId: 'approve',
     });
+  });
+});
+
+describe('TaskDetailView recognizer feedback', () => {
+  const FEEDBACK_PAYLOAD = {
+    field: 'tags',
+    fieldPath: 'columns.email.tags',
+    currentValue: '[]',
+    suggestedValue: '[{"tagFQN":"PII.Sensitive"}]',
+    feedback: {
+      entityLink: '<#E::table::db.schema.orders::columns::email>',
+      tagFQN: 'PII.Sensitive',
+      feedbackType: 'FALSE_POSITIVE',
+      userComments: 'This is not a sensitive field',
+      createdBy: { id: 'u2', type: 'user', name: 'reporter', displayName: 'Rae Porter' },
+      createdAt: 1701686127533,
+      sampleValues: ['secret@example.com'],
+    },
+    recognizer: { recognizerId: 'r1', recognizerName: 'PII Recognizer', score: 0.9 },
+  };
+
+  let taskFixture: Record<string, unknown> = {};
+
+  beforeEach(() => {
+    taskFixture = {
+      id: 't1',
+      name: 'feedback-orders',
+      status: 'Open',
+      type: 'RecognizerFeedbackApproval',
+      category: 'Review',
+      assignees: [{ id: 'u1', type: 'user', name: 'amy' }],
+      createdBy: { id: 'u2', type: 'user', name: 'reporter' },
+      comments: [],
+      payload: FEEDBACK_PAYLOAD,
+    };
+    localStorage.clear();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/task/t1')) {
+          return new Response('not found', { status: 404 });
+        }
+        if (init?.method === 'POST' && url.includes('/resolve')) {
+          return jsonResponse({ id: 't1', name: 'feedback-orders', status: 'Approved', comments: [] });
+        }
+        if (url.includes('/api/v1/tasks/t1')) {
+          return jsonResponse(taskFixture);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  async function mountAs(user?: { id: string; name: string; teams?: Array<{ id: string; name: string; type: string }>; isAdmin?: boolean }) {
+    const { wrapper } = await mountView();
+    if (user) {
+      useAuthStore().user = user;
+      await flushPromises();
+    }
+    return { wrapper };
+  }
+
+  it('renders the feedback detail instead of the suggestion section and generic resolve affordances', async () => {
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="feedback-approval-task"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('PII Recognizer');
+    expect(wrapper.text()).toContain('False Positive');
+    expect(wrapper.text()).toContain('This is not a sensitive field');
+    expect(wrapper.text()).not.toContain('PII.Sensitive');
+    expect(wrapper.text()).not.toContain('secret@example.com');
+    expect(wrapper.find('[data-testid="task-suggestion-title"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-suggestion-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="resolve-task"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Resolve this task.');
+    expect(wrapper.find('[data-testid="feedback-approve-reject"]').exists()).toBe(true);
+  });
+
+  it('approves with the approved sentinel and the raw payload echo on the primary press', async () => {
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    const [primary] = wrapper.find('[data-testid="feedback-approve-reject"]').findAll('button');
+    await primary.trigger('click');
+    await flushPromises();
+    const resolve = lastMatchingFetch((url, init) => url.includes('/resolve') && init?.method === 'POST');
+    const body = JSON.parse(String(resolve.init?.body)) as Record<string, unknown>;
+    expect(body.resolutionType).toBe('Approved');
+    expect(body.newValue).toBe('approved');
+    expect(body.payload).toEqual(FEEDBACK_PAYLOAD);
+  });
+
+  it('rejects with the rejected sentinel and no payload from the split-button menu', async () => {
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    const [, caret] = wrapper.find('[data-testid="feedback-approve-reject"]').findAll('button');
+    await caret.trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const rejectItem = document.querySelector('[data-testid="feedback-action-reject"]');
+    expect(rejectItem).not.toBeNull();
+    (rejectItem as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const resolve = lastMatchingFetch((url, init) => url.includes('/resolve') && init?.method === 'POST');
+    expect(JSON.parse(String(resolve.init?.body))).toEqual({
+      resolutionType: 'Rejected',
+      newValue: 'rejected',
+    });
+  });
+
+  it('disables the split button for an admin who is not a reviewer', async () => {
+    const { wrapper } = await mountAs({ id: 'u9', name: 'bob', isAdmin: true });
+    const [primary] = wrapper.find('[data-testid="feedback-approve-reject"]').findAll('button');
+    expect((primary.element as HTMLButtonElement).disabled).toBe(true);
+    await primary.trigger('click');
+    await flushPromises();
+    expect(
+      [...vi.mocked(fetch).mock.calls].some(
+        (call) => String(call[0]).includes('/resolve') && call[1]?.method === 'POST',
+      ),
+    ).toBe(false);
+  });
+
+  it('enables the split button for a team-member non-creator and disables it for a team-member creator', async () => {
+    taskFixture = {
+      ...taskFixture,
+      assignees: [{ id: 'team1', type: 'team', name: 'DataGovernance' }],
+    };
+    const { wrapper } = await mountAs({
+      id: 'u3',
+      name: 'team-member',
+      teams: [{ id: 'team1', name: 'DataGovernance', type: 'team' }],
+    });
+    const [primary] = wrapper.find('[data-testid="feedback-approve-reject"]').findAll('button');
+    expect((primary.element as HTMLButtonElement).disabled).toBe(false);
+
+    useAuthStore().user = {
+      id: 'u2',
+      name: 'reporter',
+      teams: [{ id: 'team1', name: 'DataGovernance', type: 'team' }],
+    };
+    await flushPromises();
+    const [primaryAfterChange] = wrapper
+      .find('[data-testid="feedback-approve-reject"]')
+      .findAll('button');
+    expect((primaryAfterChange.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('suppresses resolve/close/view menu items for feedback tasks but keeps edit and re-assign', async () => {
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    await wrapper.find('[data-testid="task-actions-menu"]').trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(document.querySelector('[data-testid="task-action-menu-item-resolve"]')).toBeNull();
+    expect(document.querySelector('[data-testid="task-action-menu-item-close"]')).toBeNull();
+    expect(document.querySelector('[data-testid="task-action-menu-item-view"]')).toBeNull();
+    expect(document.querySelector('[data-testid="task-action-menu-item-edit"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-action-menu-item-re-assign"]')).not.toBeNull();
+  });
+
+  it('treats a DataQualityReview task with a feedback payload the same way', async () => {
+    taskFixture = { ...taskFixture, type: 'DataQualityReview' };
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="feedback-approval-task"]').exists()).toBe(true);
+    const [primary] = wrapper.find('[data-testid="feedback-approve-reject"]').findAll('button');
+    await primary.trigger('click');
+    await flushPromises();
+    const resolve = lastMatchingFetch((url, init) => url.includes('/resolve') && init?.method === 'POST');
+    const body = JSON.parse(String(resolve.init?.body)) as Record<string, unknown>;
+    expect(body.newValue).toBe('approved');
+    expect(body.payload).toEqual(FEEDBACK_PAYLOAD);
+  });
+
+  it('falls through to the generic surface for a recognizer task with no feedback payload', async () => {
+    taskFixture = {
+      ...taskFixture,
+      payload: { currentValue: '[]', suggestedValue: '[{"tagFQN":"PII.Sensitive"}]' },
+    };
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="feedback-approval-task"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="feedback-approve-reject"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-suggestion-title"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="resolve-task"]').exists()).toBe(true);
+  });
+
+  it('shows the transition menu instead of the split button for a workflow-driven feedback task', async () => {
+    taskFixture = {
+      ...taskFixture,
+      availableTransitions: [
+        {
+          id: 'approve',
+          label: 'Approve',
+          resolutionType: 'Approved',
+          targetStageId: 'approved',
+          targetTaskStatus: 'Approved',
+        },
+      ],
+    };
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="feedback-approval-task"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="feedback-approve-reject"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-transition-run"]').exists()).toBe(true);
+  });
+
+  it('still renders the feedback detail for a closed feedback task, with no split button', async () => {
+    taskFixture = { ...taskFixture, status: 'Approved' };
+    const { wrapper } = await mountAs({ id: 'u1', name: 'amy' });
+    expect(wrapper.find('[data-testid="feedback-approval-task"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="feedback-approve-reject"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-terminal-note"]').exists()).toBe(true);
   });
 });

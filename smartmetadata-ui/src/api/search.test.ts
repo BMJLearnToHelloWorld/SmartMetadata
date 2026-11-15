@@ -16,6 +16,7 @@ import {
   postAggregateFieldOptions,
   postExactAggregateFieldOptions,
   searchAssets,
+  searchQueries,
 } from './search';
 
 function jsonResponse(body: unknown): Response {
@@ -244,5 +245,55 @@ describe('escapeESReservedCharacters', () => {
   it('escapes reserved characters and leaves # unescaped', () => {
     expect(escapeESReservedCharacters('a+b(c)')).toBe('a\\+b\\(c\\)');
     expect(escapeESReservedCharacters('a#b')).toBe('a#b');
+  });
+});
+
+describe('searchQueries', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('queries the query index with offset paging, sort, and the serialized filter', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          hits: {
+            total: { value: 1 },
+            hits: [
+              {
+                _source: {
+                  id: 'q1',
+                  query: 'select 1',
+                  queryDate: 1710000000000,
+                  duration: 250,
+                  votes: { upVotes: 2, downVotes: 0 },
+                  queryUsedIn: [{ id: 't1', type: 'table', name: 'orders' }],
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const filter = JSON.stringify({ query: { bool: { must: [{ term: { 'queryUsedIn.id': 'tbl-1' } }] } } });
+    const page = await searchQueries('*', 15, 15, {
+      sortField: 'queryDate',
+      sortOrder: 'desc',
+      query_filter: filter,
+    });
+    const url = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(url).toContain('/api/v1/search/query');
+    expect(url).toContain('q=*');
+    expect(url).toContain('index=query');
+    expect(url).toContain('from=15');
+    expect(url).toContain('size=15');
+    expect(url).toContain('sort_field=queryDate');
+    expect(url).toContain('sort_order=desc');
+    expect(url).toContain(`query_filter=${encodeURIComponent(filter)}`);
+    expect(page.total).toBe(1);
+    expect(page.queries[0]?.query).toBe('select 1');
+    expect(page.queries[0]?.duration).toBe(250);
+    expect(page.queries[0]?.queryUsedIn).toHaveLength(1);
   });
 });

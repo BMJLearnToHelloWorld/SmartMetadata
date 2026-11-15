@@ -80,10 +80,62 @@ export interface EntityVotes {
   downVoters?: EntityRef[];
 }
 
+/**
+ * LabelType (official generated type/tagLabel.ts LabelType enum): how a tag
+ * label was applied. Optional on TagRef: the pin type requires it, but fork
+ * payloads are unverified and may omit it, so absence must stay representable.
+ */
+export type TagLabelType = 'Automated' | 'Derived' | 'Generated' | 'Manual' | 'Propagated';
+
+/**
+ * Tag label state (official generated type/tagLabel.ts State enum): a
+ * label is Suggested until the entity owner confirms it. Optional on
+ * TagRef like labelType: payloads may omit it, and absence must stay
+ * representable so a save can default it without rewriting a carried
+ * Suggested label to Confirmed.
+ */
+export type TagLabelState = 'Confirmed' | 'Suggested';
+
 export interface TagRef {
   tagFQN: string;
   name: string;
   source?: 'Classification' | 'Glossary';
+  labelType?: TagLabelType;
+  state?: TagLabelState;
+}
+
+/** Official UsageStats (openmetadata-spec type/usageDetails.json). */
+export interface UsageStats {
+  count?: number;
+  percentileRank?: number;
+}
+
+/** Official UsageDetails: daily stats plus optional weekly/monthly rollups. */
+export interface UsageDetails {
+  date?: string;
+  dailyStats?: UsageStats;
+  weeklyStats?: UsageStats;
+  monthlyStats?: UsageStats;
+}
+
+/** Official JoinedWith (generated entity/data/table.ts). */
+export interface JoinedWith {
+  fullyQualifiedName: string;
+  joinCount: number;
+}
+
+/** Official ColumnJoins: one column's joined-with list. */
+export interface ColumnJoins {
+  columnName?: string;
+  joinedWith?: JoinedWith[];
+}
+
+/** Official TableJoins: the table entity's `joins` field. */
+export interface TableJoins {
+  columnJoins?: ColumnJoins[];
+  directTableJoins?: JoinedWith[];
+  dayCount?: number;
+  startDate?: number;
 }
 
 export interface SearchHit {
@@ -125,6 +177,12 @@ export interface SearchHit {
   metricType?: string;
   granularity?: string;
   childrenCount?: number;
+  /**
+   * Usage summary from the ES `_source`, set only when the source carries
+   * the `usageSummary` key (the pin explore card's `'usageSummary' in
+   * source` rule). The percentile display reads weeklyStats only.
+   */
+  usageSummary?: UsageDetails;
 }
 
 export interface SearchPage {
@@ -236,4 +294,15 @@ export interface AssetDetail {
   schemaRows: SchemaRow[];
   schemaLabel: string;
   extension?: Record<string, unknown>;
+  /**
+   * Usage summary (VIEW_USAGE-gated field, requested only when the
+   * viewer may see usage, on the four header-percentile entity types)
+   * and table joins (VIEW_BASIC field, requested unconditionally for
+   * table detail). Both feed the C-14 surfaces: the header percentile
+   * and the Frequently Joined widget.
+   */
+  usageSummary?: UsageDetails;
+  joins?: TableJoins;
+  /** Soft-delete flag; the table_queries tab skips its fetch for deleted tables (pin isTableDeleted). */
+  deleted?: boolean;
 }

@@ -15,6 +15,8 @@ import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
 import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset } from '@/api/entities';
+import { getDerivedPermissionFlags } from '@/api/permissions';
+import { getQueryCount } from '@/api/queries';
 import { getVoteStatus, voteAsset, type VoteType } from '@/api/votes';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from '@/api/profiler';
 import { listTestCases } from '@/api/testCases';
@@ -23,7 +25,8 @@ import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit } from '@/catalog/entityDetailTabs';
-import { isDetailWired, lineageLocation } from '@/catalog/entityRoutes';
+import { isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
   columnNullPoints,
   namedSeries,
@@ -40,6 +43,9 @@ import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { requiredField } from '@/features/crud/formRules';
+import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
+import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
+import TableQueries from '@/features/queries/TableQueries.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import {
   loadGovernanceCatalog,
@@ -47,13 +53,13 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch } from '@/governance/assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, type TagLabelInput } from '@/governance/assetPatch';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
 import type { AssetDetail, CatalogPipelineStatus, SchemaRow } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
-import type { AssetTagOption } from '@/types/governance';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
 
 const props = defineProps<{
@@ -65,10 +71,12 @@ const router = useRouter();
 const route = useRoute();
 const { t, te } = useI18n();
 const auth = useAuthStore();
+const permissionStore = usePermissionStore();
 
 const loading = ref(false);
 const errorMessage = ref('');
 const asset = ref<AssetDetail | null>(null);
+const queryCount = ref<number | undefined>(undefined);
 const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 const tests = ref<TestCase[]>([]);
 const testsError = ref('');
@@ -214,6 +222,11 @@ const tabs = computed<EntityDetailTab[]>(() => {
       key: def.key,
       label: t(`asset.tabs.${def.labelKey}`),
       testId: `asset-tab-${def.key}`,
+      // Pin tableQueryCountFn: the badge shows once the count resolves;
+      // while it is pending (or failed) the tab renders without one.
+      ...(def.key === 'table_queries' && queryCount.value !== undefined
+        ? { count: queryCount.value }
+        : {}),
     }));
   }
   return assetTabKeys(props.entityType).map((key) => ({
@@ -222,6 +235,18 @@ const tabs = computed<EntityDetailTab[]>(() => {
     testId: TAB_TEST_IDS[key],
   }));
 });
+
+// Pin detail header: the percentile renders only when usageSummary is
+// present (the `&&` gate), with a missing rank falling back to 0.
+const usagePercentileText = computed(() =>
+  asset.value?.usageSummary
+    ? getUsagePercentile(
+        asset.value.usageSummary.weeklyStats?.percentileRank ?? 0,
+        false,
+        (key) => t(key),
+      )
+    : undefined,
+);
 
 function onTabChange(key: string): void {
   activeTab.value = key;
@@ -326,6 +351,7 @@ function resetSecondary(): void {
   apiEndpoints.value = [];
   apiEndpointsError.value = '';
   activeTab.value = '';
+  queryCount.value = undefined;
 }
 
 async function load(): Promise<void> {
@@ -339,10 +365,40 @@ async function load(): Promise<void> {
     return;
   }
   try {
-    asset.value = await fetchAssetDetail(props.entityType, decodedFqn.value);
+    // The pin requests usageSummary only when the viewer holds
+    // VIEW_USAGE, on the four header-percentile entity types, so the
+    // permission is resolved before the detail fetch. A failed
+    // permission read fails closed (no usageSummary requested). The
+    // resource name is the entity type itself (pin ResourceEntity:
+    // 'table' | 'dashboard' | 'pipeline' | 'mlmodel').
+    let extraFields: string[] | undefined;
+    if (USAGE_SUMMARY_ENTITY_TYPES.includes(props.entityType)) {
+      const entityOps = await permissionStore
+        .getEntityPermissionByFqn(props.entityType, decodedFqn.value)
+        .catch(() => null);
+      if (entityOps && getDerivedPermissionFlags(entityOps).can('ViewUsage')) {
+        extraFields = [TABLE_USAGE_SUMMARY_FIELD];
+      }
+    }
+    asset.value = await fetchAssetDetail(
+      props.entityType,
+      decodedFqn.value,
+      extraFields ? { extraFields } : undefined,
+    );
     const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
     const validKeys = tabs.value.map((tab) => tab.key);
     activeTab.value = requestedTab && validKeys.includes(requestedTab) ? requestedTab : firstTabKey();
+    // Pin tableQueryCountFn runs on the table page: the count resolves
+    // independently of the tab mount, and a failure leaves the tab
+    // without a badge rather than failing the page.
+    if (props.entityType === 'table' && asset.value?.id) {
+      const tableId = asset.value.id;
+      getQueryCount(tableId)
+        .then((count) => {
+          queryCount.value = count;
+        })
+        .catch(() => undefined);
+    }
     await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses(), loadApiEndpoints()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
@@ -495,19 +551,24 @@ function openEdit(): void {
   editOpen.value = true;
 }
 
-function selectedTagOptions(): AssetTagOption[] {
+function selectedTagOptions(): TagLabelInput[] {
   return editForm.tagFqns.flatMap((fqn) => {
+    // The catalog carries no labelType, so the existing tag's labelType is
+    // overlaid onto whichever option wins: without this, saving an edit
+    // would silently convert a Generated label to Manual. Fresh picks keep
+    // no labelType and default to Manual in toTagLabel.
+    const existing = asset.value?.tags.find((tag) => tag.tagFQN === fqn);
     const fromCatalog = catalog.value.tags.find((tag) => tag.tagFQN === fqn);
     if (fromCatalog) {
-      return [fromCatalog];
+      return [{ ...fromCatalog, labelType: existing?.labelType }];
     }
-    const existing = asset.value?.tags.find((tag) => tag.tagFQN === fqn);
     if (existing) {
       return [
         {
           tagFQN: existing.tagFQN,
           name: existing.name,
           source: existing.source || 'Classification',
+          labelType: existing.labelType,
         },
       ];
     }
@@ -649,6 +710,12 @@ onMounted(() => {
           <Typography.Text v-if="asset?.owners.length" type="secondary" data-testid="asset-header-owners">
             {{ asset?.owners.map((owner) => owner.displayName || owner.name).join(' · ') }}
           </Typography.Text>
+          <!-- Pin header pairs ExtraInfoLabel label=Usage with the
+               non-literal percentile value; the value's leading space
+               separates label and value, so no space is added here. -->
+          <Typography.Text v-if="usagePercentileText" type="secondary" data-testid="asset-usage-percentile">
+            {{ t('usage.usage') }}{{ usagePercentileText }}
+          </Typography.Text>
         </Space>
       </template>
       <template #actions>
@@ -775,7 +842,21 @@ onMounted(() => {
             :expandable="schemaExpandable"
             :pagination="false"
             size="small"
-          />
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'name'">
+                {{ (record as SchemaRow).name }}
+                <FrequentlyJoinedColumns :joins="asset.joins" :column-name="(record as SchemaRow).name" />
+              </template>
+              <template v-else-if="column.key === 'dataType'">
+                {{ (record as SchemaRow).dataType }}
+              </template>
+              <template v-else>
+                {{ (record as SchemaRow).description }}
+              </template>
+            </template>
+          </SmTable>
+          <FrequentlyJoinedTables v-if="entityType === 'table'" :joins="asset.joins" />
       </template>
       <template v-if="asset" #features>
           <Typography.Paragraph type="secondary">{{ t('asset.featuresLead') }}</Typography.Paragraph>
@@ -995,14 +1076,15 @@ onMounted(() => {
           />
       </template>
       <template v-if="asset" #table_queries>
-          <Button
-            data-testid="asset-add-query"
-            style="margin-bottom: 16px"
-            @click="router.push({ name: 'query-add', params: { fqn: asset.fullyQualifiedName ?? asset.name } })"
-          >
-            {{ t('query.addTitle') }}
-          </Button>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('table_queries')" />
+          <!-- Mount-gated: the shell force-renders every pane, and the
+               pin mounts only the active tab, so the list fetches only
+               while this tab is selected. -->
+          <TableQueries
+            v-if="activeTab === 'table_queries' && asset.id"
+            :table-id="asset.id"
+            :dataset-fqn="asset.fullyQualifiedName ?? asset.name"
+            :is-table-deleted="asset.deleted === true"
+          />
       </template>
       <template v-if="asset" #dbt>
           <Empty data-testid="asset-tab-residual" :description="residualReasonFor('dbt')" />
