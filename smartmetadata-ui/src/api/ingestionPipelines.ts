@@ -328,6 +328,7 @@ export async function updateIngestionPipeline(
     {
       method: 'PATCH',
       json: ops,
+      contentType: 'application/json-patch+json',
     },
   );
   const mapped = mapIngestionPipeline(raw);
@@ -543,4 +544,22 @@ export async function getOrchestratorStatus(): Promise<OrchestratorStatus> {
     platform: asString(raw.platform) || undefined,
     reason: asString(raw.reason) || undefined,
   };
+}
+
+/**
+ * Official getPipelineServiceHostIp (openmetadata-ui
+ * rest/ingestionPipelineAPI.ts:150-156): GET
+ * /v1/services/ingestionPipelines/ip. The server answers 200 with
+ * `{ip}` when IP info is enabled and 204 with no body when it is
+ * disabled; the empty-body case returns undefined so the caller can
+ * tell "disabled" (no alert) from "unknown". HTTP errors throw, as
+ * elsewhere in this module.
+ */
+export async function getPipelineServiceHostIp(): Promise<{ ip?: string } | undefined> {
+  const raw = await apiRequest<unknown>('/v1/services/ingestionPipelines/ip');
+  if (raw === undefined) {
+    return undefined;
+  }
+  const rec = asRecord(raw);
+  return { ip: rec ? asString(rec.ip) || undefined : undefined };
 }

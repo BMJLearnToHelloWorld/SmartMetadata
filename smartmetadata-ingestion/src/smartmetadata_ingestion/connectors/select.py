@@ -38,6 +38,22 @@ def _candidate(name: str, fqn: str | None, use_fqn: bool) -> str:
     return name
 
 
+def is_configured_schema(name: str, database_schema: str | None) -> bool:
+    """Whether a catalog schema survives the connection's ``databaseSchema``.
+
+    Official layering (pin a3012259ca, ``common_db_source.py``
+    ``get_raw_database_schema_names``): when ``databaseSchema`` is set,
+    the candidate set is exactly that one schema — an exact name, never
+    a filter pattern — and the pipeline ``schemaFilterPattern`` then
+    filters the candidate set on top (``_get_filtered_schema_names``).
+    A blank restriction leaves every name standing; the pipeline
+    pattern still applies through :func:`is_selected`.
+    """
+    if not database_schema:
+        return True
+    return name == database_schema
+
+
 def is_selected(
     name: str,
     *,

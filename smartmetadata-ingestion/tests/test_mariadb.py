@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.mariadb import MariaDBSource
@@ -20,6 +23,7 @@ from smartmetadata_ingestion.connectors.mariadb_common import (
     ViewRow,
     ProfileStatRow,
     SampleRow,
+    mariadb_connect,
     run_connection_test,
 )
 from smartmetadata_ingestion.connectors.mariadb_profiler import (
@@ -77,6 +81,66 @@ def test_mariadb_connection_test_requires_host_and_user() -> None:
     with pytest.raises(WorkflowError, match="username"):
         run_connection_test({"hostPort": "localhost:3306"})
     assert run_connection_test(_conn()) == ["CheckHostPort", "CheckUsername"]
+
+
+def test_mariadb_connect_prefers_database_over_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mariadb_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "database": "db",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "db"
+
+
+def test_mariadb_connect_falls_back_to_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mariadb_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "app"
+
+
+def test_mariadb_connect_ignores_database_name(monkeypatch) -> None:
+    # D-L2b extension: pin's URL rule never puts databaseName in the
+    # connection URL — it only names the OpenMetadata Database entity.
+    # A databaseName-only config opens pymysql with no database.
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mariadb_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] is None
 
 
 def test_mariadb_metadata_tree_and_view_lineage() -> None:
@@ -146,3 +210,32 @@ def test_mariadb_quality() -> None:
         test_case_fqn="tc", timestamp=1, expression="select 1", expected=True
     )
     assert result.test_case_status == "Success"
+
+
+def test_mariadb_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = MariaDBSource(
+        SourceConfig(
+            type="mariadb",
+            service_name="mariadb-svc",
+            connection=_conn(databaseSchema="other"),
+            include_schemas=["sales"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = MariaDBSource(
+        SourceConfig(
+            type="mariadb",
+            service_name="mariadb-svc",
+            connection=_conn(databaseSchema="sal"),
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

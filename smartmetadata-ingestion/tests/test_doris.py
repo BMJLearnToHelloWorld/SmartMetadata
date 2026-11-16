@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.connectors.doris import DorisSource
@@ -409,6 +412,66 @@ def test_doris_connect_passes_ssl_into_pymysql(monkeypatch) -> None:
     assert FsPath(ssl["key"]).read_text(encoding="utf-8") == "---KEY---"
 
 
+def test_doris_connect_prefers_database_over_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = doris_connect(
+        {
+            "hostPort": "fe.example:9030",
+            "username": "ingest",
+            "password": "secret",
+            "database": "db",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "db"
+
+
+def test_doris_connect_falls_back_to_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = doris_connect(
+        {
+            "hostPort": "fe.example:9030",
+            "username": "ingest",
+            "password": "secret",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "app"
+
+
+def test_doris_connect_ignores_database_name(monkeypatch) -> None:
+    # D-L2b extension: pin's URL rule never puts databaseName in the
+    # connection URL — it only names the OpenMetadata Database entity.
+    # A databaseName-only config opens pymysql with no database.
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = doris_connect(
+        {
+            "hostPort": "fe.example:9030",
+            "username": "ingest",
+            "password": "secret",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] is None
+
+
 def test_doris_complex_type_children() -> None:
     reader = SequenceCatalogReader(
         schemas=[SchemaRow("sales")],
@@ -530,3 +593,32 @@ def test_cursor_reader_engine_query_and_partitions() -> None:
 
     assert reader.get_table_partition_details("sales", "orders_v") is None
 
+
+
+def test_doris_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = DorisSource(
+        SourceConfig(
+            type="doris",
+            service_name="doris-svc",
+            connection=_conn(databaseSchema="other"),
+            include_schemas=["sales"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = DorisSource(
+        SourceConfig(
+            type="doris",
+            service_name="doris-svc",
+            connection=_conn(databaseSchema="sal"),
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

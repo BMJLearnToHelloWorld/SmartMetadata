@@ -24,6 +24,7 @@ from smartmetadata_ingestion.connectors.mysql import (
     ViewRow,
     _pymysql_connect,
 )
+from smartmetadata_ingestion.connectors.mysql_common import mysql_connect
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
     DatabaseRecord,
@@ -106,6 +107,53 @@ def test_mysql_database_schema_restricts_scan() -> None:
             type="mysql",
             service_name="oltp",
             connection={"databaseSchema": "app"},
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == ["app"]
+
+
+def test_mysql_database_schema_and_pipeline_pattern_both_apply() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidates to
+    # exactly one schema and the pipeline pattern filters on top —
+    # neither overrides the other.
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseSchema": "app"},
+            include_schemas=["hidden"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+
+
+def test_mysql_database_schema_is_exact_not_prefix() -> None:
+    reader = SequenceCatalogReader(
+        schemas=[SchemaRow("app"), SchemaRow("app_backup")],
+    )
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseSchema": "app"},
+        ),
+        reader=reader,
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == ["app"]
+
+
+def test_mysql_database_schema_and_pattern_agreeing_selects_schema() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseSchema": "app"},
+            include_schemas=["app"],
         ),
         reader=_reader(),
     )
@@ -257,7 +305,10 @@ def test_mysql_cursor_reader_uses_information_schema() -> None:
     assert cursor.closed is True
 
 
-def test_mysql_live_connection_uses_database_name(monkeypatch) -> None:
+def test_mysql_live_connection_ignores_database_name(monkeypatch) -> None:
+    # TEST-BUG RETARGET (D-L2b): pin's URL rule never puts databaseName
+    # in the connection URL — it only names the OpenMetadata Database
+    # entity. A databaseName-only config opens pymysql with no database.
     calls = []
     fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
     monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
@@ -272,7 +323,103 @@ def test_mysql_live_connection_uses_database_name(monkeypatch) -> None:
     )
     connect()
 
-    assert calls[0]["database"] == "shop"
+    assert calls[0]["database"] is None
+
+
+def test_mysql_live_connection_prefers_database_over_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = _pymysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "database": "db",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "db"
+
+
+def test_mysql_live_connection_falls_back_to_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = _pymysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "app"
+
+
+def test_mysql_common_connect_prefers_database_over_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "database": "db",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "db"
+
+
+def test_mysql_common_connect_falls_back_to_database_schema(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseSchema": "app",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] == "app"
+
+
+def test_mysql_common_connect_ignores_database_name(monkeypatch) -> None:
+    calls = []
+    fake_pymysql = SimpleNamespace(connect=lambda **kwargs: calls.append(kwargs) or object())
+    monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+
+    connect = mysql_connect(
+        {
+            "hostPort": "localhost:3306",
+            "username": "ingest",
+            "password": "secret",
+            "databaseName": "shop",
+        }
+    )
+    connect()
+
+    assert calls[0]["database"] is None
 
 
 def test_mysql_live_connection_uses_auth_type_password(monkeypatch) -> None:

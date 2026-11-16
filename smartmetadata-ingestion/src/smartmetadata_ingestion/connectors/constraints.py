@@ -82,6 +82,20 @@ def nullable_flag(value: Any) -> bool | None:
     return None
 
 
+def _group_columns(group: list[ConstraintRow]) -> list[str]:
+    """A group's columns in catalog order, deduplicated.
+
+    Duplicate rows for one column still describe one column, so group
+    size — and therefore the single/composite split — counts distinct
+    columns, not rows.
+    """
+    columns: list[str] = []
+    for row in group:
+        if row.column_name not in columns:
+            columns.append(row.column_name)
+    return columns
+
+
 class SchemaConstraints:
     """The constraints of one schema, grouped for record shaping."""
 
@@ -97,6 +111,23 @@ class SchemaConstraints:
             self._groups.setdefault((row.table_name, row.constraint_name), []).append(row)
         for group in self._groups.values():
             group.sort(key=lambda row: row.ordinal_position)
+        # Pin's single/composite split (sql_column_handler.py
+        # get_columns_and_constraints / _get_column_constraints): a key
+        # group shapes exactly one representation — a single-column
+        # group tags its column, a composite group becomes a table
+        # constraint. The server rejects both together
+        # (DatabaseUtil.validateConstraints), so the split is decided
+        # here, once, for every connector. A column in a composite
+        # primary key carries no key tag at all, even when it also has
+        # a single-column unique constraint: pin returns None for
+        # composite members before considering unique tags.
+        composite_pk_members: set[tuple[str, str]] = set()
+        for (table_name, _), group in self._groups.items():
+            if CONSTRAINT_TYPE_MAP[group[0].constraint_type.upper()] != "PRIMARY_KEY":
+                continue
+            columns = _group_columns(group)
+            if len(columns) > 1:
+                composite_pk_members.update((table_name, column) for column in columns)
         self._column_kinds: dict[tuple[str, str], KeyColumnConstraint] = {}
         for (table_name, _), group in self._groups.items():
             kind = CONSTRAINT_TYPE_MAP[group[0].constraint_type.upper()]
@@ -106,32 +137,40 @@ class SchemaConstraints:
                 key_kind = "UNIQUE"
             else:
                 continue
-            for row in group:
-                key = (table_name, row.column_name)
-                # A primary key outranks a unique constraint on the
-                # same column: the column constraint carries one value.
-                if key_kind == "PRIMARY_KEY" or key not in self._column_kinds:
-                    self._column_kinds[key] = key_kind
+            columns = _group_columns(group)
+            if len(columns) != 1:
+                continue
+            key = (table_name, columns[0])
+            if key in composite_pk_members:
+                continue
+            # A primary key outranks a unique constraint on the
+            # same column: the column constraint carries one value.
+            if key_kind == "PRIMARY_KEY" or key not in self._column_kinds:
+                self._column_kinds[key] = key_kind
 
     def for_table(self, table_name: str) -> list[TableConstraintRecord]:
-        """The table's constraints, in catalog order."""
+        """The table's constraints, in catalog order.
+
+        Single-column PRIMARY_KEY/UNIQUE groups are absent: they shape
+        column tags instead (see ``__init__``). Composite key groups
+        and foreign keys shape table constraints.
+        """
         records: list[TableConstraintRecord] = []
         for (table, _), group in self._groups.items():
             if table != table_name:
+                continue
+            kind = CONSTRAINT_TYPE_MAP[group[0].constraint_type.upper()]
+            if kind in ("PRIMARY_KEY", "UNIQUE") and len(_group_columns(group)) == 1:
                 continue
             records.append(self._record(group))
         return records
 
     def _record(self, group: list[ConstraintRow]) -> TableConstraintRecord:
         first = group[0]
-        columns: list[str] = []
-        for row in group:
-            if row.column_name not in columns:
-                columns.append(row.column_name)
         referred = self._referred_columns(group)
         return TableConstraintRecord(
             constraint_type=CONSTRAINT_TYPE_MAP[first.constraint_type.upper()],
-            columns=columns,
+            columns=_group_columns(group),
             referred_columns=referred,
         )
 

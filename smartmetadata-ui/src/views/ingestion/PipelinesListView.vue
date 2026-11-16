@@ -155,6 +155,25 @@ const selectedFormService = computed(
   () => catalogServices.value.find((item) => item.id === form.serviceId) ?? null,
 );
 
+/**
+ * Pin `IngestionWorkflowForm.tsx` reads both gating flags from the
+ * service's connection config — never from the pipeline type. The
+ * list records carry the stored config (see `availablePipelineTypes`),
+ * so the selected service's flags derive synchronously with no extra
+ * fetch; an absent config fails closed (hidden), as in the edit view.
+ * The modal binds no debug flag: pin has no list-page create modal
+ * (`IngestionWorkflowForm`'s only consumer is the add/edit page), so
+ * there is no pin debug surface to mirror here.
+ */
+const supportsIncremental = computed(() =>
+  Boolean(
+    selectedFormService.value?.connection?.config?.supportsIncrementalMetadataExtraction,
+  ),
+);
+const supportsAutoPartition = computed(() =>
+  Boolean(selectedFormService.value?.connection?.config?.supportsAutoPartitionDetection),
+);
+
 const availablePipelineTypes = computed<readonly PipelineType[]>(() => {
   const service = selectedFormService.value;
   if (!service) {
@@ -857,7 +876,8 @@ onMounted(() => {
         ref="createSchemaFormRef"
         :schema="createSchema"
         v-model="form.sourceConfigData"
-        :supports-auto-partition="form.pipelineType === 'profiler'"
+        :supports-incremental="supportsIncremental"
+        :supports-auto-partition="supportsAutoPartition"
         @validity-change="(valid) => (createSchemaFormValid = valid)"
       />
       <Form.Item :label="t('ingestion.pipelines.schedule')" :extra="t('ingestion.pipelines.scheduleHelp')">

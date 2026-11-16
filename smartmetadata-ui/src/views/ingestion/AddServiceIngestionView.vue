@@ -126,6 +126,17 @@ const typeOptions = computed<readonly PipelineType[]>(() =>
 );
 const settingsPipeline = computed(() => isSettingsPipelineType(pipelineType.value));
 const ownersRequired = computed(() => !settingsPipeline.value);
+/**
+ * Pin `IngestionWorkflowForm.tsx` reads both gating flags from the
+ * loaded service's connection config — never from the pipeline type.
+ * Absent flags fail closed (hidden), exactly as in the edit view.
+ */
+const supportsIncremental = computed(() =>
+  Boolean(service.value?.connection?.config?.supportsIncrementalMetadataExtraction),
+);
+const supportsAutoPartition = computed(() =>
+  Boolean(service.value?.connection?.config?.supportsAutoPartitionDetection),
+);
 const steps = computed(() => [
   { title: t('ingestion.pipelines.addStepConfigure') },
   { title: t('ingestion.pipelines.addStepSchedule') },
@@ -367,18 +378,21 @@ onMounted(() => {
               @update:model-value="ownersInvalid = false"
             />
           </Form.Item>
-          <Form.Item>
-            <Checkbox v-model:checked="debugLog" data-testid="add-ingestion-debug-log">{{
-              t('ingestion.pipelines.enableDebugLog')
-            }}</Checkbox>
-          </Form.Item>
+          <!-- Pin injects `enableDebugLog` into the workflow schema
+               (`getWorkflowCustomProperties`), so the debug flag is a
+               field inside the form — first in Scope & Behaviour — and
+               the create flow has no external checkbox. Binding
+               `debug-log` renders it; the flag never enters the
+               seeded sourceConfig data. -->
           <SchemaDrivenSourceConfigForm
             v-if="sourceSchema"
             :key="`${kind}-${pipelineType}`"
             ref="schemaFormRef"
             :schema="sourceSchema"
             v-model="sourceConfigData"
-            :supports-auto-partition="pipelineType === 'profiler'"
+            v-model:debug-log="debugLog"
+            :supports-incremental="supportsIncremental"
+            :supports-auto-partition="supportsAutoPartition"
             @validity-change="(valid) => (schemaFormValid = valid)"
           />
         </Form>

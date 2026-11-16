@@ -214,3 +214,37 @@ def test_redshift_connection_config_includes_system_profile_flag() -> None:
     assert conn is not None
     assert conn["config"]["supportsSystemProfile"] is True
     assert conn["config"]["supportsProfiler"] is True
+
+
+def test_redshift_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Fork convention (D-L2a), not pin behavior: this type's connection
+    # schema declares no `databaseSchema`, so pin never restricts it —
+    # pin's restriction covers only the five declaring types (mysql,
+    # mariaDB, doris, databricks, unityCatalog). The fork honors the key
+    # anyway, consistently with the reconcile gate, which already lists
+    # it for this type. The restriction narrows the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = RedshiftSource(
+        SourceConfig(
+            type="redshift",
+            service_name="redshift-svc",
+            connection=_conn(databaseSchema="other"),
+            include_schemas=["public"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = RedshiftSource(
+        SourceConfig(
+            type="redshift",
+            service_name="redshift-svc",
+            connection=_conn(databaseSchema="pub"),
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

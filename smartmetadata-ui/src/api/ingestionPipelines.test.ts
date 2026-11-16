@@ -17,6 +17,7 @@ import {
   getIngestionPipelineByFqn,
   getIngestionPipelineLogs,
   getOrchestratorStatus,
+  getPipelineServiceHostIp,
   killIngestionPipeline,
   listIngestionPipelines,
   listPipelineStatuses,
@@ -114,6 +115,13 @@ describe('ingestionPipelines API', () => {
     await updateIngestionPipeline('p1', [{ op: 'replace', path: '/displayName', value: 'Warehouse v2' }]);
     expect(lastFetch().url).toContain('/api/v1/services/ingestionPipelines/p1');
     expect(lastFetch().init?.method).toBe('PATCH');
+    // The server's PATCH methods consume only application/json-patch+json;
+    // the default application/json is answered 415 (Issue 3, D-L5). The
+    // per-call contentType opt-in is the fork's convention at every other
+    // PATCH site — this assertion pins it here too.
+    expect((lastFetch().init?.headers as Record<string, string>)['Content-Type']).toBe(
+      'application/json-patch+json',
+    );
     expect(JSON.parse(String(lastFetch().init?.body))).toEqual([
       { op: 'replace', path: '/displayName', value: 'Warehouse v2' },
     ]);
@@ -236,6 +244,25 @@ describe('ingestionPipelines API', () => {
     expect(status.platform).toBe('disabled');
     expect(lastFetch().url).toContain('/api/v1/services/ingestionPipelines/status');
     expect(lastFetch().url).not.toContain('/trigger/');
+  });
+
+  it('reads the pipeline service host IP from GET /ip', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ip: '203.0.113.7' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await expect(getPipelineServiceHostIp()).resolves.toEqual({ ip: '203.0.113.7' });
+    expect(lastFetch().url).toContain('/api/v1/services/ingestionPipelines/ip');
+  });
+
+  it('returns undefined for the empty 204 body (IP info disabled server-side)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+    await expect(getPipelineServiceHostIp()).resolves.toBeUndefined();
   });
 
   it('lists with the P-23 default fields owners,pipelineStatuses', async () => {

@@ -131,24 +131,6 @@ export const SERVICE_TYPE_LABEL_KEY_BY_KIND: Record<ServiceKind, string> = {
   security: 'ingestion.services.serviceTypeLabels.security',
 };
 
-/** Password placeholder shown in connection forms, per service type. */
-export const PASSWORD_PLACEHOLDERS: Record<string, string> = {
-  Postgres: '${PG_PASSWORD}',
-  Mysql: '${MYSQL_PASSWORD}',
-  Snowflake: '${SNOWFLAKE_PASSWORD}',
-  Doris: '${DORIS_PASSWORD}',
-  Mssql: '${MSSQL_PASSWORD}',
-  MariaDB: '${MARIADB_PASSWORD}',
-  Redshift: '${REDSHIFT_PASSWORD}',
-  Greenplum: '${GREENPLUM_PASSWORD}',
-  Timescale: '${TIMESCALE_PASSWORD}',
-  Superset: '${SUPERSET_PASSWORD}',
-  Metabase: '${METABASE_PASSWORD}',
-  S3: '${AWS_SECRET_ACCESS_KEY}',
-  Prefect: '${PREFECT_API_KEY}',
-  Dagster: '${DAGSTER_TOKEN}',
-};
-
 export function kindForServiceType(serviceType: string): ServiceKind | undefined {
   const found = (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).find((kind) =>
     (SERVICE_TYPES_BY_KIND[kind] as readonly string[]).includes(serviceType),
@@ -2155,25 +2137,22 @@ export function buildServiceConnection(
   if (!NO_GENERIC_PASSWORD.includes(type)) {
     applyPassword(config, form, existing?.config);
   }
-  // P-08(c): the wizard stores the flat filter keys in connection.config
-  // so the add-ingestion form can prefill from them. No branch above
-  // sets them — the edit form has no filter inputs — so without this
-  // they are dropped on the next service edit and the prefill breaks
-  // afterwards. Carry them from the stored config when the built config
-  // has no value for them.
+  // P-08(c): the wizard stores declared *FilterPattern objects in
+  // connection.config so the add-ingestion form can prefill from them.
+  // No branch above sets them — the edit form has no filter inputs —
+  // so without this they are dropped on the next service edit and the
+  // prefill breaks afterwards. Carry ONLY *FilterPattern keys: every
+  // declared filter-pattern property is a $ref to the shared
+  // FilterPattern shape, and the flat keys the old wizard wrote
+  // (includeSchemas, includeViews, generateSampleData, ...) are
+  // undeclared on every connection schema, so a stored flat key must
+  // NOT survive an edit — dropping it here heals the stored config
+  // instead of re-sending a key the server rejects on encrypt.
   const prevConfig = existing?.config as Record<string, unknown> | undefined;
   if (prevConfig) {
-    for (const key of [
-      'includeViews',
-      'includeSchemas',
-      'includeTopics',
-      'includeDashboards',
-      'includeCharts',
-      'includeContainers',
-      'generateSampleData',
-    ] as const) {
-      if (config[key] === undefined && prevConfig[key] !== undefined) {
-        config[key] = prevConfig[key];
+    for (const [key, value] of Object.entries(prevConfig)) {
+      if (key.endsWith('FilterPattern') && config[key] === undefined && value !== undefined) {
+        config[key] = value;
       }
     }
   }

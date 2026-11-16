@@ -157,7 +157,7 @@ function goToHealth(filter: ServiceHealthFilter): void {
   void router.push({ name: 'ingestion-services', query: { health: filter } });
 }
 
-function openService(service: Pick<FailingService, 'fqn' | 'serviceKind'>): void {
+function openService(service: Pick<FailingService, 'id' | 'serviceKind'>): void {
   if (!service.serviceKind) {
     openServices();
     return;
@@ -165,9 +165,13 @@ function openService(service: Pick<FailingService, 'fqn' | 'serviceKind'>): void
   // The product's service detail has no real AGENTS tab — the slot only
   // renders an empty residual — so the row opens the detail page itself.
   // ADR:2026-11-08-my-data-platform-health-service-link
+  // The detail route is UUID-addressed (`:kind/:id`, fetched by id): the
+  // FQN cannot bind the by-id endpoint, so the row's UUID is passed,
+  // matching the services list — never the FQN pin's FQN-addressed
+  // detail page takes.
   void router.push({
     name: 'ingestion-service',
-    params: { kind: service.serviceKind, id: service.fqn },
+    params: { kind: service.serviceKind, id: service.id },
   });
 }
 

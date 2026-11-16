@@ -3,14 +3,23 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Alert, Button, Form, Input, Select, Steps, message } from 'ant-design-vue';
+import { getOrchestratorStatus } from '@/api/ingestionPipelines';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
-import ServiceFilterFields from '@/components/ingestion/ServiceFilterFields.vue';
-import { serviceFilterFieldsForKind, type ServiceFilterValues } from '@/ingestion/serviceFilterFields';
+import TestConnectionCard from '@/components/ingestion/TestConnectionCard.vue';
+import SchemaField, { type FilterPatternFieldOptions } from '@/components/ingestion/SchemaField.vue';
+import {
+  serviceFilterFieldsForType,
+  type ServiceFilterFieldDef,
+  type ServiceFilterValues,
+} from '@/ingestion/serviceFilterFields';
+import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
+import { addSnowflakeSystemExcludes } from '@/ingestion/filterPatterns';
+import type { RjsfSchema } from '@/ingestion/ingestionSchemas';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import { triggerOnDemandApp } from '@/api/apps';
@@ -26,17 +35,116 @@ import {
   entityTypeForKind,
 } from '@/ingestion/connections';
 import { getEntityFeedLink } from '@/utils/entityLink';
-import { hasConnectionForm } from '@/ingestion/connectionFields';
+import {
+  connectionDisplayHost,
+  filterPatternDefaultExcludes,
+  hasConnectionForm,
+  mergeAuthBranchIntoConfig,
+  missingRequiredConnectionFields,
+} from '@/ingestion/connectionFields';
+import { shouldTestConnection } from '@/ingestion/connectionTest';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
-import type { ServiceFormValues, ServiceKind } from '@/types/ingestion';
+import type { OrchestratorStatus, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
 const { t } = useI18n();
 const router = useRouter();
 const step = ref(0);
 const creating = ref(false);
 const form = reactive<ServiceFormValues>(createEmptyServiceForm());
-const filterForm = reactive<ServiceFilterValues>({ includeViews: true });
-const filterFields = computed(() => serviceFilterFieldsForKind(form.kind));
+const filterForm = reactive<ServiceFilterValues>({});
+const filterFields = computed(() => serviceFilterFieldsForType(form.kind, form.serviceType));
+const filterErrors = new Map<string, string>();
+const testConnectionPassed = ref(false);
+const orchestrator = ref<OrchestratorStatus | null>(null);
+const orchestratorChecked = ref(false);
+
+const airflowAvailable = computed(
+  () =>
+    orchestratorChecked.value &&
+    orchestrator.value?.code === 200 &&
+    orchestrator.value?.platform !== 'disabled',
+);
+
+const missingRequiredCount = computed(() =>
+  missingRequiredConnectionFields(form.serviceType, form),
+);
+
+function validateRequiredFields(): boolean {
+  return missingRequiredCount.value === 0;
+}
+
+function testConnectionGetter(): Record<string, unknown> | undefined {
+  try {
+    const connection = buildServiceConnection(form);
+    if (!connection?.config) {
+      return undefined;
+    }
+    mergeAuthBranchIntoConfig(form.serviceType, form, connection.config, undefined);
+    return connection as unknown as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+const connectedHost = computed(() => {
+  const tested = testConnectionGetter();
+  const config = tested?.config as Record<string, unknown> | undefined;
+  return connectionDisplayHost(config ?? {}, form.serviceType);
+});
+
+onMounted(() => {
+  getOrchestratorStatus()
+    .then((status) => {
+      orchestrator.value = status;
+    })
+    .catch(() => {
+      orchestrator.value = null;
+    })
+    .finally(() => {
+      orchestratorChecked.value = true;
+    });
+});
+
+/**
+ * One minimal filter-pattern schema per declared field, rendered by
+ * SchemaField as a FilterPatternCard composer (pin's step 3 renders
+ * `FilterPatternField`, the same composer, via `FiltersConfigForm`).
+ * The control keys off the object shape (exactly `includes` +
+ * `excludes` string arrays), so no connection schema is needed to
+ * render it; the label is the field's translated name. The composer
+ * itself is the Issue-4 (D-L6) shared component — the wizard renders
+ * it here because pin's step 3 does, which crosses the D-L3
+ * payload-only boundary in effect; the wizard built no composer of
+ * its own.
+ *
+ * Card options are pin's `FiltersConfigForm` uiSchema: the first two
+ * cards start open, `hasExistingData` is false on a fresh create, and
+ * the system excludes are the schema defaults (plus the Snowflake
+ * sample-database rule) — the card seeds them into a fresh field's
+ * state, and they reach the stored config on the first user edit.
+ */
+const filterSchemas = computed(() =>
+  filterFields.value.map((field, index) => ({
+    field,
+    schema: {
+      type: 'object',
+      title: t(field.labelKey),
+      properties: {
+        includes: { type: 'array', items: { type: 'string' } },
+        excludes: { type: 'array', items: { type: 'string' } },
+      },
+    } satisfies RjsfSchema,
+    options: {
+      defaultOpen: index < 2,
+      hasExistingData: false,
+      systemExcludes: addSnowflakeSystemExcludes(
+        form.serviceType,
+        field.key,
+        [...filterPatternDefaultExcludes(form.serviceType, field.key)],
+      ),
+    } satisfies FilterPatternFieldOptions,
+  })),
+);
 
 const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
 const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
@@ -55,9 +163,37 @@ const steps = computed(() => [
   { title: t('ingestion.services.wizard.stepFilter') },
 ]);
 
+/**
+ * Filter scope belongs to the selected (kind, type): a pattern entered
+ * for one type may be undeclared on another's connection schema, so a
+ * kind or type change drops everything entered rather than carrying it
+ * into a config that cannot legally hold it. Pin remounts the filter
+ * form when the field set changes (its form key is the field list);
+ * this is the same reset, stated directly.
+ */
+function resetFilterForm(): void {
+  for (const key of Object.keys(filterForm) as Array<keyof ServiceFilterValues>) {
+    delete filterForm[key];
+  }
+}
+
 function onKindChange(kind: ServiceKind): void {
   form.kind = kind;
   form.serviceType = SERVICE_KIND_DEFAULT_TYPE[kind];
+  resetFilterForm();
+}
+
+function onServiceTypeChange(serviceType: string): void {
+  form.serviceType = serviceType;
+  resetFilterForm();
+}
+
+function setFilterValue(field: ServiceFilterFieldDef, value: unknown): void {
+  if (value === undefined) {
+    delete filterForm[field.key];
+  } else {
+    filterForm[field.key] = value as FilterPatternConfig;
+  }
 }
 
 function onNext(): void {
@@ -78,10 +214,19 @@ function onBack(): void {
  * still meaningful: entered scope is carried into the service create
  * request's `connection.config`, and the add-ingestion form prefills
  * its filter defaults from there (P-08(c),
- * `getDefaultFilterPropertyValues`). Only scope beyond the defaults is
- * carried (includeViews only when false, text fields only when
- * non-blank, generateSampleData only when true), so a plain service
- * create stores no filter keys at all.
+ * `getDefaultFilterPropertyValues`). Only entered scope is carried —
+ * a field whose includes and excludes are both empty stores nothing —
+ * so a plain service create stores no filter keys at all.
+ *
+ * D-L3: the carried scope is exactly the declared `*FilterPattern`
+ * objects, as in pin's `FiltersConfigForm` — each entered field merges
+ * as `{includes, excludes}`, the shape pin's `buildPatternFromState`
+ * emits. The merge iterates the selected type's declared fields only,
+ * so no key outside that set can reach `connection.config`: the flat
+ * keys the old wizard wrote (`includeSchemas`, `includeViews`,
+ * `generateSampleData`) are undeclared on every connection schema and
+ * the server rejects them on encrypt. `includeViews` belongs on the
+ * pipeline form only, where the schema-driven form renders it.
  *
  * D-11 reconciliation (ADR:2026-11-14-autopilot-agents-ui-parity):
  * official parity overrides P-12's rationale FOR THE WIZARD PATH
@@ -93,23 +238,13 @@ function onBack(): void {
  */
 function enteredFilterValues(): Record<string, unknown> {
   const values: Record<string, unknown> = {};
-  if (filterForm.includeViews === false) {
-    values.includeViews = false;
-  }
-  for (const key of [
-    'includeSchemas',
-    'includeTopics',
-    'includeDashboards',
-    'includeCharts',
-    'includeContainers',
-  ] as const) {
-    const value = filterForm[key]?.trim();
-    if (value) {
-      values[key] = value;
+  for (const field of filterFields.value) {
+    const pattern = filterForm[field.key];
+    const includes = pattern?.includes ?? [];
+    const excludes = pattern?.excludes ?? [];
+    if (includes.length > 0 || excludes.length > 0) {
+      values[field.key] = { includes, excludes };
     }
-  }
-  if (filterForm.generateSampleData) {
-    values.generateSampleData = true;
   }
   return values;
 }
@@ -139,6 +274,9 @@ async function onCreate(): Promise<void> {
   creating.value = true;
   try {
     const connection = buildServiceConnection(form);
+    if (connection?.config) {
+      mergeAuthBranchIntoConfig(form.serviceType, form, connection.config, undefined);
+    }
     const filterValues = enteredFilterValues();
     const created = await SERVICE_CREATE_API[form.kind]({
       name: form.name.trim(),
@@ -188,7 +326,7 @@ async function onCreate(): Promise<void> {
           </Select>
         </Form.Item>
         <Form.Item :label="t('crud.type')" required>
-          <Select v-model:value="form.serviceType" data-testid="wizard-service-type">
+          <Select :value="form.serviceType" data-testid="wizard-service-type" @update:value="(value) => onServiceTypeChange(value as string)">
             <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
           </Select>
         </Form.Item>
@@ -216,18 +354,52 @@ async function onCreate(): Promise<void> {
           style="margin-top: 16px"
         />
       </Form>
-      <Alert
-        type="info"
-        show-icon
-        data-testid="wizard-test-connection-residual"
-        :message="t('ingestion.services.wizard.testConnectionResidual')"
-        style="margin-top: 16px"
+      <TestConnectionCard
+        v-if="!connectionFormMissing && shouldTestConnection(form.serviceType)"
+        :connection-type="form.serviceType"
+        :kind="form.kind"
+        :service-name="form.name"
+        :get-connection="testConnectionGetter"
+        :airflow-available="airflowAvailable"
+        :missing-required-fields-count="missingRequiredCount"
+        :on-validate-form-required-fields="validateRequiredFields"
+        @status-change="testConnectionPassed = $event"
       />
     </div>
 
     <div v-if="step === 2" data-testid="wizard-step-filter">
+      <!-- Pin threads the test status into the filters step's connected
+           message (AddServicePage); the message keys are shared with the
+           edit page, as pin uses one message pair for both pages. -->
+      <Alert
+        v-if="testConnectionPassed"
+        type="success"
+        show-icon
+        :message="
+          t('ingestion.services.editConnectionPage.connectedToHost', {
+            host: connectedHost,
+          })
+        "
+        :description="
+          t('ingestion.services.editConnectionPage.connectionVerifiedScope')
+        "
+        data-testid="wizard-connected"
+        style="margin-bottom: 16px"
+      />
       <Form layout="vertical">
-        <ServiceFilterFields :kind="form.kind" :values="filterForm" />
+        <SchemaField
+          v-for="entry in filterSchemas"
+          :key="entry.field.key"
+          :schema="entry.schema"
+          :value="filterForm[entry.field.key]"
+          :path="[entry.field.key]"
+          :root-schema="entry.schema"
+          :errors="filterErrors"
+          :show-errors="false"
+          test-id-prefix="wizard-filter"
+          :filter-pattern-options="entry.options"
+          @update:value="(value) => setFilterValue(entry.field, value)"
+        />
         <p v-if="!filterFields.length" data-testid="wizard-no-filter-patterns">
           {{ t('ingestion.pipelines.noFilterPatterns') }}
         </p>

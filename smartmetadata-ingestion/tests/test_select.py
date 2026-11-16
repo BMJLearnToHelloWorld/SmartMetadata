@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
+from smartmetadata_ingestion.connectors.select import (
+    is_configured_schema,
+    is_selected,
+    is_selected_table,
+)
 
 
 def test_is_selected_regex_match() -> None:
@@ -142,3 +146,17 @@ def test_fqn_filtering_matches_fqn_candidate_only_when_enabled() -> None:
         is_selected("orders", include=[r"warehouse.*"], exclude=[], use_fqn=True)
         is False
     )
+
+
+def test_is_configured_schema_exact_match_only() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidate set
+    # to exactly that one schema — an exact name, never a regex.
+    assert is_configured_schema("app", "app") is True
+    assert is_configured_schema("app_backup", "app") is False
+    assert is_configured_schema("App", "app") is False
+    assert is_configured_schema("other", "app") is False
+
+
+def test_is_configured_schema_blank_means_unrestricted() -> None:
+    assert is_configured_schema("anything", None) is True
+    assert is_configured_schema("anything", "") is True

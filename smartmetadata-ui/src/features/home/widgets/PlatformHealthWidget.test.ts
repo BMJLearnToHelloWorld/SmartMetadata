@@ -214,6 +214,34 @@ describe('PlatformHealthWidget', () => {
     await wrapper.get('[data-testid="failing-service-a"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'svc-a' });
+    // D-L7: the detail route is UUID-addressed — the row's UUID, not its
+    // FQN, goes into `id`. (The fixture's id 'a' differs from its FQN
+    // 'svc-a' precisely so this assertion distinguishes the two.)
+    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'a' });
+  });
+
+  it('opens the service detail page from a healthy-bucket row with the UUID (D-L7)', async () => {
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('a', 'failed')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 2, notRun: 0 } },
+        3,
+      ),
+    );
+    const { wrapper, router } = await mountWidget();
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('h1', 'success')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 2, notRun: 0 } },
+        3,
+      ),
+    );
+    await wrapper.get('[data-testid="platform-health-chip-healthy"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    await wrapper.get('[data-testid="bucket-service-h1"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'h1' });
   });
 });

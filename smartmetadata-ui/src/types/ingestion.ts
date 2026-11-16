@@ -149,6 +149,46 @@ export const PIPELINE_TYPES = [
 ] as const;
 export type PipelineType = (typeof PIPELINE_TYPES)[number];
 
+/** AWS credentials (openmetadata-spec security/credentials/awsCredentials.json):
+ * shared by the S3 top-level `awsConfig` and the `authType.awsConfig` IAM
+ * branch of the database connection schemas (pin mysqlConnection.json). */
+export interface AwsCredentialsConfig {
+  enabled?: boolean;
+  awsAccessKeyId?: string;
+  awsSecretAccessKey?: string;
+  awsRegion?: string;
+  awsSessionToken?: string;
+  endPointURL?: string;
+  profileName?: string;
+  assumeRoleArn?: string;
+  assumeRoleSessionName?: string;
+  assumeRoleSourceIdentity?: string;
+}
+
+/** Azure credentials (openmetadata-spec security/credentials/azureCredentials.json):
+ * the `authType.azureConfig` branch of the database connection schemas. */
+export interface AzureCredentialsConfig {
+  clientId?: string;
+  clientSecret?: string;
+  tenantId?: string;
+  accountName?: string;
+  vaultName?: string;
+  scopes?: string;
+}
+
+/** GCP CloudSQL credentials wrapper (openmetadata-spec
+ * security/credentials/gcpCredentials.json): the `authType.gcpConfig` branch
+ * of mysqlConnection.json. The inner `gcpConfig` oneOf (values / path /
+ * external account / ADC) stays free-form — its variants are entered as
+ * structured fields and assembled by the auth-branch merge. */
+export interface GcpCloudSqlCredentialsConfig {
+  gcpConfig?: Record<string, unknown>;
+  gcpImpersonateServiceAccount?: {
+    impersonateServiceAccount?: string;
+    lifetime?: number;
+  };
+}
+
 export interface ServiceConnectionConfig {
   type?: string;
   hostPort?: string;
@@ -193,6 +233,13 @@ export interface ServiceConnectionConfig {
     workspaceId?: string;
     /** Prefect Server auth (prefect/serverAuth.json). */
     authString?: string;
+    /** IAM branch (mysql/postgres/greenplum/timescale/redshift authType oneOf). */
+    awsConfig?: AwsCredentialsConfig;
+    /** Azure branch (mysql/postgres/timescale authType oneOf). */
+    azureConfig?: AzureCredentialsConfig;
+    /** GCP CloudSQL branch (mysql authType oneOf): IAM toggle + credentials. */
+    enableIamAuth?: boolean;
+    gcpConfig?: GcpCloudSqlCredentialsConfig;
   };
   password?: string;
   apiKey?: string;
@@ -206,18 +253,7 @@ export interface ServiceConnectionConfig {
     /** Superset API connection sslConfig (validateSSLClientConfig). */
     sslConfig?: SslClientConfig;
   };
-  awsConfig?: {
-    enabled?: boolean;
-    awsAccessKeyId?: string;
-    awsSecretAccessKey?: string;
-    awsRegion?: string;
-    awsSessionToken?: string;
-    endPointURL?: string;
-    profileName?: string;
-    assumeRoleArn?: string;
-    assumeRoleSessionName?: string;
-    assumeRoleSourceIdentity?: string;
-  };
+  awsConfig?: AwsCredentialsConfig;
   bucketNames?: string[];
   consoleEndpointURL?: string;
   host?: string;
@@ -567,6 +603,52 @@ export interface ServiceFormValues {
   supersetSSLCaCertificate?: string;
   supersetSSLCertificate?: string;
   supersetSSLKey?: string;
+  /** Live-issues S-12: `authType` oneOf branch state (pin
+   * mysql/postgres/greenplum/timescale/redshiftConnection.json `authType`,
+   * plus the synthesized Snowflake Password/Key-pair selector). The
+   * selector value is the branch key (`basic`/`iam`/`azure`/`gcp`, or
+   * `password`/`keyPair` for Snowflake); branch leaves are prefixed so
+   * they never collide with the top-level S3/Databricks keys of the same
+   * pin names. Secrets are never prefilled — see the auth-branch merge
+   * in `ingestion/connectionFields.ts` for the blank-means-keep rules. */
+  authTypeBranch?: string;
+  authAwsEnabled?: boolean;
+  authAwsAccessKeyId?: string;
+  authAwsSecretAccessKey?: string;
+  authAwsRegion?: string;
+  authAwsSessionToken?: string;
+  authAwsEndPointURL?: string;
+  authAwsProfileName?: string;
+  authAssumeRoleArn?: string;
+  authAssumeRoleSessionName?: string;
+  authAssumeRoleSourceIdentity?: string;
+  authAzureClientId?: string;
+  authAzureClientSecret?: string;
+  authAzureTenantId?: string;
+  authAzureAccountName?: string;
+  authAzureVaultName?: string;
+  authAzureScopes?: string;
+  authGcpPassword?: string;
+  authGcpEnableIamAuth?: boolean;
+  authGcpConfigBranch?: 'gcpValues' | 'gcpCredentialsPath' | 'gcpExternalAccount' | 'gcpADC';
+  authGcpProjectId?: string;
+  authGcpPrivateKeyId?: string;
+  authGcpPrivateKey?: string;
+  authGcpClientEmail?: string;
+  authGcpClientId?: string;
+  authGcpAuthUri?: string;
+  authGcpTokenUri?: string;
+  authGcpAuthProviderX509CertUrl?: string;
+  authGcpClientX509CertUrl?: string;
+  authGcpUniverseDomain?: string;
+  authGcpPath?: string;
+  authGcpAudience?: string;
+  authGcpSubjectTokenType?: string;
+  authGcpTokenUrl?: string;
+  /** GCP external-account credentialSource: string map, entered via the map editor. */
+  authGcpCredentialSource?: string;
+  authGcpImpersonateEmail?: string;
+  authGcpImpersonateLifetime?: number;
 }
 
 export interface CreateDatabaseServiceRequest {

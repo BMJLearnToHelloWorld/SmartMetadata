@@ -33,7 +33,11 @@ from smartmetadata_ingestion.connectors.json_schema import (
 )
 from smartmetadata_ingestion.connectors.owners import resolve_owner_names
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
+from smartmetadata_ingestion.connectors.select import (
+    is_configured_schema,
+    is_selected,
+    is_selected_table,
+)
 from smartmetadata_ingestion.connectors.table_types import map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_databricks_type
 from smartmetadata_ingestion.fqn import build_fqn, quote_name
@@ -199,17 +203,15 @@ class UnityCatalogSource:
     def _selected_schemas(
         self, reader: dbx.CatalogReader, database: str
     ) -> list[dbx.SchemaRow]:
-        include = list(self._config.include_schemas)
-        schema = (self._config.connection or {}).get("databaseSchema")
-        if not include and schema:
-            include = [str(schema)]
+        database_schema = (self._config.connection or {}).get("databaseSchema")
         exclude = list(self._config.exclude_schemas) + list(dbx.system_schemas())
         return [
             row
             for row in reader.list_schemas(database)
-            if is_selected(
+            if is_configured_schema(row.name, database_schema)
+            and is_selected(
                 row.name,
-                include=include,
+                include=self._config.include_schemas,
                 exclude=exclude,
                 fqn=build_fqn(self._config.service_name, database, row.name),
                 use_fqn=self._config.use_fqn_for_filtering,
