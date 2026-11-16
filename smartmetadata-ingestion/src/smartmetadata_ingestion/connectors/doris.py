@@ -177,8 +177,10 @@ class DorisSource:
         )
 
     def _database_name(self) -> str:
-        raw = self._config.connection or {}
-        return str(raw.get("databaseName") or raw.get("database") or "default")
+        from smartmetadata_ingestion.naming import resolve_connection_defaults
+
+        database, _ = resolve_connection_defaults(self._config.connection or {}, "doris")
+        return str(database)
 
     def _require_reader(self) -> doris.CatalogReader:
         if self._reader is not None:

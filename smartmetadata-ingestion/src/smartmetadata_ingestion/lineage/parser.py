@@ -28,11 +28,19 @@ The public interface of this module is frozen for the lineage worker:
 construction from (raw query, dialect, per-parser timeout, parser
 type), ``query_hash``, ``masked_query``, and the parsed views below.
 Later fixes must not change it without flagging the change.
+
+D-L2c extension (flagged interface change): ``structured_extraction``
+exposes the winning branch's names as structured identifiers — the
+only name form binding may use — and ``table_aliases`` is keyed by
+structured identifiers instead of cleaned strings. The string views
+(``clean_table_list``, ``clean_table_name``) remain for display and
+logging only and must never feed binding.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib
 import logging
 import re
 import threading
@@ -44,15 +52,33 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
 
+import sqlglot
 from collate_sqllineage import SQLPARSE_DIALECT
 from collate_sqllineage.core.models import Column, Table
 from collate_sqllineage.core.parser.sqlfluff.analyzer import SqlFluffLineageAnalyzer
 from collate_sqllineage.core.parser.sqlglot.analyzer import SqlGlotLineageAnalyzer
 from collate_sqllineage.core.parser.sqlparse.analyzer import SqlParseLineageAnalyzer
 from collate_sqllineage.runner import LineageRunner
+from sqlglot import exp
 
 from smartmetadata_ingestion.lineage.dialect import Dialect
+from smartmetadata_ingestion.lineage.identifiers import (
+    EndpointAssociation,
+    EndpointDescriptor,
+    ExtractedName,
+    ExtractionFailureReason,
+    ExtractionResult,
+    NameRole,
+    StructuredIdentifier,
+    associate_endpoints,
+    extract_names,
+    register_extractor,
+)
 from smartmetadata_ingestion.lineage.masking import mask_query
+from smartmetadata_ingestion.lineage.sqlglot_extract import (
+    effective_sqlglot_dialect,
+    extract_sqlglot_names,
+)
 from smartmetadata_ingestion.lineage.tsql import rewrite_switch_statements
 
 logger = logging.getLogger(__name__)
@@ -173,8 +199,17 @@ def query_hash_of(raw_query: str | None) -> str:
 
 def clean_table_name(table: Any) -> str:
     """The table's name as written, without the library's default-schema
-    placeholder. Case is preserved from the query text (the library's
-    ``str()`` lowercases, which would break exact-FQN binding against
+    placeholder. DISPLAY ONLY — MUST NEVER BE USED FOR BINDING: the
+    flattened string loses segment boundaries (a quoted ``sales.eu``
+    schema and two segments render identically), quoted flags, and
+    middle segments of over-long names, so any binding decision read
+    off it can bind the wrong table. Binding uses
+    ``LineageParser.structured_extraction``. This function survives
+    for log messages, warnings, and the display-only
+    ``clean_table_list`` view.
+
+    Case is preserved from the query text (the library's ``str()``
+    lowercases, which would break exact-FQN binding against
     catalogs that store uppercase names): the raw schema and table
     parts are joined, and the placeholder schema is dropped. Qualified
     names pass through unchanged.
@@ -299,6 +334,31 @@ class TableColumnJoin:
         )
 
 
+@dataclass(frozen=True)
+class ParsedTableColumn:
+    """One ``table.column`` reference as parsed, before binding: the
+    table is a structured identifier (segment boundaries and quoted
+    flags intact), the column the written name. This type never
+    reaches staging files — the stage resolves it into
+    :class:`TableColumn` (a catalog FQN string) — so it carries no
+    serialization: a resolved FQN is opaque output text, while a
+    parsed name is structured input, and one type must not pretend
+    to be both."""
+
+    table: StructuredIdentifier
+    column: str
+
+
+@dataclass(frozen=True)
+class ParsedTableColumnJoin:
+    """A join comparison between parsed table columns, keyed by
+    structured identity on both sides. The stage rewrites each side
+    to its bound catalog FQN to produce a :class:`TableColumnJoin`."""
+
+    table_column: ParsedTableColumn
+    joined_with: tuple[ParsedTableColumn, ...] = ()
+
+
 def _run_with_timeout(func: Callable[[], T], timeout_seconds: float) -> T:
     """Run ``func`` with a wall-clock budget, raising TimeoutError past it.
 
@@ -326,6 +386,57 @@ def _run_with_timeout(func: Callable[[], T], timeout_seconds: float) -> T:
         ) from exc
     executor.shutdown(wait=True)
     return result
+
+
+# Branch extractors owned by other leaves, mounted lazily by module
+# path so this module never imports a module that does not exist yet:
+# an absent branch module means that winner yields no names
+# (fail-closed), never an import crash at parser construction time.
+# The module paths and function names are frozen by the D-L2c
+# interface contract (IMPL-DL2C-CONTRACT.md §b).
+_OPTIONAL_EXTRACTOR_MODULES: tuple[tuple[str, str, str], ...] = (
+    (
+        PARSER_SQLFLUFF,
+        "smartmetadata_ingestion.lineage.sqlfluff_extract",
+        "extract_sqlfluff_names",
+    ),
+    (
+        PARSER_SQLPARSE,
+        "smartmetadata_ingestion.lineage.sqlparse_extract",
+        "extract_sqlparse_names",
+    ),
+)
+
+_extractors_registered = False
+
+
+def _ensure_extractors_registered() -> None:
+    """Mount every available branch extractor exactly once.
+    Registration is idempotent, so a repeated call (or a race between
+    worker threads) only rewrites the same entries. A branch module
+    that exists but exposes no extractor function is logged and
+    skipped: the branch then yields no names, which is the
+    fail-closed outcome, made visible instead of silent."""
+    global _extractors_registered
+    if _extractors_registered:
+        return
+    register_extractor(PARSER_SQLGLOT, extract_sqlglot_names)
+    for branch, module_name, func_name in _OPTIONAL_EXTRACTOR_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        extractor = getattr(module, func_name, None)
+        if extractor is None:
+            logger.warning(
+                "branch extractor module %s exposes no %s; %s names will not bind",
+                module_name,
+                func_name,
+                branch,
+            )
+            continue
+        register_extractor(branch, extractor)
+    _extractors_registered = True
 
 
 class LineageParser:
@@ -360,7 +471,9 @@ class LineageParser:
         self._failures: list[QueryParsingError] = []
         self._runner: LineageRunner | None = None
         self._parser_name: str | None = None
-        self._joins: dict[str, list[TableColumnJoin]] | None = None
+        self._joins: dict[StructuredIdentifier, list[ParsedTableColumnJoin]] | None = None
+        self._extraction: ExtractionResult | None = None
+        self._associations: tuple[EndpointAssociation, ...] | None = None
         if self._parse_text:
             self._evaluate()
         try:
@@ -437,6 +550,9 @@ class LineageParser:
     @property
     def clean_table_list(self) -> list[str]:
         """Deduped, cleaned names of every table the query touches.
+        DISPLAY ONLY — binding must use ``structured_extraction``:
+        these strings have already lost the segment and quoting
+        information binding needs.
 
         The involved set already includes targets, so a query that
         only writes (or a CTAS target) still counts its target, and
@@ -456,27 +572,181 @@ class LineageParser:
         return list(self._runner.get_column_lineage())
 
     @property
-    def table_aliases(self) -> dict[str, Table]:
-        """Alias → table for every touched table, plus the cleaned name
-        and raw name as keys so unaliased qualifiers resolve too. First
-        table wins on a colliding key: an ambiguous qualifier cannot be
-        resolved reliably, and silently picking the last would hide it."""
-        aliases: dict[str, Table] = {}
+    def table_aliases(self) -> dict[StructuredIdentifier, Table]:
+        """Qualifier → table, keyed by structured identifiers: the
+        table's confirmed structured identifier, plus single-segment
+        keys for its alias text and leaf name so unqualified
+        qualifiers resolve too. Alias and leaf keys carry
+        ``quoted=False`` — the runner preserves no quoting for them —
+        and qualifier comparison against these keys must go through
+        the structured comparison (folding included) in
+        ``lineage.folding``, never through string equality. First
+        table wins on a colliding key: an ambiguous qualifier cannot
+        be resolved reliably, and silently picking the last would
+        hide it. A table whose association is unconfirmed contributes
+        no identifier key: its qualifier must not resolve to a name
+        that was never proven to be its own."""
+        aliases: dict[StructuredIdentifier, Table] = {}
+        associations = {
+            id(table): association
+            for table, association in zip(
+                self.involved_tables, self.endpoint_associations, strict=True
+            )
+        }
         for table in self.involved_tables + self.target_tables:
-            for key in (table.alias, clean_table_name(table), table.raw_name):
-                if key:
-                    aliases.setdefault(key, table)
+            keys: list[StructuredIdentifier] = []
+            alias = getattr(table, "alias", None)
+            if alias:
+                key = _structured_key(alias)
+                if key is not None:
+                    keys.append(key)
+            association = associations.get(id(table))
+            if association is not None and association.identifier is not None:
+                keys.append(association.identifier)
+            raw_name = getattr(table, "raw_name", None)
+            if raw_name:
+                key = _structured_key(raw_name)
+                if key is not None:
+                    keys.append(key)
+            for key in keys:
+                aliases.setdefault(key, table)
         return aliases
 
     @property
-    def table_joins(self) -> dict[str, list[TableColumnJoin]]:
-        """Per-table join comparisons, keyed by cleaned table name.
+    def structured_extraction(self) -> ExtractionResult:
+        """The winning branch's names as structured identifiers, with
+        per-name fidelity marks. Computed lazily: extraction
+        re-parses the query, and not every consumer needs names. The
+        extraction runs on the exact text the winner parsed
+        (``_parse_text``, post-T-SQL-rewrite) under the same timeout
+        budget; a timeout or an extractor without a registered
+        branch yields a failed result, never guessed names. A query
+        no parser accepted yields an empty, non-failed result: there
+        was nothing to extract, which the parse-failure collection
+        already records, and it must not double-count as a fidelity
+        skip."""
+        if self._extraction is None:
+            self._extraction = self._extract_structured()
+        return self._extraction
+
+    def _extract_structured(self) -> ExtractionResult:
+        if self._parser_name is None or not self._parse_text:
+            return ExtractionResult(branch=self._parser_name or "")
+        _ensure_extractors_registered()
+        try:
+            return _run_with_timeout(
+                lambda: extract_names(self._parser_name, self._parse_text, self.dialect),
+                self.timeout_seconds,
+            )
+        except TimeoutError:
+            return ExtractionResult(
+                branch=self._parser_name,
+                failed=True,
+                failure_reason=ExtractionFailureReason.TIMEOUT,
+            )
+        except Exception:
+            # The dispatcher already converts extractor failures to
+            # failed results; this guards the timeout wrapper itself.
+            logger.debug(
+                "structured extraction failed for query %s", self._query_hash, exc_info=True
+            )
+            return ExtractionResult(
+                branch=self._parser_name,
+                failed=True,
+                failure_reason=ExtractionFailureReason.EXTRACTOR_ERROR,
+            )
+
+    @property
+    def endpoint_associations(self) -> tuple[EndpointAssociation, ...]:
+        """Association verdicts for ``involved_tables``, in the same
+        order: the structured identifier confirmed for each runner
+        endpoint, or the reason confirmation failed. Association is
+        by structural identity only — occurrence order is never
+        consulted — so a verdict of unconfirmed means the endpoint's
+        columns and edges must be skipped, not guessed."""
+        if self._associations is None:
+            self._associations = associate_endpoints(
+                self._endpoint_descriptors(), self.structured_extraction.names
+            )
+        return self._associations
+
+    def association_for(self, table: Table) -> EndpointAssociation | None:
+        """The association verdict for one runner table object:
+        identity first (column parents are the same objects the
+        views yield), falling back to the rendered name when the
+        object is a twin from another view. The fallback only locates
+        the verdict — the verdict itself was confirmed structurally,
+        and involved tables are deduplicated by rendered name, so
+        the fallback cannot land on a different table. None when the
+        table is not among the involved tables at all."""
+        involved = self.involved_tables
+        associations = self.endpoint_associations
+        for index, candidate in enumerate(involved):
+            if candidate is table:
+                return associations[index]
+        rendered = str(table)
+        for index, candidate in enumerate(involved):
+            if str(candidate) == rendered:
+                return associations[index]
+        return None
+
+    def _endpoint_descriptors(self) -> list[EndpointDescriptor]:
+        """Runner endpoints reduced to their lossy observables. Roles
+        are grouped by rendered name: involved tables deduplicate by
+        name, so the kept object's roles are the union over every
+        view entry sharing its name (a table both read and written
+        is both source and target). A placeholder schema renders as
+        no schema; a schema-less path object renders its path as its
+        raw name, which no extracted name can match, so it stays
+        unconfirmed.
+
+        The runner's intermediate view is not the extraction's
+        INTERMEDIATE role: the runner lists a table there when one
+        statement writes it and a later statement reads it (a
+        temporary staging table), while INTERMEDIATE on the
+        extraction side means a CTE reference — and CTE references
+        never appear in any runner view (a CTE query's intermediate
+        view is empty; the CTE name exists only on the extraction
+        side). A runner-intermediate table is therefore both written
+        and read by definition, so the view contributes both the
+        SOURCE and TARGET roles; mapping it to INTERMEDIATE would
+        match no extracted occurrence at all, since association
+        never considers INTERMEDIATE occurrences as candidates."""
+        role_views = (
+            (frozenset({NameRole.SOURCE}), self.source_tables),
+            (
+                frozenset({NameRole.SOURCE, NameRole.TARGET}),
+                self.intermediate_tables,
+            ),
+            (frozenset({NameRole.TARGET}), self.target_tables),
+        )
+        roles_by_name: dict[str, set[NameRole]] = {}
+        for roles, tables in role_views:
+            for table in tables:
+                roles_by_name.setdefault(str(table), set()).update(roles)
+        descriptors: list[EndpointDescriptor] = []
+        for table in self.involved_tables:
+            schema = getattr(table, "schema", None)
+            schema_name = schema.raw_name if schema is not None and bool(schema) else None
+            descriptors.append(
+                EndpointDescriptor(
+                    raw_name=getattr(table, "raw_name", None) or str(table),
+                    schema_name=schema_name or None,
+                    alias=getattr(table, "alias", None) or None,
+                    roles=frozenset(roles_by_name.get(str(table), ())),
+                )
+            )
+        return descriptors
+
+    @property
+    def table_joins(self) -> dict[StructuredIdentifier, list[ParsedTableColumnJoin]]:
+        """Per-table join comparisons, keyed by structured identifier.
 
         Derived from equality comparisons between qualified columns of
         different tables in the parsed statements (JOIN … ON and WHERE
         alike — both express the same join). Pairs whose qualifier does
-        not resolve to a parsed table are skipped, never guessed. Joins
-        are enrichment: extraction failure yields no joins, never a
+        not resolve to exactly one parsed table are skipped, never
+        guessed. Joins are enrichment: extraction failure yields no joins, never a
         failed parse.
         """
         if self._joins is None:
@@ -549,54 +819,84 @@ class LineageParser:
         self._failures.append(error)
         query_parsing_failures().record(error)
 
-    def _extract_joins(self) -> dict[str, list[TableColumnJoin]]:
+    def _extract_joins(self) -> dict[StructuredIdentifier, list[ParsedTableColumnJoin]]:
         if not self._runner or not self._parse_text:
             return {}
         try:
-            return _extract_table_joins(
-                self._parse_text, self.dialect, self._qualifier_map()
-            )
+            return _extract_table_joins(self._parse_text, self.dialect)
         except Exception:
             logger.debug("join extraction failed for query %s", self._query_hash, exc_info=True)
             return {}
 
-    def _qualifier_map(self) -> dict[str, str]:
-        """Lowercased qualifier → cleaned table name, for join resolution.
 
-        Qualifiers in SQL are case-insensitive for unquoted names, so
-        the map is keyed lowercase; a colliding qualifier keeps its
-        first table, matching ``table_aliases``.
-        """
-        mapping: dict[str, str] = {}
-        for table in self.involved_tables + self.target_tables:
-            cleaned = clean_table_name(table)
-            for key in (table.alias, table.raw_name, cleaned, str(table)):
-                if key:
-                    mapping.setdefault(key.lower(), cleaned)
-        return mapping
+def _structured_key(text: str) -> StructuredIdentifier | None:
+    """A single-segment structured key for alias/leaf text, or None
+    when the text cannot be a segment (empty, or the unquoted
+    placeholder, which is not a name)."""
+    try:
+        return StructuredIdentifier.single(text)
+    except ValueError:
+        return None
+
+
+def _structured_qualifier_map(
+    names: tuple[ExtractedName, ...],
+) -> dict[str, StructuredIdentifier]:
+    """Lowercased qualifier text → structured identifier, for join
+    resolution. Qualifiers in SQL are case-insensitive for unquoted
+    names, so the map is keyed lowercase; a qualifier text resolving
+    to two distinct identifiers is dropped entirely — an ambiguous
+    qualifier resolves to nothing, and the pair is skipped rather
+    than guessed. Only binding candidates contribute keys: an
+    INTERMEDIATE (CTE) occurrence names no catalog table and must
+    never resolve a qualifier. Function occurrences are retained
+    deliberately — a qualifier can only match a leaf or alias text,
+    so a function name in the map resolves exactly the qualifiers
+    that spell it, which is harmless for qualifier resolution."""
+    by_text: dict[str, set[StructuredIdentifier]] = {}
+    for name in names:
+        if not name.is_binding_candidate or name.identifier is None:
+            continue
+        texts = {name.identifier.leaf.text, name.identifier.display()}
+        if name.alias:
+            texts.add(name.alias)
+        for text in texts:
+            by_text.setdefault(text.lower(), set()).add(name.identifier)
+    return {
+        text: next(iter(identifiers))
+        for text, identifiers in by_text.items()
+        if len(identifiers) == 1
+    }
 
 
 def _extract_table_joins(
-    parse_text: str, dialect: Dialect, qualifier_map: dict[str, str]
-) -> dict[str, list[TableColumnJoin]]:
-    """Equality join pairs from the query's sqlglot AST.
+    parse_text: str, dialect: Dialect
+) -> dict[StructuredIdentifier, list[ParsedTableColumnJoin]]:
+    """Equality join pairs from the query's sqlglot AST, keyed by
+    structured identifier.
 
     sqlglot is the only analyzer whose AST exposes join predicates
     directly, so joins are derived from a fresh sqlglot parse rather
     than the winning runner: when sqlglot cannot parse the dialect or
-    the statement, there are simply no joins. The extraction never
-    raises — callers treat joins as enrichment.
+    the statement, there are simply no joins. The re-parse uses the
+    winner's effective dialect — the same mapping the extraction
+    uses — so a dialect the winner parses yields joins too, under
+    the same dialect and the same cleaned SQL. Qualifiers resolve
+    through the same extraction's names, so a join pair is only built
+    when both qualifiers pin exactly one parsed table each. The
+    extraction never raises — callers treat joins as enrichment.
     """
-    try:
-        import sqlglot
-        from sqlglot import exp
-    except ImportError:
+    extraction = extract_sqlglot_names(parse_text, dialect)
+    if extraction.failed:
         return {}
+    qualifier_map = _structured_qualifier_map(extraction.names)
     try:
-        expressions = sqlglot.parse(parse_text, read=dialect.value)
+        expressions = sqlglot.parse(
+            parse_text, read=effective_sqlglot_dialect(dialect)
+        )
     except Exception:
         return {}
-    pairs: set[tuple[str, str, str, str]] = set()
+    pairs: set[tuple[StructuredIdentifier, str, StructuredIdentifier, str]] = set()
     for expression in expressions:
         if expression is None:
             continue
@@ -617,28 +917,41 @@ def _extract_table_joins(
                 continue
             pair = (left_table, left.name, right_table, right.name)
             mirrored = (right_table, right.name, left_table, left.name)
-            pairs.add(min(pair, mirrored))
-    joins: dict[str, dict[str, set[str]]] = {}
-    for left_table, left_column, right_table, right_column in sorted(pairs):
+            pairs.add(min(pair, mirrored, key=_join_pair_key))
+    joins: dict[StructuredIdentifier, dict[str, set[tuple[StructuredIdentifier, str]]]] = {}
+    for left_table, left_column, right_table, right_column in sorted(
+        pairs, key=_join_pair_key
+    ):
         joins.setdefault(left_table, {}).setdefault(left_column, set()).add(
-            f"{right_table}.{right_column}"
+            (right_table, right_column)
         )
         joins.setdefault(right_table, {}).setdefault(right_column, set()).add(
-            f"{left_table}.{left_column}"
+            (left_table, left_column)
         )
-    result: dict[str, list[TableColumnJoin]] = {}
-    for table in sorted(joins):
+    result: dict[StructuredIdentifier, list[ParsedTableColumnJoin]] = {}
+    for table in sorted(joins, key=lambda identifier: identifier.texts):
         entries = []
         for column in sorted(joins[table]):
             joined = tuple(
-                TableColumn(table=ref.rsplit(".", 1)[0], column=ref.rsplit(".", 1)[1])
-                for ref in sorted(joins[table][column])
+                ParsedTableColumn(table=partner_table, column=partner_column)
+                for partner_table, partner_column in sorted(
+                    joins[table][column], key=lambda ref: (ref[0].texts, ref[1])
+                )
             )
             entries.append(
-                TableColumnJoin(
-                    table_column=TableColumn(table=table, column=column),
+                ParsedTableColumnJoin(
+                    table_column=ParsedTableColumn(table=table, column=column),
                     joined_with=joined,
                 )
             )
         result[table] = entries
     return result
+
+
+def _join_pair_key(
+    pair: tuple[StructuredIdentifier, str, StructuredIdentifier, str],
+) -> tuple[tuple[str, ...], str, tuple[str, ...], str]:
+    """A join pair's sort key. Identifiers carry no ordering of their
+    own (identity is not order), so pairs sort on segment texts."""
+    left_table, left_column, right_table, right_column = pair
+    return (left_table.texts, left_column, right_table.texts, right_column)

@@ -33,7 +33,12 @@ from smartmetadata_ingestion.lineage.view_lineage import (
     ViewLineageChannel,
     wrap_view_definition,
 )
-from smartmetadata_ingestion.records import LineageRecord, QueryRecord
+from smartmetadata_ingestion.records import (
+    BindingContext,
+    FieldSource,
+    LineageRecord,
+    QueryRecord,
+)
 from smartmetadata_ingestion.sinks.metadata_rest import MetadataRestSink
 
 SERVICE = "svc"
@@ -44,6 +49,23 @@ CUSTOMERS = f"{SERVICE}.{DB}.{SCHEMA}.customers"
 ORDERS_V = f"{SERVICE}.{DB}.{SCHEMA}.orders_v"
 TARGET = f"{SERVICE}.{DB}.{SCHEMA}.target"
 TARGET2 = f"{SERVICE}.{DB}.{SCHEMA}.target2"
+
+
+def _ctx(
+    database: str | None = None,
+    schema: str | None = None,
+) -> BindingContext:
+    # The query context these tests pass to process() is the history
+    # row's own context: a present segment is row-native, an absent
+    # one is missing — the same per-field rule _record_from_row
+    # applies to a native row, and the same construction the query
+    # channel performs via BindingContext.from_record (contract §f).
+    return BindingContext(
+        database_name=database,
+        database_schema=schema,
+        database_source=FieldSource.ROW_NATIVE if database else FieldSource.MISSING,
+        schema_source=FieldSource.ROW_NATIVE if schema else FieldSource.MISSING,
+    )
 
 
 def _table(fqn: str, columns: list[str] | None = None) -> dict[str, Any]:
@@ -239,8 +261,7 @@ def test_insert_select_yields_edge_with_column_lineage() -> None:
     processed = processor.process(
         "INSERT INTO public.target (id, email) "
         "SELECT id, email FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
         emit_query_record=True,
     )
     assert processed.parsed is True
@@ -264,8 +285,7 @@ def test_plain_select_emits_query_record_without_edges() -> None:
     processor = _processor(_FakeClient(_catalog()))
     processed = processor.process(
         "SELECT id FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
         emit_query_record=True,
     )
     assert processed.edges == []
@@ -276,7 +296,7 @@ def test_plain_select_emits_query_record_without_edges() -> None:
 def test_query_with_no_tables_contributes_nothing() -> None:
     processor = _processor(_FakeClient(_catalog()))
     processed = processor.process(
-        "SELECT 1", emit_query_record=True, database_name=DB, database_schema=SCHEMA
+        "SELECT 1", emit_query_record=True, context=_ctx(DB, SCHEMA)
     )
     assert processed.parsed is False
     assert processed.edges == [] and processed.query_record is None
@@ -286,8 +306,7 @@ def test_unbound_target_earns_no_query_record() -> None:
     processor = _processor(_FakeClient(_catalog()))
     processed = processor.process(
         "INSERT INTO public.missing (id) SELECT id FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
         emit_query_record=True,
     )
     assert processed.parsed is True
@@ -300,8 +319,7 @@ def test_star_columns_keep_the_edge_without_mappings() -> None:
     processor = _processor(_FakeClient(_catalog()))
     processed = processor.process(
         "INSERT INTO public.target SELECT * FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
     )
     assert len(processed.edges) == 1
     assert processed.edges[0].columns == []
@@ -315,8 +333,7 @@ def test_function_pseudo_column_keeps_edge_and_counts_unresolved_udf() -> None:
     )
     processed = processor.process(
         "INSERT INTO public.target SELECT MY_UDF(public.orders.id) FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
     )
     assert len(processed.edges) == 1
     assert processed.edges[0].columns == []
@@ -330,7 +347,7 @@ def test_edge_sql_is_masked_while_query_record_keeps_raw_text() -> None:
     )
     processor = _processor(_FakeClient(_catalog()))
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, emit_query_record=True
+        sql, context=_ctx(DB, SCHEMA), emit_query_record=True
     )
     assert len(processed.edges) == 1
     masked = (
@@ -364,8 +381,7 @@ def test_udf_resolves_in_query_schema_context() -> None:
     processed = processor.process(
         "INSERT INTO db.public.target "
         "SELECT my_udf(db.public.orders.id) FROM db.public.orders",
-        database_name="otherdb",
-        database_schema="otherschema",
+        context=_ctx("otherdb", "otherschema"),
     )
     assert processed.udf_expansions == 1
     pairs = {(edge.from_fqn, edge.to_fqn) for edge in processed.edges}
@@ -389,8 +405,7 @@ def test_cataloged_udf_body_expands_into_edges() -> None:
     processor = _processor(client)
     processed = processor.process(
         "INSERT INTO public.target SELECT my_udf(public.orders.id) FROM public.orders",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
     )
     assert processed.udf_expansions == 1
     pairs = {(edge.from_fqn, edge.to_fqn) for edge in processed.edges}
@@ -404,11 +419,11 @@ def test_temp_hops_accumulate_only_when_enabled() -> None:
         "INSERT INTO public.target SELECT * FROM tmp_stage"
     )
     disabled = _processor(_FakeClient(_catalog())).process(
-        sql, database_name=DB, database_schema=SCHEMA
+        sql, context=_ctx(DB, SCHEMA)
     )
     assert disabled.temp_hops == []
     enabled = _processor(_FakeClient(_catalog()), temp_enabled=True).process(
-        sql, database_name=DB, database_schema=SCHEMA
+        sql, context=_ctx(DB, SCHEMA)
     )
     assert len(enabled.temp_hops) == 2
     assert {hop.from_key for hop in enabled.temp_hops} == {ORDERS, "tmp_stage"}
@@ -432,8 +447,7 @@ def test_cross_database_edge_is_flagged() -> None:
     )
     processed = processor.process(
         "INSERT INTO public.target (id) SELECT id FROM db.public.remote",
-        database_name=DB,
-        database_schema=SCHEMA,
+        context=_ctx(DB, SCHEMA),
     )
     assert len(processed.edges) == 1
     assert processed.edges[0].from_fqn == "other_svc.db.public.remote"
@@ -480,7 +494,7 @@ def test_incremental_skip_when_processed_and_edge_intact() -> None:
         client, checker=IncrementalChecker(client)  # type: ignore[arg-type]
     )
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, incremental=True
+        sql, context=_ctx(DB, SCHEMA), incremental=True
     )
     assert processed.skipped_incremental is True
     assert processed.edges == []
@@ -498,7 +512,7 @@ def test_incremental_reprocesses_when_edge_is_gone() -> None:
         client, checker=IncrementalChecker(client)  # type: ignore[arg-type]
     )
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, incremental=True
+        sql, context=_ctx(DB, SCHEMA), incremental=True
     )
     assert processed.skipped_incremental is False
     assert len(processed.edges) == 1
@@ -519,7 +533,7 @@ def test_incremental_reprocesses_when_second_edge_is_gone() -> None:
         client, checker=IncrementalChecker(client)  # type: ignore[arg-type]
     )
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, incremental=True
+        sql, context=_ctx(DB, SCHEMA), incremental=True
     )
     # The target2 graph is missing, so the second edge is not
     # intact: the query reprocesses with both edges.
@@ -545,7 +559,7 @@ def test_incremental_skips_when_all_edges_intact() -> None:
         client, checker=IncrementalChecker(client)  # type: ignore[arg-type]
     )
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, incremental=True
+        sql, context=_ctx(DB, SCHEMA), incremental=True
     )
     assert processed.skipped_incremental is True
     assert processed.edges == []
@@ -563,7 +577,7 @@ def test_incremental_reprocesses_when_query_not_flagged() -> None:
         client, checker=IncrementalChecker(client)  # type: ignore[arg-type]
     )
     processed = processor.process(
-        sql, database_name=DB, database_schema=SCHEMA, incremental=True
+        sql, context=_ctx(DB, SCHEMA), incremental=True
     )
     assert processed.skipped_incremental is False
     assert len(processed.edges) == 1

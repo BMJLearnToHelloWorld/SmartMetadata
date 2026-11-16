@@ -56,13 +56,22 @@ from smartmetadata_ingestion.client.rest import STORED_PROCEDURES_PATH, RestClie
 from smartmetadata_ingestion.connectors.select import is_selected
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.lineage.dialect import Dialect
+from smartmetadata_ingestion.lineage.folding import fallback_eligible, fold_identifier
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 from smartmetadata_ingestion.lineage.parser import (
     LINEAGE_PARSING_TIMEOUT,
     LineageParser,
     QueryParserType,
-    clean_table_name,
 )
-from smartmetadata_ingestion.usage.stage import RestTableBindingResolver
+from smartmetadata_ingestion.records import BindingContext
+from smartmetadata_ingestion.usage.stage import (
+    BINDING_COUNT_KEYS,
+    CandidateSource,
+    RestTableBindingResolver,
+    build_candidate,
+    missing_count_key,
+    new_binding_counts,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +85,6 @@ MAX_CACHED_PROCEDURE_LISTINGS = 128
 # Unresolvable-procedure warnings are throttled like the usage
 # resolver's table warnings: distinct names first, then counted.
 MAX_WARNED_UNRESOLVED_PROCEDURES = 100
-
-# A parsed name has at most database.schema.table parts; longer names
-# (catalog-prefixed) resolve on their last three parts.
-_MAX_NAME_PARTS = 3
 
 _MISSING: Any = object()
 
@@ -111,22 +116,30 @@ class _LockedCache:
 
 
 def candidate_fqns(
-    service: str, parts: list[str], database: str | None, schema: str | None
+    service: str,
+    name: StructuredIdentifier,
+    context: BindingContext,
+    *,
+    default_database: str | None,
+    default_schema: str | None,
 ) -> list[str]:
-    """Candidate FQNs for a parsed name under one service, most
-    specific first. Three-part names carry their own database/schema;
-    two-part names take the database from context; one-part names
-    need both from context. Mirrors the usage resolver's candidate
-    shape so cross-service attempts behave identically."""
-    if len(parts) == 3:
-        return [f"{service}.{parts[0]}.{parts[1]}.{parts[2]}"]
-    if len(parts) == 2:
-        if not database:
-            return []
-        return [f"{service}.{database}.{parts[0]}.{parts[1]}"]
-    if database and schema:
-        return [f"{service}.{database}.{schema}.{parts[0]}"]
-    return []
+    """Candidate FQNs for a (folded) parsed name under one service:
+    at most one, from the shared construction in
+    :func:`build_candidate`, so cross-service attempts behave
+    identically to own-service ones. Three-part names carry their
+    own database/schema; two-part names take the database from
+    context; one-part names need both from context; over-long names
+    map to nothing — the caller skips them, never truncates (Q2).
+    Folding-agnostic: the caller folds at the entry, and this
+    function builds from the folded identifier it receives."""
+    candidate = build_candidate(
+        service,
+        name,
+        context,
+        default_database=default_database,
+        default_schema=default_schema,
+    )
+    return [candidate.fqn] if candidate.fqn is not None else []
 
 
 def passes_filter(
@@ -159,12 +172,17 @@ def view_parent_schema_tables(
     Parser-based, replacing the deleted FROM/JOIN regex
     (``connectors/sql_views.py``, K-1): subqueries, CTEs, and aliases
     resolve through the cascade, and qualified names keep their own
-    schema. Three-part names contribute their last two parts; the
-    database part is the caller's context (metadata view lineage
-    stays same-database, as before). Order follows the parser's
-    source-table order, deduplicated. An unparseable definition
-    yields no parents — the parser absorbs bad SQL into empty views,
-    never an exception."""
+    schema. Each source table contributes its structured identifier
+    (via the parser's association verdict — never a flattened
+    string): names with two or more segments contribute their last
+    two segments, the database part being the caller's context
+    (metadata view lineage stays same-database, as before);
+    unqualified names take the default schema. An endpoint whose
+    association is unconfirmed contributes nothing — its qualifier
+    was never proven, so no parent is guessed for it. Order follows
+    the parser's source-table order, deduplicated. An unparseable
+    definition yields no parents — the parser absorbs bad SQL into
+    empty views, never an exception."""
     parser = LineageParser(
         definition,
         dialect=dialect,
@@ -174,11 +192,14 @@ def view_parent_schema_tables(
     parents: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for table in parser.source_tables:
-        parts = clean_table_name(table).split(".")
-        if len(parts) >= 2:
-            key = (parts[-2], parts[-1])
+        association = parser.association_for(table)
+        identifier = association.identifier if association is not None else None
+        if identifier is None:
+            continue
+        if len(identifier) >= 2:
+            key = (identifier.segments[-2].text, identifier.leaf.text)
         else:
-            key = (default_schema, parts[0])
+            key = (default_schema, identifier.leaf.text)
         if key not in seen:
             seen.add(key)
             parents.append(key)
@@ -197,16 +218,19 @@ class LineageBindingResolver:
         default_schema: str | None = None,
         cross_database_service_names: Iterable[str] = (),
         process_cross_database_lineage: bool = False,
+        engine_key: str | None = None,
     ) -> None:
         self._client = client
         self._service_name = service_name
         self._default_database = default_database
         self._default_schema = default_schema
+        self._engine_key = engine_key
         self._tables = RestTableBindingResolver(
             client,
             service_name,
             default_database=default_database,
             default_schema=default_schema,
+            engine_key=engine_key,
         )
         self._cross_services = [
             name.strip() for name in cross_database_service_names if name and name.strip()
@@ -217,10 +241,46 @@ class LineageBindingResolver:
         self._columns = _LockedCache(MAX_CACHED_TABLE_COLUMNS)
         self._procedures = _LockedCache(MAX_CACHED_PROCEDURES)
         self._procedure_listings = _LockedCache(MAX_CACHED_PROCEDURE_LISTINGS)
-        self._warned_procedures: set[str] = set()
+        self._warned_procedures: set[StructuredIdentifier] = set()
+        self._procedure_throttle_warned = False
         self._unresolved_tables = 0
         self._unresolved_procedures = 0
         self._unresolved_udfs = 0
+        # Design §5.8 counters for the lineage-owned decision points
+        # (procedure/UDF/column chains and cross-service attempts).
+        # Own-service table attempts count inside the composed usage
+        # resolver; binding_counts merges the two, never double.
+        self._counts: dict[str, int] = {key: 0 for key in BINDING_COUNT_KEYS}
+        self._fidelity_skips: dict[str, int] = {}
+
+    @property
+    def binding_counts(self) -> dict[str, Any]:
+        """Design §5.8 per-key binding counts for this resolver: its
+        own counters merged with the composed usage resolver's, as a
+        fresh snapshot. Each decision point counts into exactly one
+        of the two, so the merge is a plain sum."""
+        with self._lock:
+            counts = new_binding_counts()
+            table_counts = self._tables.binding_counts
+            for key in BINDING_COUNT_KEYS:
+                counts[key] = self._counts[key] + table_counts[key]
+            merged: dict[str, int] = dict(self._fidelity_skips)
+            for branch, value in table_counts["fidelity_unproven_skip"].items():
+                merged[branch] = merged.get(branch, 0) + value
+            counts["fidelity_unproven_skip"] = merged
+            return counts
+
+    def note_unsupported_qualifier(self, count: int = 1) -> None:
+        """Count names whose qualifier could not be proven faithful
+        (extraction-level, reported by the lineage processor)."""
+        with self._lock:
+            self._counts["unsupported_qualifier"] += count
+
+    def note_fidelity_skip(self, branch: str, count: int = 1) -> None:
+        """Count queries/paths skipped because name fidelity was
+        unproven, attributed to the winning parser branch."""
+        with self._lock:
+            self._fidelity_skips[branch] = self._fidelity_skips.get(branch, 0) + count
 
     @property
     def unresolved_table_count(self) -> int:
@@ -249,40 +309,58 @@ class LineageBindingResolver:
 
     def resolve_table(
         self,
-        parsed_name: str,
+        name: StructuredIdentifier,
         *,
-        database_name: str | None = None,
-        database_schema: str | None = None,
+        context: BindingContext,
     ) -> str | None:
         """The catalog table FQN for a parsed name, or ``None``.
 
         Own service first (the usage chain), then each named
         cross-database service when enabled. A 404 moves to the next
-        candidate; any other REST error propagates."""
+        candidate; any other REST error propagates. Cross-service
+        resolution stays exactly as before — explicit names,
+        exact-only, first hit in config order, source-service
+        context reused — and that limitation is retained
+        deliberately (design §3.6/Q8): no ambiguity judgment and no
+        per-service context are added here."""
         with self._lock:
+            folded = fold_identifier(name, self._engine_key)
             resolved = self._tables.resolve(
-                parsed_name,
-                database_name=database_name,
-                database_schema=database_schema,
+                folded,
+                context=context,
                 quiet=self._cross_enabled,
             )
             if resolved is not None:
                 return resolved
             if self._cross_enabled:
-                parts = parsed_name.split(".")[-_MAX_NAME_PARTS:]
-                database = database_name or self._default_database
-                schema = database_schema or self._default_schema
                 for service in self._cross_services:
                     if service == self._service_name:
                         continue
-                    for fqn in candidate_fqns(service, parts, database, schema):
+                    for fqn in candidate_fqns(
+                        service,
+                        folded,
+                        context,
+                        default_database=self._default_database,
+                        default_schema=self._default_schema,
+                    ):
                         if self._table_lookup(fqn) is not None:
+                            self._count_default_bound(
+                                build_candidate(
+                                    service,
+                                    folded,
+                                    context,
+                                    default_database=self._default_database,
+                                    default_schema=self._default_schema,
+                                ).sources
+                            )
                             return fqn
                 # The own-service probe ran quiet; only now, with every
                 # resolver exhausted, does the name earn its warning.
                 # Inside the guard: with cross-service probing off the
                 # probe already warned loudly and must not warn twice.
-                self._tables.warn_unresolved(parsed_name)
+                # The loud warning consumes the probe's pending skip
+                # classification, so the attempt counts exactly once.
+                self._tables.warn_unresolved(folded, context=context)
             self._unresolved_tables += 1
             return None
 
@@ -331,6 +409,9 @@ class LineageBindingResolver:
             if len(matches) == 1:
                 return f"{table_fqn}.{matches[0]}"
             if len(matches) > 1:
+                # Column-chain uniqueness failure: the same §h
+                # ambiguity key as the table/procedure chains.
+                self._counts["ambiguous"] += 1
                 logger.warning(
                     "Ambiguous column %r on table %s: %d case-insensitive matches; "
                     "dropping the column mapping",
@@ -342,52 +423,85 @@ class LineageBindingResolver:
 
     def resolve_procedure(
         self,
-        parsed_name: str,
+        name: StructuredIdentifier,
         *,
-        database_name: str | None = None,
-        database_schema: str | None = None,
+        context: BindingContext,
     ) -> dict[str, Any] | None:
         """The catalog stored-procedure entity for a parsed CALL name,
-        or ``None``. Exact-FQN candidates first, then a schema-scoped
-        unique case-insensitive match — the table chain's shape,
-        applied to procedures. Unresolvable names warn (throttled)
-        and count, never invent an entity."""
+        or ``None``. Exact-FQN candidate first, then a
+        scope-constrained unique full-FQN case-insensitive match —
+        the table chain's shape, applied to procedures, with the
+        qualifier scope preserved. Unresolvable names warn
+        (throttled) and count, never invent an entity."""
         with self._lock:
-            parts = parsed_name.split(".")[-_MAX_NAME_PARTS:]
-            database = database_name or self._default_database
-            schema = database_schema or self._default_schema
-            for fqn in candidate_fqns(self._service_name, parts, database, schema):
-                entity = self._procedure_lookup(fqn)
+            folded = fold_identifier(name, self._engine_key)
+            if len(folded) > 3:
+                self._counts["unsupported_qualifier"] += 1
+                self._warn_unresolved_procedure(folded, context=context)
+                return None
+            candidate = build_candidate(
+                self._service_name,
+                folded,
+                context,
+                default_database=self._default_database,
+                default_schema=self._default_schema,
+            )
+            if candidate.fqn is None:
+                self._counts[missing_count_key(candidate.sources)] += 1
+                self._warn_unresolved_procedure(
+                    folded, context=context, candidate_sources=candidate.sources
+                )
+                return None
+            entity = self._procedure_lookup(candidate.fqn)
+            if entity is not None:
+                self._count_default_bound(candidate.sources)
+                return entity
+            if fallback_eligible(folded, self._engine_key):
+                entity, ambiguous = self._resolve_procedure_case_insensitive(
+                    candidate.fqn, candidate.database or "", candidate.schema or ""
+                )
                 if entity is not None:
+                    self._count_default_bound(candidate.sources)
                     return entity
-            if database and schema:
-                entity = self._resolve_procedure_case_insensitive(parts[-1], database, schema)
-                if entity is not None:
-                    return entity
-            self._warn_unresolved_procedure(parsed_name)
+                if ambiguous:
+                    self._counts["ambiguous"] += 1
+                    self._warn_unresolved_procedure(
+                        folded, context=context, candidate_sources=candidate.sources
+                    )
+                    return None
+            self._counts["unresolved_404"] += 1
+            self._warn_unresolved_procedure(
+                folded, context=context, candidate_sources=candidate.sources
+            )
             return None
 
     def resolve_udf(
         self,
-        function_name: str,
+        name: StructuredIdentifier,
         *,
-        database_name: str | None = None,
-        database_schema: str | None = None,
+        context: BindingContext,
     ) -> dict[str, Any] | None:
         """The catalog entity for a function name appearing in a
         column path, or ``None``. UDFs and functions live in the
         stored-procedure catalog, so this is procedure binding under
         its UDF name; misses count separately so a run can report
-        how many function call sites had no catalog body."""
+        how many function call sites had no catalog body. Folding
+        happens once, inside :meth:`resolve_procedure`."""
         with self._lock:
-            entity = self.resolve_procedure(
-                function_name,
-                database_name=database_name,
-                database_schema=database_schema,
-            )
+            entity = self.resolve_procedure(name, context=context)
             if entity is None:
                 self._unresolved_udfs += 1
             return entity
+
+    def _count_default_bound(
+        self, sources: tuple[CandidateSource, CandidateSource]
+    ) -> None:
+        """Count a successful binding's default-supplied segments,
+        per segment: qualifier and row segments are not counted."""
+        if sources[0] is CandidateSource.DEFAULT:
+            self._counts["default_bound_database"] += 1
+        if sources[1] is CandidateSource.DEFAULT:
+            self._counts["default_bound_schema"] += 1
 
     @staticmethod
     def procedure_code(entity: dict[str, Any]) -> str | None:
@@ -405,7 +519,9 @@ class LineageBindingResolver:
     def _table_lookup(self, fqn: str) -> dict[str, Any] | None:
         """The table entity for an FQN, or ``None`` on 404. Other
         REST errors propagate: absence is data, failure is failure.
-        Cached per run, misses included."""
+        Cached per run, misses included. A read failure is counted
+        before it propagates — the count is a summary supplement,
+        never a reason to swallow it."""
         cached = self._table_entities.get(fqn)
         if cached is not _MISSING:
             return cached
@@ -415,6 +531,7 @@ class LineageBindingResolver:
             if exc.status_code == 404:
                 result = None
             else:
+                self._counts["read_failure"] += 1
                 raise
         self._table_entities.set(fqn, result)
         return result
@@ -429,30 +546,39 @@ class LineageBindingResolver:
             if exc.status_code == 404:
                 result = None
             else:
+                self._counts["read_failure"] += 1
                 raise
         self._procedures.set(fqn, result)
         return result
 
     def _resolve_procedure_case_insensitive(
-        self, procedure_name: str, database: str, schema: str
-    ) -> dict[str, Any] | None:
+        self, candidate_fqn: str, database: str, schema: str
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """The unique full-FQN case-insensitive match within the
+        candidate's own schema, or ``(None, ambiguous)``. The listing
+        is scoped to the candidate's schema and the comparison spans
+        the whole FQN, so a qualifier the exact step missed cannot
+        silently change scope — the table fallback's shape, applied
+        to procedures."""
         schema_fqn = f"{self._service_name}.{database}.{schema}"
+        target = candidate_fqn.lower()
         matches = [
             item
             for item in self._list_schema_procedures(schema_fqn)
-            if str(item.get("name", "")).lower() == procedure_name.lower()
+            if str(item.get("fullyQualifiedName", "")).lower() == target
         ]
         if len(matches) == 1:
-            return matches[0]
+            return matches[0], False
         if len(matches) > 1:
             logger.warning(
                 "Ambiguous procedure name %r in schema %s: %d case-insensitive "
                 "matches; skipping",
-                procedure_name,
+                candidate_fqn,
                 schema_fqn,
                 len(matches),
             )
-        return None
+            return None, True
+        return None, False
 
     def _list_schema_procedures(self, schema_fqn: str) -> tuple[dict[str, Any], ...]:
         cached = self._procedure_listings.get(schema_fqn)
@@ -468,19 +594,44 @@ class LineageBindingResolver:
         self._procedure_listings.set(schema_fqn, result)
         return result
 
-    def _warn_unresolved_procedure(self, parsed_name: str) -> None:
+    def _warn_unresolved_procedure(
+        self,
+        name: StructuredIdentifier,
+        *,
+        context: BindingContext | None = None,
+        candidate_sources: tuple[CandidateSource, CandidateSource] | None = None,
+    ) -> None:
+        """Count and (throttled) warn an unresolvable procedure name.
+        The warning carries both provenance levels when the caller
+        supplies them: each candidate segment's final source, and
+        the row context's input-field sources (design §5.8)."""
         self._unresolved_procedures += 1
-        if parsed_name in self._warned_procedures:
+        if name in self._warned_procedures:
             return
         if len(self._warned_procedures) < MAX_WARNED_UNRESOLVED_PROCEDURES:
-            self._warned_procedures.add(parsed_name)
+            self._warned_procedures.add(name)
+            suffix = ""
+            if context is not None:
+                if candidate_sources is None:
+                    detail = "no candidate"
+                else:
+                    detail = (
+                        f"candidate database from {candidate_sources[0].value}, "
+                        f"schema from {candidate_sources[1].value}"
+                    )
+                suffix = (
+                    f" ({detail}; input sources "
+                    f"database={context.database_source.value}, "
+                    f"schema={context.schema_source.value})"
+                )
             logger.warning(
-                "No catalog procedure matches %r under service %s; skipping",
-                parsed_name,
+                "No catalog procedure matches %r under service %s; skipping%s",
+                name.display(),
                 self._service_name,
+                suffix,
             )
-        elif len(self._warned_procedures) == MAX_WARNED_UNRESOLVED_PROCEDURES:
-            self._warned_procedures.add("")
+        elif not self._procedure_throttle_warned:
+            self._procedure_throttle_warned = True
             logger.warning(
                 "Further unresolvable procedure names will be counted, not logged "
                 "(%d skipped so far)",

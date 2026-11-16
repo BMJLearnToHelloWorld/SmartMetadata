@@ -414,11 +414,12 @@ class PostgresSource:
         )
 
     def _database_name(self) -> str:
-        raw = self._config.connection
-        name = raw.get("database")
-        if not name:
+        from smartmetadata_ingestion.naming import resolve_connection_defaults
+
+        database, _ = resolve_connection_defaults(self._config.connection, "postgres")
+        if not database:
             raise WorkflowError("postgres source.connection.database is required")
-        return str(name)
+        return str(database)
 
     def _require_reader(self) -> CatalogReader:
         if self._reader is not None:

@@ -24,6 +24,7 @@ from smartmetadata_ingestion.connectors.postgres_query_log import (
     POSTGRES_MAX_DURATION_DAYS,
     POSTGRES_SQL_TEMPLATE,
     STATEMENT_SOURCE_PATTERN,
+    postgres_dbid_filter,
     postgres_engines,
 )
 from smartmetadata_ingestion.lineage.dialect import Dialect
@@ -39,6 +40,7 @@ TIMESCALE_QUERY_LOG_SPEC = register_query_log_spec(
         statement_source_key="queryStatementSource",
         statement_source_default="pg_stat_statements",
         statement_source_pattern=STATEMENT_SOURCE_PATTERN,
+        conditional_filters=postgres_dbid_filter,
     )
 )
 

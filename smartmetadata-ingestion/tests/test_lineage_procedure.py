@@ -119,13 +119,25 @@ class _FakeConnection:
 
 
 def test_extract_call_name_variants() -> None:
-    assert extract_call_name("CALL load_orders()") == "load_orders"
-    assert extract_call_name("call public.load_orders(1, 'x')") == "public.load_orders"
-    assert (
-        extract_call_name("CALL db.public.load_orders()") == "db.public.load_orders"
+    def _shape(call_text: str) -> tuple[tuple[str, ...], tuple[bool, ...]]:
+        name = extract_call_name(call_text)
+        assert name is not None
+        return name.texts, tuple(segment.quoted for segment in name.segments)
+
+    assert _shape("CALL load_orders()") == (("load_orders",), (False,))
+    assert _shape("call public.load_orders(1, 'x')") == (
+        ("public", "load_orders"),
+        (False, False),
     )
-    assert extract_call_name('CALL "public"."load_orders"()') == "public.load_orders"
-    assert extract_call_name("CALL   load_orders  ()") == "load_orders"
+    assert _shape("CALL db.public.load_orders()") == (
+        ("db", "public", "load_orders"),
+        (False, False, False),
+    )
+    assert _shape('CALL "public"."load_orders"()') == (
+        ("public", "load_orders"),
+        (True, True),
+    )
+    assert _shape("CALL   load_orders  ()") == (("load_orders",), (False,))
 
 
 def test_extract_call_name_rejects_non_calls() -> None:

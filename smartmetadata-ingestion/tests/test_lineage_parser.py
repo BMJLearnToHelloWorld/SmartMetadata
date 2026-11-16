@@ -34,6 +34,7 @@ from smartmetadata_ingestion.lineage import (
     rewrite_switch_statements,
 )
 from smartmetadata_ingestion.lineage import parser as parser_module
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 
 
 @pytest.fixture(autouse=True)
@@ -189,9 +190,11 @@ def test_table_aliases_map_alias_and_name() -> None:
         Dialect.POSTGRES,
     )
     aliases = parser.table_aliases
-    assert clean_table_name(aliases["o"]) == "shop.orders"
-    assert clean_table_name(aliases["c"]) == "shop.customers"
-    assert clean_table_name(aliases["shop.orders"]) == "shop.orders"
+    assert all(isinstance(key, StructuredIdentifier) for key in aliases)
+    assert clean_table_name(aliases[StructuredIdentifier.single("o")]) == "shop.orders"
+    assert clean_table_name(aliases[StructuredIdentifier.single("c")]) == "shop.customers"
+    orders_key = StructuredIdentifier.from_parts([("shop", False), ("orders", False)])
+    assert clean_table_name(aliases[orders_key]) == "shop.orders"
 
 
 def test_table_joins_from_join_on_equality() -> None:
@@ -201,18 +204,22 @@ def test_table_joins_from_join_on_equality() -> None:
         Dialect.POSTGRES,
     )
     joins = parser.table_joins
-    assert sorted(joins) == ["a.orders", "b.customers"]
+    orders_key = StructuredIdentifier.from_parts([("a", False), ("orders", False)])
+    customers_key = StructuredIdentifier.from_parts(
+        [("b", False), ("customers", False)]
+    )
+    assert sorted(key.texts for key in joins) == [("a", "orders"), ("b", "customers")]
     orders_joins = {
-        (entry.table_column.column, tuple((c.table, c.column) for c in entry.joined_with))
-        for entry in joins["a.orders"]
+        (entry.table_column.column, tuple((c.table.texts, c.column) for c in entry.joined_with))
+        for entry in joins[orders_key]
     }
-    assert ("cust_id", (("b.customers", "id"),)) in orders_joins
-    assert ("region", (("b.customers", "region"),)) in orders_joins
+    assert ("cust_id", ((("b", "customers"), "id"),)) in orders_joins
+    assert ("region", ((("b", "customers"), "region"),)) in orders_joins
     customers_joins = {
-        (entry.table_column.column, tuple((c.table, c.column) for c in entry.joined_with))
-        for entry in joins["b.customers"]
+        (entry.table_column.column, tuple((c.table.texts, c.column) for c in entry.joined_with))
+        for entry in joins[customers_key]
     }
-    assert ("id", (("a.orders", "cust_id"),)) in customers_joins
+    assert ("id", ((("a", "orders"), "cust_id"),)) in customers_joins
 
 
 def test_table_joins_from_where_equality_and_unqualified_skipped() -> None:
@@ -221,24 +228,37 @@ def test_table_joins_from_where_equality_and_unqualified_skipped() -> None:
         "WHERE o.cust_id = c.id AND status = 'OPEN'",
         Dialect.POSTGRES,
     )
-    assert "a.orders" in parser.table_joins
-    assert "b.customers" in parser.table_joins
+    orders_key = StructuredIdentifier.from_parts([("a", False), ("orders", False)])
+    customers_key = StructuredIdentifier.from_parts(
+        [("b", False), ("customers", False)]
+    )
+    assert orders_key in parser.table_joins
+    assert customers_key in parser.table_joins
     # The unqualified `status` comparison and the literal contribute no join.
     assert all(
-        entry.table_column.column == "cust_id" for entry in parser.table_joins["a.orders"]
+        entry.table_column.column == "cust_id" for entry in parser.table_joins[orders_key]
     )
 
 
-def test_table_joins_serialize_to_spec_shape() -> None:
+def test_table_joins_carry_structured_join_pair() -> None:
+    # Formerly test_table_joins_serialize_to_spec_shape: the parsed
+    # join type carries no serialization (contract §j-c — a resolved
+    # FQN string is the serializable shape, and the stage produces
+    # the spec dict from resolved FQNs). This test keeps the exact
+    # join-pair content the old dict assertion locked, in structured
+    # form; the spec-dict shape itself is locked by the stage joins
+    # test and the TableColumnJoin round-trip test.
     parser = LineageParser(
         "SELECT * FROM a.orders o JOIN b.customers c ON o.cust_id = c.id",
         Dialect.POSTGRES,
     )
-    entry = parser.table_joins["a.orders"][0]
-    assert entry.to_dict() == {
-        "tableColumn": {"table": "a.orders", "column": "cust_id"},
-        "joinedWith": [{"table": "b.customers", "column": "id"}],
-    }
+    orders_key = StructuredIdentifier.from_parts([("a", False), ("orders", False)])
+    entry = parser.table_joins[orders_key][0]
+    assert entry.table_column.table.texts == ("a", "orders")
+    assert entry.table_column.column == "cust_id"
+    assert [(c.table.texts, c.column) for c in entry.joined_with] == [
+        (("b", "customers"), "id")
+    ]
 
 
 def test_sqlparse_fallback_rescues_malformed_query() -> None:

@@ -496,9 +496,25 @@ def test_mariadb_connector_runs_view_channel_only(caplog) -> None:
 
 
 def test_snowflake_connector_wires_procedure_provider() -> None:
-    proc = f"{SERVICE}.{DB}.{SCHEMA}.load_orders"
+    # Snowflake folds unquoted identifiers to uppercase, so the
+    # catalog spellings this fixture carries must be uppercase: a
+    # lowercase catalog name is an impossible combination — a
+    # lowercase name survives only when quoted. The history row's
+    # database/schema values are catalog spellings too, hence
+    # uppercase below; the procedure body keeps its lowercase
+    # unquoted spelling — folding, not the written text, decides
+    # the candidates.
+    catalog = {
+        fqn: _table(fqn, ["id", "email"])
+        for fqn in (
+            "svc.DB.PUBLIC.ORDERS",
+            "svc.DB.PUBLIC.TARGET",
+            "svc.DB.PUBLIC.ORDERS_V",
+        )
+    }
+    proc = "svc.DB.PUBLIC.LOAD_ORDERS"
     client = _FakeClient(
-        _catalog(),
+        catalog,
         {
             proc: {
                 "id": "proc-id",
@@ -525,7 +541,7 @@ def test_snowflake_connector_wires_procedure_provider() -> None:
             self.statement = statement
 
         def fetchall(self):
-            return [("CALL load_orders()", "alice", None, DB, SCHEMA)]
+            return [("CALL load_orders()", "alice", None, "DB", "PUBLIC")]
 
         def close(self) -> None:
             return None

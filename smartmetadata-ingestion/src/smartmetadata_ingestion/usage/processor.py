@@ -26,13 +26,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..lineage.dialect import Dialect
+from ..lineage.identifiers import StructuredIdentifier
 from ..lineage.parser import (
     LINEAGE_PARSING_TIMEOUT,
     LineageParser,
+    ParsedTableColumnJoin,
     QueryParserType,
-    TableColumnJoin,
 )
-from ..records import TableQueryRecord
+from ..records import BindingContext, TableQueryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +73,31 @@ class ParsedData:
     schema (``ParsedData``) plus carrier fields the stage needs
     without re-parsing.
 
-    ``date`` is the analysis day as a millisecond timestamp string.
-    ``masked_sql`` is the literal-masked query text and ``query_hash``
-    the MD5-8 of the raw query, both straight from the parser; the
-    stage decides which text is stored (masked unless ``exclude_usage``).
+    ``tables`` are structured identifiers — only endpoints whose
+    association the parser confirmed enter binding; unconfirmed
+    endpoints never do. ``joins`` is keyed the same way, with
+    parsed (pre-binding) join columns. ``binding_context`` is the
+    record's frozen row context, constructed once at this boundary;
+    the binding path reads only it, never the retained
+    ``database_name``/``database_schema`` fields, which staging
+    still reads for the row-context values. ``date`` is the analysis
+    day as a millisecond timestamp string. ``masked_sql`` is the
+    literal-masked query text and ``query_hash`` the MD5-8 of the
+    raw query, both straight from the parser; the stage decides
+    which text is stored (masked unless ``exclude_usage``).
+    ``unsupported_name_count``/``fidelity_skip_branch`` carry the
+    extraction-level counts to the stage, which forwards them into
+    the resolver's counters — the parse step has no resolver of its
+    own. This type is never serialized: the stage resolves it into
+    string-FQN staging records, so the structured form needs no
+    round-trip shape.
     """
 
-    tables: list[str]
-    joins: dict[str, list[TableColumnJoin]]
+    tables: list[StructuredIdentifier]
+    joins: dict[StructuredIdentifier, list[ParsedTableColumnJoin]]
     database_name: str | None
     database_schema: str | None
+    binding_context: BindingContext
     sql: str
     query_type: str | None
     exclude_usage: bool
@@ -94,6 +110,8 @@ class ParsedData:
     masked_sql: str = ""
     query_hash: str = ""
     parser_name: str | None = None
+    unsupported_name_count: int = 0
+    fidelity_skip_branch: str | None = None
 
 
 def _day_start_ms(analysis_date: str | None) -> str:
@@ -142,7 +160,11 @@ def parse_sql_statement(
     reports no involved tables: the query contributes no counts, no
     joins, and no cost. Unexpected parser errors raise
     ``QueryParseFailure``; malformed queries do not — the parser
-    absorbs them into empty views."""
+    absorbs them into empty views. Table names come from the
+    structured extraction via the association verdicts: only
+    confirmed endpoints enter binding, sorted by segment texts and
+    deduplicated; a failed extraction leaves no tables and marks
+    the fidelity skip for the stage to count."""
     try:
         parser = LineageParser(
             record.query,
@@ -151,17 +173,27 @@ def parse_sql_statement(
             parser_type=parser_type,
         )
         involved = parser.involved_tables
-        tables = parser.clean_table_list
+        extraction = parser.structured_extraction
+        associations = parser.endpoint_associations
         joins = parser.table_joins
     except Exception as exc:
         raise QueryParseFailure(f"failed to parse query {record.label()}") from exc
     if not involved:
         return None
+    tables = sorted(
+        {
+            association.identifier
+            for association in associations
+            if association.identifier is not None
+        },
+        key=lambda identifier: identifier.texts,
+    )
     return ParsedData(
         tables=tables,
         joins=joins,
         database_name=record.database_name,
         database_schema=record.database_schema,
+        binding_context=BindingContext.from_record(record),
         sql=record.query,
         query_type=record.query_type or _derive_query_type(record.query),
         exclude_usage=record.exclude_usage,
@@ -174,4 +206,6 @@ def parse_sql_statement(
         masked_sql=parser.masked_query,
         query_hash=parser.query_hash,
         parser_name=parser.parser_name,
+        unsupported_name_count=len(extraction.unsupported_names),
+        fidelity_skip_branch=extraction.branch if extraction.failed else None,
     )

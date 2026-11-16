@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -303,6 +305,28 @@ class UsageRecord(Record):
         return f"usage:{self.entity_type}:{self.fqn}@{self.date}"
 
 
+class FieldSource(str, Enum):
+    """Where one context field of a query-log record came from.
+
+    The input-field level of the D-L2c two-level provenance (design
+    §5.8): the producer knows which contract a row arrived under, so
+    it marks each context field at production time; downstream only
+    reads the marks, never re-derives them. ``ROW_NATIVE_SWAPPED``
+    is the MySQL layer-swapped native row (design §5.2): the schema
+    value arrived in the database column of the native history SQL
+    and was moved to the schema segment by the source adaptation.
+    """
+
+    ROW_NATIVE = "row_native"
+    ROW_NATIVE_SWAPPED = "row_native_swapped"
+    ROW_CSV = "row_csv"
+    # The context segments came from the catalog position of the
+    # entity being processed itself (the view channel's ViewItem),
+    # not from any log row or CSV file (contract revision 7).
+    ENTITY = "entity"
+    MISSING = "missing"
+
+
 class TableQueryRecord(Record):
     """One raw query from a query log, per the ``tableQuery`` spec schema.
 
@@ -310,6 +334,13 @@ class TableQueryRecord(Record):
     counts. Aggregation happens in the usage stage, after parsing.
     The label carries only the query hash: query text may hold literal
     values and must not leak into run history or failure labels.
+
+    ``database_source``/``schema_source`` mark the input-field source
+    of the two context fields (design §5.8): the producer sets them
+    from the row's origin contract, and binding reads them through
+    :class:`BindingContext` without guessing. A record built without
+    a producer (tests, direct construction) defaults both to
+    ``MISSING``: no source is claimed that was never observed.
     """
 
     kind: Literal["tableQuery"] = "tableQuery"
@@ -325,12 +356,45 @@ class TableQueryRecord(Record):
     aborted: bool = False
     database_name: str | None = None
     database_schema: str | None = None
+    database_source: FieldSource = FieldSource.MISSING
+    schema_source: FieldSource = FieldSource.MISSING
     duration: float | None = None
     cost: float | None = None
 
     def label(self) -> str:
         query_hash = hashlib.md5(self.query.encode("utf-8")).hexdigest()[:8]
         return f"tableQuery:{self.service_name}:{query_hash}"
+
+
+@dataclass(frozen=True)
+class BindingContext:
+    """The row context one binding attempt resolves names against.
+
+    The single carrier of input context into every resolver (design
+    §5.8): the two context values plus the input-field source of
+    each, frozen so no layer can silently re-derive or overwrite a
+    segment's origin downstream. Constructed once at the processor
+    boundary from the record (:meth:`from_record`), or directly by
+    lineage channels from their own row/call context; never
+    re-assembled from loose values mid-chain.
+    """
+
+    database_name: str | None
+    database_schema: str | None
+    database_source: FieldSource
+    schema_source: FieldSource
+
+    @classmethod
+    def from_record(cls, record: TableQueryRecord) -> BindingContext:
+        """The record's context, carried verbatim: values and input
+        sources together, so binding sees what the row actually
+        carried and where it came from."""
+        return cls(
+            database_name=record.database_name,
+            database_schema=record.database_schema,
+            database_source=record.database_source,
+            schema_source=record.schema_source,
+        )
 
 
 class QueryRecord(Record):

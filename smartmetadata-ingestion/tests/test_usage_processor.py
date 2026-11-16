@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import pytest
 
 from smartmetadata_ingestion.lineage.dialect import Dialect
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 from smartmetadata_ingestion.lineage.parser import QueryParserType
 from smartmetadata_ingestion.records import TableQueryRecord
 from smartmetadata_ingestion.usage import processor
@@ -36,7 +37,9 @@ def test_parse_counts_target_only_insert_values() -> None:
         QueryParserType.AUTO,
     )
     assert parsed is not None
-    assert parsed.tables == ["shop.orders"]
+    assert parsed.tables == [
+        StructuredIdentifier.from_parts([("shop", False), ("orders", False)])
+    ]
     assert parsed.query_type == "INSERT"
 
 
@@ -47,7 +50,9 @@ def test_parse_counts_create_table() -> None:
         QueryParserType.AUTO,
     )
     assert parsed is not None
-    assert parsed.tables == ["shop.orders"]
+    assert parsed.tables == [
+        StructuredIdentifier.from_parts([("shop", False), ("orders", False)])
+    ]
     assert parsed.query_type == "CREATE"
 
 
@@ -73,7 +78,10 @@ def test_parse_carries_record_fields_and_parser_views() -> None:
         QueryParserType.AUTO,
     )
     assert parsed is not None
-    assert parsed.tables == ["shop.customers", "shop.orders"]
+    assert parsed.tables == [
+        StructuredIdentifier.from_parts([("shop", False), ("customers", False)]),
+        StructuredIdentifier.from_parts([("shop", False), ("orders", False)]),
+    ]
     assert parsed.database_name == "shop"
     assert parsed.database_schema == "public"
     assert parsed.sql.startswith("SELECT o.id")

@@ -69,7 +69,9 @@ from smartmetadata_ingestion.lineage.query_lineage import (
 )
 from smartmetadata_ingestion.lineage.resolution import LineageBindingResolver
 from smartmetadata_ingestion.lineage.view_lineage import ViewEnumerator, ViewLineageChannel
+from smartmetadata_ingestion.naming import resolve_connection_defaults
 from smartmetadata_ingestion.records import (
+    BindingContext,
     LineageEndpoint,
     LineageRecord,
     TableQueryRecord,
@@ -145,6 +147,10 @@ class LineageSummary:
     # Query-log engines whose history read failed in the query
     # channel (C-11/B-4); set once the channel's records are consumed.
     query_log_engine_failures: int = 0
+    # Design §5.8 binding counts, merged from the run's resolver
+    # once the channels finish; a summary supplement, never folded
+    # into warning totals.
+    binding_counts: dict[str, Any] = field(default_factory=dict)
     channels_attempted: list[str] = field(default_factory=list)
 
     def log(self) -> None:
@@ -152,7 +158,7 @@ class LineageSummary:
             "lineage run summary: channels=%s views=%d viewEdges=%d "
             "procedures=%d procedureEdges=%d queries=%d queryEdges=%d "
             "queryRecords=%d tempEdges=%d skippedIncremental=%d "
-            "timedOut=%d failed=%d",
+            "timedOut=%d failed=%d bindingCounts=%s",
             ",".join(self.channels_attempted),
             self.views_seen,
             self.view_edges,
@@ -165,6 +171,7 @@ class LineageSummary:
             self.views_skipped_incremental + self.queries_skipped_incremental,
             self.timed_out_items,
             self.failed_items,
+            self.binding_counts,
         )
 
 
@@ -274,6 +281,8 @@ class LineageSource:
         if config.process_cross_database_lineage:
             self._produce_cross_database_channel()
         yield from self._flush_temp_graph()
+        if self._resolver is not None:
+            self._summary.binding_counts = self._resolver.binding_counts
         self._summary.log()
 
     def _require_client(self) -> RestClient:
@@ -290,15 +299,21 @@ class LineageSource:
     ) -> tuple[LineageBindingResolver, QueryLineageProcessor]:
         config = self._config
         connection = config.connection or {}
+        # The binding defaults come from the shared naming rule —
+        # the same function the usage workflow calls — and the same
+        # engine key drives both the naming rule and the resolver's
+        # identifier folding, so the two can never drift apart.
+        default_database, default_schema = resolve_connection_defaults(
+            connection, self._engine_key
+        )
         resolver = LineageBindingResolver(
             client,
             config.service_name,
-            default_database=connection.get("database")
-            or connection.get("databaseName")
-            or connection.get("catalog"),
-            default_schema=connection.get("databaseSchema") or connection.get("schema"),
+            default_database=default_database,
+            default_schema=default_schema,
             cross_database_service_names=config.cross_database_service_names,
             process_cross_database_lineage=config.process_cross_database_lineage,
+            engine_key=self._engine_key,
         )
         checker = (
             IncrementalChecker(client) if config.incremental_lineage_processing else None
@@ -487,8 +502,7 @@ class LineageSource:
         ) -> tuple[list[WorkflowRecord], dict[str, int], list]:
             processed = processor.process(
                 record.query,
-                database_name=record.database_name,
-                database_schema=record.database_schema,
+                context=BindingContext.from_record(record),
                 emit_query_record=True,
                 incremental=config.incremental_lineage_processing,
                 user_name=record.user_name,
