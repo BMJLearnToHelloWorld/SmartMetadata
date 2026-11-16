@@ -5,7 +5,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Card, Input, Select } from 'ant-design-vue';
+import { Button, Card, Input, Select, TimePicker } from 'ant-design-vue';
+import dayjs, { type Dayjs } from 'dayjs';
 import {
   DAY_IN_MONTH_OPTIONS,
   DAY_OPTIONS,
@@ -19,6 +20,7 @@ import {
   type SchedulePeriod,
   type ScheduleStateValue,
 } from '@/ingestion/schedule';
+import CronSummaryCard from './CronSummaryCard.vue';
 
 /**
  * Port of official `Steps/ScheduleInterval.tsx` (pin a3012259ca): two
@@ -87,15 +89,25 @@ const minuteOptions = computed(() =>
     label: String(index).padStart(2, '0'),
   })),
 );
-const hourOptions = computed(() =>
-  Array.from({ length: 24 }, (_, index) => ({
-    value: String(index),
-    label: String(index).padStart(2, '0'),
-  })),
-);
 const dayOptions = computed(() => DAY_OPTIONS.map((option) => ({ value: option.value, label: option.label })));
 const dateOptions = computed(() =>
   DAY_IN_MONTH_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+);
+
+/** The single time picker (pin `ScheduleInterval` TimePicker). */
+const timeValue = computed(() =>
+  dayjs().hour(Number(state.value.hour)).minute(Number(state.value.min)).second(0),
+);
+
+/**
+ * Cron shown in the summary card: the pickers' cron while Schedule is
+ * selected, none while On Demand is — the card then shows the
+ * manual-trigger text. (Pin reads the raw state cron, which on the
+ * initial mount still holds the restore default for an on-demand
+ * pipeline; the fork passes the effective cron instead.)
+ */
+const effectiveCron = computed(() =>
+  selectedSchedular.value === 'schedule' ? (state.value.cron ?? null) : null,
 );
 
 const showTimePicker = computed(() =>
@@ -158,6 +170,14 @@ function handleStateChange(partial: Partial<ScheduleStateValue>): void {
 
 function handlePeriodChange(period: SchedulePeriod): void {
   handleStateChange({ selectedPeriod: period });
+}
+
+function handleTimeChange(value: Dayjs | null): void {
+  // Pin ignores a null change (clearing is disabled, so this is defensive).
+  if (!value) {
+    return;
+  }
+  handleStateChange({ hour: String(value.hour()), min: String(value.minute()) });
 }
 
 function handleCustomCronChange(value: string): void {
@@ -230,15 +250,20 @@ watch(
     <div v-if="selectedSchedular === 'schedule'">
       <div style="display: flex; gap: 12px; flex-wrap: wrap">
         <div>
-          <label>{{ t('ingestion.pipelines.frequency') }}</label>
-          <Select
-            :value="state.selectedPeriod"
-            :disabled="disabled"
-            :options="frequencyOptions"
-            :data-testid="`${testIdPrefix}-period`"
-            style="width: 160px; display: block; margin-top: 4px"
-            @change="(value) => handlePeriodChange(value as SchedulePeriod)"
-          />
+          <label>{{ t('ingestion.pipelines.cadence') }}</label>
+          <span style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap">
+            <Button
+              v-for="option in frequencyOptions"
+              :key="option.value"
+              :type="state.selectedPeriod === option.value ? 'primary' : 'default'"
+              :aria-pressed="state.selectedPeriod === option.value"
+              :disabled="disabled"
+              :data-testid="`${testIdPrefix}-frequency-${option.value}`"
+              @click="handlePeriodChange(option.value)"
+            >
+              {{ option.label }}
+            </Button>
+          </span>
         </div>
         <div v-if="showWeekSelect">
           <label>{{ t('ingestion.pipelines.scheduleDayOfWeek') }}</label>
@@ -264,24 +289,16 @@ watch(
         </div>
         <div v-if="showTimePicker">
           <label>{{ t('ingestion.pipelines.scheduleTime') }}</label>
-          <span style="display: flex; gap: 8px; margin-top: 4px">
-            <Select
-              :value="state.hour"
+          <div data-testid="time-picker" style="margin-top: 4px">
+            <TimePicker
+              :value="timeValue"
               :disabled="disabled"
-              :options="hourOptions"
-              :data-testid="`${testIdPrefix}-hour`"
-              style="width: 80px"
-              @change="(value) => handleStateChange({ hour: String(value) })"
+              format="HH:mm"
+              :allow-clear="false"
+              style="width: 160px"
+              @change="(value) => handleTimeChange(value as Dayjs | null)"
             />
-            <Select
-              :value="state.min"
-              :disabled="disabled"
-              :options="minuteOptions"
-              :data-testid="`${testIdPrefix}-minute`"
-              style="width: 80px"
-              @change="(value) => handleStateChange({ min: String(value) })"
-            />
-          </span>
+          </div>
         </div>
         <div v-if="showMinuteOnly">
           <label>{{ t('ingestion.pipelines.scheduleMinute') }}</label>
@@ -310,8 +327,6 @@ watch(
         </div>
       </div>
     </div>
-    <div v-else>
-      <p>{{ t('ingestion.pipelines.onDemandCardDescription') }}</p>
-    </div>
+    <CronSummaryCard :cron="effectiveCron" style="margin-top: 16px" />
   </div>
 </template>

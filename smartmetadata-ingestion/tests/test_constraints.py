@@ -113,22 +113,26 @@ def _grouped() -> SchemaConstraints:
     return SchemaConstraints(_rows(), service_name="svc", database_name="db")
 
 
-def test_grouping_orders_columns_and_drops_check_constraints() -> None:
+def test_grouping_drops_single_column_keys_and_check_constraints() -> None:
+    # TEST-BUG RETARGET (D-L1): the old assertions required the
+    # single-column PRIMARY_KEY and UNIQUE groups to appear as table
+    # constraints — the exact shape DatabaseUtil.validateConstraints
+    # rejects. Pin's split shapes single-column groups as column tags
+    # only, so for_table carries just the foreign key; CHECK groups
+    # are still dropped.
     records = _grouped().for_table("orders")
-    assert [record.constraint_type for record in records] == [
-        "PRIMARY_KEY",
-        "FOREIGN_KEY",
-        "UNIQUE",
-    ]
-    assert records[0].columns == ["id"]
-    assert records[2].columns == ["email"]
+    assert [record.constraint_type for record in records] == ["FOREIGN_KEY"]
+    assert records[0].columns == ["customer_id"]
     assert _grouped().for_table("missing") == []
 
 
 def test_foreign_key_referred_columns_are_fqns() -> None:
+    # Retargeted with the grouping test above: the foreign key is now
+    # the only table constraint the fixture produces.
     records = _grouped().for_table("orders")
-    assert records[1].referred_columns == ["svc.db.public.customers.id"]
-    assert records[0].referred_columns is None
+    assert len(records) == 1
+    assert records[0].constraint_type == "FOREIGN_KEY"
+    assert records[0].referred_columns == ["svc.db.public.customers.id"]
 
 
 def test_incomplete_referred_side_drops_the_whole_list() -> None:
@@ -198,6 +202,100 @@ def test_apply_overlays_keys_and_keeps_not_null() -> None:
         "NOT_NULL",
         None,
     ]
+
+
+def test_composite_primary_key_is_table_constraint_only() -> None:
+    # Pin split (D-L1): a composite PK shapes one table constraint
+    # and tags no column — and composite membership suppresses even
+    # a single-column UNIQUE tag on the same column (pin
+    # _get_column_constraints returns None for composite members).
+    grouped = SchemaConstraints(
+        [
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_pkey",
+                constraint_type="PRIMARY KEY",
+                column_name="a",
+                ordinal_position=1,
+            ),
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_pkey",
+                constraint_type="PRIMARY KEY",
+                column_name="b",
+                ordinal_position=2,
+            ),
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_a_key",
+                constraint_type="UNIQUE",
+                column_name="a",
+                ordinal_position=1,
+            ),
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_fk",
+                constraint_type="FOREIGN KEY",
+                column_name="b",
+                ordinal_position=1,
+                referred_schema="public",
+                referred_table="o",
+                referred_column="x",
+            ),
+        ],
+        service_name="svc",
+        database_name="db",
+    )
+    records = grouped.for_table("t")
+    assert [record.constraint_type for record in records] == ["PRIMARY_KEY", "FOREIGN_KEY"]
+    assert records[0].columns == ["a", "b"]
+    assert grouped.column_kind("t", "a") is None
+    assert grouped.column_kind("t", "b") is None
+    columns = [
+        ColumnRecord(name="a", data_type="INT", constraint="NOT_NULL"),
+        ColumnRecord(name="b", data_type="INT", constraint="NOT_NULL"),
+    ]
+    grouped.apply("t", columns)
+    assert [column.constraint for column in columns] == ["NOT_NULL", "NOT_NULL"]
+
+
+def test_composite_unique_is_table_constraint_only() -> None:
+    # Pin split (D-L1), same rule for UNIQUE: a multi-column unique
+    # group shapes a table constraint and tags no column, while a
+    # single-column PK in the same table still tags its column.
+    grouped = SchemaConstraints(
+        [
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_uq",
+                constraint_type="UNIQUE",
+                column_name="a",
+                ordinal_position=1,
+            ),
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_uq",
+                constraint_type="UNIQUE",
+                column_name="b",
+                ordinal_position=2,
+            ),
+            ConstraintRow(
+                table_name="t",
+                constraint_name="t_pkey",
+                constraint_type="PRIMARY KEY",
+                column_name="id",
+                ordinal_position=1,
+            ),
+        ],
+        service_name="svc",
+        database_name="db",
+    )
+    records = grouped.for_table("t")
+    assert [record.constraint_type for record in records] == ["UNIQUE"]
+    assert records[0].columns == ["a", "b"]
+    assert grouped.column_kind("t", "id") == "PRIMARY_KEY"
+    assert grouped.column_kind("t", "a") is None
+    assert grouped.column_kind("t", "b") is None
 
 
 def test_nullable_flag_maps_only_yes_and_no() -> None:
@@ -417,13 +515,13 @@ def test_postgres_source_emits_constraints_and_column_kinds() -> None:
         None,
         None,
     ]
-    assert [item.constraint_type for item in table.table_constraints] == [
-        "PRIMARY_KEY",
-        "FOREIGN_KEY",
-        "UNIQUE",
-    ]
+    # TEST-BUG RETARGET (D-L1): the old assertion required the
+    # single-column PRIMARY_KEY and UNIQUE groups as table constraints
+    # alongside the column tags — the server-rejected shape. Only the
+    # foreign key shapes a table constraint now.
+    assert [item.constraint_type for item in table.table_constraints] == ["FOREIGN_KEY"]
     payload = _table_payload(table)
-    assert payload["tableConstraints"][1]["referredColumns"] == [
+    assert payload["tableConstraints"][0]["referredColumns"] == [
         "warehouse.analytics.public.customers.id"
     ]
     assert payload["columns"][0]["constraint"] == "PRIMARY_KEY"

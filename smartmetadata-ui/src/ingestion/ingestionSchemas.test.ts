@@ -10,19 +10,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   applySchemaDefaults,
-  branchSignature,
   cleanWorkFlowData,
   deref,
   formatAdditionalProperties,
-  resolveBranches,
-  startCase,
   getDefaultFilterPropertyFieldsFromSchema,
   getDefaultFilterPropertyValues,
   getSchemaByWorkflowType,
   getWorkflowCustomProperties,
+  neutralizeUnresolvableRefs,
   resolveRef,
   selectBranch,
+  startCase,
   validateOwnerConfigMaps,
+  type RjsfSchema,
 } from './ingestionSchemas';
 
 /**
@@ -458,47 +458,14 @@ describe('ingestion schemas', () => {
     expect(custom.enableDebugLog).toBeDefined();
     expect(custom.rootProcessingEngine).toBeUndefined();
   });
+
+  it('startCase splits camelCase and snake_case keys', () => {
+    expect(startCase('dbtConfigSource')).toBe('Dbt Config Source');
+    expect(startCase('include_views')).toBe('Include Views');
+  });
 });
 
-describe('resolveBranches / branchSignature', () => {
-  it('resolves the dbt oneOf to the branch the data selects', async () => {
-    const schema = await getSchemaByWorkflowType('dbt', 'DATABASE_SERVICES');
-    const cloud = resolveBranches(schema, { dbtConfigSource: { dbtConfigType: 'cloud' } }, schema);
-    const cloudSource = deref(cloud.properties!.dbtConfigSource!, schema);
-    expect(cloudSource.oneOf).toBeUndefined();
-    expect(cloudSource.properties!.dbtConfigType).toBeDefined();
-    const local = resolveBranches(schema, { dbtConfigSource: { dbtConfigType: 'local' } }, schema);
-    const localSource = deref(local.properties!.dbtConfigSource!, schema);
-    expect(localSource.oneOf).toBeUndefined();
-    expect(localSource.properties!.dbtConfigType).toBeDefined();
-    // The two resolutions differ (cloud has dbtCloudAccountId, local has dbtManifestFilePath).
-    expect(Object.keys(cloudSource.properties ?? {})).not.toEqual(
-      Object.keys(localSource.properties ?? {}),
-    );
-  });
-
-  it('resolves the profiler sample-config oneOf to the dynamic branch by default', async () => {
-    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
-    const resolved = resolveBranches(schema, {}, schema);
-    const sampleConfig = deref(resolved.properties!.profileSampleConfig!, schema);
-    const config = deref(sampleConfig.properties!.config!, schema);
-    expect(config.oneOf).toBeUndefined();
-    expect(config.properties!.smartSampling).toBeDefined();
-  });
-
-  it('branchSignature changes exactly when a branch selection changes', async () => {
-    const schema = await getSchemaByWorkflowType('dbt', 'DATABASE_SERVICES');
-    const cloud = branchSignature(schema, { dbtConfigSource: { dbtConfigType: 'cloud' } }, schema);
-    const local = branchSignature(schema, { dbtConfigSource: { dbtConfigType: 'local' } }, schema);
-    expect(cloud).not.toBe(local);
-    const cloudAgain = branchSignature(
-      schema,
-      { dbtConfigSource: { dbtConfigType: 'cloud', dbtCloudAccountId: 'x' } },
-      schema,
-    );
-    expect(cloudAgain).toBe(cloud);
-  });
-
+describe('Q-3 layered branch selection (presentation/defaults only)', () => {
   it('selectBranch never picks a string branch for an object value', async () => {
     const schema = await getSchemaByWorkflowType('metadata', 'DATABASE_SERVICES');
     const ownerConfig = deref(schema.properties!.ownerConfig!, schema);
@@ -510,8 +477,158 @@ describe('resolveBranches / branchSignature', () => {
     expect(branch.additionalProperties).toBeDefined();
   });
 
-  it('startCase splits camelCase and snake_case keys', () => {
-    expect(startCase('dbtConfigSource')).toBe('Dbt Config Source');
-    expect(startCase('include_views')).toBe('Include Views');
+  it('selectBranch picks the static arm for a static-shaped sample config', async () => {
+    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    const config = schema.properties!.profileSampleConfig!.properties!.config!;
+    // No sampleConfigType is passed: the generic selector must tell the
+    // arms apart from the value's keys alone (the discriminator lives
+    // on the parent, invisible here by design).
+    const branch = selectBranch(
+      config.oneOf!,
+      { profileSample: 50, profileSampleType: 'ROWS' },
+      schema,
+    );
+    expect(branch.title).toBe('StaticSamplingConfig');
+  });
+
+  it('selectBranch picks the dynamic arm for a dynamic-shaped sample config', async () => {
+    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    const config = schema.properties!.profileSampleConfig!.properties!.config!;
+    const branch = selectBranch(
+      config.oneOf!,
+      { smartSampling: false, thresholds: [] },
+      schema,
+    );
+    expect(branch.title).toBe('DynamicSamplingConfig');
+  });
+
+  it('selectBranch falls back to the first branch for an empty or foreign-keyed value', async () => {
+    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    const config = schema.properties!.profileSampleConfig!.properties!.config!;
+    expect(selectBranch(config.oneOf!, {}, schema).title).toBe('DynamicSamplingConfig');
+    expect(selectBranch(config.oneOf!, { unknownKey: 1 }, schema).title).toBe(
+      'DynamicSamplingConfig',
+    );
+  });
+
+  it('selectBranch prefers the branch covering the most carried keys, earliest on ties', () => {
+    const schema: RjsfSchema = {
+      type: 'object',
+      properties: {
+        choice: {
+          oneOf: [
+            {
+              type: 'object',
+              properties: { a: { type: 'string' }, b: { type: 'string' } },
+              additionalProperties: false,
+            },
+            {
+              type: 'object',
+              properties: {
+                b: { type: 'string' },
+                c: { type: 'string' },
+                d: { type: 'string' },
+              },
+              additionalProperties: false,
+            },
+          ],
+        },
+      },
+    };
+    const branches = schema.properties!.choice!.oneOf!;
+    expect(selectBranch(branches, { c: 'x', d: 'y' }, schema).properties).toHaveProperty('d');
+    expect(selectBranch(branches, { a: 'x', c: 'y' }, schema).properties).toHaveProperty('a');
+    expect(selectBranch(branches, { b: 'x' }, schema).properties).toHaveProperty('a');
+  });
+
+  it('seeding a saved static sample config injects no dynamic fields', async () => {
+    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    const seeded = applySchemaDefaults(schema, {
+      profileSampleConfig: {
+        sampleConfigType: 'STATIC',
+        config: { profileSample: 50, profileSampleType: 'ROWS', samplingMethodType: 'SYSTEM' },
+      },
+    });
+    expect(seeded.profileSampleConfig).toEqual({
+      sampleConfigType: 'STATIC',
+      config: { profileSample: 50, profileSampleType: 'ROWS', samplingMethodType: 'SYSTEM' },
+    });
+  });
+
+  it('seeding a saved dynamic sample config injects no static fields', async () => {
+    const schema = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    const seeded = applySchemaDefaults(schema, {
+      profileSampleConfig: {
+        sampleConfigType: 'DYNAMIC',
+        config: {
+          smartSampling: false,
+          thresholds: [{ rowCountThreshold: 500, profileSample: 25 }],
+        },
+      },
+    });
+    const sampleConfig = seeded.profileSampleConfig as Record<string, unknown>;
+    const config = sampleConfig.config as Record<string, unknown>;
+    expect(sampleConfig.sampleConfigType).toBe('DYNAMIC');
+    expect(config.smartSampling).toBe(false);
+    expect(config).not.toHaveProperty('profileSample');
+    expect(config).not.toHaveProperty('profileSampleType');
+    expect(config).not.toHaveProperty('samplingMethodType');
+    expect(config.thresholds).toMatchObject([{ rowCountThreshold: 500, profileSample: 25 }]);
+  });
+
+  it('neutralizeUnresolvableRefs returns clean schemas unchanged', async () => {
+    const profiler = await getSchemaByWorkflowType('profiler', 'DATABASE_SERVICES');
+    expect(neutralizeUnresolvableRefs(profiler)).toBe(profiler);
+    const dbt = await getSchemaByWorkflowType('dbt', 'DATABASE_SERVICES');
+    expect(neutralizeUnresolvableRefs(dbt)).toBe(dbt);
+  });
+
+  it('neutralizeUnresolvableRefs drops only the dangling TestSuite projectId branches', async () => {
+    const schema = await getSchemaByWorkflowType('TestSuite', 'DATABASE_SERVICES');
+    const result = neutralizeUnresolvableRefs(schema);
+    expect(result).not.toBe(schema);
+    // The input schema is never mutated: the original still carries the
+    // dangling oneOf branches.
+    const gcpConfig = schema.definitions!.serviceConnections!.properties!.serviceConnection!
+      .oneOf![3]!.properties!.config!.oneOf![4]!.properties!.gcpConfig!;
+    const originalProjectId = gcpConfig.definitions!.gcpADC!.properties!.projectId!;
+    expect(originalProjectId.oneOf).toHaveLength(2);
+    // The neutralized copy keeps the node's annotations but no
+    // constraint: the projectId oneOf had no resolvable branch.
+    const cleanedGcpConfig = result.definitions!.serviceConnections!.properties!
+      .serviceConnection!.oneOf![3]!.properties!.config!.oneOf![4]!.properties!.gcpConfig!;
+    const cleanedProjectId = cleanedGcpConfig.definitions!.gcpADC!.properties!.projectId!;
+    expect(cleanedProjectId.oneOf).toBeUndefined();
+    expect(cleanedProjectId.$ref).toBeUndefined();
+    expect(cleanedProjectId.title).toBe('GCP Project ID');
+    // Every $ref left in the copy resolves; the two dangling pointers
+    // are gone.
+    const refs: string[] = [];
+    const collect = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(collect);
+        return;
+      }
+      if (node !== null && typeof node === 'object') {
+        for (const [key, entry] of Object.entries(node as Record<string, unknown>)) {
+          if (key === '$ref' && typeof entry === 'string') {
+            refs.push(entry);
+          }
+          collect(entry);
+        }
+      }
+    };
+    collect(result);
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(ref).not.toContain('/credentials/properties/gcpConfig/');
+      expect(() => resolveRef(ref, result)).not.toThrow();
+    }
+    // A resolvable $ref elsewhere in the file survives untouched.
+    const thresholdType = result.properties!.profileSampleConfig!.properties!.config!
+      .oneOf![0]!.properties!.thresholds!.items!.properties!.profileSampleType!;
+    expect(thresholdType.$ref).toBe(
+      '#/properties/profileSampleConfig/properties/config/oneOf/1/properties/profileSampleType',
+    );
   });
 });

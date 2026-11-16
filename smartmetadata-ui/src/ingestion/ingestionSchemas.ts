@@ -404,14 +404,122 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Pick the `oneOf`/`anyOf` branch a value belongs to: branches whose
- * `type` cannot hold the value are eliminated first (an object value
- * never selects a `string` branch — the ownerConfig maps are
- * `anyOf: [string, string[]]`-valued and `anyOf: [string, map]`-shaped),
- * then the first branch whose single-value-enum discriminators match
- * the value, else the first branch whose `required` fields are all
- * present, else the first surviving branch. Mirrors how RJSF's
- * `getDefaultFormState` resolves a `oneOf` for a given value.
+ * The validation-schema transform: return the schema with every
+ * unresolvable `$ref` neutralized, leaving every resolvable `$ref` for
+ * AJV to resolve natively. A `$ref` whose pointer does not resolve
+ * makes AJV throw at compile time; the vendored schemas carry exactly
+ * one such defect — pin's schema generator wrote the GCP `projectId`
+ * pointers in `testSuitePipeline.json` against a shape that does not
+ * exist (the `credentials` node is itself a `$ref`, so the
+ * `.../credentials/properties/gcpConfig/...` pointers dangle). The file
+ * is byte-identical to pin `a3012259ca`, so the defect is upstream's,
+ * and `schemas/` must not be edited to fix it.
+ *
+ * Neutralization never deletes a resolvable branch: a `oneOf`/`anyOf`
+ * branch that is only an unresolvable `$ref` is dropped, and a node
+ * left with no branches keeps its annotations but no constraint (the
+ * three affected `projectId` nodes accept any value — a recorded
+ * residual; they were never correctly validated before either, since
+ * branch resolution pruned them away). A schema with no unresolvable
+ * `$ref` is returned unchanged (the same object), so the transform is
+ * a no-op for the other eighteen schemas.
+ */
+export function neutralizeUnresolvableRefs(
+  schema: RjsfSchema,
+  rootSchema: RjsfSchema = schema,
+): RjsfSchema {
+  return neutralizeNode(schema, rootSchema) as RjsfSchema;
+}
+
+function refResolves(ref: string, rootSchema: RjsfSchema): boolean {
+  try {
+    resolveRef(ref, rootSchema);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isDanglingRefNode(value: unknown, rootSchema: RjsfSchema): boolean {
+  return (
+    isRecord(value) && typeof value.$ref === 'string' && !refResolves(value.$ref, rootSchema)
+  );
+}
+
+function neutralizeNode(value: unknown, rootSchema: RjsfSchema): unknown {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const out = value.map((entry) => {
+      const next = neutralizeNode(entry, rootSchema);
+      if (next !== entry) {
+        changed = true;
+      }
+      return next;
+    });
+    return changed ? out : value;
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  let result: Record<string, unknown> = value;
+  let stripped = false;
+  for (const keyword of ['oneOf', 'anyOf'] as const) {
+    const branches = result[keyword];
+    if (!Array.isArray(branches)) {
+      continue;
+    }
+    const kept = branches.filter((branch) => !isDanglingRefNode(branch, rootSchema));
+    if (kept.length === branches.length) {
+      continue;
+    }
+    const { [keyword]: _dropped, ...siblings } = result;
+    void _dropped;
+    result = kept.length === 0 ? siblings : { ...siblings, [keyword]: kept };
+    stripped = true;
+  }
+  if (isDanglingRefNode(result, rootSchema)) {
+    const { $ref: _dropped, ...siblings } = result;
+    void _dropped;
+    result = siblings;
+    stripped = true;
+  }
+  const walked = neutralizeRecord(result, rootSchema);
+  return !stripped && walked === result ? value : walked;
+}
+
+function neutralizeRecord(
+  record: Record<string, unknown>,
+  rootSchema: RjsfSchema,
+): Record<string, unknown> {
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    const next = neutralizeNode(entry, rootSchema);
+    if (next !== entry) {
+      changed = true;
+    }
+    out[key] = next;
+  }
+  return changed ? out : record;
+}
+
+/**
+ * Pick the `oneOf`/`anyOf` branch to PRESENT for a value, and to seed
+ * defaults from. Presentation/defaults ONLY — validity never calls
+ * this: the form validates against the full schema with every branch
+ * intact, so a value matching zero or several branches keeps its
+ * object-level error instead of being judged against the branch picked
+ * here (Q-3). Branches whose `type` cannot hold the value are
+ * eliminated first (an object value never selects a `string` branch —
+ * the ownerConfig maps are `anyOf: [string, string[]]`-valued and
+ * `anyOf: [string, map]`-shaped), then the first branch whose
+ * single-value-enum discriminators match the value, else the first
+ * branch whose `required` fields are all present, else the branch
+ * whose properties cover the most keys the value carries (the
+ * profile-sample arms have neither discriminators nor `required`, so
+ * only their keys tell them apart), else the first surviving branch.
+ * Mirrors how RJSF's `getDefaultFormState` resolves a `oneOf` for a
+ * given value.
  */
 export function selectBranch(
   branches: RjsfSchema[],
@@ -460,6 +568,30 @@ export function selectBranch(
       if (required.length > 0 && required.every((key) => value[key] !== undefined)) {
         return resolved;
       }
+    }
+    // Neither discriminators nor `required` decide (both profile-sample
+    // arms lack them): prefer the branch whose properties cover the
+    // most keys the value carries. Ties keep the earliest candidate, so
+    // an empty or foreign-keyed value still falls through to the first
+    // branch exactly as before.
+    let best: RjsfSchema | undefined;
+    let bestScore = 0;
+    for (const branch of candidates) {
+      const resolved = deref(branch, rootSchema);
+      const props = resolved.properties ?? {};
+      let score = 0;
+      for (const key of Object.keys(value)) {
+        if (value[key] !== undefined && key in props) {
+          score += 1;
+        }
+      }
+      if (score > bestScore) {
+        best = resolved;
+        bestScore = score;
+      }
+    }
+    if (best !== undefined) {
+      return best;
     }
   }
   return deref(candidates[0]!, rootSchema);
@@ -707,78 +839,6 @@ export function getDefaultFilterPropertyValues({
   return Object.fromEntries(
     Object.entries(filterValues).filter(([key]) => filterPropertiesInSchema.includes(key)),
   );
-}
-
-/**
- * Resolve every `oneOf`/`anyOf` node in a schema to the branch the given
- * data selects — the AJV equivalent of the branch RJSF renders. Validation
- * then runs against the resolved schema, so errors come only from the
- * selected branch instead of from every branch plus a `oneOf` complaint
- * (RJSF surfaces the selected branch's errors the same way).
- *
- * Array items are resolved against the first row: no item schema in the
- * vendored set contains a `oneOf`/`anyOf`, so the choice cannot differ
- * per row.
- */
-export function resolveBranches(schema: RjsfSchema, data: unknown, rootSchema: RjsfSchema): RjsfSchema {
-  const resolved = deref(schema, rootSchema);
-  const branches = resolved.oneOf ?? resolved.anyOf;
-  if (branches) {
-    return resolveBranches(selectBranch(branches, data, rootSchema), data, rootSchema);
-  }
-  const out: RjsfSchema = { ...resolved };
-  if (resolved.properties) {
-    const properties: Record<string, RjsfSchema> = {};
-    const record = isRecord(data) ? data : {};
-    for (const [key, subSchema] of Object.entries(resolved.properties)) {
-      properties[key] = resolveBranches(subSchema, record[key], rootSchema);
-    }
-    out.properties = properties;
-  }
-  if (resolved.items && typeof resolved.items === 'object') {
-    const rows = Array.isArray(data) ? data : [];
-    out.items = resolveBranches(resolved.items, rows[0], rootSchema);
-  }
-  if (resolved.additionalProperties && typeof resolved.additionalProperties === 'object') {
-    out.additionalProperties = resolveBranches(
-      resolved.additionalProperties,
-      undefined,
-      rootSchema,
-    );
-  }
-  return out;
-}
-
-/**
- * A stable key for the branch choices `resolveBranches` makes for a given
- * data object — the cache key for a validator compiled from the resolved
- * schema. Changes exactly when a branch selection changes.
- */
-export function branchSignature(schema: RjsfSchema, data: unknown, rootSchema: RjsfSchema): string {
-  const parts: string[] = [];
-  function walk(node: RjsfSchema, value: unknown, path: string): void {
-    const resolved = deref(node, rootSchema);
-    const branches = resolved.oneOf ?? resolved.anyOf;
-    if (branches) {
-      const branch = selectBranch(branches, value, rootSchema);
-      const index = branches.findIndex((candidate) => deref(candidate, rootSchema) === branch);
-      parts.push(`${path}=${index}`);
-      walk(branch, value, path);
-      return;
-    }
-    if (resolved.properties && isRecord(value)) {
-      for (const [key, subSchema] of Object.entries(resolved.properties)) {
-        walk(subSchema, value[key], `${path}/${key}`);
-      }
-    }
-    if (resolved.type === 'array' && Array.isArray(value) && resolved.items) {
-      value.forEach((item, index) => {
-        walk(resolved.items as RjsfSchema, item, `${path}/${index}`);
-      });
-    }
-  }
-  walk(schema, data, '');
-  return parts.join(';');
 }
 
 /** `startCase` for schema keys that carry no `title` (official's RJSF does the same). */

@@ -9,7 +9,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  PASSWORD_PLACEHOLDERS,
   SERVICE_ENTITY_TYPE_BY_KIND,
   SERVICE_KIND_BY_ENTITY_TYPE,
   SERVICE_KIND_DEFAULT_TYPE,
@@ -180,6 +179,61 @@ describe('service connections', () => {
       config: { type: 'Postgres', authType: { password: '********' } },
     });
     expect(connection?.config?.authType).toEqual({ password: '********' });
+  });
+
+  it('carries declared *FilterPattern objects forward on edit and drops the flat wizard keys (D-L3)', () => {
+    // P-08(c): the edit form has no filter inputs, so the stored
+    // patterns must survive the rebuild or the add-ingestion prefill
+    // breaks afterwards. The flat keys the old wizard wrote are
+    // undeclared on every connection schema — carrying them would
+    // re-send keys the server rejects on encrypt, so an edit heals a
+    // stored config carrying them instead of preserving them.
+    const connection = buildServiceConnection(postgresForm(), {
+      config: {
+        type: 'Postgres',
+        schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] },
+        tableFilterPattern: { includes: [], excludes: ['^stg_.*$'] },
+        includeSchemas: 'public',
+        includeViews: false,
+        includeTopics: 'orders',
+        includeDashboards: 'dash',
+        includeCharts: 'chart',
+        includeContainers: 'cont',
+        generateSampleData: true,
+      },
+    });
+    expect(connection?.config?.schemaFilterPattern).toEqual({
+      includes: ['public'],
+      excludes: ['^tmp_.*$'],
+    });
+    expect(connection?.config?.tableFilterPattern).toEqual({ includes: [], excludes: ['^stg_.*$'] });
+    const config = connection?.config as unknown as Record<string, unknown>;
+    expect(config.includeSchemas).toBeUndefined();
+    expect(config.includeViews).toBeUndefined();
+    expect(config.includeTopics).toBeUndefined();
+    expect(config.includeDashboards).toBeUndefined();
+    expect(config.includeCharts).toBeUndefined();
+    expect(config.includeContainers).toBeUndefined();
+    expect(config.generateSampleData).toBeUndefined();
+  });
+
+  it('carries unlisted *FilterPattern keys forward too (D-L3)', () => {
+    // modelFilterPattern is declared on the OpenAI connection schema
+    // but is not one of the 19 known fields: the carry-over keys off
+    // the FilterPattern name, not the known-field list, so it survives
+    // an edit like any declared pattern.
+    const connection = buildServiceConnection(
+      { name: 'chat', kind: 'llm', serviceType: 'OpenAI', apiKey: 'k' },
+      {
+        config: {
+          type: 'OpenAI',
+          modelFilterPattern: { includes: ['gpt-*'], excludes: [] },
+        },
+      },
+    );
+    expect(
+      (connection?.config as unknown as Record<string, unknown>)?.modelFilterPattern,
+    ).toEqual({ includes: ['gpt-*'], excludes: [] });
   });
 
   it('builds Snowflake and Kafka catalog subsets', () => {
@@ -1392,12 +1446,6 @@ describe('service kind tables', () => {
       expect(kindForServiceType(SERVICE_KIND_DEFAULT_TYPE[kind])).toBe(kind);
       expect(SERVICE_KIND_BY_ENTITY_TYPE[SERVICE_ENTITY_TYPE_BY_KIND[kind]]).toBe(kind);
     }
-  });
-
-  it('keeps password placeholders table-driven per type', () => {
-    expect(PASSWORD_PLACEHOLDERS.Postgres).toBe('${PG_PASSWORD}');
-    expect(PASSWORD_PLACEHOLDERS.S3).toBe('${AWS_SECRET_ACCESS_KEY}');
-    expect(PASSWORD_PLACEHOLDERS.UnknownType).toBeUndefined();
   });
 
   it('creates a blank form with the create-modal defaults', () => {

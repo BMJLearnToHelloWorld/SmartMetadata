@@ -26,6 +26,7 @@ describe('AddServiceIngestionView', () => {
   const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
   const deploys: string[] = [];
   let serviceOwners: Array<Record<string, unknown>> = [];
+  let serviceConfig: Record<string, unknown> = {};
   let deployReason: string | undefined;
   let createStatus = 200;
 
@@ -41,7 +42,7 @@ describe('AddServiceIngestionView', () => {
             serviceType: 'Postgres',
             kind: 'database',
             owners: serviceOwners,
-            connection: { config: { type: 'Postgres', schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] } } },
+            connection: { config: serviceConfig },
           });
         }
         if (url.includes('/api/v1/services/ingestionPipelines/status')) {
@@ -73,7 +74,10 @@ describe('AddServiceIngestionView', () => {
     );
   }
 
-  async function mountView() {
+  async function mountView(
+    ingestionType = 'metadata',
+    readyTestId = 'schema-field-threads',
+  ) {
     const pinia = createPinia();
     setActivePinia(pinia);
     useAuthStore().user = {
@@ -99,16 +103,20 @@ describe('AddServiceIngestionView', () => {
         },
       ],
     });
-    await router.push('/ingestion/services/database/s1/add-ingestion/metadata');
+    await router.push(`/ingestion/services/database/s1/add-ingestion/${ingestionType}`);
     await router.isReady();
     const wrapper = mount(AddServiceIngestionView, {
-      props: { kind: 'database', id: 's1', ingestionType: 'metadata' },
+      props: { kind: 'database', id: 's1', ingestionType },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     // The schema import is an extra async hop after the service fetch;
     // wait for the form (and its schema-driven fields) to appear.
+    // `threads` lives in the open Agent Setup section; collapsed
+    // sections (e.g. Advanced Config, where includeViews sits) do not
+    // mount their fields. Non-metadata schemas wait on a section
+    // toggle instead (the profiler schema has no `threads` field).
     await vi.waitFor(() =>
-      expect(wrapper.find('[data-testid="schema-field-includeViews"]').exists()).toBe(true),
+      expect(wrapper.find(`[data-testid="${readyTestId}"]`).exists()).toBe(true),
     );
     return { wrapper, router };
   }
@@ -117,6 +125,10 @@ describe('AddServiceIngestionView', () => {
     posts.length = 0;
     deploys.length = 0;
     serviceOwners = [];
+    serviceConfig = {
+      type: 'Postgres',
+      schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] },
+    };
     deployReason = undefined;
     createStatus = 200;
     stubFetch();
@@ -252,5 +264,61 @@ describe('AddServiceIngestionView', () => {
     expect(posts).toHaveLength(1);
     expect(wrapper.find('[data-testid="add-ingestion-step-success"]').exists()).toBe(false);
     expect(router.currentRoute.value.name).toBe('ingestion-service-add-ingestion');
+  });
+
+  it('renders the debug log inside Scope & Behaviour, with no external checkbox', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="ingestion-section-scope-toggle"]').trigger('click');
+    const scope = wrapper.find('[data-testid="ingestion-section-scope"]');
+    expect(scope.find('[data-testid="schema-field-enableDebugLog-switch"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-ingestion-debug-log"]').exists()).toBe(false);
+  });
+
+  it('sends loggerLevel DEBUG from the in-form debug toggle, without leaking the flag into sourceConfig', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="ingestion-section-scope-toggle"]').trigger('click');
+    await wrapper.find('[data-testid="schema-field-enableDebugLog-switch"]').trigger('click');
+    await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
+    await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
+    await flushPromises();
+    await flushPromises();
+    expect(posts).toHaveLength(1);
+    const body = posts[0]!.body as {
+      loggerLevel?: string;
+      sourceConfig: { config: Record<string, unknown> };
+    };
+    expect(body.loggerLevel).toBe('DEBUG');
+    // Pin's createNewIngestion destructures enableDebugLog out of the
+    // workflow data before building sourceConfig.config.
+    expect(body.sourceConfig.config).not.toHaveProperty('enableDebugLog');
+  });
+
+  it('gates incremental on the service connection flag', async () => {
+    const hidden = await mountView();
+    expect(hidden.wrapper.find('[data-testid="schema-field-incremental"]').exists()).toBe(false);
+    serviceConfig = {
+      ...serviceConfig,
+      supportsMetadataExtraction: true,
+      supportsIncrementalMetadataExtraction: true,
+    };
+    const shown = await mountView();
+    expect(shown.wrapper.find('[data-testid="schema-field-incremental"]').exists()).toBe(true);
+  });
+
+  it('gates enableAutoPartitionDetection on the service connection flag, not the pipeline type', async () => {
+    // Profiler WITHOUT the flag: the old `pipelineType === 'profiler'`
+    // heuristic showed the field; the service flag hides it.
+    serviceConfig = { ...serviceConfig, supportsProfiler: true };
+    const hidden = await mountView('profiler', 'ingestion-section-advanced-toggle');
+    await hidden.wrapper.find('[data-testid="ingestion-section-advanced-toggle"]').trigger('click');
+    expect(
+      hidden.wrapper.find('[data-testid="schema-field-enableAutoPartitionDetection"]').exists(),
+    ).toBe(false);
+    serviceConfig = { ...serviceConfig, supportsAutoPartitionDetection: true };
+    const shown = await mountView('profiler', 'ingestion-section-advanced-toggle');
+    await shown.wrapper.find('[data-testid="ingestion-section-advanced-toggle"]').trigger('click');
+    expect(
+      shown.wrapper.find('[data-testid="schema-field-enableAutoPartitionDetection-switch"]').exists(),
+    ).toBe(true);
   });
 });

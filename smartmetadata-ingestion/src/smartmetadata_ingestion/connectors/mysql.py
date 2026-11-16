@@ -41,7 +41,11 @@ from smartmetadata_ingestion.connectors.procedures import (
     procedures_for_schema,
 )
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
+from smartmetadata_ingestion.connectors.select import (
+    is_configured_schema,
+    is_selected,
+    is_selected_table,
+)
 from smartmetadata_ingestion.connectors.table_types import map_table_type
 from smartmetadata_ingestion.datatypes import check_col_length, map_mysql_type
 from smartmetadata_ingestion.errors import WorkflowError
@@ -450,24 +454,19 @@ class MysqlSource:
             return self._reader
         return CursorCatalogReader(_pymysql_connect(self._config.connection))
 
-    def _include_schemas(self) -> list[str]:
-        if self._config.include_schemas:
-            return list(self._config.include_schemas)
-        schema = self._config.connection.get("databaseSchema") or self._config.connection.get(
-            "database_schema"
-        )
-        return [str(schema)] if schema else []
-
     def _selected_schemas(
         self, reader: CatalogReader, database_name: str
     ) -> list[SchemaRow]:
+        connection = self._config.connection
+        database_schema = connection.get("databaseSchema") or connection.get("database_schema")
         exclude = list(self._config.exclude_schemas) + list(_SYSTEM_SCHEMAS)
         return [
             schema
             for schema in reader.list_schemas()
-            if is_selected(
+            if is_configured_schema(schema.name, database_schema)
+            and is_selected(
                 schema.name,
-                include=self._include_schemas(),
+                include=self._config.include_schemas,
                 exclude=exclude,
                 fqn=build_fqn(self._config.service_name, database_name, schema.name),
                 use_fqn=self._config.use_fqn_for_filtering,
@@ -541,11 +540,7 @@ def _pymysql_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = host_port, 3306
-    database = (
-        connection.get("databaseName")
-        or connection.get("database")
-        or connection.get("databaseSchema")
-    )
+    database = mysql_common.connection_database(connection)
 
     def connect():
         return pymysql.connect(

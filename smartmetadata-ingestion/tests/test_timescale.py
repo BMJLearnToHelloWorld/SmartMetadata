@@ -170,3 +170,37 @@ def test_timescale_usage(tmp_path) -> None:
     assert isinstance(events[0], TableQueryRecord)
     assert events[0].query == "SELECT * FROM analytics.public.orders"
 
+
+
+def test_timescale_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Fork convention (D-L2a), not pin behavior: this type's connection
+    # schema declares no `databaseSchema`, so pin never restricts it —
+    # pin's restriction covers only the five declaring types (mysql,
+    # mariaDB, doris, databricks, unityCatalog). The fork honors the key
+    # anyway, consistently with the reconcile gate, which already lists
+    # it for this type. The restriction narrows the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = TimescaleSource(
+        SourceConfig(
+            type="timescale",
+            service_name="timescale-svc",
+            connection=_conn(databaseSchema="other"),
+            include_schemas=["public"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = TimescaleSource(
+        SourceConfig(
+            type="timescale",
+            service_name="timescale-svc",
+            connection=_conn(databaseSchema="pub"),
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

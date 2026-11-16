@@ -21,7 +21,12 @@ from smartmetadata_ingestion.connectors.databricks_common import (
 from smartmetadata_ingestion.connectors.unitycatalog import UnityCatalogSource
 from smartmetadata_ingestion.connectors.unitycatalog_data_diff import UnityCatalogTableParameter
 from smartmetadata_ingestion.connectors.unitycatalog_usage import UnityCatalogUsageSource
-from smartmetadata_ingestion.records import DatabaseServiceRecord, TableQueryRecord, TableRecord
+from smartmetadata_ingestion.records import (
+    DatabaseServiceRecord,
+    SchemaRecord,
+    TableQueryRecord,
+    TableRecord,
+)
 
 
 def _conn(**extra):
@@ -122,3 +127,34 @@ def test_unitycatalog_usage_data_diff(tmp_path) -> None:
         table="ORDERS",
     )
     assert payload["type"] == "UnityCatalog"
+
+
+def test_unitycatalog_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = UnityCatalogSource(
+        SourceConfig(
+            type="unitycatalog",
+            service_name="uc",
+            connection=_conn(databaseSchema="other"),
+            include_databases=["main"],
+            include_schemas=["default"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = UnityCatalogSource(
+        SourceConfig(
+            type="unitycatalog",
+            service_name="uc",
+            connection=_conn(databaseSchema="def"),
+            include_databases=["main"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

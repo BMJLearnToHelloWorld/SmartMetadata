@@ -21,6 +21,7 @@ from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors.constraints import ConstraintRow, nullable_flag
 from smartmetadata_ingestion.connectors.ddl import quote_backtick_ident
+from smartmetadata_ingestion.connectors.mysql_common import connection_database
 from smartmetadata_ingestion.connectors.procedures import ProcedureRow, epoch_ms
 from smartmetadata_ingestion.connectors.profile_sql import (
     MYSQL_TABLE_STATS_SQL,
@@ -274,11 +275,7 @@ def mariadb_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = str(host_port), 3306
-    database = (
-        connection.get("databaseSchema")
-        or connection.get("databaseName")
-        or connection.get("database")
-    )
+    database = connection_database(connection)
 
     def connect():
         return pymysql.connect(

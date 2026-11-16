@@ -284,6 +284,20 @@ def build_service_connection_config(
     return {"config": config}
 
 
+def connection_database(connection: dict[str, Any]) -> str | None:
+    """The database a pymysql connection opens, per pin's URL rule.
+
+    Official ``get_connection_url_common`` (pin a3012259ca,
+    ``connections/builders.py``) puts ``/database`` in the URL path
+    when the connection carries ``database``, else ``/databaseSchema``
+    when set; ``databaseName`` never enters the URL — it only names
+    the OpenMetadata Database entity. All four pymysql builders share
+    this one rule so they cannot disagree again.
+    """
+    database = connection.get("database") or connection.get("databaseSchema")
+    return str(database) if database else None
+
+
 def mysql_connect(connection: dict[str, Any]):
     try:
         import pymysql
@@ -298,11 +312,7 @@ def mysql_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = str(host_port), 3306
-    database = (
-        connection.get("databaseSchema")
-        or connection.get("databaseName")
-        or connection.get("database")
-    )
+    database = connection_database(connection)
 
     def connect():
         return pymysql.connect(

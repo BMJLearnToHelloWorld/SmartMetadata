@@ -196,3 +196,34 @@ def test_profiler_sampler_quality_data_diff() -> None:
     )
     assert payload["type"] == "Databricks"
     assert payload["authKind"] == AUTH_PAT
+
+
+def test_databricks_database_schema_restricts_before_pipeline_pattern() -> None:
+    # Pin layering (D-L2a): databaseSchema restricts the candidates to
+    # exactly that schema — an exact name, not a regex — and the
+    # pipeline pattern filters on top. A restriction naming no listed
+    # schema selects nothing even when the pattern matches, and a
+    # restriction that merely prefixes a schema name matches nothing.
+    source = DatabricksSource(
+        SourceConfig(
+            type="databricks",
+            service_name="lakehouse",
+            connection=_pat_conn(databaseSchema="other"),
+            include_databases=["main"],
+            include_schemas=["default"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []
+    source = DatabricksSource(
+        SourceConfig(
+            type="databricks",
+            service_name="lakehouse",
+            connection=_pat_conn(databaseSchema="def"),
+            include_databases=["main"],
+        ),
+        reader=_reader(),
+    )
+    names = [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+    assert names == []

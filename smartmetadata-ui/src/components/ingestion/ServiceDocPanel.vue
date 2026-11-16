@@ -1,0 +1,332 @@
+<!--
+  Copyright 2026 SmartMetadata authors.
+  Licensed under the Apache License, Version 2.0.
+-->
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import SmMarkdown from '@/components/shared/SmMarkdown.vue';
+import {
+  buildConnectorDocFilePath,
+  buildDocFilePaths,
+  extractFocusedRequirementsMarkdown,
+  fetchDocFileText,
+  fetchServiceDocMarkdown,
+  getActiveFieldName,
+  getConnectorDocsUrl,
+  getFocusedDocDetails,
+  getServiceTypeDisplay,
+  getSupportedDocLanguage,
+  isUsableMarkdown,
+  type FieldFocusMeta,
+} from '@/ingestion/fieldFocus';
+
+/**
+ * Port of official ServiceDocPanel in focused mode (pin a3012259ca),
+ * the mode both edit pages use. The panel owns the connector-markdown
+ * fetch, as pin does: same-origin files bundled under
+ * `public/locales/`, requested in the active locale with an English
+ * fallback, guarded so only the newest response writes. The focused
+ * field's `$$section` block plus the Requirements body render when
+ * the doc carries them; otherwise the field area falls back to the
+ * parsed schema title/description (Q-2 C′), and the setup-guide
+ * default shows with nothing focused. The docs link renders only
+ * when a connector URL can be extracted from the markdown (for
+ * workflows, from the connector file, which the shared workflow doc
+ * can never carry).
+ */
+const props = withDefaults(
+  defineProps<{
+    serviceName: string;
+    serviceType: string;
+    activeField?: string;
+    activeFieldMeta?: FieldFocusMeta;
+    isWorkflow?: boolean;
+    workflowType?: string;
+    testId?: string;
+  }>(),
+  {
+    activeField: undefined,
+    activeFieldMeta: undefined,
+    isWorkflow: false,
+    workflowType: undefined,
+    testId: 'service-requirements',
+  },
+);
+
+const { t, locale } = useI18n();
+
+const markdownContent = ref('');
+const connectorMarkdown = ref('');
+const isLoading = ref(false);
+
+// Pin's markdownRequestIdRef: the host pages render once before the
+// service has loaded, so a first request can still be in flight when a
+// second one is made. Only the newest may write, otherwise a stale
+// response blanks the panel.
+let markdownRequestId = 0;
+let connectorRequestId = 0;
+
+async function fetchRequirement(): Promise<void> {
+  const requestId = ++markdownRequestId;
+  if (!props.serviceName) {
+    markdownContent.value = '';
+    isLoading.value = false;
+    return;
+  }
+  isLoading.value = true;
+  const language = getSupportedDocLanguage(locale.value);
+  const paths = buildDocFilePaths({
+    language,
+    serviceType: props.serviceType,
+    serviceName: props.serviceName,
+    isWorkflow: props.isWorkflow,
+    workflowType: props.workflowType,
+  });
+  let response = '';
+  try {
+    response = await fetchServiceDocMarkdown(fetchDocFileText, paths, language === 'en-US');
+  } catch {
+    response = '';
+  }
+  if (requestId !== markdownRequestId) {
+    return;
+  }
+  markdownContent.value = response.replaceAll('OpenMetadata', t('product.name'));
+  isLoading.value = false;
+}
+
+async function fetchConnectorMarkdown(): Promise<void> {
+  const requestId = ++connectorRequestId;
+  if (!props.isWorkflow || !props.serviceName) {
+    connectorMarkdown.value = '';
+    return;
+  }
+  let content = '';
+  try {
+    content = await fetchDocFileText(
+      buildConnectorDocFilePath(props.serviceType, props.serviceName),
+    );
+  } catch {
+    content = '';
+  }
+  if (requestId !== connectorRequestId) {
+    return;
+  }
+  connectorMarkdown.value = isUsableMarkdown(content) ? content : '';
+}
+
+// Pin refetches on [serviceName, serviceType]; the fork also watches
+// the workflow identity because the agent form mounts the panel before
+// the pipeline type settles from the loaded pipeline. The language is
+// read from the active locale at fetch time; pin does not refetch on
+// locale change, and neither does this panel.
+watch(
+  () => [props.serviceName, props.serviceType, props.isWorkflow, props.workflowType],
+  () => {
+    void fetchRequirement();
+    void fetchConnectorMarkdown();
+  },
+  { immediate: true },
+);
+
+const activeFieldName = computed(() => getActiveFieldName(props.activeField));
+
+const details = computed(() =>
+  getFocusedDocDetails(
+    activeFieldName.value,
+    props.activeFieldMeta,
+    markdownContent.value,
+    props.isWorkflow,
+    t('product.name'),
+    (key, params) => t(key, params ?? {}),
+  ),
+);
+
+const requirementsMarkdown = computed(() =>
+  details.value.showRequirements
+    ? extractFocusedRequirementsMarkdown(markdownContent.value, {
+        autoClassification: t('forms.docPanel.requirementAutoClassification'),
+        lineage: t('forms.docPanel.requirementLineage'),
+        metadata: t('forms.docPanel.requirementMetadata'),
+        profiler: t('forms.docPanel.requirementProfiler'),
+      })
+    : '',
+);
+
+const docsUrl = computed(() =>
+  getConnectorDocsUrl(
+    props.isWorkflow ? connectorMarkdown.value : markdownContent.value,
+    props.serviceName,
+  ),
+);
+
+const serviceTypeDisplay = computed(() =>
+  getServiceTypeDisplay(props.serviceType, t('forms.docPanel.service')),
+);
+</script>
+
+<template>
+  <div :data-testid="testId" class="service-doc-panel">
+    <div class="service-doc-header">
+      <div class="service-doc-title">{{ serviceName }}</div>
+      <div class="service-doc-subtitle">{{ serviceTypeDisplay }}</div>
+    </div>
+
+    <div v-if="isLoading" class="service-doc-loading" data-testid="service-doc-loading">
+      {{ t('shared.loading') }}
+    </div>
+
+    <template v-else>
+      <div class="service-doc-intro">
+        <div class="service-doc-eyebrow">{{ details.eyebrow }}</div>
+        <h1 class="service-doc-heading">{{ details.title }}</h1>
+        <p class="service-doc-description">{{ details.description }}</p>
+      </div>
+
+      <div v-if="details.showAuthGuidance" class="service-doc-auth-grid">
+        <div class="service-doc-auth-card">
+          <div class="service-doc-auth-title">{{ t('forms.docPanel.passwordAuthTitle') }}</div>
+          <p>{{ t('forms.docPanel.passwordAuthDescription') }}</p>
+        </div>
+        <div class="service-doc-auth-card">
+          <div class="service-doc-auth-title">{{ t('forms.docPanel.keyPairAuthTitle') }}</div>
+          <p>{{ t('forms.docPanel.keyPairAuthDescription') }}</p>
+        </div>
+      </div>
+
+      <div v-if="requirementsMarkdown" class="service-doc-section">
+        <h1 class="service-doc-heading">{{ t('forms.docPanel.requirements') }}</h1>
+        <SmMarkdown :markdown="requirementsMarkdown" test-id="service-doc-requirements" />
+      </div>
+
+      <div
+        v-if="details.schemaFallback"
+        class="service-doc-section"
+        data-testid="service-doc-field-fallback"
+      >
+        <div class="service-doc-field-title">{{ details.schemaFallback.title }}</div>
+        <p class="service-doc-field-description">{{ details.schemaFallback.description }}</p>
+      </div>
+
+      <div v-if="details.markdown" class="service-doc-section">
+        <SmMarkdown :markdown="details.markdown" test-id="service-doc-field-markdown" />
+      </div>
+
+      <div v-if="docsUrl" class="service-doc-link-section">
+        <a :href="docsUrl" rel="noreferrer" target="_blank" class="service-doc-link">
+          {{ t('forms.docPanel.viewServiceDocs', { serviceName }) }}
+        </a>
+        <span class="service-doc-link-hint">{{ t('forms.docPanel.docsDescription') }}</span>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.service-doc-panel {
+  padding: 20px;
+}
+
+.service-doc-header {
+  margin-bottom: 20px;
+}
+
+.service-doc-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.service-doc-subtitle {
+  font-size: 13px;
+  color: var(--sm-text-tertiary);
+}
+
+.service-doc-loading {
+  font-size: 14px;
+  color: var(--sm-text-secondary);
+}
+
+.service-doc-intro {
+  margin-bottom: 16px;
+}
+
+.service-doc-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--sm-color-primary);
+}
+
+.service-doc-heading {
+  margin: 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.service-doc-description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--sm-text-secondary);
+}
+
+.service-doc-auth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.service-doc-auth-card {
+  padding: 12px;
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: 8px;
+}
+
+.service-doc-auth-title {
+  font-weight: 600;
+}
+
+.service-doc-auth-card p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--sm-text-secondary);
+}
+
+.service-doc-section {
+  margin-bottom: 16px;
+}
+
+.service-doc-field-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.service-doc-field-description {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--sm-text-secondary);
+}
+
+.service-doc-link-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.service-doc-link {
+  font-weight: 500;
+  color: var(--sm-color-primary);
+}
+
+.service-doc-link-hint {
+  font-size: 12px;
+  color: var(--sm-text-tertiary);
+}
+</style>

@@ -293,6 +293,165 @@ describe('PipelinesListView', () => {
     expect(values).toEqual(['metadata', 'usage', 'lineage', 'profiler', 'autoClassification', 'dbt']);
   });
 
+  /**
+   * Open the create modal with a list record carrying the given
+   * connection config, pick the pipeline type, then select the
+   * service. The type goes first so the schema resolves exactly once,
+   * for the final (service, type) pair. The modal teleports, so
+   * callers query document.body for its content.
+   */
+  async function mountCreateModal(
+    serviceConfig: Record<string, unknown>,
+    pipelineType: string,
+    readyTestId: string,
+  ) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/services/databaseServices')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 's1',
+                name: 'warehouse',
+                serviceType: 'Postgres',
+                connection: { config: serviceConfig },
+              },
+            ],
+          });
+        }
+        if (
+          url.includes('/api/v1/services/messagingServices') ||
+          url.includes('/api/v1/services/dashboardServices') ||
+          url.includes('/api/v1/services/storageServices')
+        ) {
+          return jsonResponse({ data: [] });
+        }
+        if (url.includes('/api/v1/permissions/ingestionPipeline')) {
+          return jsonResponse({
+            resource: 'ingestionPipeline',
+            permissions: [{ operation: 'Create', access: 'allow' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="create-pipeline"]').trigger('click');
+    await flushPromises();
+    const selects = wrapper.findAllComponents(Select);
+    const typeSelect = selects.find(
+      (component) => component.attributes('data-testid') === 'create-pipeline-type',
+    );
+    expect(typeSelect).not.toBeUndefined();
+    await typeSelect!.vm.$emit('update:value', pipelineType);
+    await flushPromises();
+    const serviceSelect = selects.find(
+      (component) => component.attributes('data-testid') === 'create-pipeline-service',
+    );
+    expect(serviceSelect).not.toBeUndefined();
+    await serviceSelect!.vm.$emit('update:value', 's1');
+    await vi.waitFor(
+      () =>
+        expect(document.body.querySelector(`[data-testid="${readyTestId}"]`)).not.toBeNull(),
+      { timeout: 5000 },
+    );
+    return wrapper;
+  }
+
+  it('hides incremental in the create modal when the service does not support it', async () => {
+    await mountCreateModal(
+      { type: 'Postgres', supportsMetadataExtraction: true },
+      'metadata',
+      'schema-field-threads',
+    );
+    expect(document.body.querySelector('[data-testid="schema-field-incremental"]')).toBeNull();
+  });
+
+  it('shows incremental in the create modal when the service supports it', async () => {
+    await mountCreateModal(
+      {
+        type: 'Postgres',
+        supportsMetadataExtraction: true,
+        supportsIncrementalMetadataExtraction: true,
+      },
+      'metadata',
+      'schema-field-threads',
+    );
+    expect(document.body.querySelector('[data-testid="schema-field-incremental"]')).not.toBeNull();
+  });
+
+  it('hides enableAutoPartitionDetection for profiler in the create modal when the service does not support it', async () => {
+    // The old `pipelineType === 'profiler'` heuristic showed the field
+    // for every profiler pipeline; the service flag hides it.
+    await mountCreateModal(
+      { type: 'Postgres', supportsMetadataExtraction: true, supportsProfiler: true },
+      'profiler',
+      'ingestion-section-advanced-toggle',
+    );
+    (
+      document.body.querySelector(
+        '[data-testid="ingestion-section-advanced-toggle"]',
+      ) as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(
+      document.body.querySelector('[data-testid="schema-field-enableAutoPartitionDetection"]'),
+    ).toBeNull();
+  });
+
+  it('shows enableAutoPartitionDetection for profiler in the create modal when the service supports it', async () => {
+    await mountCreateModal(
+      {
+        type: 'Postgres',
+        supportsMetadataExtraction: true,
+        supportsProfiler: true,
+        supportsAutoPartitionDetection: true,
+      },
+      'profiler',
+      'ingestion-section-advanced-toggle',
+    );
+    (
+      document.body.querySelector(
+        '[data-testid="ingestion-section-advanced-toggle"]',
+      ) as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(
+      document.body.querySelector(
+        '[data-testid="schema-field-enableAutoPartitionDetection-switch"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('renders no debug field in the create modal (no pin counterpart owns the flag)', async () => {
+    // Pin's IngestionWorkflowForm has exactly one consumer (the
+    // add/edit page); the list-page modal is fork-only, so it binds
+    // no debug flag and the form renders no debug field.
+    await mountCreateModal(
+      { type: 'Postgres', supportsMetadataExtraction: true },
+      'metadata',
+      'schema-field-threads',
+    );
+    (
+      document.body.querySelector('[data-testid="ingestion-section-scope-toggle"]') as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(
+      document.body.querySelector('[data-testid="schema-field-enableDebugLog"]'),
+    ).toBeNull();
+    expect(
+      document.body.querySelector('[data-testid="schema-field-enableDebugLog-switch"]'),
+    ).toBeNull();
+  });
+
   it('creates a pipeline without pausePipeline (born unpaused)', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     vi.stubGlobal(

@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors.constraints import nullable_flag
 from smartmetadata_ingestion.connectors.ddl import quote_backtick_ident
+from smartmetadata_ingestion.connectors.mysql_common import connection_database
 from smartmetadata_ingestion.connectors.procedures import epoch_ms
 from smartmetadata_ingestion.connectors.profile_sql import (
     MetricParamsByColumn,
@@ -345,11 +346,7 @@ def doris_connect(connection: dict[str, Any]):
         port = int(port_text)
     else:
         host, port = str(host_port), 9030
-    database = (
-        connection.get("databaseSchema")
-        or connection.get("databaseName")
-        or connection.get("database")
-    )
+    database = connection_database(connection)
 
     ssl = pymysql_ssl_from_config(connection)
 

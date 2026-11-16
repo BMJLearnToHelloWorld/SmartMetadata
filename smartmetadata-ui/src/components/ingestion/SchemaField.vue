@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Checkbox, Form, Input, InputNumber, Select, Typography } from 'ant-design-vue';
+import { Button, Form, Input, InputNumber, Select, Typography } from 'ant-design-vue';
 import {
   applySchemaDefaults,
   deref,
@@ -14,6 +14,9 @@ import {
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
 import { splitCsv } from '@/ingestion/sourceConfig';
+import type { FieldFocusMeta } from '@/ingestion/fieldFocus';
+import FilterPatternCard from './FilterPatternCard.vue';
+import ToggleField from '@/components/shared/ToggleField.vue';
 
 /**
  * One field of the schema-driven sourceConfig form. Recurses for
@@ -23,11 +26,24 @@ import { splitCsv } from '@/ingestion/sourceConfig';
  * `@rjsf/core` (custom `FilterPatternField`, `CoreOneOfField`,
  * `WorkflowArrayFieldTemplate`, `CoreWrapIfAdditionalTemplate`).
  *
- * A filter-pattern object (an object whose properties are exactly
- * `includes` + `excludes` string arrays) renders as two text inputs,
- * one pattern per line or comma-separated — the product's existing
- * `splitCsv` convention (P-08(b)).
+ * A root-level filter-pattern object (an object whose properties are
+ * exactly `includes` + `excludes` string arrays) renders as a
+ * `FilterPatternCard` composer (official `FilterPatternField`), never
+ * as free text; nested filter-shaped objects render generically, as in
+ * pin, whose filter uiSchema is root-level only. Booleans render as
+ * toggles with the schema description beneath (official
+ * `BooleanFieldTemplate`); other fields render no description inline —
+ * descriptions surface through the doc panel when the field is focused
+ * (official behaviour) — every control forwards focus/blur with the
+ * field's schema title/description.
  */
+
+/** Pin `FilterPatternFieldUiOptions`: the uiSchema options for one filter card. */
+export interface FilterPatternFieldOptions {
+  defaultOpen?: boolean;
+  hasExistingData?: boolean;
+  systemExcludes?: string[];
+}
 const props = defineProps<{
   schema: RjsfSchema;
   value: unknown;
@@ -40,6 +56,16 @@ const props = defineProps<{
    * rendered under its parent's branch-selector label. */
   hideLabel?: boolean;
   testIdPrefix: string;
+  /** Doc-panel focus handler, drilled from the schema form (official
+   * `formContext.handleFocus` / RJSF `onFocus`). Absent outside a
+   * doc-panel form, where focus is a no-op. */
+  onFieldFocus?: (fieldName: string, meta?: FieldFocusMeta) => void;
+  onFieldBlur?: () => void;
+  /** Filter-card options for a root-level filter-pattern field (pin
+   * `ui:options`); absent, the card takes pin's defaults (closed, no
+   * system excludes, no existing data). Never forwarded to nested
+   * fields — the options belong to this field only. */
+  filterPatternOptions?: FilterPatternFieldOptions;
 }>();
 const emit = defineEmits<{ (event: 'update:value', value: unknown): void }>();
 const { t } = useI18n();
@@ -52,7 +78,21 @@ const error = computed(() => (props.showErrors ? props.errors.get(pathKey.value)
 
 const label = computed(() => resolved.value.title ?? startCase(key.value));
 const shownLabel = computed(() => (props.hideLabel ? undefined : label.value));
-const help = computed(() => resolved.value.description);
+
+/** RJSF-style field id (`root/<path>`), the doc panel's focus key. */
+const fieldId = computed(() => `root/${props.path.join('/')}`);
+const focusMeta = computed<FieldFocusMeta>(() => ({
+  title: resolved.value.title,
+  description: resolved.value.description,
+}));
+
+function onFocus(): void {
+  props.onFieldFocus?.(fieldId.value, focusMeta.value);
+}
+
+function onBlur(): void {
+  props.onFieldBlur?.();
+}
 
 function joinCsv(values: string[]): string {
   return values.join(', ');
@@ -74,16 +114,20 @@ const kind = computed((): string => {
   }
   const type = effectiveType(schema);
   if (type === 'object') {
-    const props = schema.properties ?? {};
-    const keys = Object.keys(props);
+    const properties = schema.properties ?? {};
+    const keys = Object.keys(properties);
+    // Root-level only: pin's filter uiSchema addresses top-level fields,
+    // and no pipeline schema nests a filter-pattern object — a nested
+    // occurrence renders generically as an object below.
     if (
+      props.path.length === 1 &&
       keys.length === 2 &&
       keys.includes('includes') &&
       keys.includes('excludes')
     ) {
       return 'filterPattern';
     }
-    if (Object.keys(props).length > 0) {
+    if (keys.length > 0) {
       return 'object';
     }
     if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
@@ -162,18 +206,16 @@ function isScalarBranch(schema: RjsfSchema): boolean {
 }
 
 // --- filter pattern ------------------------------------------------------
-const patternIncludes = computed(() => {
-  const value = props.value as { includes?: string[] } | undefined;
-  return joinCsv(value?.includes ?? []);
-});
-const patternExcludes = computed(() => {
-  const value = props.value as { excludes?: string[] } | undefined;
-  return joinCsv(value?.excludes ?? []);
-});
-
-function onPatternChange(which: 'includes' | 'excludes', text: string): void {
-  const current = (props.value ?? {}) as { includes?: string[]; excludes?: string[] };
-  emit('update:value', { ...current, [which]: splitCsv(text) });
+// Rendered by FilterPatternCard in the template, with the caller-supplied
+// options (pin `ui:options`); the wizard passes the filters-step options,
+// and pin's defaults (closed, no system excludes) apply otherwise.
+function onFilterPatternFocus(fieldName: string): void {
+  // The card re-emits its composers' blur as focus('').
+  if (fieldName) {
+    props.onFieldFocus?.(fieldName, focusMeta.value);
+  } else {
+    props.onFieldBlur?.();
+  }
 }
 
 // --- string arrays -------------------------------------------------------
@@ -339,7 +381,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'oneOf'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -348,6 +389,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :value="selectedBranchIndex"
         :data-testid="`${testId}-branch`"
         @update:value="(index) => onBranchChange(Number(index))"
+        @focus="onFocus"
+        @blur="onBlur"
       >
         <Select.Option v-for="(title, index) in branchTitles" :key="index" :value="index">
           {{ title }}
@@ -364,6 +407,9 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
       :show-errors="showErrors"
       hide-label
       :test-id-prefix="testIdPrefix"
+      :on-field-focus="onFieldFocus"
+      :on-field-blur="onFieldBlur"
+      @update:value="updateValue"
     />
     <SchemaField
       v-else
@@ -375,40 +421,31 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
       :show-errors="showErrors"
       hide-label
       :test-id-prefix="testIdPrefix"
+      :on-field-focus="onFieldFocus"
+      :on-field-blur="onFieldBlur"
+      @update:value="updateValue"
     />
   </template>
 
   <template v-else-if="kind === 'filterPattern'">
     <div :data-testid="testId">
-      <Typography.Text v-if="!hideLabel" strong>{{ label }}</Typography.Text>
-      <Typography.Paragraph v-if="help" type="secondary">{{ help }}</Typography.Paragraph>
-      <Form.Item
-        :label="t('ingestion.pipelines.filterIncludes')"
-        :validate-status="error ? 'error' : undefined"
-        :help="error"
-      >
-        <Input.TextArea
-          :value="patternIncludes"
-          :data-testid="`${testId}-includes`"
-          :auto-size="{ minRows: 1, maxRows: 4 }"
-          @update:value="(text) => onPatternChange('includes', String(text))"
-        />
-      </Form.Item>
-      <Form.Item :label="t('ingestion.pipelines.filterExcludes')">
-        <Input.TextArea
-          :value="patternExcludes"
-          :data-testid="`${testId}-excludes`"
-          :auto-size="{ minRows: 1, maxRows: 4 }"
-          @update:value="(text) => onPatternChange('excludes', String(text))"
-        />
-      </Form.Item>
+      <Typography.Text v-if="error" type="danger">{{ error }}</Typography.Text>
+      <FilterPatternCard
+        :field-name="key"
+        :model-value="value as { includes?: string[]; excludes?: string[] } | undefined"
+        :schema-title="resolved.title"
+        :default-open="filterPatternOptions?.defaultOpen ?? false"
+        :system-excludes="filterPatternOptions?.systemExcludes ?? []"
+        :has-existing-data="filterPatternOptions?.hasExistingData ?? false"
+        @update:model-value="updateValue"
+        @focus="onFilterPatternFocus"
+      />
     </div>
   </template>
 
   <template v-else-if="kind === 'object'">
     <div :data-testid="testId">
       <Typography.Text v-if="!hideLabel" strong>{{ label }}</Typography.Text>
-      <Typography.Paragraph v-if="help" type="secondary">{{ help }}</Typography.Paragraph>
       <SchemaField
         v-for="fieldKey in objectFields"
         :key="fieldKey"
@@ -420,6 +457,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :show-errors="showErrors"
         :required="(resolved.required ?? []).includes(fieldKey)"
         :test-id-prefix="testIdPrefix"
+        :on-field-focus="onFieldFocus"
+        :on-field-blur="onFieldBlur"
         @update:value="(next) => updateField(fieldKey, next)"
       />
     </div>
@@ -428,7 +467,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'map'">
     <div :data-testid="testId">
       <Typography.Text v-if="!hideLabel" strong>{{ label }}</Typography.Text>
-      <Typography.Paragraph v-if="help" type="secondary">{{ help }}</Typography.Paragraph>
       <Typography.Text v-if="error" type="danger">{{ error }}</Typography.Text>
       <div v-for="[rowKey, rowValue] in mapRows" :key="rowKey" style="margin-bottom: 8px">
         <div style="display: flex; gap: 8px">
@@ -436,6 +474,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
             :value="rowKey"
             :data-testid="`${testId}-key-${rowKey}`"
             @update:value="(next) => updateMapRowKey(rowKey, String(next))"
+            @focus="onFocus"
+            @blur="onBlur"
           />
           <Input
             :value="mapValueText([rowKey, rowValue])"
@@ -444,6 +484,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
               showErrors && errors.get(`${pathKey}.${rowKey}`) ? 'error' : undefined
             "
             @update:value="(next) => updateMapRowValue(rowKey, String(next))"
+            @focus="onFocus"
+            @blur="onBlur"
           />
           <Button :data-testid="`${testId}-remove-${rowKey}`" @click="removeMapRow(rowKey)">
             {{ t('crud.remove') }}
@@ -465,7 +507,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'enumArray'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -475,6 +516,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :value="Array.isArray(value) ? (value as string[]) : []"
         :data-testid="testId"
         @update:value="(next) => updateValue(next)"
+        @focus="onFocus"
+        @blur="onBlur"
       >
         <Select.Option v-for="(item, index) in enumItems" :key="item" :value="item">
           {{ enumLabels[index] }}
@@ -486,7 +529,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'objectArray'">
     <div :data-testid="testId">
       <Typography.Text v-if="!hideLabel" strong>{{ label }}</Typography.Text>
-      <Typography.Paragraph v-if="help" type="secondary">{{ help }}</Typography.Paragraph>
       <div
         v-for="(row, index) in objectArrayRows"
         :key="index"
@@ -500,6 +542,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
           :errors="errors"
           :show-errors="showErrors"
           :test-id-prefix="testIdPrefix"
+          :on-field-focus="onFieldFocus"
+          :on-field-blur="onFieldBlur"
           @update:value="(next) => updateObjectArrayRow(index, next as Record<string, unknown>)"
         />
         <Button :data-testid="`${testId}-remove-${index}`" @click="removeObjectArrayRow(index)">
@@ -515,7 +559,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'stringArray'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -525,6 +568,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :data-testid="testId"
         :auto-size="{ minRows: 1, maxRows: 4 }"
         @update:value="(text) => onStringArrayChange(String(text))"
+        @focus="onFocus"
+        @blur="onBlur"
       />
     </Form.Item>
   </template>
@@ -532,7 +577,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'enum'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -541,6 +585,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :value="value as string | undefined"
         :data-testid="testId"
         @update:value="(next) => updateValue(next)"
+        @focus="onFocus"
+        @blur="onBlur"
       >
         <Select.Option
           v-for="item in (resolved.enum ?? []) as string[]"
@@ -559,21 +605,21 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
 
   <template v-else-if="kind === 'boolean'">
     <Form.Item :validate-status="error ? 'error' : undefined" :help="error">
-      <Checkbox
-        :checked="value === true"
-        :data-testid="testId"
-        @update:checked="(checked) => updateValue(checked)"
-      >
-        {{ label }}
-      </Checkbox>
-      <Typography.Paragraph v-if="help" type="secondary">{{ help }}</Typography.Paragraph>
+      <ToggleField
+        :model-value="value === true"
+        :label="label"
+        :description="resolved.description"
+        :field-id="fieldId"
+        :test-id="testId"
+        @update:model-value="updateValue"
+        @focus="onFocus"
+      />
     </Form.Item>
   </template>
 
   <template v-else-if="kind === 'number'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -584,6 +630,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :max="resolved.maximum"
         :data-testid="testId"
         @update:value="(next) => updateValue(next === null ? undefined : next)"
+        @focus="onFocus"
+        @blur="onBlur"
       />
     </Form.Item>
   </template>
@@ -591,7 +639,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="key === 'defaultManifest'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error || manifestError ? 'error' : undefined"
       :help="error || manifestError || undefined"
@@ -601,6 +648,8 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :data-testid="testId"
         :auto-size="{ minRows: 3, maxRows: 10 }"
         @update:value="(text) => onManifestChange(String(text))"
+        @focus="onFocus"
+        @blur="onBlur"
       />
     </Form.Item>
   </template>
@@ -608,7 +657,6 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
   <template v-else-if="kind === 'string'">
     <Form.Item
       :label="shownLabel"
-      :extra="help"
       :required="required"
       :validate-status="error ? 'error' : undefined"
       :help="error"
@@ -618,12 +666,16 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :value="typeof value === 'string' ? value : ''"
         :data-testid="testId"
         @update:value="(next) => updateValue(next === '' ? undefined : next)"
+        @focus="onFocus"
+        @blur="onBlur"
       />
       <Input
         v-else
         :value="typeof value === 'string' ? value : ''"
         :data-testid="testId"
         @update:value="(next) => updateValue(next === '' ? undefined : next)"
+        @focus="onFocus"
+        @blur="onBlur"
       />
     </Form.Item>
   </template>

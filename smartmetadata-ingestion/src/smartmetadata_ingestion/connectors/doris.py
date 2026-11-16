@@ -38,7 +38,11 @@ from smartmetadata_ingestion.connectors.json_schema import (
 )
 from smartmetadata_ingestion.connectors.owners import resolve_owner_names
 from smartmetadata_ingestion.connectors.registry import register_source
-from smartmetadata_ingestion.connectors.select import is_selected, is_selected_table
+from smartmetadata_ingestion.connectors.select import (
+    is_configured_schema,
+    is_selected,
+    is_selected_table,
+)
 from smartmetadata_ingestion.datatypes import check_col_length, map_doris_type
 from smartmetadata_ingestion.fqn import build_fqn, quote_name
 from smartmetadata_ingestion.lineage.dialect import dialect_for_connection_type
@@ -181,22 +185,18 @@ class DorisSource:
             return self._reader
         return doris.CursorCatalogReader(doris.doris_connect(self._config.connection or {}))
 
-    def _include_schemas(self) -> list[str]:
-        if self._config.include_schemas:
-            return list(self._config.include_schemas)
-        schema = (self._config.connection or {}).get("databaseSchema")
-        return [str(schema)] if schema else []
-
     def _selected_schemas(
         self, reader: doris.CatalogReader, database_name: str
     ) -> list[doris.SchemaRow]:
+        database_schema = (self._config.connection or {}).get("databaseSchema")
         exclude = list(self._config.exclude_schemas) + list(doris.system_schemas())
         return [
             schema
             for schema in reader.list_schemas()
-            if is_selected(
+            if is_configured_schema(schema.name, database_schema)
+            and is_selected(
                 schema.name,
-                include=self._include_schemas(),
+                include=self._config.include_schemas,
                 exclude=exclude,
                 fqn=build_fqn(self._config.service_name, database_name, schema.name),
                 use_fqn=self._config.use_fqn_for_filtering,
