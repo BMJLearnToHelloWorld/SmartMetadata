@@ -45,9 +45,16 @@ from typing import Protocol
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.lineage.graphs import TempHop
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 from smartmetadata_ingestion.lineage.query_lineage import QueryLineageProcessor
 from smartmetadata_ingestion.lineage.resolution import LineageBindingResolver, passes_filter
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord, WorkflowRecord
+from smartmetadata_ingestion.records import (
+    BindingContext,
+    FieldSource,
+    LineageEndpoint,
+    LineageRecord,
+    WorkflowRecord,
+)
 from smartmetadata_ingestion.usage.query_log import (
     ConnectFactory,
     fetch_rows,
@@ -56,13 +63,27 @@ from smartmetadata_ingestion.usage.query_log import (
 
 logger = logging.getLogger(__name__)
 
-# CALL <name>(...) — the name is one to three dotted parts, each
-# bare or double-quoted. The match runs on the statement text as
-# logged; a CALL whose name cannot be read is skipped, never guessed.
+# CALL <name>(...) — the name is a dotted chain of segments, each
+# bare or quoted in one of three shapes (double quotes, backticks,
+# square brackets). The segment count is unbounded: capping it
+# would silently truncate a longer name onto the wrong object, so
+# every segment survives into the structured identifier and the
+# resolver decides what an over-long name means. A quoted segment
+# may contain dots, which the segment pattern consumes whole, so
+# splitting the matched name never cuts inside quotes. The match
+# runs on the statement text as logged; a CALL whose name cannot be
+# read is skipped, never guessed.
+_CALL_SEGMENT = (
+    r"(?:\"(?:[^\"]|\"\")+\""
+    r"|`(?:[^`]|``)+`"
+    r"|\[(?:[^\]]|\]\])+\]"
+    r"|[A-Za-z_][\w$]*)"
+)
 _CALL_NAME = re.compile(
-    r"\bCALL\s+((?:\"[^\"]+\"|[A-Za-z_][\w$]*)(?:\.(?:\"[^\"]+\"|[A-Za-z_][\w$]*)){0,2})",
+    r"\bCALL\s+(" + _CALL_SEGMENT + r"(?:\." + _CALL_SEGMENT + r")*)",
     re.IGNORECASE,
 )
+_CALL_SEGMENT_ONLY = re.compile(_CALL_SEGMENT)
 
 # Window-narrowing attempts for the CALL-history read: the full
 # window first, then progressively narrower tails. A history
@@ -73,20 +94,52 @@ _NARROWING_DIVISORS = (1, 2, 4)
 _STATEMENT_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-def extract_call_name(call_text: str) -> str | None:
-    """The procedure name a CALL statement invokes, unquoted, or
-    ``None`` when the statement names no procedure."""
+def extract_call_name(call_text: str) -> StructuredIdentifier | None:
+    """The structured procedure name a CALL statement invokes, or
+    ``None`` when the statement names no procedure. Segments keep
+    their quoted flags, so a quoted dotted segment stays one
+    segment and a quoted ``"<default>"`` stays a real name; the
+    name is never flattened back to a dotted string."""
     match = _CALL_NAME.search(call_text or "")
     if match is None:
         return None
-    parts = []
-    for part in match.group(1).split("."):
-        stripped = part.strip()
-        if stripped.startswith('"') and stripped.endswith('"'):
-            stripped = stripped[1:-1].replace('""', '"')
-        parts.append(stripped)
-    name = ".".join(part for part in parts if part)
-    return name or None
+    parts = [
+        _call_segment(segment_match.group(0))
+        for segment_match in _CALL_SEGMENT_ONLY.finditer(match.group(1))
+    ]
+    try:
+        return StructuredIdentifier.from_parts(parts)
+    except ValueError:
+        return None
+
+
+def _call_segment(raw: str) -> tuple[str, bool]:
+    """One CALL name segment as (text, quoted): the quote marks are
+    stripped and the doubled closer collapsed, which is the escape
+    in all three quote shapes."""
+    if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
+        return raw[1:-1].replace('""', '"'), True
+    if len(raw) >= 2 and raw[0] == "`" and raw[-1] == "`":
+        return raw[1:-1].replace("``", "`"), True
+    if len(raw) >= 2 and raw[0] == "[" and raw[-1] == "]":
+        return raw[1:-1].replace("]]", "]"), True
+    return raw, False
+
+
+def _binding_context(call: ProcedureCall) -> BindingContext:
+    """The CALL's binding context, built once from its history-row
+    fields: present fields carry the native-row source, missing
+    ones are marked missing. The one context serves both the
+    procedure resolution and the body processing, so the body's
+    names resolve against exactly the row the CALL arrived in."""
+    return BindingContext(
+        database_name=call.database_name,
+        database_schema=call.schema_name,
+        database_source=FieldSource.ROW_NATIVE
+        if call.database_name
+        else FieldSource.MISSING,
+        schema_source=FieldSource.ROW_NATIVE if call.schema_name else FieldSource.MISSING,
+    )
 
 
 @dataclass(frozen=True)
@@ -242,10 +295,10 @@ class ProcedureLineageChannel:
         if not self._selected(procedure_name, call):
             outcome.skipped_filtered = 1
             return [], outcome, []
+        context = _binding_context(call)
         entity = self._resolver.resolve_procedure(
             procedure_name,
-            database_name=call.database_name,
-            database_schema=call.schema_name,
+            context=context,
         )
         if entity is None:
             outcome.skipped_unresolved = 1
@@ -254,7 +307,7 @@ class ProcedureLineageChannel:
         if code is None:
             logger.warning(
                 "procedure %s has no stored code; skipping its lineage",
-                entity.get("fullyQualifiedName") or procedure_name,
+                entity.get("fullyQualifiedName") or procedure_name.display(),
             )
             outcome.skipped_no_code = 1
             return [], outcome, []
@@ -264,8 +317,7 @@ class ProcedureLineageChannel:
             return [], outcome, []
         processed = self._processor.process(
             code,
-            database_name=call.database_name,
-            database_schema=call.schema_name,
+            context=context,
             emit_query_record=True,
             triggered_by_fqn=procedure_fqn,
             user_name=call.user_name,
@@ -315,12 +367,13 @@ class ProcedureLineageChannel:
             outcome.queries = 1
         return records, outcome, list(processed.temp_hops)
 
-    def _selected(self, procedure_name: str, call: ProcedureCall) -> bool:
+    def _selected(self, procedure_name: StructuredIdentifier, call: ProcedureCall) -> bool:
         """Whether the CALL passes the stored-procedure filter
         pattern. The candidate FQN uses the CALL's own database /
         schema context when present, so the pattern can match a
-        qualified name."""
-        parts = procedure_name.split(".")
+        qualified name. Segments come from the structured name, so
+        a quoted dotted segment is never mistaken for two parts."""
+        parts = procedure_name.texts
         if len(parts) >= 3:
             candidate_fqn = build_fqn(
                 self._service_name, parts[-3], parts[-2], parts[-1]
@@ -337,8 +390,8 @@ class ProcedureLineageChannel:
             )
             short_name = parts[-1]
         else:
-            candidate_fqn = procedure_name
-            short_name = procedure_name
+            candidate_fqn = procedure_name.display()
+            short_name = procedure_name.display()
         return passes_filter(
             short_name,
             candidate_fqn,

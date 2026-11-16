@@ -36,6 +36,7 @@ from smartmetadata_ingestion.errors import (
 )
 from smartmetadata_ingestion.lineage.dialect import Dialect, dialect_for_connection_type
 from smartmetadata_ingestion.lineage.parser import QueryParserType, resolve_parser_type
+from smartmetadata_ingestion.naming import resolve_connection_defaults
 from smartmetadata_ingestion.processors.identity import Processor
 from smartmetadata_ingestion.progress import ProgressHook, RecordFailure
 from smartmetadata_ingestion.records import TableQueryRecord
@@ -104,11 +105,21 @@ class UsageWorkflow(MetadataWorkflow):
             self._dialect, self._parser_type = self._resolve_parse_settings()
             stage_dir = resolve_stage_dir(self.config.source.stage_file_location)
             connection = self.config.source.connection or {}
+            # The binding defaults come from the shared naming rule —
+            # the same function the lineage source calls — and the
+            # same engine key drives both the naming rule and the
+            # resolver's identifier folding, so the two can never
+            # drift apart.
+            engine_key = self._resolve_engine_key()
+            default_database, default_schema = resolve_connection_defaults(
+                connection, engine_key
+            )
             binding_resolver = RestTableBindingResolver(
                 self._client,
                 self.config.source.service_name,
-                default_database=connection.get("database") or connection.get("catalog"),
-                default_schema=connection.get("databaseSchema"),
+                default_database=default_database,
+                default_schema=default_schema,
+                engine_key=engine_key,
             )
             self._stage = UsageStage(
                 stage_dir=stage_dir,
@@ -127,6 +138,17 @@ class UsageWorkflow(MetadataWorkflow):
             raise WorkflowInitializationError(
                 f"could not prepare usage workflow: {exc}"
             ) from exc
+
+    def _resolve_engine_key(self) -> str:
+        """The engine key for the naming rule and the resolver's
+        folding: the query-log source's spec key when this run has
+        one, else the connection type with its pipeline suffix
+        stripped — the same derivation as the parse settings."""
+        if isinstance(self._source, QueryLogSource):
+            return self._source.spec.engine_key
+        return (
+            self.config.source.type.removesuffix("-usage").removesuffix("-lineage")
+        )
 
     def _resolve_parse_settings(self) -> tuple[Dialect, QueryParserType]:
         """The cascade dialect and parser type for this run. The
@@ -224,6 +246,10 @@ class UsageWorkflow(MetadataWorkflow):
             report.cost_records_published,
             report.cost_records_skipped,
         )
+        # Design §5.8 binding counts in the run summary: a supplement
+        # to the warning fold in _collect_warnings, never a second
+        # count of the same skips.
+        logger.info("usage binding counts: %s", self._stage.binding_counts)
         # A run that scanned queries but published nothing is
         # suspicious, not clean: warn so it shows in run status, and
         # remember it for the warning count folded in later.

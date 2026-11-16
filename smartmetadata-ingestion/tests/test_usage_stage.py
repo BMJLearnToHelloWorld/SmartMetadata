@@ -19,7 +19,14 @@ import pytest
 
 from smartmetadata_ingestion.client.rest import TABLES_PATH
 from smartmetadata_ingestion.errors import RestError
-from smartmetadata_ingestion.lineage.parser import TableColumn, TableColumnJoin
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
+from smartmetadata_ingestion.lineage.parser import (
+    ParsedTableColumn,
+    ParsedTableColumnJoin,
+    TableColumn,
+    TableColumnJoin,
+)
+from smartmetadata_ingestion.records import BindingContext, FieldSource
 from smartmetadata_ingestion.usage.processor import ParsedData
 from smartmetadata_ingestion.usage.stage import (
     RestTableBindingResolver,
@@ -33,12 +40,33 @@ from smartmetadata_ingestion.usage.stage import (
 DAY_MS = str(int(datetime(2026, 11, 13, tzinfo=timezone.utc).timestamp() * 1000))
 
 
+def _ident(*parts: str) -> StructuredIdentifier:
+    return StructuredIdentifier.from_parts([(part, False) for part in parts])
+
+
+def _ctx(
+    database: str | None = None,
+    schema: str | None = None,
+) -> BindingContext:
+    # The row context these tests simulate arrives as history-row
+    # values: a present segment is row-native, an absent one is
+    # missing — the same per-field rule _record_from_row applies to
+    # a native row (contract §f).
+    return BindingContext(
+        database_name=database,
+        database_schema=schema,
+        database_source=FieldSource.ROW_NATIVE if database else FieldSource.MISSING,
+        schema_source=FieldSource.ROW_NATIVE if schema else FieldSource.MISSING,
+    )
+
+
 def _parsed(**overrides: Any) -> ParsedData:
     values: dict[str, Any] = {
-        "tables": ["shop.orders"],
+        "tables": [_ident("shop", "orders")],
         "joins": {},
         "database_name": "shop",
         "database_schema": "public",
+        "binding_context": _ctx("shop", "public"),
         "sql": "SELECT * FROM shop.orders WHERE total > 100",
         "query_type": "SELECT",
         "exclude_usage": False,
@@ -57,13 +85,13 @@ def _parsed(**overrides: Any) -> ParsedData:
 
 
 class _DictResolver:
-    def __init__(self, mapping: dict[str, str]) -> None:
+    def __init__(self, mapping: dict[StructuredIdentifier, str]) -> None:
         self.mapping = mapping
 
     def resolve(
-        self, parsed_name: str, *, database_name: str | None, database_schema: str | None
+        self, name: StructuredIdentifier, *, context: BindingContext
     ) -> str | None:
-        return self.mapping.get(parsed_name)
+        return self.mapping.get(name)
 
 
 class _StubUserClient:
@@ -93,7 +121,7 @@ def test_stage_writes_usage_file_with_masked_query_and_resolved_user(tmp_path: P
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
         user_resolver=UserResolver(_StubUserClient({"alice": "alice"})),  # type: ignore[arg-type]
     )
     stage.handle_batch([_parsed()])
@@ -122,7 +150,7 @@ def test_stage_stores_raw_text_when_exclude_usage(tmp_path: Path) -> None:
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
     )
     stage.handle_batch([_parsed(exclude_usage=True)])
     request = _read_usage_lines(tmp_path, "warehouse_2026-11-13")[0]["sqlQueries"][0]
@@ -134,7 +162,7 @@ def test_stage_puts_unknown_users_in_used_by(tmp_path: Path) -> None:
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
         user_resolver=UserResolver(_StubUserClient({})),  # type: ignore[arg-type]
     )
     stage.handle_batch([_parsed()])
@@ -147,7 +175,7 @@ def test_stage_counts_executions_and_dedupes_queries_per_batch(tmp_path: Path) -
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
     )
     stage.handle_batch(
         [
@@ -163,6 +191,35 @@ def test_stage_counts_executions_and_dedupes_queries_per_batch(tmp_path: Path) -
     assert record["count"] == 3
     # Same masked text twice + one distinct query.
     assert len(record["sqlQueries"]) == 2
+
+
+def test_stage_counts_the_same_record_once_per_execution(tmp_path: Path) -> None:
+    """The stage premise behind count-1 (design §6 test 8): usage
+    count accumulates per record with no dedup — the same record
+    fed twice counts 2, fed once counts 1. Only the query list
+    dedupes (one distinct query), never the count, so a history
+    row read by two engines would count twice without the dbid
+    filter keeping it to one engine."""
+    twice_dir = tmp_path / "twice"
+    stage = UsageStage(
+        stage_dir=twice_dir,
+        service_name="warehouse",
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
+    )
+    stage.handle_batch([_parsed(), _parsed()])
+    record = _read_usage_lines(twice_dir, "warehouse_2026-11-13")[0]
+    assert record["count"] == 2
+    assert len(record["sqlQueries"]) == 1
+
+    once_dir = tmp_path / "once"
+    single = UsageStage(
+        stage_dir=once_dir,
+        service_name="warehouse",
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
+    )
+    single.handle_batch([_parsed()])
+    record = _read_usage_lines(once_dir, "warehouse_2026-11-13")[0]
+    assert record["count"] == 1
 
 
 def test_stage_skips_unresolvable_tables(tmp_path: Path) -> None:
@@ -203,12 +260,16 @@ def test_stage_rewrites_join_tables_to_fqns_and_drops_unknown_partners(
     tmp_path: Path,
 ) -> None:
     joins = {
-        "shop.orders": [
-            TableColumnJoin(
-                table_column=TableColumn(table="shop.orders", column="cust_id"),
+        _ident("shop", "orders"): [
+            ParsedTableColumnJoin(
+                table_column=ParsedTableColumn(
+                    table=_ident("shop", "orders"), column="cust_id"
+                ),
                 joined_with=(
-                    TableColumn(table="shop.customers", column="id"),
-                    TableColumn(table="shop.ghost", column="id"),
+                    ParsedTableColumn(
+                        table=_ident("shop", "customers"), column="id"
+                    ),
+                    ParsedTableColumn(table=_ident("shop", "ghost"), column="id"),
                 ),
             )
         ]
@@ -218,12 +279,19 @@ def test_stage_rewrites_join_tables_to_fqns_and_drops_unknown_partners(
         service_name="warehouse",
         binding_resolver=_DictResolver(
             {
-                "shop.orders": "warehouse.shop.public.orders",
-                "shop.customers": "warehouse.shop.public.customers",
+                _ident("shop", "orders"): "warehouse.shop.public.orders",
+                _ident("shop", "customers"): "warehouse.shop.public.customers",
             }
         ),
     )
-    stage.handle_batch([_parsed(tables=["shop.orders", "shop.customers"], joins=joins)])
+    stage.handle_batch(
+        [
+            _parsed(
+                tables=[_ident("shop", "orders"), _ident("shop", "customers")],
+                joins=joins,
+            )
+        ]
+    )
     record = _read_usage_lines(tmp_path, "warehouse_2026-11-13")[0]
     assert record["joins"] == [
         {
@@ -237,7 +305,7 @@ def test_stage_aggregates_cost_per_query_and_day(tmp_path: Path) -> None:
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
     )
     stage.handle_batch(
         [
@@ -263,7 +331,7 @@ def test_stage_writes_cost_file_with_zero_cost_without_cost_values(tmp_path: Pat
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
     )
     stage.handle_batch([_parsed()])
     lines = _read_cost_lines(tmp_path, "warehouse_2026-11-13_query")
@@ -276,7 +344,7 @@ def test_stage_appends_across_batches(tmp_path: Path) -> None:
     stage = UsageStage(
         stage_dir=tmp_path,
         service_name="warehouse",
-        binding_resolver=_DictResolver({"shop.orders": "warehouse.shop.public.orders"}),
+        binding_resolver=_DictResolver({_ident("shop", "orders"): "warehouse.shop.public.orders"}),
     )
     stage.handle_batch([_parsed()])
     stage.handle_batch([_parsed()])
@@ -342,7 +410,7 @@ def test_resolver_exact_fqn_from_three_part_name() -> None:
     )
     resolver = RestTableBindingResolver(client, "warehouse")  # type: ignore[arg-type]
     assert (
-        resolver.resolve("shop.public.orders", database_name=None, database_schema=None)
+        resolver.resolve(_ident("shop", "public", "orders"), context=_ctx())
         == "warehouse.shop.public.orders"
     )
 
@@ -353,7 +421,7 @@ def test_resolver_uses_row_context_for_two_part_names() -> None:
     )
     resolver = RestTableBindingResolver(client, "warehouse")  # type: ignore[arg-type]
     assert (
-        resolver.resolve("public.orders", database_name="shop", database_schema=None)
+        resolver.resolve(_ident("public", "orders"), context=_ctx("shop", None))
         == "warehouse.shop.public.orders"
     )
 
@@ -366,7 +434,7 @@ def test_resolver_uses_connection_defaults_for_bare_names() -> None:
         client, "warehouse", default_database="shop", default_schema="public"
     )
     assert (
-        resolver.resolve("orders", database_name=None, database_schema=None)
+        resolver.resolve(_ident("orders"), context=_ctx())
         == "warehouse.shop.public.orders"
     )
 
@@ -382,7 +450,7 @@ def test_resolver_falls_back_to_case_insensitive_schema_scan() -> None:
     )
     resolver = RestTableBindingResolver(client, "warehouse")  # type: ignore[arg-type]
     assert (
-        resolver.resolve("orders", database_name="SHOP", database_schema="PUBLIC")
+        resolver.resolve(_ident("orders"), context=_ctx("SHOP", "PUBLIC"))
         == "warehouse.SHOP.PUBLIC.ORDERS"
     )
 
@@ -398,19 +466,19 @@ def test_resolver_skips_ambiguous_case_insensitive_matches() -> None:
         },
     )
     resolver = RestTableBindingResolver(client, "warehouse")  # type: ignore[arg-type]
-    assert resolver.resolve("orders", database_name="shop", database_schema="public") is None
+    assert resolver.resolve(_ident("orders"), context=_ctx("shop", "public")) is None
 
 
 def test_resolver_propagates_non_404_errors() -> None:
     client = _StubTableClient({}, error_status=500)
     resolver = RestTableBindingResolver(client, "warehouse")  # type: ignore[arg-type]
     with pytest.raises(RestError):
-        resolver.resolve("shop.public.orders", database_name=None, database_schema=None)
+        resolver.resolve(_ident("shop", "public", "orders"), context=_ctx())
 
 
 def test_resolver_returns_none_when_nothing_matches() -> None:
     resolver = RestTableBindingResolver(_StubTableClient({}), "warehouse")  # type: ignore[arg-type]
-    assert resolver.resolve("orders", database_name=None, database_schema=None) is None
+    assert resolver.resolve(_ident("orders"), context=_ctx()) is None
 
 
 def test_resolver_quiet_probe_warns_only_when_called_loudly(
@@ -419,12 +487,12 @@ def test_resolver_quiet_probe_warns_only_when_called_loudly(
     resolver = RestTableBindingResolver(_StubTableClient({}), "warehouse")  # type: ignore[arg-type]
     with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.usage.stage"):
         assert (
-            resolver.resolve("ghost", database_name=None, database_schema=None, quiet=True)
+            resolver.resolve(_ident("ghost"), context=_ctx(), quiet=True)
             is None
         )
     assert "ghost" not in caplog.text
     with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.usage.stage"):
-        resolver.warn_unresolved("ghost")
+        resolver.warn_unresolved(_ident("ghost"), context=_ctx())
     assert "ghost" in caplog.text
 
 

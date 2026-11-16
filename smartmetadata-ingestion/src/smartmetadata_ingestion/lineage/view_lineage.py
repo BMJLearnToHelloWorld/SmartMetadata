@@ -50,7 +50,12 @@ from smartmetadata_ingestion.fqn import build_fqn
 from smartmetadata_ingestion.lineage.graphs import TempHop
 from smartmetadata_ingestion.lineage.query_lineage import QueryLineageProcessor
 from smartmetadata_ingestion.lineage.resolution import LineageBindingResolver, passes_filter
-from smartmetadata_ingestion.records import LineageEndpoint, LineageRecord
+from smartmetadata_ingestion.records import (
+    BindingContext,
+    FieldSource,
+    LineageEndpoint,
+    LineageRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,10 +194,20 @@ class ViewLineageChannel:
             )
             outcome.skipped_not_cataloged = 1
             return [], outcome, []
-        processed = self._processor.process(
-            wrap_view_definition(view.definition),
+        # The view's own catalog position is the binding context:
+        # ViewItem.database/schema always carry values, and their
+        # source is always the entity itself, never a log row — so
+        # the context is built once here and passed through, never
+        # re-assembled downstream.
+        context = BindingContext(
             database_name=view.database,
             database_schema=view.schema,
+            database_source=FieldSource.ENTITY,
+            schema_source=FieldSource.ENTITY,
+        )
+        processed = self._processor.process(
+            wrap_view_definition(view.definition),
+            context=context,
             target_override_fqn=view_fqn,
         )
         if (

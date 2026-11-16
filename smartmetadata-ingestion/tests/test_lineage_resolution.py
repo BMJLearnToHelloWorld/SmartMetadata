@@ -21,15 +21,37 @@ import pytest
 from smartmetadata_ingestion.client.rest import STORED_PROCEDURES_PATH, TABLES_PATH
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.lineage.dialect import Dialect
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 from smartmetadata_ingestion.lineage.resolution import (
     LineageBindingResolver,
     candidate_fqns,
     passes_filter,
     view_parent_schema_tables,
 )
+from smartmetadata_ingestion.records import BindingContext, FieldSource
 
 SERVICE = "svc"
 OTHER = "other_svc"
+
+
+def _ident(*parts: str) -> StructuredIdentifier:
+    return StructuredIdentifier.from_parts([(part, False) for part in parts])
+
+
+def _ctx(
+    database: str | None = None,
+    schema: str | None = None,
+) -> BindingContext:
+    # The row context these tests simulate arrives as history-row
+    # values: a present segment is row-native, an absent one is
+    # missing — the same per-field rule _record_from_row applies to
+    # a native row (contract §f).
+    return BindingContext(
+        database_name=database,
+        database_schema=schema,
+        database_source=FieldSource.ROW_NATIVE if database else FieldSource.MISSING,
+        schema_source=FieldSource.ROW_NATIVE if schema else FieldSource.MISSING,
+    )
 
 
 def _table(fqn: str, columns: list[str] | None = None) -> dict[str, Any]:
@@ -122,14 +144,17 @@ def _resolver(
 def test_resolve_table_exact_fqn_three_part_name() -> None:
     client = _FakeClient({"svc.db.public.orders": _table("svc.db.public.orders")})
     resolver = _resolver(client)
-    assert resolver.resolve_table("db.public.orders") == "svc.db.public.orders"
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+        == "svc.db.public.orders"
+    )
 
 
 def test_resolve_table_two_part_name_uses_context_database() -> None:
     client = _FakeClient({"svc.db.public.orders": _table("svc.db.public.orders")})
     resolver = _resolver(client)
     assert (
-        resolver.resolve_table("public.orders", database_name="db")
+        resolver.resolve_table(_ident("public", "orders"), context=_ctx("db"))
         == "svc.db.public.orders"
     )
 
@@ -137,13 +162,13 @@ def test_resolve_table_two_part_name_uses_context_database() -> None:
 def test_resolve_table_one_part_name_uses_context_database_and_schema() -> None:
     client = _FakeClient({"svc.db.public.orders": _table("svc.db.public.orders")})
     resolver = _resolver(client)
-    assert resolver.resolve_table("orders") == "svc.db.public.orders"
+    assert resolver.resolve_table(_ident("orders"), context=_ctx()) == "svc.db.public.orders"
 
 
 def test_resolve_table_case_insensitive_unique_match() -> None:
     client = _FakeClient({"svc.db.public.Orders": _table("svc.db.public.Orders")})
     resolver = _resolver(client)
-    assert resolver.resolve_table("ORDERS") == "svc.db.public.Orders"
+    assert resolver.resolve_table(_ident("ORDERS"), context=_ctx()) == "svc.db.public.Orders"
 
 
 def test_resolve_table_ambiguous_case_insensitive_match_skips() -> None:
@@ -154,18 +179,18 @@ def test_resolve_table_ambiguous_case_insensitive_match_skips() -> None:
         }
     )
     resolver = _resolver(client)
-    assert resolver.resolve_table("orders") is None
+    assert resolver.resolve_table(_ident("orders"), context=_ctx()) is None
 
 
 def test_resolve_table_unresolvable_returns_none() -> None:
     resolver = _resolver(_FakeClient())
-    assert resolver.resolve_table("missing_table") is None
+    assert resolver.resolve_table(_ident("missing_table"), context=_ctx()) is None
 
 
 def test_resolve_table_non_404_error_propagates() -> None:
     resolver = _resolver(_FakeClient(fail_tables_with=500))
     try:
-        resolver.resolve_table("orders")
+        resolver.resolve_table(_ident("orders"), context=_ctx())
     except RestError as exc:
         assert exc.status_code == 500
     else:  # pragma: no cover
@@ -177,7 +202,10 @@ def test_resolve_table_cross_service_exact_match() -> None:
         {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=True)
-    assert resolver.resolve_table("db.public.orders") == "other_svc.db.public.orders"
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+        == "other_svc.db.public.orders"
+    )
 
 
 def test_resolve_table_cross_service_disabled_never_leaves_own_service() -> None:
@@ -185,7 +213,7 @@ def test_resolve_table_cross_service_disabled_never_leaves_own_service() -> None
         {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=False)
-    assert resolver.resolve_table("db.public.orders") is None
+    assert resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx()) is None
 
 
 def test_resolve_table_cross_service_has_no_fuzzy_step() -> None:
@@ -193,7 +221,7 @@ def test_resolve_table_cross_service_has_no_fuzzy_step() -> None:
         {"other_svc.db.public.Orders": _table("other_svc.db.public.Orders")}
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=True)
-    assert resolver.resolve_table("ORDERS") is None
+    assert resolver.resolve_table(_ident("ORDERS"), context=_ctx()) is None
 
 
 def test_cross_service_probe_stays_quiet_until_all_resolvers_fail(
@@ -204,12 +232,15 @@ def test_cross_service_probe_stays_quiet_until_all_resolvers_fail(
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=True)
     with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.usage.stage"):
-        assert resolver.resolve_table("db.public.orders") == "other_svc.db.public.orders"
+        assert (
+            resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+            == "other_svc.db.public.orders"
+        )
     # The own-service miss warned about nothing: the name resolved
     # cross-service.
     assert "orders" not in caplog.text
     with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.usage.stage"):
-        assert resolver.resolve_table("db.public.ghost") is None
+        assert resolver.resolve_table(_ident("db", "public", "ghost"), context=_ctx()) is None
     # Every resolver exhausted: the name earns its warning.
     assert "ghost" in caplog.text
 
@@ -268,19 +299,21 @@ def test_resolve_procedure_exact_then_case_insensitive() -> None:
     )
     resolver = _resolver(client)
     assert (
-        resolver.resolve_procedure("db.public.load_orders")["fullyQualifiedName"]
+        resolver.resolve_procedure(
+            _ident("db", "public", "load_orders"), context=_ctx()
+        )["fullyQualifiedName"]
         == "svc.db.public.load_orders"
     )
     assert (
-        resolver.resolve_procedure("calctotal")["fullyQualifiedName"]
+        resolver.resolve_procedure(_ident("calctotal"), context=_ctx())["fullyQualifiedName"]
         == "svc.db.public.CalcTotal"
     )
 
 
 def test_resolve_procedure_unresolved_counts_and_warns_once() -> None:
     resolver = _resolver(_FakeClient())
-    assert resolver.resolve_procedure("nope") is None
-    assert resolver.resolve_procedure("nope") is None
+    assert resolver.resolve_procedure(_ident("nope"), context=_ctx()) is None
+    assert resolver.resolve_procedure(_ident("nope"), context=_ctx()) is None
     assert resolver.unresolved_procedure_count == 2
 
 
@@ -289,8 +322,8 @@ def test_resolve_udf_counts_misses_separately() -> None:
         procedures={"svc.db.public.my_udf": _procedure("svc.db.public.my_udf", "SELECT 1")}
     )
     resolver = _resolver(client)
-    assert resolver.resolve_udf("my_udf") is not None
-    assert resolver.resolve_udf("missing_fn") is None
+    assert resolver.resolve_udf(_ident("my_udf"), context=_ctx()) is not None
+    assert resolver.resolve_udf(_ident("missing_fn"), context=_ctx()) is None
     assert resolver.unresolved_udf_count == 1
     assert resolver.unresolved_procedure_count == 1
 
@@ -311,16 +344,34 @@ def test_procedure_code_reads_the_code_block() -> None:
 
 
 def test_candidate_fqns_most_specific_first() -> None:
-    assert candidate_fqns(SERVICE, ["db", "public", "orders"], "other", "s") == [
-        "svc.db.public.orders"
-    ]
-    assert candidate_fqns(SERVICE, ["public", "orders"], "db", None) == [
-        "svc.db.public.orders"
-    ]
-    assert candidate_fqns(SERVICE, ["orders"], "db", "public") == [
-        "svc.db.public.orders"
-    ]
-    assert candidate_fqns(SERVICE, ["orders"], None, None) == []
+    assert candidate_fqns(
+        SERVICE,
+        _ident("db", "public", "orders"),
+        _ctx("other", "s"),
+        default_database=None,
+        default_schema=None,
+    ) == ["svc.db.public.orders"]
+    assert candidate_fqns(
+        SERVICE,
+        _ident("public", "orders"),
+        _ctx("db"),
+        default_database=None,
+        default_schema=None,
+    ) == ["svc.db.public.orders"]
+    assert candidate_fqns(
+        SERVICE,
+        _ident("orders"),
+        _ctx("db", "public"),
+        default_database=None,
+        default_schema=None,
+    ) == ["svc.db.public.orders"]
+    assert candidate_fqns(
+        SERVICE,
+        _ident("orders"),
+        _ctx(),
+        default_database=None,
+        default_schema=None,
+    ) == []
 
 
 def test_passes_filter_name_vs_fqn_and_exclude_wins() -> None:
@@ -406,9 +457,9 @@ def test_unresolved_table_count_counts_final_outcome_only() -> None:
         {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=True)
-    assert resolver.resolve_table("orders") == "other_svc.db.public.orders"
-    assert resolver.resolve_table("ghost") is None
-    assert resolver.resolve_table("ghost") is None
+    assert resolver.resolve_table(_ident("orders"), context=_ctx()) == "other_svc.db.public.orders"
+    assert resolver.resolve_table(_ident("ghost"), context=_ctx()) is None
+    assert resolver.resolve_table(_ident("ghost"), context=_ctx()) is None
     assert resolver.unresolved_table_count == 2
 
 
@@ -416,9 +467,9 @@ def test_warning_count_adds_tables_and_procedures_once() -> None:
     # A UDF miss is a procedure miss too (resolve_udf delegates to
     # resolve_procedure), so it contributes once, not twice.
     resolver = _resolver(_FakeClient())
-    assert resolver.resolve_table("ghost") is None
-    assert resolver.resolve_procedure("missing_proc") is None
-    assert resolver.resolve_udf("missing_fn") is None
+    assert resolver.resolve_table(_ident("ghost"), context=_ctx()) is None
+    assert resolver.resolve_procedure(_ident("missing_proc"), context=_ctx()) is None
+    assert resolver.resolve_udf(_ident("missing_fn"), context=_ctx()) is None
     assert resolver.unresolved_table_count == 1
     assert resolver.unresolved_procedure_count == 2
     assert resolver.unresolved_udf_count == 1

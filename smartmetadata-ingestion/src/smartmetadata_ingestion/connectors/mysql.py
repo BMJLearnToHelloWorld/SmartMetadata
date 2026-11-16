@@ -446,8 +446,10 @@ class MysqlSource:
         )
 
     def _database_name(self) -> str:
-        raw = self._config.connection
-        return str(raw.get("databaseName") or raw.get("database") or "default")
+        from smartmetadata_ingestion.naming import resolve_connection_defaults
+
+        database, _ = resolve_connection_defaults(self._config.connection, "mysql")
+        return str(database)  # mysql 链以字面 "default" 终结，永不为 None（数据保证 + 测试锁定）
 
     def _require_reader(self) -> CatalogReader:
         if self._reader is not None:

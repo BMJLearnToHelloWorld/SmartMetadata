@@ -38,7 +38,7 @@ from typing import Any
 from smartmetadata_ingestion.config import SourceConfig
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.lineage.dialect import Dialect
-from smartmetadata_ingestion.records import TableQueryRecord, WorkflowRecord
+from smartmetadata_ingestion.records import FieldSource, TableQueryRecord, WorkflowRecord
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,12 @@ class QueryLogSpec:
     resolve a configurable account-usage schema name the same way,
     and ``credit_cost_key``/``credit_cost_default`` resolve the
     credit price knob used to scale query cost.
+    ``conditional_filters`` is an optional connection-dependent extra
+    predicate: called with the connection configuration mapping, it
+    returns an additional predicate WITHOUT a leading AND (the same
+    convention as ``filters``), or ``""`` when it does not apply. The
+    base stays engine-agnostic; SQL ownership remains with the spec
+    modules.
     """
 
     engine_key: str
@@ -108,6 +114,14 @@ class QueryLogSpec:
     credit_cost_key: str | None = None
     credit_cost_default: float | None = None
     time_column_name: str | None = None
+    # True when the engine's native history SQL already carries the
+    # layer-swapped context (design §5.2 approach 1: the physical
+    # schema in the schema column, NULL in the database column).
+    # Only the record-production marking reads it: native rows from
+    # such a spec mark their schema source as swapped, and CSV rows
+    # under the same spec are unaffected.
+    swapped_native_context: bool = False
+    conditional_filters: Callable[[Mapping[str, Any]], str] | None = None
 
 
 _SPECS: dict[str, QueryLogSpec] = {}
@@ -360,9 +374,15 @@ class QueryLogSource:
         return resolve_parser_type(self._config.query_parser_config)
 
     def filters_clause(self) -> str:
-        """The ``{filters}`` fragment: the engine predicate plus the
-        user's ``filterCondition``, joined with AND and prefixed."""
+        """The ``{filters}`` fragment: the engine predicate, any
+        connection-dependent predicate, plus the user's
+        ``filterCondition``, joined with AND and prefixed."""
         parts = [part for part in (self._spec.filters.strip(),) if part]
+        conditional = self._spec.conditional_filters
+        if conditional is not None:
+            extra = conditional(self._config.connection or {}).strip()
+            if extra:
+                parts.append(extra)
         condition = (self._config.filter_condition or "").strip()
         if condition:
             parts.append(f"({condition})")
@@ -485,7 +505,7 @@ class QueryLogSource:
             self._warn_truncated_once(label)
         for row in rows:
             try:
-                record = self._record_from_row(row)
+                record = self._record_from_row(row, from_csv=False)
             except Exception as exc:
                 # Per-row isolation: one malformed row never aborts
                 # the batch or the run.
@@ -506,7 +526,14 @@ class QueryLogSource:
             self._config.result_limit,
         )
 
-    def _record_from_row(self, row: dict[str, Any]) -> TableQueryRecord | None:
+    def _record_from_row(
+        self, row: dict[str, Any], *, from_csv: bool = False
+    ) -> TableQueryRecord | None:
+        """One normalized row → a record. ``from_csv`` names the
+        producing path explicitly: native history rows and CSV rows
+        carry different context contracts (design §2), and the
+        input-field source marks must reflect the path that produced
+        the row, never a guess from the values."""
         raw_query = row.get("query_text")
         if raw_query is None:
             raise WorkflowError("query-log row has no query_text")
@@ -522,6 +549,11 @@ class QueryLogSource:
             pattern.match(query_text)
             for pattern in self._spec.lifecycle_query_text_patterns
         )
+        database_name = _as_text(row.get("database_name"))
+        database_schema = _as_text(row.get("schema_name"))
+        database_source, schema_source = self._context_sources(
+            database_name, database_schema, from_csv=from_csv
+        )
         return TableQueryRecord(
             query=query_text,
             service_name=self._config.service_name,
@@ -533,10 +565,38 @@ class QueryLogSource:
             end_time=_as_text(row.get("end_time")),
             analysis_date=parse_analysis_date(row.get("start_time")),
             aborted=_as_bool(row.get("aborted", False)),
-            database_name=_as_text(row.get("database_name")),
-            database_schema=_as_text(row.get("schema_name")),
+            database_name=database_name,
+            database_schema=database_schema,
+            database_source=database_source,
+            schema_source=schema_source,
             duration=_as_number(row.get("duration")),
             cost=_as_number(row.get("cost")),
+        )
+
+    def _context_sources(
+        self,
+        database_name: str | None,
+        database_schema: str | None,
+        *,
+        from_csv: bool,
+    ) -> tuple[FieldSource, FieldSource]:
+        """The input-field sources for one row's context values. A
+        present value takes its path's mark, an absent one is
+        ``MISSING``; the layer-swapped native spec marks the schema
+        value as swapped and the database segment as missing (its
+        SQL selects NULL there), and never applies to CSV rows,
+        whose two columns keep their catalog-segment meaning."""
+        if self._spec.swapped_native_context and not from_csv:
+            return (
+                FieldSource.MISSING,
+                FieldSource.ROW_NATIVE_SWAPPED
+                if database_schema is not None
+                else FieldSource.MISSING,
+            )
+        present = FieldSource.ROW_CSV if from_csv else FieldSource.ROW_NATIVE
+        return (
+            present if database_name is not None else FieldSource.MISSING,
+            present if database_schema is not None else FieldSource.MISSING,
         )
 
     def _produce_from_csv(self) -> Iterable[TableQueryRecord]:
@@ -567,7 +627,7 @@ class QueryLogSource:
                     if key is not None
                 }
                 try:
-                    record = self._record_from_row(row)
+                    record = self._record_from_row(row, from_csv=True)
                 except Exception as exc:
                     logger.warning(
                         "skipping malformed row in %s: %s", csv_file, exc

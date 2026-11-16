@@ -27,6 +27,22 @@ dependencies = [
   # an extra: usage/lineage run for every database connector.
   # ADR:2026-11-14-agent-capability-batch1
   "collate-sqllineage==2.1.9",
+  # Direct dependency: the lineage parser re-parses with sqlglot to
+  # extract structured identifiers from the AST (D-L2c), so the
+  # version must be the exact one collate-sqllineage 2.1.9 pins and
+  # both parses must agree on AST shape.
+  "sqlglot==29.0.1",
+  # Direct dependency: the SqlFluff branch extractor imports sqlfluff
+  # to extract structured identifiers from the parse tree (D-L2c), so
+  # the version must be the exact one collate-sqllineage 2.1.9 pins
+  # (the distribution is collate-sqlfluff; the import package is
+  # sqlfluff) and both parses must agree on parse-tree shape.
+  "collate-sqlfluff==3.5.3",
+  # Direct dependency: the SqlParse branch extractor imports sqlparse
+  # to extract structured identifiers from the token stream (D-L2c),
+  # so the version must be the exact one collate-sqllineage 2.1.9 pins
+  # and both parses must agree on token shape.
+  "sqlparse==0.6.1",
 ]
 
 [project.optional-dependencies]

@@ -39,6 +39,16 @@ from smartmetadata_ingestion.usage.query_log import (
 # below (start/end times derive from uptime minus the timer in seconds).
 _PICOSECONDS_PER_SECOND = 1_000_000_000_000
 
+# CURRENT_SCHEMA is the physical database the statement ran in,
+# which is the catalog SCHEMA segment for a MySQL-family service:
+# the catalog database segment is the synthetic connection name,
+# supplied later by the shared naming rule, not by this query. The
+# aliases therefore swap the physical value into schema_name and
+# leave database_name NULL for the defaults to fill. This alias
+# change is the swap's only site — no row handling re-swaps it —
+# and CSV rows never pass through this template, so file input
+# keeps its own two-column meaning.
+# ADR:2026-11-17-dl2c-binding-context
 MYSQL_SQL_TEMPLATE = (
     "SELECT e.SQL_TEXT AS query_text, t.PROCESSLIST_USER AS user_name, "
     f"DATE_SUB(NOW(6), INTERVAL (g.uptime - e.TIMER_START / {_PICOSECONDS_PER_SECOND}) "
@@ -47,7 +57,7 @@ MYSQL_SQL_TEMPLATE = (
     "SECOND) AS end_time, "
     "e.TIMER_WAIT / 1000000000 AS duration, NULL AS cost, "
     "NULL AS query_type, (e.MYSQL_ERRNO <> 0) AS aborted, "
-    "e.CURRENT_SCHEMA AS database_name, NULL AS schema_name "
+    "e.CURRENT_SCHEMA AS schema_name, NULL AS database_name "
     "FROM performance_schema.events_statements_history_long e "
     "JOIN performance_schema.threads t ON t.THREAD_ID = e.THREAD_ID "
     "CROSS JOIN (SELECT VARIABLE_VALUE AS uptime FROM performance_schema.global_status "
@@ -68,6 +78,10 @@ MYSQL_QUERY_LOG_SPEC = register_query_log_spec(
         engine_key="mysql",
         sql_template=MYSQL_SQL_TEMPLATE,
         dialect=Dialect.MYSQL,
+        # The native rows arrive with the context segments swapped
+        # (see above); record production marks their provenance so
+        # the swapped rows stay distinguishable from CSV rows.
+        swapped_native_context=True,
     )
 )
 

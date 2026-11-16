@@ -38,12 +38,16 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
 from ..client.rest import TABLES_PATH, RestClient
 from ..errors import RestError, WorkflowError
+from ..lineage.folding import fallback_eligible, fold_identifier
+from ..lineage.identifiers import StructuredIdentifier
 from ..lineage.parser import TableColumn, TableColumnJoin
+from ..records import BindingContext
 from .processor import ParsedData
 
 logger = logging.getLogger(__name__)
@@ -63,11 +67,6 @@ MAX_CACHED_USERS = 512
 # are warned about individually, the rest only counted, so a log full
 # of unresolvable temp tables cannot flood the run log.
 MAX_WARNED_UNRESOLVED_NAMES = 100
-
-# A parsed name has at most database.schema.table parts; longer names
-# (catalog-prefixed) resolve on their last three parts.
-_MAX_NAME_PARTS = 3
-
 
 _MISSING: Any = object()
 
@@ -95,6 +94,147 @@ class _BoundedCache:
         self._data[key] = value
         while len(self._data) > self._maxsize:
             self._data.popitem(last=False)
+
+
+class CandidateSource(str, Enum):
+    """Where one segment of a binding candidate came from: the final
+    candidate level of the D-L2c two-level provenance (design §5.8).
+    Only the resolver sees qualifier, row context, and defaults
+    together, so only it can attribute each segment; the attribution
+    feeds warnings and the default-bound counts, and is never stored
+    on the record."""
+
+    QUALIFIER = "qualifier"
+    ROW = "row"
+    DEFAULT = "default"
+    MISSING = "missing"
+
+
+# Design §5.8 count keys with scalar counters. The fidelity skip is
+# per winning parser branch, so it nests a dict under its key instead
+# of a scalar (contract §h); see new_binding_counts for the shape.
+BINDING_COUNT_KEYS: tuple[str, ...] = (
+    "missing_database",
+    "missing_schema",
+    "missing_both",
+    "unresolved_404",
+    "ambiguous",
+    "unsupported_qualifier",
+    "read_failure",
+    "default_bound_database",
+    "default_bound_schema",
+)
+
+
+def new_binding_counts() -> dict[str, Any]:
+    """A zeroed design §5.8 count snapshot, in the shape resolvers
+    expose: one counter per key, with ``fidelity_unproven_skip``
+    holding per-branch counts."""
+    counts: dict[str, Any] = {key: 0 for key in BINDING_COUNT_KEYS}
+    counts["fidelity_unproven_skip"] = {}
+    return counts
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    """One exact-FQN candidate plus the provenance of its segments.
+
+    ``fqn`` is ``None`` when no candidate can be constructed (a
+    needed context segment is missing, or the name is over-long);
+    ``sources`` still attributes each segment, with ``MISSING``
+    marking the absent ones, so the skip can be classified without
+    re-deriving the construction. ``database``/``schema`` are the
+    candidate's own segments, for the scope-constrained fallback
+    listing — carried explicitly because a built FQN string must
+    never be split back apart."""
+
+    fqn: str | None
+    sources: tuple[CandidateSource, CandidateSource]
+    database: str | None
+    schema: str | None
+
+
+def _effective_segment(
+    row_value: str | None, default_value: str | None
+) -> tuple[str | None, CandidateSource]:
+    """A context segment from the row, else the connection default.
+    Row context wins over defaults; an empty value counts as absent,
+    matching the previous ``or`` chaining."""
+    if row_value:
+        return row_value, CandidateSource.ROW
+    if default_value:
+        return default_value, CandidateSource.DEFAULT
+    return None, CandidateSource.MISSING
+
+
+def build_candidate(
+    service: str,
+    name: StructuredIdentifier,
+    context: BindingContext,
+    *,
+    default_database: str | None,
+    default_schema: str | None,
+) -> _Candidate:
+    """The exact-FQN candidate for one structured name, shared by
+    all three binding chains (design §5.5: one candidate
+    construction). ``name`` must already be folded: folding is the
+    caller's entry step, and this function is folding-agnostic.
+
+    SQL qualifier segments are never overwritten by context or
+    defaults: a 3-segment name carries its own database/schema, a
+    2-segment name takes only the database from context, and a
+    1-segment name takes both. An over-long name has no mapping —
+    the caller skips it, never truncates it (Q2)."""
+    texts = name.texts
+    if len(texts) > 3:
+        return _Candidate(None, (CandidateSource.MISSING, CandidateSource.MISSING), None, None)
+    if len(texts) == 3:
+        return _Candidate(
+            f"{service}.{texts[0]}.{texts[1]}.{texts[2]}",
+            (CandidateSource.QUALIFIER, CandidateSource.QUALIFIER),
+            texts[0],
+            texts[1],
+        )
+    database, database_source = _effective_segment(
+        context.database_name, default_database
+    )
+    if len(texts) == 2:
+        if database is None:
+            return _Candidate(
+                None, (CandidateSource.MISSING, CandidateSource.QUALIFIER), None, texts[0]
+            )
+        return _Candidate(
+            f"{service}.{database}.{texts[0]}.{texts[1]}",
+            (database_source, CandidateSource.QUALIFIER),
+            database,
+            texts[0],
+        )
+    schema, schema_source = _effective_segment(
+        context.database_schema, default_schema
+    )
+    if database is None or schema is None:
+        return _Candidate(None, (database_source, schema_source), database, schema)
+    return _Candidate(
+        f"{service}.{database}.{schema}.{texts[0]}",
+        (database_source, schema_source),
+        database,
+        schema,
+    )
+
+
+def missing_count_key(sources: tuple[CandidateSource, CandidateSource]) -> str:
+    """The §h missing-context count key for a candidate that could
+    not be constructed: the two single-segment keys and the both
+    key are mutually exclusive — a double miss counts only as
+    ``missing_both``. Callers guarantee at least one segment is
+    ``MISSING`` (no candidate exists)."""
+    database_missing = sources[0] is CandidateSource.MISSING
+    schema_missing = sources[1] is CandidateSource.MISSING
+    if database_missing and schema_missing:
+        return "missing_both"
+    if database_missing:
+        return "missing_database"
+    return "missing_schema"
 
 
 def stored_query_hash(stored_text: str) -> str:
@@ -196,16 +336,38 @@ class QueryCostAggregate:
         }
 
 
+def _sources_suffix(
+    sources: tuple[CandidateSource, CandidateSource] | None,
+    context: BindingContext,
+) -> str:
+    """The two provenance levels for an unresolved-name warning:
+    each candidate segment's final source (or the absence of a
+    candidate), plus the row context's input-field sources."""
+    if sources is None:
+        detail = "no candidate"
+    else:
+        detail = (
+            f"candidate database from {sources[0].value}, "
+            f"schema from {sources[1].value}"
+        )
+    return (
+        f" ({detail}; input sources database={context.database_source.value}, "
+        f"schema={context.schema_source.value})"
+    )
+
+
 class TableBindingResolver(Protocol):
     """Parsed table name → catalog table FQN, or ``None`` when the
-    name cannot be bound. Implementations never invent an entity."""
+    name cannot be bound. Implementations never invent an entity.
+    The name is structured (segment boundaries and quoting intact)
+    and the row context arrives as one frozen
+    :class:`BindingContext`, never as loose values."""
 
     def resolve(
         self,
-        parsed_name: str,
+        name: StructuredIdentifier,
         *,
-        database_name: str | None,
-        database_schema: str | None,
+        context: BindingContext,
     ) -> str | None: ...
 
 
@@ -214,28 +376,33 @@ class RestTableBindingResolver:
 
     Fallback chain, in order (mandatory parent-review item):
 
-    1. Exact-FQN candidates. The parsed name's parts plus the row's
-       database/schema context (falling back to the connection's
-       default database/schema) form candidate FQNs
-       ``service.database.schema.table``; each is looked up with GET
-       ``/v1/tables/name/{fqn}`` and the first hit wins. A 404 moves
-       to the next candidate; any other REST error propagates —
-       server trouble must not degrade into silent skips.
-    2. Schema-scoped case-insensitive match. When exact candidates
-       fail but database + schema context is known, the schema's
-       tables are listed once (``GET /v1/tables?databaseSchema=...``)
-       and matched on the table name case-insensitively — parsed
-       names keep query case, catalog names keep ingestion case, and
-       the two differ on engines that fold case. The match must be
-       unique; ambiguity skips with a warning rather than guessing.
+    1. Exact-FQN candidate. The folded structured name's qualifier
+       segments plus the row context (falling back to the
+       connection's default database/schema) form one candidate FQN
+       ``service.database.schema.table``; it is looked up with GET
+       ``/v1/tables/name/{fqn}``. A 404 moves to the fallback; any
+       other REST error propagates — server trouble must not
+       degrade into silent skips. SQL qualifier segments are never
+       overwritten by context or defaults.
+    2. Scope-constrained case-insensitive match. When the exact
+       candidate fails, the candidate FQN's OWN schema is listed
+       once (``GET /v1/tables?databaseSchema=...``) and matched on
+       the FULL FQN case-insensitively — the qualifier scope is
+       preserved, so a name qualified into another database cannot
+       bind into the default context. The match must be unique;
+       ambiguity skips with a warning rather than guessing. Quoted
+       segments on engines with established case-sensitive quoting
+       never enter this step (design §5.5b).
     3. Unresolvable. ``None``: the stage skips the table with a
        throttled warning. No search-API fuzzy step exists in this
        batch — ranked search results would bind queries to the wrong
        table, which is worse than skipping; extending the chain is a
        deliberate follow-up, not a silent fallback.
 
-    Candidates are tried most-specific first (row context before
-    connection defaults), and lookups are cached per run.
+    Over-long names (more than three segments) have no mapping and
+    are skipped, never truncated (Q2). Binding counts (design §5.8)
+    accumulate in :attr:`binding_counts`; the warning-fold count
+    stays :attr:`skipped_count`.
     """
 
     def __init__(
@@ -245,15 +412,35 @@ class RestTableBindingResolver:
         *,
         default_database: str | None = None,
         default_schema: str | None = None,
+        engine_key: str | None = None,
     ) -> None:
         self._client = client
         self._service_name = service_name
         self._default_database = default_database
         self._default_schema = default_schema
+        self._engine_key = engine_key
         self._bindings = _BoundedCache(MAX_CACHED_BINDINGS)
         self._schema_listings = _BoundedCache(MAX_CACHED_SCHEMA_LISTINGS)
-        self._warned: set[str] = set()
+        self._warned: set[StructuredIdentifier] = set()
+        self._throttle_warned = False
         self._skipped_count = 0
+        self._counts: dict[str, int] = {key: 0 for key in BINDING_COUNT_KEYS}
+        self._fidelity_skips: dict[str, int] = {}
+        # The latest failed attempt's skip classification, held for
+        # the loud warning that earns the count: a quiet probe must
+        # not count a skip the cross-service chain may still rescue,
+        # and only the probe saw whether the fallback was ambiguous.
+        # Cleared on every resolve entry and consumed by the matching
+        # loud warn_unresolved; a stale entry never counts twice.
+        self._pending_skip: (
+            tuple[
+                StructuredIdentifier,
+                BindingContext,
+                str,
+                tuple[CandidateSource, CandidateSource] | None,
+            ]
+            | None
+        ) = None
 
     @property
     def skipped_count(self) -> int:
@@ -263,47 +450,114 @@ class RestTableBindingResolver:
         including repeats of a name whose log warning was throttled."""
         return self._skipped_count
 
+    @property
+    def binding_counts(self) -> dict[str, Any]:
+        """Design §5.8 per-key binding counts for this resolver: a
+        fresh snapshot, so callers cannot mutate the counters. The
+        lineage resolver merges this snapshot with its own counters;
+        the workflows log it in their run summaries."""
+        counts = new_binding_counts()
+        counts.update(self._counts)
+        counts["fidelity_unproven_skip"] = dict(self._fidelity_skips)
+        return counts
+
+    def note_unsupported_qualifier(self, count: int = 1) -> None:
+        """Count names whose qualifier could not be proven faithful
+        (extraction-level, reported by the processors)."""
+        self._counts["unsupported_qualifier"] += count
+
+    def note_fidelity_skip(self, branch: str, count: int = 1) -> None:
+        """Count queries/paths skipped because name fidelity was
+        unproven, attributed to the winning parser branch."""
+        self._fidelity_skips[branch] = self._fidelity_skips.get(branch, 0) + count
+
     def resolve(
         self,
-        parsed_name: str,
+        name: StructuredIdentifier,
         *,
-        database_name: str | None,
-        database_schema: str | None,
+        context: BindingContext,
         quiet: bool = False,
     ) -> str | None:
-        parts = parsed_name.split(".")[-_MAX_NAME_PARTS:]
-        database = database_name or self._default_database
-        schema = database_schema or self._default_schema
-        for fqn in self._candidate_fqns(parts, database, schema):
-            if self._lookup(fqn) is not None:
-                return fqn
-        if database and schema:
-            resolved = self._resolve_case_insensitive(parts[-1], database, schema)
+        # Fold once, at the entry: every later step — candidate
+        # construction, fallback — uses only the folded identifier,
+        # so an unquoted name resolves under its engine's folding
+        # before any exact comparison happens (design §5.5b).
+        folded = fold_identifier(name, self._engine_key)
+        self._pending_skip = None
+        if len(folded) > 3:
+            self._pending_skip = (folded, context, "unsupported_qualifier", None)
+            self.warn_unresolved(folded, context=context, quiet=quiet)
+            return None
+        candidate = build_candidate(
+            self._service_name,
+            folded,
+            context,
+            default_database=self._default_database,
+            default_schema=self._default_schema,
+        )
+        if candidate.fqn is None:
+            self._pending_skip = (
+                folded,
+                context,
+                missing_count_key(candidate.sources),
+                candidate.sources,
+            )
+            self.warn_unresolved(folded, context=context, candidate_sources=None, quiet=quiet)
+            return None
+        if self._lookup(candidate.fqn) is not None:
+            self._count_default_bound(candidate.sources)
+            return candidate.fqn
+        if fallback_eligible(folded, self._engine_key):
+            resolved, ambiguous = self._resolve_case_insensitive(
+                candidate.fqn, candidate.database or "", candidate.schema or ""
+            )
             if resolved is not None:
+                self._count_default_bound(candidate.sources)
                 return resolved
-        self.warn_unresolved(parsed_name, quiet=quiet)
+            if ambiguous:
+                self._pending_skip = (folded, context, "ambiguous", candidate.sources)
+                self.warn_unresolved(
+                    folded, context=context, candidate_sources=candidate.sources, quiet=quiet
+                )
+                return None
+        self._pending_skip = (folded, context, "unresolved_404", candidate.sources)
+        self.warn_unresolved(
+            folded, context=context, candidate_sources=candidate.sources, quiet=quiet
+        )
         return None
 
     def _candidate_fqns(
-        self, parts: list[str], database: str | None, schema: str | None
+        self, name: StructuredIdentifier, context: BindingContext
     ) -> list[str]:
-        """Candidate FQNs, most specific first. Three-part names carry
-        their own database/schema; two-part names take the database
-        from context; one-part names need both from context."""
-        service = self._service_name
-        if len(parts) == 3:
-            return [f"{service}.{parts[0]}.{parts[1]}.{parts[2]}"]
-        if len(parts) == 2:
-            if not database:
-                return []
-            return [f"{service}.{database}.{parts[0]}.{parts[1]}"]
-        if database and schema:
-            return [f"{service}.{database}.{schema}.{parts[0]}"]
-        return []
+        """Candidate FQNs for a (folded) structured name: at most
+        one — the shared construction in :func:`build_candidate`.
+        Three-part names carry their own database/schema; two-part
+        names take the database from context; one-part names need
+        both from context; over-long names map to nothing."""
+        candidate = build_candidate(
+            self._service_name,
+            name,
+            context,
+            default_database=self._default_database,
+            default_schema=self._default_schema,
+        )
+        return [candidate.fqn] if candidate.fqn is not None else []
+
+    def _count_default_bound(
+        self, sources: tuple[CandidateSource, CandidateSource]
+    ) -> None:
+        """Count a successful binding's default-supplied segments,
+        per segment: qualifier and row segments are not counted."""
+        if sources[0] is CandidateSource.DEFAULT:
+            self._counts["default_bound_database"] += 1
+        if sources[1] is CandidateSource.DEFAULT:
+            self._counts["default_bound_schema"] += 1
 
     def _lookup(self, fqn: str) -> dict[str, Any] | None:
         """The table entity for an FQN, or ``None`` on 404. Other
-        REST errors propagate: absence is data, failure is failure."""
+        REST errors propagate: absence is data, failure is failure.
+        A read failure is counted before it propagates — the count
+        is a summary supplement, never a reason to swallow it."""
         cached = self._bindings.get(fqn)
         if cached is not _MISSING:
             return cached
@@ -313,29 +567,42 @@ class RestTableBindingResolver:
             if exc.status_code == 404:
                 result = None
             else:
+                self._counts["read_failure"] += 1
                 raise
         self._bindings.set(fqn, result)
         return result
 
-    def _resolve_case_insensitive(self, table_name: str, database: str, schema: str) -> str | None:
+    def _resolve_case_insensitive(
+        self, candidate_fqn: str, database: str, schema: str
+    ) -> tuple[str | None, bool]:
+        """The unique full-FQN case-insensitive match within the
+        candidate's own schema, or ``(None, ambiguous)``. The listing
+        is scoped to the candidate's schema — never the row context
+        alone — and the comparison spans the whole FQN, so a
+        qualifier the exact step missed cannot silently change
+        scope. ``ambiguous`` reports a multi-match so the caller can
+        count the skip at the decision point."""
         schema_fqn = f"{self._service_name}.{database}.{schema}"
+        target = candidate_fqn.lower()
         matches = [
             item
             for item in self._list_schema_tables(schema_fqn)
-            if str(item.get("name", "")).lower() == table_name.lower()
+            if str(item.get("fullyQualifiedName", "")).lower() == target
         ]
         if len(matches) == 1:
             fqn = matches[0].get("fullyQualifiedName")
             if isinstance(fqn, str) and fqn:
-                return fqn
-        elif len(matches) > 1:
+                return fqn, False
+            return None, False
+        if len(matches) > 1:
             logger.warning(
                 "Ambiguous table name %r in schema %s: %d case-insensitive matches; skipping",
-                table_name,
+                candidate_fqn,
                 schema_fqn,
                 len(matches),
             )
-        return None
+            return None, True
+        return None, False
 
     def _list_schema_tables(self, schema_fqn: str) -> tuple[dict[str, Any], ...]:
         cached = self._schema_listings.get(schema_fqn)
@@ -349,33 +616,87 @@ class RestTableBindingResolver:
         self._schema_listings.set(schema_fqn, result)
         return result
 
-    def warn_unresolved(self, parsed_name: str, *, quiet: bool = False) -> None:
+    def warn_unresolved(
+        self,
+        name: StructuredIdentifier,
+        *,
+        context: BindingContext,
+        candidate_sources: tuple[CandidateSource, CandidateSource] | None = None,
+        quiet: bool = False,
+    ) -> None:
         """Record an unresolvable name, warning unless ``quiet``.
 
         Quiet probes (a cross-service resolver trying the own service
         first) neither warn nor count: the name may still resolve
         elsewhere, and a probe must not spend the name's one warning
         or inflate the skipped count. Callers that exhaust every
-        resolver warn loudly through this same method."""
+        resolver warn loudly through this same method, which then
+        consumes the probe's pending skip classification so the
+        attempt counts exactly once, under the outcome the probe
+        actually saw. A direct call with no pending probe classifies
+        from the candidate construction itself.
+
+        The warning carries both provenance levels (design §5.8):
+        each candidate segment's final source, and the row context's
+        input-field sources."""
         if quiet:
             return
+        folded = fold_identifier(name, self._engine_key)
+        skip_key, sources = self._consume_pending(folded, context, candidate_sources)
+        self._counts[skip_key] += 1
         self._skipped_count += 1
-        if parsed_name in self._warned:
+        if folded in self._warned:
             return
         if len(self._warned) < MAX_WARNED_UNRESOLVED_NAMES:
-            self._warned.add(parsed_name)
+            self._warned.add(folded)
             logger.warning(
-                "No catalog table matches parsed name %r under service %s; skipping its usage",
-                parsed_name,
+                "No catalog table matches parsed name %r under service %s; "
+                "skipping its usage%s",
+                folded.display(),
                 self._service_name,
+                _sources_suffix(sources, context),
             )
-        elif len(self._warned) == MAX_WARNED_UNRESOLVED_NAMES:
-            self._warned.add("")
+        elif not self._throttle_warned:
+            self._throttle_warned = True
             logger.warning(
                 "Further unresolvable table names will be counted, not logged "
                 "(%d skipped so far)",
                 self._skipped_count,
             )
+
+    def _consume_pending(
+        self,
+        folded: StructuredIdentifier,
+        context: BindingContext,
+        candidate_sources: tuple[CandidateSource, CandidateSource] | None,
+    ) -> tuple[str, tuple[CandidateSource, CandidateSource] | None]:
+        """The skip classification for a loud warning: the pending
+        probe outcome when it matches this name and context, else a
+        fresh classification from the candidate construction. The
+        pending entry is always cleared — a stale probe outcome must
+        never be spent on a later, unrelated name."""
+        pending = self._pending_skip
+        self._pending_skip = None
+        if (
+            pending is not None
+            and pending[0] == folded
+            and pending[1] == context
+        ):
+            return pending[2], pending[3]
+        candidate = build_candidate(
+            self._service_name,
+            folded,
+            context,
+            default_database=self._default_database,
+            default_schema=self._default_schema,
+        )
+        if candidate.fqn is None:
+            if len(folded) > 3:
+                return "unsupported_qualifier", None
+            return missing_count_key(candidate.sources), candidate.sources
+        if candidate_sources is not None:
+            return "unresolved_404", candidate_sources
+        return "unresolved_404", candidate.sources
 
 
 class UserResolver:
@@ -463,14 +784,43 @@ class UsageStage:
         behind the protocol) contributes zero."""
         return int(getattr(self._binding_resolver, "skipped_count", 0) or 0)
 
+    @property
+    def binding_counts(self) -> dict[str, Any]:
+        """Design §5.8 per-key binding counts from the stage's
+        resolver, for the workflow's run summary. A resolver without
+        a count snapshot (a test double behind the protocol)
+        contributes zeros."""
+        counts = getattr(self._binding_resolver, "binding_counts", None)
+        if counts is None:
+            return new_binding_counts()
+        return dict(counts)
+
     def handle_batch(self, parsed_batch: list[ParsedData]) -> None:
         """Aggregate one batch and append it to the staging files."""
         usage: dict[tuple[str, str], _UsageAccumulator] = {}
         costs: dict[tuple[str, str], QueryCostAggregate] = {}
         for parsed in parsed_batch:
+            self._forward_parse_counts(parsed)
             self._handle_table_usage(parsed, usage)
             self._handle_query_cost(parsed, costs)
         self._dump(usage, costs)
+
+    def _forward_parse_counts(self, parsed: ParsedData) -> None:
+        """Forward one record's extraction-level counts into the
+        resolver's counters: names whose fidelity the parser could
+        not prove, and queries whose whole extraction failed. The
+        parse step has no resolver of its own, so the counts ride
+        the parsed record and land here, once per record, whether
+        or not any table bound."""
+        resolver = self._binding_resolver
+        if parsed.unsupported_name_count:
+            note = getattr(resolver, "note_unsupported_qualifier", None)
+            if note is not None:
+                note(parsed.unsupported_name_count)
+        if parsed.fidelity_skip_branch is not None:
+            note = getattr(resolver, "note_fidelity_skip", None)
+            if note is not None:
+                note(parsed.fidelity_skip_branch)
 
     def _handle_table_usage(
         self,
@@ -499,16 +849,13 @@ class UsageStage:
             if query_hash not in accumulator.queries:
                 accumulator.queries[query_hash] = self._build_query_request(parsed, text)
 
-    def _resolve_tables(self, parsed: ParsedData) -> dict[str, str]:
+    def _resolve_tables(self, parsed: ParsedData) -> dict[StructuredIdentifier, str]:
         """Parsed names → catalog FQNs for one record; unresolvable
-        names are dropped (the resolver warned already)."""
-        resolved: dict[str, str] = {}
+        names are dropped (the resolver warned already). The row
+        context travels as the record's frozen binding context."""
+        resolved: dict[StructuredIdentifier, str] = {}
         for name in parsed.tables:
-            fqn = self._binding_resolver.resolve(
-                name,
-                database_name=parsed.database_name,
-                database_schema=parsed.database_schema,
-            )
+            fqn = self._binding_resolver.resolve(name, context=parsed.binding_context)
             if fqn is not None:
                 resolved[name] = fqn
         return resolved
@@ -516,8 +863,8 @@ class UsageStage:
     def _resolve_joins(
         self,
         parsed: ParsedData,
-        parsed_name: str,
-        resolved: dict[str, str],
+        parsed_name: StructuredIdentifier,
+        resolved: dict[StructuredIdentifier, str],
     ) -> list[TableColumnJoin]:
         """The record's joins for one table, with table names
         rewritten to catalog FQNs. Join partners that cannot be

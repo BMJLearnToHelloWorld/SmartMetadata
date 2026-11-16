@@ -61,7 +61,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -71,21 +70,21 @@ from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.lineage.dialect import Dialect
 from smartmetadata_ingestion.lineage.graphs import TempHop
+from smartmetadata_ingestion.lineage.identifiers import StructuredIdentifier
 from smartmetadata_ingestion.lineage.parser import (
     LINEAGE_PARSING_TIMEOUT,
     LineageParser,
     QueryParserType,
-    clean_table_name,
 )
 from smartmetadata_ingestion.lineage.resolution import LineageBindingResolver
-from smartmetadata_ingestion.records import ColumnLineage, QueryRecord
+from smartmetadata_ingestion.lineage.udf_names import (
+    FUNCTION_COLUMN_PATTERN,
+    column_parent_identifier,
+    udf_names_from_extraction,
+)
+from smartmetadata_ingestion.records import BindingContext, ColumnLineage, QueryRecord
 
 logger = logging.getLogger(__name__)
-
-# A column path element shaped like a function call: the parser
-# bakes the call into the target column name when neither an alias
-# nor an INSERT column list names the output column.
-_FUNCTION_COLUMN = re.compile(r"\A([A-Za-z_][\w$]*)\s*\(")
 
 # UDF bodies are parsed at most one level deep: a UDF calling
 # another UDF does not recurse, so a cyclic catalog cannot loop the
@@ -280,8 +279,7 @@ class QueryLineageProcessor:
         self,
         sql_text: str,
         *,
-        database_name: str | None = None,
-        database_schema: str | None = None,
+        context: BindingContext,
         emit_query_record: bool = False,
         incremental: bool = False,
         target_override_fqn: str | None = None,
@@ -292,12 +290,15 @@ class QueryLineageProcessor:
         analysis_date: str | None = None,
         exclude_usage: bool = False,
         _udf_depth: int = 0,
-        _seen_udfs: set[str] | None = None,
+        _seen_udfs: set[StructuredIdentifier] | None = None,
     ) -> ProcessedQuery:
-        """Process one SQL text. ``target_override_fqn`` pins the
-        target (view channel: the enumerated view, whatever the
-        definition names). ``incremental`` enables the
-        already-processed skip, which needs the checker configured."""
+        """Process one SQL text. ``context`` is the query's frozen
+        row context: every binding decision in this call resolves
+        against it, and it threads unchanged into UDF-body
+        recursion. ``target_override_fqn`` pins the target (view
+        channel: the enumerated view, whatever the definition
+        names). ``incremental`` enables the already-processed skip,
+        which needs the checker configured."""
         result = ProcessedQuery()
         seen_udfs = _seen_udfs if _seen_udfs is not None else set()
         already_processed = False
@@ -309,6 +310,14 @@ class QueryLineageProcessor:
             timeout_seconds=self._timeout_seconds,
             parser_type=self._parser_type,
         )
+        # Extraction-level counts land before any early return: a
+        # query whose names could not be proven faithful counts as
+        # a fidelity skip even when it touches no tables.
+        extraction = parser.structured_extraction
+        if extraction.failed:
+            self._resolver.note_fidelity_skip(extraction.branch)
+        if extraction.unsupported_names:
+            self._resolver.note_unsupported_qualifier(len(extraction.unsupported_names))
         # Edge SQL is the MASKED text; the raw text stays with the
         # incremental checksum and the Query entity only.
         edge_sql = parser.masked_query
@@ -317,14 +326,14 @@ class QueryLineageProcessor:
         targets = parser.target_tables
         if not involved and not targets:
             return result
-        bindings = self._bind_tables(
-            parser, database_name=database_name, database_schema=database_schema
-        )
+        bindings = self._bind_tables(parser, context=context)
         if target_override_fqn is not None:
             for table in targets:
-                bindings[clean_table_name(table)] = target_override_fqn
+                association = parser.association_for(table)
+                if association is not None and association.identifier is not None:
+                    bindings[association.identifier] = target_override_fqn
         result.unbound_tables = sorted(
-            name for name, fqn in bindings.items() if fqn is None
+            identifier.display() for identifier, fqn in bindings.items() if fqn is None
         )
         result.parsed = True
         edge_pairs: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -335,7 +344,7 @@ class QueryLineageProcessor:
         if paths:
             result.udf_expansions = self._process_paths(
                 parser, bindings, edge_sql, edge_pairs, hops, _udf_depth, extra_edges,
-                extra_hops, seen_udfs, database_name, database_schema,
+                extra_hops, seen_udfs, context,
             )
         else:
             self._process_cartesian(
@@ -385,43 +394,62 @@ class QueryLineageProcessor:
         self,
         parser: LineageParser,
         *,
-        database_name: str | None,
-        database_schema: str | None,
-    ) -> dict[str, str | None]:
-        bindings: dict[str, str | None] = {}
-        for name in parser.clean_table_list:
-            bindings[name] = self._resolver.resolve_table(
-                name,
-                database_name=database_name,
-                database_schema=database_schema,
+        context: BindingContext,
+    ) -> dict[StructuredIdentifier, str | None]:
+        """Confirmed endpoints → catalog FQNs. Only endpoints whose
+        association the parser confirmed enter binding, each resolved
+        once however many endpoints share the identifier (a self-join
+        binds its table once); unconfirmed endpoints get no entry,
+        so no path through them can bind on a guessed name."""
+        bindings: dict[StructuredIdentifier, str | None] = {}
+        for _table, association in zip(
+            parser.involved_tables, parser.endpoint_associations, strict=True
+        ):
+            identifier = association.identifier
+            if identifier is None or identifier in bindings:
+                continue
+            bindings[identifier] = self._resolver.resolve_table(
+                identifier, context=context
             )
         return bindings
 
     def _process_paths(
         self,
         parser: LineageParser,
-        bindings: dict[str, str | None],
+        bindings: dict[StructuredIdentifier, str | None],
         edge_sql: str,
         edge_pairs: dict[tuple[str, str], list[tuple[str, str]]],
         hops: list[TempHop],
         udf_depth: int,
         extra_edges: list[LineageEdge],
         extra_hops: list[TempHop],
-        seen_udfs: set[str],
-        database_name: str | None,
-        database_schema: str | None,
+        seen_udfs: set[StructuredIdentifier],
+        context: BindingContext,
     ) -> int:
         """Process the parser's column paths; returns the number of
-        UDF bodies that expanded into additional edges or hops."""
+        UDF bodies that expanded into additional edges or hops. A
+        path whose every column parent cannot be confirmed to a
+        unique structured identifier is skipped whole and counted:
+        column attribution is confirmed only when every occurrence of
+        the parent name carries one alias and the endpoint pins it; a
+        path whose parent carries differing aliases is skipped whole
+        and counted, never guessed onto an alias."""
         expansions = 0
+        branch = parser.structured_extraction.branch
         for path in parser.column_lineage:
             if len(path) < 2:
                 continue
-            tables = [clean_table_name(column.parent) for column in path]
+            parents = [column_parent_identifier(column.parent, parser) for column in path]
+            if any(parent is None for parent in parents):
+                self._resolver.note_fidelity_skip(branch)
+                continue
+            tables: list[StructuredIdentifier] = [
+                parent for parent in parents if parent is not None
+            ]
             columns = [column.raw_name for column in path]
             expansions += self._expand_udfs(
-                columns, udf_depth, extra_edges, extra_hops, seen_udfs,
-                database_name, database_schema,
+                parser, columns, udf_depth, extra_edges, extra_hops, seen_udfs,
+                context,
             )
             for index in range(len(path) - 1):
                 self._process_pair(
@@ -451,11 +479,11 @@ class QueryLineageProcessor:
 
     def _process_pair(
         self,
-        from_table: str,
+        from_table: StructuredIdentifier,
         from_column: str,
-        to_table: str,
+        to_table: StructuredIdentifier,
         to_column: str,
-        bindings: dict[str, str | None],
+        bindings: dict[StructuredIdentifier, str | None],
         edge_sql: str,
         edge_pairs: dict[tuple[str, str], list[tuple[str, str]]],
         hops: list[TempHop],
@@ -488,8 +516,12 @@ class QueryLineageProcessor:
         )
         hops.append(
             TempHop(
-                from_key=from_fqn or from_table,
-                to_key=to_fqn or to_table,
+                # Unbound sides chain on the display spelling: the
+                # same confirmed identifier renders identically on
+                # the writing and reading hops, and hop keys are
+                # compared, never re-parsed.
+                from_key=from_fqn or from_table.display(),
+                to_key=to_fqn or to_table.display(),
                 columns=(hop_pair,) if hop_pair is not None else (),
                 sql_query=edge_sql,
                 from_bound=from_fqn is not None,
@@ -500,7 +532,7 @@ class QueryLineageProcessor:
     def _process_cartesian(
         self,
         parser: LineageParser,
-        bindings: dict[str, str | None],
+        bindings: dict[StructuredIdentifier, str | None],
         target_override_fqn: str | None,
         edge_sql: str,
         edge_pairs: dict[tuple[str, str], list[tuple[str, str]]],
@@ -510,18 +542,31 @@ class QueryLineageProcessor:
         No column mappings exist to attach; the table edges still do.
         Sources are the source + intermediate tables only:
         ``involved_tables`` also carries targets, and pairing targets
-        against targets would invent edges between written tables."""
-        sources = []
-        seen_sources: set[str] = set()
+        against targets would invent edges between written tables.
+        Only confirmed endpoints pair: an unconfirmed source or
+        target has no proven name to bind or chain on."""
+        sources: list[StructuredIdentifier] = []
+        seen_sources: set[StructuredIdentifier] = set()
         for table in parser.source_tables + parser.intermediate_tables:
-            name = clean_table_name(table)
-            if name not in seen_sources:
-                seen_sources.add(name)
-                sources.append(name)
-        target_names = [clean_table_name(table) for table in parser.target_tables]
-        if target_override_fqn is not None and not target_names:
-            target_names = ["__override__"]
-            bindings["__override__"] = target_override_fqn
+            association = parser.association_for(table)
+            if association is None or association.identifier is None:
+                continue
+            if association.identifier not in seen_sources:
+                seen_sources.add(association.identifier)
+                sources.append(association.identifier)
+        target_names: list[StructuredIdentifier] = []
+        for table in parser.target_tables:
+            association = parser.association_for(table)
+            if association is not None and association.identifier is not None:
+                target_names.append(association.identifier)
+        if target_override_fqn is not None and not parser.target_tables:
+            # A target-less query under an override (the view
+            # channel's wrapped definition always names a target, so
+            # this is the degenerate case): pair sources against the
+            # override through a sentinel key that never binds.
+            sentinel = StructuredIdentifier.single("__override__")
+            target_names = [sentinel]
+            bindings[sentinel] = target_override_fqn
         for source_name in sources:
             source_fqn = bindings.get(source_name)
             for target_name in target_names:
@@ -532,8 +577,8 @@ class QueryLineageProcessor:
                 elif self._temp_enabled and source_name != target_name:
                     hops.append(
                         TempHop(
-                            from_key=source_fqn or source_name,
-                            to_key=target_fqn or target_name,
+                            from_key=source_fqn or source_name.display(),
+                            to_key=target_fqn or target_name.display(),
                             columns=(),
                             sql_query=edge_sql,
                             from_bound=source_fqn is not None,
@@ -563,17 +608,19 @@ class QueryLineageProcessor:
 
     def _hop_pair(
         self,
-        from_table: str,
+        from_table: StructuredIdentifier,
         from_fqn: str | None,
         from_column: str,
-        to_table: str,
+        to_table: StructuredIdentifier,
         to_fqn: str | None,
         to_column: str,
     ) -> tuple[str, str] | None:
         """A hop's column pair, spelled for graph chaining: bound
         sides use catalog column FQNs, temp sides use
-        ``<raw-name>.<column>`` so the hop that writes a temp table
-        and the hop that reads it chain on identical spellings."""
+        ``<display-name>.<column>`` so the hop that writes a temp
+        table and the hop that reads it chain on identical
+        spellings. The display spelling is compared, never
+        re-parsed."""
         if from_column in ("", "*") or to_column in ("", "*"):
             return None
         if "(" in from_column or "(" in to_column:
@@ -583,49 +630,52 @@ class QueryLineageProcessor:
             if from_ref is None:
                 return None
         else:
-            from_ref = f"{from_table}.{from_column}"
+            from_ref = f"{from_table.display()}.{from_column}"
         if to_fqn is not None:
             to_ref = self._resolver.resolve_column(to_fqn, to_column)
             if to_ref is None:
                 return None
         else:
-            to_ref = f"{to_table}.{to_column}"
+            to_ref = f"{to_table.display()}.{to_column}"
         return (from_ref, to_ref)
 
     def _expand_udfs(
         self,
+        parser: LineageParser,
         columns: list[str],
         udf_depth: int,
         extra_edges: list[LineageEdge],
         extra_hops: list[TempHop],
-        seen_udfs: set[str],
-        database_name: str | None,
-        database_schema: str | None,
+        seen_udfs: set[StructuredIdentifier],
+        context: BindingContext,
     ) -> int:
         """Resolve function names in a column path as UDFs and parse
         cataloged bodies once for additional edges. The query's
-        database/schema context threads through: a bare function
-        name resolves in the query's schema, not the connection
-        defaults alone. A body that is a scalar expression (no
-        tables) adds nothing; a body that queries tables adds its
-        edges to this query's result. Depth 0 only — nested UDF
-        calls do not recurse. Returns the number of bodies that
-        expanded into edges or hops."""
+        binding context threads through: a bare function name
+        resolves in the query's schema, not the connection defaults
+        alone. Function names come from the structured extraction
+        (never re-read off the column text); the function-call
+        heuristic only gates whether the path can name a UDF at all.
+        A body that is a scalar expression (no tables) adds nothing;
+        a body that queries tables adds its edges to this query's
+        result. Depth 0 only — nested UDF calls do not recurse.
+        Returns the number of bodies that expanded into edges or
+        hops."""
         if udf_depth >= MAX_UDF_EXPANSION_DEPTH:
             return 0
-        names: list[str] = []
-        for column in columns:
-            match = _FUNCTION_COLUMN.match(column)
-            if match and match.group(1) not in names and match.group(1) not in seen_udfs:
-                names.append(match.group(1))
+        if not any(FUNCTION_COLUMN_PATTERN.match(column) for column in columns):
+            return 0
+        names = [
+            name
+            for name in udf_names_from_extraction(parser.structured_extraction, columns)
+            if name not in seen_udfs
+        ]
         if not names:
             return 0
         expansions = 0
         for name in names:
             seen_udfs.add(name)
-            entity = self._resolver.resolve_udf(
-                name, database_name=database_name, database_schema=database_schema
-            )
+            entity = self._resolver.resolve_udf(name, context=context)
             if entity is None:
                 continue
             code = self._resolver.procedure_code(entity)
@@ -633,8 +683,7 @@ class QueryLineageProcessor:
                 continue
             expanded = self.process(
                 code,
-                database_name=database_name,
-                database_schema=database_schema,
+                context=context,
                 emit_query_record=False,
                 incremental=False,
                 _udf_depth=udf_depth + 1,
@@ -671,7 +720,7 @@ class QueryLineageProcessor:
     @staticmethod
     def _should_emit_record(
         parser: LineageParser,
-        bindings: dict[str, str | None],
+        bindings: dict[StructuredIdentifier, str | None],
         target_override_fqn: str | None,
         result: ProcessedQuery,
     ) -> bool:

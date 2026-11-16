@@ -19,15 +19,22 @@ date defaults to the run time. The statement source is the connection's
 it is interpolated as an identifier.
 
 View contract: the source must expose ``query``, ``userid``,
-``mean_exec_time``, and ``calls`` columns with the
-``pg_stat_statements`` meanings. ``duration`` is the mean execution
-time: the view aggregates executions, so no per-execution duration
-exists to report, and the mean is the honest per-execution figure.
+``mean_exec_time``, ``calls``, and ``dbid`` columns with the
+``pg_stat_statements`` meanings. ``dbid`` is the database OID each
+history row belongs to: the statement joins it to ``pg_database``
+for the database name, because the view is cross-database and the
+reading connection's own database would mislabel other databases'
+rows. A custom source without a ``dbid`` column fails loudly with a
+SQL error; there is no silent fallback to the current database.
+``duration`` is the mean execution time: the view aggregates
+executions, so no per-execution duration exists to report, and the
+mean is the honest per-execution figure.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from smartmetadata_ingestion.config import SourceConfig
@@ -54,17 +61,48 @@ STATEMENT_SOURCE_PATTERN = re.compile(
     r'(?:\"[^\"]+\"|[A-Za-z_][\w$]*)(?:\.(?:\"[^\"]+\"|[A-Za-z_][\w$]*))*'
 )
 
+# The statement source must expose a ``dbid`` column (the database OID,
+# for the join below); without it the query fails loudly, no silent fallback.
+# ADR:2026-11-17-dl2c-binding-context
 POSTGRES_SQL_TEMPLATE = (
     "SELECT s.query AS query_text, r.rolname AS user_name, "
     "NULL AS start_time, NULL AS end_time, "
     "s.mean_exec_time AS duration, NULL AS cost, "
     "NULL AS query_type, false AS aborted, "
-    "current_database() AS database_name, NULL AS schema_name "
+    "d.datname AS database_name, NULL AS schema_name "
     "FROM {query_statement_source} s "
+    "JOIN pg_catalog.pg_database d ON s.dbid = d.oid "
     "LEFT JOIN pg_roles r ON r.oid = s.userid "
     "WHERE s.query IS NOT NULL {filters} "
     "ORDER BY s.calls DESC LIMIT {result_limit}"
 )
+
+# Multi-engine predicate, kept out of the template on purpose: with
+# ``ingestAllDatabases`` every engine reads the same cross-database
+# view, so each engine's statement must restrict the view to its own
+# database or every row is counted once per engine. The subquery
+# resolves against the reading connection, so this one text is
+# correct for every engine — but only in multi-engine mode. The
+# single-engine statement keeps the unfiltered shape, so the
+# predicate is applied at statement formatting when (and only when)
+# the run ingests all databases, never baked into the template.
+POSTGRES_DBID_FILTER = (
+    "s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database())"
+)
+
+
+def postgres_dbid_filter(connection: Mapping[str, Any]) -> str:
+    """The multi-engine dbid predicate, only when ingesting all databases.
+
+    A single-engine run reads the view once, so no restriction
+    applies; with ``ingestAllDatabases`` every engine reads the same
+    cross-database view, and each statement must restrict it to the
+    reading connection's own database (see POSTGRES_DBID_FILTER).
+    """
+    if not connection.get("ingestAllDatabases"):
+        return ""
+    return POSTGRES_DBID_FILTER
+
 
 POSTGRES_QUERY_LOG_SPEC = register_query_log_spec(
     QueryLogSpec(
@@ -76,6 +114,7 @@ POSTGRES_QUERY_LOG_SPEC = register_query_log_spec(
         statement_source_key="queryStatementSource",
         statement_source_default="pg_stat_statements",
         statement_source_pattern=STATEMENT_SOURCE_PATTERN,
+        conditional_filters=postgres_dbid_filter,
     )
 )
 
