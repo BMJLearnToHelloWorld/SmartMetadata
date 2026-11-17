@@ -12,9 +12,16 @@ import type { IngestionPipeline, PipelineStatus } from '@/types/ingestion';
 import {
   aggregateProgress,
   aggregateStepTotals,
+  buildRunTotals,
+  buildStepAttention,
+  formatRunStartedAt,
   getAgentStatusFromPipelineState,
   getRecentRuns,
+  mapPipelineStatusToRun,
   mapPipelineToAgent,
+  mapStepSummaryToRunStep,
+  resolveRunStepStatus,
+  toRunStatus,
 } from './agentsDataMapper';
 
 const NOW = new Date('2026-11-14T12:00:00.000Z').getTime();
@@ -319,5 +326,100 @@ describe('mapPipelineToAgent', () => {
   it('carries the enabled flag through', () => {
     expect(mapPipelineToAgent(pipeline({ enabled: false })).enabled).toBe(false);
     expect(mapPipelineToAgent(pipeline({ enabled: true })).enabled).toBe(true);
+  });
+});
+
+describe('run-history mapping (official mapPipelineStatusToRun)', () => {
+  it('maps capitalized pipeline states and falls back to skipped', () => {
+    expect(toRunStatus('Success')).toBe('success');
+    expect(toRunStatus('PartialSuccess')).toBe('partial');
+    expect(toRunStatus('Failed')).toBe('failed');
+    expect(toRunStatus('Running')).toBe('running');
+    expect(toRunStatus('Queued')).toBe('skipped');
+    expect(toRunStatus('Stopped')).toBe('skipped');
+    expect(toRunStatus('success')).toBe('skipped');
+    expect(toRunStatus(undefined)).toBe('skipped');
+  });
+
+  it('formats the run start in pin customFormatDateTime shape', () => {
+    const millis = new Date(2026, 10, 14, 9, 5).getTime();
+    expect(formatRunStartedAt(millis)).toBe('Nov 14, 2026 · 09:05');
+  });
+
+  it('takes totals as max records/filtered/updated and summed warnings/errors', () => {
+    expect(
+      buildRunTotals([
+        { records: 10, filtered: 2, updated_records: 1, warnings: 1, errors: 0 },
+        { records: 7, filtered: 5, updated_records: 3, warnings: 2, errors: 1 },
+      ]),
+    ).toEqual({ records: 10, filtered: 5, updated: 3, warnings: 3, errors: 1 });
+    expect(buildRunTotals([])).toEqual({ records: 0, filtered: 0, updated: 0, warnings: 0, errors: 0 });
+  });
+
+  it('resolves step status from errors, warnings, and empty counts', () => {
+    expect(resolveRunStepStatus(10, 0, 1, 0)).toBe('partial');
+    expect(resolveRunStepStatus(0, 0, 1, 0)).toBe('failed');
+    expect(resolveRunStepStatus(10, 0, 0, 1)).toBe('partial');
+    expect(resolveRunStepStatus(0, 0, 0, 0)).toBe('skipped');
+    expect(resolveRunStepStatus(0, 3, 0, 0)).toBe('success');
+    expect(resolveRunStepStatus(10, 0, 0, 0)).toBe('success');
+  });
+
+  it('builds attention from the first failure only', () => {
+    expect(buildStepAttention({})).toBeUndefined();
+    expect(
+      buildStepAttention({
+        failures: [
+          { name: 'boom', error: 'kaboom', stackTrace: 'trace' },
+          { name: 'second', error: 'ignored' },
+        ],
+      }),
+    ).toEqual({
+      severity: 'error',
+      title: 'boom',
+      message: 'kaboom',
+      hint: undefined,
+      stackTrace: 'trace',
+    });
+  });
+
+  it('maps a full status to a run with duration, totals, and steps', () => {
+    const run = mapPipelineStatusToRun(
+      status({
+        pipelineState: 'Success',
+        startDate: NOW - 90_000,
+        endDate: NOW,
+        status: [
+          { name: 'extract', records: 12, filtered: 1, updated_records: 2 },
+          { name: 'load', records: 12, errors: 1, failures: [{ name: 'x', error: 'y' }] },
+        ],
+      }),
+    );
+    expect(run.id).toBe('run-1');
+    expect(run.status).toBe('success');
+    expect(run.duration).toBe(1.5);
+    expect(run.totals).toEqual({ records: 12, filtered: 1, updated: 2, warnings: 0, errors: 1 });
+    expect(run.steps.map((step) => step.status)).toEqual(['success', 'partial']);
+    expect(run.steps[1].attention?.title).toBe('x');
+  });
+
+  it('falls back to the timestamp id and an empty start when the run id and start date are missing', () => {
+    const run = mapPipelineStatusToRun(status({ runId: undefined, startDate: undefined, timestamp: NOW }));
+    expect(run.id).toBe(String(NOW));
+    expect(run.startedAt).not.toBe('');
+    expect(run.duration).toBe(0);
+    const dateless = mapPipelineStatusToRun(
+      status({ runId: undefined, startDate: undefined, timestamp: undefined }),
+    );
+    expect(dateless.startedAt).toBe('');
+  });
+
+  it('maps a step summary with defaulted counts', () => {
+    expect(mapStepSummaryToRunStep({ name: 'only' })).toMatchObject({
+      name: 'only',
+      status: 'skipped',
+      records: 0,
+      attention: undefined,
+    });
   });
 });

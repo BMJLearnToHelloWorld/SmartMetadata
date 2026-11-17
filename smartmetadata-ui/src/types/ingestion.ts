@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import type { EntityRef } from './api';
+import type { EntityRef, TagLabelState, TagLabelType } from './api';
+import type { EntityStyle, TagSource } from './governance';
 
 export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql', 'Redshift', 'MariaDB', 'Greenplum', 'Timescale'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
@@ -366,6 +367,60 @@ export interface ServiceConnection {
   config?: ServiceConnectionConfig;
 }
 
+/**
+ * Service tag label, mirroring the pin TagLabel field set
+ * (generated/type/tagLabel.ts at a3012259ca, from openmetadata-spec
+ * type/tagLabel.json) in full: a tier edit rewrites the whole `tags`
+ * array, so every field the server stored on a retained label must
+ * survive the round trip — dropping `style`, `reason`, or the
+ * auto-classification provenance (`appliedAt`/`appliedBy`/`metadata`)
+ * would silently strip it on save. `appliedAt` stays the JSON string
+ * the server sent (the pin type is Date; the transport is a string).
+ * `source`/`labelType`/`state` stay optional: fork payloads are
+ * unverified and may omit them, like TagRef.
+ */
+export interface ServiceTagLabel {
+  tagFQN: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  style?: EntityStyle;
+  source?: TagSource;
+  labelType?: TagLabelType;
+  state?: TagLabelState;
+  href?: string;
+  reason?: string;
+  appliedAt?: string;
+  appliedBy?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Deployment attributes of a service (pin generated/entity/services/
+ * serviceAttributes.ts at a3012259ca). An ordinary property of the
+ * service entity, not a fields expansion: the pin service-detail
+ * fetches never list it in `fields`, yet the attributes card renders
+ * from it. `environment` is the pin closed set below, kept as a plain
+ * string so a value outside the set still round-trips instead of
+ * being dropped by the mapper.
+ */
+export interface ServiceAttributes {
+  environment?: string;
+  region?: string;
+  deployment?: string;
+}
+
+/** Pin `Environment` enum values, in declaration order, verbatim. */
+export const SERVICE_ENVIRONMENTS = [
+  'Development',
+  'Other',
+  'Production',
+  'QA',
+  'Sandbox',
+  'Staging',
+  'UAT',
+] as const;
+
 export interface CatalogService {
   id: string;
   name: string;
@@ -377,6 +432,21 @@ export interface CatalogService {
   connection?: ServiceConnection;
   /** Owners of the service (fetched with fields=owners); seeds a new pipeline's owners (P-13). */
   owners?: EntityRef[];
+  /**
+   * Tag labels (fetched with fields=tags). The tier facet reads the
+   * first `Tier.*` label from here; a tier edit rewrites this array.
+   */
+  tags?: ServiceTagLabel[];
+  /** Followers (fetched with fields=followers); follow state is membership of the current user id. */
+  followers?: EntityRef[];
+  /** Domains (fetched with fields=domains). */
+  domains?: EntityRef[];
+  /** Data products (fetched with fields=dataProducts; metadata services never request it). */
+  dataProducts?: EntityRef[];
+  /** Entity version; the header version entry renders only when present. */
+  version?: number;
+  /** Deployment attributes; an ordinary entity property, not a fields expansion. */
+  serviceAttributes?: ServiceAttributes;
   /**
    * Stored test-connection outcome (openmetadata-spec
    * entity/services/connections/testConnectionResult.json), written by a
@@ -741,6 +811,13 @@ export interface IngestionPipeline {
   raiseOnError?: boolean;
   /** Soft-deleted flag; the detail shell renders its deleted Tag from this. */
   deleted?: boolean;
+  /**
+   * Provider type of the pipeline (official generated ProviderType:
+   * `system` / `user` / `automation`). The Insights agents widget
+   * filters on `automation` (pin AgentsStatusWidgetUtils); AutoPilot
+   * agents carry it, hand-built pipelines do not.
+   */
+  provider?: string;
   /** Owners of the pipeline, only present when the caller asks for fields=owners. */
   owners?: EntityRef[];
   /**

@@ -5,17 +5,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { Alert, Button, Descriptions, Tooltip, message } from 'ant-design-vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Alert, Button, Form, Input, Tooltip, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import { setFieldPatch } from '@/admin/jsonPatch';
 import { triggerOnDemandApp } from '@/api/apps';
-import { getOrchestratorStatus, listIngestionPipelines } from '@/api/ingestionPipelines';
-import { permissionFlags, type OperationPermissions } from '@/api/permissions';
+import { getOrchestratorStatus } from '@/api/ingestionPipelines';
+import { getDerivedPermissionFlags, permissionFlags, type OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { useAuthStore } from '@/stores/auth';
-import { listWorkflowInstances } from '@/api/workflows';
-import { getServiceVersion, listServiceVersions } from '@/api/serviceVersions';
-import type { EntityVersion } from '@/api/entities';
+import {
+  getWorkflowInstanceStates,
+  listWorkflowInstances,
+  type WorkflowInstance,
+  type WorkflowStatesData,
+} from '@/api/workflows';
 import {
   createTestConnectionWorkflow,
   deleteTestConnectionWorkflow,
@@ -24,23 +28,63 @@ import {
   isTestConnectionComplete,
   triggerTestConnectionWorkflow,
 } from '@/api/testConnections';
-import { SERVICE_DETAIL_TABS } from '@/catalog/ingestionTabs';
+import { countDataModels } from '@/api/dataModels';
+import { countDriveAssets } from '@/api/driveAssets';
+import type { ServicePageData } from '@/api/servicePageData';
+import {
+  applyFollowChange,
+  applyUnfollowChange,
+  followService,
+  isServiceFollowing,
+  unfollowService,
+} from '@/api/serviceFollowers';
+import { patchService } from '@/api/servicePatch';
+import {
+  buildServiceChildrenFields,
+  CHILD_ENTITY_TYPE_BY_KIND,
+  fetchServiceChildren,
+} from '@/api/serviceChildren';
+import {
+  isOpenMetadataService,
+  listServiceAgents,
+  resolveAgentsFetchMode,
+  resolveAgentsRefreshMode,
+  searchServiceAgents,
+} from '@/api/serviceAgents';
+import { createEmptyPaging, PAGE_SIZE_BASE } from '@/catalog/servicePaging';
+import {
+  defaultServiceDetailTab,
+  firstServiceDetailTab,
+  resolveServiceDetailTabs,
+} from '@/catalog/serviceDetailTabs';
 import SmState from '@/components/shared/SmState.vue';
+import FormModal from '@/components/shared/FormModal.vue';
 import AirflowMessageBanner from '@/components/ingestion/AirflowMessageBanner.vue';
+import DataModelsTab from '@/components/ingestion/DataModelsTab.vue';
 import DeploymentSummaryCard from '@/components/ingestion/DeploymentSummaryCard.vue';
+import DriveAssetTable from '@/components/ingestion/DriveAssetTable.vue';
 import MetadataAgentsView from '@/components/ingestion/MetadataAgentsView.vue';
+import RunHistoryDrawer from '@/components/ingestion/RunHistoryDrawer.vue';
+import ServiceAttributesCard from '@/components/ingestion/ServiceAttributesCard.vue';
+import ServiceConnectionDetails from '@/components/ingestion/ServiceConnectionDetails.vue';
+import ServiceHeaderFacets from '@/components/ingestion/ServiceHeaderFacets.vue';
+import ServiceInsightsTab from '@/components/ingestion/ServiceInsightsTab.vue';
+import ServiceMainTab, {
+  type ServiceChildRow,
+  type ServiceMainTabDetails,
+} from '@/components/ingestion/ServiceMainTab.vue';
+import { withRequiredFqn } from '@/components/ingestion/serviceChildTable';
 import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
 import RestoreEntityModal from '@/features/crud/RestoreEntityModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel } from '@/features/crud/paging';
-import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import { descriptionPatch } from '@/governance/assetPatch';
 import {
   entityTypeForKind,
-  redactConnectionForDisplay,
   SERVICE_KIND_BY_ENTITY_TYPE,
   SERVICE_TYPE_LABEL_KEY_BY_KIND,
 } from '@/ingestion/connections';
-import { cliSourceType } from '@/ingestion/cliWorkflow';
 import {
   AUTO_PILOT_APP_NAME,
   AUTO_PILOT_WORKFLOW_NAME,
@@ -48,7 +92,9 @@ import {
   isAutoPilotServiceType,
   isExcludedAutoPilotServiceType,
 } from '@/ingestion/autoPilot';
-import type { AgentAction } from '@/ingestion/agentsUtils';
+import { agentOverflowPermissions, type AgentAction } from '@/ingestion/agentsUtils';
+import { shouldTestConnection } from '@/ingestion/connectionTest';
+import { useCursorPaging } from '@/ingestion/useCursorPaging';
 import { getIngestionTypes, getSupportedPipelineTypes } from '@/ingestion/supportedPipelines';
 import { useMetadataAgents } from '@/ingestion/useMetadataAgents';
 import { usePipelineRowActions } from '@/ingestion/usePipelineRowActions';
@@ -56,26 +102,26 @@ import { getEntityFeedLink } from '@/utils/entityLink';
 import { SERVICE_DELETE_API, SERVICE_GET_API, SERVICE_RESTORE_API } from '@/ingestion/serviceApis';
 import { waitForServiceDelete, type DeleteType } from '@/ingestion/serviceDelete';
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
+import type { EntityRef } from '@/types/api';
 import type {
   Agent,
   CatalogService,
   IngestionPipeline,
   OrchestratorStatus,
-  PipelineStatus,
+  ServiceAttributes,
   ServiceKind,
   TestConnectionStepResult,
 } from '@/types/ingestion';
 import IngestionLogsModal from './IngestionLogsModal.vue';
-import IngestionRunDetailsModal from './IngestionRunDetailsModal.vue';
 import KillPipelineModal from './KillPipelineModal.vue';
 
-const props = defineProps<{ kind: string; id: string; initialTab?: string }>();
+const props = defineProps<{ kind: string; id: string }>();
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const service = ref<CatalogService | null>(null);
-const activeTab = ref(props.initialTab ?? 'overview');
 const deleting = ref(false);
 const deleteModalOpen = ref(false);
 const restoreModalOpen = ref(false);
@@ -92,6 +138,18 @@ const servicePermission = ref<OperationPermissions>({});
 const canDeleteService = computed(() => permissionFlags(servicePermission.value).canDelete);
 const canRestoreService = computed(() => permissionFlags(servicePermission.value).canEditAll);
 
+/**
+ * Pin ServiceDetailsPage flags: the page-level `flags` are derived
+ * with the default deleted=false (pin :487-490), so the Connection
+ * tab, the Test button, and the header Edit button all ride the
+ * UNGATED EditAll flag. The facets strip and the main tab's own
+ * edit affordances use the deleted-gated derivation instead.
+ */
+const ungatedFlags = computed(() => getDerivedPermissionFlags(servicePermission.value));
+const gatedFlags = computed(() =>
+  getDerivedPermissionFlags(servicePermission.value, service.value?.deleted ?? false),
+);
+
 const kind = computed<ServiceKind>(() =>
   (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(props.kind as ServiceKind)
     ? (props.kind as ServiceKind)
@@ -99,10 +157,6 @@ const kind = computed<ServiceKind>(() =>
 );
 /** Kind-specific service-type label for the delete/restore modals (pin: never a generic "Service"). */
 const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]));
-const supported = computed(() => Boolean(service.value && cliSourceType(service.value.serviceType)));
-const connectionJson = computed(() =>
-  JSON.stringify(redactConnectionForDisplay(service.value?.connection) ?? {}, null, 2),
-);
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('ingestion.services.title'), to: { name: 'ingestion-services' } },
@@ -120,14 +174,27 @@ const loadedPipelinesFqn = ref('');
 const servicePipelinePermissions = ref(new Map<string, OperationPermissions>());
 const serviceOrchestrator = ref<OrchestratorStatus | null>(null);
 const serviceOrchestratorChecked = ref(false);
-const serviceRunDetailsStatus = ref<PipelineStatus | null>(null);
 const ingestionPipelineCreateAllowed = ref(false);
 const applicationTriggerAllowed = ref(false);
 const workflowInstancesLoading = ref(false);
 const autoPilotRunning = ref(false);
 const triggeringAutoPilot = ref(false);
+/** First AutoPilotWorkflow instance, passed straight through to the Insights widget (poll-only). */
+const liveAutoPilotStatus = ref<WorkflowInstance | undefined>(undefined);
+/** Pin `workflowStatesData`: the first instance plus that run's states, threaded to the Insights tab. */
+const workflowStatesData = ref<WorkflowStatesData | undefined>(undefined);
 /** FQNs whose entity permission was already requested, so the fill watch never re-fetches. */
 const requestedPermissionFqns = new Set<string>();
+
+/**
+ * Agents list filters (pin ServiceDetailsPage state): the page has
+ * no filter UI, so they stay at their empty defaults and the
+ * scheduler always lists — but the resolver wiring is real, and a
+ * future filter UI only sets these refs.
+ */
+const agentsSearchText = ref('');
+const agentsTypeFilter = ref<string[]>([]);
+const agentsStatusFilter = ref<string[]>([]);
 
 const serviceEntityType = computed(() => entityTypeForKind(kind.value));
 const serviceEntityLink = computed(() =>
@@ -147,9 +214,8 @@ const { agents, discoveredCount, pipelinesByFqn } = useMetadataAgents(
 
 const agentsTabCount = computed(() => pipelinesTotal.value + discoveredCount.value);
 
-const tabs = computed<EntityDetailTab[]>(() => {
-  // Official ServiceDetailsPage: the Agents tab shows for the service
-  // owner, a member of an owner team, or an admin — never admin-only.
+/** Official ServiceDetailsPage: the Agents tab shows for the service owner, a member of an owner team, or an admin — never admin-only. */
+const showAgentsTab = computed(() => {
   const ownerIds = new Set(
     (service.value?.owners ?? []).map((owner) => owner.id).filter(Boolean),
   );
@@ -158,22 +224,73 @@ const tabs = computed<EntityDetailTab[]>(() => {
   const userInOwnerTeam = (currentUser?.teams ?? []).some(
     (team) => team.id && ownerIds.has(team.id),
   );
-  const showAgentsTab = userOwnsService || userInOwnerTeam || permissionStore.isAdminUser;
-  return SERVICE_DETAIL_TABS.filter((tab) => {
-    if (tab.excludedKinds?.includes(kind.value)) {
-      return false;
-    }
-    if (tab.key === 'agents' && !showAgentsTab) {
-      return false;
-    }
-    return true;
-  }).map((tab) => ({
-    key: tab.key,
-    label: t(tab.labelKey),
-    testId: `service-tab-${tab.key}`,
-    count: tab.key === 'agents' ? agentsTabCount.value : undefined,
-  }));
+  return userOwnsService || userInOwnerTeam || permissionStore.isAdminUser;
 });
+
+const tabDefs = computed(() =>
+  resolveServiceDetailTabs({
+    kind: kind.value,
+    showAgentsTab: showAgentsTab.value,
+    canEditAll: ungatedFlags.value.canEditAll,
+  }),
+);
+
+/** The main tab's dynamic slot key (English count-label slug); empty when the kind has no main tab. */
+const mainTabKey = computed(() => tabDefs.value.find((def) => def.kind === 'main')?.key ?? '');
+
+/**
+ * URL-driven tab (ADR:2026-11-17-service-detail-tab-query): `?tab=`
+ * is the only tab state. An absent tab resolves to the kind default
+ * (metadata → agents, security → connection, else insights); an
+ * invalid tab falls back to the first visible tab without rewriting
+ * the URL. An empty tab set renders no tab rather than crashing.
+ */
+const urlTab = computed(() => {
+  const raw = route.query.tab;
+  return typeof raw === 'string' ? raw : undefined;
+});
+const renderedTab = computed(() => {
+  const wanted = urlTab.value ?? defaultServiceDetailTab(kind.value);
+  if (tabDefs.value.some((def) => def.key === wanted)) {
+    return wanted;
+  }
+  return firstServiceDetailTab(tabDefs.value) ?? '';
+});
+const activeTab = computed({
+  get: () => renderedTab.value,
+  set: (key: string) => {
+    activeTabHandler(key);
+  },
+});
+function activeTabHandler(key: string): void {
+  if (key === renderedTab.value) {
+    return;
+  }
+  // Switching tabs clears every other query param (pin navigation
+  // semantics): paging, search, and show-deleted state do not leak
+  // across tabs.
+  void router.push({ query: { tab: key } });
+}
+
+const tabs = computed<EntityDetailTab[]>(() =>
+  tabDefs.value.map((def) => ({
+    key: def.key,
+    label: t(def.labelKey),
+    testId: `service-tab-${def.key}`,
+    count:
+      def.kind === 'agents'
+        ? agentsTabCount.value
+        : def.kind === 'main'
+          ? mainPaging.paging.value.total
+          : def.key === 'data-model'
+            ? dataModelCount.value
+            : def.key === 'files'
+              ? filesCount.value
+              : def.key === 'spreadsheets'
+                ? spreadsheetsCount.value
+                : undefined,
+  })),
+);
 
 /** Official Ingestion.component: resource Create plus a non-disabled platform. */
 const showAddAgent = computed(
@@ -249,37 +366,204 @@ const serviceRowActions = usePipelineRowActions({
 const serviceLogsPipeline = serviceRowActions.logsPipeline;
 const serviceKillPipeline = serviceRowActions.killPipeline;
 
-const residualByKey = computed(() => {
-  const map = new Map<string, string>();
-  for (const tab of SERVICE_DETAIL_TABS) {
-    if (!tab.supported && tab.residualReason) {
-      map.set(tab.key, tab.residualReason);
+// ---------------------------------------------------------------------------
+// Main-tab children + secondary counts
+// ---------------------------------------------------------------------------
+
+const mainPaging = useCursorPaging();
+/** The show-deleted toggle lives in the URL (pin `showDeletedTables` filter); absent means false. */
+const showDeletedTables = computed(() => route.query.showDeletedTables === 'true');
+const schemaSearch = computed(() => {
+  const raw = route.query.schema;
+  return typeof raw === 'string' ? raw : '';
+});
+const children = ref<ServicePageData[]>([]);
+const childrenLoading = ref(false);
+const childViewUsageAllowed = ref(false);
+const childPermissionSettled = ref(false);
+const dataModelCount = ref(0);
+const filesCount = ref(0);
+const spreadsheetsCount = ref(0);
+let childrenRequest = 0;
+
+const childrenRows = computed<ServiceChildRow[]>(() =>
+  children.value.map(withRequiredFqn),
+);
+
+function onShowDeletedChange(checked: boolean): void {
+  void router.replace({
+    query: { ...route.query, showDeletedTables: String(checked) },
+  });
+}
+
+function setSchemaFilter(filters: { schema?: string }): void {
+  const query = { ...route.query };
+  if (filters.schema) {
+    query.schema = filters.schema;
+  } else {
+    delete query.schema;
+  }
+  void router.replace({ query });
+}
+
+/** The main tab drives the shared loading flag while its search fetch runs. */
+function setChildrenLoading(loadingValue: boolean): void {
+  childrenLoading.value = loadingValue;
+}
+
+/**
+ * Pin getOtherDetails: the current page of child entities for the
+ * main tab, dispatched by kind. While a schema search is active the
+ * main tab owns the list (its own search effect) and this fetch
+ * stays out. A failure blanks the list silently, as the pin does;
+ * kinds without a child table resolve to an empty list. A
+ * latest-request guard keeps a slow page from overwriting a newer
+ * one.
+ */
+async function loadChildren(): Promise<void> {
+  const fqn = service.value?.fullyQualifiedName;
+  if (!fqn || !childPermissionSettled.value || schemaSearch.value) {
+    return;
+  }
+  const cursor = mainPaging.pagingCursor.value;
+  const page = fetchServiceChildren(kind.value, {
+    service: fqn,
+    fields: buildServiceChildrenFields(kind.value, childViewUsageAllowed.value),
+    paging: {
+      limit: mainPaging.pageSize.value,
+      after: cursor.cursorType === 'after' ? cursor.cursorValue : undefined,
+      before: cursor.cursorType === 'before' ? cursor.cursorValue : undefined,
+    },
+    include: showDeletedTables.value ? 'deleted' : 'non-deleted',
+  });
+  if (!page) {
+    children.value = [];
+    mainPaging.handlePagingChange(createEmptyPaging());
+    return;
+  }
+  const token = ++childrenRequest;
+  childrenLoading.value = true;
+  try {
+    const result = await page;
+    if (token !== childrenRequest) {
+      return;
+    }
+    children.value = result.data;
+    mainPaging.handlePagingChange({
+      total: result.total ?? 0,
+      after: result.after ?? '',
+      before: result.before ?? '',
+    });
+  } catch {
+    if (token !== childrenRequest) {
+      return;
+    }
+    children.value = [];
+    mainPaging.handlePagingChange(createEmptyPaging());
+  } finally {
+    if (token === childrenRequest) {
+      childrenLoading.value = false;
     }
   }
-  return map;
-});
+}
 
-async function loadPipelines(): Promise<void> {
-  if (!service.value?.fullyQualifiedName || pipelinesLoaded.value) {
+watch(
+  [
+    () => service.value?.fullyQualifiedName,
+    () => mainPaging.pagingCursor.value,
+    () => mainPaging.pageSize.value,
+    showDeletedTables,
+    schemaSearch,
+    childPermissionSettled,
+  ],
+  () => {
+    void loadChildren();
+  },
+);
+
+/**
+ * Pin fetchDashboardsDataModel count pattern (limit 0, total only)
+ * for the secondary tab badges. A failure toasts and zeroes the
+ * badge, as the pin does — it never blocks the main table.
+ */
+async function loadSecondaryCounts(): Promise<void> {
+  const fqn = service.value?.fullyQualifiedName;
+  if (!fqn) {
+    return;
+  }
+  const include = showDeletedTables.value ? 'deleted' : 'non-deleted';
+  if (kind.value === 'dashboard') {
+    try {
+      dataModelCount.value = await countDataModels(fqn, include);
+    } catch (error) {
+      dataModelCount.value = 0;
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  }
+  if (kind.value === 'drive') {
+    try {
+      filesCount.value = await countDriveAssets('file', fqn, include);
+    } catch (error) {
+      filesCount.value = 0;
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+    try {
+      spreadsheetsCount.value = await countDriveAssets('spreadsheet', fqn, include);
+    } catch (error) {
+      spreadsheetsCount.value = 0;
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  }
+}
+
+watch(
+  [() => service.value?.fullyQualifiedName, showDeletedTables],
+  () => {
+    void loadSecondaryCounts();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Agents scheduler (D18)
+// ---------------------------------------------------------------------------
+
+async function probeOrchestrator(): Promise<void> {
+  try {
+    serviceOrchestrator.value = await getOrchestratorStatus();
+  } catch {
+    serviceOrchestrator.value = null;
+  } finally {
+    serviceOrchestratorChecked.value = true;
+  }
+}
+
+async function fetchAgentsPage(mode: 'list' | 'search'): Promise<void> {
+  const target = service.value;
+  if (!target?.fullyQualifiedName) {
     return;
   }
   pipelinesLoading.value = true;
   pipelinesError.value = '';
   try {
-    const [page, orch] = await Promise.all([
-      listIngestionPipelines({
-        service: service.value.fullyQualifiedName,
-        limit: 100,
-        fields: 'owners,pipelineStatuses',
-        agentType: 'metadata',
-      }),
-      getOrchestratorStatus().catch(() => null),
-    ]);
+    const page =
+      mode === 'search'
+        ? await searchServiceAgents({
+            searchText: agentsSearchText.value,
+            page: 1,
+            pageSize: PAGE_SIZE_BASE,
+            serviceDisplayName:
+              target.displayName || target.name || target.fullyQualifiedName,
+            typeFilter: agentsTypeFilter.value,
+            statusFilter: agentsStatusFilter.value,
+          })
+        : await listServiceAgents({
+            serviceFqn: target.fullyQualifiedName,
+            kind: kind.value,
+            pageSize: PAGE_SIZE_BASE,
+          });
     servicePipelines.value = page.data;
     pipelinesTotal.value = page.total ?? page.data.length;
-    loadedPipelinesFqn.value = service.value.fullyQualifiedName;
-    serviceOrchestrator.value = orch;
-    serviceOrchestratorChecked.value = true;
+    loadedPipelinesFqn.value = target.fullyQualifiedName;
     pipelinesLoaded.value = true;
     const results = await Promise.allSettled(
       page.data
@@ -309,6 +593,40 @@ async function loadPipelines(): Promise<void> {
   } finally {
     pipelinesLoading.value = false;
   }
+}
+
+async function loadPipelines(): Promise<void> {
+  const fqn = service.value?.fullyQualifiedName;
+  if (!fqn || pipelinesLoaded.value) {
+    return;
+  }
+  const mode = resolveAgentsFetchMode({
+    searchText: agentsSearchText.value,
+    typeFilter: agentsTypeFilter.value,
+    statusFilter: agentsStatusFilter.value,
+    isOpenMetadata: isOpenMetadataService(fqn),
+  });
+  if (mode === 'skip') {
+    servicePipelines.value = [];
+    pipelinesTotal.value = 0;
+    loadedPipelinesFqn.value = fqn;
+    pipelinesLoaded.value = true;
+    return;
+  }
+  await fetchAgentsPage(mode);
+}
+
+/**
+ * Pin refreshAgentsList: no OpenMetadata guard, and only the search
+ * text decides — empty re-lists, non-empty re-runs the current
+ * search. Filters are never cleared by a refresh.
+ */
+async function reloadPipelines(): Promise<void> {
+  if (!service.value?.fullyQualifiedName) {
+    return;
+  }
+  pipelinesLoaded.value = false;
+  await fetchAgentsPage(resolveAgentsRefreshMode(agentsSearchText.value));
 }
 
 /**
@@ -352,11 +670,6 @@ watch(agents, (list) => {
   });
 });
 
-async function reloadPipelines(): Promise<void> {
-  pipelinesLoaded.value = false;
-  await loadPipelines();
-}
-
 /** Card action dispatch onto the shared row-action handlers — no second action implementation. */
 const agentActionHandlers: Record<AgentAction, (pipeline: IngestionPipeline) => void> = {
   run: (pipeline) => serviceRowActions.onRun(pipeline),
@@ -372,28 +685,52 @@ function onAgentAction(action: AgentAction, pipeline: IngestionPipeline): void {
   agentActionHandlers[action](pipeline);
 }
 
-/**
- * A run dot resolves its PipelineStatus from the pipeline's statuses
- * and opens the existing run details modal; Diagnose and the
- * view-history button land on the pipeline detail page, which is
- * this console's run-history surface (official opens the
- * RunHistoryDrawer instead).
- */
-function onAgentRunDetails(agent: Agent, runId?: string): void {
-  const pipeline = pipelinesByFqn.value.get(agent.fqn);
-  const status =
-    runId === undefined
-      ? undefined
-      : pipeline?.pipelineStatuses?.find((item) => item.runId === runId);
-  if (status) {
-    serviceRunDetailsStatus.value = status;
-    return;
+// ---------------------------------------------------------------------------
+// Run history drawer (D12)
+// ---------------------------------------------------------------------------
+
+const drawerAgent = ref<Agent | null>(null);
+const drawerRunId = ref<string | undefined>(undefined);
+/** The live agent object from the stream, so the drawer's status stays current while open. */
+const drawerLiveAgent = computed(() => {
+  if (!drawerAgent.value) {
+    return null;
   }
-  void router.push({ name: 'ingestion-pipeline', params: { id: agent.id } });
+  return agents.value.find((agent) => agent.fqn === drawerAgent.value?.fqn) ?? drawerAgent.value;
+});
+const drawerPermissions = computed(() => {
+  const pipeline = drawerAgent.value
+    ? pipelinesByFqn.value.get(drawerAgent.value.fqn)
+    : undefined;
+  if (!pipeline) {
+    return undefined;
+  }
+  return agentOverflowPermissions(servicePipelinePermissions.value.get(pipeline.id));
+});
+
+function onAgentRunDetails(agent: Agent, runId?: string): void {
+  drawerAgent.value = agent;
+  drawerRunId.value = runId;
 }
 
 function onAgentViewHistory(agent: Agent): void {
-  void router.push({ name: 'ingestion-pipeline', params: { id: agent.id } });
+  drawerAgent.value = agent;
+  drawerRunId.value = undefined;
+}
+
+function onDrawerOpenLogs(agent: Agent): void {
+  const pipeline = pipelinesByFqn.value.get(agent.fqn);
+  if (pipeline) {
+    // The logs modal overlays the drawer; the drawer stays open.
+    serviceRowActions.onLogs(pipeline);
+  }
+}
+
+function onDrawerRun(agent: Agent): void {
+  const pipeline = pipelinesByFqn.value.get(agent.fqn);
+  if (pipeline) {
+    serviceRowActions.onRun(pipeline);
+  }
 }
 
 function logEntityTypeFor(pipeline: IngestionPipeline): string {
@@ -404,12 +741,13 @@ function logEntityTypeFor(pipeline: IngestionPipeline): string {
 }
 
 /**
- * Official ServiceDetailsPage.fetchWorkflowInstanceStates, list half
- * only: the first AutoPilotWorkflow instance for this service in the
- * last 7 days decides whether the trigger button disables. The
- * per-instance state fetch feeds the Insights widget and stays
- * residual (D-10). A fetch failure toasts and fails open — the
- * button stays enabled rather than trapping the user.
+ * Official ServiceDetailsPage.fetchWorkflowInstanceStates, whole: the
+ * first AutoPilotWorkflow instance for this service in the last 7
+ * days plus that run's states, fetched with the same window. The
+ * trigger button reads the first instance's status; the Insights tab
+ * receives the whole object, as pin threads it. A fetch failure
+ * toasts and fails open — the button stays enabled rather than
+ * trapping the user.
  */
 async function loadWorkflowInstanceStates(): Promise<void> {
   if (!service.value?.fullyQualifiedName) {
@@ -417,13 +755,28 @@ async function loadWorkflowInstanceStates(): Promise<void> {
   }
   workflowInstancesLoading.value = true;
   try {
+    const startTs = getDayAgoStartGMTinMillis(6);
+    const endTs = Date.now();
     const page = await listWorkflowInstances(AUTO_PILOT_WORKFLOW_NAME, {
-      startTs: getDayAgoStartGMTinMillis(6),
-      endTs: Date.now(),
+      startTs,
+      endTs,
       entityLink: serviceEntityLink.value,
     });
-    autoPilotRunning.value = page.data[0]?.status === 'RUNNING';
+    const mainInstanceState = page.data[0];
+    const subInstanceStates = mainInstanceState
+      ? (
+          await getWorkflowInstanceStates(AUTO_PILOT_WORKFLOW_NAME, mainInstanceState.id, {
+            startTs,
+            endTs,
+          })
+        ).data
+      : [];
+    workflowStatesData.value = { mainInstanceState, subInstanceStates };
+    liveAutoPilotStatus.value = mainInstanceState;
+    autoPilotRunning.value = mainInstanceState?.status === 'RUNNING';
   } catch (error) {
+    workflowStatesData.value = undefined;
+    liveAutoPilotStatus.value = undefined;
     autoPilotRunning.value = false;
     message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
   } finally {
@@ -451,66 +804,192 @@ async function onTriggerAutoPilot(): Promise<void> {
   }
 }
 
-const versions = ref<EntityVersion[]>([]);
-const versionsLoading = ref(false);
-const versionsError = ref('');
-const versionsLoaded = ref(false);
-const versionColumns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.version'), dataIndex: 'version', key: 'version', width: 100 },
-  { title: t('crud.updatedBy'), dataIndex: 'updatedBy', key: 'updatedBy', width: 160 },
-  { title: t('crud.updatedAt'), dataIndex: 'updatedAt', key: 'updatedAt', width: 180 },
-]);
-const selectedVersion = ref<EntityVersion | null>(null);
-const versionSnapshot = ref<CatalogService | null>(null);
-const versionSnapshotLoading = ref(false);
-const versionSnapshotJson = computed(() =>
-  JSON.stringify(redactConnectionForDisplay(versionSnapshot.value?.connection) ?? {}, null, 2),
-);
-const versionChangedFields = computed(() => {
-  const change = selectedVersion.value?.changeDescription;
-  if (!change) {
-    return [];
-  }
-  const names = new Set<string>();
-  for (const group of [change.fieldsAdded, change.fieldsUpdated, change.fieldsDeleted]) {
-    for (const field of group ?? []) {
-      if (field.field) {
-        names.add(field.field);
-      }
-    }
-  }
-  return [...names];
-});
+// ---------------------------------------------------------------------------
+// Header: follow, version, display-name edit (D17)
+// ---------------------------------------------------------------------------
 
-async function loadVersions(): Promise<void> {
-  if (!service.value || versionsLoaded.value) {
+const followLoading = ref(false);
+const showFollowButton = computed(
+  () => service.value !== null && kind.value === 'database' && !service.value.deleted,
+);
+const isFollowing = computed(() =>
+  isServiceFollowing(service.value?.followers, authStore.user?.id ?? ''),
+);
+async function onToggleFollow(): Promise<void> {
+  const target = service.value;
+  const userId = authStore.user?.id;
+  if (!target || !userId || followLoading.value) {
     return;
   }
-  versionsLoading.value = true;
-  versionsError.value = '';
+  const wasFollowing = isFollowing.value;
+  followLoading.value = true;
   try {
-    versions.value = await listServiceVersions(kind.value, service.value.id);
-    versionsLoaded.value = true;
+    const payload = wasFollowing
+      ? await unfollowService(kind.value, target.id, userId)
+      : await followService(kind.value, target.id, userId);
+    const followers = wasFollowing
+      ? applyUnfollowChange(target.followers ?? [], payload)
+      : applyFollowChange(target.followers ?? [], payload);
+    service.value = { ...target, followers };
   } catch {
-    versions.value = [];
-    versionsError.value = t('crud.loadFailed');
+    message.error(
+      t(wasFollowing ? 'server.entityUnfollowError' : 'server.entityFollowError', {
+        entity: entityLabel(target),
+      }),
+    );
   } finally {
-    versionsLoading.value = false;
+    followLoading.value = false;
   }
 }
 
-async function onViewVersion(version: EntityVersion): Promise<void> {
-  if (!service.value || version.version === undefined) {
+function onOpenVersions(): void {
+  if (service.value?.version === undefined) {
     return;
   }
-  selectedVersion.value = version;
-  versionSnapshotLoading.value = true;
+  void router.push({
+    name: 'ingestion-service-version',
+    params: { kind: props.kind, id: props.id, version: String(service.value.version) },
+  });
+}
+
+const canEditDisplayName = computed(() => ungatedFlags.value.canEditDisplayName);
+const renameOpen = ref(false);
+const renameDraft = ref('');
+const renaming = ref(false);
+function openRename(): void {
+  renameDraft.value = service.value?.displayName ?? '';
+  renameOpen.value = true;
+}
+async function onRename(): Promise<void> {
+  const target = service.value;
+  if (!target) {
+    return;
+  }
+  const displayName = renameDraft.value.trim();
+  if (displayName === (target.displayName ?? '')) {
+    renameOpen.value = false;
+    return;
+  }
+  renaming.value = true;
   try {
-    versionSnapshot.value = await getServiceVersion(kind.value, service.value.id, version.version);
-  } catch {
-    versionSnapshot.value = null;
+    // Pin handleUpdateDisplayName merges only the displayName from
+    // the PATCH response; clearing sends `replace ''`, never remove.
+    const response = await patchService(
+      kind.value,
+      target.id,
+      setFieldPatch('/displayName', target.displayName, displayName),
+    );
+    service.value = { ...target, displayName: response.displayName };
+    renameOpen.value = false;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
   } finally {
-    versionSnapshotLoading.value = false;
+    renaming.value = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main-tab writes (pin saveUpdatedServiceData / handleDescriptionUpdate /
+// handleDataProductUpdate, as single-field patches: each call site only
+// ever changes one field, so the field patch equals the pin's compare()
+// result. Failures toast and rethrow so the tab stays in edit mode.)
+// ---------------------------------------------------------------------------
+
+async function onSaveUpdatedServiceData(updated: ServiceMainTabDetails): Promise<void> {
+  const target = service.value;
+  if (!target) {
+    return;
+  }
+  try {
+    service.value = await patchService(
+      kind.value,
+      target.id,
+      setFieldPatch('/tags', target.tags, updated.tags),
+    );
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    throw error;
+  }
+}
+
+async function onDescriptionUpdate(html: string): Promise<void> {
+  const target = service.value;
+  if (!target || target.description === html) {
+    return;
+  }
+  try {
+    service.value = await patchService(
+      kind.value,
+      target.id,
+      descriptionPatch(target.description, html),
+    );
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    throw error;
+  }
+}
+
+async function onDataProductUpdate(refs: EntityRef[]): Promise<void> {
+  const target = service.value;
+  if (!target) {
+    return;
+  }
+  try {
+    service.value = await patchService(
+      kind.value,
+      target.id,
+      setFieldPatch('/dataProducts', target.dataProducts, refs),
+    );
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Connection tab (D9–D11)
+// ---------------------------------------------------------------------------
+
+const canEditConnection = computed(() => ungatedFlags.value.canEditAll);
+const editConnectionTooltip = computed(() =>
+  canEditConnection.value
+    ? t('ingestion.services.editConnection')
+    : t('crud.noPermissionForAction'),
+);
+/**
+ * Pin isTestingDisabled, plus the product's orchestrator and
+ * Custom-connector gates: no EditAll, the OpenMetadata metadata
+ * service, a missing connection config, a Custom connector type,
+ * an unreachable orchestrator, or a run already in flight.
+ */
+const isTestingDisabled = computed(
+  () =>
+    !canEditConnection.value ||
+    (kind.value === 'metadata' &&
+      service.value?.fullyQualifiedName === 'OpenMetadata') ||
+    service.value?.connection?.config === undefined ||
+    !shouldTestConnection(service.value?.serviceType ?? '') ||
+    serviceOrchestratorUnavailable.value ||
+    testingConnection.value,
+);
+
+async function onSaveServiceAttributes(attributes: ServiceAttributes): Promise<void> {
+  const target = service.value;
+  if (!target) {
+    return;
+  }
+  try {
+    const response = await patchService(
+      kind.value,
+      target.id,
+      setFieldPatch('/serviceAttributes', target.serviceAttributes, attributes),
+    );
+    // Only the attributes field merges back; the rest of the local
+    // service state is untouched.
+    service.value = { ...target, serviceAttributes: response.serviceAttributes };
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    throw error;
   }
 }
 
@@ -522,15 +1001,6 @@ const testError = ref('');
 const testRunToken = ref(0);
 const TEST_CONNECTION_POLL_MS = 2000;
 const TEST_CONNECTION_MAX_POLLS = 30;
-
-const lastTestLabel = computed(() => {
-  const result = service.value?.testConnectionResult;
-  if (!result) {
-    return t('ingestion.services.testConnectionNever');
-  }
-  const at = result.lastUpdatedAt ? new Date(result.lastUpdatedAt).toLocaleString() : '—';
-  return `${result.status ?? '—'} · ${at}`;
-});
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -621,17 +1091,25 @@ async function load(): Promise<void> {
     loadedPipelinesFqn.value = '';
     requestedPermissionFqns.clear();
     autoPilotRunning.value = false;
-    versionsLoaded.value = false;
-    versions.value = [];
-    selectedVersion.value = null;
-    versionSnapshot.value = null;
+    liveAutoPilotStatus.value = undefined;
+    workflowStatesData.value = undefined;
+    childPermissionSettled.value = false;
+    // Pin classic: the service fetch writes the show-deleted filter
+    // from the service's own deleted flag, so a soft-deleted service
+    // opens with its deleted children visible.
+    void router.replace({
+      query: { ...route.query, showDeletedTables: String(service.value.deleted ?? false) },
+    });
     // Resource gates for the Agents tab, fail-closed on any fetch
     // failure: the ingestionPipeline Create bit and the APPLICATION
     // Trigger bit the header button merges onto the service. The third
     // fetch is the service entity's OWN permission, scoped to its FQN
     // (pin ServiceDetailsPage.fetchServicePermission), which gates the
-    // delete/restore entries; it fails closed the same way.
-    const [createOps, triggerOps, serviceOps] = await Promise.all([
+    // delete/restore entries; it fails closed the same way. The fourth
+    // fetch is the child entity's resource permission, whose
+    // ViewUsage bit decides the usageSummary field on the main tab.
+    const childEntityType = CHILD_ENTITY_TYPE_BY_KIND[kind.value];
+    const [createOps, triggerOps, serviceOps, childOps] = await Promise.all([
       permissionStore.getResourcePermission('ingestionPipeline').catch(() => null),
       permissionStore.getResourcePermission('app').catch(() => null),
       service.value.fullyQualifiedName
@@ -639,19 +1117,26 @@ async function load(): Promise<void> {
             .getEntityPermissionByFqn(serviceEntityType.value, service.value.fullyQualifiedName)
             .catch(() => null)
         : Promise.resolve(null),
+      childEntityType
+        ? permissionStore.getResourcePermission(childEntityType).catch(() => null)
+        : Promise.resolve(null),
     ]);
     ingestionPipelineCreateAllowed.value = createOps?.Create === true;
     applicationTriggerAllowed.value = triggerOps?.Trigger === true;
     servicePermission.value = serviceOps ?? {};
+    childViewUsageAllowed.value = childOps
+      ? getDerivedPermissionFlags(childOps).canViewUsage
+      : false;
+    childPermissionSettled.value = true;
+    // The orchestrator probe runs independently of the agents list:
+    // the OpenMetadata skip must not leave the banner unchecked.
+    void probeOrchestrator();
     // Page-level pipeline fetch: the Agents tab count badge needs the
     // total on every tab, matching official's page-level list fetch.
-    await loadPipelines();
-    if (showTriggerButton.value) {
-      await loadWorkflowInstanceStates();
-    }
-    if (activeTab.value === 'versions') {
-      await loadVersions();
-    }
+    // The two loads are independent (pin effects): neither waits for
+    // the other, and each owns its failure handling.
+    void loadPipelines();
+    void loadWorkflowInstanceStates();
   } catch (error) {
     service.value = null;
     servicePermission.value = {};
@@ -757,15 +1242,6 @@ watch(
   },
 );
 
-watch(activeTab, (tab) => {
-  if (tab === 'agents') {
-    void loadPipelines();
-  }
-  if (tab === 'versions') {
-    void loadVersions();
-  }
-});
-
 onMounted(() => {
   void load();
 });
@@ -785,6 +1261,21 @@ onMounted(() => {
     :tabs="service ? tabs : []"
     v-model:active-tab="activeTab"
   >
+    <template #meta>
+      <ServiceHeaderFacets
+        v-if="service"
+        :service-id="service.id"
+        :service-kind="kind"
+        :owners="service.owners"
+        :domains="service.domains"
+        :tags="service.tags"
+        :can-edit-domains="gatedFlags.canEditDomains"
+        :can-edit-owners="gatedFlags.canEditOwners"
+        :can-edit-tier="gatedFlags.canEditTier"
+        :show-domain="kind !== 'metadata'"
+        @updated="service = $event"
+      />
+    </template>
     <template #actions>
       <Tooltip v-if="showTriggerButton" :title="triggerTooltip">
         <Button
@@ -797,9 +1288,37 @@ onMounted(() => {
           {{ t('ingestion.agents.triggerAutoPilot') }}
         </Button>
       </Tooltip>
-      <Button data-testid="edit-service" :disabled="!service" @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })">
-        {{ t('crud.edit') }}
+      <Button
+        v-if="showFollowButton"
+        data-testid="service-follow-button"
+        :loading="followLoading"
+        @click="onToggleFollow"
+      >
+        {{ t(isFollowing ? 'asset.unfollow' : 'asset.follow') }}
       </Button>
+      <Button
+        v-if="service && service.version !== undefined"
+        data-testid="service-version-button"
+        @click="onOpenVersions"
+      >
+        v{{ service.version }}
+      </Button>
+      <Button
+        v-if="service && canEditDisplayName"
+        data-testid="service-rename-button"
+        @click="openRename"
+      >
+        {{ t('ingestion.services.editDisplayName') }}
+      </Button>
+      <Tooltip :title="canEditConnection ? undefined : t('crud.noPermissionForAction')">
+        <Button
+          data-testid="edit-service"
+          :disabled="!service || !canEditConnection"
+          @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
+        >
+          {{ t('crud.edit') }}
+        </Button>
+      </Tooltip>
       <Tooltip v-if="canDeleteService" :title="t('ingestion.services.deleteActionHelp')">
         <Button
           data-testid="delete-service"
@@ -826,43 +1345,105 @@ onMounted(() => {
         </Button>
       </Tooltip>
     </template>
-    <template #overview>
-      <Alert
-        v-if="service && !supported"
-        type="info"
-        show-icon
-        :message="t('ingestion.services.unsupported')"
+    <template #insights>
+      <ServiceInsightsTab
+        v-if="service"
+        :service-name="service.name"
+        :service-kind="kind"
+        :ingestion-pipelines="servicePipelines"
+        :is-ingestion-pipeline-loading="pipelinesLoading"
+        :live-auto-pilot-status="liveAutoPilotStatus"
+        :workflow-states-data="workflowStatesData"
       />
-      <Descriptions v-if="service" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ service.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.fqn')">{{ service.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('ingestion.services.kind')">{{ service.kind }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.type')">{{ service.serviceType || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('ingestion.services.cliSource')">
-          {{ cliSourceType(service.serviceType) || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('ingestion.services.lastTestConnection')">{{ lastTestLabel }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ service.description || '—' }}</Descriptions.Item>
-      </Descriptions>
+    </template>
+    <template #[mainTabKey]>
+      <ServiceMainTab
+        v-if="service"
+        :service-name="service.name"
+        :service-details="service"
+        :service-permission="servicePermission"
+        :data="childrenRows"
+        :is-service-loading="childrenLoading"
+        :paging="mainPaging.paging"
+        :current-page="mainPaging.currentPage"
+        :paging-info="{
+          handlePageChange: mainPaging.handlePageChange,
+          handlePageSizeChange: mainPaging.handlePageSizeChange,
+          handlePagingChange: mainPaging.handlePagingChange,
+          pageSize: mainPaging.pageSize,
+          showPagination: mainPaging.showPagination,
+        }"
+        :show-deleted="showDeletedTables"
+        :set-filters="setSchemaFilter"
+        :save-updated-service-data="onSaveUpdatedServiceData"
+        :on-description-update="onDescriptionUpdate"
+        :on-data-product-update="onDataProductUpdate"
+        :on-show-deleted-change="onShowDeletedChange"
+        :set-is-service-loading="setChildrenLoading"
+      />
+    </template>
+    <template #data-model>
+      <DataModelsTab
+        v-if="service?.fullyQualifiedName"
+        :service-fqn="service.fullyQualifiedName"
+        :show-deleted="showDeletedTables"
+        :on-show-deleted-change="onShowDeletedChange"
+      />
+    </template>
+    <template #files>
+      <DriveAssetTable
+        v-if="service?.fullyQualifiedName"
+        entity-type="file"
+        :service-fqn="service.fullyQualifiedName"
+        :show-deleted="showDeletedTables"
+        :on-show-deleted-change="onShowDeletedChange"
+      />
+    </template>
+    <template #spreadsheets>
+      <DriveAssetTable
+        v-if="service?.fullyQualifiedName"
+        entity-type="spreadsheet"
+        :service-fqn="service.fullyQualifiedName"
+        :show-deleted="showDeletedTables"
+        :on-show-deleted-change="onShowDeletedChange"
+      />
     </template>
     <template #connection>
+      <AirflowMessageBanner
+        :status="serviceOrchestrator"
+        :checked="serviceOrchestratorChecked"
+        :disabled-message="t('ingestion.pipelines.orchestratorDisabled')"
+        :unreachable-message="t('ingestion.pipelines.orchestratorUnreachable')"
+      />
       <p class="entity-detail__tab-lead">{{ t('ingestion.services.connectionTitle') }}</p>
-      <Button
+      <ServiceConnectionDetails
         v-if="service"
-        data-testid="edit-service-connection"
-        @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
-      >
-        {{ t('ingestion.services.editConnection') }}
-      </Button>
-      <Button
-        v-if="service"
-        data-testid="test-service-connection"
-        :loading="testingConnection"
-        style="margin-left: 8px"
-        @click="onTestConnection"
-      >
-        {{ testingConnection ? t('ingestion.services.testingConnection') : t('ingestion.services.testConnection') }}
-      </Button>
+        :config="service.connection?.config"
+        :kind="kind"
+        :service-type="service.serviceType"
+      />
+      <div class="service-connection-actions">
+        <Tooltip :title="editConnectionTooltip">
+          <Button
+            v-if="service"
+            data-testid="edit-service-connection"
+            :disabled="!canEditConnection"
+            @click="router.push({ name: 'ingestion-service-connection', params: { kind: props.kind, id: props.id } })"
+          >
+            {{ t('ingestion.services.editConnection') }}
+          </Button>
+        </Tooltip>
+        <Button
+          v-if="service"
+          data-testid="test-service-connection"
+          :disabled="isTestingDisabled"
+          :loading="testingConnection"
+          style="margin-left: 8px"
+          @click="onTestConnection"
+        >
+          {{ testingConnection ? t('ingestion.services.testingConnection') : t('ingestion.services.testConnection') }}
+        </Button>
+      </div>
       <Alert
         v-if="testingConnection"
         type="info"
@@ -904,10 +1485,12 @@ onMounted(() => {
           :pagination="false"
         />
       </template>
-      <p v-if="service" class="entity-detail__tab-lead" data-testid="service-connection-json-help">
-        {{ t('ingestion.services.connectionJsonHelp') }}
-      </p>
-      <pre v-if="service" class="ing-json" data-testid="service-connection-json">{{ connectionJson }}</pre>
+      <ServiceAttributesCard
+        v-if="service"
+        :service-attributes="service.serviceAttributes"
+        :has-edit-permission="ungatedFlags.canEditAll"
+        :on-save="onSaveServiceAttributes"
+      />
     </template>
     <template #agents>
       <AirflowMessageBanner
@@ -948,68 +1531,20 @@ onMounted(() => {
         />
       </template>
     </template>
-    <template #assets>
-      <SmState state="empty" test-id="service-assets-residual" :empty-text="residualByKey.get('assets')" />
-    </template>
-    <template #insights>
-      <SmState state="empty" test-id="service-insights-residual" :empty-text="residualByKey.get('insights')" />
-    </template>
-    <template #versions>
-      <SmState
-        v-if="versionsError"
-        state="error"
-        test-id="service-versions-error"
-        :error-text="versionsError"
-      />
-      <template v-else>
-        <SmTable
-          test-id="service-versions-table"
-          row-key="version"
-          size="small"
-          :columns="versionColumns"
-          :data-source="versions"
-          :loading="versionsLoading"
-          :pagination="false"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'version'">
-              <a
-                href="#"
-                :data-testid="`service-version-${(record as EntityVersion).version}`"
-                @click.prevent="onViewVersion(record as EntityVersion)"
-              >
-                {{ (record as EntityVersion).version }}
-              </a>
-            </template>
-            <template v-else-if="column.key === 'updatedAt'">
-              {{ (record as EntityVersion).updatedAt ? new Date((record as EntityVersion).updatedAt as number).toLocaleString() : '—' }}
-            </template>
-          </template>
-        </SmTable>
-        <SmState
-          v-if="!versionsLoading && versions.length === 0"
-          state="empty"
-          test-id="service-versions"
-          :empty-text="t('ingestion.services.versionsEmpty')"
-        />
-        <template v-if="selectedVersion && versionSnapshot">
-          <p class="entity-detail__tab-lead">
-            {{ t('ingestion.services.versionSnapshot') }} — {{ selectedVersion.version }}
-          </p>
-          <Descriptions bordered :column="1" size="small">
-            <Descriptions.Item :label="t('crud.name')">{{ versionSnapshot.name }}</Descriptions.Item>
-            <Descriptions.Item :label="t('crud.displayName')">{{ versionSnapshot.displayName || '—' }}</Descriptions.Item>
-            <Descriptions.Item :label="t('crud.description')">{{ versionSnapshot.description || '—' }}</Descriptions.Item>
-            <Descriptions.Item :label="t('crud.type')">{{ versionSnapshot.serviceType || '—' }}</Descriptions.Item>
-            <Descriptions.Item v-if="versionChangedFields.length > 0" :label="t('ingestion.services.versionChangedFields')">
-              {{ versionChangedFields.join(', ') }}
-            </Descriptions.Item>
-          </Descriptions>
-          <pre class="ing-json" data-testid="service-version-connection-json">{{ versionSnapshotJson }}</pre>
-        </template>
-      </template>
-    </template>
   </EntityDetailShell>
+  <RunHistoryDrawer
+    v-if="drawerLiveAgent"
+    :agent="drawerLiveAgent"
+    :agents="agents"
+    :open="drawerAgent !== null"
+    :initial-run-id="drawerRunId"
+    :permissions="drawerPermissions"
+    :actions-pending="!serviceOrchestratorChecked"
+    :actions-unavailable="serviceOrchestratorUnavailable"
+    @close="drawerAgent = null"
+    @open-logs="onDrawerOpenLogs"
+    @run="onDrawerRun"
+  />
   <IngestionLogsModal
     :open="serviceLogsPipeline !== null"
     :pipeline="serviceLogsPipeline"
@@ -1023,11 +1558,20 @@ onMounted(() => {
     @close="serviceKillPipeline = null"
     @killed="serviceRowActions.onKillDone"
   />
-  <IngestionRunDetailsModal
-    :open="serviceRunDetailsStatus !== null"
-    :status="serviceRunDetailsStatus"
-    @close="serviceRunDetailsStatus = null"
-  />
+  <FormModal
+    :open="renameOpen"
+    :title="t('ingestion.services.editDisplayName')"
+    :confirm-loading="renaming"
+    test-id="service-rename-modal"
+    @ok="void onRename()"
+    @cancel="renameOpen = false"
+  >
+    <Form layout="vertical">
+      <Form.Item :label="t('crud.displayName')">
+        <Input v-model:value="renameDraft" data-testid="service-rename-display-name" />
+      </Form.Item>
+    </Form>
+  </FormModal>
   <DeleteEntityModal
     :open="deleteModalOpen"
     :entity-name="service ? (service.displayName ?? service.name) : ''"
@@ -1052,11 +1596,7 @@ onMounted(() => {
   color: var(--sm-text-secondary);
   margin-bottom: 12px;
 }
-.ing-json {
-  background: var(--sm-bg-elevated);
-  border: 1px solid var(--sm-border-color);
-  border-radius: 6px;
-  padding: 12px;
-  overflow: auto;
+.service-connection-actions {
+  margin: 12px 0;
 }
 </style>

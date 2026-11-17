@@ -187,6 +187,10 @@ export interface AssetTagOption {
   tagFQN: string;
   name: string;
   source: TagSource;
+  /** Tag/term display name, when the entity carries one. */
+  displayName?: string;
+  /** Tag/term description, when the entity carries one. */
+  description?: string;
 }
 
 /**

@@ -52,6 +52,24 @@ export function agentActionPermissions(
   };
 }
 
+/**
+ * Pin useAgentPermissions triad, verbatim: trigger → can(Trigger),
+ * edit → canEditAll, delete → canDelete, with NO admin input. The
+ * overflow menu (and the run-history drawer, which receives the
+ * same hook output) filter items on this triad; the P1 admin line
+ * does not apply here — an admin without the entity bits sees no
+ * menu items, exactly as the pin renders an empty menu as null.
+ */
+export function agentOverflowPermissions(
+  ops: OperationPermissions | undefined,
+): AgentActionPermissions {
+  return {
+    trigger: ops?.Trigger === true,
+    edit: ops?.EditAll === true,
+    delete: ops?.Delete === true,
+  };
+}
+
 /** Card/menu actions, named as in official AgentOverflowMenu / useAgentActions. */
 export type AgentAction = 'run' | 'redeploy' | 'kill' | 'pause' | 'resume' | 'edit' | 'delete';
 

@@ -71,6 +71,31 @@ describe('ingestionPipelines API', () => {
     expect(lastFetch().url).toContain('/api/v1/services/ingestionPipelines');
   });
 
+  it('carries the provider type the Insights agents filter reads', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { id: 'p1', name: 'warehouse-metadata', provider: 'automation' },
+              { id: 'p2', name: 'hand-built', provider: 'user' },
+              { id: 'p3', name: 'legacy' },
+            ],
+            paging: { total: 3 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listIngestionPipelines({ limit: 50 });
+    expect(page.data.map((pipeline) => pipeline.provider)).toEqual([
+      'automation',
+      'user',
+      undefined,
+    ]);
+  });
+
   it('creates a pipeline with schema-required name, service, pipelineType, sourceConfig, airflowConfig', async () => {
     vi.stubGlobal(
       'fetch',
@@ -450,6 +475,21 @@ describe('ingestionPipelines API', () => {
     await listIngestionPipelines({ agentType: 'metadata', service: 'pg.warehouse' });
     expect(lastFetch().url).toContain('agentType=metadata');
     expect(lastFetch().url).toContain('service=pg.warehouse');
+  });
+
+  it('forwards the before cursor for backward paging', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await listIngestionPipelines({ before: 'prev-cursor', limit: 15 });
+    expect(lastFetch().url).toContain('before=prev-cursor');
+    expect(lastFetch().url).not.toContain('after=');
   });
 
   it('maps step progress records and drops non-record step entries', async () => {

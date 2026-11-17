@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createWorkflow, listWorkflowInstances, listWorkflows } from './workflows';
+import { createWorkflow, getWorkflowInstanceStates, listWorkflowInstances, listWorkflows } from './workflows';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -80,6 +80,56 @@ describe('workflows API', () => {
     expect(lastFetch().url).toContain('workflowDefinitionName=nightly-dq');
     expect(page.data).toHaveLength(1);
     expect(page.data[0]?.status).toBe('SUCCESS');
+  });
+
+  it('fetches one run states with the same window params (pin getWorkflowInstanceStateById)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 's1',
+              status: 'SUCCESS',
+              timestamp: 1700000001000,
+              workflowDefinitionId: 'wd1',
+              workflowInstanceExecutionId: 'e1',
+              workflowInstanceId: 'i1',
+              stage: {
+                displayName: 'Run metadata',
+                name: 'RunMetadataIngestion',
+                startedAt: 1700000000000,
+                endedAt: 1700000001000,
+                tasks: ['t1', 7, 't2'],
+                variables: { key: 'value' },
+              },
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await getWorkflowInstanceStates('AutoPilotWorkflow', 'i1', {
+      startTs: 1699400000000,
+      endTs: 1700000000000,
+    });
+    expect(lastFetch().url).toContain(
+      '/api/v1/governance/workflowInstanceStates/AutoPilotWorkflow/i1',
+    );
+    expect(lastFetch().url).toContain('startTs=1699400000000');
+    expect(lastFetch().url).toContain('endTs=1700000000000');
+    expect(page.data).toHaveLength(1);
+    const state = page.data[0];
+    expect(state?.id).toBe('s1');
+    expect(state?.status).toBe('SUCCESS');
+    expect(state?.timestamp).toBe(1700000001000);
+    expect(state?.workflowDefinitionId).toBe('wd1');
+    expect(state?.workflowInstanceExecutionId).toBe('e1');
+    expect(state?.workflowInstanceId).toBe('i1');
+    expect(state?.stage?.displayName).toBe('Run metadata');
+    expect(state?.stage?.name).toBe('RunMetadataIngestion');
+    expect(state?.stage?.tasks).toEqual(['t1', 't2']);
+    expect(state?.stage?.variables).toEqual({ key: 'value' });
   });
 
   it('creates a workflow with the official required name + description', async () => {

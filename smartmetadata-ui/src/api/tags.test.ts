@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTag, listTags, updateTag } from './tags';
+import { createTag, listTags, listTierTags, updateTag } from './tags';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -87,5 +87,58 @@ describe('tags API', () => {
     );
     await updateTag({ name: 'Confidential', description: 'Updated', classification: 'PII' });
     expect(lastFetch().init?.method).toBe('PUT');
+  });
+
+  it('forwards the disabled filter on listTags', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ data: [], paging: { total: 0 } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await listTags({ disabled: false });
+    expect(lastFetch().url).toContain('disabled=false');
+    await listTags({});
+    expect(lastFetch().url).not.toContain('disabled=');
+  });
+
+  it('lists enabled Tier tags with no fields param, mapping style', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'tg1',
+                name: 'Tier1',
+                fullyQualifiedName: 'Tier.Tier1',
+                style: { color: '#FF0000', iconURL: 'https://example.invalid/tier1.svg' },
+              },
+              { id: 'tg2', name: 'Tier2', fullyQualifiedName: 'Tier.Tier2' },
+            ],
+            paging: { total: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTierTags();
+    expect(lastFetch().url).toContain('/api/v1/tags');
+    expect(lastFetch().url).toContain('parent=Tier');
+    expect(lastFetch().url).toContain('limit=50');
+    expect(lastFetch().url).toContain('disabled=false');
+    expect(lastFetch().url).not.toContain('fields=');
+    expect(page.data).toEqual([
+      expect.objectContaining({
+        name: 'Tier1',
+        fullyQualifiedName: 'Tier.Tier1',
+        style: { color: '#FF0000', iconURL: 'https://example.invalid/tier1.svg' },
+      }),
+      expect.objectContaining({ name: 'Tier2', style: undefined }),
+    ]);
   });
 });

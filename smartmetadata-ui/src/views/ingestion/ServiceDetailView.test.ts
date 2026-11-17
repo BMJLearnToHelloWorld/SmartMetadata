@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { createTestI18n } from '@/test/i18n';
 import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
+import ServiceInsightsTab from '@/components/ingestion/ServiceInsightsTab.vue';
 import ServiceDetailView from './ServiceDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -39,12 +40,26 @@ interface MockOptions {
   applicationTrigger?: boolean;
   /** Workflow instances for the AutoPilot running check, or 'error' to fail the fetch. */
   workflowInstances?: Array<Record<string, unknown>> | 'error';
+  /** States of the first instance's run, or 'error' to fail the states fetch. */
+  workflowInstanceStates?: Array<Record<string, unknown>> | 'error';
   /** Status for the apps trigger POST. */
   triggerStatus?: number;
   /** Service kind under test; the service URL follows it. */
   kind?: string;
   /** Connection config overrides (supports* flags default to the Postgres set). */
   serviceConfig?: Record<string, unknown>;
+  /** Entity version carried by the service body, when the test needs the version button. */
+  serviceVersion?: number;
+  /** Followers carried by the service body. */
+  serviceFollowers?: Array<Record<string, unknown>>;
+  /** Child rows the databases list endpoint returns; absent means the endpoint 404s. */
+  childRows?: Array<Record<string, unknown>>;
+  /** The service body carries deleted: true. */
+  serviceDeleted?: boolean;
+  /** Follow/unfollow requests fail with a 500. */
+  followFails?: boolean;
+  /** A /displayName PATCH echoes only { id, displayName }, to prove merge-only echo. */
+  patchEchoPartial?: boolean;
 }
 
 const DEFAULT_CONFIG = {
@@ -82,15 +97,69 @@ function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       calls.push({ method: init?.method ?? 'GET', url, body: String(init?.body ?? '') });
-      if (url.includes(`/api/v1/services/${servicePath}/s1`)) {
+      // The followers URLs also contain the service prefix: answer
+      // them before the plain service branch below.
+      if (url.includes(`/api/v1/services/${servicePath}/s1/followers`)) {
+        if (options.followFails) {
+          return new Response('boom', { status: 500 });
+        }
+        if (init?.method === 'PUT') {
+          return jsonResponse({
+            changeDescription: {
+              fieldsAdded: [
+                {
+                  field: 'followers',
+                  newValue: [{ id: 'u1', type: 'user', name: 'alice' }],
+                },
+              ],
+            },
+          });
+        }
         return jsonResponse({
+          changeDescription: {
+            fieldsDeleted: [{ field: 'followers', oldValue: [{ id: 'u1' }] }],
+          },
+        });
+      }
+      if (url.includes(`/api/v1/services/${servicePath}/s1`)) {
+        const body: Record<string, unknown> = {
           id: 's1',
           name: 'warehouse',
           displayName: 'Warehouse',
           fullyQualifiedName: 'pg.warehouse',
           serviceType: 'Postgres',
           connection: { config: { ...DEFAULT_CONFIG, ...(options.serviceConfig ?? {}) } },
-        });
+        };
+        if (options.serviceVersion !== undefined) {
+          body.version = options.serviceVersion;
+        }
+        if (options.serviceFollowers !== undefined) {
+          body.followers = options.serviceFollowers;
+        }
+        if (options.serviceDeleted) {
+          body.deleted = true;
+        }
+        if (init?.method === 'PATCH') {
+          // Apply a /displayName replace so rename tests see the echo.
+          const ops = JSON.parse(String(init?.body ?? '[]')) as Array<Record<string, unknown>>;
+          let displayNameOp: Record<string, unknown> | undefined;
+          for (const op of ops) {
+            if (op.path === '/displayName') {
+              body.displayName = op.value;
+              displayNameOp = op;
+            }
+          }
+          if (options.patchEchoPartial && displayNameOp) {
+            return jsonResponse({ id: 's1', displayName: displayNameOp.value });
+          }
+        }
+        return jsonResponse(body);
+      }
+      if (url.includes('/api/v1/databases')) {
+        if (options.childRows) {
+          return jsonResponse({ data: options.childRows, paging: { total: options.childRows.length } });
+        }
+        return new Response('not found', { status: 404 });
       }
       // The progress stream URL also contains the ingestionPipelines
       // prefix: answer 503 (fatal, no reconnect loop) before the list branch.
@@ -124,6 +193,17 @@ function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
           ),
         );
       }
+      if (url.includes('/api/v1/permissions/databaseService/name/')) {
+        return jsonResponse(
+          permissionBody('databaseService', ['EditAll', 'Delete', 'ViewAll', 'EditDisplayName']),
+        );
+      }
+      // The child-resource permission (ViewUsage decides the
+      // usageSummary field). Checked after the databaseService
+      // entity branch above: that path also contains this prefix.
+      if (url.includes('/api/v1/permissions/database')) {
+        return jsonResponse(permissionBody('database', ['ViewAll', 'ViewUsage']));
+      }
       if (url.includes('/api/v1/permissions/app')) {
         return jsonResponse(
           permissionBody('app', options.applicationTrigger === false ? [] : ['Trigger']),
@@ -134,6 +214,13 @@ function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
           return new Response('boom', { status: 500 });
         }
         const data = options.workflowInstances ?? [];
+        return jsonResponse({ data, paging: { total: data.length } });
+      }
+      if (url.includes('/api/v1/governance/workflowInstanceStates/')) {
+        if (options.workflowInstanceStates === 'error') {
+          return new Response('boom', { status: 500 });
+        }
+        const data = options.workflowInstanceStates ?? [];
         return jsonResponse({ data, paging: { total: data.length } });
       }
       if (url.includes('/api/v1/apps/trigger/')) {
@@ -147,7 +234,7 @@ function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
 const mounted: Array<{ unmount(): void }> = [];
 
 async function mountView(
-  options: { initialTab?: string; kind?: string; id?: string } = {},
+  options: { tab?: string; kind?: string; id?: string } = {},
 ) {
   const pinia = createPinia();
   setActivePinia(pinia);
@@ -169,9 +256,21 @@ async function mountView(
         props: true,
       },
       {
+        path: '/ingestion/services/:kind/:id/versions/:version',
+        name: 'ingestion-service-version',
+        component: { template: '<div>version</div>' },
+        props: true,
+      },
+      {
         path: '/ingestion/pipelines/:id',
         name: 'ingestion-pipeline',
         component: { template: '<div>pipe</div>' },
+        props: true,
+      },
+      {
+        path: '/assets/:entityType/:fqn',
+        name: 'asset',
+        component: { template: '<div>asset</div>' },
         props: true,
       },
       {
@@ -183,10 +282,11 @@ async function mountView(
     ],
   });
   const kind = options.kind ?? 'database';
-  await router.push(`/ingestion/services/${kind}/${options.id ?? 's1'}`);
+  const tabQuery = options.tab ? `?tab=${options.tab}` : '';
+  await router.push(`/ingestion/services/${kind}/${options.id ?? 's1'}${tabQuery}`);
   await router.isReady();
   const wrapper = mount(ServiceDetailView, {
-    props: { kind, id: options.id ?? 's1', initialTab: options.initialTab ?? 'agents' },
+    props: { kind, id: options.id ?? 's1' },
     attachTo: document.body,
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
@@ -281,17 +381,39 @@ describe('ServiceDetailView', () => {
     expect(wrapper.find('[data-testid="test-service-connection"]').exists()).toBe(true);
   });
 
-  it('renders registry tabs including Agents and the wired versions tab', async () => {
+  it('renders registry tabs Insights, Databases, Agents, Connection — no overview or versions tab', async () => {
     const { wrapper } = await mountView();
     // Ant Tabs does not forward TabPane testids (Stage 5 lesson), so assert
-    // the rendered tab labels plus the force-rendered versions slot content.
-    expect(wrapper.text()).toContain('Overview');
+    // the count pills (which do carry testids) plus the force-rendered
+    // main-tab content and the absence of the removed surfaces.
+    expect(wrapper.text()).toContain('Insights');
     expect(wrapper.text()).toContain('Connection');
-    expect(wrapper.text()).toContain('Agents');
+    expect(wrapper.find('[data-testid="service-tab-databases-count"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="service-tab-agents-count"]').text()).toBe('1');
+    expect(wrapper.text()).not.toContain('Overview');
     expect(wrapper.text()).not.toContain('Pipelines');
-    expect(wrapper.text()).toContain('Versions');
-    expect(wrapper.find('[data-testid="service-versions-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="service-versions-empty"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="description-container"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="service-versions-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="service-connection-json"]').exists()).toBe(false);
+  });
+
+  it('falls back to the first visible tab for an invalid ?tab= value', async () => {
+    const { wrapper, router } = await mountView({ tab: 'nope' });
+    expect(router.currentRoute.value.query.tab).toBe('nope');
+    const activeTab = wrapper.find('.ant-tabs-tab-active');
+    expect(activeTab.text()).toContain('Insights');
+  });
+
+  it('switching tabs clears the other query params', async () => {
+    const { wrapper, router } = await mountView({ tab: 'agents' });
+    await router.replace({ query: { tab: 'agents', schema: 'foo', currentPage: '2' } });
+    await flushPromises();
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    const insights = tabs.find((tab) => tab.text().includes('Insights'));
+    expect(insights).toBeDefined();
+    await insights!.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ tab: 'insights' });
   });
 
   it('hides the Agents tab from a non-owner non-admin user', async () => {
@@ -312,13 +434,13 @@ describe('ServiceDetailView', () => {
     await router.push('/ingestion/services/database/s1');
     await router.isReady();
     const wrapper = mount(ServiceDetailView, {
-      props: { kind: 'database', id: 's1', initialTab: 'overview' },
+      props: { kind: 'database', id: 's1' },
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
     mounted.push(wrapper);
     await flushPromises();
-    expect(wrapper.text()).not.toContain('Agents');
+    expect(wrapper.find('[data-testid="service-tab-agents-count"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="metadata-agents-view"]').exists()).toBe(false);
   });
 
@@ -373,6 +495,59 @@ describe('ServiceDetailView', () => {
         String(tooltip.props('title') ?? '').includes('already running'),
       ),
     ).toBe(true);
+  });
+
+  it('fetches the first instance states and threads workflowStatesData to the Insights tab', async () => {
+    stubFetch(calls, {
+      workflowInstances: [{ id: 'i1', status: 'RUNNING', startedAt: 1700000000000 }],
+      workflowInstanceStates: [
+        { id: 's1', status: 'SUCCESS', workflowInstanceId: 'i1', stage: { name: 'RunMetadataIngestion' } },
+      ],
+    });
+    const { wrapper } = await mountView();
+    const stateCalls = calls.filter((call) =>
+      call.url.includes('/api/v1/governance/workflowInstanceStates/AutoPilotWorkflow/i1'),
+    );
+    expect(stateCalls).toHaveLength(1);
+    expect(stateCalls[0].url).toContain('startTs=');
+    expect(stateCalls[0].url).toContain('endTs=');
+    const tab = wrapper.findComponent(ServiceInsightsTab);
+    expect(tab.exists()).toBe(true);
+    expect(tab.props('workflowStatesData')).toEqual({
+      mainInstanceState: { id: 'i1', status: 'RUNNING', startedAt: 1700000000000 },
+      subInstanceStates: [
+        {
+          id: 's1',
+          status: 'SUCCESS',
+          workflowInstanceId: 'i1',
+          stage: { name: 'RunMetadataIngestion' },
+        },
+      ],
+    });
+    expect(tab.props('liveAutoPilotStatus')).toEqual({
+      id: 'i1',
+      status: 'RUNNING',
+      startedAt: 1700000000000,
+    });
+  });
+
+  it('skips the states fetch when no AutoPilot instances exist', async () => {
+    stubFetch(calls, { workflowInstances: [] });
+    await mountView();
+    expect(
+      calls.some((call) => call.url.includes('/api/v1/governance/workflowInstanceStates/')),
+    ).toBe(false);
+  });
+
+  it('keeps the trigger button enabled when the states fetch fails (fail-open)', async () => {
+    stubFetch(calls, {
+      workflowInstances: [{ id: 'i1', status: 'RUNNING', startedAt: 1700000000000 }],
+      workflowInstanceStates: 'error',
+    });
+    const { wrapper } = await mountView();
+    const button = wrapper.find('[data-testid="trigger-auto-pilot-application-button"]');
+    expect(button.exists()).toBe(true);
+    expect((button.element as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('hides the trigger button when the APPLICATION Trigger bit is denied', async () => {
@@ -430,6 +605,12 @@ describe('ServiceDetailView', () => {
             connection: { config: { type: 'Mysql', hostPort: 'db.example:3306' } },
           });
         }
+        if (url.includes('/api/v1/permissions/databaseService/name/')) {
+          return jsonResponse(permissionBody('databaseService', ['EditAll', 'Delete', 'ViewAll']));
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
         if (url.includes('/api/v1/services/testConnectionDefinitions/name/Mysql.testConnectionDefinition')) {
           return jsonResponse({
             name: 'Mysql',
@@ -445,7 +626,7 @@ describe('ServiceDetailView', () => {
         return new Response('not found', { status: 404 });
       }),
     );
-    const { wrapper } = await mountView({ initialTab: 'connection' });
+    const { wrapper } = await mountView({ tab: 'connection' });
     await wrapper.find('[data-testid="test-service-connection"]').trigger('click');
     await flushPromises();
     const deletes = localCalls.filter((call) => call.method === 'DELETE');
@@ -475,6 +656,12 @@ describe('ServiceDetailView', () => {
             serviceType: 'Mysql',
             connection: { config: { type: 'Mysql', hostPort: 'db.example:3306' } },
           });
+        }
+        if (url.includes('/api/v1/permissions/databaseService/name/')) {
+          return jsonResponse(permissionBody('databaseService', ['EditAll', 'Delete', 'ViewAll']));
+        }
+        if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
         }
         if (url.includes('/api/v1/services/testConnectionDefinitions/name/Mysql.testConnectionDefinition')) {
           return jsonResponse({
@@ -512,7 +699,7 @@ describe('ServiceDetailView', () => {
         return new Response('not found', { status: 404 });
       }),
     );
-    const { wrapper } = await mountView({ initialTab: 'connection' });
+    const { wrapper } = await mountView({ tab: 'connection' });
     await wrapper.find('[data-testid="test-service-connection"]').trigger('click');
     await new Promise((resolve) => setTimeout(resolve, 3500));
     await flushPromises();
@@ -522,6 +709,178 @@ describe('ServiceDetailView', () => {
     const deletes = localCalls.filter((call) => call.method === 'DELETE');
     expect(deletes).toHaveLength(1);
     expect(deletes[0].url).toContain('hardDelete=true');
+  });
+
+  it('fetches the main-tab children by service FQN and badges the total', async () => {
+    stubFetch(calls, {
+      childRows: [
+        { id: 'd1', name: 'db1', fullyQualifiedName: 'pg.warehouse.db1' },
+        { id: 'd2', name: 'db2', fullyQualifiedName: 'pg.warehouse.db2' },
+      ],
+    });
+    const { wrapper } = await mountView();
+    const childCall = calls.find((call) => call.url.includes('/api/v1/databases'));
+    expect(childCall).toBeDefined();
+    expect(childCall!.url).toContain('service=pg.warehouse');
+    expect(childCall!.url).toContain('include=non-deleted');
+    expect(wrapper.find('[data-testid="service-tab-databases-count"]').text()).toBe('2');
+    expect(wrapper.text()).toContain('db1');
+    expect(wrapper.text()).toContain('db2');
+  });
+
+  it('follows and unfollows through the changeDescription merge', async () => {
+    stubFetch(calls, { serviceFollowers: [] });
+    const { wrapper } = await mountView();
+    const button = wrapper.find('[data-testid="service-follow-button"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toContain('Follow');
+    await button.trigger('click');
+    await flushPromises();
+    expect(calls.some((call) => call.method === 'PUT' && call.url.includes('/followers'))).toBe(true);
+    expect(wrapper.find('[data-testid="service-follow-button"]').text()).toContain('Unfollow');
+    await wrapper.find('[data-testid="service-follow-button"]').trigger('click');
+    await flushPromises();
+    expect(
+      calls.some((call) => call.method === 'DELETE' && call.url.includes('/followers/u1')),
+    ).toBe(true);
+    expect(wrapper.find('[data-testid="service-follow-button"]').text()).toContain('Follow');
+  });
+
+  it('navigates to the version page from the header version button', async () => {
+    stubFetch(calls, { serviceVersion: 0.3 });
+    const { wrapper, router } = await mountView();
+    const button = wrapper.find('[data-testid="service-version-button"]');
+    expect(button.exists()).toBe(true);
+    expect(button.text()).toContain('v0.3');
+    await button.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-version');
+    expect(router.currentRoute.value.params).toMatchObject({
+      kind: 'database',
+      id: 's1',
+      version: '0.3',
+    });
+  });
+
+  it('omits the version button when the service carries no version', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="service-version-button"]').exists()).toBe(false);
+  });
+
+  it('renames the display name through a /displayName patch', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="service-rename-button"]').trigger('click');
+    await flushPromises();
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="service-rename-display-name"]',
+    );
+    expect(input).not.toBeNull();
+    input!.value = 'Renamed Warehouse';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    const ok = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(ok).not.toBeNull();
+    ok!.click();
+    await flushPromises();
+    const patch = calls.find(
+      (call) => call.method === 'PATCH' && call.url.includes('/api/v1/services/databaseServices/s1'),
+    );
+    expect(patch).toBeDefined();
+    expect(JSON.parse(patch!.body ?? '[]')).toEqual([
+      { op: 'replace', path: '/displayName', value: 'Renamed Warehouse' },
+    ]);
+    expect(wrapper.find('[data-testid="entity-detail-shell"]').text()).toContain('Renamed Warehouse');
+  });
+
+  it('merges only the displayName from the rename response, keeping the rest of the service', async () => {
+    stubFetch(calls, { patchEchoPartial: true });
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="service-rename-button"]').trigger('click');
+    await flushPromises();
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="service-rename-display-name"]',
+    );
+    input!.value = 'Renamed Warehouse';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    (document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement).click();
+    await flushPromises();
+    const shell = wrapper.find('[data-testid="entity-detail-shell"]');
+    expect(shell.text()).toContain('Renamed Warehouse');
+    // A whole-object replace would drop the name and FQN the partial
+    // echo does not carry; the merge keeps the subtitle intact.
+    expect(shell.text()).toContain('warehouse · pg.warehouse');
+  });
+
+  it('clears the display name with a replace-empty patch, never a remove', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="service-rename-button"]').trigger('click');
+    await flushPromises();
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="service-rename-display-name"]',
+    );
+    expect(input).not.toBeNull();
+    input!.value = '';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    const ok = document.body.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(ok).not.toBeNull();
+    ok!.click();
+    await flushPromises();
+    const patch = calls.find(
+      (call) => call.method === 'PATCH' && call.url.includes('/api/v1/services/databaseServices/s1'),
+    );
+    expect(patch).toBeDefined();
+    expect(JSON.parse(patch!.body ?? '[]')).toEqual([
+      { op: 'replace', path: '/displayName', value: '' },
+    ]);
+  });
+
+  it('toasts the pin follow error naming the service when following fails', async () => {
+    stubFetch(calls, { serviceFollowers: [], followFails: true });
+    const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => ({}) as never);
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="service-follow-button"]').trigger('click');
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('Error while following Warehouse');
+    expect(wrapper.find('[data-testid="service-follow-button"]').text()).toContain('Follow');
+    errorSpy.mockRestore();
+  });
+
+  it('hides the follow button for messaging services', async () => {
+    stubFetch(calls, { kind: 'messaging' });
+    const { wrapper } = await mountView({ kind: 'messaging' });
+    expect(wrapper.find('[data-testid="service-follow-button"]').exists()).toBe(false);
+  });
+
+  it('hides the follow button for a deleted database service', async () => {
+    stubFetch(calls, { serviceDeleted: true });
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="service-follow-button"]').exists()).toBe(false);
+  });
+
+  it('opens the run-history drawer from view history and closes it', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="view-run-history-button"]').trigger('click');
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="run-history-drawer"]')).not.toBeNull();
+    const close = document.body.querySelector<HTMLElement>('.ant-drawer-close');
+    expect(close).not.toBeNull();
+    close!.click();
+    await flushPromises();
+    expect(document.body.querySelector('[data-testid="run-history-drawer"]')).toBeNull();
+  });
+
+  it('renders the structured connection details and attributes card on the connection tab', async () => {
+    const { wrapper } = await mountView({ tab: 'connection' });
+    expect(wrapper.find('[data-testid="service-connection-details"]').exists()).toBe(true);
+    // Values render in readonly inputs, not as text: the stored host
+    // shows through its input value.
+    const inputs = wrapper.findAll('[data-testid="input-field"]');
+    expect(inputs.some((input) => (input.element as HTMLInputElement).value === 'localhost:5432')).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-testid="service-attributes-card"]').exists()).toBe(true);
   });
 });
 
@@ -649,7 +1008,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('fetches the service with include=all and shows the delete button when Delete is allowed', async () => {
     const fixture = newFixture();
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(true);
     expect(
       fixture.calls.some(
@@ -668,14 +1027,14 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('omits the delete button entirely when Operation.Delete is denied', async () => {
     const fixture = newFixture({ permissionOps: ['EditAll', 'ViewAll'] });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(false);
   });
 
   it('soft-deletes through the async endpoint, stays, and shows the Deleted badge + restore', async () => {
     const fixture = newFixture();
     stubDeleteFetch(fixture);
-    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="delete-service"]').trigger('click');
     await flushPromises();
     expect(document.body.textContent).toContain('Delete "Warehouse" Database Service');
@@ -699,7 +1058,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('hard-deletes through the async endpoint and navigates to the list', async () => {
     const fixture = newFixture();
     stubDeleteFetch(fixture);
-    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="delete-service"]').trigger('click');
     await flushPromises();
     const hard = document.body.querySelector('[data-testid="delete-option-hard"]') as HTMLElement | null;
@@ -718,7 +1077,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('shows the hard-only variant for an already soft-deleted service', async () => {
     const fixture = newFixture({ deleted: true });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="entity-detail-deleted"]').exists()).toBe(true);
     await wrapper.find('[data-testid="delete-service"]').trigger('click');
     await flushPromises();
@@ -738,7 +1097,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('restores a soft-deleted service and refetches so the badge clears', async () => {
     const fixture = newFixture({ deleted: true });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     const restore = wrapper.find('[data-testid="restore-service"]');
     expect(restore.exists()).toBe(true);
     expect((restore.element as HTMLButtonElement).disabled).toBe(false);
@@ -760,7 +1119,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('disables restore when EditAll is denied', async () => {
     const fixture = newFixture({ deleted: true, permissionOps: ['Delete', 'ViewAll'] });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     const restore = wrapper.find('[data-testid="restore-service"]');
     expect(restore.exists()).toBe(true);
     expect((restore.element as HTMLButtonElement).disabled).toBe(true);
@@ -769,7 +1128,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('keeps the restore modal open when the restore fails', async () => {
     const fixture = newFixture({ deleted: true, restoreStatus: 500 });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     await wrapper.find('[data-testid="restore-service"]').trigger('click');
     await flushPromises();
     await clickModalOk();
@@ -781,7 +1140,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('fails closed when the service-permission fetch fails: no delete entry, restore disabled', async () => {
     const fixture = newFixture({ deleted: true, permissionStatus: 500 });
     stubDeleteFetch(fixture);
-    const { wrapper } = await mountView({ initialTab: 'overview' });
+    const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="delete-service"]').exists()).toBe(false);
     const restore = wrapper.find('[data-testid="restore-service"]');
     expect(restore.exists()).toBe(true);
@@ -791,7 +1150,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('warns and stays (soft) when the bounded re-read never confirms', async () => {
     const fixture = newFixture({ neverConfirm: true });
     stubDeleteFetch(fixture);
-    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    const { wrapper, router } = await mountView();
     vi.useFakeTimers();
     try {
       await wrapper.find('[data-testid="delete-service"]').trigger('click');
@@ -819,7 +1178,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('warns and navigates to the list (hard) when the bounded re-read never confirms', async () => {
     const fixture = newFixture({ neverConfirm: true });
     stubDeleteFetch(fixture);
-    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    const { wrapper, router } = await mountView();
     vi.useFakeTimers();
     try {
       await wrapper.find('[data-testid="delete-service"]').trigger('click');
@@ -845,7 +1204,7 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
   it('toasts the server error, stays, and closes the modal when the delete submit fails', async () => {
     const fixture = newFixture({ deleteStatus: 500 });
     stubDeleteFetch(fixture);
-    const { wrapper, router } = await mountView({ initialTab: 'overview' });
+    const { wrapper, router } = await mountView();
     await wrapper.find('[data-testid="delete-service"]').trigger('click');
     await flushPromises();
     await clickModalOk();

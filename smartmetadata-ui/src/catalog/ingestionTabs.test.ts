@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import {
   INGESTION_PIPELINE_TABS,
   SERVICE_CATEGORIES,
-  SERVICE_DETAIL_TABS,
   ingestionTabKeys,
 } from './ingestionTabs';
 
@@ -64,21 +63,9 @@ describe('ingestionTabs', () => {
     }
   });
 
-  it('marks service detail agents and versions as supported (D-3: one working agents tab)', () => {
-    const byKey = new Map(SERVICE_DETAIL_TABS.map((tab) => [tab.key, tab]));
-    expect(byKey.get('overview')?.supported).toBe(true);
-    expect(byKey.get('connection')?.supported).toBe(true);
-    expect(byKey.get('agents')?.supported).toBe(true);
-    expect(byKey.get('versions')?.supported).toBe(true);
-    // D-3 replaced the pipelines entry with the agents entry: no
-    // pipelines key remains, and the dead agents residual is gone, so
-    // exactly one agents entry exists, in third position.
-    expect(byKey.has('pipelines')).toBe(false);
-    expect(SERVICE_DETAIL_TABS.filter((tab) => tab.key === 'agents')).toHaveLength(1);
-    expect(SERVICE_DETAIL_TABS[2]?.key).toBe('agents');
-    // Official pushes the Agents tab only for non-security services.
-    expect(byKey.get('agents')?.excludedKinds).toEqual(['security']);
-  });
+  // The service detail tab set moved to serviceDetailTabs.ts
+  // (resolveServiceDetailTabs): the old static SERVICE_DETAIL_TABS
+  // registry is gone, and its coverage lives there.
 
   it('lists the ingestion pipeline detail tabs the view renders', () => {
     expect(ingestionTabKeys(INGESTION_PIPELINE_TABS)).toEqual(['overview', 'status']);

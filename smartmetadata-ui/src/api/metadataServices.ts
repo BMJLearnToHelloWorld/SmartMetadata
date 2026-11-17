@@ -7,14 +7,14 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
-import { mapTestConnectionResult } from '@/api/serviceCommon';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { mapServiceAttributes, mapServiceTags, mapTestConnectionResult } from '@/api/serviceCommon';
 import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
 import type { IncludeFilter, Paged } from '@/types/admin';
 import type { CatalogService, CreateDatabaseServiceRequest, ServiceConnection } from '@/types/ingestion';
 import { apiRequest } from './client';
 
-export const METADATA_SERVICE_FIELDS = 'owners,pipelines';
+export const METADATA_SERVICE_FIELDS = 'owners,pipelines,tags,followers,domains';
 
 export interface ListMetadataServicesQuery {
   limit?: number;
@@ -46,6 +46,12 @@ export function mapMetadataService(raw: Record<string, unknown>): CatalogService
     kind: 'metadata',
     serviceType: asString(raw.serviceType),
     owners: mapEntityRefs(raw.owners),
+    tags: mapServiceTags(raw.tags),
+    followers: mapEntityRefs(raw.followers),
+    domains: mapEntityRefs(raw.domains),
+    dataProducts: mapEntityRefs(raw.dataProducts),
+    version: asNumber(raw.version),
+    serviceAttributes: mapServiceAttributes(raw.serviceAttributes),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
     deleted: asBoolean(raw.deleted),

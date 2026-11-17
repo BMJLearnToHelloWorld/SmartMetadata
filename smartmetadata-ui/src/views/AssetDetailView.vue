@@ -26,6 +26,7 @@ import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit } from '@/catalog/entityDetailTabs';
 import { isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import { getTierTag } from '@/ingestion/tierTags';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
   columnNullPoints,
@@ -142,11 +143,9 @@ const TAB_TEST_IDS: Record<AssetTabKey, string> = {
 const isSplit = computed(() => isOfficiallySplit(props.entityType));
 
 // Official tier rule (utils/TablePureUtils.ts getTierTags): the first tag
-// whose FQN starts with the `Tier.` category (constants.ts TIER_CATEGORY
-// plus the FQN separator). Rendered only when present: the product never
-// invents a default tier.
-const TIER_TAG_PREFIX = 'Tier.';
-const tierTag = computed(() => asset.value?.tags.find((tag) => tag.tagFQN.startsWith(TIER_TAG_PREFIX)));
+// whose FQN starts with the `Tier.` category. Rendered only when present:
+// the product never invents a default tier.
+const tierTag = computed(() => (asset.value ? getTierTag(asset.value.tags) : undefined));
 
 const followers = computed(() => asset.value?.followers ?? []);
 const currentUserId = computed(() => auth.user?.id || '');

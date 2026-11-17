@@ -122,6 +122,17 @@ export const escapeESReservedCharacters = (text?: string): string => {
 };
 
 /**
+ * Official getEncodedFqn (utils/StringUtils.ts), verbatim: the FQN as
+ * a URI component, with spaces optionally rendered as `+` for query
+ * strings. The agents search wraps the escaped search text in
+ * `*...*` through this encoder before it reaches rawSearchQuery.
+ */
+export const getEncodedFqn = (fqn: string, spaceAsPlus = false): string => {
+  const uri = encodeURIComponent(fqn);
+  return spaceAsPlus ? uri.replaceAll('%20', '+') : uri;
+};
+
+/**
  * Official postAggregateFieldOptions (rest/miscAPI.ts), verbatim: wraps
  * the filter value as `.*<escaped>.*` (or `.*` when empty) and POSTs
  * the body as given otherwise. No exact-match variant is needed in

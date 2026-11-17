@@ -228,8 +228,7 @@ describe('AgentCard (official AgentCard)', () => {
     wrapper.unmount();
   });
 
-  it('maps the overflow toggle to pause or resume from the pipeline enabled flag', async () => {
-    const enabled = mountCard(agent(), { ops: FULL_OPS, pipelineValue: pipeline({ enabled: true }) });
+  it('maps the overflow toggle to pause or resume from the pipeline enabled flag', async () => {    const enabled = mountCard(agent(), { ops: FULL_OPS, pipelineValue: pipeline({ enabled: true }) });
     await flushPromises();
     await enabled.find('[data-testid="more-actions"]').trigger('click');
     await flushPromises();
@@ -250,5 +249,36 @@ describe('AgentCard (official AgentCard)', () => {
     await flushPromises();
     expect(paused.emitted('action')).toEqual([['resume', expect.objectContaining({ id: 'p1' })]]);
     paused.unmount();
+  });
+
+  it('hides the whole overflow menu without edit or delete bits (pin empty-menu rule)', async () => {
+    const none = mountCard(agent(), { ops: {} });
+    await flushPromises();
+    expect(none.find('[data-testid="more-actions"]').exists()).toBe(false);
+    none.unmount();
+
+    const triggerOnly = mountCard(agent(), { ops: { Trigger: true } });
+    await flushPromises();
+    expect(triggerOnly.find('[data-testid="more-actions"]').exists()).toBe(false);
+    triggerOnly.unmount();
+
+    const adminNoBits = mountCard(agent(), { ops: {}, isAdminUser: true });
+    await flushPromises();
+    expect(adminNoBits.find('[data-testid="more-actions"]').exists()).toBe(false);
+    adminNoBits.unmount();
+
+    const deleteOnly = mountCard(agent(), { ops: { Delete: true } });
+    await flushPromises();
+    expect(deleteOnly.find('[data-testid="more-actions"]').exists()).toBe(true);
+    deleteOnly.unmount();
+  });
+
+  it('disables the overflow trigger while the orchestrator is unavailable', async () => {
+    const wrapper = mountCard(agent(), { ops: FULL_OPS, orchestratorUnavailable: true });
+    await flushPromises();
+    expect(
+      (wrapper.find('[data-testid="more-actions"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
+    wrapper.unmount();
   });
 });
