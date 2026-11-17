@@ -13,6 +13,7 @@ import static org.openmetadata.service.Entity.STORAGE_SERVICE;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +45,7 @@ import org.openmetadata.schema.metadataIngestion.SearchServiceMetadataPipeline;
 import org.openmetadata.schema.metadataIngestion.SourceConfig;
 import org.openmetadata.schema.metadataIngestion.StorageServiceAutoClassificationPipeline;
 import org.openmetadata.schema.metadataIngestion.StorageServiceMetadataPipeline;
+import org.openmetadata.schema.profiler.MetricType;
 import org.openmetadata.schema.type.ProviderType;
 import org.openmetadata.schema.utils.JsonUtils;
 import org.openmetadata.service.Entity;
@@ -402,8 +404,33 @@ public class CreateIngestionPipelineImpl {
         .withDatabaseFilterPattern(defaultFilters.get(DATABASE_FILTER_PATTERN))
         .withSchemaFilterPattern(defaultFilters.get(SCHEMA_FILTER_PATTERN))
         .withTableFilterPattern(defaultFilters.get(TABLE_FILTER_PATTERN))
-        .withClassificationFilterPattern(
-            new FilterPattern().withIncludes(DEFAULT_TIERS_TO_PROCESS));
+        .withClassificationFilterPattern(new FilterPattern().withIncludes(DEFAULT_TIERS_TO_PROCESS))
+        // Mirrors the schema default for metrics (see databaseServiceProfilerPipeline.json);
+        // the generated default is build-shape dependent and may be 20 nulls (see the ADR),
+        // which must never reach storage. Order matches the schema default exactly.
+        .withMetrics(
+            new ArrayList<>(
+                List.of(
+                    MetricType.MEAN,
+                    MetricType.VALUES_COUNT,
+                    MetricType.COLUMN_COUNT,
+                    MetricType.DISTINCT_COUNT,
+                    MetricType.DISTINCT_PROPORTION,
+                    MetricType.MAX,
+                    MetricType.MIN,
+                    MetricType.NULL_COUNT,
+                    MetricType.ROW_COUNT,
+                    MetricType.STDDEV,
+                    MetricType.SUM,
+                    MetricType.UNIQUE_COUNT,
+                    MetricType.UNIQUE_PROPORTION,
+                    MetricType.COLUMN_NAMES,
+                    MetricType.NULL_PROPORTION,
+                    MetricType.MEDIAN,
+                    MetricType.FIRST_QUARTILE,
+                    MetricType.THIRD_QUARTILE,
+                    MetricType.INTER_QUARTILE_RANGE,
+                    MetricType.NON_PARAMETRIC_SKEW)));
   }
 
   private static DatabaseServiceAutoClassificationPipeline
