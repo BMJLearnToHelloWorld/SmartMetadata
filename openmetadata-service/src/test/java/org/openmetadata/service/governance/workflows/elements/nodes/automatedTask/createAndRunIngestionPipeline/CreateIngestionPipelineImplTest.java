@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,6 +19,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,9 +51,11 @@ import org.openmetadata.schema.entity.services.ingestionPipelines.PipelineType;
 import org.openmetadata.schema.entity.teams.AuthenticationMechanism;
 import org.openmetadata.schema.entity.teams.User;
 import org.openmetadata.schema.metadataIngestion.DashboardServiceMetadataPipeline;
+import org.openmetadata.schema.metadataIngestion.DatabaseServiceProfilerPipeline;
 import org.openmetadata.schema.metadataIngestion.MessagingServiceAutoClassificationPipeline;
 import org.openmetadata.schema.metadataIngestion.SourceConfig;
 import org.openmetadata.schema.metadataIngestion.StorageServiceAutoClassificationPipeline;
+import org.openmetadata.schema.profiler.MetricType;
 import org.openmetadata.schema.security.client.OpenMetadataJWTClientConfig;
 import org.openmetadata.schema.security.secrets.SecretsManagerProvider;
 import org.openmetadata.schema.security.ssl.VerifySSL;
@@ -181,6 +189,20 @@ class CreateIngestionPipelineImplTest {
         createIngestionPipeline.execute(service, PipelineType.PROFILER, true).isSuccessful());
 
     assertNotEquals(Boolean.TRUE, deployedPipeline(service).getDeployed());
+  }
+
+  @Test
+  void profilerAgentMetricsMatchTheSchemaDefault() throws IOException {
+    when(pipelineRepository.listAllByParentFqn(anyString())).thenReturn(List.of());
+
+    final IngestionPipeline agent =
+        pipelineCreatedFor(
+            () -> createIngestionPipeline.execute(service, PipelineType.PROFILER, false));
+
+    final DatabaseServiceProfilerPipeline profilerConfig =
+        assertInstanceOf(
+            DatabaseServiceProfilerPipeline.class, agent.getSourceConfig().getConfig());
+    assertEquals(schemaDefaultMetrics(), profilerConfig.getMetrics());
   }
 
   @Test
@@ -368,5 +390,21 @@ class CreateIngestionPipelineImplTest {
     final OpenMetadataApplicationConfig config = new OpenMetadataApplicationConfig();
     config.setPipelineServiceClientConfiguration(pipelineConfig);
     return config;
+  }
+
+  private static List<MetricType> schemaDefaultMetrics() throws IOException {
+    final String schemaPath = "json/schema/metadataIngestion/databaseServiceProfilerPipeline.json";
+    final List<MetricType> expected = new ArrayList<>();
+    try (InputStream schemaStream =
+        CreateIngestionPipelineImplTest.class.getClassLoader().getResourceAsStream(schemaPath)) {
+      assertNotNull(schemaStream, "Schema resource missing from the classpath: " + schemaPath);
+      final JsonNode schema =
+          JsonUtils.readTree(new String(schemaStream.readAllBytes(), StandardCharsets.UTF_8));
+      for (final JsonNode metric : schema.path("properties").path("metrics").path("default")) {
+        expected.add(MetricType.fromValue(metric.asText()));
+      }
+    }
+    assertFalse(expected.isEmpty(), "Schema default for profiler metrics must not be empty");
+    return expected;
   }
 }
