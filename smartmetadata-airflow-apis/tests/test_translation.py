@@ -290,3 +290,35 @@ def test_server_config_unregistered_provider_fails_loudly() -> None:
     pipeline["openMetadataServerConnection"]["secretsManagerProvider"] = "aws"
     with pytest.raises(TranslationError):
         _translate(pipeline)
+
+
+# -- failFast is no longer emitted -------------------------------------------
+# Translation must not forward the pipeline's raiseOnError (or the
+# builders' raise_on_error override) into the workflow config: the
+# runner's fail_fast field is deprecated and ignored, and emitting the
+# key used to abort the run mid-stream on the first failed flush. The
+# operator's raise-on-error gate lives in build_dag, not here.
+
+
+@pytest.mark.parametrize(
+    ("pipeline_raise_on_error", "override"),
+    [(True, None), (False, None), (True, False), (False, True)],
+)
+def test_translate_pipeline_emits_no_fail_fast(
+    pipeline_raise_on_error: bool, override: bool | None
+) -> None:
+    pipeline = _pipeline(service_type="databaseService")
+    pipeline["raiseOnError"] = pipeline_raise_on_error
+    config = translate_pipeline(
+        pipeline,
+        workflow_type="metadata",
+        service_connection=(dict(KAFKA_CONNECTION), "Kafka"),
+        raise_on_error=override,
+    )
+    # fields_set records exactly what translation handed the model:
+    # fail_fast must be absent, not merely defaulted to False.
+    assert "fail_fast" not in config.workflow.model_fields_set
+    assert config.workflow.fail_fast is False
+    # The dumped dict (what the builders store on the operator) must
+    # carry no camelCase failFast key either.
+    assert "failFast" not in config.model_dump(mode="json")["workflow"]

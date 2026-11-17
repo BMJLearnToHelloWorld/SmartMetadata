@@ -22,9 +22,11 @@ Reads the stage's files and performs the five writes:
 Counts are aggregated per (table, day) across all staged lines before
 write 1; joins are counted per column pair across all staged lines.
 A failed write is recorded and the sink moves on to the next group,
-so one bad table cannot hide the rest of the run — but the run is
-still failed: :meth:`UsageBulkSink.run` returns a report whose
-``failures`` the workflow turns into a loud error. Cost records whose
+so one bad table cannot hide the rest of the run. :meth:`UsageBulkSink.run`
+returns a report whose ``failures`` feed the workflow's end-of-run
+threshold determination, which decides whether the run ends ``success``,
+``partialSuccess``, or ``failed`` — raising only after the status
+writeback, when below threshold. Cost records whose
 query was never created are skipped with a warning, never invented.
 ``close`` deletes only the staging files this run owns, then asks the
 server to recompute usage percentiles; both steps warn on failure

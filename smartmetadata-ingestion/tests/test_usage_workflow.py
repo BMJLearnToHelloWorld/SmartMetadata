@@ -282,7 +282,10 @@ def test_usage_run_fails_loud_when_sink_write_fails(tmp_path: Path) -> None:
     client = RestClient(
         _server(), transport=httpx.MockTransport(_catalog_handler(seen, fail_counts=True))
     )
-    with pytest.raises(WorkflowExecutionError, match="usage sink failed"):
+    # Nothing published (sink step 1/2, mean 83.3%): the shared
+    # threshold determination fails the run after the writeback —
+    # the usage workflow no longer raises for sink failures itself.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
         run_workflow(_config(stage_dir, csv_path), client=client)
     assert not stage_dir.exists()  # cleaned even on failure
     client.close()
@@ -294,30 +297,184 @@ def test_unexpected_record_kind_is_recorded_not_silent(tmp_path: Path) -> None:
         [UsageRecord(fqn=TABLE_FQN, date="2026-11-13", count=1)]
     )
     workflow = UsageWorkflow(_config(tmp_path / "staging"), client=client, source=source)
+    # The only record fails to process (processor step 1/2, mean
+    # 83.3%): recorded, then the threshold determination fails the
+    # run — the failure is never silent.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
+    workflow.stop()
+    assert workflow.report.failed == 1
+    assert "unexpected record kind" in workflow.report.failures[0].message
+    client.close()
+
+
+def test_unexpected_record_kind_ignores_fail_fast(tmp_path: Path) -> None:
+    # D-S1/Q3: the deprecated fail_fast flag never aborts a usage run
+    # at the unexpected-kind point — later queries still process, and
+    # the run's outcome follows the threshold determination.
+    config = _config(tmp_path / "staging")
+    config.workflow.fail_fast = True
+    client = RestClient(_server(), transport=httpx.MockTransport(_catalog_handler([])))
+    source = _StubSource(
+        [UsageRecord(fqn=TABLE_FQN, date="2026-11-13", count=1)]
+        + [
+            TableQueryRecord(
+                query="SELECT * FROM shop.public.orders",
+                service_name="warehouse",
+                database_name="shop",
+                database_schema="public",
+                analysis_date="2026-11-13T09:00:00+00:00",
+            )
+            for _ in range(4)
+        ]
+    )
+    workflow = UsageWorkflow(config, client=client, source=source)
     report = workflow.execute()
     workflow.stop()
+    # Processor step 4/5, mean 93.3%: partialSuccess, no raise.
     assert report.failed == 1
     assert "unexpected record kind" in report.failures[0].message
+    assert report.succeeded == 1
     client.close()
 
 
 def test_parse_failure_is_recorded_and_run_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _boom(record, dialect, parser_type):
-        raise QueryParseFailure("boom")
+    # The first query fails to parse; the next three parse and
+    # publish. Processor step 3/4, mean 91.7%: the run continues past
+    # the failure and reports partialSuccess.
+    real_parse = usage_workflow_module.parse_sql_statement
+    calls = {"count": 0}
 
-    monkeypatch.setattr(usage_workflow_module, "parse_sql_statement", _boom)
+    def _boom_once(record, dialect, parser_type):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise QueryParseFailure("boom")
+        return real_parse(record, dialect, parser_type)
+
+    monkeypatch.setattr(usage_workflow_module, "parse_sql_statement", _boom_once)
     client = RestClient(_server(), transport=httpx.MockTransport(_catalog_handler([])))
     source = _StubSource(
-        [TableQueryRecord(query="SELECT * FROM shop.public.orders", service_name="warehouse")]
+        [
+            TableQueryRecord(
+                query="SELECT * FROM shop.public.orders",
+                service_name="warehouse",
+                database_name="shop",
+                database_schema="public",
+                analysis_date="2026-11-13T09:00:00+00:00",
+            )
+            for _ in range(4)
+        ]
+    )
+    workflow = UsageWorkflow(_config(tmp_path / "staging"), client=client, source=source)
+    report = workflow.execute()
+    workflow.stop()
+    assert calls["count"] == 4
+    assert report.failed == 1
+    assert report.failures[0].kind == "tableQuery"
+    assert report.succeeded == 1
+    client.close()
+
+
+def test_parse_failure_ignores_fail_fast(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # D-S1/Q3: the deprecated fail_fast flag never aborts a usage run
+    # at the parse-failure point either — the failure is recorded and
+    # later queries still process.
+    real_parse = usage_workflow_module.parse_sql_statement
+    calls = {"count": 0}
+
+    def _boom_once(record, dialect, parser_type):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise QueryParseFailure("boom")
+        return real_parse(record, dialect, parser_type)
+
+    monkeypatch.setattr(usage_workflow_module, "parse_sql_statement", _boom_once)
+    config = _config(tmp_path / "staging")
+    config.workflow.fail_fast = True
+    client = RestClient(_server(), transport=httpx.MockTransport(_catalog_handler([])))
+    source = _StubSource(
+        [
+            TableQueryRecord(
+                query="SELECT * FROM shop.public.orders",
+                service_name="warehouse",
+                database_name="shop",
+                database_schema="public",
+                analysis_date="2026-11-13T09:00:00+00:00",
+            )
+            for _ in range(4)
+        ]
+    )
+    workflow = UsageWorkflow(config, client=client, source=source)
+    report = workflow.execute()
+    workflow.stop()
+    assert calls["count"] == 4
+    assert report.failed == 1
+    assert report.succeeded == 1
+    client.close()
+
+
+def test_usage_sink_failure_in_partial_band_reports_partial_success(
+    tmp_path: Path,
+) -> None:
+    # D-S1: sink failures are recorded values and the shared
+    # threshold determination decides the outcome. Three of four
+    # tables publish (sink step 3/4, mean 91.7%), so the run returns
+    # its report with the one sink failure recorded — it no longer
+    # raises merely because the sink report is non-empty.
+    tables = {
+        "orders": "11111111-1111-1111-1111-111111111111",
+        "customers": "33333333-3333-3333-3333-333333333333",
+        "products": "55555555-5555-5555-5555-555555555555",
+        "invoices": "66666666-6666-6666-6666-666666666666",
+    }
+    failing_id = tables["invoices"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = unquote(request.url.path)
+        if request.method == "GET" and path.startswith("/api/v1/tables/name/"):
+            fqn = path.removeprefix("/api/v1/tables/name/")
+            name = fqn.rsplit(".", 1)[-1]
+            return httpx.Response(
+                200,
+                json={
+                    "id": tables[name],
+                    "fullyQualifiedName": fqn,
+                    "columns": [],
+                },
+            )
+        if request.method == "GET" and path.startswith("/api/v1/users/name/"):
+            return httpx.Response(404, json={"message": "not found"})
+        if request.method == "PUT" and path == "/api/v1/queries":
+            return httpx.Response(200, json={"id": QUERY_ID, "fullyQualifiedName": "warehouse.q"})
+        if (
+            request.method == "POST"
+            and path.endswith(f"/usage/table/{failing_id}")
+        ):
+            return httpx.Response(500, json={"message": "boom"})
+        return httpx.Response(200, json={})
+
+    client = RestClient(_server(), transport=httpx.MockTransport(handler))
+    source = _StubSource(
+        [
+            TableQueryRecord(
+                query=f"SELECT * FROM shop.public.{name}",
+                service_name="warehouse",
+                database_name="shop",
+                database_schema="public",
+                analysis_date="2026-11-13T09:00:00+00:00",
+            )
+            for name in tables
+        ]
     )
     workflow = UsageWorkflow(_config(tmp_path / "staging"), client=client, source=source)
     report = workflow.execute()
     workflow.stop()
     assert report.failed == 1
-    assert report.failures[0].kind == "tableQuery"
-    assert report.succeeded == 0
+    assert "usage counts write failed" in report.failures[0].message
+    assert report.succeeded == 3
+    assert workflow.sink_status.records == 3
     client.close()
 
 

@@ -10,10 +10,16 @@ from __future__ import annotations
 
 from smartmetadata_ingestion.errors import RestError
 from smartmetadata_ingestion.records import (
+    ChartRecord,
+    ContainerRecord,
+    DashboardRecord,
     DatabaseRecord,
     DatabaseServiceRecord,
+    PipelineRecord,
     SchemaRecord,
+    StoredProcedureRecord,
     TableRecord,
+    TopicRecord,
 )
 from smartmetadata_ingestion.sinks.metadata_rest import BulkMetadataRestSink
 
@@ -41,6 +47,26 @@ class FakeClient:
 
     def bulk_upsert_topics(self, payloads, *, override_metadata: bool = False):
         self.calls.append(("bulk_topic", payloads))
+        return _bulk_result(payloads)
+
+    def bulk_upsert_stored_procedures(self, payloads, *, override_metadata: bool = False):
+        self.calls.append(("bulk_procedure", payloads))
+        return _bulk_result(payloads)
+
+    def bulk_upsert_charts(self, payloads, *, override_metadata: bool = False):
+        self.calls.append(("bulk_chart", payloads))
+        return _bulk_result(payloads)
+
+    def bulk_upsert_dashboards(self, payloads, *, override_metadata: bool = False):
+        self.calls.append(("bulk_dashboard", payloads))
+        return _bulk_result(payloads)
+
+    def bulk_upsert_containers(self, payloads, *, override_metadata: bool = False):
+        self.calls.append(("bulk_container", payloads))
+        return _bulk_result(payloads)
+
+    def bulk_upsert_pipelines(self, payloads, *, override_metadata: bool = False):
+        self.calls.append(("bulk_pipeline", payloads))
         return _bulk_result(payloads)
 
     def put_lineage(self, *args, **kwargs):
@@ -304,3 +330,244 @@ def test_bulk_sink_empty_body_response_fails_closed() -> None:
         "table:svc.db.public.t1",
         "table:svc.db.public.t2",
     ]
+
+
+# -- D-S2/D-S3: single shared buffer, depth-ordered grouped flush -----------
+# Depths are derived from the pin topology trees: depth = tree layer x 100
+# + stage index within the node, minimum across topologies. These tests pin
+# the derived table, the emitted group order, and the stable-sort tie rule
+# (kinds sharing a depth keep first-arrival order).
+
+
+def test_bulk_sink_kind_depth_table() -> None:
+    assert BulkMetadataRestSink._KIND_DEPTH == {
+        "topic": 100,
+        "database": 101,
+        "chart": 101,
+        "container": 101,
+        "pipeline": 101,
+        "dashboard": 103,
+        "schema": 201,
+        "storedProcedure": 300,
+        "table": 301,
+    }
+    # The verified constraint: the storedProcedure group goes out before
+    # the table group.
+    assert (
+        BulkMetadataRestSink._KIND_DEPTH["storedProcedure"]
+        < BulkMetadataRestSink._KIND_DEPTH["table"]
+    )
+
+
+def test_bulk_sink_flush_groups_follow_depth_order() -> None:
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    # Scrambled arrival across all nine buffered kinds.
+    sink.write(TableRecord(name="t", database_schema="svc.db.public", columns=[]))
+    sink.write(DashboardRecord(name="d", service="svc"))
+    sink.write(PipelineRecord(name="p", service="svc"))
+    sink.write(SchemaRecord(name="public", database="svc.db"))
+    sink.write(ChartRecord(name="c", service="svc"))
+    sink.write(
+        StoredProcedureRecord(
+            name="sp",
+            database_schema="svc.db.public",
+            stored_procedure_type="StoredProcedure",
+            language="SQL",
+            code="SELECT 1",
+        )
+    )
+    sink.write(ContainerRecord(name="ct", service="svc"))
+    sink.write(TopicRecord(name="tp", service="svc"))
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.flush()
+    # Depth order; the four depth-101 kinds keep first-arrival order
+    # (pipeline, chart, container, database).
+    kinds = [call[0] for call in client.calls]
+    assert kinds == [
+        "bulk_topic",
+        "bulk_pipeline",
+        "bulk_chart",
+        "bulk_container",
+        "bulk_db",
+        "bulk_dashboard",
+        "bulk_schema",
+        "bulk_procedure",
+        "bulk_table",
+    ]
+    # One bulk call per group, each carrying its single payload.
+    assert all(len(call[1]) == 1 for call in client.calls)
+
+
+def test_bulk_sink_equal_depth_groups_keep_arrival_order() -> None:
+    # Chart, database and container all sit at depth 101: whichever
+    # arrives first goes out first.
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(ChartRecord(name="c", service="svc"))
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(ContainerRecord(name="ct", service="svc"))
+    sink.flush()
+    assert [call[0] for call in client.calls] == [
+        "bulk_chart",
+        "bulk_db",
+        "bulk_container",
+    ]
+
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(ContainerRecord(name="ct", service="svc"))
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(ChartRecord(name="c", service="svc"))
+    sink.flush()
+    assert [call[0] for call in client.calls] == [
+        "bulk_container",
+        "bulk_db",
+        "bulk_chart",
+    ]
+
+
+def test_bulk_sink_groups_keep_arrival_order_within_group() -> None:
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
+    sink.write(SchemaRecord(name="s1", database="svc.db"))
+    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
+    sink.write(SchemaRecord(name="s2", database="svc.db"))
+    sink.write(TableRecord(name="t3", database_schema="svc.db.public", columns=[]))
+    sink.flush()
+    assert [call[0] for call in client.calls] == ["bulk_schema", "bulk_table"]
+    schema_names = [p["name"] for p in client.calls[0][1]]
+    table_names = [p["name"] for p in client.calls[1][1]]
+    assert schema_names == ["s1", "s2"]
+    assert table_names == ["t1", "t2", "t3"]
+
+
+def test_bulk_sink_group_exception_isolates_remaining_groups() -> None:
+    class ExplodingSchemaClient(FakeClient):
+        def bulk_upsert_schemas(self, payloads, *, override_metadata: bool = False):
+            raise RuntimeError("schema endpoint down")
+
+    client = ExplodingSchemaClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(SchemaRecord(name="s1", database="svc.db"))
+    sink.write(SchemaRecord(name="s2", database="svc.db"))
+    sink.write(TableRecord(name="t", database_schema="svc.db.public", columns=[]))
+    # A group failure never raises out of the flush.
+    result = sink.flush()
+    assert result is not None
+    # The database and table groups still went out and landed.
+    assert [call[0] for call in client.calls] == ["bulk_db", "bulk_table"]
+    assert result.succeeded == {"database": 1, "table": 1}
+    # The failed group is counted per payload, each with the group's error.
+    assert [f.label for f in result.failed] == [
+        "schema:svc.db.s1",
+        "schema:svc.db.s2",
+    ]
+    assert all("schema endpoint down" in f.error for f in result.failed)
+
+
+def test_bulk_sink_malformed_response_isolates_group() -> None:
+    class MalformedTableClient(FakeClient):
+        def bulk_upsert_tables(self, payloads, *, override_metadata: bool = False):
+            self.calls.append(("bulk_table", payloads))
+            return {"successRequest": 5}
+
+    client = MalformedTableClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
+    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
+    # Response recording shares the group's isolation boundary: the
+    # malformed table response fails only the table group, and the
+    # database group still lands.
+    result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {"database": 1}
+    assert [f.label for f in result.failed] == [
+        "table:svc.db.public.t1",
+        "table:svc.db.public.t2",
+    ]
+
+
+def test_bulk_sink_write_trip_failure_is_recorded_not_raised() -> None:
+    client = BulkResultClient(fail_kinds=frozenset({"table"}))
+    sink = BulkMetadataRestSink(client, batch_size=2)
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
+    # The second write trips the buffer; the failing flush is recorded,
+    # not raised, and the sink stays usable afterwards.
+    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
+    result = sink.take_flush_result()
+    assert result is not None
+    assert result.succeeded == {}
+    assert [f.label for f in result.failed] == [
+        "table:svc.db.public.t1",
+        "table:svc.db.public.t2",
+    ]
+    sink.write(DatabaseRecord(name="db", service="svc"))
+    result = sink.flush()
+    assert result is not None
+    assert result.succeeded == {"database": 1}
+    assert result.failed == []
+
+
+def test_bulk_sink_default_batch_size_is_100() -> None:
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client)
+    for index in range(99):
+        sink.write(TableRecord(name=f"t{index}", database_schema="svc.db.public", columns=[]))
+    assert client.calls == []
+    sink.write(TableRecord(name="t99", database_schema="svc.db.public", columns=[]))
+    assert len(client.calls) == 1
+    assert client.calls[0][0] == "bulk_table"
+    assert len(client.calls[0][1]) == 100
+    result = sink.take_flush_result()
+    assert result is not None
+    assert result.succeeded == {"table": 100}
+
+
+def test_bulk_sink_buffers_container_and_pipeline() -> None:
+    # D-S4/F7: container and pipeline stay buffered groups.
+    client = FakeClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    assert sink.buffers(ContainerRecord(name="ct", service="svc")) is True
+    assert sink.buffers(PipelineRecord(name="p", service="svc")) is True
+    sink.write(ContainerRecord(name="ct", service="svc"))
+    sink.write(PipelineRecord(name="p", service="svc"))
+    assert client.calls == []
+    sink.flush()
+    assert [call[0] for call in client.calls] == [
+        "bulk_container",
+        "bulk_pipeline",
+    ]
+
+
+def test_bulk_sink_sampled_topic_flush_uses_depth_order() -> None:
+    from smartmetadata_ingestion.records import TopicSampleData
+
+    class SampleClient(FakeClient):
+        def upsert_topic(self, payload):
+            self.calls.append(("topic", payload))
+            return {"id": "topic-uuid", **payload}
+
+        def ingest_topic_sample_data(self, topic_id, payload):
+            self.calls.append(("sample", topic_id, payload))
+            return {"sampleData": payload}
+
+    client = SampleClient()
+    sink = BulkMetadataRestSink(client, batch_size=10)
+    sink.write(TableRecord(name="t", database_schema="svc.db.public", columns=[]))
+    sink.write(SchemaRecord(name="public", database="svc.db"))
+    sink.write(
+        TopicRecord(
+            name="orders",
+            service="events",
+            partitions=1,
+            sample_data=TopicSampleData(messages=['{"id": 1}']),
+        )
+    )
+    # The pending buffer flushes in depth order (schema before table),
+    # then the sampled topic single-writes (upsert + sample PUT).
+    kinds = [call[0] for call in client.calls]
+    assert kinds == ["bulk_schema", "bulk_table", "topic", "sample"]

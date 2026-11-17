@@ -93,7 +93,13 @@ class WorkflowSettings(CamelModel):
         "elasticSearchReindex",
         "application",
     ] = "metadata"
+    # Deprecated and ignored (D-S1): retained only so existing
+    # emitters and already-deployed DAG configs keep validating
+    # under extra="forbid". Its value never triggers a mid-stream
+    # raise; the end-of-run threshold determination decides the
+    # outcome instead. Removable once deployed DAGs rotate.
     fail_fast: bool = False
+    success_threshold: int = Field(default=90, ge=0, le=100)
     ingestion_pipeline_fqn: str | None = None
     reconcile_stale: bool = False
     reconcile_dry_run: bool = False
@@ -517,7 +523,8 @@ class ProcessorConfig(CamelModel):
 class SinkConfig(CamelModel):
     type: Literal["metadata-rest"] = "metadata-rest"
     use_bulk: bool = True
-    bulk_batch_size: int = 50
+    # Default 100 aligns with the official batch default (D-S2/Q1).
+    bulk_batch_size: int = 100
 
     @field_validator("bulk_batch_size")
     @classmethod

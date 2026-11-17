@@ -354,7 +354,14 @@ def test_sampling_failure_records_a_processor_failure_and_continues() -> None:
             raise RuntimeError("connection reset")
         return _sample()
 
-    workflow, report = _run(_config(), client, sample_entity=sample_entity, engine=_StubEngine())
+    workflow = AutoClassificationWorkflow(
+        _config(), client=client, sample_entity=sample_entity, engine=_StubEngine()
+    )
+    # Below-threshold runs raise after the status writeback (D-S5): the
+    # failure is recorded and the run continues, but the verdict is loud.
+    with pytest.raises(WorkflowExecutionError, match="below the 90% success threshold"):
+        workflow.execute()
+    report = workflow.report
     assert report.succeeded == 1
     assert report.failed == 1
     assert len(workflow.processor_status.failures) == 1
@@ -375,12 +382,16 @@ def test_store_failure_is_a_sink_failure_but_the_patch_still_runs() -> None:
             ]
         }
     )
-    workflow, report = _run(
+    workflow = AutoClassificationWorkflow(
         _config(storeSampleData=True),
-        client,
+        client=client,
         sample_entity=lambda entity: _sample(),
         engine=engine,
     )
+    # Below-threshold runs raise after the status writeback (D-S5).
+    with pytest.raises(WorkflowExecutionError, match="below the 90% success threshold"):
+        workflow.execute()
+    report = workflow.report
     assert report.failed == 1
     assert report.succeeded == 0
     assert len(client.patch_calls) == 1
@@ -447,12 +458,16 @@ def test_per_column_engine_failures_become_processor_failures() -> None:
             ]
         }
     )
-    workflow, report = _run(
+    workflow = AutoClassificationWorkflow(
         _config(),
-        client,
+        client=client,
         sample_entity=lambda entity: _sample(),
         engine=engine,
     )
+    # Below-threshold runs raise after the status writeback (D-S5).
+    with pytest.raises(WorkflowExecutionError, match="below the 90% success threshold"):
+        workflow.execute()
+    report = workflow.report
     assert report.failed == 1
     assert report.succeeded == 1
     assert len(workflow.processor_status.failures) == 1

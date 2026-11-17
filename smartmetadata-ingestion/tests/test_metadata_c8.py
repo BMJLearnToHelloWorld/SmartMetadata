@@ -165,7 +165,12 @@ def test_single_sink_writes_stored_procedure_with_resolved_owners() -> None:
     ]
 
 
-def test_bulk_sink_buffers_procedures_and_flushes_after_tables() -> None:
+def test_bulk_sink_flushes_procedures_before_tables() -> None:
+    # D-S3: flush groups sort by hierarchy depth — storedProcedure sits
+    # at layer 3 stage 0 (depth 300), ahead of table at layer 3 stage 1
+    # (depth 301) — so the procedure group goes out before the table
+    # group even though the table arrived first. (Retargeted from the
+    # old fixed kind order, which emitted tables before procedures.)
     from smartmetadata_ingestion.records import DatabaseRecord, SchemaRecord
 
     client = _FakeClient()
@@ -178,8 +183,8 @@ def test_bulk_sink_buffers_procedures_and_flushes_after_tables() -> None:
     assert not client.calls
     sink.flush()
     kinds = [call[0] for call in client.calls]
-    assert kinds == ["bulk_db", "bulk_schema", "bulk_table", "bulk_procedure"]
-    assert client.calls[3][1][0]["storedProcedureCode"]["code"] == "SELECT 1"
+    assert kinds == ["bulk_db", "bulk_schema", "bulk_procedure", "bulk_table"]
+    assert client.calls[2][1][0]["storedProcedureCode"]["code"] == "SELECT 1"
 
 
 def test_bulk_sink_forwards_override_metadata_only_when_set() -> None:

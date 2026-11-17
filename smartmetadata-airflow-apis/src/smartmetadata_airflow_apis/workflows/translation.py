@@ -798,10 +798,14 @@ def translate_pipeline(
     builders). Neither source means the pipeline cannot be expressed:
     fail loudly instead of silently building a ``"None"`` source.
 
-    ``raise_on_error`` overrides the pipeline's own value when given: the
-    official profiler (and test_suite) builders omit raiseOnError, so their
-    builders pass False; metadata/usage/lineage leave it None and keep the
-    pipeline value (official ``build_workflow_config_property``).
+    ``raise_on_error`` is accepted but deliberately not forwarded into
+    the emitted config: translation no longer emits ``failFast`` — the
+    runner's ``fail_fast`` field is deprecated and ignored, and the
+    pipeline's raiseOnError must not reintroduce a mid-run abort
+    through this key. The parameter stays so the profiler and
+    test_suite builders keep calling with the same signature; the
+    operator's raise-on-error gate is decided independently by
+    ``build_dag`` from the pipeline.
     """
     from smartmetadata_ingestion.config import WorkflowConfig
 
@@ -809,9 +813,6 @@ def translate_pipeline(
     # accept the service-type spelling too and normalize it.
     if workflow_type == "testSuite":
         workflow_type = "TestSuite"
-
-    if raise_on_error is None:
-        raise_on_error = bool(pipeline.get("raiseOnError", False))
 
     source_config = pipeline.get("sourceConfig") or {}
     config_block = source_config.get("config") or {}
@@ -914,11 +915,14 @@ def translate_pipeline(
         "connection": service_connection,
     }
     source_block.update(source_knobs)
+    # Deliberately no failFast key: emitting the pipeline's raiseOnError
+    # here used to abort the run mid-stream on the first failed flush.
+    # The runner's fail_fast field is deprecated and ignored; the
+    # operator gate lives in build_dag (see the docstring above).
     raw = {
         "workflow": {
             "name": pipeline.get("name"),
             "type": workflow_type,
-            "failFast": raise_on_error,
             "ingestionPipelineFqn": pipeline.get("fullyQualifiedName"),
             "reconcileStale": _reconcile_stale_for(
                 source_knobs, workflow_type, service_category

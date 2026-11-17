@@ -38,16 +38,123 @@ def test_step_summary_includes_sampled_failures() -> None:
     assert summary["failures"][0]["stackTrace"] == "trace"
 
 
+def _report(succeeded: int, failures: int) -> RunReport:
+    report = RunReport(workflow_name="w", succeeded=succeeded)
+    for index in range(failures):
+        report.failures.append(
+            RecordFailure(label=f"a{index}", kind="t", message="x")
+        )
+    return report
+
+
+def _step(records: int, failures: int, *, updated: int = 0) -> StepStatus:
+    status = StepStatus(name="S", records=records, updated_records=updated)
+    for index in range(failures):
+        status.failures.append(
+            RecordFailure(label=f"a{index}", kind="t", message="x")
+        )
+    return status
+
+
 def test_final_pipeline_state_matrix() -> None:
-    ok = RunReport(workflow_name="w", succeeded=2)
-    assert final_pipeline_state(ok) == "success"
-    partial = RunReport(workflow_name="w", succeeded=1)
-    partial.failures.append(RecordFailure(label="a", kind="t", message="x"))
-    assert final_pipeline_state(partial) == "partialSuccess"
-    failed = RunReport(workflow_name="w")
-    failed.failures.append(RecordFailure(label="a", kind="t", message="x"))
-    assert final_pipeline_state(failed) == "failed"
-    assert final_pipeline_state(ok, stopped=True) == "stopped"
+    # Report-only callers (no step data) are judged as a single step
+    # under the threshold rule: 100% success, >=90% partialSuccess,
+    # below 90% failed, and stopped wins over all.
+    assert final_pipeline_state(_report(2, 0)) == "success"
+    assert final_pipeline_state(_report(0, 0)) == "success"
+    assert final_pipeline_state(_report(9, 1)) == "partialSuccess"
+    assert final_pipeline_state(_report(1, 1)) == "failed"
+    assert final_pipeline_state(_report(0, 1)) == "failed"
+    assert final_pipeline_state(_report(2, 0), stopped=True) == "stopped"
+    assert final_pipeline_state(_report(9, 1), stopped=True) == "stopped"
+
+
+def test_final_pipeline_state_threshold_boundaries() -> None:
+    # Exactly at the threshold is partialSuccess; one point below is
+    # failed. Exact fractions decide the boundary, not float rounding.
+    assert final_pipeline_state(_report(90, 10)) == "partialSuccess"
+    assert final_pipeline_state(_report(89, 11)) == "failed"
+    assert final_pipeline_state(_report(90, 10), success_threshold=91) == "failed"
+    assert final_pipeline_state(_report(90, 10), success_threshold=90) == "partialSuccess"
+    assert final_pipeline_state(_report(1, 0), success_threshold=100) == "success"
+    assert final_pipeline_state(_report(99, 1), success_threshold=100) == "failed"
+
+
+def test_final_pipeline_state_uses_mean_of_step_rates() -> None:
+    # The workflow rate is the MEAN of the steps' rates (D-S5/F1), not
+    # the minimum and not the report totals: a 60% sink step averaged
+    # with two clean steps rates 86.7% and fails at 90, while an 80%
+    # sink step averages 93.3% and reports partialSuccess.
+    clean = _step(5, 0)
+    assert (
+        final_pipeline_state(
+            _report(0, 0), steps=[clean, _step(0, 0), _step(3, 2)]
+        )
+        == "failed"
+    )
+    assert (
+        final_pipeline_state(
+            _report(0, 0), steps=[clean, _step(0, 0), _step(4, 1)]
+        )
+        == "partialSuccess"
+    )
+    assert (
+        final_pipeline_state(
+            _report(0, 0), steps=[clean, _step(0, 0), _step(5, 0)]
+        )
+        == "success"
+    )
+
+
+def test_final_pipeline_state_mean_boundary_is_exact() -> None:
+    # Three steps at exactly 90% each average exactly 90%: the mean
+    # must not slip below the threshold through float summation.
+    steps = [_step(9, 1), _step(9, 1), _step(9, 1)]
+    assert final_pipeline_state(_report(0, 0), steps=steps) == "partialSuccess"
+    assert (
+        final_pipeline_state(_report(0, 0), steps=steps, success_threshold=91)
+        == "failed"
+    )
+
+
+def test_final_pipeline_state_empty_step_rates_full() -> None:
+    # A step with no records and no failures rates 100% and pulls the
+    # mean up; it never drags a clean run below the threshold.
+    from smartmetadata_ingestion.pipeline_status import step_success_rate
+
+    assert step_success_rate(_step(0, 0)) == 1.0
+    assert (
+        final_pipeline_state(_report(0, 0), steps=[_step(0, 0), _step(0, 0)])
+        == "success"
+    )
+    assert (
+        final_pipeline_state(_report(0, 0), steps=[_step(0, 0), _step(9, 1)])
+        == "partialSuccess"
+    )
+
+
+def test_final_pipeline_state_counts_updated_records_as_success() -> None:
+    # The step success count is records + updated_records (B-12): a
+    # step with only updates and one failure rates 4/5, not 1/2.
+    from smartmetadata_ingestion.pipeline_status import step_success_rate
+
+    assert step_success_rate(_step(0, 1, updated=4)) == pytest.approx(0.8)
+    assert step_success_rate(_step(0, 2)) == pytest.approx(1 / 3)
+
+
+def test_final_pipeline_state_threshold_is_per_workflow_type() -> None:
+    # The same step mix at an 86.7% mean is partialSuccess under an
+    # 80 threshold (profiler) and failed under the generic 90: the
+    # hook value, not the rule, differs between workflow types.
+    steps = [_step(10, 0), _step(0, 0), _step(3, 2)]
+    assert (
+        final_pipeline_state(_report(0, 0), steps=steps, success_threshold=80)
+        == "partialSuccess"
+    )
+    assert (
+        final_pipeline_state(_report(0, 0), steps=steps, success_threshold=90)
+        == "failed"
+    )
 
 
 def test_step_summary_reports_true_warnings_and_updates() -> None:

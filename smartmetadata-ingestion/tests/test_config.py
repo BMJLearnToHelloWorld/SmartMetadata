@@ -153,6 +153,80 @@ def test_messaging_metadata_pipeline_config_parses() -> None:
     assert source.messaging_metadata.store_sample_data is None
 
 
+def test_workflow_success_threshold_defaults_to_90() -> None:
+    from smartmetadata_ingestion.config import WorkflowSettings
+
+    assert WorkflowSettings.model_validate({"name": "demo"}).success_threshold == 90
+    # The camelCase alias follows the file's alias conventions.
+    assert (
+        WorkflowSettings.model_validate(
+            {"name": "demo", "successThreshold": 80}
+        ).success_threshold
+        == 80
+    )
+    assert (
+        WorkflowSettings.model_validate(
+            {"name": "demo", "success_threshold": 75}
+        ).success_threshold
+        == 75
+    )
+
+
+def test_workflow_success_threshold_rejects_out_of_range() -> None:
+    from smartmetadata_ingestion.config import WorkflowSettings
+
+    for value in (-1, 101):
+        with pytest.raises(Exception, match="success_threshold|successThreshold"):
+            WorkflowSettings.model_validate(
+                {"name": "demo", "successThreshold": value}
+            )
+    assert (
+        WorkflowSettings.model_validate(
+            {"name": "demo", "successThreshold": 0}
+        ).success_threshold
+        == 0
+    )
+    assert (
+        WorkflowSettings.model_validate(
+            {"name": "demo", "successThreshold": 100}
+        ).success_threshold
+        == 100
+    )
+
+
+def test_fail_fast_field_still_validates_for_legacy_configs() -> None:
+    # Deprecated-ignored (D-S1), but retained: existing emitters and
+    # deployed DAG configs carrying failFast must keep validating
+    # under extra="forbid". That the value never raises mid-stream is
+    # covered by the workflow tests.
+    from smartmetadata_ingestion.config import WorkflowSettings
+
+    assert WorkflowSettings.model_validate({"name": "demo"}).fail_fast is False
+    assert (
+        WorkflowSettings.model_validate(
+            {"name": "demo", "failFast": True}
+        ).fail_fast
+        is True
+    )
+
+
+def test_sink_bulk_batch_size_defaults_to_100() -> None:
+    from smartmetadata_ingestion.config import SinkConfig
+
+    assert SinkConfig.model_validate({"type": "metadata-rest"}).bulk_batch_size == 100
+    assert (
+        SinkConfig.model_validate(
+            {"type": "metadata-rest", "bulkBatchSize": 50}
+        ).bulk_batch_size
+        == 50
+    )
+    for value in (0, 501):
+        with pytest.raises(Exception, match="bulkBatchSize"):
+            SinkConfig.model_validate(
+                {"type": "metadata-rest", "bulkBatchSize": value}
+            )
+
+
 def test_messaging_metadata_rejects_unknown_keys() -> None:
     from smartmetadata_ingestion.config import SourceConfig
 

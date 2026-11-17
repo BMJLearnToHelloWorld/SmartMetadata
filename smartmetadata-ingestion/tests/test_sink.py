@@ -284,9 +284,16 @@ def test_bulk_table_flush_sends_pending_database_and_schema_first() -> None:
     sink = BulkMetadataRestSink(client, batch_size=3)
     sink.write(DatabaseRecord(name="db", service="svc"))
     sink.write(SchemaRecord(name="public", database="svc.db"))
-    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
-    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
     assert client.calls == []
-    sink.write(TableRecord(name="t3", database_schema="svc.db.public", columns=[]))
+    # The third buffered record trips the ONE shared buffer: the whole
+    # buffer flushes, grouped in depth order, parents before the table.
+    # (Retargeted from the per-kind buffers, where the trip needed three
+    # tables; the parent-first assertion is unchanged.)
+    sink.write(TableRecord(name="t1", database_schema="svc.db.public", columns=[]))
     assert client.calls == ["database", "schema", "table"]
+    # A later table stays buffered until the buffer fills again or closes.
+    sink.write(TableRecord(name="t2", database_schema="svc.db.public", columns=[]))
+    assert client.calls == ["database", "schema", "table"]
+    sink.flush()
+    assert client.calls == ["database", "schema", "table", "table"]
 

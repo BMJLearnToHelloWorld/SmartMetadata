@@ -98,7 +98,10 @@ def test_metadata_builder_keeps_pipeline_raise_on_error() -> None:
     task = _task(dag, "ingestion_task")
     assert task._raise_on_error is True
     assert task._workflow_config["workflow"]["type"] == "metadata"
-    assert task._workflow_config["workflow"]["fail_fast"] is True
+    # Translation no longer emits failFast, so the dumped config carries
+    # the model default False even though the operator gate above still
+    # follows the pipeline's raiseOnError.
+    assert task._workflow_config["workflow"]["fail_fast"] is False
     assert task._workflow_config["source"]["type"] == "mysql"
 
 
@@ -113,6 +116,8 @@ def test_profiler_builder_omits_raise_on_error() -> None:
     task = _task(dag, "profiler_task")
     assert task._raise_on_error is False
     assert task._workflow_config["workflow"]["type"] == "profiler"
+    # The False below is now the unset model default: translation emits
+    # no failFast key at all, rather than the builder's override value.
     assert task._workflow_config["workflow"]["fail_fast"] is False
     assert task._workflow_config["source"]["type"] == "mysql"
 
@@ -125,7 +130,10 @@ def test_usage_builder_suffixes_source_type() -> None:
     task = _task(dag, "usage_task")
     assert task._raise_on_error is True
     assert task._workflow_config["workflow"]["type"] == "usage"
-    assert task._workflow_config["workflow"]["fail_fast"] is True
+    # Translation no longer emits failFast, so the dumped config carries
+    # the model default False even though the operator gate above still
+    # follows the pipeline's raiseOnError.
+    assert task._workflow_config["workflow"]["fail_fast"] is False
     assert task._workflow_config["source"]["type"] == "mysql-usage"
 
 
@@ -298,6 +306,8 @@ def test_test_suite_builder_omits_raise_on_error(
     # must not fail the task on a case failure.
     assert task._raise_on_error is False
     assert task._workflow_config["workflow"]["type"] == "TestSuite"
+    # The False below is now the unset model default: translation emits
+    # no failFast key at all, rather than the builder's override value.
     assert task._workflow_config["workflow"]["fail_fast"] is False
     assert task._workflow_config["source"]["type"] == "mysql"
     # The dumped config uses snake_case keys (model_dump(mode="json")).

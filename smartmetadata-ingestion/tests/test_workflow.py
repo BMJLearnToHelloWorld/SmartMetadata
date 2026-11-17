@@ -246,7 +246,14 @@ def test_source_failure_is_fatal_but_cleanup_and_completion_still_run(workflow_c
     assert workflow.source_status.errors == 1
 
 
-def test_fail_fast_closes_source_iterator_before_steps(workflow_config) -> None:
+def test_fail_fast_ignored_sink_failures_continue_then_threshold_raises(
+    workflow_config,
+) -> None:
+    # D-S1: fail_fast=True no longer aborts the run — both records are
+    # attempted and both failures recorded. The run then fails only
+    # through the end-of-run threshold determination (sink step 1/3,
+    # mean 77.8% < 90), raised after the steps close. The source
+    # iterator still closes before the steps do.
     events: list[str] = []
     workflow_config.lineage = []
     workflow_config.workflow.fail_fast = True
@@ -257,9 +264,11 @@ def test_fail_fast_closes_source_iterator_before_steps(workflow_config) -> None:
         sink=FailingSink(events),
     )
 
-    with pytest.raises(RuntimeError, match="write failed"):
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
         workflow.execute()
 
+    assert len(workflow.report.failures) == 2
+    assert workflow.sink_status.errors == 2
     assert events[-3:] == ["source.iterator.close", "source.close", "sink.flush"]
 
 
@@ -297,10 +306,17 @@ def test_processor_failure_is_attributed_to_processor_status(workflow_config) ->
         processors=[FailingProcessor()],
     )
 
-    report = workflow.execute()
+    # One record, processor step 1/2, mean 83.3%: below the threshold,
+    # so execute() raises after the writeback — but the failure stays
+    # attributed to the processor step, never the sink step, and a
+    # failed chain counts no processed records.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
 
+    report = workflow.report
     assert report.failed == 1
     assert workflow.processor_status.errors == 1
+    assert workflow.processor_status.records == 0
     assert workflow.sink_status.errors == 0
     assert "processor failed" in report.failures[0].message
     assert report.failures[0].stack_trace
@@ -534,11 +550,16 @@ def test_pipeline_status_failed_when_all_records_fail(workflow_config) -> None:
         sink=FailingSink(events),
     )
 
-    report = workflow.execute()
+    # Below the threshold, execute() raises — but only after the
+    # failed status was written back, so the run history shows the
+    # failure instead of the run vanishing into an exception.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
 
+    report = workflow.report
     assert report.failed == 1
     assert report.succeeded == 0
-    assert statuses[-1]["pipelineState"] == "failed"
+    assert [item["pipelineState"] for item in statuses] == ["running", "failed"]
 
 
 class MixedSink(RecordingSink):
@@ -553,22 +574,36 @@ class MixedSink(RecordingSink):
         super().write(record)
 
 
+class ManyServicesSource(RecordingSource):
+    """A source that enumerates ten services: enough records that one
+    failed write still lands in the partialSuccess band."""
+
+    def produce(self):
+        self.events.append("source.produce")
+        for index in range(10):
+            yield DatabaseServiceRecord(name=f"warehouse-{index}", service_type="Postgres")
+
+
 def test_pipeline_status_partial_success_when_some_records_succeed(workflow_config) -> None:
     events: list[str] = []
     statuses: list[dict] = []
-    # keep configured lineage so one sink write can succeed after the first fails
+    # Keep configured lineage: 11 records, the first write fails, the
+    # other 10 land — sink step 10/11, mean 97.0%, partialSuccess with
+    # no raise, and the failure recorded.
     workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
     workflow = MetadataWorkflow(
         workflow_config,
         client=StatusClient(events, statuses),
-        source=RecordingSource(events),
+        source=ManyServicesSource(events),
         sink=MixedSink(events),
     )
 
     report = workflow.execute()
 
     assert report.failed == 1
-    assert report.succeeded >= 1
+    assert report.succeeded == 10
+    assert workflow.processor_status.records == 11
+    assert workflow.sink_status.records == 10
     assert statuses[-1]["pipelineState"] == "partialSuccess"
 
 
@@ -729,7 +764,11 @@ def test_bulk_flush_400_counts_nothing_as_succeeded(workflow_config) -> None:
         ]
     )
     workflow = MetadataWorkflow(workflow_config, client=client, source=source, sink=sink)
-    report = workflow.execute()
+    # Nothing landed (sink step 1/3, mean 77.8%): the threshold raise
+    # fires after the close flush recorded the failures.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
+    report = workflow.report
     assert report.succeeded == 0
     assert report.failed == 2
     assert [f.label for f in report.failures] == [
@@ -758,12 +797,229 @@ def test_bulk_partial_flush_counts_only_landed_records(workflow_config) -> None:
         ]
     )
     workflow = MetadataWorkflow(workflow_config, client=client, source=source, sink=sink)
-    report = workflow.execute()
-    # 1 database + 2 schemas landed; the two tables 400'd.
+    # 1 database + 2 schemas landed; the two tables 400'd. The sink
+    # step rates 3/5, the mean 86.7%: below the threshold, so the run
+    # fails after the close flush — only truly-flushed records count.
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
+    report = workflow.report
     assert report.succeeded == 3
     assert report.failed == 2
     assert workflow.sink_status.records == 3
-    assert final_pipeline_state(report) == "partialSuccess"
+    assert final_pipeline_state(report) == "failed"
+
+
+def test_bulk_partial_flush_in_partial_band_reports_partial_success(
+    workflow_config,
+) -> None:
+    from smartmetadata_ingestion.pipeline_status import final_pipeline_state
+    from smartmetadata_ingestion.records import DatabaseRecord, SchemaRecord, TableRecord
+    from smartmetadata_ingestion.sinks.metadata_rest import BulkMetadataRestSink
+
+    workflow_config.lineage = []
+    client = BulkWorkflowClient(fail_kinds=frozenset({"table"}))
+    sink = BulkMetadataRestSink(client, batch_size=50)
+    source = BulkRecordsSource(
+        [
+            DatabaseRecord(name="db", service="svc"),
+            *[
+                SchemaRecord(name=f"s{index}", database="svc.db")
+                for index in range(8)
+            ],
+            TableRecord(name="orders", database_schema="svc.db.s0", columns=[]),
+        ]
+    )
+    workflow = MetadataWorkflow(workflow_config, client=client, source=source, sink=sink)
+    report = workflow.execute()
+    # 1 database + 8 schemas landed; the one table 400'd at the close
+    # flush. Sink step 9/10, mean 96.7%: partialSuccess, no raise.
+    assert report.succeeded == 9
+    assert report.failed == 1
+    assert workflow.sink_status.records == 9
+    assert (
+        final_pipeline_state(
+            report,
+            steps=[
+                workflow.source_status,
+                workflow.processor_status,
+                workflow.sink_status,
+            ],
+        )
+        == "partialSuccess"
+    )
+
+
+class DrainingStubSink:
+    """A sink that buffers every record and reports flush outcomes on
+    demand: ``mid_stream`` is drained while records are still being
+    handled, ``at_close`` is returned by flush()."""
+
+    def __init__(
+        self,
+        *,
+        mid_stream=None,
+        at_close=None,
+    ) -> None:
+        self._mid_stream = mid_stream
+        self._at_close = at_close
+        self.writes = 0
+
+    def buffers(self, record) -> bool:
+        return True
+
+    def take_flush_result(self):
+        result, self._mid_stream = self._mid_stream, None
+        return result
+
+    def write(self, record) -> None:
+        self.writes += 1
+
+    def flush(self):
+        return self._at_close
+
+
+def test_drain_flush_result_never_raises_and_run_continues(workflow_config) -> None:
+    # D-S1: a mid-stream flush failure is a value, never a raise — even
+    # with the deprecated fail_fast flag set. All ten records are
+    # attempted; nine count as landed, one as failed, and the run
+    # reports partialSuccess (sink step 9/10, mean 96.7%).
+    from smartmetadata_ingestion.sinks.metadata_rest import FlushFailure, FlushResult
+
+    events: list[str] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.fail_fast = True
+    sink = DrainingStubSink(
+        mid_stream=FlushResult(
+            succeeded={"databaseService": 9},
+            failed=[
+                FlushFailure(
+                    kind="databaseService",
+                    payload={"name": "warehouse-9"},
+                    error="bulk 400",
+                )
+            ],
+        )
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=RecordingClient(events),
+        source=ManyServicesSource(events),
+        sink=sink,
+    )
+
+    report = workflow.execute()
+
+    assert sink.writes == 10
+    assert report.succeeded == 9
+    assert report.failed == 1
+    assert report.failures[0].message == "bulk 400"
+    assert workflow.sink_status.records == 9
+
+
+def test_close_flush_failure_feeds_threshold_determination(workflow_config) -> None:
+    # D-S6: the close flush happens before the determination, so a
+    # failure that surfaces only at close still counts: nine landed,
+    # one failed at close, partialSuccess — not a clean success.
+    from smartmetadata_ingestion.sinks.metadata_rest import FlushFailure, FlushResult
+
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    sink = DrainingStubSink(
+        at_close=FlushResult(
+            succeeded={"databaseService": 9},
+            failed=[
+                FlushFailure(
+                    kind="databaseService",
+                    payload={"name": "warehouse-9"},
+                    error="bulk 400 at close",
+                )
+            ],
+        )
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=ManyServicesSource(events),
+        sink=sink,
+    )
+
+    report = workflow.execute()
+
+    assert sink.writes == 10
+    assert report.succeeded == 9
+    assert report.failed == 1
+    assert statuses[-1]["pipelineState"] == "partialSuccess"
+
+
+def test_close_flush_failure_below_threshold_raises_after_writeback(
+    workflow_config,
+) -> None:
+    # The same close-flush shape at a failing rate: nothing landed at
+    # close, the threshold raise fires, and the failed status was
+    # already written back.
+    from smartmetadata_ingestion.sinks.metadata_rest import FlushFailure, FlushResult
+
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.lineage = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    sink = DrainingStubSink(
+        at_close=FlushResult(
+            failed=[
+                FlushFailure(
+                    kind="databaseService",
+                    payload={"name": f"warehouse-{index}"},
+                    error="bulk 400 at close",
+                )
+                for index in range(10)
+            ]
+        )
+    )
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=ManyServicesSource(events),
+        sink=sink,
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="success threshold"):
+        workflow.execute()
+
+    assert workflow.report.succeeded == 0
+    assert workflow.report.failed == 10
+    assert statuses[-1]["pipelineState"] == "failed"
+
+
+@pytest.mark.parametrize(
+    ("threshold", "outcome"),
+    [(50, "partialSuccess"), (100, "failed")],
+)
+def test_configured_success_threshold_drives_determination(
+    workflow_config, threshold: int, outcome: str
+) -> None:
+    # The configured successThreshold reaches the determination: a
+    # two-record run with one failed write (mean 83.3%) is
+    # partialSuccess under a 50 threshold and failed under 100.
+    events: list[str] = []
+    statuses: list[dict] = []
+    workflow_config.workflow.ingestion_pipeline_fqn = "svc.meta"
+    workflow_config.workflow.success_threshold = threshold
+    workflow = MetadataWorkflow(
+        workflow_config,
+        client=StatusClient(events, statuses),
+        source=RecordingSource(events),
+        sink=MixedSink(events),
+    )
+
+    if outcome == "failed":
+        with pytest.raises(WorkflowExecutionError, match="success threshold"):
+            workflow.execute()
+    else:
+        workflow.execute()
+
+    assert statuses[-1]["pipelineState"] == outcome
 
 
 def test_reconcile_skips_count_as_sink_warnings_in_writeback(workflow_config) -> None:

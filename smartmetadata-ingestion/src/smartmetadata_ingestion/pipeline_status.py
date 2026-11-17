@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
+from fractions import Fraction
 from typing import Any, Literal
 
 from smartmetadata_ingestion.progress import (
@@ -88,16 +90,69 @@ def _stack_trace_error(failure: RecordFailure) -> dict[str, Any]:
     return item
 
 
+def _step_success_fraction(status: StepStatus) -> Fraction:
+    """One step's success share, exactly.
+
+    The success count is ``max(records + updated_records, 1)`` over
+    that count plus the step's failures, so a step that recorded
+    nothing at all (0 records, 0 failures) rates 100% instead of
+    dividing by zero, and a step with failures but no counted
+    successes still rates above zero. Exact fractions keep threshold
+    boundaries (e.g. exactly 90%) decidable instead of float-noisy.
+    """
+    success = max(status.records + status.updated_records, 1)
+    return Fraction(success, success + len(status.failures))
+
+
+def step_success_rate(status: StepStatus) -> float:
+    """One step's success rate in [0, 1], from the step's own counts."""
+    return float(_step_success_fraction(status))
+
+
+def mean_success_rate(steps: Sequence[StepStatus]) -> float:
+    """The mean of the steps' success rates in [0, 1].
+
+    No steps means nothing ran and nothing failed, so the rate is
+    100%. This is the display form of the determination below; the
+    determination itself compares exact fractions.
+    """
+    if not steps:
+        return 1.0
+    total = sum((_step_success_fraction(step) for step in steps), Fraction(0))
+    return float(total / len(steps))
+
+
 def final_pipeline_state(
     report: RunReport,
     *,
     stopped: bool = False,
+    steps: Sequence[StepStatus] | None = None,
+    success_threshold: int = 90,
 ) -> PipelineState:
+    """The end-of-run state under the threshold rule (D-S5).
+
+    The workflow success rate is the MEAN of the steps' success
+    rates, each from the step's own records/updated/failures counts
+    — never inferred from the report totals. 100% is ``success``;
+    at or above the threshold but below 100% is ``partialSuccess``;
+    below the threshold is ``failed``; ``stopped`` wins over all.
+
+    Without step data (legacy callers pass only the report), the
+    report's own succeeded/failed counts are treated as a single
+    step under the same formula, so the signature keeps working
+    while the verdict follows the threshold rule.
+    """
     if stopped:
         return "stopped"
-    if report.failed == 0:
+    if steps:
+        rate = sum((_step_success_fraction(step) for step in steps), Fraction(0))
+        rate /= len(steps)
+    else:
+        success = max(report.succeeded, 1)
+        rate = Fraction(success, success + report.failed)
+    if rate == 1:
         return "success"
-    if report.succeeded > 0:
+    if rate >= Fraction(success_threshold, 100):
         return "partialSuccess"
     return "failed"
 
