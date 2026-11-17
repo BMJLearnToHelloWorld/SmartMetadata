@@ -21,10 +21,9 @@ import { getShortRelativeTime } from '@/utils/relativeTime';
 /**
  * Agent view-model mapping, ported from official
  * components/ServiceAgents/utils/agentsDataMapper.ts
- * (openmetadata-ui, pin a3012259ca). The run-history / log-viewer helpers of that module
- * (`mapPipelineStatusToRun`, `mapStepSummaryToRunStep`,
- * `parseLogLines`) are not ported: the fork reuses its existing run
- * details modal and log modal instead.
+ * (openmetadata-ui, pin a3012259ca). Only the log-viewer helper
+ * `parseLogLines` is not ported: the fork reuses its existing log
+ * modal instead.
  */
 
 /** Official constants/ServiceType.constant.ts `SERVICE_INGESTION_PIPELINE_TYPES` (8). */
@@ -272,5 +271,171 @@ export function mapPipelineToAgent(pipeline: IngestionPipeline): Agent {
     finishedAt: progress.finishedAt,
     lastRunAt: latestStatus?.timestamp,
     enabled: pipeline.enabled,
+  };
+}
+
+/**
+ * Run-history view models, ported from official
+ * components/ServiceAgents/utils/agentsDataMapper.ts
+ * (`mapPipelineStatusToRun`, `mapStepSummaryToRunStep`) plus the
+ * step/attention shapes the run step row renders (pin
+ * RunStepRow.component.tsx). The pipeline-state table below is keyed
+ * on the capitalized enum values the server returns in
+ * `PipelineStatus.pipelineState`, unlike the lowercase-keyed
+ * `PIPELINE_STATE_TO_RUN_STATUS` used for recent-run dots.
+ */
+export interface RunAttention {
+  severity: 'error' | 'warning';
+  title: string;
+  message: string;
+  hint?: string;
+  stackTrace?: string;
+}
+
+export interface RunStep {
+  name: string;
+  status: RunStatus;
+  records: number;
+  filtered: number;
+  updated: number;
+  warnings: number;
+  errors: number;
+  attention?: RunAttention;
+}
+
+export interface RunTotals {
+  records: number;
+  filtered: number;
+  updated: number;
+  warnings: number;
+  errors: number;
+}
+
+export interface AgentRun {
+  id: string;
+  status: RunStatus;
+  startedAt: string;
+  duration: number;
+  totals: RunTotals;
+  steps: RunStep[];
+}
+
+const RUN_HISTORY_PIPELINE_STATE_TO_RUN_STATUS: Record<string, RunStatus> = {
+  Success: 'success',
+  PartialSuccess: 'partial',
+  Failed: 'failed',
+  Running: 'running',
+  Queued: 'skipped',
+  Stopped: 'skipped',
+};
+
+export function toRunStatus(state?: string): RunStatus {
+  return state ? (RUN_HISTORY_PIPELINE_STATE_TO_RUN_STATUS[state] ?? 'skipped') : 'skipped';
+}
+
+const RUN_STARTED_AT_MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/** Pin `customFormatDateTime(millis, 'MMM dd, yyyy · HH:mm')`: local time, English month abbreviations. */
+export function formatRunStartedAt(millis: number): string {
+  const date = new Date(millis);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${RUN_STARTED_AT_MONTHS[date.getMonth()]} ${pad(date.getDate())}, ${date.getFullYear()} · ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function maxStepField(steps: PipelineStepStatus[], field: 'records' | 'filtered' | 'updated_records'): number {
+  return steps.reduce((highest, step) => Math.max(highest, step[field] ?? 0), 0);
+}
+
+function sumStepField(steps: PipelineStepStatus[], field: 'warnings' | 'errors'): number {
+  return steps.reduce((sum, step) => sum + (step[field] ?? 0), 0);
+}
+
+export function buildRunTotals(steps: PipelineStepStatus[]): RunTotals {
+  return {
+    records: maxStepField(steps, 'records'),
+    filtered: maxStepField(steps, 'filtered'),
+    updated: maxStepField(steps, 'updated_records'),
+    warnings: sumStepField(steps, 'warnings'),
+    errors: sumStepField(steps, 'errors'),
+  };
+}
+
+export function resolveRunStepStatus(
+  records: number,
+  filtered: number,
+  errors: number,
+  warnings: number,
+): RunStatus {
+  if (errors > 0) {
+    return records > 0 ? 'partial' : 'failed';
+  }
+  if (warnings > 0) {
+    return 'partial';
+  }
+  if (records === 0 && filtered === 0) {
+    return 'skipped';
+  }
+  return 'success';
+}
+
+export function buildStepAttention(step: PipelineStepStatus): RunAttention | undefined {
+  const firstFailure = step.failures?.[0];
+  if (!firstFailure) {
+    return undefined;
+  }
+  return {
+    severity: 'error',
+    title: firstFailure.name ?? '',
+    message: firstFailure.error ?? '',
+    hint: undefined,
+    ...(firstFailure.stackTrace ? { stackTrace: firstFailure.stackTrace } : {}),
+  };
+}
+
+export function mapStepSummaryToRunStep(step: PipelineStepStatus): RunStep {
+  const records = step.records ?? 0;
+  const filtered = step.filtered ?? 0;
+  const updated = step.updated_records ?? 0;
+  const warnings = step.warnings ?? 0;
+  const errors = step.errors ?? 0;
+  return {
+    name: step.name ?? '',
+    status: resolveRunStepStatus(records, filtered, errors, warnings),
+    records,
+    filtered,
+    updated,
+    warnings,
+    errors,
+    attention: buildStepAttention(step),
+  };
+}
+
+export function mapPipelineStatusToRun(status: PipelineStatus): AgentRun {
+  const steps = status.status ?? [];
+  const startedAtMillis = status.startDate ?? status.timestamp;
+  const duration =
+    status.endDate && status.startDate
+      ? Math.round(((status.endDate - status.startDate) / 60000) * 10) / 10
+      : 0;
+  return {
+    id: status.runId ?? String(status.timestamp),
+    status: toRunStatus(status.pipelineState),
+    startedAt: startedAtMillis ? formatRunStartedAt(startedAtMillis) : '',
+    duration,
+    totals: buildRunTotals(steps),
+    steps: steps.map(mapStepSummaryToRunStep),
   };
 }

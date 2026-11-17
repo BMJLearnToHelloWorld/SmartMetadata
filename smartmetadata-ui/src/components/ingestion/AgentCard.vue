@@ -31,6 +31,7 @@ import {
 import type { OperationPermissions } from '@/api/permissions';
 import {
   agentActionPermissions,
+  agentOverflowPermissions,
   AGENT_STATUS_PILL,
   canRunAgent,
   fmtNum,
@@ -81,6 +82,16 @@ const { t } = useI18n();
  */
 const permissions = computed(() => agentActionPermissions(props.isAdminUser, props.ops));
 const showRunButton = computed(() => canRunAgent(permissions.value, props.agent));
+/**
+ * Pin AgentOverflowMenu empty-menu rule: with neither `edit` nor
+ * `delete` in the no-admin triad, no item survives the filter and
+ * the whole dropdown is not rendered. The Run button above keeps
+ * the P1 admin line; only the menu follows the pin triad.
+ */
+const showOverflowMenu = computed(() => {
+  const triad = agentOverflowPermissions(props.ops);
+  return triad.edit || triad.delete;
+});
 const pill = computed(() => AGENT_STATUS_PILL[props.agent.status]);
 const isPaused = computed(() => props.agent.enabled === false);
 const isActive = computed(() => props.agent.status === 'running' || props.agent.status === 'queued');
@@ -244,7 +255,7 @@ function onToggle(pipeline: IngestionPipeline): void {
           <PlayCircleOutlined />
           {{ t('ingestion.pipelines.run') }}
         </Button>
-        <Dropdown :trigger="['click']">
+        <Dropdown v-if="showOverflowMenu" :trigger="['click']">
           <template #overlay>
             <Menu data-testid="actions-dropdown">
               <PipelineRowActions
@@ -262,7 +273,11 @@ function onToggle(pipeline: IngestionPipeline): void {
               />
             </Menu>
           </template>
-          <Button data-testid="more-actions" :aria-label="t('ingestion.agents.moreActions')">
+          <Button
+            data-testid="more-actions"
+            :aria-label="t('ingestion.agents.moreActions')"
+            :disabled="orchestratorUnavailable"
+          >
             <MoreOutlined />
           </Button>
         </Dropdown>

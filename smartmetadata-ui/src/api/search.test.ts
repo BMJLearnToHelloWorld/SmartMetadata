@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeESReservedCharacters,
+  getEncodedFqn,
   getNLPEnabledStatus,
   mapAggregateBuckets,
   nlqSearch,
@@ -245,6 +246,15 @@ describe('escapeESReservedCharacters', () => {
   it('escapes reserved characters and leaves # unescaped', () => {
     expect(escapeESReservedCharacters('a+b(c)')).toBe('a\\+b\\(c\\)');
     expect(escapeESReservedCharacters('a#b')).toBe('a#b');
+  });
+});
+
+describe('getEncodedFqn', () => {
+  it('encodes an FQN as a URI component', () => {
+    expect(getEncodedFqn('svc.db.schema')).toBe('svc.db.schema');
+    expect(getEncodedFqn('a/b c')).toBe('a%2Fb%20c');
+    expect(getEncodedFqn('a/b c', true)).toBe('a%2Fb+c');
+    expect(getEncodedFqn('')).toBe('');
   });
 });
 

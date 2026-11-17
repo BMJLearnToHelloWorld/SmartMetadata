@@ -29,6 +29,7 @@ function mountActions(
   options: {
     pipelineValue?: IngestionPipeline;
     ops?: Record<string, boolean>;
+    isAdminUser?: boolean;
     orchestratorUnavailable?: boolean;
     variant?: 'row' | 'card';
     active?: boolean;
@@ -45,7 +46,7 @@ function mountActions(
             h(PipelineRowActions, {
               pipeline: options.pipelineValue ?? pipeline(),
               ops: options.ops,
-              isAdminUser: false,
+              isAdminUser: options.isAdminUser ?? false,
               orchestratorUnavailable: options.orchestratorUnavailable ?? false,
               variant: options.variant,
               active: options.active,
@@ -100,6 +101,20 @@ describe('PipelineRowActions card variant (official AgentOverflowMenu compositio
     expect(wrapper.find('[data-testid="re-deploy-button"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="deploy-button"]').exists()).toBe(false);
     wrapper.unmount();
+  });
+
+  it('uses the pin AgentOverflowMenu wording for the card items', async () => {
+    const active = mountActions({ variant: 'card', active: true, ops: FULL_OPS });
+    await flushPromises();
+    expect(active.find('[data-testid="kill-button"]').text()).toBe('Kill run');
+    expect(active.find('[data-testid="edit-button"]').text()).toBe('Edit configuration');
+    expect(active.find('[data-testid="delete-button"]').text()).toBe('Delete agent');
+    active.unmount();
+
+    const idle = mountActions({ variant: 'card', ops: FULL_OPS });
+    await flushPromises();
+    expect(idle.find('[data-testid="re-deploy-button"]').text()).toBe('Re-deploy');
+    idle.unmount();
   });
 
   it('shows Deploy for an undeployed pipeline and Re-deploy once deployed', async () => {
@@ -167,6 +182,63 @@ describe('PipelineRowActions card variant (official AgentOverflowMenu compositio
     expect(actions.emitted('deploy')).toEqual([[expect.objectContaining({ id: 'p1' })]]);
     expect(actions.emitted('edit')).toEqual([[expect.objectContaining({ id: 'p1' })]]);
     expect(actions.emitted('delete')).toEqual([[expect.objectContaining({ id: 'p1' })]]);
+    wrapper.unmount();
+  });
+
+  it('hides items on the pin triad instead of disabling them (V11)', async () => {
+    // EditAll only: pause, re-deploy, and edit render; delete hides.
+    const editOnly = mountActions({ variant: 'card', ops: { EditAll: true } });
+    await flushPromises();
+    expect(editOnly.find('[data-testid="pause-button"]').exists()).toBe(true);
+    expect(editOnly.find('[data-testid="re-deploy-button"]').exists()).toBe(true);
+    expect(editOnly.find('[data-testid="edit-button"]').exists()).toBe(true);
+    expect(editOnly.find('[data-testid="delete-button"]').exists()).toBe(false);
+    editOnly.unmount();
+
+    // Delete only: delete renders alone.
+    const deleteOnly = mountActions({ variant: 'card', ops: { Delete: true } });
+    await flushPromises();
+    expect(deleteOnly.find('[data-testid="pause-button"]').exists()).toBe(false);
+    expect(deleteOnly.find('[data-testid="re-deploy-button"]').exists()).toBe(false);
+    expect(deleteOnly.find('[data-testid="edit-button"]').exists()).toBe(false);
+    expect(deleteOnly.find('[data-testid="delete-button"]').exists()).toBe(true);
+    deleteOnly.unmount();
+
+    // No bits: nothing renders (the card hides the whole dropdown).
+    const none = mountActions({ variant: 'card', ops: {} });
+    await flushPromises();
+    expect(none.find('[data-testid="pause-button"]').exists()).toBe(false);
+    expect(none.find('[data-testid="re-deploy-button"]').exists()).toBe(false);
+    expect(none.find('[data-testid="edit-button"]').exists()).toBe(false);
+    expect(none.find('[data-testid="delete-button"]').exists()).toBe(false);
+    none.unmount();
+
+    // Kill rides `edit` too, even while active.
+    const activeNoEdit = mountActions({ variant: 'card', active: true, ops: { Delete: true } });
+    await flushPromises();
+    expect(activeNoEdit.find('[data-testid="kill-button"]').exists()).toBe(false);
+    expect(activeNoEdit.find('[data-testid="delete-button"]').exists()).toBe(true);
+    activeNoEdit.unmount();
+  });
+
+  it('grants no card items to an admin without the entity bits', async () => {
+    const wrapper = mountActions({ variant: 'card', ops: {}, isAdminUser: true });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="pause-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="re-deploy-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-button"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="delete-button"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('disables re-deploy for a paused pipeline without hiding it', async () => {
+    const wrapper = mountActions({
+      variant: 'card',
+      ops: FULL_OPS,
+      pipelineValue: pipeline({ enabled: false }),
+    });
+    await flushPromises();
+    expect(isDisabled(wrapper, 're-deploy-button')).toBe(true);
     wrapper.unmount();
   });
 });

@@ -7,9 +7,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
-import type { ClassificationTag, CreateTagRequest } from '@/types/governance';
+import type { ClassificationTag, CreateTagRequest, EntityStyle } from '@/types/governance';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { apiRequest } from './client';
 
@@ -19,6 +19,8 @@ export interface ListTagsQuery {
   parent?: string;
   limit?: number;
   after?: string;
+  /** Pin TagsRequestParams.disabled: filter by the tag's disabled flag. */
+  disabled?: boolean;
 }
 
 function mapTag(raw: Record<string, unknown>): ClassificationTag | null {
@@ -51,8 +53,45 @@ export function listTags(query: ListTagsQuery = {}): Promise<Paged<Classificatio
       limit: query.limit ?? 25,
       after: query.after,
       parent: query.parent,
+      disabled: query.disabled,
     },
   }).then((payload) => parsePaged(payload, mapTag));
+}
+
+/**
+ * A classification tag carrying its display style (pin Tag.style).
+ * Kept local to this module: the shared ClassificationTag shape is
+ * outside this change's ownership, and only the tier picker reads
+ * style.
+ */
+export interface TierTag extends ClassificationTag {
+  style?: EntityStyle;
+}
+
+function mapTierTag(raw: Record<string, unknown>): TierTag | null {
+  const base = mapTag(raw);
+  if (!base) {
+    return null;
+  }
+  const style = asRecord(raw.style);
+  const color = style ? asString(style.color) || undefined : undefined;
+  const iconURL = style ? asString(style.iconURL) || undefined : undefined;
+  return {
+    ...base,
+    style: color || iconURL ? { color, iconURL } : undefined,
+  };
+}
+
+/**
+ * Pin TierCard fetch (getTags with parent 'Tier', limit 50,
+ * disabled false): the enabled Tier classification tags. No fields
+ * param is sent — the pin call sends none, yet reads tier.style, so
+ * style needs no fields expansion.
+ */
+export function listTierTags(): Promise<Paged<TierTag>> {
+  return apiRequest<unknown>('/v1/tags', {
+    query: { parent: 'Tier', limit: 50, disabled: false },
+  }).then((payload) => parsePaged(payload, mapTierTag));
 }
 
 export async function getTag(id: string): Promise<ClassificationTag> {

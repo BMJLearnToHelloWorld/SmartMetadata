@@ -3,9 +3,11 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Menu } from 'ant-design-vue';
 import type { OperationPermissions } from '@/api/permissions';
+import { agentOverflowPermissions } from '@/ingestion/agentsUtils';
 import {
   canDeletePipeline,
   canDeployPipeline,
@@ -29,9 +31,12 @@ const props = defineProps<{
    * 'card' renders the official AgentOverflowMenu composition
    * (pause/resume + kill-or-redeploy + edit + delete) for the agent
    * card: no View, Logs, or Run item — the card carries its own
-   * Logs and Run buttons. Gating stays the fork's per-item disabled
-   * presentation, including edit/delete staying enabled while the
-   * orchestrator is down (catalog operations, not Airflow calls).
+   * Logs and Run buttons. Card gating is the pin triad (V11): items
+   * hide (v-if) on the pin useAgentPermissions bits with no admin
+   * input; only the non-permission conditions stay as disabled
+   * (toggle needs deployed, kill/deploy need the orchestrator).
+   * Edit/delete stay enabled while the orchestrator is down
+   * (catalog operations, not Airflow calls).
    */
   variant?: 'row' | 'card';
   /** Card variant: the agent is running or queued, so Kill replaces Re-deploy. */
@@ -49,6 +54,10 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+/** Pin AgentOverflowMenu PERMISSION_BY_ITEM: pause/resume, kill, redeploy, and edit ride `edit`; delete rides `delete`. */
+const cardPermissions = computed(() => agentOverflowPermissions(props.ops));
+const isCard = computed(() => props.variant === 'card');
 
 /**
  * The official PipelineActions row (PipelineActions.tsx + the
@@ -75,12 +84,15 @@ const { t } = useI18n();
     {{ t('crud.view') }}
   </Menu.Item>
   <Menu.Item
+    v-if="!isCard || cardPermissions.edit"
     key="toggle-status"
     :data-testid="pipeline.enabled === false ? 'resume-button' : 'pause-button'"
     :disabled="
-      !canTogglePipelineStatus(isAdminUser, ops) ||
-      pipeline.deployed !== true ||
-      orchestratorUnavailable
+      isCard
+        ? pipeline.deployed !== true || orchestratorUnavailable
+        : !canTogglePipelineStatus(isAdminUser, ops) ||
+          pipeline.deployed !== true ||
+          orchestratorUnavailable
     "
     @click="emit('toggle', pipeline)"
   >
@@ -97,22 +109,22 @@ const { t } = useI18n();
   </Menu.Item>
   <template v-if="variant === 'card'">
     <Menu.Item
-      v-if="active"
+      v-if="active && cardPermissions.edit"
       key="kill"
       data-testid="kill-button"
-      :disabled="!canKillPipeline(isAdminUser, ops) || orchestratorUnavailable"
+      :disabled="orchestratorUnavailable"
       @click="emit('kill', pipeline)"
     >
-      {{ t('ingestion.pipelines.kill') }}
+      {{ t('label.killRun') }}
     </Menu.Item>
     <Menu.Item
-      v-else
+      v-else-if="!active && cardPermissions.edit"
       key="deploy"
       :data-testid="pipeline.deployed === true ? 're-deploy-button' : 'deploy-button'"
-      :disabled="!canDeployPipeline(isAdminUser, ops, pipeline) || orchestratorUnavailable"
+      :disabled="pipeline.enabled === false || orchestratorUnavailable"
       @click="emit('deploy', pipeline)"
     >
-      {{ t(pipeline.deployed === true ? 'ingestion.pipelines.redeploy' : 'ingestion.pipelines.deploy') }}
+      {{ t(pipeline.deployed === true ? 'label.redeploySentence' : 'ingestion.pipelines.deploy') }}
     </Menu.Item>
   </template>
   <template v-else-if="pipeline.enabled !== false">
@@ -135,12 +147,13 @@ const { t } = useI18n();
     </Menu.Item>
   </template>
   <Menu.Item
+    v-if="!isCard || cardPermissions.edit"
     key="edit"
     :data-testid="variant === 'card' ? 'edit-button' : 'row-overflow-edit'"
-    :disabled="!canEditPipeline(isAdminUser, ops)"
+    :disabled="!isCard && !canEditPipeline(isAdminUser, ops)"
     @click="emit('edit', pipeline)"
   >
-    {{ t('crud.edit') }}
+    {{ t(isCard ? 'label.editConfiguration' : 'crud.edit') }}
   </Menu.Item>
   <Menu.Item
     v-if="variant !== 'card'"
@@ -152,12 +165,13 @@ const { t } = useI18n();
     {{ t('ingestion.pipelines.kill') }}
   </Menu.Item>
   <Menu.Item
+    v-if="!isCard || cardPermissions.delete"
     key="delete"
     danger
     :data-testid="variant === 'card' ? 'delete-button' : 'row-overflow-delete'"
-    :disabled="!canDeletePipeline(isAdminUser, ops)"
+    :disabled="!isCard && !canDeletePipeline(isAdminUser, ops)"
     @click="emit('delete', pipeline)"
   >
-    {{ t('crud.delete') }}
+    {{ t(isCard ? 'label.deleteAgent' : 'crud.delete') }}
   </Menu.Item>
 </template>

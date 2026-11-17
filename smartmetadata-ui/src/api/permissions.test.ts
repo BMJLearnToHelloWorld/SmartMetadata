@@ -291,4 +291,113 @@ describe('getDerivedPermissionFlags (W2-2 row + page gates)', () => {
     expect(getDerivedPermissionFlags({ ViewAll: true, ViewBasic: false }).canViewBasic).toBe(false);
     expect(getDerivedPermissionFlags({ ViewAll: true }).canViewBasic).toBe(true);
   });
+
+  it('derives every named pin flag through the same edit/view closures', () => {
+    const flags = getDerivedPermissionFlags({ EditAll: true, ViewAll: true });
+    expect(flags.canEditTags).toBe(true);
+    expect(flags.canEditGlossaryTerms).toBe(true);
+    expect(flags.canEditDescription).toBe(true);
+    expect(flags.canEditDisplayName).toBe(true);
+    expect(flags.canEditCustomFields).toBe(true);
+    expect(flags.canEditOwners).toBe(true);
+    expect(flags.canEditDomains).toBe(true);
+    expect(flags.canEditTier).toBe(true);
+    expect(flags.canEditLineage).toBe(true);
+    expect(flags.canEditSampleData).toBe(true);
+    expect(flags.canViewSampleData).toBe(true);
+    expect(flags.canViewQueries).toBe(true);
+    expect(flags.canViewDataProfile).toBe(true);
+    expect(flags.canViewTests).toBe(true);
+    expect(flags.canViewUsage).toBe(true);
+    expect(flags.canViewCustomFields).toBe(true);
+    expect(getDerivedPermissionFlags({}).canEditOwners).toBe(false);
+    expect(getDerivedPermissionFlags({}).canViewUsage).toBe(false);
+  });
+
+  it('prefers each field key over EditAll/ViewAll (pin PermissionDerivation.test.ts:41-60)', () => {
+    // Field deny beats the EditAll grant, for every facet flag.
+    const denied = getDerivedPermissionFlags({
+      EditAll: true,
+      EditOwners: false,
+      EditDomains: false,
+      EditTier: false,
+      EditTags: false,
+      EditDescription: false,
+      EditDisplayName: false,
+    });
+    expect(denied.canEditOwners).toBe(false);
+    expect(denied.canEditDomains).toBe(false);
+    expect(denied.canEditTier).toBe(false);
+    expect(denied.canEditTags).toBe(false);
+    expect(denied.canEditDescription).toBe(false);
+    expect(denied.canEditDisplayName).toBe(false);
+    // Field grant beats the EditAll deny.
+    const granted = getDerivedPermissionFlags({
+      EditAll: false,
+      EditOwners: true,
+      EditTier: true,
+      ViewAll: false,
+      ViewUsage: true,
+    });
+    expect(granted.canEditOwners).toBe(true);
+    expect(granted.canEditTier).toBe(true);
+    expect(granted.canViewUsage).toBe(true);
+    expect(granted.canViewQueries).toBe(false);
+  });
+
+  it('routes can() through deleted gating and keeps canEditAll EditAll-only', () => {
+    const deleted = getDerivedPermissionFlags(
+      {
+        EditAll: true,
+        EditTags: true,
+        ViewAll: true,
+        ViewUsage: true,
+        Delete: true,
+        Create: true,
+      },
+      true,
+    );
+    expect(deleted.can('EditTags')).toBe(false);
+    expect(deleted.can('ViewUsage')).toBe(true);
+    expect(deleted.can('Delete')).toBe(true);
+    expect(deleted.can('Create')).toBe(true);
+    expect(deleted.canCreate).toBe(true);
+    expect(getDerivedPermissionFlags({ ViewBasic: true }, true).hasViewAccess).toBe(true);
+    // canEditAll reads EditAll alone: field grants never imply it.
+    expect(getDerivedPermissionFlags({ EditAll: false, EditOwners: true }).canEditAll).toBe(false);
+    expect(getDerivedPermissionFlags({ EditAll: true }).canEditAll).toBe(true);
+  });
+
+  it('revokes every named Edit flag when deleted, leaving the View flags alone', () => {
+    const flags = getDerivedPermissionFlags(
+      {
+        EditAll: true,
+        EditOwners: true,
+        EditDomains: true,
+        EditTier: true,
+        EditTags: true,
+        EditGlossaryTerms: true,
+        EditDescription: true,
+        EditDisplayName: true,
+        EditCustomFields: true,
+        EditLineage: true,
+        EditSampleData: true,
+        ViewAll: true,
+        ViewUsage: true,
+      },
+      true,
+    );
+    expect(flags.canEditOwners).toBe(false);
+    expect(flags.canEditDomains).toBe(false);
+    expect(flags.canEditTier).toBe(false);
+    expect(flags.canEditTags).toBe(false);
+    expect(flags.canEditGlossaryTerms).toBe(false);
+    expect(flags.canEditDescription).toBe(false);
+    expect(flags.canEditDisplayName).toBe(false);
+    expect(flags.canEditCustomFields).toBe(false);
+    expect(flags.canEditLineage).toBe(false);
+    expect(flags.canEditSampleData).toBe(false);
+    expect(flags.canViewUsage).toBe(true);
+    expect(flags.canViewQueries).toBe(true);
+  });
 });

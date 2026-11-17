@@ -13,6 +13,7 @@ import type { Agent } from '@/types/ingestion';
 import {
   AGENT_STATUS_PILL,
   agentActionPermissions,
+  agentOverflowPermissions,
   canRunAgent,
   convertSecondsToHumanReadableFormat,
   formatEtaLong,
@@ -87,6 +88,23 @@ describe('agentActionPermissions / canRunAgent', () => {
     expect(canRunAgent(permitted, agent({ status: 'none' }))).toBe(true);
     expect(canRunAgent(NO_AGENT_PERMISSIONS, agent())).toBe(false);
     expect(canRunAgent(permitted, agent({ enabled: undefined }))).toBe(true);
+  });
+});
+
+describe('agentOverflowPermissions (pin useAgentPermissions triad)', () => {
+  it('derives trigger/edit/delete from the entity bits with no admin input', () => {
+    expect(agentOverflowPermissions({ Trigger: true, EditAll: false, Delete: true })).toEqual({
+      trigger: true,
+      edit: false,
+      delete: true,
+    });
+    expect(agentOverflowPermissions({})).toEqual(NO_AGENT_PERMISSIONS);
+    expect(agentOverflowPermissions(undefined)).toEqual(NO_AGENT_PERMISSIONS);
+    // The triad takes no admin flag: an admin without the entity bits
+    // gets no menu items, as the pin renders an empty menu as null.
+    expect(agentOverflowPermissions({ Trigger: false, EditAll: false, Delete: false })).toEqual(
+      NO_AGENT_PERMISSIONS,
+    );
   });
 });
 

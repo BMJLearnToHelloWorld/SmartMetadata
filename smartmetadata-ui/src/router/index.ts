@@ -101,6 +101,7 @@ const PipelinesListView = () => import('@/views/ingestion/PipelinesListView.vue'
 const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
 const EditServiceConnectionView = () => import('@/views/ingestion/EditServiceConnectionView.vue');
 const ServiceDetailView = () => import('@/views/ingestion/ServiceDetailView.vue');
+const ServiceVersionView = () => import('@/views/ingestion/ServiceVersionView.vue');
 const AddServiceIngestionView = () => import('@/views/ingestion/AddServiceIngestionView.vue');
 const QueryFullScreenView = () => import('@/views/QueryFullScreenView.vue');
 const AddQueryView = () => import('@/views/AddQueryView.vue');
@@ -841,6 +842,12 @@ export const router = createRouter({
           path: 'ingestion/services/:kind/:id',
           name: 'ingestion-service',
           component: ServiceDetailView,
+          props: true,
+        },
+        {
+          path: 'ingestion/services/:kind/:id/versions/:version',
+          name: 'ingestion-service-version',
+          component: ServiceVersionView,
           props: true,
         },
         { path: 'ingestion/pipelines', name: 'ingestion-pipelines', component: PipelinesListView },

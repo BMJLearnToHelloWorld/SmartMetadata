@@ -39,6 +39,8 @@ export const INGESTION_PIPELINE_FIELDS = 'owners,pipelineStatuses';
 export interface ListIngestionPipelinesQuery {
   limit?: number;
   after?: string;
+  /** Backward cursor (official paging.before); the agents tab pages both ways. */
+  before?: string;
   service?: string;
   pipelineType?: string;
   serviceType?: string;
@@ -158,6 +160,7 @@ export function mapIngestionPipeline(raw: Record<string, unknown>): IngestionPip
     loggerLevel: asString(raw.loggerLevel) || undefined,
     raiseOnError: asBoolean(raw.raiseOnError),
     deleted: asBoolean(raw.deleted),
+    provider: asString(raw.provider) || undefined,
     owners: Array.isArray(raw.owners) ? mapEntityRefs(raw.owners) : undefined,
     pipelineStatuses: Array.isArray(raw.pipelineStatuses)
       ? raw.pipelineStatuses.flatMap((item) => {
@@ -250,6 +253,7 @@ export function listIngestionPipelines(
       fields: query.fields ?? INGESTION_PIPELINE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
+      before: query.before,
       service: query.serviceFilter ?? query.service,
       pipelineType: query.pipelineType,
       serviceType: query.serviceType,

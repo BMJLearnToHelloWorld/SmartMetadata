@@ -1,0 +1,60 @@
+<!--
+  Copyright 2026 SmartMetadata authors.
+  Licensed under the Apache License, Version 2.0.
+-->
+<script setup lang="ts">
+import { computed } from 'vue';
+
+/**
+ * Search-term highlighting, ported from official
+ * utils/EntitySearchUtils.tsx `highlightSearchText` (pin a3012259ca):
+ * a case-insensitive match on the escaped search text, with matches
+ * wrapped in `<span data-highlight="true" class="text-highlighter">`.
+ * Segments are rendered as elements rather than HTML, so entity
+ * names never pass through `v-html`.
+ */
+const props = defineProps<{
+  text: string;
+  searchText?: string;
+}>();
+
+interface Segment {
+  text: string;
+  highlighted: boolean;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const segments = computed<Segment[]>(() => {
+  if (!props.searchText) {
+    return [{ text: props.text, highlighted: false }];
+  }
+  const regex = new RegExp(`(${escapeRegExp(props.searchText)})`, 'gi');
+  const parts = props.text.split(regex);
+  return parts
+    .filter((part) => part !== '')
+    .map((part) => ({
+      text: part,
+      highlighted: part.toLowerCase() === props.searchText?.toLowerCase(),
+    }));
+});
+</script>
+
+<template>
+  <span>
+    <template v-for="(segment, index) in segments" :key="index">
+      <span v-if="segment.highlighted" data-highlight="true" class="text-highlighter">
+        {{ segment.text }}
+      </span>
+      <template v-else>{{ segment.text }}</template>
+    </template>
+  </span>
+</template>
+
+<style scoped>
+.text-highlighter {
+  background: var(--sm-color-warning-bg);
+}
+</style>

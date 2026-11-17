@@ -139,36 +139,6 @@ export const SERVICE_CATEGORIES: ServiceCategoryRow[] = [
   },
 ];
 
-export const SERVICE_DETAIL_TABS: IngestionTab[] = [
-  { key: 'overview', labelKey: 'crud.overview', supported: true },
-  { key: 'connection', labelKey: 'ingestion.services.connectionTab', supported: true },
-  {
-    key: 'agents',
-    labelKey: 'ingestion.services.agentsTab',
-    supported: true,
-    // Official ServiceDetailsPage pushes the Agents tab only for
-    // non-security services; security services get no agents tab.
-    excludedKinds: ['security'],
-  },
-  {
-    key: 'assets',
-    labelKey: 'ingestion.services.assetsTab',
-    supported: false,
-    residualReason: 'No per-category asset list API is wired for services.',
-  },
-  {
-    key: 'insights',
-    labelKey: 'ingestion.services.insightsTab',
-    supported: false,
-    residualReason: 'No service-insights workflow API is wired.',
-  },
-  {
-    key: 'versions',
-    labelKey: 'ingestion.services.versionsTab',
-    supported: true,
-  },
-];
-
 export const INGESTION_PIPELINE_TABS: IngestionTab[] = [
   { key: 'overview', labelKey: 'crud.overview', supported: true },
   { key: 'status', labelKey: 'ingestion.pipelines.statusTab', supported: true },

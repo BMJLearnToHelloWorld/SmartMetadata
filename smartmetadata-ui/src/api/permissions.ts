@@ -87,11 +87,27 @@ export interface DerivedPermissionFlags {
   /** ViewBasic || ViewAll */
   hasViewAccess: boolean;
   canEditAll: boolean;
+  canEditTags: boolean;
+  canEditGlossaryTerms: boolean;
+  canEditDescription: boolean;
+  canEditDisplayName: boolean;
+  canEditCustomFields: boolean;
+  canEditOwners: boolean;
+  canEditDomains: boolean;
+  canEditTier: boolean;
+  canEditLineage: boolean;
   canEditStatus: boolean;
+  canEditSampleData: boolean;
   canCreate: boolean;
   canDelete: boolean;
   canViewAll: boolean;
   canViewBasic: boolean;
+  canViewSampleData: boolean;
+  canViewQueries: boolean;
+  canViewDataProfile: boolean;
+  canViewTests: boolean;
+  canViewUsage: boolean;
+  canViewCustomFields: boolean;
   /**
    * Escape hatch for operations without a named flag. Applies the same
    * prioritization (field → EditAll / ViewAll) and deleted gating as
@@ -133,11 +149,27 @@ export function getDerivedPermissionFlags(
   return {
     hasViewAccess: ops.ViewBasic === true || ops.ViewAll === true,
     canEditAll: ops.EditAll === true && !deleted,
+    canEditTags: edit('EditTags'),
+    canEditGlossaryTerms: edit('EditGlossaryTerms'),
+    canEditDescription: edit('EditDescription'),
+    canEditDisplayName: edit('EditDisplayName'),
+    canEditCustomFields: edit('EditCustomFields'),
+    canEditOwners: edit('EditOwners'),
+    canEditDomains: edit('EditDomains'),
+    canEditTier: edit('EditTier'),
+    canEditLineage: edit('EditLineage'),
     canEditStatus: edit('EditStatus'),
+    canEditSampleData: edit('EditSampleData'),
     canCreate: ops.Create === true,
     canDelete: ops.Delete === true,
     canViewAll: ops.ViewAll === true,
     canViewBasic: view('ViewBasic'),
+    canViewSampleData: view('ViewSampleData'),
+    canViewQueries: view('ViewQueries'),
+    canViewDataProfile: view('ViewDataProfile'),
+    canViewTests: view('ViewTests'),
+    canViewUsage: view('ViewUsage'),
+    canViewCustomFields: view('ViewCustomFields'),
     can,
   };
 }

@@ -111,6 +111,8 @@ export async function loadGovernanceCatalog(): Promise<GovernanceCatalog> {
           tagFQN: tag.fullyQualifiedName || tag.name,
           name: tag.displayName || tag.name,
           source: 'Classification' as const,
+          displayName: tag.displayName || undefined,
+          description: tag.description || undefined,
         })),
     ),
     ...glossaryTerms.flatMap((page) =>
@@ -120,6 +122,8 @@ export async function loadGovernanceCatalog(): Promise<GovernanceCatalog> {
           tagFQN: term.fullyQualifiedName || term.name,
           name: term.displayName || term.name,
           source: 'Glossary' as const,
+          displayName: term.displayName || undefined,
+          description: term.description || undefined,
         })),
     ),
   ];

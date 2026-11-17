@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import type { Paged } from '@/types/admin';
 import type {
@@ -253,6 +253,93 @@ export function listWorkflowInstances(
       entityLink: query.entityLink,
     },
   }).then((payload) => parsePaged(payload, mapWorkflowInstance));
+}
+
+/**
+ * Official workflow instance state surface
+ * (openmetadata-ui/.../rest/workflowAPI.ts getWorkflowInstanceStateById):
+ * GET /v1/governance/workflowInstanceStates/{workflowName}/{instanceId}
+ * with the same window params as the instances list. The page carries
+ * the states of one run's flow; the service page holds them as
+ * `subInstanceStates` although no widget reads them yet — pin fetches
+ * and threads them identically.
+ */
+export interface WorkflowInstanceStage {
+  displayName?: string;
+  endedAt?: number;
+  name?: string;
+  startedAt?: number;
+  tasks?: string[];
+  variables?: Record<string, unknown>;
+}
+
+export interface WorkflowInstanceState {
+  exception?: string;
+  id?: string;
+  stage?: WorkflowInstanceStage;
+  status?: string;
+  timestamp?: number;
+  workflowDefinitionId?: string;
+  workflowInstanceExecutionId?: string;
+  workflowInstanceId?: string;
+}
+
+/** Pin `workflowStatesData`: the first instance plus that run's states. */
+export interface WorkflowStatesData {
+  mainInstanceState?: WorkflowInstance;
+  subInstanceStates: WorkflowInstanceState[];
+}
+
+export interface WorkflowInstanceStateQuery {
+  limit?: number;
+  offset?: string;
+  startTs: number;
+  endTs: number;
+}
+
+function mapWorkflowInstanceStage(raw: Record<string, unknown>): WorkflowInstanceStage {
+  return {
+    displayName: asString(raw.displayName) || undefined,
+    endedAt: asNumber(raw.endedAt),
+    name: asString(raw.name) || undefined,
+    startedAt: asNumber(raw.startedAt),
+    tasks: Array.isArray(raw.tasks)
+      ? raw.tasks.filter((task): task is string => typeof task === 'string')
+      : undefined,
+    variables: asRecord(raw.variables) ?? undefined,
+  };
+}
+
+function mapWorkflowInstanceState(raw: Record<string, unknown>): WorkflowInstanceState {
+  const stage = asRecord(raw.stage);
+  return {
+    exception: asString(raw.exception) || undefined,
+    id: asString(raw.id) || undefined,
+    stage: stage ? mapWorkflowInstanceStage(stage) : undefined,
+    status: asString(raw.status) || undefined,
+    timestamp: asNumber(raw.timestamp),
+    workflowDefinitionId: asString(raw.workflowDefinitionId) || undefined,
+    workflowInstanceExecutionId: asString(raw.workflowInstanceExecutionId) || undefined,
+    workflowInstanceId: asString(raw.workflowInstanceId) || undefined,
+  };
+}
+
+export function getWorkflowInstanceStates(
+  fqn: string,
+  instanceId: string,
+  query: WorkflowInstanceStateQuery,
+): Promise<Paged<WorkflowInstanceState>> {
+  return apiRequest<unknown>(
+    `/v1/governance/workflowInstanceStates/${encodeURIComponent(fqn)}/${encodeURIComponent(instanceId)}`,
+    {
+      query: {
+        limit: query.limit,
+        offset: query.offset,
+        startTs: query.startTs,
+        endTs: query.endTs,
+      },
+    },
+  ).then((payload) => parsePaged(payload, mapWorkflowInstanceState));
 }
 
 /** Official workflowDefinitionsAPI: GET /v1/governance/workflowDefinitions/{id}?include=all. */
