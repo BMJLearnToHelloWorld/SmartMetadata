@@ -633,7 +633,7 @@ async function load(): Promise<void> {
     // delete/restore entries; it fails closed the same way.
     const [createOps, triggerOps, serviceOps] = await Promise.all([
       permissionStore.getResourcePermission('ingestionPipeline').catch(() => null),
-      permissionStore.getResourcePermission('application').catch(() => null),
+      permissionStore.getResourcePermission('app').catch(() => null),
       service.value.fullyQualifiedName
         ? permissionStore
             .getEntityPermissionByFqn(serviceEntityType.value, service.value.fullyQualifiedName)

@@ -612,6 +612,62 @@ def test_workflow_isolates_one_failure_and_passes_threshold() -> None:
     ]
 
 
+def test_workflow_uses_80_threshold_not_generic_90() -> None:
+    # F3: the generic 90% rule must not cover profiler runs. Ten
+    # tables, two fail compute (the profiler check passes at exactly
+    # 80%), and three of the eight computed profiles fail to write:
+    # processor step 8/10, sink step 5/8, mean 80.8% — partialSuccess
+    # under the profiler 80 threshold, failed under the generic 90.
+    # The run returns its report; the same step mix at 90 fails.
+    from smartmetadata_ingestion.pipeline_status import final_pipeline_state
+    from smartmetadata_ingestion.workflow import ProfilerWorkflow
+
+    tables = [f"t{index}" for index in range(1, 11)]
+
+    class _FlakySink(_CollectingSink):
+        def write(self, record) -> None:
+            if record.fqn.rsplit(".", 1)[-1] in {"t1", "t2", "t3"}:
+                raise RuntimeError(f"sink boom on {record.fqn}")
+            super().write(record)
+
+    sink = _FlakySink()
+    workflow = ProfilerWorkflow(
+        _workflow_config(tables),
+        client=_StubClient(),
+        source=_catalog_source(tables),
+        sink=sink,
+        profile_reader=_TableReader(fail_tables={"t9", "t10"}),
+        table_fetcher=lambda fqn: None,
+    )
+    report = workflow.execute()
+    workflow.stop()
+    assert report.succeeded == 5
+    assert len(report.failures) == 5
+    assert len(sink.written) == 5
+    steps = [
+        workflow.source_status,
+        workflow.processor_status,
+        workflow.sink_status,
+    ]
+    # The run returned, so the workflow applied its own 80
+    # threshold — the identical step mix fails at the generic 90.
+    assert final_pipeline_state(report, steps=steps, success_threshold=80) == "partialSuccess"
+    assert final_pipeline_state(report, steps=steps, success_threshold=90) == "failed"
+
+
+def test_workflow_eight_of_ten_passes_threshold() -> None:
+    # Eight of ten tables profile cleanly: the profiler check passes
+    # at exactly 80%, and the shared determination must agree — the
+    # processor step counts the eight processed profiles against the
+    # two failures (8/10), not an empty step against two failures.
+    tables = [f"t{index}" for index in range(1, 11)]
+    reader = _TableReader(fail_tables={"t9", "t10"})
+    report, sink = _run(tables, reader=reader, fetcher=lambda fqn: None)
+    assert report.succeeded == 8
+    assert len(report.failures) == 2
+    assert len(sink.written) == 8
+
+
 def test_workflow_below_threshold_raises_after_writing_successes() -> None:
     tables = ["t1", "t2", "t3", "t4", "t5"]
     reader = _TableReader(fail_tables={"t2", "t3"})

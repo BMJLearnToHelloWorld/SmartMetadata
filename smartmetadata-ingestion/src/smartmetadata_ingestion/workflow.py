@@ -73,6 +73,7 @@ from smartmetadata_ingestion.pipeline_status import (
     PipelineState,
     build_pipeline_status,
     final_pipeline_state,
+    mean_success_rate,
     now_ms,
 )
 from smartmetadata_ingestion.processors.identity import Processor, build_processors
@@ -220,6 +221,15 @@ class MetadataWorkflow:
                 f"could not prepare metadata workflow: {exc}"
             ) from exc
 
+    def _success_threshold(self) -> int:
+        """The end-of-run success threshold for this workflow type.
+
+        The configured value by default; a workflow type with its
+        own determination (profiler) overrides only this value, and
+        the shared threshold rule applies it.
+        """
+        return self.config.workflow.success_threshold
+
     def execute(self) -> RunReport:
         if self._executed:
             raise WorkflowExecutionError("metadata workflow has already executed")
@@ -263,9 +273,13 @@ class MetadataWorkflow:
         # Warning counts fold in on both paths: a failed run's partial
         # warnings still belong in its final status.
         self._collect_warnings()
+        steps = [self.source_status, self.processor_status, self.sink_status]
+        threshold = self._success_threshold()
         final_state = final_pipeline_state(
             self.report,
             stopped=isinstance(pending, KeyboardInterrupt),
+            steps=steps,
+            success_threshold=threshold,
         )
         if pending is not None and final_state == "success":
             final_state = "failed"
@@ -284,6 +298,18 @@ class MetadataWorkflow:
             logger.warning("Progress completion hook failed: %s", exc)
         if pending is not None:
             raise pending
+        # The threshold raise happens only after the status writeback:
+        # a below-threshold run fails loudly, while a run at or above
+        # the threshold returns its report with the failures recorded.
+        # ``pending`` carries only unhandled exceptions now — per-record
+        # and flush failures are values in the report, never pending.
+        if final_state == "failed":
+            raise WorkflowExecutionError(
+                f"workflow {self.config.workflow.name} finished below the "
+                f"{threshold}% success threshold "
+                f"(success rate {mean_success_rate(steps) * 100:.1f}%, "
+                f"{self.report.succeeded} succeeded, {self.report.failed} failed)"
+            )
         return self.report
 
     def _report_pipeline_status(
@@ -448,6 +474,13 @@ class MetadataWorkflow:
             raise WorkflowInitializationError("workflow sink is not prepared")
         self.seen.add(record)
         current: WorkflowRecord | None = record
+        # The processor step's own counts feed the end-of-run threshold
+        # determination (D-S5): every record that reaches the chain is
+        # expected, a chain that completes counts as processed, and a
+        # dropped record completes as filtered — mirroring the usage
+        # workflow's processor accounting. A failed chain counts
+        # nothing: its failure is the step's record of the attempt.
+        self.processor_status.expect(record.kind)
         try:
             for processor in self._processors:
                 if current is None:
@@ -459,14 +492,15 @@ class MetadataWorkflow:
             )
             self.report.failures.append(failure)
             self._notify_record(record, "failed")
-            if self.config.workflow.fail_fast:
-                raise
             return
         if current is None:
             self.report.skipped += 1
             self.source_status.filtered += 1
+            self.processor_status.complete(record.kind)
             self._notify_record(record, "skipped")
             return
+        self.processor_status.records += 1
+        self.processor_status.complete(record.kind)
         # The record reached the sink: it counts toward the sink step's
         # expected total now, and toward processed only once its write
         # (or flush) actually lands.
@@ -477,13 +511,13 @@ class MetadataWorkflow:
         except Exception as exc:
             # A flush-then-inner-write failure (sampled topic, service):
             # the flush outcomes landed first — apply them before
-            # recording this record's own failure.
-            self._drain_flush_result(fail_fast=False)
+            # recording this record's own failure. The failure is
+            # recorded and processing continues: per-record errors
+            # never raise mid-stream (D-S1).
+            self._drain_flush_result()
             failure = self._record_failure(self.sink_status, record.label(), record.kind, exc)
             self.report.failures.append(failure)
             self._notify_record(record, "failed")
-            if self.config.workflow.fail_fast:
-                raise
 
     def _count_sink_write(self, record: WorkflowRecord) -> None:
         """Count a sink write: immediately, or when its flush reports it.
@@ -511,8 +545,13 @@ class MetadataWorkflow:
             self.report.succeeded += 1
             self._notify_record(record, "written")
 
-    def _drain_flush_result(self, *, fail_fast: bool = True) -> None:
-        """Apply any flush outcomes the sink accumulated, if it reports them."""
+    def _drain_flush_result(self) -> None:
+        """Apply any flush outcomes the sink accumulated, if it reports them.
+
+        Flush failures are values in the report, never raised: the run
+        continues to the end and the threshold determination decides
+        the outcome (D-S1).
+        """
         drain = getattr(self._sink, "take_flush_result", None)
         if not callable(drain):
             return
@@ -520,11 +559,6 @@ class MetadataWorkflow:
         if not result:
             return
         self._apply_flush_result(result)
-        if fail_fast and result.failed and self.config.workflow.fail_fast:
-            raise WorkflowExecutionError(
-                f"bulk flush failed for {len(result.failed)} record(s): "
-                f"{result.failed[0].error}"
-            )
 
     def _apply_flush_result(self, result: FlushResult) -> None:
         """Fold one flush outcome into the sink step and the report.
@@ -727,6 +761,12 @@ class ProfilerWorkflow(MetadataWorkflow):
             hook=hook,
             run_id=run_id,
         )
+
+    def _success_threshold(self) -> int:
+        # Profiler keeps its own 80% determination (F3): the generic
+        # 90% rule must not cover profiler runs. Threshold value only;
+        # the post-hoc check below is untouched.
+        return PROFILER_SUCCESS_THRESHOLD_PCT
 
     def prepare(self) -> None:
         if self._prepared:

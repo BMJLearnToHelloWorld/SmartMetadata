@@ -84,7 +84,11 @@ def test_runner_writes_source_and_config_lineage(workflow_config) -> None:
     assert hook.events[-1][1] == "written"
 
 
-def test_runner_collects_errors_unless_fail_fast(workflow_config) -> None:
+def test_runner_collects_errors_and_fail_fast_is_ignored(workflow_config) -> None:
+    # D-S1: per-record failures are recorded and processing continues;
+    # the deprecated fail_fast flag never triggers a mid-stream raise.
+    # Four of five records land (sink step 80%, mean 93.3%), so the run
+    # reports partialSuccess and returns its report either way.
     class BoomSink:
         def write(self, record):
             if isinstance(record, TableRecord):
@@ -94,27 +98,28 @@ def test_runner_collects_errors_unless_fail_fast(workflow_config) -> None:
         def flush(self) -> None:
             return None
 
-    reader = SequenceCatalogReader(
-        schemas=[SchemaRow("public")],
-        tables=[TableRow("public", "orders", "BASE TABLE")],
-        columns=[ColumnRow("public", "orders", "id", "integer", 1)],
-    )
-    report = run_workflow(
-        workflow_config,
-        source=PostgresSource(workflow_config.source, reader=reader),
-        sink=BoomSink(),
-    )
+    def _run():
+        reader = SequenceCatalogReader(
+            schemas=[SchemaRow("public")],
+            tables=[TableRow("public", "orders", "BASE TABLE")],
+            columns=[ColumnRow("public", "orders", "id", "integer", 1)],
+        )
+        return run_workflow(
+            workflow_config,
+            source=PostgresSource(workflow_config.source, reader=reader),
+            sink=BoomSink(),
+        )
+
+    report = _run()
     assert report.failed == 1
     assert report.succeeded == 4
     assert report.failures[0].kind == "table"
 
     workflow_config.workflow.fail_fast = True
-    with pytest.raises(RestError):
-        run_workflow(
-            workflow_config,
-            source=PostgresSource(workflow_config.source, reader=reader),
-            sink=BoomSink(),
-        )
+    report = _run()
+    assert report.failed == 1
+    assert report.succeeded == 4
+    assert report.failures[0].kind == "table"
 
 
 def test_runner_writes_kafka_topics(workflow_config) -> None:

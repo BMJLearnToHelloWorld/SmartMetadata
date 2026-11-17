@@ -124,9 +124,9 @@ function stubFetch(calls: FetchCall[], options: MockOptions = {}): void {
           ),
         );
       }
-      if (url.includes('/api/v1/permissions/application')) {
+      if (url.includes('/api/v1/permissions/app')) {
         return jsonResponse(
-          permissionBody('application', options.applicationTrigger === false ? [] : ['Trigger']),
+          permissionBody('app', options.applicationTrigger === false ? [] : ['Trigger']),
         );
       }
       if (url.includes('/api/v1/governance/workflowInstances')) {
@@ -347,6 +347,18 @@ describe('ServiceDetailView', () => {
     ).toBe(2);
   });
 
+  it('requests the AutoPilot Trigger bit from the app resource, never application (D-S8)', async () => {
+    // Official ResourceEntity.APPLICATION is 'app': the server 400s
+    // GET /permissions/application, so the literal must not regress.
+    // endsWith keeps the positive check exact — '/permissions/app' is a
+    // prefix of '/permissions/application', so includes() would pass on
+    // the regressed URL too.
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="trigger-auto-pilot-application-button"]').exists()).toBe(true);
+    expect(calls.some((call) => call.url.endsWith('/api/v1/permissions/app'))).toBe(true);
+    expect(calls.some((call) => call.url.includes('/api/v1/permissions/application'))).toBe(false);
+  });
+
   it('disables the trigger button while an AutoPilot run is in flight', async () => {
     stubFetch(calls, {
       workflowInstances: [{ id: 'i1', status: 'RUNNING', startedAt: 1700000000000 }],
@@ -556,8 +568,8 @@ describe('ServiceDetailView delete/restore (D-C14)', () => {
         if (url.includes('/api/v1/permissions/ingestionPipeline')) {
           return jsonResponse(permissionBody('ingestionPipeline', ['Create']));
         }
-        if (url.includes('/api/v1/permissions/application')) {
-          return jsonResponse(permissionBody('application', []));
+        if (url.includes('/api/v1/permissions/app')) {
+          return jsonResponse(permissionBody('app', []));
         }
         if (url.includes('/api/v1/services/databaseServices/async/s1') && method === 'DELETE') {
           if (fixture.deleteStatus !== 200) {

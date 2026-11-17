@@ -14,8 +14,6 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-import httpx
-
 from smartmetadata_ingestion.client.rest import RestClient
 from smartmetadata_ingestion.config import WorkflowConfig
 from smartmetadata_ingestion.errors import RestError, WorkflowError
@@ -285,6 +283,14 @@ def build_sink(config: WorkflowConfig, client: RestClient, sink: Sink | None = N
 class BulkMetadataRestSink:
     """Buffer create/update payloads and flush via Apache /bulk endpoints.
 
+    Records share ONE buffer in arrival order. When the buffer reaches
+    ``batch_size`` (or at close / before a non-buffered write) it flushes:
+    the buffer is grouped by kind, groups go out in hierarchy-depth order
+    with arrival order kept inside each group, and one bulk call is made
+    per group. A group whose bulk call or response recording raises
+    records that group's payloads as failed; the remaining groups still
+    run — a flush never raises.
+
     A buffered record is NOT yet persisted when ``write()`` returns:
     flush outcomes accumulate in :attr:`_flush_result` and the caller
     drains them with :meth:`take_flush_result` (after each write, and
@@ -293,11 +299,45 @@ class BulkMetadataRestSink:
     one :class:`FlushFailure` (official ``_flush_buffer``).
     """
 
+    # Hierarchy depth per buffered kind, derived from the pin topology
+    # trees (behavior spec only): depth = tree layer x 100 + stage index
+    # within the node, the minimum across topologies. Topic sits at layer
+    # 1 stage 0 (100); database, chart, container and pipeline at layer 1
+    # stage 1 (101); dashboard at layer 1 stage 3 (103); schema at layer 2
+    # stage 1 (201); storedProcedure at layer 3 stage 0 (300) — ahead of
+    # table at layer 3 stage 1 (301). Groups sort by depth with a stable
+    # sort, so kinds sharing a depth keep first-arrival order, as in the
+    # pin's grouping sort.
+    _KIND_DEPTH: dict[str, int] = {
+        "topic": 100,
+        "database": 101,
+        "chart": 101,
+        "container": 101,
+        "pipeline": 101,
+        "dashboard": 103,
+        "schema": 201,
+        "storedProcedure": 300,
+        "table": 301,
+    }
+
+    # Bulk endpoint per buffered kind, on the catalog client.
+    _BULK_METHODS: dict[str, str] = {
+        "database": "bulk_upsert_databases",
+        "schema": "bulk_upsert_schemas",
+        "table": "bulk_upsert_tables",
+        "storedProcedure": "bulk_upsert_stored_procedures",
+        "topic": "bulk_upsert_topics",
+        "chart": "bulk_upsert_charts",
+        "dashboard": "bulk_upsert_dashboards",
+        "container": "bulk_upsert_containers",
+        "pipeline": "bulk_upsert_pipelines",
+    }
+
     def __init__(
         self,
         client: RestClient,
         *,
-        batch_size: int = 50,
+        batch_size: int = 100,
         override_metadata: bool = False,
         owner_resolver: OwnerResolver | None = None,
     ) -> None:
@@ -312,17 +352,8 @@ class BulkMetadataRestSink:
         self.written: list[str] = self._inner.written
         self.seen = SeenSet()
         self._flush_result = FlushResult()
-        self._buffers: dict[str, list[dict]] = {
-            "database": [],
-            "schema": [],
-            "table": [],
-            "storedProcedure": [],
-            "topic": [],
-            "chart": [],
-            "dashboard": [],
-            "container": [],
-            "pipeline": [],
-        }
+        # One shared buffer: (kind, payload) pairs in arrival order.
+        self._buffer: list[tuple[str, dict]] = []
 
     def buffers(self, record: WorkflowRecord) -> bool:
         """Whether ``write()`` only buffers this record (not yet persisted).
@@ -357,27 +388,33 @@ class BulkMetadataRestSink:
     def write(self, record: WorkflowRecord) -> Any:
         self.seen.add(record)
         if isinstance(record, DatabaseRecord):
-            self._buffers["database"].append(_database_payload(record))
+            self._buffer.append(("database", _database_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("database", force=False)
+            return self._flush_if_full()
         if isinstance(record, SchemaRecord):
-            self._buffers["schema"].append(_schema_payload(record))
+            self._buffer.append(("schema", _schema_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("schema", force=False)
+            return self._flush_if_full()
         if isinstance(record, TableRecord):
-            self._buffers["table"].append(
-                _table_payload(record, owners=_owners_for(self._owner_resolver, record))
-            )
-            self.written.append(record.label())
-            return self._flush_kind("table", force=False)
-        if isinstance(record, StoredProcedureRecord):
-            self._buffers["storedProcedure"].append(
-                _stored_procedure_payload(
-                    record, owners=_owners_for(self._owner_resolver, record)
+            self._buffer.append(
+                (
+                    "table",
+                    _table_payload(record, owners=_owners_for(self._owner_resolver, record)),
                 )
             )
             self.written.append(record.label())
-            return self._flush_kind("storedProcedure", force=False)
+            return self._flush_if_full()
+        if isinstance(record, StoredProcedureRecord):
+            self._buffer.append(
+                (
+                    "storedProcedure",
+                    _stored_procedure_payload(
+                        record, owners=_owners_for(self._owner_resolver, record)
+                    ),
+                )
+            )
+            self.written.append(record.label())
+            return self._flush_if_full()
         if isinstance(record, TopicRecord):
             if record.sample_data and record.sample_data.messages:
                 # The sample PUT needs the topic id from the upsert
@@ -385,25 +422,25 @@ class BulkMetadataRestSink:
                 # flush, then single-write (upsert + sample PUT).
                 self._flush_all()
                 return self._inner.write(record)
-            self._buffers["topic"].append(_topic_payload(record))
+            self._buffer.append(("topic", _topic_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("topic", force=False)
+            return self._flush_if_full()
         if isinstance(record, ChartRecord):
-            self._buffers["chart"].append(_chart_payload(record))
+            self._buffer.append(("chart", _chart_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("chart", force=False)
+            return self._flush_if_full()
         if isinstance(record, DashboardRecord):
-            self._buffers["dashboard"].append(_dashboard_payload(record))
+            self._buffer.append(("dashboard", _dashboard_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("dashboard", force=False)
+            return self._flush_if_full()
         if isinstance(record, ContainerRecord):
-            self._buffers["container"].append(_container_payload(record))
+            self._buffer.append(("container", _container_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("container", force=False)
+            return self._flush_if_full()
         if isinstance(record, PipelineRecord):
-            self._buffers["pipeline"].append(_pipeline_payload(record))
+            self._buffer.append(("pipeline", _pipeline_payload(record)))
             self.written.append(record.label())
-            return self._flush_kind("pipeline", force=False)
+            return self._flush_if_full()
         # Flush buffered parents before services/lineage so wire order stays parent-first.
         self._flush_all()
         return self._inner.write(record)
@@ -413,89 +450,38 @@ class BulkMetadataRestSink:
         self._flush_all()
         return self.take_flush_result()
 
+    def _flush_if_full(self) -> None:
+        if len(self._buffer) >= self._batch_size:
+            self._flush_all()
+
     def _flush_all(self) -> None:
-        kinds = (
-            "database",
-            "schema",
-            "table",
-            "storedProcedure",
-            "topic",
-            "chart",
-            "dashboard",
-            "container",
-            "pipeline",
-        )
-        for kind in kinds:
-            self._flush_kind(kind, force=True)
-
-    # Official topology flushes parents at stage end before children.
-    # A per-kind batch_size trip must do the same, or tables can go out
-    # while database/schema payloads are still sitting in their buffers.
-    _KIND_PARENTS: dict[str, tuple[str, ...]] = {
-        "schema": ("database",),
-        "table": ("database", "schema"),
-        "storedProcedure": ("database", "schema"),
-    }
-
-    def _flush_kind(self, kind: str, *, force: bool) -> None:
-        buf = self._buffers[kind]
-        if not buf:
+        if not self._buffer:
             return None
-        if not force and len(buf) < self._batch_size:
-            return None
-        for parent in self._KIND_PARENTS.get(kind, ()):
-            self._flush_kind(parent, force=True)
-        payloads = list(buf)
-        buf.clear()
-        override = self._override_metadata
+        buffered, self._buffer = self._buffer, []
+        groups: dict[str, list[dict]] = {}
+        for kind, payload in buffered:
+            groups.setdefault(kind, []).append(payload)
+        # Groups go out in hierarchy-depth order; the sort is stable, so
+        # kinds sharing a depth keep first-arrival order.
+        for kind in sorted(groups, key=lambda name: self._KIND_DEPTH[name]):
+            self._flush_group(kind, groups[kind])
+
+    def _flush_group(self, kind: str, payloads: list[dict]) -> None:
+        """One bulk call for one kind; any failure is recorded, never raised.
+
+        The call and its response recording share one broad isolation
+        boundary: whatever goes wrong, every payload in the group becomes
+        one per-record failure and the remaining groups still run.
+        """
         try:
-            if kind == "database":
-                result = self._client.bulk_upsert_databases(
-                    payloads, override_metadata=override
-                )
-            elif kind == "schema":
-                result = self._client.bulk_upsert_schemas(
-                    payloads, override_metadata=override
-                )
-            elif kind == "table":
-                result = self._client.bulk_upsert_tables(
-                    payloads, override_metadata=override
-                )
-            elif kind == "storedProcedure":
-                result = self._client.bulk_upsert_stored_procedures(
-                    payloads, override_metadata=override
-                )
-            elif kind == "topic":
-                result = self._client.bulk_upsert_topics(
-                    payloads, override_metadata=override
-                )
-            elif kind == "chart":
-                result = self._client.bulk_upsert_charts(
-                    payloads, override_metadata=override
-                )
-            elif kind == "dashboard":
-                result = self._client.bulk_upsert_dashboards(
-                    payloads, override_metadata=override
-                )
-            elif kind == "container":
-                result = self._client.bulk_upsert_containers(
-                    payloads, override_metadata=override
-                )
-            elif kind == "pipeline":
-                result = self._client.bulk_upsert_pipelines(
-                    payloads, override_metadata=override
-                )
-            else:
-                return None
-        except (RestError, httpx.HTTPError) as exc:
-            # The whole batch was refused (the live 400): every payload
-            # in it failed, each as its own failure — not one batch error.
+            bulk_upsert = getattr(self._client, self._BULK_METHODS[kind])
+            result = bulk_upsert(payloads, override_metadata=self._override_metadata)
+            self._record_flush_response(kind, payloads, result)
+        except Exception as exc:
+            # The whole group was refused or unrecordable: every payload
+            # in it failed, each as its own failure — not one group error.
             for payload in payloads:
-                self._record_flush_failure(
-                    kind, payload, str(exc), traceback.format_exc()
-                )
-            return None
-        self._record_flush_response(kind, payloads, result)
+                self._record_flush_failure(kind, payload, str(exc), traceback.format_exc())
 
     def _record_flush_response(
         self, kind: str, payloads: list[dict], result: Any

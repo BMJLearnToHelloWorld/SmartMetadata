@@ -184,10 +184,6 @@ class UsageWorkflow(MetadataWorkflow):
                     )
                     self.report.failures.append(failure)
                     self._notify_record(record, "failed")
-                    if self.config.workflow.fail_fast:
-                        raise WorkflowExecutionError(
-                            f"unexpected record kind {record.kind!r} in a usage run"
-                        )
                     continue
                 self.source_status.complete(record.kind)
                 # The processor step's total is recorded as records reach
@@ -204,8 +200,6 @@ class UsageWorkflow(MetadataWorkflow):
                     )
                     self.report.failures.append(failure)
                     self._notify_record(record, "failed")
-                    if self.config.workflow.fail_fast:
-                        raise
                     continue
                 if parsed is None:
                     self.report.skipped += 1
@@ -273,11 +267,10 @@ class UsageWorkflow(MetadataWorkflow):
                 "query-log engines failed during the run: %s",
                 "; ".join(str(failure) for failure in engine_failures),
             )
-        if report.failures:
-            raise WorkflowExecutionError(
-                f"usage sink failed for {len(report.failures)} item(s); "
-                f"first: {report.failures[0]}"
-            )
+        # Sink failures stay recorded values (see the fold above): the
+        # shared end-of-run threshold determination in execute()
+        # decides whether the run fails, so a mostly-published run
+        # reports partialSuccess instead of raising here.
 
     def close_steps(self) -> None:
         # The bulk sink's close deletes the run's staging files and
