@@ -452,6 +452,19 @@ describe('PipelinesListView', () => {
     ).toBeNull();
   });
 
+  it('renders the schema-driven form in the create modal with no Option placeholders', async () => {
+    await mountCreateModal(
+      { type: 'Postgres', supportsMetadataExtraction: true },
+      'metadata',
+      'schema-field-threads',
+    );
+    const modal = document.body.querySelector('.ant-modal');
+    expect(modal).not.toBeNull();
+    expect(modal!.textContent).toContain('Number of Threads');
+    expect(modal!.textContent).not.toContain('Option 1');
+    expect(modal!.textContent).not.toContain('Option 2');
+  });
+
   it('creates a pipeline without pausePipeline (born unpaused)', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     vi.stubGlobal(

@@ -12,12 +12,15 @@ import Antd from 'ant-design-vue';
 import { describe, expect, it, vi } from 'vitest';
 import FilterPatternCard from '@/components/ingestion/FilterPatternCard.vue';
 import SchemaDrivenSourceConfigForm from '@/components/ingestion/SchemaDrivenSourceConfigForm.vue';
+import SchemaField from '@/components/ingestion/SchemaField.vue';
 import {
   SERVICE_CATEGORY_BY_KIND,
+  deref,
   getSchemaByWorkflowType,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
 import { createTestI18n } from '@/test/i18n';
+import type { SupportedLocale } from '@/i18n/localePreference';
 
 async function mountForm(
   pipelineType: Parameters<typeof getSchemaByWorkflowType>[0],
@@ -465,5 +468,516 @@ describe('SchemaDrivenSourceConfigForm Q-3 layered validity', () => {
     const singleVm = single.vm as unknown as { validate: () => boolean };
     expect(singleVm.validate()).toBe(true);
     expect(single.emitted('validity-change')?.at(-1)?.[0]).toBe(true);
+  });
+});
+
+/**
+ * i18n key resolution at the form level (§6.3): the form passes a
+ * label-key prefix per top-level field, resolves filter-card focus
+ * meta and required-error titles against the keys, and leaves
+ * non-metadata pipeline types untouched.
+ */
+async function mountI18nForm(options: {
+  pipelineType: Parameters<typeof getSchemaByWorkflowType>[0];
+  category?: Parameters<typeof getSchemaByWorkflowType>[1];
+  serviceType?: string;
+  schema?: RjsfSchema;
+  modelValue?: Record<string, unknown>;
+  props?: Record<string, unknown>;
+  locale?: SupportedLocale;
+}) {
+  const schema =
+    options.schema ??
+    (await getSchemaByWorkflowType(
+      options.pipelineType,
+      options.category ?? SERVICE_CATEGORY_BY_KIND.database,
+      options.serviceType,
+    ));
+  const i18n = createTestI18n(options.locale ?? 'en-US');
+  const wrapper = mount(SchemaDrivenSourceConfigForm, {
+    props: { schema, modelValue: options.modelValue ?? {}, ...(options.props ?? {}) },
+    global: { plugins: [Antd, i18n] },
+  });
+  await flushPromises();
+  return { wrapper, i18n };
+}
+
+async function openFormOptions(
+  wrapper: ReturnType<typeof mount>,
+  testId: string,
+): Promise<string[]> {
+  const selector = wrapper.find(`[data-testid="${testId}"] .ant-select-selector`);
+  expect(selector.exists(), `selector ${testId}`).toBe(true);
+  selector.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  selector.element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await flushPromises();
+  return [...document.querySelectorAll('.ant-select-item-option')].map(
+    (option) => (option.textContent ?? '').trim(),
+  );
+}
+
+/** The Antd Form.Item label text for the field carrying `testId`. */
+function formItemLabel(wrapper: ReturnType<typeof mount>, testId: string): string {
+  const element = wrapper.find(`[data-testid="${testId}"]`).element;
+  const item = element.closest('.ant-form-item');
+  expect(item, `form item for ${testId}`).not.toBeNull();
+  return (item!.querySelector('.ant-form-item-label')?.textContent ?? '').trim();
+}
+
+describe('SchemaDrivenSourceConfigForm i18n keys', () => {
+  it('renders database metadata fields in Chinese with keys', async () => {
+    const zh = await mountI18nForm({
+      pipelineType: 'metadata',
+      props: { supportsIncremental: true },
+      locale: 'zh-CN',
+    });
+    expect(zh.wrapper.find('[data-testid="schema-field-ownerConfig"]').text()).toContain(
+      '分层所有者配置',
+    );
+    expect(formItemLabel(zh.wrapper, 'schema-field-threads')).toBe('线程数');
+    expect(zh.wrapper.find('[data-testid="schema-field-incremental"]').text()).toContain(
+      '增量元数据提取配置',
+    );
+    await expandSection(zh.wrapper, 'scope');
+    expect(zh.wrapper.find('[data-testid="schema-field-includeTables-label"]').text()).toBe(
+      '包含数据表',
+    );
+    zh.wrapper.unmount();
+
+    const en = await mountI18nForm({
+      pipelineType: 'metadata',
+      props: { supportsIncremental: true },
+    });
+    expect(en.wrapper.find('[data-testid="schema-field-ownerConfig"]').text()).toContain(
+      'Hierarchical Owner Configuration',
+    );
+    expect(formItemLabel(en.wrapper, 'schema-field-threads')).toBe('Number of Threads');
+    await expandSection(en.wrapper, 'scope');
+    expect(en.wrapper.find('[data-testid="schema-field-includeTables-label"]').text()).toBe(
+      'Include Tables',
+    );
+    en.wrapper.unmount();
+  });
+
+  it('renders shardedTables in Chinese for BigQuery only', async () => {
+    const bigQuery = await mountI18nForm({
+      pipelineType: 'metadata',
+      serviceType: 'BigQuery',
+      locale: 'zh-CN',
+    });
+    await expandSection(bigQuery.wrapper, 'scope');
+    const group = bigQuery.wrapper.find('[data-testid="schema-field-shardedTables"]');
+    expect(group.exists()).toBe(true);
+    expect(group.text()).toContain('分片表');
+    expect(group.text()).toContain('分片表分组');
+    bigQuery.wrapper.unmount();
+
+    const bigQueryEn = await mountI18nForm({
+      pipelineType: 'metadata',
+      serviceType: 'BigQuery',
+    });
+    await expandSection(bigQueryEn.wrapper, 'scope');
+    const groupEn = bigQueryEn.wrapper.find('[data-testid="schema-field-shardedTables"]');
+    expect(groupEn.text()).toContain('Sharded Tables');
+    expect(groupEn.text()).toContain('Group Sharded Tables');
+    bigQueryEn.wrapper.unmount();
+
+    const mysql = await mountI18nForm({ pipelineType: 'metadata', locale: 'zh-CN' });
+    expect(mysql.wrapper.find('[data-testid="schema-field-shardedTables"]').exists()).toBe(false);
+    mysql.wrapper.unmount();
+  });
+
+  it('renders the debug log label from the shared key', async () => {
+    const zh = await mountI18nForm({
+      pipelineType: 'metadata',
+      props: { debugLog: false },
+      locale: 'zh-CN',
+    });
+    await expandSection(zh.wrapper, 'scope');
+    expect(zh.wrapper.find('[data-testid="schema-field-enableDebugLog-label"]').text()).toBe(
+      '启用调试日志',
+    );
+    zh.wrapper.unmount();
+
+    const en = await mountI18nForm({ pipelineType: 'metadata', props: { debugLog: false } });
+    await expandSection(en.wrapper, 'scope');
+    expect(en.wrapper.find('[data-testid="schema-field-enableDebugLog-label"]').text()).toBe(
+      'Enable Debug Log',
+    );
+    en.wrapper.unmount();
+  });
+
+  it('forwards translated filter titles and descriptions to the doc panel', async () => {
+    const onFieldFocusZh = vi.fn();
+    const zh = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      props: { onFieldFocus: onFieldFocusZh },
+      locale: 'zh-CN',
+    });
+    await expandSection(zh.wrapper, 'filters');
+    const cardZh = zh.wrapper.find('[data-testid="filter-section-containerFilterPattern"]');
+    expect(cardZh.exists()).toBe(true);
+    expect(cardZh.find('.filter-pattern-title').text()).toBe('存储容器');
+    await cardZh.find('.filter-pattern-header').trigger('click');
+    expect(onFieldFocusZh).toHaveBeenCalledWith('containerFilterPattern', {
+      title: '存储容器',
+      description: '仅获取与该模式匹配的存储容器的正则表达式。',
+    });
+    zh.wrapper.unmount();
+
+    const onFieldFocusEn = vi.fn();
+    const en = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      props: { onFieldFocus: onFieldFocusEn },
+    });
+    await expandSection(en.wrapper, 'filters');
+    const cardEn = en.wrapper.find('[data-testid="filter-section-containerFilterPattern"]');
+    expect(cardEn.find('.filter-pattern-title').text()).toBe('Containers');
+    await cardEn.find('.filter-pattern-header').trigger('click');
+    expect(onFieldFocusEn).toHaveBeenCalledWith('containerFilterPattern', {
+      title: 'Containers',
+      description: 'Regex to only fetch containers that matches the pattern.',
+    });
+    en.wrapper.unmount();
+  });
+
+  it('uses the translated label in the required error for incremental.enabled', async () => {
+    // Production seeding always fills `enabled` (default: false), so the
+    // missing-required state is unreachable with the pristine schema.
+    // The clone strips only that default; shape, titles and the
+    // `required` constraint are unchanged, exposing the AJV path the
+    // error-message lookup must handle.
+    const pristine = await getSchemaByWorkflowType(
+      'metadata',
+      SERVICE_CATEGORY_BY_KIND.database,
+    );
+    const schema = JSON.parse(JSON.stringify(pristine)) as RjsfSchema & {
+      definitions: Record<string, RjsfSchema>;
+    };
+    const incremental = schema.definitions.incremental;
+    const enabled = (incremental.properties as Record<string, RjsfSchema>).enabled;
+    delete (enabled as Record<string, unknown>).default;
+
+    const zh = await mountI18nForm({
+      pipelineType: 'metadata',
+      schema,
+      modelValue: { incremental: {} },
+      props: { supportsIncremental: true },
+      locale: 'zh-CN',
+    });
+    const zhVm = zh.wrapper.vm as unknown as { validate: () => boolean };
+    expect(zhVm.validate()).toBe(false);
+    await flushPromises();
+    expect(zh.wrapper.emitted('validity-change')?.at(-1)?.[0]).toBe(false);
+    expect(zh.wrapper.text()).toContain('已启用');
+    zh.wrapper.unmount();
+
+    const en = await mountI18nForm({
+      pipelineType: 'metadata',
+      schema,
+      modelValue: { incremental: {} },
+      props: { supportsIncremental: true },
+    });
+    const enVm = en.wrapper.vm as unknown as { validate: () => boolean };
+    expect(enVm.validate()).toBe(false);
+    await flushPromises();
+    expect(en.wrapper.text()).toContain('Enabled is required');
+    en.wrapper.unmount();
+  });
+
+  it('keeps submitted values identical with keys enabled', async () => {
+    async function scripted(locale: SupportedLocale) {
+      const { wrapper } = await mountI18nForm({ pipelineType: 'metadata', locale });
+      await expandSection(wrapper, 'advanced');
+      await wrapper.find('[data-testid="schema-field-includeViews-switch"]').trigger('click');
+      await wrapper
+        .find('[data-testid="schema-field-ownerConfig-default"]')
+        .setValue('owner-x');
+      await flushPromises();
+      await openFormOptions(wrapper, 'schema-field-ownerConfig-database-branch');
+      const options = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')];
+      expect(options).toHaveLength(2);
+      options[1]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      options[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flushPromises();
+      const data = lastModelValue(wrapper);
+      wrapper.unmount();
+      return data;
+    }
+    const enData = await scripted('en-US');
+    const zhData = await scripted('zh-CN');
+    expect(zhData).toEqual(enData);
+    expect(enData.includeViews).toBe(false);
+    expect((enData.ownerConfig as Record<string, unknown>).default).toBe('owner-x');
+    expect((enData.ownerConfig as Record<string, unknown>).database).toEqual({});
+  });
+
+  it('renders profiler, usage, lineage, dbt and TestSuite forms without key regressions', async () => {
+    const profiler = await mountI18nForm({
+      pipelineType: 'profiler',
+      props: { pipelineType: 'profiler' },
+      locale: 'zh-CN',
+    });
+    await expandSection(profiler.wrapper, 'advanced');
+    expect(profiler.wrapper.text()).toContain('Timeout (in sec.)');
+    profiler.wrapper.unmount();
+
+    const usage = await mountI18nForm({
+      pipelineType: 'usage',
+      props: { pipelineType: 'usage' },
+      locale: 'zh-CN',
+    });
+    expect(usage.wrapper.text()).toContain('Query Log Duration');
+    usage.wrapper.unmount();
+
+    const lineage = await mountI18nForm({
+      pipelineType: 'lineage',
+      props: { pipelineType: 'lineage' },
+      locale: 'zh-CN',
+    });
+    expect(lineage.wrapper.text()).toContain('Query Log File Path');
+    lineage.wrapper.unmount();
+
+    const dbt = await mountI18nForm({
+      pipelineType: 'dbt',
+      props: { pipelineType: 'dbt' },
+      locale: 'zh-CN',
+    });
+    const dbtOptions = await openFormOptions(dbt.wrapper, 'schema-field-dbtConfigSource-branch');
+    expect(dbtOptions).toContain('dbt Cloud Config');
+    expect(dbtOptions.some((option) => option.startsWith('DBT'))).toBe(false);
+    dbt.wrapper.unmount();
+
+    const testSuite = await mountI18nForm({
+      pipelineType: 'TestSuite',
+      props: { pipelineType: 'TestSuite' },
+      locale: 'zh-CN',
+    });
+    const vm = testSuite.wrapper.vm as unknown as { validate: () => boolean };
+    expect(vm.validate()).toBe(true);
+    expect(testSuite.wrapper.emitted('ready')).toHaveLength(1);
+    testSuite.wrapper.unmount();
+  });
+
+  it('shows the branch description line for storage config source branches', async () => {
+    // Branch selection is value-driven (selectBranch): a branch is
+    // reached by seeding a value that selects it, not by clicking the
+    // selector (a click resets to branch defaults, which select b0).
+    const row = '[data-testid="schema-field-storageMetadataConfigSource-branch-description"]';
+    const en0 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+    });
+    expect(en0.wrapper.find(row).text()).toBe(
+      'No manifest file available. Ingestion would look for bucket-level metadata file instead',
+    );
+    en0.wrapper.unmount();
+
+    const en1 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { manifestFilePath: '/manifest.json' } },
+    });
+    expect(en1.wrapper.find(row).text()).toBe('Storage Metadata Manifest file path config.');
+    en1.wrapper.unmount();
+
+    const en3 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { prefixConfig: { containerName: 'c' } } },
+    });
+    expect(en3.wrapper.find(row).text()).toBe('Storage Metadata Manifest file S3 path config.');
+    en3.wrapper.unmount();
+
+    const zh1 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { manifestFilePath: '/manifest.json' } },
+      locale: 'zh-CN',
+    });
+    expect(zh1.wrapper.find(row).text()).toBe('存储元数据清单文件路径配置。');
+    zh1.wrapper.unmount();
+  });
+
+  it('disambiguates same-named fields across storage branches (securityConfig)', async () => {
+    const group = '[data-testid="schema-field-storageMetadataConfigSource-securityConfig"]';
+    const zh3 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { prefixConfig: { containerName: 'c' } } },
+      locale: 'zh-CN',
+    });
+    const zh3Text = zh3.wrapper.find(group).text();
+    expect(zh3Text).toContain('S3 安全配置');
+    expect(zh3Text).not.toContain('ADLS 安全配置');
+    expect(zh3Text).not.toContain('GCS 安全配置');
+    zh3.wrapper.unmount();
+
+    const en3 = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { prefixConfig: { containerName: 'c' } } },
+    });
+    const en3Text = en3.wrapper.find(group).text();
+    expect(en3Text).toContain('S3 Security Config');
+    expect(en3Text).not.toContain('ADLS Security Config');
+    expect(en3Text).not.toContain('GCS Security Config');
+    en3.wrapper.unmount();
+
+    // b4/b5 are unreachable through the form: value-driven branch
+    // selection cannot distinguish them from b3 (identical direct
+    // props, same required key). The branch-child key resolution is
+    // verified by mounting the branch content directly with the
+    // prefix the form would pass — the same pattern the SchemaField
+    // projectId test uses for unreachable nesting.
+    const storageSchema = await getSchemaByWorkflowType(
+      'metadata',
+      SERVICE_CATEGORY_BY_KIND.storage,
+    );
+    const smcs = deref(storageSchema.properties!.storageMetadataConfigSource!, storageSchema);
+    for (const [index, expected] of [
+      [4, 'ADLS 安全配置'],
+      [5, 'GCS 安全配置'],
+    ] as const) {
+      const branch = deref(smcs.oneOf![index]!, storageSchema);
+      const securityConfig = deref(branch.properties!.securityConfig!, storageSchema);
+      const i18n = createTestI18n('zh-CN');
+      const field = mount(SchemaField, {
+        props: {
+          schema: securityConfig,
+          value: {},
+          path: ['storageMetadataConfigSource', 'securityConfig'],
+          rootSchema: storageSchema,
+          errors: new Map<string, string>(),
+          showErrors: false,
+          testIdPrefix: 'schema-field',
+          labelKeyPrefix: `forms.schemaFields.storage.storageMetadataConfigSource.b${index}.securityConfig`,
+        },
+        global: { plugins: [Antd, i18n] },
+      });
+      await flushPromises();
+      expect(field.find(group).text()).toContain(expected);
+      field.unmount();
+    }
+  });
+
+  it('disambiguates projectId labels across gcpConfig branches', async () => {
+    // gcpConfig lives under the unreachable b5 branch, so the field is
+    // mounted directly per branch with the prefix the form would pass.
+    const storageSchema = await getSchemaByWorkflowType(
+      'metadata',
+      SERVICE_CATEGORY_BY_KIND.storage,
+    );
+    const smcs = deref(storageSchema.properties!.storageMetadataConfigSource!, storageSchema);
+    const b5 = deref(smcs.oneOf![5]!, storageSchema);
+    const securityConfig = deref(b5.properties!.securityConfig!, storageSchema);
+    const gcpConfig = deref(securityConfig.properties!.gcpConfig!, storageSchema);
+    const cases: Array<[number, string, string]> = [
+      [0, '项目 ID', 'Project ID'],
+      [1, 'GCP 项目 ID', 'GCP Project ID'],
+      [3, 'GCP 项目 ID', 'GCP Project ID'],
+    ];
+    for (const [index, zhLabel, enLabel] of cases) {
+      const branch = deref(gcpConfig.oneOf![index]!, storageSchema);
+      const projectId = branch.properties!.projectId!;
+      for (const [locale, expected] of [
+        ['zh-CN', zhLabel],
+        ['en-US', enLabel],
+      ] as const) {
+        const i18n = createTestI18n(locale);
+        const field = mount(SchemaField, {
+          props: {
+            schema: projectId,
+            value: 'my-project',
+            path: ['storageMetadataConfigSource', 'securityConfig', 'gcpConfig', 'projectId'],
+            rootSchema: storageSchema,
+            errors: new Map<string, string>(),
+            showErrors: false,
+            testIdPrefix: 'schema-field',
+            labelKeyPrefix: `forms.schemaFields.storage.storageMetadataConfigSource.b5.securityConfig.gcpConfig.b${index}.projectId`,
+          },
+          global: { plugins: [Antd, i18n] },
+        });
+        await flushPromises();
+        expect(
+          formItemLabel(
+            field,
+            'schema-field-storageMetadataConfigSource-securityConfig-gcpConfig-projectId-branch',
+          ),
+        ).toBe(expected);
+        field.unmount();
+      }
+    }
+  });
+
+  it('disambiguates gcpConfig type descriptions across branches', async () => {
+    const storageSchema = await getSchemaByWorkflowType(
+      'metadata',
+      SERVICE_CATEGORY_BY_KIND.storage,
+    );
+    const smcs = deref(storageSchema.properties!.storageMetadataConfigSource!, storageSchema);
+    const b5 = deref(smcs.oneOf![5]!, storageSchema);
+    const securityConfig = deref(b5.properties!.securityConfig!, storageSchema);
+    const gcpConfig = deref(securityConfig.properties!.gcpConfig!, storageSchema);
+    const cases: Array<[number, string, string]> = [
+      [0, 'Google Cloud Platform 帐户类型。', 'Google Cloud Platform account type.'],
+      [3, 'Google Cloud Platform ADC（应用默认凭证）。', 'Google Cloud Platform ADC ( Application Default Credentials )'],
+    ];
+    for (const [index, zhDescription, enDescription] of cases) {
+      const branch = deref(gcpConfig.oneOf![index]!, storageSchema);
+      const typeSchema = branch.properties!.type!;
+      for (const [locale, expected] of [
+        ['zh-CN', zhDescription],
+        ['en-US', enDescription],
+      ] as const) {
+        const onFieldFocus = vi.fn();
+        const i18n = createTestI18n(locale);
+        const field = mount(SchemaField, {
+          props: {
+            schema: typeSchema,
+            value: 'gcp_adc',
+            path: ['storageMetadataConfigSource', 'securityConfig', 'gcpConfig', 'type'],
+            rootSchema: storageSchema,
+            errors: new Map<string, string>(),
+            showErrors: false,
+            testIdPrefix: 'schema-field',
+            labelKeyPrefix: `forms.schemaFields.storage.storageMetadataConfigSource.b5.securityConfig.gcpConfig.b${index}.type`,
+            onFieldFocus,
+          },
+          global: { plugins: [Antd, i18n] },
+        });
+        await flushPromises();
+        await field
+          .find('[data-testid="schema-field-storageMetadataConfigSource-securityConfig-gcpConfig-type"]')
+          .trigger('focus');
+        expect(onFieldFocus).toHaveBeenCalledWith(
+          'root/storageMetadataConfigSource/securityConfig/gcpConfig/type',
+          expect.objectContaining({ description: expected }),
+        );
+        field.unmount();
+      }
+    }
+  });
+
+  it('falls back to the English schema title for a branch-internal required field', async () => {
+    // The b1/manifestFilePath state the design names is unreachable:
+    // selecting b1 requires manifestFilePath present, which satisfies
+    // the constraint. The prefixConfig/containerName state exercises
+    // the identical code path (branch-less key lookup misses the
+    // `.b<i>.`-segmented key, so the English schema title is used).
+    const zh = await mountI18nForm({
+      pipelineType: 'metadata',
+      category: SERVICE_CATEGORY_BY_KIND.storage,
+      modelValue: { storageMetadataConfigSource: { prefixConfig: {} } },
+      locale: 'zh-CN',
+    });
+    const vm = zh.wrapper.vm as unknown as { validate: () => boolean };
+    expect(vm.validate()).toBe(false);
+    await flushPromises();
+    expect(zh.wrapper.emitted('validity-change')?.at(-1)?.[0]).toBe(false);
+    expect(zh.wrapper.text()).toContain('Storage Metadata Container Name');
+    zh.wrapper.unmount();
   });
 });

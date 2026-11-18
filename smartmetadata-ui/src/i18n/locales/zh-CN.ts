@@ -4815,7 +4815,7 @@ const zhCN = {
       scopeDescription: 'Optional settings to tune what gets ingested. Defaults are applied.',
       advancedConfig: '高级配置',
       advancedDescription:
-        'Driver-level options — connection arguments, scheme, and timeouts. Most connections never need these.',
+        '驱动级选项 — 连接参数、协议方案和超时时间。绝大多数连接都不需要这些设置。',
       requiredCount: '{count} required',
       optional: '可选',
       agentSetup: '代理设置',
@@ -4845,9 +4845,9 @@ const zhCN = {
       advancedTitle: '连接内部设置',
       advancedDescription:
         '驱动级别的覆盖设置 — 连接参数、协议方案和超时时间。绝大多数连接从不需要这些设置。',
-      docsDescription: 'Full setup guide, required privileges, and every supported field.',
+      docsDescription: '完整的设置指南、所需权限和每个支持的字段。',
       focusedFallbackDescription:
-        'Review the requirements and focused field guidance before testing the connection.',
+        '在测试连接之前，请查看要求和聚焦字段的指导。',
       requirements: '需求',
       requirementAutoClassification: '自动分类',
       requirementLineage: '血缘关系',
@@ -4946,6 +4946,832 @@ const zhCN = {
         glossary: '术语库',
         domains: '域',
         domain: '域',
+      },
+    },
+    schemaFields: {
+      api: {
+        apiCollectionFilterPattern: {
+          description: '仅获取名称与该模式匹配的 API 集合的正则表达式。',
+        },
+        apiEndpointFilterPattern: {
+          description: '仅获取名称与该模式匹配的 API 端点的正则表达式。',
+        },
+        markDeletedApiCollections: {
+          description: '可选配置，用于在源集合被删除时，在 OpenMetadata 中软删除 API 集合。此外，如果集合被删除，与该集合关联的所有实体（如端点等）也会被删除。',
+          label: '标记已删除的 API 集合',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+      },
+      branchOption: '选项 {n}',
+      branchTypes: {
+        array: '数组',
+        boolean: '布尔值',
+        integer: '整数',
+        number: '数字',
+        object: '对象',
+        string: '字符串',
+      },
+      dashboard: {
+        chartFilterPattern: {
+          description: '用于排除或包含与该模式匹配的图表的正则表达式。',
+        },
+        dashboardFilterPattern: {
+          description: '用于排除或包含与该模式匹配的仪表板的正则表达式。',
+        },
+        dataModelFilterPattern: {
+          description: '用于排除或包含与该模式匹配的数据模型的正则表达式。',
+        },
+        includeCustomProperties: {
+          description: '可选配置，用于切换将源特定的自定义属性（例如 Hex 项目的应用视图、上次运行状态、运行时间和刷新时间）摄取到仪表板扩展。自定义属性定义由 OpenMetadata 中的每个仪表板共享，因此默认禁用。',
+          label: '包含自定义属性',
+        },
+        includeDataModels: {
+          description: '可选配置，用于切换数据模型摄取。',
+          label: '包含数据模型',
+        },
+        includeDraftDashboard: {
+          description: '可选配置，用于包含/排除草稿仪表板。默认包含草稿仪表板。',
+          label: '包含草稿仪表板',
+        },
+        includeMetrics: {
+          description: '可选配置，用于切换将语义层度量（例如 LookML 度量）作为一等 Metric 实体摄取。Metric 名称在整个 OpenMetadata 实例中唯一，因此默认禁用。度量从公开它们的数据模型中发现，因此还需要启用“包含数据模型”。',
+          label: '包含指标',
+        },
+        includeOwners: {
+          description: '启用该开关后，在元数据摄取期间，如果当前所有者为 null，将用源中的新所有者替换当前所有者。建议保持该开关启用，以便在首次元数据摄取时获取所有者信息。',
+          label: '包含当前所有者',
+        },
+        includeTags: {
+          description: '可选配置，用于切换标签摄取。',
+          label: '包含标签',
+        },
+        includeUsage: {
+          description: '可选配置，用于切换仪表板使用元数据的摄取。启用后，将收集并摄取使用统计信息。',
+          label: '包含使用情况',
+        },
+        lineageInformation: {
+          dbServicePrefixes: {
+            description: '用于血缘匹配的服务路径前缀列表。支持的格式：DBServiceName、DBServiceName.DatabaseName、DBServiceName.DatabaseName.SchemaName 或 DBServiceName.DatabaseName.SchemaName.TableName。',
+            label: '数据库服务前缀',
+          },
+          description: '生成血缘所需的详细信息。',
+          label: '血缘信息',
+        },
+        markDeletedCharts: {
+          description: '可选配置，用于在源图表被删除时，在 OpenMetadata 中软删除图表。',
+          label: '标记已删除的图表',
+        },
+        markDeletedDashboards: {
+          description: '可选配置，用于在源仪表板被删除时，在 OpenMetadata 中软删除仪表板。此外，如果仪表板被删除，与该仪表板关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的仪表板',
+        },
+        markDeletedDataModels: {
+          description: '可选配置，用于在源数据模型被删除时，在 OpenMetadata 中软删除数据模型。此外，如果数据模型被删除，与该数据模型关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的数据模型',
+        },
+        overrideLineage: {
+          description: '设置“覆盖血缘”开关，控制是否覆盖现有血缘。',
+          label: '覆盖血缘',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        projectFilterPattern: {
+          description: '用于排除或包含与该模式匹配的项目的正则表达式。',
+        },
+        queryParserConfig: {
+          description: '用于血缘提取的 SQL 查询解析器选择配置。',
+          label: '查询解析器配置',
+          type: {
+            description: '选择用于血缘提取的 SQL 解析器：\n• Auto（默认值）：先尝试 SqlGlot，失败时回退到 SqlFluff，再回退到 SqlParse。推荐使用，以获得最佳效果。\n• SqlGlot：高性能解析器，方言支持出色。失败时回退到 SqlParse。\n• SqlFluff：功能全面的解析器，方言支持强。失败时回退到 SqlParse。',
+            label: '查询解析器类型',
+          },
+        },
+      },
+      database: {
+        databaseFilterPattern: {
+          description: '仅包含/排除与该模式匹配的数据库的正则表达式。',
+        },
+        extractJsonSchema: {
+          description: '通过采样数据从 JSON 列提取 JSON Schema。这需要对数据表拥有 SELECT 权限。如果禁用或 SELECT 失败，JSON 列将在没有结构信息的情况下被摄取。',
+          label: '提取 JSON Schema',
+        },
+        includeCustomProperties: {
+          description: '可选配置，用于切换将源特定的自定义属性（例如 Iceberg 数据表属性）摄取到实体扩展。禁用后，不注册自定义属性定义，也不设置扩展值。',
+          label: '包含自定义属性',
+        },
+        includeDDL: {
+          description: '可选配置，用于切换 DDL 语句摄取。',
+          label: '包含 DDL 语句',
+        },
+        includeOwners: {
+          description: '设置“包含所有者”开关，控制在元数据摄取过程中，当所有者电子邮件与 OM 服务器中存储的用户匹配时，是否将所有者包含到摄取的实体中。如果摄取的实体已存在且已有所有者，则不会覆盖所有者。',
+          label: '包含所有者',
+        },
+        includeStoredProcedures: {
+          description: '可选配置，用于切换存储过程摄取。',
+          label: '包含存储过程',
+        },
+        includeTables: {
+          description: '可选配置，用于关闭数据表的元数据获取。',
+          label: '包含数据表',
+        },
+        includeTags: {
+          description: '可选配置，用于切换标签摄取。',
+          label: '包含标签',
+        },
+        includeViews: {
+          description: '可选配置，用于关闭视图的元数据获取。',
+          label: '包含视图',
+        },
+        incremental: {
+          description: '首次执行后使用增量元数据提取。这通常通过从支持该功能的数据库的审计表中获取变更来实现。',
+          enabled: {
+            description: '如果设为 True，将启用增量元数据提取。',
+            label: '已启用',
+          },
+          label: '增量元数据提取配置',
+          lookbackDays: {
+            description: '回溯搜索成功管道运行的天数。将使用找到的最近一次成功管道运行的时间戳作为基准，搜索更新的实体。',
+            label: '成功管道运行回溯天数',
+          },
+          safetyMarginDays: {
+            description: '加到最近一次成功管道运行时间戳上、用于搜索更新的实体的天数。',
+            label: '安全边际天数',
+          },
+        },
+        jsonSchemaSampleSize: {
+          description: '用于推断 JSON Schema 的采样行数。更大的样本量可提供更准确的结构推断，但会增加查询时间。',
+          label: 'JSON Schema 样本数',
+        },
+        markDeletedDatabases: {
+          description: '可选配置，用于在源数据库被删除时，在 OpenMetadata 中软删除数据库。此外，如果数据库被删除，与该数据库关联的所有实体（如数据模式、数据表、视图、存储过程、血缘等）也会被删除。',
+          label: '标记已删除的数据库',
+        },
+        markDeletedSchemas: {
+          description: '可选配置，用于在源数据模式被删除时，在 OpenMetadata 中软删除数据模式。此外，如果数据模式被删除，与该数据模式关联的所有实体（如数据表、视图、存储过程、血缘等）也会被删除。',
+          label: '标记已删除的数据模式',
+        },
+        markDeletedStoredProcedures: {
+          description: '可选配置，用于在源存储过程被删除时，在 OpenMetadata 中软删除存储过程。此外，如果存储过程被删除，与该存储过程关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的存储过程',
+        },
+        markDeletedTables: {
+          description: '此可选配置用于启用数据表的软删除。启用此选项后，仅从数据源中删除的数据表会被软删除，且仅适用于当前通过该管道摄取的数据模式。与这些数据表关联的相关实体（如测试套件或血缘信息）也会被删除。',
+          label: '标记已删除的数据表',
+        },
+        maxChildrenPerColumn: {
+          description: '从采样的 JSON 值推断出的每个列保留的最大直接子项数，应用于每个嵌套级别。当列的子项超出此数量时，保留名称排序最靠前的子项，因此无论采样记录的顺序如何，每次运行保留的子项都相同。0 表示不保留推断出的子项。留空表示无限制。',
+          label: '每列最大子项数',
+        },
+        maxSchemaInferenceDepth: {
+          description: '从采样的 JSON 值推断出的列子项的最大嵌套深度。列的直接子项为深度 1。更深的子项不会被摄取，达到上限的列保留其数据类型但不带子项。0 表示不保留推断出的子项。留空表示无限制。',
+          label: '最大结构推断深度',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        ownerConfig: {
+          database: {
+            branches: {
+              b0: {
+                description: '适用于全部数据库的单个所有者（用户或团队）。',
+              },
+              b1: {
+                description: '数据库名称到其所有者的映射。',
+              },
+            },
+            description: '数据库实体的所有者。可以是适用于全部数据库的单个所有者，也可以是数据库名称到所有者的映射。',
+            label: '数据库所有者',
+          },
+          databaseSchema: {
+            branches: {
+              b0: {
+                description: '适用于全部数据模式的单个所有者（用户或团队）。',
+              },
+              b1: {
+                description: '数据模式名称/FQN 到其所有者的映射。',
+              },
+            },
+            description: '数据模式实体的所有者。可以是适用于全部数据模式的单个所有者，也可以是数据模式 FQN 到所有者的映射。',
+            label: '数据模式所有者',
+          },
+          default: {
+            description: '未配置特定所有者时应用于全部实体的默认所有者（用户名或团队名称/电子邮件）。',
+            label: '默认所有者',
+          },
+          description: '用于在多个层级（服务、数据库、数据模式、数据表）管理所有者的高级配置，支持自定义映射和继承规则。',
+          enableInheritance: {
+            description: '允许子实体在没有配置特定所有者时，从父实体继承所有者。',
+            label: '启用继承',
+          },
+          label: '分层所有者配置',
+          service: {
+            description: '服务级别的所有者。',
+            label: '服务所有者',
+          },
+          table: {
+            branches: {
+              b0: {
+                description: '适用于全部数据表的单个所有者（用户或团队）。',
+              },
+              b1: {
+                description: '数据表名称/FQN 到其所有者的映射。',
+              },
+            },
+            description: '数据表实体的所有者。可以是适用于全部数据表的单个所有者，也可以是数据表 FQN 到所有者的映射。',
+            label: '数据表所有者',
+          },
+        },
+        queryLogDuration: {
+          description: '用于调整在查询日志中回溯多远以处理存储过程结果的配置。',
+          label: '查询日志时长',
+        },
+        queryParsingTimeoutLimit: {
+          description: '用于设置查询解析超时时间（以秒为单位）的配置。',
+          label: '查询解析超时限制',
+        },
+        schemaFilterPattern: {
+          description: '仅包含/排除与该模式匹配的数据模式的正则表达式。',
+        },
+        shardedTables: {
+          description: 'BigQuery 每日分片分组。省略此配置则保持禁用。',
+          enabled: {
+            description: '将 BigQuery 每日分片分组为稳定的逻辑表，使用最新分片的列和执行信息。',
+            label: '分片表分组',
+          },
+          label: '分片表',
+        },
+        storedProcedureFilterPattern: {
+          description: '仅包含/排除与该模式匹配的存储过程的正则表达式。',
+        },
+        tableFilterPattern: {
+          description: '仅包含/排除与该模式匹配的数据表的正则表达式。',
+        },
+        threads: {
+          description: '用于并行处理数据表摄取的线程数。',
+          label: '线程数',
+        },
+        useFqnForFiltering: {
+          description: '正则表达式将应用于完全限定名（例如 service_name.db_name.schema_name.table_name），而不是原始名称（例如 table_name）。',
+          label: '使用 FQN 过滤',
+        },
+      },
+      drive: {
+        directoryFilterPattern: {
+          description: '仅包含/排除与该模式匹配的目录的正则表达式。',
+        },
+        fileFilterPattern: {
+          description: '仅包含/排除与该模式匹配的文件的正则表达式。',
+        },
+        includeDirectories: {
+          description: '可选配置，用于关闭目录的元数据获取。',
+          label: '包含目录',
+        },
+        includeFiles: {
+          description: '可选配置，用于关闭文件的元数据获取。',
+          label: '包含文件',
+        },
+        includeOwners: {
+          description: '设置“包含所有者”开关，控制在元数据摄取过程中，当所有者电子邮件与 OM 服务器中存储的用户匹配时，是否将所有者包含到摄取的实体中。如果摄取的实体已存在且已有所有者，则不会覆盖所有者。',
+          label: '包含所有者',
+        },
+        includeSpreadsheets: {
+          description: '可选配置，用于关闭电子表格的元数据获取。',
+          label: '包含电子表格',
+        },
+        includeTags: {
+          description: '可选配置，用于切换标签摄取。',
+          label: '包含标签',
+        },
+        includeWorksheets: {
+          description: '可选配置，用于关闭工作表的元数据获取。',
+          label: '包含工作表',
+        },
+        markDeletedDirectories: {
+          description: '可选配置，用于在源目录被删除时，在 OpenMetadata 中软删除目录。此外，如果目录被删除，与该目录关联的所有实体（如文件、电子表格、工作表、血缘等）也会被删除。',
+          label: '标记已删除的目录',
+        },
+        markDeletedFiles: {
+          description: '可选配置，用于在源文件被删除时，在 OpenMetadata 中软删除文件。此外，如果文件被删除，与该文件关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的文件',
+        },
+        markDeletedSpreadsheets: {
+          description: '可选配置，用于在源电子表格被删除时，在 OpenMetadata 中软删除电子表格。此外，如果电子表格被删除，与该电子表格关联的所有实体（如工作表、血缘等）也会被删除。',
+          label: '标记已删除的电子表格',
+        },
+        markDeletedWorksheets: {
+          description: '可选配置，用于在源工作表被删除时，在 OpenMetadata 中软删除工作表。此外，如果工作表被删除，与该工作表关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的工作表',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        spreadsheetFilterPattern: {
+          description: '仅包含/排除与该模式匹配的电子表格的正则表达式。',
+        },
+        threads: {
+          description: '用于并行处理 Drive 摄取的线程数。',
+          label: '线程数',
+        },
+        useFqnForFiltering: {
+          description: '正则表达式将应用于完全限定名（例如 service_name.directory_name.file_name），而不是原始名称（例如 file_name）。',
+          label: '使用 FQN 过滤',
+        },
+        worksheetFilterPattern: {
+          description: '仅包含/排除与该模式匹配的工作表的正则表达式。',
+        },
+      },
+      invalidJson: 'JSON 格式无效',
+      messaging: {
+        generateSampleData: {
+          description: '用于在元数据提取期间开启/关闭生成样本数据的选项。',
+          label: '生成样本数据',
+        },
+        markDeletedTopics: {
+          description: '可选配置，用于在源消息主题被删除时，在 OpenMetadata 中软删除消息主题。此外，如果消息主题被删除，与该消息主题关联的所有实体（如样本数据、血缘等）也会被删除。',
+          label: '标记已删除的消息主题',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        topicFilterPattern: {
+          description: '仅获取与该模式匹配的消息主题的正则表达式。',
+        },
+      },
+      mlmodel: {
+        lineageInformation: {
+          dbServicePrefixes: {
+            description: '用于血缘匹配的服务路径前缀列表。支持的格式：DBServiceName、DBServiceName.DatabaseName、DBServiceName.DatabaseName.SchemaName 或 DBServiceName.DatabaseName.SchemaName.TableName。',
+            label: '数据库服务前缀',
+          },
+          description: '生成血缘所需的详细信息。',
+          label: '血缘信息',
+        },
+        markDeletedMlModels: {
+          description: '可选配置，用于在源 ML 模型被删除时，在 OpenMetadata 中软删除 ML 模型。此外，如果 ML 模型被删除，与该 ML 模型关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的 ML 模型',
+        },
+        mlModelFilterPattern: {
+          description: '仅获取名称与该模式匹配的 ML 模型的正则表达式。',
+        },
+        overrideLineage: {
+          description: '设置“覆盖血缘”开关，控制是否覆盖现有血缘。',
+          label: '覆盖血缘',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+      },
+      pipeline: {
+        includeLineage: {
+          description: '可选配置，用于关闭从管道获取血缘。',
+          label: '包含血缘',
+        },
+        includeOwners: {
+          description: '设置“包含所有者”开关，控制在元数据摄取过程中，当所有者电子邮件与 OM 服务器中存储的用户匹配时，是否将所有者包含到摄取的实体中。如果摄取的实体已存在且已有所有者，则不会覆盖所有者。',
+          label: '包含所有者',
+        },
+        includeTags: {
+          description: '可选配置，用于切换标签摄取。',
+          label: '包含标签',
+        },
+        includeUnDeployedPipelines: {
+          description: '可选配置，用于切换是否摄取未部署的管道。如果设为 false，仅摄取已部署的管道。',
+          label: '包含未部署的管道',
+        },
+        lineageInformation: {
+          apiServiceNames: {
+            description: '用于创建血缘的 API 服务名称列表。',
+            label: 'API 服务名称列表',
+          },
+          dbServiceNames: {
+            description: '用于创建血缘的数据库服务名称列表。',
+            label: '数据库服务名称列表',
+          },
+          description: '生成血缘所需的详细信息。',
+          label: '血缘信息',
+          messagingServiceNames: {
+            description: '用于创建血缘的消息服务名称列表。',
+            label: '消息服务名称列表',
+          },
+          searchServiceNames: {
+            description: '用于创建血缘的搜索服务名称列表。',
+            label: '搜索服务名称列表',
+          },
+          storageServiceNames: {
+            description: '用于创建血缘的存储服务名称列表。',
+            label: '存储服务名称列表',
+          },
+        },
+        markDeletedPipelines: {
+          description: '可选配置，用于在源管道被删除时，在 OpenMetadata 中软删除管道。此外，如果管道被删除，与该管道关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的管道',
+        },
+        overrideLineage: {
+          description: '设置“覆盖血缘”开关，控制是否覆盖现有血缘。',
+          label: '覆盖血缘',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        ownershipUpdateMode: {
+          description: '设置源元数据中的所有者如何更新管道所有者。在替换模式下，当前源中解析出的所有者将替换现有所有者。在追加模式下，解析出的所有者将追加到现有的活动管道所有者之后。',
+          label: '所有权更新模式',
+          options: {
+            append: '追加',
+            replace: '替换',
+          },
+        },
+        pipelineFilterPattern: {
+          description: '用于排除管道的正则表达式。',
+        },
+        statusLookbackDays: {
+          description: '要摄取的管道运行状态历史的天数。仅获取最近 N 天内的运行。',
+          label: '状态回溯天数',
+        },
+      },
+      search: {
+        includeIndexTemplate: {
+          description: '启用“包含索引模板”开关，以管理索引模板数据的摄取。',
+          label: '包含索引模板',
+        },
+        includeSampleData: {
+          description: '可选配置，用于关闭搜索索引的样本数据获取。',
+          label: '包含样本数据',
+        },
+        markDeletedSearchIndexes: {
+          description: '可选配置，用于在源搜索索引被删除时，在 OpenMetadata 中软删除搜索索引。此外，如果搜索索引被删除，与该搜索索引关联的所有实体（如血缘等）也会被删除。',
+          label: '标记已删除的搜索索引',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        sampleSize: {
+          description: '要摄取的样本数据记录数。',
+          label: '样本数',
+        },
+        searchIndexFilterPattern: {
+          description: '仅获取与该模式匹配的搜索索引的正则表达式。',
+        },
+      },
+      shared: {
+        enableDebugLog: {
+          label: '启用调试日志',
+        },
+      },
+      storage: {
+        containerFilterPattern: {
+          description: '仅获取与该模式匹配的存储容器的正则表达式。',
+        },
+        defaultManifest: {
+          description: '应用于没有任何自有 openmetadata.json 文件的存储桶的回退清单。如果存储桶有清单文件，该文件优先，本值对该存储桶将被忽略。粘贴与存储桶 openmetadata.json 文件中相同的 JSON——条目接受字面路径或 glob 风格的 dataPath 模式。',
+          label: '默认清单（JSON）',
+        },
+        includeTags: {
+          description: '可选配置，用于切换标签摄取。',
+          label: '包含标签',
+        },
+        markDeletedContainers: {
+          description: '可选配置，用于在源存储容器被删除时，在 OpenMetadata 中软删除存储容器。此外，如果存储容器被删除，与该存储容器关联的所有实体也会被删除。',
+          label: '标记已删除的存储容器',
+        },
+        maxChildrenPerColumn: {
+          description: '从采样的 JSON 值推断出的每个列保留的最大直接子项数，应用于每个嵌套级别。当列的子项超出此数量时，保留名称排序最靠前的子项，因此无论采样记录的顺序如何，每次运行保留的子项都相同。0 表示不保留推断出的子项。留空表示无限制。',
+          label: '每列最大子项数',
+        },
+        maxSchemaInferenceDepth: {
+          description: '从采样的 JSON 值推断出的列子项的最大嵌套深度。列的直接子项为深度 1。更深的子项不会被摄取，达到上限的列保留其数据类型但不带子项。0 表示不保留推断出的子项。留空表示无限制。',
+          label: '最大结构推断深度',
+        },
+        overrideMetadata: {
+          description: '设置“覆盖元数据”开关，控制是否用从数据源获取的元数据覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 true，从数据源获取的元数据将覆盖 OpenMetadata 服务器中的现有元数据。如果开关为 false，从数据源获取的元数据将不会覆盖 OpenMetadata 服务器中的现有元数据。这适用于 description、tags、owner 和 displayName 等字段。',
+          label: '覆盖元数据',
+        },
+        storageMetadataConfigSource: {
+          b1: {
+            manifestFilePath: {
+              description: '用于提取待摄取位置的存储元数据清单文件路径。',
+              label: '存储元数据清单文件路径',
+            },
+          },
+          b2: {
+            manifestHttpPath: {
+              description: '用于提取待摄取位置的存储元数据清单 HTTP 文件路径。',
+              label: '存储元数据清单 HTTP 路径',
+            },
+          },
+          b3: {
+            prefixConfig: {
+              containerName: {
+                description: '存储存储元数据文件的顶级存储容器的名称。',
+                label: '存储元数据存储容器名称',
+              },
+              description: '存储存储元数据清单文件的存储桶的详细信息。',
+              label: '存储元数据前缀配置',
+              objectPrefix: {
+                description: '存储存储元数据文件的文件夹路径。如果文件位于根目录，可以留空。',
+                label: '存储元数据对象前缀',
+              },
+            },
+            securityConfig: {
+              assumeRoleArn: {
+                description: '要代入的角色的 Amazon Resource Name (ARN)。在代入角色的情况下为必填字段。',
+                label: '代入角色的角色 ARN',
+              },
+              assumeRoleSessionName: {
+                description: '代入角色会话的标识符。当同一角色被不同主体代入或因不同原因被代入时，使用角色会话名称唯一标识一个会话。在代入角色的情况下为必填字段。',
+                label: '代入角色的角色会话名称',
+              },
+              assumeRoleSourceIdentity: {
+                description: '要代入的角色的 Amazon Resource Name (ARN)。在代入角色的情况下为可选字段。',
+                label: '代入角色的源身份',
+              },
+              awsAccessKeyId: {
+                description: 'AWS 访问密钥 ID。',
+                label: 'AWS 访问密钥 ID',
+              },
+              awsRegion: {
+                description: 'AWS 区域。',
+                label: 'AWS 区域',
+              },
+              awsSecretAccessKey: {
+                description: 'AWS 秘密访问密钥。',
+                label: 'AWS 秘密访问密钥',
+              },
+              awsSessionToken: {
+                description: 'AWS 会话令牌。',
+                label: 'AWS 会话令牌',
+              },
+              description: 'AWS 凭据配置。',
+              enabled: {
+                description: '启用 AWS IAM 身份验证。启用后，使用默认凭据提供程序链（环境变量、实例配置文件等）。默认为 false，以保持向后兼容。',
+                label: '启用 IAM 身份验证',
+              },
+              endPointURL: {
+                description: 'AWS 的端点 URL。',
+                label: '端点 URL',
+              },
+              label: 'S3 安全配置',
+              profileName: {
+                description: '与 boto 会话一起使用的配置文件的名称。',
+                label: '配置文件名称',
+              },
+            },
+          },
+          b4: {
+            prefixConfig: {
+              containerName: {
+                description: '存储存储元数据文件的顶级存储容器的名称。',
+                label: '存储元数据存储容器名称',
+              },
+              description: '存储存储元数据清单文件的存储桶的详细信息。',
+              label: '存储元数据前缀配置',
+              objectPrefix: {
+                description: '存储存储元数据文件的文件夹路径。如果文件位于根目录，可以留空。',
+                label: '存储元数据对象前缀',
+              },
+            },
+            securityConfig: {
+              accountName: {
+                description: '存储帐户的帐户名称。',
+                label: '存储帐户名称',
+              },
+              clientId: {
+                description: '服务主体应用 ID（客户端 ID）。',
+                label: '客户端 ID',
+              },
+              clientSecret: {
+                description: '服务主体密码（客户端密钥）。',
+                label: '客户端密钥',
+              },
+              description: 'Azure 云凭据。',
+              label: 'ADLS 安全配置',
+              scopes: {
+                description: '用于获取访问令牌的作用域，例如 api://6dfX33ab-XXXX-49df-XXXX-3459eX817d3e/.default。',
+                label: '作用域',
+              },
+              tenantId: {
+                description: 'Azure 订阅的租户 ID。',
+                label: '租户 ID',
+              },
+              vaultName: {
+                description: '密钥保管库名称。',
+                label: '密钥保管库名称',
+              },
+            },
+          },
+          b5: {
+            prefixConfig: {
+              containerName: {
+                description: '存储存储元数据文件的顶级存储容器的名称。',
+                label: '存储元数据存储容器名称',
+              },
+              description: '存储存储元数据清单文件的存储桶的详细信息。',
+              label: '存储元数据前缀配置',
+              objectPrefix: {
+                description: '存储存储元数据文件的文件夹路径。如果文件位于根目录，可以留空。',
+                label: '存储元数据对象前缀',
+              },
+            },
+            securityConfig: {
+              description: 'GCP 凭据配置。',
+              gcpConfig: {
+                b0: {
+                  authProviderX509CertUrl: {
+                    description: 'Google Cloud 身份验证提供程序证书。',
+                    label: '身份验证提供程序 x509 证书 URL',
+                  },
+                  authUri: {
+                    description: 'Google Cloud 身份验证 URI。',
+                    label: '身份验证 URI',
+                  },
+                  clientEmail: {
+                    description: 'Google Cloud 电子邮件。',
+                    label: '客户端电子邮件',
+                  },
+                  clientId: {
+                    description: 'Google Cloud 客户端 ID。',
+                    label: '客户端 ID',
+                  },
+                  clientX509CertUrl: {
+                    description: 'Google Cloud 客户端证书 URI。',
+                    label: '客户端 x509 证书 URL',
+                  },
+                  privateKey: {
+                    description: 'Google Cloud 私钥。',
+                    label: '私钥',
+                  },
+                  privateKeyId: {
+                    description: 'Google Cloud 私钥 ID。',
+                    label: '私钥 ID',
+                  },
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: '单个项目 ID',
+                      },
+                      b1: {
+                        label: '多个项目 ID',
+                      },
+                    },
+                    description: '项目 ID。',
+                    label: '项目 ID',
+                  },
+                  tokenUri: {
+                    description: 'Google Cloud 令牌 URI。',
+                    label: '令牌 URI',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform 帐户类型。',
+                    label: '凭据类型',
+                  },
+                  universeDomain: {
+                    description: 'Google Cloud 服务域，用于覆盖默认的 `googleapis.com` 域，适用于主权云或合作伙伴云（例如 Trusted Partner Cloud 服务账号）。',
+                    label: 'Universe 域',
+                  },
+                },
+                b1: {
+                  path: {
+                    description: '包含 GCP 凭据信息的文件的路径。',
+                    label: '路径',
+                  },
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: '单个项目 ID',
+                      },
+                      b1: {
+                        label: '多个项目 ID',
+                      },
+                    },
+                    description: '用于解析元数据的 GCP 项目 ID。',
+                    label: 'GCP 项目 ID',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform 帐户类型。',
+                    label: '凭据类型',
+                  },
+                },
+                b2: {
+                  audience: {
+                    description: 'Google Security Token Service 受众，包含工作负载身份池的资源名称和该池中的提供程序标识符。',
+                    label: '受众',
+                  },
+                  credentialSource: {
+                    description: '此对象定义了从本地环境检索外部凭据的机制，以便通过 STS 端点将其交换为 GCP 访问令牌。',
+                    label: '凭据来源',
+                  },
+                  externalType: {
+                    description: 'Google Cloud Platform 帐户类型。',
+                    label: 'GCP 帐户类型',
+                  },
+                  subjectTokenType: {
+                    description: '基于 OAuth 2.0 令牌交换规范的 Google Security Token Service 主体令牌类型。',
+                    label: '主体令牌类型',
+                  },
+                  tokenURL: {
+                    description: 'Google Security Token Service 令牌交换端点。',
+                    label: '令牌 URL',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform 帐户类型。',
+                    label: '凭据类型',
+                  },
+                },
+                b3: {
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: '单个项目 ID',
+                      },
+                      b1: {
+                        label: '多个项目 ID',
+                      },
+                    },
+                    description: '用于解析元数据的 GCP 项目 ID。',
+                    label: 'GCP 项目 ID',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform ADC（应用默认凭证）。',
+                    label: '凭据类型',
+                  },
+                },
+                branches: {
+                  b0: {
+                    description: '传递 GCP 提供的原始凭据值。',
+                    label: 'GCP 凭据值',
+                  },
+                  b1: {
+                    description: '传递包含 GCP 凭据信息的文件的路径。',
+                    label: 'GCP 凭据路径',
+                  },
+                  b2: {
+                    description: '传递 GCP 提供的原始凭据值。',
+                    label: 'GCP 外部帐户',
+                  },
+                  b3: {
+                    description: '使用应用默认凭证。',
+                    label: 'GCP 应用默认凭证',
+                  },
+                },
+                description: '我们支持两种向 GCP 进行身份验证的方式，即通过 GCP 凭据值或 GCP 凭据路径。',
+                label: 'GCP 凭据配置',
+              },
+              gcpImpersonateServiceAccount: {
+                description: '我们使经过身份验证的服务账号能够模拟另一个服务账号。',
+                impersonateServiceAccount: {
+                  description: '被模拟的服务账号电子邮件。',
+                  label: '目标服务账号电子邮件',
+                },
+                label: 'GCP 模拟服务账号配置',
+                lifetime: {
+                  description: '委托凭据应保持有效的秒数。',
+                  label: '有效期',
+                },
+              },
+              label: 'GCS 安全配置',
+            },
+          },
+          branches: {
+            b0: {
+              description: '没有可用的清单文件。摄取将改为查找存储桶级别的元数据文件。',
+              label: '无全局清单',
+            },
+            b1: {
+              description: '存储元数据清单文件路径配置。',
+              label: '存储元数据本地配置',
+            },
+            b2: {
+              description: '存储元数据清单文件 HTTP 路径配置。',
+              label: '存储元数据 HTTP 配置',
+            },
+            b3: {
+              description: '存储元数据清单文件 S3 路径配置。',
+              label: '存储元数据 S3 配置',
+            },
+            b4: {
+              description: '存储元数据清单文件 ADLS 路径配置。',
+              label: '存储元数据 ADLS 配置',
+            },
+            b5: {
+              description: '存储元数据清单文件 GCS 路径配置。',
+              label: '存储元数据 GCS 配置',
+            },
+          },
+          description: '全局清单来源。配置后，此处的条目优先于任何存储桶级别的 openmetadata.json，并优先于与 containerName 匹配的存储桶的 defaultManifest。',
+          label: '存储元数据配置来源',
+        },
       },
     },
     map: {

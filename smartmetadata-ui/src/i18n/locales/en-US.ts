@@ -5019,6 +5019,832 @@ const enUS = {
         domain: 'Domain',
       },
     },
+    schemaFields: {
+      api: {
+        apiCollectionFilterPattern: {
+          description: 'Regex to only fetch api collections with names matching the pattern.',
+        },
+        apiEndpointFilterPattern: {
+          description: 'Regex to only fetch api endpoints with names matching the pattern.',
+        },
+        markDeletedApiCollections: {
+          description: 'Optional configuration to soft delete api collections in OpenMetadata if the source collections are deleted. Also, if the collection is deleted, all the associated entities like endpoints, etc., with that collection will be deleted',
+          label: 'Mark Deleted Api Collection',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+      },
+      branchOption: 'Option {n}',
+      branchTypes: {
+        array: 'Array',
+        boolean: 'Boolean',
+        integer: 'Integer',
+        number: 'Number',
+        object: 'Object',
+        string: 'String',
+      },
+      dashboard: {
+        chartFilterPattern: {
+          description: 'Regex exclude or include charts that matches the pattern.',
+        },
+        dashboardFilterPattern: {
+          description: 'Regex to exclude or include dashboards that matches the pattern.',
+        },
+        dataModelFilterPattern: {
+          description: 'Regex exclude or include data models that matches the pattern.',
+        },
+        includeCustomProperties: {
+          description: 'Optional configuration to toggle the ingestion of source-specific custom properties (e.g. the app views, last run status, run time and refresh time of Hex projects) onto the dashboard extension. The custom property definitions are shared by every dashboard in OpenMetadata, so this is disabled by default.',
+          label: 'Include Custom Properties',
+        },
+        includeDataModels: {
+          description: 'Optional configuration to toggle the ingestion of data models.',
+          label: 'Include Data Models',
+        },
+        includeDraftDashboard: {
+          description: 'Optional Configuration to include/exclude draft dashboards. By default it will include draft dashboards',
+          label: 'Include Draft Dashboards',
+        },
+        includeMetrics: {
+          description: 'Optional configuration to toggle the ingestion of semantic-layer measures (e.g. LookML measures) as first-class Metric entities. Metric names are unique across the whole OpenMetadata instance, so this is disabled by default. Measures are discovered from the data models that expose them, so this requires \'Include Data Models\' to be enabled as well.',
+          label: 'Include Metrics',
+        },
+        includeOwners: {
+          description: 'Enabling a flag will replace the current owner with a new owner from the source during metadata ingestion, if the current owner is null. It is recommended to keep the flag enabled to obtain the owner information during the first metadata ingestion.',
+          label: 'Include Current Owners',
+        },
+        includeTags: {
+          description: 'Optional configuration to toggle the tags ingestion.',
+          label: 'Include Tags',
+        },
+        includeUsage: {
+          description: 'Optional configuration to toggle the ingestion of usage metadata for dashboards. When enabled, usage statistics will be collected and ingested.',
+          label: 'Include Usage',
+        },
+        lineageInformation: {
+          dbServicePrefixes: {
+            description: 'List of service path prefixes for lineage matching. Supported formats: DBServiceName, DBServiceName.DatabaseName, DBServiceName.DatabaseName.SchemaName, or DBServiceName.DatabaseName.SchemaName.TableName',
+            label: 'Database Service Prefixes',
+          },
+          description: 'Details required to generate Lineage',
+          label: 'Lineage Information',
+        },
+        markDeletedCharts: {
+          description: 'Optional configuration to soft delete charts in OpenMetadata if the source charts are deleted.',
+          label: 'Mark Deleted Charts',
+        },
+        markDeletedDashboards: {
+          description: 'Optional configuration to soft delete dashboards in OpenMetadata if the source dashboards are deleted. Also, if the dashboard is deleted, all the associated entities like lineage, etc., with that dashboard will be deleted',
+          label: 'Mark Deleted Dashboards',
+        },
+        markDeletedDataModels: {
+          description: 'Optional configuration to soft delete data models in OpenMetadata if the source data models are deleted. Also, if the data models is deleted, all the associated entities like lineage, etc., with that data models will be deleted',
+          label: 'Mark Deleted Data Models',
+        },
+        overrideLineage: {
+          description: 'Set the \'Override Lineage\' toggle to control whether to override the existing lineage.',
+          label: 'Override Lineage',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        projectFilterPattern: {
+          description: 'Regex to exclude or include projects that matches the pattern.',
+        },
+        queryParserConfig: {
+          description: 'Configuration for SQL query parser selection for lineage extraction.',
+          label: 'Query Parser Configuration',
+          type: {
+            description: 'Choose the SQL parser for lineage extraction:\n• Auto (default): Automatically tries SqlGlot first, falls back to SqlFluff, then SqlParse. Recommended for best results.\n• SqlGlot: High-performance parser with excellent dialect support. Falls back to SqlParse on failure.\n• SqlFluff: Comprehensive parser with strong dialect support. Falls back to SqlParse on failure.',
+            label: 'Query Parser Type',
+          },
+        },
+      },
+      database: {
+        databaseFilterPattern: {
+          description: 'Regex to only include/exclude databases that matches the pattern.',
+        },
+        extractJsonSchema: {
+          description: 'Extract JSON schema from JSON columns by sampling data. This requires SELECT permission on the tables. If disabled or if SELECT fails, JSON columns will be ingested without schema information.',
+          label: 'Extract JSON Schema',
+        },
+        includeCustomProperties: {
+          description: 'Optional configuration to toggle the ingestion of source-specific custom properties (e.g. Iceberg table properties) onto the entity extension. When disabled, no custom property definitions are registered and no extension values are set.',
+          label: 'Include Custom Properties',
+        },
+        includeDDL: {
+          description: 'Optional configuration to toggle the DDL Statements ingestion.',
+          label: 'Include DDL Statements',
+        },
+        includeOwners: {
+          description: 'Set the \'Include Owners\' toggle to control whether to include owners to the ingested entity if the owner email matches with a user stored in the OM server as part of metadata ingestion. If the ingested entity already exists and has an owner, the owner will not be overwritten.',
+          label: 'Include Owners',
+        },
+        includeStoredProcedures: {
+          description: 'Optional configuration to toggle the Stored Procedures ingestion.',
+          label: 'Include Stored Procedures',
+        },
+        includeTables: {
+          description: 'Optional configuration to turn off fetching metadata for tables.',
+          label: 'Include Tables',
+        },
+        includeTags: {
+          description: 'Optional configuration to toggle the tags ingestion.',
+          label: 'Include Tags',
+        },
+        includeViews: {
+          description: 'Optional configuration to turn off fetching metadata for views.',
+          label: 'Include Views',
+        },
+        incremental: {
+          description: 'Use incremental Metadata extraction after the first execution. This is commonly done by getting the changes from Audit tables on the supporting databases.',
+          enabled: {
+            description: 'If True, enables Metadata Extraction to be incremental',
+            label: 'Enabled',
+          },
+          label: 'Incremental Metadata Extraction Configuration',
+          lookbackDays: {
+            description: 'Number os days to search back for a successful pipeline run. The timestamp of the last found successful pipeline run will be used as a base to search for updated entities.',
+            label: 'Successful Pipeline Run Lookback Days',
+          },
+          safetyMarginDays: {
+            description: 'Number of days to add to the last successful pipeline run timestamp to search for updated entities.',
+            label: 'Safety Margin Days',
+          },
+        },
+        jsonSchemaSampleSize: {
+          description: 'Number of rows to sample for inferring JSON schema. A larger sample size provides more accurate schema inference but increases query time.',
+          label: 'JSON Schema Sample Size',
+        },
+        markDeletedDatabases: {
+          description: 'Optional configuration to soft delete databases in OpenMetadata if the source databases are deleted. Also, if the database is deleted, all the associated entities like schemas, tables, views, stored procedures, lineage, etc., with that database will be deleted',
+          label: 'Mark Deleted Databases',
+        },
+        markDeletedSchemas: {
+          description: 'Optional configuration to soft delete schemas in OpenMetadata if the source schemas are deleted. Also, if the schema is deleted, all the associated entities like tables, views, stored procedures, lineage, etc., with that schema will be deleted',
+          label: 'Mark Deleted Schemas',
+        },
+        markDeletedStoredProcedures: {
+          description: 'Optional configuration to soft delete stored procedures in OpenMetadata if the source stored procedures are deleted. Also, if the stored procedures is deleted, all the associated entities like lineage, etc., with that stored procedures will be deleted',
+          label: 'Mark Deleted Stored Procedures',
+        },
+        markDeletedTables: {
+          description: 'This is an optional configuration for enabling soft deletion of tables. When this option is enabled, only tables that have been deleted from the source will be soft deleted, and this will apply solely to the schema that is currently being ingested via the pipeline. Any related entities such as test suites or lineage information that were associated with those tables will also be deleted.',
+          label: 'Mark Deleted Tables',
+        },
+        maxChildrenPerColumn: {
+          description: 'Maximum number of direct children kept for any column inferred from sampled JSON values, applied at every nesting level. When a column has more, the children whose names sort first are kept, so every run keeps the same children whatever the order of the sampled records. 0 keeps no inferred children. Leave empty for no limit.',
+          label: 'Max Children Per Column',
+        },
+        maxSchemaInferenceDepth: {
+          description: 'Maximum nesting depth of column children inferred from sampled JSON values. The direct children of a column are depth 1. Deeper children are not ingested, and a column at the limit keeps its data type without children. 0 keeps no inferred children. Leave empty for no limit.',
+          label: 'Max Schema Inference Depth',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        ownerConfig: {
+          database: {
+            branches: {
+              b0: {
+                description: 'Single owner (user or team) for all databases',
+              },
+              b1: {
+                description: 'Map of database names to their owner(s)',
+              },
+            },
+            description: 'Owner for database entities. Can be a single owner for all databases, or a map of database names to owner(s).',
+            label: 'Database',
+          },
+          databaseSchema: {
+            branches: {
+              b0: {
+                description: 'Single owner (user or team) for all schemas',
+              },
+              b1: {
+                description: 'Map of schema names/FQNs to their owner(s)',
+              },
+            },
+            description: 'Owner for schema entities. Can be a single owner for all schemas, or a map of schema FQNs to owner(s).',
+            label: 'Database Schema',
+          },
+          default: {
+            description: 'Default owner applied to all entities when no specific owner is configured (user or team name/email)',
+            label: 'Default',
+          },
+          description: 'Advanced configuration for managing owners at multiple hierarchy levels (Service, Database, Schema, Table) with custom mappings and inheritance rules.',
+          enableInheritance: {
+            description: 'Enable child entities to inherit owner from parent entities when they don\'t have a specific owner configured',
+            label: 'Enable Inheritance',
+          },
+          label: 'Hierarchical Owner Configuration',
+          service: {
+            description: 'Owner for the service level',
+            label: 'Service',
+          },
+          table: {
+            branches: {
+              b0: {
+                description: 'Single owner (user or team) for all tables',
+              },
+              b1: {
+                description: 'Map of table names/FQNs to their owner(s)',
+              },
+            },
+            description: 'Owner for table entities. Can be a single owner for all tables, or a map of table FQNs to owner(s).',
+            label: 'Table',
+          },
+        },
+        queryLogDuration: {
+          description: 'Configuration to tune how far we want to look back in query logs to process Stored Procedures results.',
+          label: 'Query Log Duration',
+        },
+        queryParsingTimeoutLimit: {
+          description: 'Configuration to set the timeout for parsing the query in seconds.',
+          label: 'Query Parsing Timeout Limit',
+        },
+        schemaFilterPattern: {
+          description: 'Regex to only include/exclude schemas that matches the pattern.',
+        },
+        shardedTables: {
+          description: 'BigQuery daily shard grouping. Omitted configuration remains disabled.',
+          enabled: {
+            description: 'Group BigQuery daily shards into a stable logical table using the newest shard for columns and execution.',
+            label: 'Group Sharded Tables',
+          },
+          label: 'Sharded Tables',
+        },
+        storedProcedureFilterPattern: {
+          description: 'Regex to only include/exclude stored procedures that matches the pattern.',
+        },
+        tableFilterPattern: {
+          description: 'Regex to only include/exclude tables that matches the pattern.',
+        },
+        threads: {
+          description: 'Number of Threads to use in order to parallelize Table ingestion.',
+          label: 'Number of Threads',
+        },
+        useFqnForFiltering: {
+          description: 'Regex will be applied on fully qualified name (e.g service_name.db_name.schema_name.table_name) instead of raw name (e.g. table_name)',
+          label: 'Use FQN For Filtering',
+        },
+      },
+      drive: {
+        directoryFilterPattern: {
+          description: 'Regex to only include/exclude directories that matches the pattern.',
+        },
+        fileFilterPattern: {
+          description: 'Regex to only include/exclude files that matches the pattern.',
+        },
+        includeDirectories: {
+          description: 'Optional configuration to turn off fetching metadata for directories.',
+          label: 'Include Directories',
+        },
+        includeFiles: {
+          description: 'Optional configuration to turn off fetching metadata for files.',
+          label: 'Include Files',
+        },
+        includeOwners: {
+          description: 'Set the \'Include Owners\' toggle to control whether to include owners to the ingested entity if the owner email matches with a user stored in the OM server as part of metadata ingestion. If the ingested entity already exists and has an owner, the owner will not be overwritten.',
+          label: 'Include Owners',
+        },
+        includeSpreadsheets: {
+          description: 'Optional configuration to turn off fetching metadata for spreadsheets.',
+          label: 'Include Spreadsheets',
+        },
+        includeTags: {
+          description: 'Optional configuration to toggle the tags ingestion.',
+          label: 'Include Tags',
+        },
+        includeWorksheets: {
+          description: 'Optional configuration to turn off fetching metadata for worksheets.',
+          label: 'Include Worksheets',
+        },
+        markDeletedDirectories: {
+          description: 'Optional configuration to soft delete directories in OpenMetadata if the source directories are deleted. Also, if the directory is deleted, all the associated entities like files, spreadsheets, worksheets, lineage, etc., with that directory will be deleted',
+          label: 'Mark Deleted Directories',
+        },
+        markDeletedFiles: {
+          description: 'Optional configuration to soft delete files in OpenMetadata if the source files are deleted. Also, if the file is deleted, all the associated entities like lineage, etc., with that file will be deleted',
+          label: 'Mark Deleted Files',
+        },
+        markDeletedSpreadsheets: {
+          description: 'Optional configuration to soft delete spreadsheets in OpenMetadata if the source spreadsheets are deleted. Also, if the spreadsheet is deleted, all the associated entities like worksheets, lineage, etc., with that spreadsheet will be deleted',
+          label: 'Mark Deleted Spreadsheets',
+        },
+        markDeletedWorksheets: {
+          description: 'Optional configuration to soft delete worksheets in OpenMetadata if the source worksheets are deleted. Also, if the worksheet is deleted, all the associated entities like lineage, etc., with that worksheet will be deleted',
+          label: 'Mark Deleted Worksheets',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        spreadsheetFilterPattern: {
+          description: 'Regex to only include/exclude spreadsheets that matches the pattern.',
+        },
+        threads: {
+          description: 'Number of Threads to use in order to parallelize Drive ingestion.',
+          label: 'Number of Threads',
+        },
+        useFqnForFiltering: {
+          description: 'Regex will be applied on fully qualified name (e.g service_name.directory_name.file_name) instead of raw name (e.g. file_name)',
+          label: 'Use FQN For Filtering',
+        },
+        worksheetFilterPattern: {
+          description: 'Regex to only include/exclude worksheets that matches the pattern.',
+        },
+      },
+      invalidJson: 'Invalid JSON',
+      messaging: {
+        generateSampleData: {
+          description: 'Option to turn on/off generating sample data during metadata extraction.',
+          label: 'Generate Sample Data',
+        },
+        markDeletedTopics: {
+          description: 'Optional configuration to soft delete topics in OpenMetadata if the source topics are deleted. Also, if the topic is deleted, all the associated entities like sample data, lineage, etc., with that topic will be deleted',
+          label: 'Mark Deleted Topics',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        topicFilterPattern: {
+          description: 'Regex to only fetch topics that matches the pattern.',
+        },
+      },
+      mlmodel: {
+        lineageInformation: {
+          dbServicePrefixes: {
+            description: 'List of service path prefixes for lineage matching. Supported formats: DBServiceName, DBServiceName.DatabaseName, DBServiceName.DatabaseName.SchemaName, or DBServiceName.DatabaseName.SchemaName.TableName',
+            label: 'Database Service Prefixes',
+          },
+          description: 'Details required to generate Lineage',
+          label: 'Lineage Information',
+        },
+        markDeletedMlModels: {
+          description: 'Optional configuration to soft delete MlModels in OpenMetadata if the source MlModels are deleted. Also, if the MlModel is deleted, all the associated entities like lineage, etc., with that MlModels will be deleted',
+          label: 'Mark Deleted ML Models',
+        },
+        mlModelFilterPattern: {
+          description: 'Regex to only fetch MlModels with names matching the pattern.',
+        },
+        overrideLineage: {
+          description: 'Set the \'Override Lineage\' toggle to control whether to override the existing lineage.',
+          label: 'Override Lineage',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+      },
+      pipeline: {
+        includeLineage: {
+          description: 'Optional configuration to turn off fetching lineage from pipelines.',
+          label: 'Include Lineage',
+        },
+        includeOwners: {
+          description: 'Set the \'Include Owners\' toggle to control whether to include owners to the ingested entity if the owner email matches with a user stored in the OM server as part of metadata ingestion. If the ingested entity already exists and has an owner, the owner will not be overwritten.',
+          label: 'Include Owners',
+        },
+        includeTags: {
+          description: 'Optional configuration to toggle the tags ingestion.',
+          label: 'Include Tags',
+        },
+        includeUnDeployedPipelines: {
+          description: 'Optional configuration to toggle whether the un-deployed pipelines should be ingested or not. If set to false, only deployed pipelines will be ingested.',
+          label: 'Include UnDeployed Pipelines',
+        },
+        lineageInformation: {
+          apiServiceNames: {
+            description: 'List of API Service Names for creation of lineage',
+            label: 'API Service Names List',
+          },
+          dbServiceNames: {
+            description: 'List of Database Service Names for creation of lineage',
+            label: 'Database Service Names List',
+          },
+          description: 'Details required to generate Lineage',
+          label: 'Lineage Information',
+          messagingServiceNames: {
+            description: 'List of Messaging Service Names for creation of lineage',
+            label: 'Messaging Service Names List',
+          },
+          searchServiceNames: {
+            description: 'List of Search Service Names for creation of lineage',
+            label: 'Search Service Names List',
+          },
+          storageServiceNames: {
+            description: 'List of Storage Service Names for creation of lineage',
+            label: 'Storage Service Names List',
+          },
+        },
+        markDeletedPipelines: {
+          description: 'Optional configuration to soft delete Pipelines in OpenMetadata if the source Pipelines are deleted. Also, if the Pipeline is deleted, all the associated entities like lineage, etc., with that Pipeline will be deleted',
+          label: 'Mark Deleted Pipeline',
+        },
+        overrideLineage: {
+          description: 'Set the \'Override Lineage\' toggle to control whether to override the existing lineage.',
+          label: 'Override Lineage',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        ownershipUpdateMode: {
+          description: 'Set how owners from source metadata update Pipeline owners. In replace mode, resolved owners from the current source replace existing owners. In append mode, resolved owners are appended to active existing Pipeline owners.',
+          label: 'Ownership Update Mode',
+          options: {
+            append: 'append',
+            replace: 'replace',
+          },
+        },
+        pipelineFilterPattern: {
+          description: 'Regex exclude pipelines.',
+        },
+        statusLookbackDays: {
+          description: 'Number of days of pipeline run status history to ingest. Only runs within the last N days will be fetched.',
+          label: 'Status Lookback Days',
+        },
+      },
+      search: {
+        includeIndexTemplate: {
+          description: 'Enable the \'Include Index Template\' toggle to manage the ingestion of index template data.',
+          label: 'Include Index Template',
+        },
+        includeSampleData: {
+          description: 'Optional configuration to turn off fetching sample data for search index.',
+          label: 'Include Sample Data',
+        },
+        markDeletedSearchIndexes: {
+          description: 'Optional configuration to soft delete search indexes in OpenMetadata if the source search indexes are deleted. Also, if the search index is deleted, all the associated entities like lineage, etc., with that search index will be deleted',
+          label: 'Mark Deleted Search Indexes',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        sampleSize: {
+          description: 'No. of records of sample data we want to ingest.',
+          label: 'Sample Size',
+        },
+        searchIndexFilterPattern: {
+          description: 'Regex to only fetch search indexes that matches the pattern.',
+        },
+      },
+      shared: {
+        enableDebugLog: {
+          label: 'Enable Debug Log',
+        },
+      },
+      storage: {
+        containerFilterPattern: {
+          description: 'Regex to only fetch containers that matches the pattern.',
+        },
+        defaultManifest: {
+          description: 'Fallback manifest applied to any bucket that does not have its own openmetadata.json file. If a bucket has a manifest file, that file takes precedence and this value is ignored for that bucket. Paste the same JSON you would place in a bucket\'s openmetadata.json file — entries accept literal paths or glob-style dataPath patterns.',
+          label: 'Default Manifest (JSON)',
+        },
+        includeTags: {
+          description: 'Optional configuration to toggle the tags ingestion.',
+          label: 'Include Tags',
+        },
+        markDeletedContainers: {
+          description: 'Optional configuration to soft delete containers in OpenMetadata if the source containers are deleted. Also, if the topic is deleted, all the associated entities with that containers will be deleted',
+          label: 'Mark Deleted Containers',
+        },
+        maxChildrenPerColumn: {
+          description: 'Maximum number of direct children kept for any column inferred from sampled JSON values, applied at every nesting level. When a column has more, the children whose names sort first are kept, so every run keeps the same children whatever the order of the sampled records. 0 keeps no inferred children. Leave empty for no limit.',
+          label: 'Max Children Per Column',
+        },
+        maxSchemaInferenceDepth: {
+          description: 'Maximum nesting depth of column children inferred from sampled JSON values. The direct children of a column are depth 1. Deeper children are not ingested, and a column at the limit keeps its data type without children. 0 keeps no inferred children. Leave empty for no limit.',
+          label: 'Max Schema Inference Depth',
+        },
+        overrideMetadata: {
+          description: 'Set the \'Override Metadata\' toggle to control whether to override the existing metadata in the OpenMetadata server with the metadata fetched from the source. If the toggle is set to true, the metadata fetched from the source will override the existing metadata in the OpenMetadata server. If the toggle is set to false, the metadata fetched from the source will not override the existing metadata in the OpenMetadata server. This is applicable for fields like description, tags, owner and displayName',
+          label: 'Override Metadata',
+        },
+        storageMetadataConfigSource: {
+          b1: {
+            manifestFilePath: {
+              description: 'Storage Metadata manifest file path to extract locations to ingest from.',
+              label: 'Storage Metadata Manifest File Path',
+            },
+          },
+          b2: {
+            manifestHttpPath: {
+              description: 'Storage Metadata manifest http file path to extract locations to ingest from.',
+              label: 'Storage Metadata Manifest HTTP Path',
+            },
+          },
+          b3: {
+            prefixConfig: {
+              containerName: {
+                description: 'Name of the top level container where the storage metadata file is stored',
+                label: 'Storage Metadata Container Name',
+              },
+              description: 'Details of the bucket where the storage metadata manifest file is stored',
+              label: 'Storage Metadata Prefix Config',
+              objectPrefix: {
+                description: 'Path of the folder where the storage metadata file is stored. If the file is at the root, you can keep it empty.',
+                label: 'Storage Metadata Object Prefix',
+              },
+            },
+            securityConfig: {
+              assumeRoleArn: {
+                description: 'The Amazon Resource Name (ARN) of the role to assume. Required Field in case of Assume Role',
+                label: 'Role Arn for Assume Role',
+              },
+              assumeRoleSessionName: {
+                description: 'An identifier for the assumed role session. Use the role session name to uniquely identify a session when the same role is assumed by different principals or for different reasons. Required Field in case of Assume Role',
+                label: 'Role Session Name for Assume Role',
+              },
+              assumeRoleSourceIdentity: {
+                description: 'The Amazon Resource Name (ARN) of the role to assume. Optional Field in case of Assume Role',
+                label: 'Source Identity for Assume Role',
+              },
+              awsAccessKeyId: {
+                description: 'AWS Access key ID.',
+                label: 'AWS Access Key ID',
+              },
+              awsRegion: {
+                description: 'AWS Region',
+                label: 'AWS Region',
+              },
+              awsSecretAccessKey: {
+                description: 'AWS Secret Access Key.',
+                label: 'AWS Secret Access Key',
+              },
+              awsSessionToken: {
+                description: 'AWS Session Token.',
+                label: 'AWS Session Token',
+              },
+              description: 'AWS credentials configs.',
+              enabled: {
+                description: 'Enable AWS IAM authentication. When enabled, uses the default credential provider chain (environment variables, instance profile, etc.). Defaults to false for backward compatibility.',
+                label: 'Enable IAM Auth',
+              },
+              endPointURL: {
+                description: 'EndPoint URL for the AWS',
+                label: 'Endpoint URL',
+              },
+              label: 'S3 Security Config',
+              profileName: {
+                description: 'The name of a profile to use with the boto session.',
+                label: 'Profile Name',
+              },
+            },
+          },
+          b4: {
+            prefixConfig: {
+              containerName: {
+                description: 'Name of the top level container where the storage metadata file is stored',
+                label: 'Storage Metadata Container Name',
+              },
+              description: 'Details of the bucket where the storage metadata manifest file is stored',
+              label: 'Storage Metadata Prefix Config',
+              objectPrefix: {
+                description: 'Path of the folder where the storage metadata file is stored. If the file is at the root, you can keep it empty.',
+                label: 'Storage Metadata Object Prefix',
+              },
+            },
+            securityConfig: {
+              accountName: {
+                description: 'Account Name of your storage account',
+                label: 'Storage Account Name',
+              },
+              clientId: {
+                description: 'Your Service Principal App ID (Client ID)',
+                label: 'Client ID',
+              },
+              clientSecret: {
+                description: 'Your Service Principal Password (Client Secret)',
+                label: 'Client Secret',
+              },
+              description: 'Azure Cloud Credentials',
+              label: 'ADLS Security Config',
+              scopes: {
+                description: 'Scopes to get access token, for e.g. api://6dfX33ab-XXXX-49df-XXXX-3459eX817d3e/.default',
+                label: 'Scopes',
+              },
+              tenantId: {
+                description: 'Tenant ID of your Azure Subscription',
+                label: 'Tenant ID',
+              },
+              vaultName: {
+                description: 'Key Vault Name',
+                label: 'Key Vault Name',
+              },
+            },
+          },
+          b5: {
+            prefixConfig: {
+              containerName: {
+                description: 'Name of the top level container where the storage metadata file is stored',
+                label: 'Storage Metadata Container Name',
+              },
+              description: 'Details of the bucket where the storage metadata manifest file is stored',
+              label: 'Storage Metadata Prefix Config',
+              objectPrefix: {
+                description: 'Path of the folder where the storage metadata file is stored. If the file is at the root, you can keep it empty.',
+                label: 'Storage Metadata Object Prefix',
+              },
+            },
+            securityConfig: {
+              description: 'GCP credentials configs.',
+              gcpConfig: {
+                b0: {
+                  authProviderX509CertUrl: {
+                    description: 'Google Cloud auth provider certificate.',
+                    label: 'Authentication Provider x509 Certificate URL',
+                  },
+                  authUri: {
+                    description: 'Google Cloud auth uri.',
+                    label: 'Authentication URI',
+                  },
+                  clientEmail: {
+                    description: 'Google Cloud email.',
+                    label: 'Client Email',
+                  },
+                  clientId: {
+                    description: 'Google Cloud Client ID.',
+                    label: 'Client ID',
+                  },
+                  clientX509CertUrl: {
+                    description: 'Google Cloud client certificate uri.',
+                    label: 'Client x509 Certificate URL',
+                  },
+                  privateKey: {
+                    description: 'Google Cloud private key.',
+                    label: 'Private Key',
+                  },
+                  privateKeyId: {
+                    description: 'Google Cloud private key id.',
+                    label: 'Private Key ID',
+                  },
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: 'Single Project ID',
+                      },
+                      b1: {
+                        label: 'Multiple Project ID',
+                      },
+                    },
+                    description: 'Project ID',
+                    label: 'Project ID',
+                  },
+                  tokenUri: {
+                    description: 'Google Cloud token uri.',
+                    label: 'Token URI',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform account type.',
+                    label: 'Credentials Type',
+                  },
+                  universeDomain: {
+                    description: 'Google Cloud service domain, used to override the default `googleapis.com` domain for sovereign or partner clouds (e.g. Trusted Partner Cloud service accounts).',
+                    label: 'Universe Domain',
+                  },
+                },
+                b1: {
+                  path: {
+                    description: 'Path of the file containing the GCP credentials info',
+                    label: 'Path',
+                  },
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: 'Single Project ID',
+                      },
+                      b1: {
+                        label: 'Multiple Project ID',
+                      },
+                    },
+                    description: 'GCP Project ID to parse metadata from',
+                    label: 'GCP Project ID',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform account type.',
+                    label: 'Credentials Type',
+                  },
+                },
+                b2: {
+                  audience: {
+                    description: 'Google Security Token Service audience which contains the resource name for the workload identity pool and the provider identifier in that pool.',
+                    label: 'Audience',
+                  },
+                  credentialSource: {
+                    description: 'This object defines the mechanism used to retrieve the external credential from the local environment so that it can be exchanged for a GCP access token via the STS endpoint',
+                    label: 'Credential Source',
+                  },
+                  externalType: {
+                    description: 'Google Cloud Platform account type.',
+                    label: 'GCP Account Type',
+                  },
+                  subjectTokenType: {
+                    description: 'Google Security Token Service subject token type based on the OAuth 2.0 token exchange spec.',
+                    label: 'Subject Token Type',
+                  },
+                  tokenURL: {
+                    description: 'Google Security Token Service token exchange endpoint.',
+                    label: 'Token URL',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform account type.',
+                    label: 'Credentials Type',
+                  },
+                },
+                b3: {
+                  projectId: {
+                    branches: {
+                      b0: {
+                        label: 'Single Project ID',
+                      },
+                      b1: {
+                        label: 'Multiple Project ID',
+                      },
+                    },
+                    description: 'GCP Project ID to parse metadata from',
+                    label: 'GCP Project ID',
+                  },
+                  type: {
+                    description: 'Google Cloud Platform ADC ( Application Default Credentials )',
+                    label: 'Credentials Type',
+                  },
+                },
+                branches: {
+                  b0: {
+                    description: 'Pass the raw credential values provided by GCP',
+                    label: 'GCP Credentials Values',
+                  },
+                  b1: {
+                    description: 'Pass the path of file containing the GCP credentials info',
+                    label: 'GCP Credentials Path',
+                  },
+                  b2: {
+                    description: 'Pass the raw credential values provided by GCP',
+                    label: 'GCP External Account',
+                  },
+                  b3: {
+                    description: 'Use the application default credentials',
+                    label: 'GCP Application Default Credentials',
+                  },
+                },
+                description: 'We support two ways of authenticating to GCP i.e via GCP Credentials Values or GCP Credentials Path',
+                label: 'GCP Credentials Configuration',
+              },
+              gcpImpersonateServiceAccount: {
+                description: 'we enable the authenticated service account to impersonate another service account',
+                impersonateServiceAccount: {
+                  description: 'The impersonated service account email',
+                  label: 'Target Service Account Email',
+                },
+                label: 'GCP Impersonate Service Account Configuration',
+                lifetime: {
+                  description: 'Number of seconds the delegated credential should be valid',
+                  label: 'Lifetime',
+                },
+              },
+              label: 'GCS Security Config',
+            },
+          },
+          branches: {
+            b0: {
+              description: 'No manifest file available. Ingestion would look for bucket-level metadata file instead',
+              label: 'No Global Manifest',
+            },
+            b1: {
+              description: 'Storage Metadata Manifest file path config.',
+              label: 'Storage Metadata Local Config',
+            },
+            b2: {
+              description: 'Storage Metadata Manifest file HTTP path config.',
+              label: 'Storage Metadata Http Config',
+            },
+            b3: {
+              description: 'Storage Metadata Manifest file S3 path config.',
+              label: 'Storage Metadata S3 Config',
+            },
+            b4: {
+              description: 'Storage Metadata Manifest file ADLS path config.',
+              label: 'Storage Metadata ADLS Config',
+            },
+            b5: {
+              description: 'Storage Metadata Manifest file GCS path config.',
+              label: 'Storage Metadata GCS Config',
+            },
+          },
+          description: 'Global manifest source. When configured, entries here take precedence over any bucket-level openmetadata.json and over defaultManifest for buckets whose containerName matches.',
+          label: 'Storage Metadata Configuration Source',
+        },
+      },
+    },
     map: {
       key: 'Key',
       keyPlaceholder: 'key',

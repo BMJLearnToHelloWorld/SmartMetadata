@@ -8,6 +8,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Typography } from 'ant-design-vue';
 import {
+  getFilterSectionLabels,
   isFilterSchemaProperty,
   type FilterPatternConfig,
   type FilterSchemaProperty,
@@ -26,6 +27,7 @@ import {
   validateOwnerConfigMaps,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
+import { fieldLabelPrefix, schemaSlugFor } from '@/ingestion/schemaFieldLabels';
 import type { PipelineType } from '@/types/ingestion';
 import ToggleField from '@/components/shared/ToggleField.vue';
 import FilterPatternCard from './FilterPatternCard.vue';
@@ -107,7 +109,7 @@ const emit = defineEmits<{
   /** The form has seeded and mounted; the parent may enable its footer. */
   (event: 'ready'): void;
 }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 
 const HIDDEN_FIELDS = ['type', 'name', 'displayName', 'processingEngine'];
 
@@ -117,6 +119,9 @@ const DEBUG_LOG_SCHEMA: RjsfSchema = { title: 'Enable Debug Log', type: 'boolean
 const localData = reactive<Record<string, unknown>>({});
 const errors = ref(new Map<string, string>());
 const showErrors = ref(false);
+
+/** Metadata-schema slug from the root title; undefined for other schemas. */
+const schemaSlug = computed(() => schemaSlugFor(props.schema));
 
 const hiddenKeys = computed(() => {
   const keys = new Set(HIDDEN_FIELDS);
@@ -172,7 +177,17 @@ function isProfileSampleField(fieldName: string): boolean {
 function fieldMeta(fieldName: string): FieldFocusMeta {
   const schema = effectiveProperties.value[fieldName];
   const resolved = schema ? deref(schema, props.schema) : undefined;
-  return { title: resolved?.title, description: resolved?.description };
+  // The panel title reuses the filter label key, the same source as the
+  // card title; the description resolves against this batch's keys.
+  const title = getFilterSectionLabels(fieldName, resolved?.title, t).label;
+  let description = resolved?.description;
+  if (schemaSlug.value !== undefined) {
+    const descriptionKey = `${fieldLabelPrefix(schemaSlug.value, fieldName)}.description`;
+    if (te(descriptionKey)) {
+      description = t(descriptionKey);
+    }
+  }
+  return { title, description };
 }
 
 function onFilterCardFocus(fieldName: string, emitted: string): void {
@@ -295,6 +310,16 @@ function ajvErrorMessage(error: ErrorObject, schema: RjsfSchema): string {
   if (error.keyword === 'required' && typeof error.params.missingProperty === 'string') {
     const parent = schemaAtPointer(schema, error.instancePath);
     const missing = error.params.missingProperty;
+    // Branch-less key prefix: the branch context in a validation path is
+    // unreliable for shared names, so branch-internal required fields
+    // keep the English schema title (documented limitation).
+    if (schemaSlug.value !== undefined) {
+      const segments = [...error.instancePath.split('/').filter(Boolean), missing];
+      const labelKey = `${fieldLabelPrefix(schemaSlug.value, segments.join('.'))}.label`;
+      if (te(labelKey)) {
+        return t('crud.fieldRequired', { field: t(labelKey) });
+      }
+    }
     return t('crud.fieldRequired', { field: propertyTitle(parent, missing, schema) });
   }
   return error.message ?? '';
@@ -427,11 +452,15 @@ defineExpose({ validate });
           <ToggleField
             v-else-if="fieldName === 'enableDebugLog' && debugLog !== undefined"
             :model-value="debugLog ?? false"
-            label="Enable Debug Log"
+            :label="t('forms.schemaFields.shared.enableDebugLog.label')"
             field-id="root/enableDebugLog"
             test-id="schema-field-enableDebugLog"
             @update:model-value="(next) => emit('update:debugLog', next)"
-            @focus="onFieldFocus?.('root/enableDebugLog', { title: 'Enable Debug Log' })"
+            @focus="
+              onFieldFocus?.('root/enableDebugLog', {
+                title: t('forms.schemaFields.shared.enableDebugLog.label'),
+              })
+            "
           />
           <SchemaField
             v-else
@@ -443,6 +472,9 @@ defineExpose({ validate });
             :show-errors="showErrors"
             :required="(schema.required ?? []).includes(fieldName)"
             test-id-prefix="schema-field"
+            :label-key-prefix="
+              schemaSlug ? fieldLabelPrefix(schemaSlug, fieldName) : undefined
+            "
             :on-field-focus="onFieldFocus"
             :on-field-blur="onFieldBlur"
             @update:value="(next) => onFieldUpdate(fieldName, next)"
