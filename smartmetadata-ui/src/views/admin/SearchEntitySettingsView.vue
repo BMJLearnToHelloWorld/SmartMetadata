@@ -9,9 +9,15 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {Button, Form, Input, InputNumber, Select, Space, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import { getTypedSetting, settingAsSearch, updateSetting } from '@/api/system';
+import {
+  buildEntitySearchSettingsPayload,
+  getEffectiveRankingConfiguration,
+  getTypedSetting,
+  settingAsSearch,
+  updateSetting,
+} from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
-import type { AssetTypeConfiguration, SearchSettings } from '@/types/admin';
+import type { AssetTypeConfiguration, SearchRankingConfiguration, SearchSettings } from '@/types/admin';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -20,11 +26,16 @@ const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
 const full = ref<SearchSettings | null>(null);
-const form = reactive<AssetTypeConfiguration>({
+const form = reactive<
+  Pick<AssetTypeConfiguration, 'assetType' | 'searchFields' | 'highlightFields' | 'scoreMode' | 'boostMode'>
+>({
   assetType: '',
   searchFields: [],
   highlightFields: [],
 });
+// Evaluated once from the loaded configuration, never recomputed from edits:
+// the official effective ranking is a function of the loaded config only.
+const effectiveRanking = ref<SearchRankingConfiguration | undefined>(undefined);
 
 const entityType = computed(() => String(route.params.entityType ?? ''));
 
@@ -42,12 +53,14 @@ async function load(): Promise<void> {
     full.value = cfg;
     const match = (cfg.assetTypeConfigurations ?? []).find((item) => item.assetType === entityType.value);
     if (!match) {
+      effectiveRanking.value = undefined;
       errorMessage.value = t('settings.searchPrefs.entityMissing', { type: entityType.value });
       return;
     }
+    effectiveRanking.value = getEffectiveRankingConfiguration(cfg, match);
     Object.assign(form, {
       assetType: match.assetType,
-      searchFields: [...(match.searchFields ?? [])],
+      searchFields: (match.searchFields ?? []).map((field) => ({ ...field })),
       highlightFields: [...(match.highlightFields ?? [])],
       scoreMode: match.scoreMode,
       boostMode: match.boostMode,
@@ -67,25 +80,21 @@ function removeField(index: number): void {
   form.searchFields?.splice(index, 1);
 }
 
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
 async function save(): Promise<void> {
   if (!full.value) return;
   saving.value = true;
   try {
-    const nextAssets = (full.value.assetTypeConfigurations ?? []).map((item) =>
-      item.assetType === entityType.value
-        ? {
-            assetType: form.assetType,
-            searchFields: form.searchFields,
-            highlightFields: form.highlightFields,
-            scoreMode: form.scoreMode,
-            boostMode: form.boostMode,
-          }
-        : item,
+    await updateSetting(
+      'searchSettings',
+      buildEntitySearchSettingsPayload(full.value, entityType.value, {
+        searchFields: form.searchFields,
+        highlightFields: form.highlightFields,
+        scoreMode: form.scoreMode,
+        boostMode: form.boostMode,
+        ranking: effectiveRanking.value,
+      }),
     );
-    await updateSetting('searchSettings', {
-      ...full.value,
-      assetTypeConfigurations: nextAssets,
-    });
     message.success(t('settings.searchPrefs.saved'));
     await load();
   } catch (error) {

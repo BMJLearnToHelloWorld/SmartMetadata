@@ -32,6 +32,7 @@
     "echarts": "^6.1.0",
     "fast-json-patch": "^3.1.1",
     "html-to-image": "^1.11.13",
+    "oidc-client": "^1.11.5",
     "pinia": "^4.1.0",
     "rapidoc": "^9.3.8",
     "vue": "^3.5.44",

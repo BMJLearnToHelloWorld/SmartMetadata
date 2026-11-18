@@ -96,18 +96,6 @@ export async function createTeam(body: CreateTeamRequest): Promise<AdminTeam> {
   return mapped;
 }
 
-export async function updateTeam(body: CreateTeamRequest): Promise<AdminTeam> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/teams', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapTeam(raw);
-  if (!mapped) {
-    throw new Error('Update team succeeded but the response had no team');
-  }
-  return mapped;
-}
-
 /** Replaces the team's direct members. Only Group teams hold users. */
 export function replaceTeamUsers(teamId: string, userIds: string[]): Promise<unknown> {
   return apiRequest(`/v1/teams/${encodeURIComponent(teamId)}/users`, {

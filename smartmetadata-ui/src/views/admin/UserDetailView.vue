@@ -8,11 +8,13 @@ import { useI18n } from 'vue-i18n';
 import {Alert, Button, Checkbox, Descriptions, Form, Input, Popconfirm, Select, Space, Tag, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import { removeFieldPatch, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
 import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
 import {
   JWT_TOKEN_EXPIRY_OPTIONS,
   assignUserRolesPatch,
+  assignUserTeamsPatch,
   createPersonalToken,
   deactivateUser,
   generateUserToken,
@@ -21,7 +23,6 @@ import {
   patchUser,
   restoreUser,
   revokePersonalTokens,
-  updateUser,
   type JwtTokenExpiry,
   type PersonalAccessToken,
 } from '@/api/users';
@@ -61,6 +62,33 @@ const roles = ref<AdminRole[]>([]);
 
 function idsOf(refs: { id?: string }[]): string[] {
   return refs.map((item) => item.id).filter((id): id is string => Boolean(id));
+}
+
+/** Order-insensitive id comparison: reordering alone is not a change. */
+function sameIdSet(current: string[], next: string[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  const sortedCurrent = [...current].sort();
+  const sortedNext = [...next].sort();
+  return sortedCurrent.every((id, index) => id === sortedNext[index]);
+}
+
+/**
+ * Ops for a trimmable text field: compare after trimming, an emptied
+ * form value removes a stored value, and an already-absent value stays
+ * absent without an op.
+ */
+function textFieldOps(path: string, current: string | undefined, formValue: string): JsonPatchOp[] {
+  const next = formValue.trim() || undefined;
+  const stored = current?.trim() || undefined;
+  if (next === stored) {
+    return [];
+  }
+  if (next === undefined) {
+    return [removeFieldPatch(path)];
+  }
+  return setFieldPatch(path, current, next);
 }
 
 const editForm = reactive({
@@ -218,20 +246,34 @@ function openEdit(): void {
 }
 
 async function onSave(): Promise<void> {
-  if (!user.value) {
+  const current = user.value;
+  if (!current) {
     return;
   }
   saving.value = true;
   try {
-    await updateUser({
-      name: user.value.name,
-      email: editForm.email.trim(),
-      displayName: editForm.displayName.trim() || undefined,
-      description: editForm.description.trim() || undefined,
-      isAdmin: editForm.isAdmin,
-      teams: editForm.teamIds,
-      roles: editForm.roleIds,
-    });
+    // A whole-entity PUT would drop every field this form does not
+    // carry (personas, profile, timezone, ...), so the edit saves as
+    // a JSON Patch limited to the five fields the form owns. Fields
+    // the patch never mentions keep their stored values server-side.
+    // Email is never sent: the server ignores it on PATCH too, and an
+    // address change only goes through the change-email ops.
+    // ADR:2026-11-18-user-team-detail-saves-use-json-patch
+    const ops: JsonPatchOp[] = [];
+    ops.push(...textFieldOps('/displayName', current.displayName, editForm.displayName));
+    ops.push(...textFieldOps('/description', current.description, editForm.description));
+    if (Boolean(current.isAdmin) !== editForm.isAdmin) {
+      ops.push(...setFieldPatch('/isAdmin', current.isAdmin, editForm.isAdmin));
+    }
+    if (!sameIdSet(idsOf(current.teams), editForm.teamIds)) {
+      ops.push(...assignUserTeamsPatch(current.teams, editForm.teamIds));
+    }
+    if (!sameIdSet(idsOf(current.roles), editForm.roleIds)) {
+      ops.push(...assignUserRolesPatch(current.roles, editForm.roleIds));
+    }
+    // Pin sends the compare() result unguarded, so an unchanged edit
+    // still sends an empty patch array rather than skipping the call.
+    await patchUser(current.id, ops);
     editOpen.value = false;
     message.success(t('admin.users.updated'));
     await load();

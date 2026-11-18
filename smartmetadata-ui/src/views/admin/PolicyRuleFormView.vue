@@ -64,6 +64,7 @@ async function load(): Promise<void> {
       form.resources = [...rule.resources];
       form.description = rule.description ?? '';
       form.condition = rule.condition ?? '';
+      form.fullyQualifiedName = rule.fullyQualifiedName;
     } else if (policy.value) {
       form.name = `${policy.value.name}Rule`;
       form.operations = ['ViewAll'];
@@ -92,6 +93,7 @@ async function onSave(): Promise<void> {
     resources: [...form.resources],
     description: form.description?.trim() || undefined,
     condition: form.condition?.trim() || undefined,
+    fullyQualifiedName: isEdit.value ? form.fullyQualifiedName : undefined,
   };
   const rules = isEdit.value
     ? policy.value.rules.map((rule) => (rule.name === props.ruleName ? next : rule))

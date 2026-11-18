@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   assignUserRolesPatch,
+  assignUserTeamsPatch,
   createPersonalToken,
   createUser,
   deactivateUser,
@@ -124,6 +125,11 @@ describe('users API', () => {
   it('builds a JSON Patch that assigns roles without inventing an authz engine', () => {
     const patch = assignUserRolesPatch([], ['role-1']);
     expect(patch).toEqual([{ op: 'replace', path: '/roles', value: [{ id: 'role-1', type: 'role' }] }]);
+  });
+
+  it('builds a JSON Patch that assigns teams without inventing an authz engine', () => {
+    const patch = assignUserTeamsPatch([], ['team-1']);
+    expect(patch).toEqual([{ op: 'replace', path: '/teams', value: [{ id: 'team-1', type: 'team' }] }]);
   });
 
   it('lists online users from GET /v1/users/online with activity timestamps', async () => {

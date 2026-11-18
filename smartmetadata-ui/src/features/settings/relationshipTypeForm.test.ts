@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { RelationshipType } from '@/api/relationshipTypes';
 import {
   cardinalityForPreset,
+  DEFAULT_RELATIONSHIP_TYPE_FORM,
   deriveCardinalityPreset,
   toRelationshipTypeForm,
   toRelationshipTypeRequest,
@@ -62,6 +63,100 @@ describe('relationshipTypeForm', () => {
     });
     expect(values.cardinalityPreset).toBe('ONE_TO_ONE');
     expect(toRelationshipTypeRequest(values).cardinality).toEqual({ sourceMax: 1, targetMax: 1 });
+  });
+
+  it('carries the six unedited fields through the form untouched', () => {
+    const request = toRelationshipTypeRequest(
+      toRelationshipTypeForm({
+        ...EXISTING,
+        description: 'd',
+        iri: 'http://example.test/isA',
+        category: 'CUSTOM',
+        characteristics: ['TRANSITIVE'],
+        cardinality: { sourceMax: 1 },
+        crossGlossaryAllowed: true,
+        paletteKey: 'VIOLET',
+        systemDefined: false,
+        inverse: 'relatedTo',
+        owners: [{ id: 'u1', name: 'admin', type: 'user' }],
+        reviewers: [],
+        disjointWith: ['otherType'],
+        domain: [
+          {
+            iri: 'http://example.test/Domain',
+            term: { id: 't1', name: 'term1', type: 'glossaryTerm' },
+          },
+        ],
+        entityStatus: 'In Review',
+        propertyChain: ['a', 'b'],
+        range: [],
+        replacedBy: 'newType',
+      }),
+    );
+    expect(request).toEqual({
+      cardinality: { sourceMax: 1 },
+      category: 'CUSTOM',
+      characteristics: ['TRANSITIVE'],
+      crossGlossaryAllowed: true,
+      description: 'd',
+      disjointWith: ['otherType'],
+      displayName: 'Is A',
+      domain: [
+        {
+          iri: 'http://example.test/Domain',
+          term: { id: 't1', name: 'term1', type: 'glossaryTerm' },
+        },
+      ],
+      entityStatus: 'In Review',
+      inverse: 'relatedTo',
+      iri: 'http://example.test/isA',
+      name: 'isA',
+      owners: [{ id: 'u1', name: 'admin', type: 'user' }],
+      paletteKey: 'VIOLET',
+      propertyChain: ['a', 'b'],
+      range: [],
+      rdfPredicate: 'http://example.test/isA',
+      replacedBy: 'newType',
+      reviewers: [],
+    });
+  });
+
+  it('trims only description, displayName, name and rdfPredicate', () => {
+    const request = toRelationshipTypeRequest(
+      form({
+        description: '  d  ',
+        displayName: '  Is A  ',
+        name: '  isA  ',
+        rdfPredicate: '  http://example.test/isA  ',
+        inverse: ' relatedTo ',
+        iri: ' http://example.test/isA ',
+        replacedBy: ' newType ',
+      }),
+    );
+    expect(request.description).toBe('d');
+    expect(request.displayName).toBe('Is A');
+    expect(request.name).toBe('isA');
+    expect(request.rdfPredicate).toBe('http://example.test/isA');
+    expect(request.inverse).toBe(' relatedTo ');
+    expect(request.iri).toBe(' http://example.test/isA ');
+    expect(request.replacedBy).toBe(' newType ');
+  });
+
+  it('turns an empty inverse or iri into undefined', () => {
+    expect(toRelationshipTypeRequest(form({ inverse: '' })).inverse).toBeUndefined();
+    expect(toRelationshipTypeRequest(form({ iri: '' })).iri).toBeUndefined();
+  });
+
+  it('omits the six unedited fields from a fresh create request', () => {
+    const serialized = JSON.parse(
+      JSON.stringify(toRelationshipTypeRequest({ ...DEFAULT_RELATIONSHIP_TYPE_FORM })),
+    ) as Record<string, unknown>;
+    expect(serialized).not.toHaveProperty('disjointWith');
+    expect(serialized).not.toHaveProperty('domain');
+    expect(serialized).not.toHaveProperty('entityStatus');
+    expect(serialized).not.toHaveProperty('propertyChain');
+    expect(serialized).not.toHaveProperty('range');
+    expect(serialized).not.toHaveProperty('replacedBy');
   });
 
   it('rejects a bad name, a missing display name and a non-IRI predicate', () => {

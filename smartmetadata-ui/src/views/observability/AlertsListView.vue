@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Button, Form, Input, InputNumber, Menu, Select, Switch, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createEventSubscription, deleteEventSubscription, listEventSubscriptions } from '@/api/eventSubscriptions';
+import { getLimitByResource } from '@/api/limits';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -175,9 +176,10 @@ async function onDelete(record: EventSubscription): Promise<void> {
     message.error(t('errors.forbidden'));
     return;
   }
+  const name = entityLabel(record);
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: record.displayName || record.name }),
+    title: t('observability.alerts.deleteTitle', { name }),
+    content: t('observability.alerts.deleteConfirm', { name: name.toLowerCase() }),
     okText: t('crud.delete'),
     cancelText: t('crud.cancel'),
   });
@@ -186,7 +188,14 @@ async function onDelete(record: EventSubscription): Promise<void> {
   }
   try {
     await deleteEventSubscription(record.id);
-    message.success(t('crud.deletedName', { name: record.displayName || record.name }));
+    message.success(t('observability.alerts.deleted', { name }));
+    // Pin's ordering (NotificationListPage / useObservabilityAlerts):
+    // the limit refresh is awaited before the reload, in the same try,
+    // so a limit failure surfaces an error and leaves the list — and
+    // its cursor — untouched instead of reloading a stale page.
+    // ADR:2026-11-18-event-subscription-delete-wire-matches-pin
+    await getLimitByResource('eventsubscription');
+    cursor.value = createCursorPager();
     await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));

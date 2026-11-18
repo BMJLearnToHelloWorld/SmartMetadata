@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -136,7 +136,68 @@ describe('AnnouncementsListView', () => {
     expect(title!.value).toBe('Maintenance');
   });
 
-  it('deletes after confirmation and reloads the list', async () => {
+  it('deletes after confirmation with hardDelete=true and reloads the list', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
+    await flushPromises();
+    expect(document.body.textContent).toContain('permanently delete this announcement');
+    const confirmButton = document.querySelector('.ant-modal-confirm-btns .ant-btn-primary');
+    expect(confirmButton).not.toBeNull();
+    (confirmButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
+    expect(
+      calls.some(
+        (call) => call.url.includes('/api/v1/announcements/a1?hardDelete=true') && call.init?.method === 'DELETE',
+      ),
+    ).toBe(true);
+    const listLoads = calls.filter(
+      (call) => call.url.includes('/api/v1/announcements') && !call.url.includes('/a1'),
+    );
+    expect(listLoads).toHaveLength(2);
+  });
+
+  it('sends no DELETE when the delete confirmation is cancelled', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
+    await flushPromises();
+    const cancelButton = Array.from(document.body.querySelectorAll('.ant-modal-confirm-btns button')).find(
+      (button) => button.textContent?.includes('Cancel'),
+    );
+    expect(cancelButton).toBeDefined();
+    (cancelButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
+    expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false);
+  });
+
+  it('shows an error and does not reload the list when the delete fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/announcements')) {
+          if (init?.method === 'DELETE') {
+            return new Response('boom', { status: 500 });
+          }
+          return jsonResponse({
+            data: [
+              {
+                id: 'a1',
+                displayName: 'Maintenance',
+                description: 'Window',
+                type: 'Notice',
+                startTime: 1762051200000,
+                endTime: 1762054800000,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const errorSpy = vi.spyOn(message, 'error');
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
     await flushPromises();
@@ -144,8 +205,13 @@ describe('AnnouncementsListView', () => {
     expect(confirmButton).not.toBeNull();
     (confirmButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
+    expect(errorSpy).toHaveBeenCalled();
     const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
-    expect(calls.some((call) => call.url.includes('/api/v1/announcements/a1') && call.init?.method === 'DELETE')).toBe(true);
+    const listLoads = calls.filter(
+      (call) => call.url.includes('/api/v1/announcements') && !call.url.includes('/a1'),
+    );
+    expect(listLoads).toHaveLength(1);
+    errorSpy.mockRestore();
   });
 
   it('edits with a patch containing only changed fields', async () => {

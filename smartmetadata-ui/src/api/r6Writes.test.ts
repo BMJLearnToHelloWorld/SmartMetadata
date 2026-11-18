@@ -128,11 +128,18 @@ describe('R6 write surfaces', () => {
     expect(lastFetch().init?.method).toBe('DELETE');
   });
 
-  it('deletes an alert subscription', async () => {
+  it('deletes an alert subscription with the pin hardDelete/recursive wire', async () => {
     stubFetch({});
     await deleteEventSubscription('a1');
-    expect(lastFetch().url).toContain('/api/v1/events/subscriptions/a1');
-    expect(lastFetch().init?.method).toBe('DELETE');
+    const { url, init } = lastFetch();
+    // The server ignores both parameters (the endpoint hardcodes a hard
+    // delete), but the wire must match pin's hardDeleteEntity shape
+    // exactly, key order included. ADR:2026-11-18-event-subscription-delete-wire-matches-pin
+    const parsed = new URL(url);
+    expect(`${parsed.pathname}${parsed.search}`).toBe(
+      '/api/v1/events/subscriptions/a1?hardDelete=true&recursive=false',
+    );
+    expect(init?.method).toBe('DELETE');
   });
 
   it('patches classification and tag disabled flags as JSON Patch', async () => {
@@ -163,14 +170,14 @@ describe('R6 write surfaces', () => {
   });
 
   it('starts an audit export job, polls it, and fetches the text result', async () => {
-    stubFetch({ jobId: 'job1', status: 'running' });
+    stubFetch({ jobId: 'job1', status: 'RUNNING' });
     const job = await exportAuditLogs({ userName: 'alice' });
     expect(job.jobId).toBe('job1');
     expect(lastFetch().url).toContain('/api/v1/audit/logs/export');
     expect(lastFetch().url).toContain('userName=alice');
-    stubFetch({ jobId: 'job1', status: 'completed' });
+    stubFetch({ jobId: 'job1', status: 'COMPLETED' });
     const polled = await getAuditLogExportJob('job1');
-    expect(polled.status).toBe('completed');
+    expect(polled.status).toBe('COMPLETED');
     stubFetch('a,b\n1,2\n');
     const result = await getAuditLogExportResult('job1');
     expect(result).toContain('a,b');

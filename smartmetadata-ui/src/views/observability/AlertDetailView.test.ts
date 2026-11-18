@@ -194,8 +194,14 @@ describe('AlertDetailView delete', () => {
     await wrapper.find('[data-testid="delete-alert"]').trigger('click');
     await flushPromises();
     expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(confirmDelete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete dq-alert',
+        content: "Delete this dq-alert and all its metadata forever. This can't be undone.",
+      }),
+    );
     expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
-    expect(successSpy).toHaveBeenCalled();
+    expect(successSpy).toHaveBeenCalledWith('"dq-alert" deleted successfully!');
     // The delete succeeded, so no deleteFailed toast may appear: before
     // this fix the navigation threw ReferenceError: router is not defined
     // and the catch showed a spurious deleteFailed error instead.
@@ -203,5 +209,30 @@ describe('AlertDetailView delete', () => {
     expect(router.currentRoute.value.name).toBe('observability-alerts');
     errorSpy.mockRestore();
     successSpy.mockRestore();
+  });
+
+  it('shows an error and does not navigate when the delete fails', async () => {
+    deleteEventSubscription.mockRejectedValue(new Error('delete boom'));
+    const errorSpy = vi.spyOn(message, 'error');
+    const successSpy = vi.spyOn(message, 'success');
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="delete-alert"]').trigger('click');
+    await flushPromises();
+    expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
+    expect(errorSpy).toHaveBeenCalled();
+    expect(successSpy).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe('observability-alert');
+    errorSpy.mockRestore();
+    successSpy.mockRestore();
+  });
+
+  it('does not delete or navigate when the confirmation is cancelled', async () => {
+    confirmDelete.mockResolvedValue(false);
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="delete-alert"]').trigger('click');
+    await flushPromises();
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(deleteEventSubscription).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe('observability-alert');
   });
 });

@@ -15,6 +15,7 @@ import {
   deleteRelationshipType,
   getRelationTypeUsageCounts,
   listAllRelationshipTypes,
+  RELATIONSHIP_TYPE_FIELDS,
   updateRelationshipType,
   type RelationshipCharacteristic,
   type RelationshipType,
@@ -123,13 +124,14 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   try {
     const [types, counts] = await Promise.all([
-      listAllRelationshipTypes(),
-      getRelationTypeUsageCounts().catch(() => ({} as Record<string, number>)),
+      listAllRelationshipTypes(RELATIONSHIP_TYPE_FIELDS),
+      getRelationTypeUsageCounts(),
     ]);
     relationshipTypes.value = types;
     usageCounts.value = counts;
   } catch (error) {
     relationshipTypes.value = [];
+    usageCounts.value = {};
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
   } finally {
     loading.value = false;

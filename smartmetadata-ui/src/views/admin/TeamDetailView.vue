@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import {Alert, Button, Checkbox, Descriptions, Form, Input, Select, Space, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import { removeFieldPatch, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
 import { listRoles } from '@/api/roles';
 import {
   TEAM_TYPES,
@@ -16,7 +17,6 @@ import {
   patchTeam,
   removeTeamUser,
   replaceTeamUsers,
-  updateTeam,
 } from '@/api/teams';
 import { listUsers } from '@/api/users';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -59,6 +59,33 @@ const form = reactive({
 
 function idsOf(refs: { id?: string }[]): string[] {
   return refs.map((item) => item.id).filter((id): id is string => Boolean(id));
+}
+
+/** Order-insensitive id comparison: reordering alone is not a change. */
+function sameIdSet(current: string[], next: string[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  const sortedCurrent = [...current].sort();
+  const sortedNext = [...next].sort();
+  return sortedCurrent.every((id, index) => id === sortedNext[index]);
+}
+
+/**
+ * Ops for a trimmable text field: compare after trimming, an emptied
+ * form value removes a stored value, and an already-absent value stays
+ * absent without an op.
+ */
+function textFieldOps(path: string, current: string | undefined, formValue: string): JsonPatchOp[] {
+  const next = formValue.trim() || undefined;
+  const stored = current?.trim() || undefined;
+  if (next === stored) {
+    return [];
+  }
+  if (next === undefined) {
+    return [removeFieldPatch(path)];
+  }
+  return setFieldPatch(path, current, next);
 }
 
 const canHoldUsers = computed(() => team.value?.teamType === 'Group');
@@ -109,19 +136,35 @@ function openEdit(): void {
 }
 
 async function onSave(): Promise<void> {
-  if (!team.value) {
+  const current = team.value;
+  if (!current) {
     return;
   }
   saving.value = true;
   try {
-    await updateTeam({
-      name: team.value.name,
-      teamType: form.teamType,
-      displayName: form.displayName.trim() || undefined,
-      description: form.description.trim() || undefined,
-      isJoinable: form.isJoinable,
-      defaultRoles: form.defaultRoleIds,
-    });
+    // A whole-entity PUT would drop every field this form does not
+    // carry (members, parents, children, policies, ...), so the edit
+    // saves as a JSON Patch limited to the five fields the form owns.
+    // Fields the patch never mentions keep their stored values
+    // server-side.
+    // ADR:2026-11-18-user-team-detail-saves-use-json-patch
+    const ops: JsonPatchOp[] = [];
+    ops.push(...textFieldOps('/displayName', current.displayName, form.displayName));
+    ops.push(...textFieldOps('/description', current.description, form.description));
+    if (form.teamType !== current.teamType) {
+      ops.push(...setFieldPatch('/teamType', current.teamType, form.teamType));
+    }
+    // A missing stored value behaves as joinable, matching openEdit's
+    // normalization, so an untouched form emits no op for it.
+    if (form.isJoinable !== (current.isJoinable !== false)) {
+      ops.push(...setFieldPatch('/isJoinable', current.isJoinable, form.isJoinable));
+    }
+    if (!sameIdSet(idsOf(current.defaultRoles), form.defaultRoleIds)) {
+      ops.push(...assignTeamDefaultRolesPatch(current.defaultRoles, form.defaultRoleIds));
+    }
+    // Pin sends the compare() result unguarded, so an unchanged edit
+    // still sends an empty patch array rather than skipping the call.
+    await patchTeam(current.id, ops);
     editOpen.value = false;
     message.success(t('admin.teams.updated'));
     await load();

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -104,10 +104,12 @@ describe('AuditLogsView', () => {
           return new Response('a,b\n1,2\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
         }
         if (url.includes('/export/job1')) {
-          return jsonResponse({ jobId: 'job1', status: 'completed' });
+          return jsonResponse({ jobId: 'job1', status: 'COMPLETED' });
         }
         if (url.includes('/export')) {
-          return jsonResponse({ jobId: 'job1', status: 'running' });
+          // The real create-job response carries no status field, only
+          // jobId + message; the first status comes from the poll.
+          return jsonResponse({ jobId: 'job1', message: 'Export started' });
         }
         if (url.includes('/api/v1/audit/logs')) {
           return jsonResponse(logs);
@@ -137,6 +139,87 @@ describe('AuditLogsView', () => {
     if (originalRevokeObjectURL) {
       URL.revokeObjectURL = originalRevokeObjectURL;
     }
+  });
+
+  async function exportWithPollStatus(pollStatus: string) {
+    const logs = {
+      data: [
+        {
+          id: 7,
+          eventTs: 1700000000000,
+          eventType: 'CREATE',
+          userName: 'admin',
+          actorType: 'USER',
+          entityType: 'table',
+          entityFQN: 'svc.db.orders',
+          summary: 'Table created',
+        },
+      ],
+      paging: { total: 1 },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/export/job1/result')) {
+          return new Response('a,b\n1,2\n', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+        }
+        if (url.includes('/export/job1')) {
+          return jsonResponse({ jobId: 'job1', status: pollStatus });
+        }
+        if (url.includes('/export')) {
+          return jsonResponse({ jobId: 'job1', message: 'Export started' });
+        }
+        if (url.includes('/api/v1/audit/logs')) {
+          return jsonResponse(logs);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const createdUrls: string[] = [];
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => {
+      createdUrls.push('blob:mock');
+      return 'blob:mock';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
+    const errorSpy = vi.spyOn(message, 'error');
+    try {
+      const wrapper = await mountView();
+      await wrapper.find('[data-testid="audit-export"]').trigger('click');
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await flushPromises();
+      return {
+        urls: vi.mocked(fetch).mock.calls.map(([input]) => String(input)),
+        downloads: createdUrls.length,
+        errorCalls: errorSpy.mock.calls.length,
+      };
+    } finally {
+      if (originalCreateObjectURL) {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+      if (originalRevokeObjectURL) {
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+      errorSpy.mockRestore();
+    }
+  }
+
+  it('fails fast without downloading when the poll reports FAILED', async () => {
+    const { urls, downloads, errorCalls } = await exportWithPollStatus('FAILED');
+    expect(urls.some((url) => url.includes('/export/job1') && !url.includes('/result'))).toBe(true);
+    expect(urls.some((url) => url.includes('/export/job1/result'))).toBe(false);
+    expect(downloads).toBe(0);
+    expect(errorCalls).toBe(1);
+  });
+
+  it('fails fast without downloading when the poll reports CANCELLED', async () => {
+    const { urls, downloads, errorCalls } = await exportWithPollStatus('CANCELLED');
+    expect(urls.some((url) => url.includes('/export/job1') && !url.includes('/result'))).toBe(true);
+    expect(urls.some((url) => url.includes('/export/job1/result'))).toBe(false);
+    expect(downloads).toBe(0);
+    expect(errorCalls).toBe(1);
   });
 
   it('applies the user filter to the request', async () => {

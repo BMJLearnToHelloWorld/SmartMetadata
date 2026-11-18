@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { toEntityLink } from '@/quality/entityLink';
-import { createAnnouncement, listAnnouncements, parseAnnouncementEntityLink } from './announcements';
+import { createAnnouncement, deleteAnnouncement, listAnnouncements, parseAnnouncementEntityLink } from './announcements';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -79,6 +79,39 @@ describe('announcements API', () => {
     expect(created.id).toBe('a2');
     expect(lastFetch().init?.method).toBe('POST');
     expect(lastFetch().url).toContain('/api/v1/announcements');
+  });
+
+  describe('deleteAnnouncement', () => {
+    function stubDeleteFetch(): void {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })),
+      );
+    }
+
+    it('sends hardDelete=true when the caller passes it', async () => {
+      stubDeleteFetch();
+      await deleteAnnouncement('a1', true);
+      expect(lastFetch().url).toContain('/api/v1/announcements/a1?hardDelete=true');
+      expect(lastFetch().init?.method).toBe('DELETE');
+    });
+
+    it('defaults to hardDelete=false, matching the pin API shape', async () => {
+      stubDeleteFetch();
+      await deleteAnnouncement('a1');
+      expect(lastFetch().url).toContain('/api/v1/announcements/a1?hardDelete=false');
+      expect(lastFetch().init?.method).toBe('DELETE');
+    });
+
+    it('encodes special characters in the id', async () => {
+      stubDeleteFetch();
+      await deleteAnnouncement('a/b c', true);
+      expect(lastFetch().url).toContain('/api/v1/announcements/a%2Fb%20c?hardDelete=true');
+      expect(lastFetch().init?.method).toBe('DELETE');
+    });
   });
 });
 
