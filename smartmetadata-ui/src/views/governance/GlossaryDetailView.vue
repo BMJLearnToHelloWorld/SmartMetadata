@@ -27,6 +27,7 @@ import { fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
 import type { OntologyGraphData } from '@/features/ontology/ontologyGraph';
 import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
+import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
@@ -222,16 +223,25 @@ const filteredTerms = computed(() => {
 const activityCount = computed(
   () => activityEvents.value.length + activityConversations.value.length + activityTasks.value.length,
 );
+// C-4 consume side: the selected persona's Glossary page reorders and
+// renames these tabs (official `getDetailsTabWithNewLabel`, preserve
+// mode — see `useCustomPages.ts`).
+const { customizedPage } = useCustomPages('Glossary');
+
 const glossaryTabs = computed(() =>
-  governanceTabsFor('glossary').map((tab) => ({
-    ...tab,
-    label:
-      tab.key === 'terms'
-        ? termCountLabel.value
-        : tab.key === 'activity'
-          ? t(tab.labelKey, { count: activityCount.value })
-          : t(tab.labelKey),
-  })),
+  getDetailsTabWithNewLabel(
+    governanceTabsFor('glossary').map((tab) => ({
+      ...tab,
+      label:
+        tab.key === 'terms'
+          ? termCountLabel.value
+          : tab.key === 'activity'
+            ? t(tab.labelKey, { count: activityCount.value })
+            : t(tab.labelKey),
+    })),
+    customizedPage.value?.tabs,
+    { preserveUnlisted: true },
+  ),
 );
 
 const statusOptions = computed(() => {

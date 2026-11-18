@@ -33,7 +33,7 @@ const DETAIL = {
   default: false,
 };
 
-async function mountDetail() {
+async function mountDetail(initialPath = '/settings/persona/Analyst') {
   const pinia = createPinia();
   setActivePinia(pinia);
   useAuthStore().user = { id: 'admin', name: 'admin', isAdmin: true };
@@ -41,24 +41,24 @@ async function mountDetail() {
     history: createMemoryHistory(),
     routes: [
       {
-        path: '/admin/settings/persona/:fqn',
+        path: '/settings/persona/:fqn',
         name: 'admin-settings-persona-detail',
         component: PersonaDetailView,
         props: true,
       },
       {
-        path: '/admin/settings/persona/:fqn/customize/:category',
-        name: 'admin-settings-persona-customize',
+        path: '/customize-page/:fqn/:pageFqn',
+        name: 'customize-page',
         component: { template: '<div>customize</div>' },
       },
       {
-        path: '/admin/settings/persona',
+        path: '/settings/persona',
         name: 'admin-settings-persona',
         component: { template: '<div>list</div>' },
       },
     ],
   });
-  await router.push('/admin/settings/persona/Analyst');
+  await router.push(initialPath);
   await router.isReady();
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   vi.stubGlobal(
@@ -124,14 +124,68 @@ describe('PersonaDetailView', () => {
     expect(wrapper.find('[data-testid="persona-detail-name"]').text()).toBe('Data Analyst');
     expect(wrapper.find('[data-testid="persona-customize-app-layout"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="persona-customize-DataMarketplace"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="persona-customize-askCollateSidebar"]').exists()).toBe(
+      false,
+    );
   });
 
-  it('navigates a customize card to the customize route', async () => {
+  it('writes the default #customize-ui hash when the URL has none', async () => {
+    const { router } = await mountDetail();
+    expect(router.currentRoute.value.hash).toBe('#customize-ui');
+  });
+
+  it('navigates a leaf customize card to the top-level customize route', async () => {
     const { wrapper, router } = await mountDetail();
     await wrapper.find('[data-testid="persona-customize-app-layout"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-settings-persona-customize');
-    expect(router.currentRoute.value.params.category).toBe('app-layout');
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    expect(router.currentRoute.value.params).toEqual({ fqn: 'Analyst', pageFqn: 'app-layout' });
+  });
+
+  it('drilling into a parent card only changes the hash and swaps in the sub-options', async () => {
+    const { wrapper, router } = await mountDetail();
+    await wrapper.find('[data-testid="persona-customize-data-assets"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings-persona-detail');
+    expect(router.currentRoute.value.hash).toBe('#customize-ui.data-assets');
+    expect(wrapper.findAll('[data-testid^="persona-customize-option-"]')).toHaveLength(19);
+    expect(wrapper.find('[data-testid="persona-customize-navigation"]').exists()).toBe(false);
+  });
+
+  it('honours a drilled-in hash on load', async () => {
+    const { wrapper, router } = await mountDetail('/settings/persona/Analyst#customize-ui.governance');
+    expect(router.currentRoute.value.hash).toBe('#customize-ui.governance');
+    expect(wrapper.findAll('[data-testid^="persona-customize-option-"]')).toHaveLength(4);
+  });
+
+  it('honours the #users hash on load and switches tabs through the hash', async () => {
+    const { wrapper, router } = await mountDetail('/settings/persona/Analyst#users');
+    expect(wrapper.find('[data-testid="persona-user-u1"]').exists()).toBe(true);
+    const tabs = wrapper.findAll('.ant-tabs-tab');
+    const customizeTab = tabs.find((tab) => tab.text().includes('Customize'));
+    await customizeTab?.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.hash).toBe('#customize-ui');
+    expect(wrapper.find('[data-testid="persona-customize-navigation"]').exists()).toBe(true);
+  });
+
+  it('renders the row-1 breadcrumb trail without a Settings root', async () => {
+    const { wrapper } = await mountDetail();
+    const crumbs = wrapper.find('[data-testid="persona-breadcrumb"]');
+    expect(crumbs.exists()).toBe(true);
+    const links = crumbs.findAll('a');
+    expect(links.map((link) => link.text())).toEqual(['Personas', 'Data Analyst']);
+    expect(links[0].attributes('href')).toBe('/settings/persona');
+    expect(links[1].attributes('href')).toBe('/settings/persona/Analyst#customize-ui');
+    expect(crumbs.text()).not.toContain('Settings');
+  });
+
+  it('appends the drilled-in category label to the breadcrumb trail', async () => {
+    const { wrapper } = await mountDetail('/settings/persona/Analyst#customize-ui.governance');
+    const crumbs = wrapper.find('[data-testid="persona-breadcrumb"]');
+    expect(crumbs.text()).toContain('Governance');
+    // The category crumb carries no link.
+    expect(crumbs.findAll('a')).toHaveLength(2);
   });
 
   it('toggles the default flag with a PATCH', async () => {

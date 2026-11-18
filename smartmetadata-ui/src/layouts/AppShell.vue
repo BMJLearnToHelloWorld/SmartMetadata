@@ -20,24 +20,45 @@ import {
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
-  NAV_ENTRIES,
   sectionKeyForRoute,
   sectionLanding,
   selectedNavKey,
 } from '@/layouts/nav';
+import { useSidebarItems } from '@/composables/useSidebarItems';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
 import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
+import { principalKeyFor, useGuardDecisionStore } from '@/stores/guardDecision';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const guardDecisions = useGuardDecisionStore();
 const { t, locale } = useI18n();
+
+// D-3: a guard denial completes the navigation with the URL unchanged
+// and this slot renders the shared placeholder instead of mounting the
+// matched component. The decision is bound to its fullPath + principal,
+// so a stale decision can never blank another page; the router's
+// afterEach sweeps it and beforeEach overwrites it on the next
+// navigation — no view-layer state is kept here.
+const guardDenied = computed(() =>
+  guardDecisions.isDeniedFor(route.fullPath, principalKeyFor(auth.user)),
+);
 
 const collapsed = ref(false);
 const openKeys = ref<string[]>(defaultOpenNavKeys());
 
 const selectedKeys = computed(() => [selectedNavKey(route.name)]);
+
+// C-4 consume side: the sidebar renders the selected persona's saved
+// navigation (order + visibility) over the default item set, falling
+// back to the defaults when the document carries no navigation
+// (official `useSidebarItems` + `filterHiddenNavigationItems` — see
+// `useSidebarItems.ts`). A save lands here without a reload through
+// the shared persona store slot.
+const sidebarItems = useSidebarItems();
 const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
 
@@ -209,10 +230,10 @@ function onUserMenu({ key }: { key: string | number }): void {
     void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
     return;
   }
-  if (action === 'settings') {
-    void router.push({ name: 'admin-settings' });
-    return;
-  }
+  // D-9: the user menu carries no Settings entry — the left sidebar
+  // footer is the only Settings entry, as officially. (The `settings`
+  // branch and menu item were removed here; the footer entry in
+  // `NAV_FOOTER_ENTRIES` is untouched.)
   if (action === 'logout') {
     void onLogout();
   }
@@ -254,7 +275,7 @@ async function onLogout(): Promise<void> {
           v-model:openKeys="openKeys"
           @click="onMenuClick"
         >
-          <template v-for="entry in NAV_ENTRIES" :key="entry.key">
+          <template v-for="entry in sidebarItems" :key="entry.key">
             <Menu.Item v-if="entry.kind === 'item'" :key="entry.key">
               <template #icon>
                 <component :is="navIcon(entry.key)" />
@@ -342,9 +363,6 @@ async function onLogout(): Promise<void> {
                 <Menu.Item v-if="profileUserId" key="profile" data-testid="user-profile-item">
                   {{ t('chrome.viewProfile') }}
                 </Menu.Item>
-                <Menu.Item key="settings" data-testid="user-settings-item">
-                  {{ t('chrome.settings') }}
-                </Menu.Item>
                 <Menu.Item key="logout" data-testid="logout-button">
                   {{ t('chrome.logout') }}
                 </Menu.Item>
@@ -354,7 +372,10 @@ async function onLogout(): Promise<void> {
         </div>
       </Layout.Header>
       <Layout.Content class="shell__content" :class="{ 'shell__content--flush': flushContent }">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <PermissionPlaceholder v-if="guardDenied" :permission-value="t('crud.view')" />
+          <component :is="Component" v-else />
+        </router-view>
       </Layout.Content>
     </Layout>
     <TourOverlay />

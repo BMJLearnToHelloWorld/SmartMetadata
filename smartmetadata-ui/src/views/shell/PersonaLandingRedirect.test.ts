@@ -105,4 +105,12 @@ describe('PersonaLandingRedirect', () => {
     const { router } = await mountRedirect({});
     expect(router.currentRoute.value.name).toBe('home');
   });
+
+  // C-4 §6.3: only curated landing values are honored — a stored
+  // value outside the curated options (stale or hand-written) falls
+  // back to Home instead of navigating to an unknown path.
+  it('resolves to Home when the stored landing page is not a curated option', async () => {
+    const { router } = await mountRedirect({ storedPersona: 'p1', landing: '/deleted-page' });
+    expect(router.currentRoute.value.name).toBe('home');
+  });
 });

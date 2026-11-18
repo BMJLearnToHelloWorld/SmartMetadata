@@ -30,6 +30,7 @@ async function mountApps() {
     routes: [
       { path: '/admin/apps', name: 'admin-apps', component: AppsListView },
       { path: '/admin/apps/:id', name: 'admin-app', component: { template: '<div>app</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/apps');

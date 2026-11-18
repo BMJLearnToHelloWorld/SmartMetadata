@@ -20,8 +20,17 @@ import {
   Tag,
   Typography,
 } from 'ant-design-vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import UserPermissionsPanel from '@/views/admin/UserPermissionsPanel.vue';
 import { searchAssets } from '@/api/search';
@@ -36,6 +45,21 @@ import {
 import { useAuthStore } from '@/stores/auth';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('access.permission-debugger');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: access.permission-debugger');
+}
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'access',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const authStore = useAuthStore();
 
 /**
@@ -206,8 +230,9 @@ async function handleEvaluate(): Promise<void> {
 </script>
 
 <template>
-  <ForbiddenView v-if="!isAdmin" />
+  <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
   <PageLayout v-else test-id="permission-debugger">
+    <SmBreadcrumb :items="breadcrumbItems" />
     <PageHeader
       :header="t('permissionDebugger.title')"
       :sub-header="t('permissionDebugger.lead')"

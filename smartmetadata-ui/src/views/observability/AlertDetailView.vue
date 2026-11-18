@@ -11,6 +11,15 @@ import SmTable from '@/components/shared/SmTable.vue';
 import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { buildSettingsBreadcrumbCatalog } from '@/settings/breadcrumbs';
+import { alertDetailBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import FormModal from '@/components/shared/FormModal.vue';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -135,10 +144,26 @@ async function onSaveEdit(): Promise<void> {
   }
 }
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('observability.alerts.title'), to: { name: 'observability-alerts' } },
-  { label: entityLabel(alert.value) || t('observability.alerts.title') },
-]);
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const alertsRegistryEntry = findSettingsRegistryItem('notifications.alerts');
+if (!alertsRegistryEntry) {
+  throw new Error('Missing settings registry entry: notifications.alerts');
+}
+// R-WIRE-7: the pin four-item array lives in the named adapter; the
+// view only resolves the catalog, the registry title, and the entity
+// name (with its pre-existing fallback).
+const breadcrumbs = computed<EntityBreadcrumb[]>(() =>
+  alertDetailBreadcrumbs(
+    buildSettingsBreadcrumbCatalog(
+      'settings.title',
+      SETTINGS_BREADCRUMB_NAMES,
+      settingsTranslator,
+    ),
+    resolveSettingsLocation,
+    registryTitle(settingsTranslator, alertsRegistryEntry),
+    entityLabel(alert.value) || t('observability.alerts.title'),
+  ),
+);
 
 const tabs = computed<EntityDetailTab[]>(() => [
   { key: 'overview', label: t('crud.overview'), testId: 'alert-tab-overview' },

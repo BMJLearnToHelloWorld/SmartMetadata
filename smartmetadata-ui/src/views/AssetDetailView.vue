@@ -26,6 +26,12 @@ import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
 import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit } from '@/catalog/entityDetailTabs';
 import { isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
+import {
+  getDetailsTabWithNewLabel,
+  getRenderedActiveTab,
+  pageTypeForEntityType,
+  useCustomPages,
+} from '@/composables/useCustomPages';
 import { getTierTag } from '@/ingestion/tierTags';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
@@ -73,6 +79,13 @@ const route = useRoute();
 const { t, te } = useI18n();
 const auth = useAuthStore();
 const permissionStore = usePermissionStore();
+
+// C-4 consume side: the selected persona's customized page for this
+// entity type reorders and renames the detail tabs (official
+// `getDetailsTabWithNewLabel` semantics, preserve mode — see
+// `useCustomPages.ts`). Types with no PageType (`query`) yield no
+// customization and always render their defaults.
+const { customizedPage } = useCustomPages(() => pageTypeForEntityType(props.entityType));
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -198,14 +211,6 @@ async function onToggleFollow(): Promise<void> {
   }
 }
 
-function firstTabKey(): string {
-  const defs = entityDetailTabDefs(props.entityType);
-  if (defs?.length) {
-    return defs[0].key;
-  }
-  return assetTabKeys(props.entityType)[0] ?? 'overview';
-}
-
 function residualReasonFor(key: string): string {
   const def = entityDetailTabDef(props.entityType, key);
   return def?.residual ? t(def.residual) : '';
@@ -216,23 +221,29 @@ const tabs = computed<EntityDetailTab[]>(() => {
     return [];
   }
   const defs = entityDetailTabDefs(props.entityType);
-  if (defs) {
-    return defs.map((def) => ({
-      key: def.key,
-      label: t(`asset.tabs.${def.labelKey}`),
-      testId: `asset-tab-${def.key}`,
-      // Pin tableQueryCountFn: the badge shows once the count resolves;
-      // while it is pending (or failed) the tab renders without one.
-      ...(def.key === 'table_queries' && queryCount.value !== undefined
-        ? { count: queryCount.value }
-        : {}),
-    }));
-  }
-  return assetTabKeys(props.entityType).map((key) => ({
-    key,
-    label: t(`asset.tabs.${key}`),
-    testId: TAB_TEST_IDS[key],
-  }));
+  const defaults: EntityDetailTab[] = defs
+    ? defs.map((def) => ({
+        key: def.key,
+        label: t(`asset.tabs.${def.labelKey}`),
+        testId: `asset-tab-${def.key}`,
+        // Pin tableQueryCountFn: the badge shows once the count resolves;
+        // while it is pending (or failed) the tab renders without one.
+        ...(def.key === 'table_queries' && queryCount.value !== undefined
+          ? { count: queryCount.value }
+          : {}),
+      }))
+    : assetTabKeys(props.entityType).map((key) => ({
+        key,
+        label: t(`asset.tabs.${key}`),
+        testId: TAB_TEST_IDS[key],
+      }));
+  // The customized tab list reorders and renames the defaults; tabs
+  // the customization does not mention stay, in default order
+  // (preserve mode — the product tab sets carry tabs with no official
+  // id, which replacement semantics would silently remove).
+  return getDetailsTabWithNewLabel(defaults, customizedPage.value?.tabs, {
+    preserveUnlisted: true,
+  });
 });
 
 // Pin detail header: the percentile renders only when usageSummary is
@@ -385,8 +396,7 @@ async function load(): Promise<void> {
       extraFields ? { extraFields } : undefined,
     );
     const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
-    const validKeys = tabs.value.map((tab) => tab.key);
-    activeTab.value = requestedTab && validKeys.includes(requestedTab) ? requestedTab : firstTabKey();
+    activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
     // Pin tableQueryCountFn runs on the table page: the count resolves
     // independently of the tab mount, and a failure leaves the tab
     // without a badge rather than failing the page.

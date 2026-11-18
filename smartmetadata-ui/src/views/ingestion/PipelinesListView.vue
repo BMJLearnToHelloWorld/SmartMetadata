@@ -32,6 +32,7 @@ import {
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import type { ListableServiceKind } from '@/router/serviceTabSegments';
 import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { entityTypeForKind } from '@/ingestion/connections';
@@ -67,6 +68,20 @@ import IngestionRunDetailsModal from './IngestionRunDetailsModal.vue';
 import KillPipelineModal from './KillPipelineModal.vue';
 import PipelineRowActions from './PipelineRowActions.vue';
 import PipelineScheduleCell from './PipelineScheduleCell.vue';
+
+/**
+ * Controlled tab content (DESIGN §6.4): the embedding services page
+ * passes the scope. A kind scope fetches with
+ * serviceType=entityTypeForKind(kind) (pin IngestionPipelineList
+ * fetches with the serviceType derived from its serviceName) and
+ * restricts the service filter and create-modal services to that
+ * kind. The 'testSuites' scope is pin's Data Observability tab
+ * (ServicesPage.tsx passes serviceName='testSuites', fetched with
+ * serviceType TEST_SUITE): its list fetching belongs to the third
+ * batch, so this scope renders shell + empty state only and fetches
+ * nothing — no fabricated data.
+ */
+const props = defineProps<{ kindFilter: ListableServiceKind | 'testSuites' }>();
 
 const { t } = useI18n();
 const router = useRouter();
@@ -224,10 +239,12 @@ const typeFilterOptions = computed(() =>
 );
 
 const serviceFilterOptions = computed(() =>
-  catalogServices.value.map((service) => ({
-    value: service.fullyQualifiedName ?? service.name,
-    label: service.displayName ?? service.name,
-  })),
+  catalogServices.value
+    .filter((service) => service.kind === props.kindFilter)
+    .map((service) => ({
+      value: service.fullyQualifiedName ?? service.name,
+      label: service.displayName ?? service.name,
+    })),
 );
 
 const rowActions = usePipelineRowActions({
@@ -246,6 +263,19 @@ const logsPipeline = rowActions.logsPipeline;
 const killPipeline = rowActions.killPipeline;
 
 async function load(): Promise<void> {
+  const scope = props.kindFilter;
+  if (scope === 'testSuites') {
+    // Third-batch scope: no pipeline fetch, no orchestrator probe, no
+    // permission fetch — the shell renders with the existing empty
+    // state. The orchestrator probe stays unsettled so no banner or
+    // gating flashes for a list that does not exist yet.
+    pipelines.value = [];
+    total.value = undefined;
+    pageAfter.value = undefined;
+    loading.value = false;
+    errorMessage.value = '';
+    return;
+  }
   loading.value = true;
   errorMessage.value = '';
   try {
@@ -255,6 +285,7 @@ async function load(): Promise<void> {
         after: cursor.value.after,
         pipelineType: selectedTypes.value.length ? selectedTypes.value.join(',') : undefined,
         service: selectedService.value,
+        serviceType: entityTypeForKind(scope),
         sortField: sortOrder.value ? 'displayName' : undefined,
         sortOrder: sortOrder.value,
       }),
@@ -308,11 +339,18 @@ async function loadPipelinePermissions(): Promise<void> {
 }
 
 /**
- * P-49: the service list is fetched lazily, once — on first create-modal
- * open or first service-filter open — never on every load().
+ * P-49: the service list is fetched lazily, once per scope — on first
+ * create-modal open or first service-filter open — never on every
+ * load(). Only the scoped kind is fetched; the testSuites scope
+ * fetches nothing. A scope change while a fetch is in flight drops
+ * the stale result instead of showing another kind's services.
  */
 let servicesLoading: Promise<void> | null = null;
 async function ensureServicesLoaded(): Promise<void> {
+  const scope = props.kindFilter;
+  if (scope === 'testSuites') {
+    return;
+  }
   if (servicesLoaded.value) {
     return;
   }
@@ -320,13 +358,11 @@ async function ensureServicesLoaded(): Promise<void> {
     return servicesLoading;
   }
   servicesLoading = (async () => {
-    const serviceKinds = Object.keys(SERVICE_LIST_API) as Array<keyof typeof SERVICE_LIST_API>;
-    const settled = await Promise.allSettled(
-      serviceKinds.map((kind) => SERVICE_LIST_API[kind]({ limit: 100 })),
-    );
-    catalogServices.value = settled.flatMap((result) =>
-      result.status === 'fulfilled' ? result.value.data : [],
-    );
+    const page = await SERVICE_LIST_API[scope]({ limit: 100 }).catch(() => null);
+    if (props.kindFilter !== scope) {
+      return;
+    }
+    catalogServices.value = page?.data ?? [];
     servicesLoaded.value = true;
   })();
   try {
@@ -586,6 +622,19 @@ function runTooltip(status: PipelineStatus): string {
   }
   return parts.join('\n');
 }
+
+watch(
+  () => props.kindFilter,
+  () => {
+    cursor.value = createCursorPager();
+    pageAfter.value = undefined;
+    selectedService.value = undefined;
+    selectedRowKeys.value = [];
+    servicesLoaded.value = false;
+    catalogServices.value = [];
+    void load();
+  },
+);
 
 watch(createOpen, (open) => {
   if (open) {

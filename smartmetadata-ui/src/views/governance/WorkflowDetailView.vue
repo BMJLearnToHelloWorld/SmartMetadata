@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, h, onMounted } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Card, Empty, Modal, Spin, Tabs, Typography } from 'ant-design-vue';
@@ -22,12 +22,12 @@ const route = useRoute();
 const router = useRouter();
 
 /**
- * Official WorkflowBuilder page (pin a3012259ca), ported to the product's
- * route contract: /workflows/:fqn/:tab, default tab 'workflow'
- * (WORKFLOWS_WITH_FQN_TAB). The builder's own tabs are the canvas
- * ('workflow-builder' in official, 'workflow' as the route param) and
- * the execution history; the tabs are route params here, not internal
- * state (R-2). The header is the page variant — the product has no
+ * Official WorkflowBuilder page (pin a3012259ca): the builder route
+ * carries only :fqn, and the active tab is component-local state
+ * defaulting to the first tab, matching official's useState
+ * (WorkflowBuilder.tsx:252-253,720-721). The builder's own tabs are the
+ * canvas ('workflow-builder' in official, 'workflow' here) and the
+ * execution history. The header is the page variant — the product has no
  * embedded host. No-fqn redirects to the list: creating a workflow is
  * gated off in OSS.
  */
@@ -46,11 +46,7 @@ const fqn = computed(() => {
 
 const fqnRef = computed<string | undefined>(() => fqn.value || undefined);
 
-const activeTab = computed<DetailTab>(() => {
-  const raw = route.params.tab;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return DETAIL_TABS.includes(value as DetailTab) ? (value as DetailTab) : 'workflow';
-});
+const activeTab = ref<DetailTab>(DETAIL_TABS[0]);
 
 const isCanvasTabActive = computed(() => activeTab.value === 'workflow');
 
@@ -71,10 +67,7 @@ const isForbidden = computed(
 );
 
 function onTabChange(tab: string | number): void {
-  void router.replace({
-    name: 'workflow-detail',
-    params: { fqn: fqn.value, tab: String(tab) },
-  });
+  activeTab.value = tab as DetailTab;
 }
 
 // The palette overlay only renders on the canvas tab when the sidebar is
@@ -95,13 +88,6 @@ onMounted(() => {
   if (!fqn.value) {
     void router.replace({ name: 'workflows' });
     return;
-  }
-  // Unknown :tab values fall back to the official default tab.
-  if (!DETAIL_TABS.includes(route.params.tab as DetailTab)) {
-    void router.replace({
-      name: 'workflow-detail',
-      params: { fqn: fqn.value, tab: 'workflow' },
-    });
   }
 });
 </script>

@@ -8,42 +8,74 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, resolveAdminAccess, resolveGuard } from './guards';
+import {
+  CREATE_USER_GUARD_DECLARATIONS,
+  evaluateGuardDeclaration,
+  guardDeclarationOf,
+  guardDeclarationResources,
+  resolveAdminAccess,
+  resolveGuard,
+  type GuardDeclaration,
+} from './guards';
 
-describe('route guards', () => {
+describe('route guards (meta-driven, DESIGN §10)', () => {
   it('keeps public routes open without a session', () => {
-    expect(
-      resolveGuard({ isPublic: true, hasSession: false, fullPath: '/login' }),
-    ).toEqual({ kind: 'allow' });
+    expect(resolveGuard({ isPublic: true, hasSession: false, fullPath: '/login' })).toEqual({
+      kind: 'allow',
+    });
   });
 
   it('redirects to login when there is no session', () => {
-    expect(
-      resolveGuard({ isPublic: false, hasSession: false, fullPath: '/my-data' }),
-    ).toEqual({ kind: 'login', redirect: '/my-data' });
+    expect(resolveGuard({ isPublic: false, hasSession: false, fullPath: '/my-data' })).toEqual({
+      kind: 'login',
+      redirect: '/my-data',
+    });
   });
 
-  it('passes non-admin routes on session alone', () => {
+  it('passes undeclared routes on session alone', () => {
+    expect(resolveGuard({ isPublic: false, hasSession: true, fullPath: '/my-data' })).toEqual({
+      kind: 'allow',
+    });
+  });
+
+  it('passes none-declared routes on session alone', () => {
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/my-data' }),
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/settings', declaration: 'none' }),
     ).toEqual({ kind: 'allow' });
   });
 
-  it('forbids admin routes when neither permission line passes', () => {
+  it('denies admin-only routes in place when neither line passes', () => {
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/users' }),
-    ).toEqual({ kind: 'forbidden' });
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/access/permission-debugger',
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'deny' });
   });
 
-  it('admits admin routes on the isAdminUser line alone', () => {
+  it('admits declared routes on the isAdminUser line alone', () => {
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/users', isAdminUser: true }),
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/members/users',
+        isAdminUser: true,
+        declaration: { resource: 'USER', operation: 'view' },
+      }),
     ).toEqual({ kind: 'allow' });
   });
 
-  it('admits admin routes on the permission line alone', () => {
+  it('admits declared routes on the permission line alone', () => {
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/users', hasPermission: true }),
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/members/users',
+        hasPermission: true,
+        declaration: { resource: 'USER', operation: 'view' },
+      }),
     ).toEqual({ kind: 'allow' });
   });
 
@@ -54,94 +86,177 @@ describe('route guards', () => {
     expect(resolveAdminAccess({ isAdminUser: false, hasPermission: false })).toBe(false);
   });
 
-  it('recognizes admin paths by prefix only', () => {
-    expect(isAdminPath('/admin')).toBe(true);
-    expect(isAdminPath('/admin/users')).toBe(true);
-    expect(isAdminPath('/administrator')).toBe(false);
-    expect(isAdminPath('/my-data')).toBe(false);
-  });
-
-  it('recognizes the announcements management list as admin-only (B-7)', () => {
-    expect(isAdminPath('/announcements')).toBe(true);
-    expect(isAdminPath('/announcements/duplicate/abc')).toBe(true);
-    // The home announcement rail is a read-only view on /my-data,
-    // not an admin route, and stays open to any signed-in user.
-    expect(isAdminPath('/my-data')).toBe(false);
-  });
-
-  it('forbids the announcements list for non-admins, admits admins', () => {
+  it('never judges by URL path: a staged-looking path without a declaration is session-only', () => {
+    // The prefix machinery is retired (§10.5). fullPath is only the
+    // login redirect target; the declaration decides.
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/announcements' }),
-    ).toEqual({ kind: 'forbidden' });
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/users' }),
+    ).toEqual({ kind: 'allow' });
+    expect(
+      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings/system' }),
+    ).toEqual({ kind: 'allow' });
+    expect(
+      resolveGuard({ isPublic: false, hasSession: false, fullPath: '/admin/settings/system' }),
+    ).toEqual({ kind: 'login', redirect: '/admin/settings/system' });
+  });
+
+  it('sends the login-configuration route to not-found before the admin line (S1)', () => {
     expect(
       resolveGuard({
         isPublic: false,
         hasSession: true,
-        fullPath: '/announcements/duplicate/abc',
-      }),
-    ).toEqual({ kind: 'forbidden' });
-    expect(
-      resolveGuard({
-        isPublic: false,
-        hasSession: true,
-        fullPath: '/announcements',
+        fullPath: '/settings/preferences/loginConfiguration',
         isAdminUser: true,
+        declaration: 'admin-only',
+        loginConfigApplicable: false,
+      }),
+    ).toEqual({ kind: 'not-found' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/preferences/loginConfiguration',
+        isAdminUser: true,
+        declaration: 'admin-only',
+        loginConfigApplicable: true,
       }),
     ).toEqual({ kind: 'allow' });
   });
 
-  it('maps user/team admin routes and the custom-properties routes to a permission resource', () => {
-    expect(ADMIN_ROUTE_RESOURCE['admin-users']).toBe('user');
-    expect(ADMIN_ROUTE_RESOURCE['admin-user']).toBe('user');
-    expect(ADMIN_ROUTE_RESOURCE['admin-admins']).toBe('user');
-    expect(ADMIN_ROUTE_RESOURCE['admin-teams']).toBe('team');
-    expect(ADMIN_ROUTE_RESOURCE['admin-team']).toBe('team');
-    // G-23 stage 4: both custom-properties route names map to 'type' so a
-    // non-admin holding a type grant can reach the per-type gated detail
-    // page (the list route alone would still forbid them).
-    expect(ADMIN_ROUTE_RESOURCE['admin-settings-custom-properties']).toBe('type');
-    expect(ADMIN_ROUTE_RESOURCE['admin-settings-custom-property-type']).toBe('type');
-    // Roles, bots, policies, settings, personas and the debugger stay
-    // admin-only until their resource mappings are determined.
-    expect(ADMIN_ROUTE_RESOURCE['admin-roles']).toBeUndefined();
-    expect(ADMIN_ROUTE_RESOURCE['admin-settings-permission-debugger']).toBeUndefined();
-  });
-
-  it('recognizes the ingestion pipeline routes as admin-only (P-17)', () => {
-    // Official keeps only the Pipelines tab admin-only
-    // (ServicesPage.tsx:147-165); the service routes admit viewers and
-    // owners under their own view-permission behaviour, so they are not
-    // admin paths.
-    expect(isAdminPath('/ingestion/pipelines')).toBe(true);
-    expect(isAdminPath('/ingestion/pipelines/p1')).toBe(true);
-    expect(isAdminPath('/ingestion/pipelines/p1/edit')).toBe(true);
-    expect(isAdminPath('/ingestion')).toBe(false);
-    expect(isAdminPath('/ingestion/services')).toBe(false);
-    expect(isAdminPath('/ingestion/services/database/s1')).toBe(false);
-    expect(isAdminPath('/ingestionx')).toBe(false);
-  });
-
-  it('forbids ingestion routes for non-admins, admits admins (P-17)', () => {
+  it('lets an unlogged visitor reach login even when the provider gate would fail', () => {
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/ingestion/pipelines' }),
-    ).toEqual({ kind: 'forbidden' });
+      resolveGuard({
+        isPublic: false,
+        hasSession: false,
+        fullPath: '/settings/preferences/loginConfiguration',
+        declaration: 'admin-only',
+        loginConfigApplicable: false,
+      }),
+    ).toEqual({ kind: 'login', redirect: '/settings/preferences/loginConfiguration' });
+  });
+});
+
+describe('guard declaration evaluation', () => {
+  it('evaluates view as ViewAll or ViewBasic', () => {
+    const declaration: GuardDeclaration = { resource: 'ROLE', operation: 'view' };
+    expect(evaluateGuardDeclaration(declaration, { role: { ViewAll: true } })).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, { role: { ViewBasic: true } })).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, { role: { EditAll: true } })).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, { role: {} })).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, { role: null })).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, {})).toBe(false);
+  });
+
+  it('evaluates the staged entry operation as view-or-better (M1b)', () => {
+    const declaration: GuardDeclaration = { resource: 'USER', operation: 'entry' };
+    expect(evaluateGuardDeclaration(declaration, { user: { ViewAll: true } })).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, { user: { ViewBasic: true } })).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, { user: { EditAll: true } })).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, { user: { Create: true } })).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, { user: {} })).toBe(false);
+  });
+
+  it('evaluates Create, EditAll and AuditLogs on their own operations', () => {
+    expect(
+      evaluateGuardDeclaration({ resource: 'POLICY', operation: 'EditAll' }, { policy: { EditAll: true } }),
+    ).toBe(true);
+    expect(
+      evaluateGuardDeclaration({ resource: 'POLICY', operation: 'EditAll' }, { policy: { ViewAll: true } }),
+    ).toBe(false);
+    expect(
+      evaluateGuardDeclaration(
+        { resource: 'AUDIT_LOG', operation: 'AuditLogs' },
+        { auditLog: { AuditLogs: true } },
+      ),
+    ).toBe(true);
+    expect(
+      evaluateGuardDeclaration(
+        { resource: 'AUDIT_LOG', operation: 'AuditLogs' },
+        { auditLog: { ViewAll: true } },
+      ),
+    ).toBe(false);
+    expect(
+      evaluateGuardDeclaration({ resource: 'USER', operation: 'Create' }, { user: { Create: true } }),
+    ).toBe(true);
+  });
+
+  it('maps declarations to §11.3 resource keys for fetching', () => {
+    expect(guardDeclarationResources({ resource: 'USER', operation: 'view' })).toEqual(['user']);
+    expect(guardDeclarationResources({ resource: 'AUDIT_LOG', operation: 'AuditLogs' })).toEqual([
+      'auditLog',
+    ]);
+    expect(guardDeclarationResources({ resource: 'EVENT_SUBSCRIPTION', operation: 'view' })).toEqual([
+      'eventsubscription',
+    ]);
+    expect(guardDeclarationResources('admin-only')).toEqual([]);
+    expect(guardDeclarationResources('none')).toEqual([]);
+    expect(
+      guardDeclarationResources(CREATE_USER_GUARD_DECLARATIONS['/create-user/bot']),
+    ).toEqual(['user', 'bot']);
+  });
+
+  it('fails closed on malformed meta declarations', () => {
+    expect(guardDeclarationOf(undefined)).toBeUndefined();
+    expect(guardDeclarationOf('admin-only')).toBe('admin-only');
+    expect(guardDeclarationOf('none')).toBe('none');
+    expect(guardDeclarationOf({ resource: 'USER', operation: 'view' })).toEqual({
+      resource: 'USER',
+      operation: 'view',
+    });
+    expect(guardDeclarationOf({ resource: 'USER', operation: 'bogus' })).toBe('admin-only');
+    expect(guardDeclarationOf({ resource: 'BOGUS', operation: 'view' })).toBe('admin-only');
+    expect(guardDeclarationOf({ resource: 'USER' })).toBe('admin-only');
+    expect(guardDeclarationOf('admin')).toBe('admin-only');
+    expect(guardDeclarationOf({ allOf: [] })).toBe('admin-only');
+    expect(
+      guardDeclarationOf({
+        allOf: [
+          { resource: 'USER', operation: 'Create' },
+          { resource: 'BOT', operation: 'Create' },
+        ],
+      }),
+    ).toEqual({
+      allOf: [
+        { resource: 'USER', operation: 'Create' },
+        { resource: 'BOT', operation: 'Create' },
+      ],
+    });
+    expect(
+      guardDeclarationOf({
+        allOf: [{ resource: 'USER', operation: 'Create' }, { resource: 'BOT' }],
+      }),
+    ).toBe('admin-only');
+  });
+});
+
+describe('create-user guard contract (§10.6, reserved, no routes)', () => {
+  it('declares Create(user) for the plain branch', () => {
+    expect(CREATE_USER_GUARD_DECLARATIONS['/create-user']).toEqual({
+      resource: 'USER',
+      operation: 'Create',
+    });
+  });
+
+  it('requires the bot conjunction across all four permission combinations', () => {
+    const declaration = CREATE_USER_GUARD_DECLARATIONS['/create-user/bot'];
+    const ops = (userCreate: boolean, botCreate: boolean) => ({
+      user: { Create: userCreate },
+      bot: { Create: botCreate },
+    });
+    expect(evaluateGuardDeclaration(declaration, ops(true, true))).toBe(true);
+    expect(evaluateGuardDeclaration(declaration, ops(true, false))).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, ops(false, true))).toBe(false);
+    expect(evaluateGuardDeclaration(declaration, ops(false, false))).toBe(false);
+    // The admin line stays outside the conjunction (§10.6 point 3).
     expect(
       resolveGuard({
         isPublic: false,
         hasSession: true,
-        fullPath: '/ingestion/pipelines',
+        fullPath: '/create-user/bot',
         isAdminUser: true,
+        hasPermission: false,
+        declaration,
       }),
     ).toEqual({ kind: 'allow' });
-  });
-
-  it('admits mapped admin entry on any view-or-better grant', () => {
-    expect(hasAdminEntryGrant({ ViewAll: true })).toBe(true);
-    expect(hasAdminEntryGrant({ ViewBasic: true })).toBe(true);
-    expect(hasAdminEntryGrant({ EditAll: true })).toBe(true);
-    expect(hasAdminEntryGrant({ Create: true })).toBe(false);
-    expect(hasAdminEntryGrant({})).toBe(false);
-    expect(hasAdminEntryGrant(null)).toBe(false);
-    expect(hasAdminEntryGrant(undefined)).toBe(false);
   });
 });

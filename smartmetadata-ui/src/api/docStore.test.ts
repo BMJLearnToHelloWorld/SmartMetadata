@@ -162,7 +162,11 @@ describe('docStore API', () => {
     expect(doc.data.personPreferences?.[0]?.landingPageSettings?.headerColor).toBe('#099250');
   });
 
-  it('saves a personPreferences change with a personPreferences replace patch only', async () => {
+  it('saves a personPreferences change with a personPreferences add patch (path was absent)', async () => {
+    // C-4 §3.3 defect 2: storedDoc carries no personPreferences key, so
+    // the op is `add`, not the previous unconditional `replace`. The
+    // missing-path trigger condition itself is unconfirmed; the op
+    // choice follows key presence, as the official compare does.
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc })));
     const saved = await savePersonaDocument(storedDoc, (draft) => {
       draft.data.personPreferences = [
@@ -174,11 +178,169 @@ describe('docStore API', () => {
     const body = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
     expect(body).toEqual([
       {
-        op: 'replace',
+        op: 'add',
         path: '/data/personPreferences',
         value: [{ personaId: 'p1', landingPageSettings: { headerColor: '#099250' } }],
       },
     ]);
+  });
+
+  it('replaces a present personaPreferences path and adds an absent navigation path', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc })));
+    await savePersonaDocument(storedDoc, (draft) => {
+      draft.data.personaPreferences = [{ personaId: 'p1', personaName: 'Analyst', appMode: 'AI' }];
+    });
+    const body = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(body).toEqual([
+      {
+        op: 'replace',
+        path: '/data/personaPreferences',
+        value: [{ personaId: 'p1', personaName: 'Analyst', appMode: 'AI' }],
+      },
+    ]);
+    await savePersonaDocument(storedDoc, (draft) => {
+      draft.data.navigation = [{ key: 'home' }];
+    });
+    const added = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(added).toEqual([
+      { op: 'add', path: '/data/navigation', value: [{ key: 'home' }] },
+    ]);
+  });
+
+  it('emits a navigation op when only navigation changes (C-4 defect 1)', async () => {
+    const withNavigation: PersonaDocument = {
+      ...storedDoc,
+      data: { ...storedDoc.data, navigation: [{ key: 'home' }] },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...withNavigation })));
+    await savePersonaDocument(withNavigation, (draft) => {
+      draft.data.navigation = [{ key: 'home' }, { key: 'search' }];
+    });
+    expect(lastFetch().init?.method).toBe('PATCH');
+    const body = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(body).toEqual([
+      {
+        op: 'replace',
+        path: '/data/navigation',
+        value: [{ key: 'home' }, { key: 'search' }],
+      },
+    ]);
+  });
+
+  it('leaves untouched data keys out of the patch and removes a deleted key', async () => {
+    const withExtra: PersonaDocument = {
+      ...storedDoc,
+      data: {
+        ...storedDoc.data,
+        navigation: [{ key: 'home' }],
+        askCollateSidebar: [{ key: 'ai-home' }],
+        futureKey: { kept: true },
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...withExtra })));
+    await savePersonaDocument(withExtra, (draft) => {
+      draft.data.pages = [{ pageType: 'Table', layout: [] }];
+    });
+    const body = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(body).toEqual([
+      { op: 'replace', path: '/data/pages', value: [{ pageType: 'Table', layout: [] }] },
+    ]);
+    await savePersonaDocument(withExtra, (draft) => {
+      delete draft.data.navigation;
+    });
+    const removed = JSON.parse(String(lastFetch().init?.body)) as Array<Record<string, unknown>>;
+    expect(removed).toEqual([{ op: 'remove', path: '/data/navigation' }]);
+  });
+
+  it('keeps every stored data key and page field verbatim through mapping (RB-8)', async () => {
+    const payload = {
+      id: 'doc1',
+      name: 'Analyst-Analyst',
+      fullyQualifiedName: 'persona.Analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Table',
+            entityType: 'table',
+            layout: [{ i: 'w1', x: 0, y: 0, w: 8, h: 1 }],
+            knowledgePanels: [
+              {
+                id: 'kp1',
+                type: 'knowledgePanel',
+                name: 'Panel',
+                fullyQualifiedName: 'Panel',
+                description: 'desc',
+                deleted: false,
+                inherited: true,
+                href: '/api/v1/docStore/kp1',
+                futureSubfield: 'kept',
+              },
+            ],
+            tabs: [{ id: 't1', name: 'Overview', layout: [] }],
+            persona: { id: 'p1', type: 'persona', name: 'Analyst', description: 'pdesc' },
+            domains: [{ id: 'd1', type: 'domain', name: 'Marketing', deleted: true }],
+            futurePageField: { nested: [1, 2] },
+          },
+        ],
+        personaPreferences: [
+          {
+            personaId: 'p1',
+            appMode: 'classic',
+            landingPageSettings: { headerColor: '#099250', futureSetting: 'kept' },
+            futurePrefField: 42,
+          },
+        ],
+        navigation: [{ key: 'home' }],
+        askCollateSidebar: [{ key: 'ai-home' }],
+        futureDataKey: { anything: ['goes'] },
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(payload)));
+    const doc = await getDocumentByFqn('persona.Analyst');
+    expect(doc.data.askCollateSidebar).toEqual([{ key: 'ai-home' }]);
+    expect(doc.data.futureDataKey).toEqual({ anything: ['goes'] });
+    expect(doc.data.navigation).toEqual([{ key: 'home' }]);
+    expect('personPreferences' in doc.data).toBe(false);
+    const page = doc.data.pages?.[0];
+    expect(page?.persona).toEqual({
+      id: 'p1',
+      type: 'persona',
+      name: 'Analyst',
+      description: 'pdesc',
+    });
+    expect(page?.domains).toEqual([{ id: 'd1', type: 'domain', name: 'Marketing', deleted: true }]);
+    expect(page?.knowledgePanels).toEqual([
+      {
+        id: 'kp1',
+        type: 'knowledgePanel',
+        name: 'Panel',
+        fullyQualifiedName: 'Panel',
+        description: 'desc',
+        deleted: false,
+        inherited: true,
+        href: '/api/v1/docStore/kp1',
+        futureSubfield: 'kept',
+      },
+    ]);
+    expect(page?.futurePageField).toEqual({ nested: [1, 2] });
+    const pref = doc.data.personaPreferences?.[0];
+    expect(pref?.landingPageSettings).toEqual({ headerColor: '#099250', futureSetting: 'kept' });
+    expect(pref?.futurePrefField).toBe(42);
+  });
+
+  it('keeps object-shaped layouts verbatim through mapping, empty and non-empty', async () => {
+    for (const layout of [{}, { widgets: ['a'], nested: { deep: true } }]) {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+        id: 'doc1',
+        name: 'Analyst-Analyst',
+        fullyQualifiedName: 'persona.Analyst',
+        entityType: 'Page',
+        data: { pages: [{ pageType: 'LandingPage', layout }] },
+      })));
+      const doc = await getDocumentByFqn('persona.Analyst');
+      expect(doc.data.pages?.[0]?.layout).toEqual(layout);
+    }
   });
 
   it('creates a document with POST /v1/docStore', async () => {

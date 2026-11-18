@@ -10,7 +10,7 @@ import { Alert, Button, Card, Empty, Space, Spin, Tag, Typography } from 'ant-de
 import PageHeader from '@/components/shared/PageHeader.vue';
 import { listMarketplaceApps, type MarketplaceApp } from '@/api/marketplaceApps';
 import { useAuthStore } from '@/stores/auth';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 
 /**
  * Installable-app catalog (A2). Official shape
@@ -70,7 +70,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="marketplace-app-catalog">
-    <ForbiddenView v-if="!isAdmin()" />
+    <PermissionPlaceholder v-if="!isAdmin()" :permission-value="t('crud.view')" />
     <template v-else>
       <PageHeader
         :header="t('apps.catalog.title')"

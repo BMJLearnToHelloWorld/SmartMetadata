@@ -432,3 +432,106 @@ describe('GlossaryDetailView', () => {
     expect(wrapper.find('[data-testid="term-children-error-t1"]').exists()).toBe(false);
   });
 });
+
+describe('GlossaryDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaries/') && !url.includes('glossaryTerms')) {
+          return jsonResponse({
+            id: 'g1',
+            name: 'Business',
+            displayName: 'Business Glossary',
+            description: 'Core terms',
+            fullyQualifiedName: 'Business',
+            owners: [],
+            reviewers: [],
+            tags: [],
+            domains: [],
+            termCount: 0,
+          });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        if (
+          url.includes('/api/v1/activity/') ||
+          url.includes('/api/v1/conversations') ||
+          url.includes('/api/v1/tasks')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper
+      .find('[data-testid="glossary-tabs"]')
+      .findAll('.ant-tabs-tab')
+      .map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('reorders and renames tabs from the persona Glossary page, keeping unlisted tabs', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Glossary',
+            tabs: [
+              { id: 'relations_graph', name: 'relations_graph', displayName: 'Graph' },
+              { id: 'terms', name: 'terms' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const labels = tabLabels(wrapper);
+    expect(labels[0]).toBe('Graph');
+    expect(labels[1]).toMatch(/^Terms/);
+    expect(labels[2]).toMatch(/^Activity Feeds/);
+    wrapper.unmount();
+  });
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual([
+      'Terms (0)',
+      'Relations Graph',
+      'Activity Feeds & Tasks (0)',
+    ]);
+    wrapper.unmount();
+  });
+});

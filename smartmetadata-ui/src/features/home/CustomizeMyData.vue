@@ -3,10 +3,11 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { Button, Modal } from 'ant-design-vue';
+import ObjectLayoutNotice from '@/views/admin/persona/editors/ObjectLayoutNotice.vue';
 import CustomizeHomeModal from './CustomizeHomeModal.vue';
 import HomeWidgetCard from './HomeWidgetCard.vue';
 import { compactDisplayLayout } from './useTopicsView';
@@ -60,18 +61,58 @@ import type { PersonaPage } from '@/types/persona';
  * pointer and reflows live through `getLayoutUpdateHandler`, the same
  * handler pin's grid feeds. `grid-layout-plus` is the named fallback
  * if live verification shows this cannot match the grid behaviour.
+ *
+ * C-4 §2.5: the save fallback pageType is the raw pageFqn from the
+ * caller prop (no 'LandingPage' hardcode, no normalization).
+ * C-4 §4.4/D2: a stored non-array layout renders the explicit
+ * abnormal state (ObjectLayoutNotice) instead of a default grid.
  */
 const props = defineProps<{
   personaName: string;
   personaFqn: string;
+  /**
+   * The raw pageFqn (caller-prop injection, C-4 §2.5(d)): the save
+   * fallback pageType when no page is stored yet. Never normalized —
+   * 'homepage' stays 'homepage', 'LandingPage' stays 'LandingPage'.
+   * Required so a missing wire-up fails the type gate loudly.
+   */
+  pageFqn: string;
   initialPageData?: PersonaPage | null;
   backgroundColor: string;
   onSaveLayout: (newPage?: PersonaPage) => Promise<void>;
   onBackgroundColorUpdate: (color?: string) => Promise<void>;
+  /**
+   * O-ENTRY-2: exit ownership. Pin `CustomizeMyData` never navigates
+   * — exit belongs to the parent (the settings-route header closes
+   * to the persona detail page; the overlay shell closes the
+   * overlay). When the parent supplies `onExit`, both the direct
+   * and the leave-modal paths call it; without a parent, the
+   * historical home navigation stays as the default.
+   */
+  onExit?: () => void;
 }>();
 
 const { t } = useI18n();
 const router = useRouter();
+
+/**
+ * D2 (S-C4STORE §3.2, binding): a present-but-non-array stored layout
+ * is an explicit abnormal state, never silently defaulted. The grid
+ * is hidden until the user explicitly confirms conversion; the
+ * original field is preserved untouched until a save replaces it.
+ * `{}` and non-empty objects are treated identically here.
+ */
+const hasObjectLayout = computed(() => {
+  const stored = props.initialPageData?.layout;
+  return stored !== undefined && !Array.isArray(stored);
+});
+const converted = ref(false);
+watch(
+  () => props.initialPageData,
+  () => {
+    converted.value = false;
+  },
+);
 
 const savedLayout = computed(() =>
   Array.isArray(props.initialPageData?.layout)
@@ -109,7 +150,19 @@ const lastDragTarget = ref<{ x: number; y: number } | null>(null);
 const pendingLeave = ref<(() => void) | null>(null);
 const leaveModalOpen = ref(false);
 
-const disableSave = computed(() => !isLayoutDirty(initialLayout.value, layout.value));
+const disableSave = computed(() => {
+  if (hasObjectLayout.value) {
+    // Unconverted: no edits are possible, save is unreachable.
+    // Converted: any save replaces the object layout, so the editor
+    // is always dirty until the save lands a new stored value.
+    return !converted.value;
+  }
+  return !isLayoutDirty(initialLayout.value, layout.value);
+});
+
+function convertObjectLayout(): void {
+  converted.value = true;
+}
 
 /**
  * What the grid renders. The working layout is already tightly packed
@@ -208,7 +261,7 @@ async function handleSave(updatedLayout?: EditorLayoutItem[]): Promise<void> {
   saving.value = true;
   try {
     await props.onSaveLayout({
-      ...(props.initialPageData ?? { pageType: 'LandingPage' }),
+      ...(props.initialPageData ?? { pageType: props.pageFqn }),
       layout: getUniqueFilteredLayout(updatedLayout ?? layout.value),
     });
   } finally {
@@ -241,14 +294,20 @@ function handleReset(): void {
   });
 }
 
-function requestExit(): void {
-  if (disableSave.value) {
-    void router.push({ name: 'home' });
+function exit(): void {
+  if (props.onExit) {
+    props.onExit();
     return;
   }
-  pendingLeave.value = () => {
-    void router.push({ name: 'home' });
-  };
+  void router.push({ name: 'home' });
+}
+
+function requestExit(): void {
+  if (disableSave.value) {
+    exit();
+    return;
+  }
+  pendingLeave.value = exit;
   leaveModalOpen.value = true;
 }
 
@@ -360,7 +419,12 @@ function onDragEnd(): void {
         </p>
       </div>
       <div class="customize-my-data__actions">
-        <Button type="primary" data-testid="customize-add-widget" @click="openWidgetModal()">
+        <Button
+          type="primary"
+          data-testid="customize-add-widget"
+          :disabled="hasObjectLayout && !converted"
+          @click="openWidgetModal()"
+        >
           {{ t('home.addWidget') }}
         </Button>
         <Button data-testid="customize-reset-layout" @click="handleReset">
@@ -381,7 +445,14 @@ function onDragEnd(): void {
       </div>
     </div>
 
+    <ObjectLayoutNotice
+      v-if="hasObjectLayout && !converted"
+      :stored-value="initialPageData?.layout"
+      @convert="convertObjectLayout"
+    />
+
     <div
+      v-else
       ref="gridRef"
       class="customize-my-data__grid"
       dir="ltr"

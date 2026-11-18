@@ -217,8 +217,9 @@ function isLayoutItem(value: unknown): value is LandingPageLayoutItem {
  * keys are filtered out, `w:1, h:3` are forced (the landing grid has
  * no size control, so any other size is stale three-column-era state),
  * an empty result falls back to the default layout, and the result is
- * reflowed. A missing or non-array saved layout is the caller's
- * "no saved layout" (see `extractSavedLandingLayout`).
+ * reflowed. A missing saved layout is the caller's "no saved layout"
+ * (see `extractSavedLandingLayout`); a present but non-array layout
+ * never reaches here — the extractor throws for it (C-4 §4.4 D4).
  */
 export function normalizeLandingPageLayout(
   savedLayout: LandingPageLayoutItem[] | undefined,
@@ -240,23 +241,40 @@ export function normalizeLandingPageLayout(
 }
 
 /**
- * The saved layout of a persona document's LandingPage, if it is an
- * array. A Record-shaped layout (the JSON editor stores pages
- * verbatim, and `PersonaPage.layout` tolerates that shape) is treated
- * as no saved layout, so the default layout applies.
+ * The saved layout of a persona document's LandingPage. An absent
+ * layout (no page, or a null layout) is "no saved layout", so the
+ * caller falls back to the default. A present but non-array layout
+ * throws (C-4 §4.4 D4): official `normalizeLandingPageLayout`
+ * assumes an array input (`(savedLayout ?? []).filter(...)`, no type
+ * guard), so an object-shaped layout — `{}` included — throws a
+ * TypeError at the function layer on the official read path, and the
+ * product must not silently present the default layout for it
+ * instead. The storage layer hands the stored value through
+ * verbatim, so this is the first place the shape is judged. The
+ * throw propagates through the home view's render; the product has
+ * no top-level error boundary yet, so the visible fallback page
+ * awaits that (residual, live step L1).
  */
 export function extractSavedLandingLayout(
   document: PersonaDocument | null | undefined,
 ): LandingPageLayoutItem[] | undefined {
   const layout = getPersonaPage(document, 'LandingPage')?.layout;
-  return Array.isArray(layout) ? (layout as LandingPageLayoutItem[]) : undefined;
+  if (layout == null) {
+    return undefined;
+  }
+  if (!Array.isArray(layout)) {
+    throw new TypeError(`LandingPage layout must be an array, received ${typeof layout}`);
+  }
+  return layout as LandingPageLayoutItem[];
 }
 
 /**
  * The read path for a persona's landing layout: extract the saved
  * layout from the persona document and normalize it against the
  * five-parameter port above. No persona document, no LandingPage page,
- * or an empty/filtered-out layout all resolve to the default layout.
+ * a null layout, or an empty/filtered-out layout all resolve to the
+ * default layout; a present non-array layout throws (see
+ * `extractSavedLandingLayout`).
  */
 export function resolveLandingPageLayout(
   document: PersonaDocument | null | undefined,

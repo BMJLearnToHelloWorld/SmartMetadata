@@ -642,6 +642,33 @@ const enUS = {
       assets: 'Assets',
       apiEndpoints: 'API endpoints',
       endpoint: 'Endpoint',
+      glossaryTerms: 'Glossary Terms',
+      terms: 'Terms',
+      review: 'Review',
+      dataObservability: 'Data Observability',
+      incidents: 'Incidents',
+      knowledgeGraph: 'Knowledge Graph',
+      subDomains: 'Sub Domains',
+      dataProducts: 'Data Products',
+      documentation: 'Documentation',
+      testCases: 'Test Cases',
+      pipeline: 'Pipeline',
+      dataModel: 'Data Model',
+      agents: 'Agents',
+      connection: 'Connection',
+      sql: 'SQL',
+      apiCollection: 'API Collection',
+      schemaDefinition: 'Schema Definition',
+      expression: 'Expression',
+      dashboard: 'Dashboard',
+      insights: 'Insights',
+      directories: 'Directories',
+      worksheets: 'Worksheets',
+      files: 'Files',
+      spreadsheets: 'Spreadsheets',
+      inputOutputPorts: 'Input/Output Ports',
+      relationsGraph: 'Relations Graph',
+      approval: 'Approval',
     },
     tabResidual: {
       dbt: 'dbt models are not served by this console yet.',
@@ -2256,40 +2283,7 @@ const enUS = {
   },
   settings: {
     title: 'Settings',
-    lead: 'Open a page this console already ships. Residual items stay listed as residual.',
     back: 'Back to Settings',
-    residual: {
-      generic: 'Not wired in this console.',
-    },
-    items: {
-      admins: 'Admins',
-      onlineUsers: 'Online users',
-      policies: 'Policies',
-      auditLogs: 'Audit logs',
-      permissionDebugger: 'Permission debugger',
-      appearance: 'Appearance',
-      searchSettings: 'Search settings',
-      profiler: 'Profiler configuration',
-      email: 'Email',
-      login: 'Login configuration',
-      health: 'Health check',
-      dqDimensions: 'Data quality dimensions',
-      lineage: 'Lineage',
-      omUrl: 'Brand name URL',
-      entityRules: 'Data asset rules',
-      learning: 'Learning resources',
-      appMode: 'App mode',
-      glossaryPrefs: 'Glossary',
-      timeFormat: 'Default time format',
-      inbox: 'Notification inbox',
-      applications: 'Applications',
-      sso: 'SSO',
-      intakeForms: 'Intake Forms',
-      taskForms: 'Task Forms',
-      glossaryTermRelations: 'Glossary term relations',
-      persona: 'Persona',
-      customProperties: 'Custom Properties',
-    },
     glossaryTermRelations: {
       title: 'Glossary term relations',
       lead: 'Manage the relationship types that glossary terms can use.',
@@ -2337,52 +2331,6 @@ const enUS = {
       deleteConfirmContent: 'This removes {name}. This cannot be undone from here.',
       cannotDeleteInUse: 'Cannot delete a relation type in use ({count} uses)',
     },
-    categories: {
-      members: {
-        title: 'Members',
-        description: 'Users and teams.',
-      },
-      access: {
-        title: 'Access',
-        description: 'Roles and policies.',
-      },
-      bots: {
-        title: 'Bots',
-        description: 'Bot users and tokens.',
-      },
-      governance: {
-        title: 'Governance',
-        description: 'Glossaries, classifications, domains, and data products.',
-      },
-      services: {
-        title: 'Services',
-        description: 'Ingestion services and pipelines already in the console.',
-      },
-      preferences: {
-        title: 'Preferences',
-        description: 'Appearance, login, email, search, profiler, lineage, and other catalog preferences.',
-      },
-      notifications: {
-        title: 'Notifications',
-        description: 'Event-subscription alerts and announcements. No navbar inbox API.',
-      },
-      applications: {
-        title: 'Applications',
-        description: 'Installed apps list. Marketplace install is not wired.',
-      },
-      sso: {
-        title: 'SSO',
-        description: 'Identity-provider callback is not implemented in this console.',
-      },
-      persona: {
-        title: 'Persona',
-        description: 'Persona list, members and UI customization.',
-      },
-      customProperties: {
-        title: 'Custom properties',
-        description: 'Custom property definitions. Values stay on the asset tab.',
-      },
-    },
     appearance: {
       title: 'Appearance',
       lead: 'Custom logo URLs and theme colors (customUiThemePreference).',
@@ -2407,8 +2355,6 @@ const enUS = {
       reset: 'Reset',
     },
     login: {
-      title: 'Login configuration',
-      lead: 'Failed-attempt limits, lockout, and JWT expiry.',
       loadFailed: 'Failed to load login configuration',
       saved: 'Login configuration saved',
       saveFailed: 'Save login configuration failed',
@@ -2421,8 +2367,6 @@ const enUS = {
       saveFailed: 'Save email configuration failed',
     },
     health: {
-      title: 'Health check',
-      lead: 'Server status from GET /v1/system/status.',
       loadFailed: 'Failed to load health status',
       refresh: 'Refresh',
       database: 'Database',
@@ -2477,7 +2421,6 @@ const enUS = {
     },
     lineage: {
       title: 'Lineage configuration',
-      lead: 'Default lineage depth, layer, and pipeline view mode.',
       loadFailed: 'Failed to load lineage settings',
       saved: 'Lineage settings saved',
       saveFailed: 'Save lineage settings failed',
@@ -2697,6 +2640,304 @@ const enUS = {
         user: { label: 'Users', entity: 'Users' },
         worksheet: { label: 'Worksheets', entity: 'Worksheets' },
       },
+    },
+    // Settings-shell registry copy (DESIGN §12). English values are pin
+    // en-us verbatim, with the two approved whitespace artifacts repaired
+    // (D-13): the leading space of custom-properties-description and the
+    // double space of search-settings-for-entity. Pin `{{brandName}}` /
+    // `{{entity}}` become vue-i18n `{brandName}` / `{entity}`.
+    registry: {
+      templates: {
+        searchSettingsForEntity: 'Search settings based on ranking for {entity}',
+        defineCustomPropertyForEntity:
+          'Define the custom properties for your {entity} to serve your organizational needs.',
+        defineCustomPropertyForColumn:
+          'Define the custom properties for column level on tables and dashboard data models.',
+      },
+      services: {
+        title: 'Services',
+        description: 'Set up connectors and ingest metadata from diverse sources',
+        breadcrumbName: 'Services',
+        apiServices: {
+          title: 'APIs',
+          description: 'Ingest metadata from the most popular API services.',
+        },
+        databases: {
+          title: 'Databases',
+          description: 'Ingest metadata from the most popular database services.',
+        },
+        messaging: {
+          title: 'Messaging',
+          description: 'Ingest metadata from the most used messaging services.',
+        },
+        dashboards: {
+          title: 'Dashboards',
+          description: 'Ingest metadata from the most popular dashboard services.',
+        },
+        pipelines: {
+          title: 'Pipelines',
+          description: 'Ingest metadata from the most used pipeline services.',
+        },
+        mlmodels: {
+          title: 'ML Models',
+          description: 'Ingest metadata from ML Model services through the UI.',
+        },
+        storages: {
+          title: 'Storage',
+          description: 'Ingest metadata from the most popular storage services.',
+        },
+        search: {
+          title: 'Search Engines',
+          description: 'Ingest metadata from the most popular search services.',
+        },
+        metadata: {
+          title: 'Catalogs',
+          description: 'Ingest metadata from metadata services right from the UI.',
+        },
+        drives: {
+          title: 'Drives',
+          description: 'Ingest metadata from the most popular drive services.',
+        },
+        dataObservability: {
+          title: 'Data Observability',
+          description: 'Ingest metadata from test suite services right from the UI.',
+        },
+      },
+      apps: {
+        title: 'Applications',
+        description:
+          'Improve your data using applications like AskCollate, Data Insights, and Search Indexing',
+        breadcrumbName: 'Applications',
+      },
+      notifications: {
+        title: 'Notifications',
+        description: 'Set up notifications to receive real-time updates and timely alerts.',
+        breadcrumbName: 'Notifications',
+        alerts: {
+          title: 'Alerts',
+        },
+        announcements: {
+          title: 'Announcements',
+          description:
+            'Broadcast system-wide banners for maintenance, releases, and org-wide updates.',
+        },
+      },
+      members: {
+        title: 'Team & User Management',
+        description: 'Streamline access to users and teams in {brandName}.',
+        breadcrumbName: 'Members',
+        teams: {
+          title: 'Teams',
+          description: 'Represent your entire organizational structure with hierarchical teams.',
+        },
+        users: {
+          title: 'Users',
+          description:
+            'View and manage regular users in your organization. For admin users, please visit the Admin page.',
+        },
+        admins: {
+          title: 'Admins',
+          description:
+            'View and manage admin users in your organization. For regular users, please visit the Users page.',
+        },
+        onlineUsers: {
+          title: 'Online Users',
+          description: 'View users who have been active recently in the system.',
+        },
+      },
+      access: {
+        title: 'Access Control',
+        description: 'Align with your organizational hierarchy and team access with roles and policies.',
+        breadcrumbName: 'Access Control',
+        roles: {
+          title: 'Roles',
+          description: 'Assign comprehensive role based access to Users or Teams.',
+        },
+        policies: {
+          title: 'Policies',
+          description: 'Define policies with a set of rules for fine-grained access control.',
+        },
+        permissionDebugger: {
+          title: 'Permission Debugger',
+          description: 'Debug and understand user permissions across roles, teams, and policies.',
+        },
+        auditLogs: {
+          title: 'Audit Logs',
+          description: 'Review who changed what by browsing persisted metadata change events.',
+        },
+      },
+      preferences: {
+        title: 'Preferences',
+        description: 'Tailor the {brandName} UX to suit your organizational and team needs.',
+        breadcrumbName: 'Preferences',
+        appearance: {
+          title: 'Theme',
+          description:
+            'Customize {brandName} with your company logo, monogram, favicon and brand color.',
+        },
+        email: {
+          title: 'Email',
+          description: 'Configure the SMTP Settings for sending Emails.',
+        },
+        loginConfiguration: {
+          title: 'Login Configuration',
+          description: 'Define the handling of failed login attempts and JWT token expiry.',
+        },
+        omHealth: {
+          title: 'Health Check',
+          description:
+            'Check database access, ES health, Pipeline Service Client, jwks configuration and migrations',
+        },
+        profilerConfiguration: {
+          title: 'Profiler Configuration',
+          description:
+            'Customize globally the behavior of the profiler by setting the metrics to compute based on columns data types',
+        },
+        dataQuality: {
+          title: 'Data Quality',
+          description: 'Configure how data quality is organised across your workspace.',
+        },
+        searchSettings: {
+          title: 'Search',
+          description: 'Ability to configure the search settings to suit your needs.',
+          breadcrumbName: 'Search',
+          tables: { title: 'Tables' },
+          dashboards: { title: 'Dashboards' },
+          pipelines: { title: 'Pipelines' },
+          topics: { title: 'Topics' },
+          glossaryTerm: { title: 'Glossary Term' },
+          apiEndpoints: { title: 'API Endpoint' },
+          dashboardDataModels: { title: 'Dashboard Data Models' },
+          storedProcedures: { title: 'Stored Procedures' },
+          containers: { title: 'Containers' },
+          mlmodels: { title: 'ML Models' },
+          dataProducts: { title: 'Data Products' },
+          query: { title: 'Query' },
+          tags: { title: 'Tags' },
+          databases: { title: 'Databases' },
+          databaseSchemas: { title: 'Database Schema' },
+          domains: { title: 'Domains' },
+          metrics: { title: 'Metrics' },
+          searchIndexes: { title: 'Search Indexes' },
+          directories: { title: 'Directories' },
+          files: { title: 'Files' },
+          spreadsheets: { title: 'Spreadsheets' },
+          worksheets: { title: 'Worksheets' },
+          column: { title: 'Columns' },
+        },
+        lineageConfig: {
+          title: 'Lineage',
+          description: 'Configure the lineage view settings.',
+        },
+        omUrlConfig: {
+          title: '{brandName} URL',
+          description: 'Configure the {brandName} URL Settings.',
+        },
+        dataAssetRules: {
+          title: 'Data Asset Rules',
+          description:
+            "Data Asset Rules help you manage metadata validations at the platform level. If an asset does not follow a rule, you won't be able to make any changes to it unless you fix the validation first.",
+        },
+        learningResources: {
+          title: 'Learning Resources',
+          description: 'Explore product features and learn how they work through our resources',
+        },
+        appMode: {
+          title: 'Default App Mode',
+          description:
+            "The 'first impression' mode for users who haven't picked one. User preferences and persona-level app modes still win over this default.",
+        },
+        glossary: {
+          title: 'Glossary',
+          description:
+            'Apply classification tags from glossary terms to associated assets across the catalog. Turn off to keep these tags on glossary terms only.',
+        },
+        timeFormat: {
+          title: 'Default Time Format',
+          description:
+            'Configure the default time format (12-hour or 24-hour) used to display timestamps for all users.',
+        },
+      },
+      customProperties: {
+        title: 'Custom Properties',
+        description: 'Capture custom metadata to enrich your data assets by extending the attributes.',
+        breadcrumbName: 'Custom Properties',
+        apiCollections: { title: 'API Collection' },
+        apiEndpoints: { title: 'API Endpoint' },
+        dataProducts: { title: 'Data Product' },
+        dashboardDataModels: { title: 'Dashboard Data Models' },
+        databases: { title: 'Database' },
+        databaseSchemas: { title: 'Database Schema' },
+        metrics: { title: 'Metric' },
+        tables: { title: 'Tables' },
+        storedProcedures: { title: 'Stored Procedures' },
+        dashboards: { title: 'Dashboards' },
+        pipelines: { title: 'Pipelines' },
+        topics: { title: 'Topics' },
+        containers: { title: 'Containers' },
+        mlmodels: { title: 'ML Models' },
+        searchIndexes: { title: 'Search Indexes' },
+        column: { title: 'Columns' },
+        glossaryTerm: { title: 'Glossary Term' },
+        domains: { title: 'Domain' },
+        charts: { title: 'Charts' },
+        directories: { title: 'Directories' },
+        files: { title: 'Files' },
+        spreadsheets: { title: 'Spreadsheets' },
+        worksheets: { title: 'Worksheets' },
+        articles: { title: 'Articles' },
+        teams: { title: 'Teams' },
+        users: { title: 'Users' },
+      },
+      bots: {
+        title: 'Bots',
+        description: 'Create well-defined bots with scoped access permissions.',
+        breadcrumbName: 'Bots',
+      },
+      persona: {
+        title: 'Personas',
+        description: 'Enhance and customize the user experience with Personas.',
+        breadcrumbName: 'Persona',
+      },
+      sso: {
+        title: 'SSO',
+        description: 'SSO configuration directly from the UI',
+        breadcrumbName: 'SSO',
+      },
+      governance: {
+        title: 'Governance',
+        description: 'Configure governance settings for your metadata platform.',
+        breadcrumbName: 'Governance',
+        glossaryTermRelations: {
+          title: 'Glossary Term Relations',
+          description:
+            'Configure semantic relation types for glossary terms. Define hierarchical, associative, and equivalence relationships to build a rich ontology.',
+        },
+        workflowDefinitions: {
+          title: 'Workflows',
+          description:
+            'View and edit governance workflow definitions: triggers, tasks, and automation configuration.',
+          breadcrumbName: 'Workflows',
+        },
+        intakeForms: {
+          title: 'Intake Forms',
+          description:
+            'Define the fields your governance policy requires for Data Products, Domains, Glossary Terms, and Metrics. Enforced in both the API and the UI.',
+        },
+      },
+    },
+    services: {
+      addNewService: 'Add New Service',
+      servicesTab: 'Services',
+      pipelinesTab: 'Pipelines',
+    },
+    shell: {
+      hubDescription: 'Ability to configure the {brandName} application to suit your needs.',
+      accessDenied: 'Access Denied',
+      noAccessPlaceholder:
+        "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
+      entityConfiguration: '{entity} Configuration',
+      learningResource: 'Learning Resource',
     },
   },
   collaboration: {
@@ -3569,6 +3810,16 @@ const enUS = {
   },
   persona: {
     title: 'Personas',
+    showTab: 'Show',
+    hideTab: 'Hide',
+    renameTabAction: 'Rename',
+    customizeTabs: 'Customize Tabs',
+    addTab: 'Add Tab',
+    renameTab: 'Rename Tab',
+    newTab: 'New Tab',
+    objectLayoutTitle: 'Saved layout cannot be edited as a grid',
+    objectLayoutDescription: 'The saved layout for this page is stored as an object, not a grid. The original value is preserved and nothing has been changed. Convert it to an editable grid only if you want to replace it — conversion takes effect when you save.',
+    objectLayoutConvert: 'Convert to editable grid',
     create: 'Create persona',
     edit: 'Edit persona',
     empty: 'No personas yet.',
@@ -3590,6 +3841,31 @@ const enUS = {
     customizeLandingPage: 'Home page',
     customizeMarketplace: 'Data marketplace',
     customizeGovern: 'Govern pages',
+    // C-4 customize-category copy (S-C4STORE §7). Values are pin verbatim:
+    // labels/messages from en-us.json, descriptions from the literal
+    // strings in PersonaClassBase.ts. The pin literal for the navigation
+    // description carries a trailing space; it is stripped here, the same
+    // whitespace-artifact repair D-13 approves for the registry copy.
+    customizeCategoryNavigation: 'Navigation',
+    customizeCategoryNavigationDescription: 'Customize left sidebar',
+    customizeCategoryAppLayout: 'App Layout',
+    customizeCategoryAppLayoutDescription:
+      'Configure the app layout applied to users of this persona.',
+    customizeCategoryAiSidebar: 'AI Sidebar',
+    customizeCategoryAiSidebarDescription:
+      'Reorder the AI sidebar navigation, toggle item visibility, and move items in or out of the "More" group for this persona.',
+    customizeCategoryHomePage: 'Home Page',
+    customizeCategoryHomePageDescription:
+      'Customize the My data page with widget of your preference',
+    customizeCategoryMarketplace: 'Marketplace',
+    entityCustomizeDescription:
+      'Customize {entity} detail page with choice of your widget and tabs which is more useful for your use case.',
+    customizeCategoryGovernance: 'Governance',
+    customizeCategoryGovernanceDescription:
+      'Customize the Govern pages with widget of your preference',
+    customizeCategoryDataAssets: 'Data Assets',
+    customizeCategoryDataAssetsDescription:
+      'Customize the entity detail page with widget of your preference',
     appMode: 'App mode',
     appModeNone: 'No preference',
     appModeClassic: 'Classic',

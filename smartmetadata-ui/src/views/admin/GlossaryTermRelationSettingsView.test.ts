@@ -33,6 +33,8 @@ async function mountView(asAdmin = true) {
         name: 'admin-settings-governance-glossary-term-relations',
         component: GlossaryTermRelationSettingsView,
       },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/settings/governance/glossary-term-relations');
@@ -200,7 +202,8 @@ describe('GlossaryTermRelationSettingsView', () => {
   it('shows the forbidden page for non-admin users', async () => {
     const { wrapper } = await mountView(false);
     expect(wrapper.find('[data-testid="relation-type-table"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Access not allowed');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Access Denied');
   });
 
   it('carries every unedited field in the edit PUT body', async () => {

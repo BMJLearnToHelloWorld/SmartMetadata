@@ -35,6 +35,8 @@ async function mountUsers(asAdmin = true, initialPath = '/admin/users') {
       { path: '/admin/users', name: 'admin-users', component: UsersListView },
       { path: '/admin/users/admins', name: 'admin-admins', component: UsersListView },
       { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push(initialPath);

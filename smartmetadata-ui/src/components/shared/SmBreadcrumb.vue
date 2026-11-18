@@ -8,9 +8,10 @@ import { RouterLink } from 'vue-router';
 
 /**
  * Shared breadcrumb (official HeaderBreadcrumb equivalent): items are
- * passed per page as data, never hard-coded per route here. The last
- * item renders as plain text; earlier items link when a route name is
- * given. An empty list renders nothing.
+ * passed per page as data, never hard-coded per route here. Every item
+ * with a route name links, including the last one — pin's TitleBreadcrumb
+ * renders a Link for any item with a URL, and the Data Asset Rules trail
+ * (DESIGN §9.4) keeps its last-item link. An empty list renders nothing.
  */
 export interface SmBreadcrumbItem {
   label: string;
@@ -28,7 +29,7 @@ withDefaults(defineProps<{ items?: SmBreadcrumbItem[]; testId?: string }>(), {
   <Breadcrumb v-if="items.length" :data-testid="testId">
     <Breadcrumb.Item v-for="(item, index) in items" :key="`${item.label}-${index}`">
       <RouterLink
-        v-if="item.routeName && index < items.length - 1"
+        v-if="item.routeName"
         :to="{ name: item.routeName, params: item.routeParams }"
       >
         {{ item.label }}

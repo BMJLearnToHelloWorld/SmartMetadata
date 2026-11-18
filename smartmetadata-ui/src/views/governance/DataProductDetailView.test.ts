@@ -145,3 +145,92 @@ describe('DataProductDetailView assets + tabs', () => {
     wrapper.unmount();
   });
 });
+
+describe('DataProductDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataProducts/dp1')) {
+          return jsonResponse({
+            id: 'dp1',
+            name: 'churn',
+            displayName: 'Churn',
+            fullyQualifiedName: 'marketing.churn',
+            description: 'Churn scores',
+            domains: [],
+            owners: [],
+            experts: [],
+            tags: [],
+            extension: {},
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        if (
+          url.includes('/api/v1/activity/entity/dataProduct/') ||
+          url.includes('/api/v1/conversations')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  function tabLabels(wrapper: ReturnType<typeof mountView>): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('reorders and renames tabs from the persona DataProduct page, keeping unlisted tabs', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataProduct',
+            tabs: [
+              { id: 'custom_properties', name: 'custom_properties', displayName: 'Props' },
+              { id: 'activity_feed', name: 'activity_feed' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = mountView();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual(['Props', 'Activity', 'Overview', 'Assets']);
+    wrapper.unmount();
+  });
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = mountView();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual(['Overview', 'Assets', 'Activity', 'Custom Properties']);
+    wrapper.unmount();
+  });
+});

@@ -13,6 +13,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { LOCALE_STORAGE_KEY } from '@/i18n/localePreference';
+import { useAuthStore } from '@/stores/auth';
+import { useGuardDecisionStore } from '@/stores/guardDecision';
 import { createTestI18n } from '@/test/i18n';
 import AppShell from './AppShell.vue';
 
@@ -177,7 +179,7 @@ describe('AppShell', () => {
     });
   });
 
-  it('opens Settings from the user menu and profile only when loggedInUser has an id', async () => {
+  it('opens the profile from the user menu only when loggedInUser has an id, and offers no Settings entry (D-9)', async () => {
     const { wrapper, router } = await mountShell();
     const { useAuthStore } = await import('@/stores/auth');
     const auth = useAuthStore();
@@ -186,11 +188,9 @@ describe('AppShell', () => {
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="user-profile-item"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="user-settings-item"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-settings');
-    await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
-    await flushPromises();
+    // D-9: the user menu carries no Settings entry — the left sidebar
+    // footer is the only Settings entry.
+    expect(wrapper.find('[data-testid="user-settings-item"]').exists()).toBe(false);
     await wrapper.find('[data-testid="user-profile-item"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-user');
@@ -250,5 +250,185 @@ describe('AppShell', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('inbox');
     expect(router.currentRoute.value.query.tab).toBe('tasks');
+  });
+});
+
+describe('AppShell persona sidebar (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  function stubWithDoc(doc: Record<string, unknown>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return jsonResponse(doc);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    getInboxCounts.mockReset();
+    getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders the saved navigation order and hides hidden items', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        navigation: [
+          { id: 'insights', title: 'Insights', pageId: 'insights' },
+          { id: 'home', title: 'Home', pageId: 'home' },
+          { id: 'search', title: 'Explore', pageId: 'search', isHidden: true },
+          {
+            id: 'governance',
+            title: 'Govern',
+            pageId: 'governance',
+            children: [
+              { id: 'governance-metrics', title: 'Metrics', pageId: 'governance-metrics' },
+              {
+                id: 'governance-glossaries',
+                title: 'Glossary',
+                pageId: 'governance-glossaries',
+                isHidden: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountShell();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const text = wrapper.text();
+    expect(text.indexOf('Insights')).toBeGreaterThan(-1);
+    expect(text.indexOf('Insights')).toBeLessThan(text.indexOf('Home'));
+    expect(text).not.toContain('Explore');
+    expect(text).not.toContain('Lineage');
+    expect(text).toContain('Metrics');
+    expect(text).not.toContain('Glossary');
+    wrapper.unmount();
+  });
+
+  it('renders the default sidebar when the document carries no navigation', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {},
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountShell();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const text = wrapper.text();
+    expect(text.indexOf('Home')).toBeLessThan(text.indexOf('Explore'));
+    expect(text.indexOf('Explore')).toBeLessThan(text.indexOf('Lineage'));
+    expect(text).toContain('Observability');
+    expect(text).toContain('Glossary');
+    wrapper.unmount();
+  });
+
+  describe('guard denial slot (D-3)', () => {
+    async function mountDeniedShell() {
+      const { wrapper, router } = await mountShell();
+      await router.push('/insights');
+      await router.isReady();
+      await flushPromises();
+      useAuthStore().user = { id: 'u1', name: 'alice', isAdmin: false };
+      await wrapper.vm.$nextTick();
+      return { wrapper, router };
+    }
+
+    function contentText(wrapper: { find: (s: string) => { text: () => string } }): string {
+      return wrapper.find('.shell__content').text();
+    }
+
+    it('renders the placeholder in place and never mounts the denied component', async () => {
+      const { wrapper, router } = await mountDeniedShell();
+      expect(contentText(wrapper)).toContain('insights');
+      useGuardDecisionStore().setDecision({
+        fullPath: '/insights',
+        principalKey: 'alice',
+        denied: true,
+      });
+      await wrapper.vm.$nextTick();
+      // The URL is unchanged and the matched component is not mounted:
+      // only the shared placeholder occupies the content slot.
+      expect(router.currentRoute.value.fullPath).toBe('/insights');
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+      expect(contentText(wrapper)).toContain('Access Denied');
+      expect(contentText(wrapper)).not.toContain('insights');
+      wrapper.unmount();
+    });
+
+    it('ignores a decision bound to another path or another principal', async () => {
+      const { wrapper } = await mountDeniedShell();
+      useGuardDecisionStore().setDecision({
+        fullPath: '/search',
+        principalKey: 'alice',
+        denied: true,
+      });
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+      expect(contentText(wrapper)).toContain('insights');
+      useGuardDecisionStore().setDecision({
+        fullPath: '/insights',
+        principalKey: 'bob',
+        denied: true,
+      });
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+      expect(contentText(wrapper)).toContain('insights');
+      wrapper.unmount();
+    });
+
+    it('drops the placeholder when navigation or identity moves on', async () => {
+      const { wrapper, router } = await mountDeniedShell();
+      useGuardDecisionStore().setDecision({
+        fullPath: '/insights',
+        principalKey: 'alice',
+        denied: true,
+      });
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+      // Identity change: the decision was bound to alice.
+      useAuthStore().user = { id: 'u2', name: 'bob', isAdmin: false };
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+      // Navigation change: the decision was bound to /insights.
+      useAuthStore().user = { id: 'u1', name: 'alice', isAdmin: false };
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+      await router.push('/search');
+      await router.isReady();
+      await flushPromises();
+      expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+      expect(contentText(wrapper)).toContain('search');
+      wrapper.unmount();
+    });
   });
 });

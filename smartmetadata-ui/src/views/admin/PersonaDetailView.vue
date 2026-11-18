@@ -1,27 +1,38 @@
 <!--
   Copyright 2026 SmartMetadata authors.
-
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { getPersonaByName, personaUsersPatch, updatePersona } from '@/api/persona';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import FormModal from '@/components/shared/FormModal.vue';
-import { Button, Card, Col, Form, Input, Row, Tabs, message } from 'ant-design-vue';
+import { Breadcrumb, Button, Form, Input, Tabs, message } from 'ant-design-vue';
+import { personaDetailBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { settingsLocationResolver } from '@/settings/locationResolver';
 import type { EntityRef } from '@/types/api';
 import type { Persona } from '@/types/persona';
-import { PERSONA_CUSTOMIZE_CATEGORIES } from './personaPage';
+import { CUSTOMIZE_PAGE_CATEGORIES } from './personaPage';
+import PersonaCustomizeGrid from './persona/PersonaCustomizeGrid.vue';
 import PersonaUserPicker from './PersonaUserPicker.vue';
 
 /**
- * Persona detail, mirroring the official PersonaDetailsPage: header
- * with edit + set-as-default, a customize-ui tab (category cards into
- * the customize routes) and a users tab (member list with add/remove
- * via PATCH users). Personas are not deletable through this page, as
- * official notes.
+ * Persona detail, mirroring the official S1 PersonaDetailsPage: header
+ * with edit + set-as-default, two tabs only (`customize-ui`, driven by
+ * the customize grid, and `users`), and the §9.5 row-1 breadcrumb
+ * trail (no Settings root; the detail crumb links with the
+ * `#customize-ui` hash). Personas are not deletable through this
+ * page, as official notes.
+ *
+ * Tab state lives in the URL hash, exactly as official derives it:
+ * `activeKey` is the hash segment before the first `.` (default
+ * `customize-ui`), `activeCategory` the segment after it. With no
+ * hash the page writes `#customize-ui` once on mount (replace, so no
+ * extra history entry). Switching tabs pushes the new hash; drilling
+ * into a customize category only changes the hash, which swaps the
+ * grid list without leaving the tab.
  */
 const props = defineProps<{ fqn: string }>();
 
@@ -32,7 +43,6 @@ const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const persona = ref<Persona | null>(null);
-const activeTab = ref('customize-ui');
 const editOpen = ref(false);
 const editing = ref(false);
 const editForm = reactive({ displayName: '', description: '' });
@@ -41,6 +51,30 @@ const defaulting = ref(false);
 const addUsersOpen = ref(false);
 const addingUsers = ref(false);
 const addUserIds = ref<string[]>([]);
+
+const hashSegments = computed(() =>
+  (route.hash ? route.hash.replace(/^#/, '') : '').split('.'),
+);
+const activeKey = computed(() => hashSegments.value[0] || 'customize-ui');
+const activeCategory = computed(() => hashSegments.value[1] || undefined);
+
+const breadcrumbs = computed(() =>
+  personaDetailBreadcrumbs({
+    personasLabel: t('settings.registry.persona.title'),
+    entityName: persona.value ? persona.value.displayName || persona.value.name : '',
+    personaListLocation: settingsLocationResolver('persona'),
+    personaDetailLocation: {
+      name: 'admin-settings-persona-detail',
+      params: { fqn: props.fqn },
+      hash: '#customize-ui',
+    },
+    customizeCategories: CUSTOMIZE_PAGE_CATEGORIES.map((category) => ({
+      key: category.key,
+      label: t(category.labelKey),
+    })),
+    activeCategory: activeCategory.value,
+  }),
+);
 
 const memberRefs = computed(() => persona.value?.users ?? []);
 
@@ -143,11 +177,8 @@ async function onAddUsers(): Promise<void> {
   }
 }
 
-function openCustomize(category: string): void {
-  void router.push({
-    name: 'admin-settings-persona-customize',
-    params: { fqn: props.fqn, category },
-  });
+function onTabChange(key: string | number): void {
+  void router.push({ hash: `#${key}` });
 }
 
 function backToList(): void {
@@ -162,8 +193,8 @@ watch(
 );
 
 onMounted(() => {
-  if (route.hash === '#users') {
-    activeTab.value = 'users';
+  if (!route.hash) {
+    void router.replace({ hash: '#customize-ui' });
   }
   void load();
 });
@@ -171,6 +202,12 @@ onMounted(() => {
 
 <template>
   <div data-testid="persona-detail">
+    <Breadcrumb v-if="persona" data-testid="persona-breadcrumb">
+      <Breadcrumb.Item v-for="(crumb, index) in breadcrumbs" :key="`${crumb.label}-${index}`">
+        <RouterLink v-if="crumb.to" :to="crumb.to">{{ crumb.label }}</RouterLink>
+        <span v-else>{{ crumb.label }}</span>
+      </Breadcrumb.Item>
+    </Breadcrumb>
     <Button data-testid="persona-back" @click="backToList">{{ t('persona.backToPersona') }}</Button>
     <p v-if="errorMessage" class="persona-detail__error">{{ errorMessage }}</p>
     <div v-if="persona" class="persona-detail__header">
@@ -184,20 +221,10 @@ onMounted(() => {
         </Button>
       </div>
     </div>
-    <Tabs v-if="persona" v-model:active-key="activeTab">
+    <Tabs v-if="persona" :active-key="activeKey" @change="onTabChange">
       <Tabs.TabPane key="customize-ui" :tab="t('persona.customizeUi')">
         <div data-testid="persona-tab-customize">
-          <Row :gutter="[16, 16]">
-            <Col v-for="category in PERSONA_CUSTOMIZE_CATEGORIES" :key="category.key" :xs="24" :sm="12" :lg="8">
-              <Card
-                hoverable
-                :data-testid="`persona-customize-${category.key}`"
-                @click="openCustomize(category.key)"
-              >
-                <Card.Meta :title="t(category.titleKey)" />
-              </Card>
-            </Col>
-          </Row>
+          <PersonaCustomizeGrid :persona-fqn="props.fqn" :active-category="activeCategory" />
         </div>
       </Tabs.TabPane>
       <Tabs.TabPane key="users" :tab="t('persona.users')">

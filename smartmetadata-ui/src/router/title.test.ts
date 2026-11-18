@@ -16,6 +16,7 @@ const translations: Record<string, string> = {
   'nav.explore': 'Explore',
   'nav.domains': 'Domains',
   'nav.overview': 'Overview',
+  'nav.settings': 'Settings',
   'auth.forgotTitle': 'Forgot password',
   'auth.logoutTitle': 'Logging out',
 };
@@ -48,6 +49,34 @@ describe('document title', () => {
 
   it('uses the sidebar entry for a former shell page turned real page (P2 B2)', () => {
     expect(resolveDocumentTitleKey(route('marketplace-overview'))).toBe('nav.overview');
+  });
+
+  it('resolves Hub-attributed routes to the Settings title via the footer entries (B3)', () => {
+    expect(documentTitleFor(route('admin-settings'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('ingestion-service'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('ingestion-pipeline'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('insights-online-users'), t)).toBe('Settings - iSmart');
+  });
+
+  it('resolves the remaining §6.6/§6.7 row 8 settings-space routes to the Settings title', () => {
+    // Legacy names under /settings/ (SETTINGS_SPACE_NAMES).
+    expect(documentTitleFor(route('workflows'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('workflow-detail'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('observability-alerts'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('observability-alert'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('announcements'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('announcement-duplicate'), t)).toBe('Settings - iSmart');
+    // Prefix-attributed settings routes.
+    expect(documentTitleFor(route('settings-category'), t)).toBe('Settings - iSmart');
+    expect(documentTitleFor(route('settings-services'), t)).toBe('Settings - iSmart');
+  });
+
+  it('keeps the customize-page editor unattributed: bare product name, no Settings title (S-HUB)', () => {
+    expect(documentTitleFor(route('customize-page'), t)).toBe('iSmart');
+  });
+
+  it('has no special title for the deleted forbidden route', () => {
+    expect(documentTitleFor(route('forbidden'), t)).toBe('iSmart');
   });
 
   it('uses existing auth/error keys for routes outside the sidebar', () => {

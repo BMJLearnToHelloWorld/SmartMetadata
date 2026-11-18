@@ -7,7 +7,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Avatar, Button, Empty, Spin, Tooltip, Typography } from 'ant-design-vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmMarkdown from '@/components/shared/SmMarkdown.vue';
 import { getAppByName } from '@/api/apps';
@@ -121,7 +121,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="marketplace-app-detail">
-    <ForbiddenView v-if="!isAdmin" />
+    <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
     <template v-else>
       <PageHeader
         :header="appData ? appName : t('apps.detail.title')"

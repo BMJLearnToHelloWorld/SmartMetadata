@@ -10,6 +10,15 @@ import { Alert, Button, Card, Form, Input, Select, Space, Typography, message } 
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -23,6 +32,21 @@ import { toEntityLink } from '@/quality/entityLink';
 import { ANNOUNCEMENT_TYPES, type Announcement } from '@/types/collaboration';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('notifications.announcements');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: notifications.announcements');
+}
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'notifications',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
@@ -259,6 +283,7 @@ onMounted(() => {
 <template>
   <Card>
     <Space direction="vertical" size="middle" style="width: 100%">
+      <SmBreadcrumb :items="breadcrumbItems" />
       <div class="collab-head">
         <PageHeader :header="t('collaboration.announcements.title')" :sub-header="t('collaboration.announcements.lead')" />
         <Button

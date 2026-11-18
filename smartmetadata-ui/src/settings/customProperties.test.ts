@@ -13,9 +13,12 @@ import zhCN from '@/i18n/locales/zh-CN';
 import {
   CUSTOM_PROPERTY_ENTITY_TYPES,
   CUSTOM_PROPERTY_ENTITY_TYPE_SET,
+  CUSTOM_PROPERTY_SEGMENT_MAPPINGS,
   CUSTOM_PROPERTY_TYPE_ENTRIES,
+  customPropertySegmentForType,
+  customPropertyTypeForSegment,
 } from './customProperties';
-import { sortSettingsItemsByRenderedTitle } from './hub';
+import { SETTINGS_REGISTRY, sortSettingsItemsByRenderedTitle } from './registry';
 
 type TypeLabels = Record<string, { label?: string; entity?: string }>;
 
@@ -100,5 +103,50 @@ describe('custom property type entries (official 26)', () => {
     expect(enTypes.metric?.entity).toBe('Metric');
     expect(enTypes.glossaryTerm?.entity).toBe('Glossary term');
     expect(enTypes.domain?.entity).toBe('Domain');
+  });
+});
+
+describe('custom-properties segment mapping (§3.5)', () => {
+  it('maps all 26 URL segments to metadata types and back', () => {
+    expect(CUSTOM_PROPERTY_SEGMENT_MAPPINGS).toHaveLength(26);
+    const segments = new Set<string>();
+    const types = new Set<string>();
+    for (const { segment, type } of CUSTOM_PROPERTY_SEGMENT_MAPPINGS) {
+      expect(segments.has(segment), segment).toBe(false);
+      expect(types.has(type), type).toBe(false);
+      segments.add(segment);
+      types.add(type);
+      expect(customPropertyTypeForSegment(segment)).toBe(type);
+      expect(customPropertySegmentForType(type)).toBe(segment);
+    }
+    expect(types).toEqual(new Set(CUSTOM_PROPERTY_ENTITY_TYPES));
+    expect(customPropertyTypeForSegment('articles')).toBe('page');
+    expect(customPropertyTypeForSegment('column')).toBe('tableColumn');
+    expect(customPropertyTypeForSegment('apiCollections')).toBe('apiCollection');
+    expect(customPropertySegmentForType('page')).toBe('articles');
+    expect(customPropertySegmentForType('tableColumn')).toBe('column');
+  });
+
+  it('covers exactly the registry custom-properties segments', () => {
+    const category = SETTINGS_REGISTRY.find((entry) => entry.key === 'customProperties');
+    const registrySegments = (category?.items ?? []).map((entry) =>
+      entry.key.split('.').pop(),
+    );
+    expect(new Set(registrySegments)).toEqual(
+      new Set(CUSTOM_PROPERTY_SEGMENT_MAPPINGS.map(({ segment }) => segment)),
+    );
+    expect(registrySegments).toEqual(
+      CUSTOM_PROPERTY_SEGMENT_MAPPINGS.map(({ segment }) => segment),
+    );
+  });
+
+  it('returns undefined for unknown segments and types (D-10: no tables fallback)', () => {
+    expect(customPropertyTypeForSegment('query')).toBeUndefined();
+    expect(customPropertyTypeForSegment('tags')).toBeUndefined();
+    expect(customPropertyTypeForSegment('bogus')).toBeUndefined();
+    expect(customPropertyTypeForSegment('table')).toBeUndefined();
+    expect(customPropertySegmentForType('query')).toBeUndefined();
+    expect(customPropertySegmentForType('tag')).toBeUndefined();
+    expect(customPropertySegmentForType('bogus')).toBeUndefined();
   });
 });

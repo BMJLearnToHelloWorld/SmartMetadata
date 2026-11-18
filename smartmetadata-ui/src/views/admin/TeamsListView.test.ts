@@ -37,6 +37,8 @@ async function mountTeams(asAdmin: boolean) {
     routes: [
       { path: '/admin/teams', name: 'admin-teams', component: TeamsListView },
       { path: '/admin/teams/:id', name: 'admin-team', component: { template: '<div>team</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/teams');

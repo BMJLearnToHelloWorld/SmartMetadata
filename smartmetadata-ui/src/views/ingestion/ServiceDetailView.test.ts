@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { createTestI18n } from '@/test/i18n';
 import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import ServiceInsightsTab from '@/components/ingestion/ServiceInsightsTab.vue';
 import ServiceDetailView from './ServiceDetailView.vue';
 
@@ -243,6 +244,7 @@ async function mountView(
     history: createMemoryHistory(),
     routes: [
       { path: '/ingestion/services', name: 'ingestion-services', component: { template: '<div>list</div>' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
         path: '/ingestion/services/:kind/:id',
         name: 'ingestion-service',
@@ -308,6 +310,23 @@ describe('ServiceDetailView', () => {
     }
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
+  });
+
+  it('points the breadcrumb parent at the Services overview (DESIGN §6.7 row 1)', async () => {
+    const { wrapper } = await mountView();
+    const shell = wrapper.findComponent(EntityDetailShell);
+    expect(shell.exists()).toBe(true);
+    const breadcrumbs = shell.props('breadcrumbs') as Array<{
+      label: string;
+      to?: Record<string, unknown>;
+    }>;
+    expect(breadcrumbs).toHaveLength(2);
+    expect(breadcrumbs[0].label).toBe('Services');
+    expect(breadcrumbs[0].to).toEqual({
+      name: 'settings-category',
+      params: { category: 'services' },
+    });
+    expect(breadcrumbs[1].to).toBeUndefined();
   });
 
   it('lists the service agents filtered by service FQN with the metadata agentType', async () => {

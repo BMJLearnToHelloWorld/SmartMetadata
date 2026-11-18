@@ -31,6 +31,8 @@ async function mountView() {
       { path: '/settings/profiler', name: 'settings-profiler', component: ProfilerConfigurationView },
       // The settings shell links back to the settings hub by name.
       { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      // The breadcrumb category crumb links to the partition page by name.
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
       // The settings shell links to sibling preference pages; a catch-all keeps those links resolvable.
       { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
     ],

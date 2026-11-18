@@ -10,9 +10,31 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import SearchSettingsView from './SearchSettingsView.vue';
+
+const permissionFixture = {
+  isAdminUser: true,
+  authProvider: 'basic' as string | undefined,
+};
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    get isAdminUser() {
+      return permissionFixture.isAdminUser;
+    },
+    getResourcePermission: async () => ({}),
+  }),
+}));
+
+vi.mock('@/settings/permissionRules', async (importOriginal) => {
+  const original = (await importOriginal()) as typeof import('@/settings/permissionRules');
+  return {
+    ...original,
+    loadAuthProvider: async () => permissionFixture.authProvider,
+  };
+});
 
 vi.mock('@/api/system', async () => {
   const actual = await vi.importActual<typeof import('@/api/system')>('@/api/system');
@@ -72,8 +94,14 @@ async function makeRouter(): Promise<Router> {
     routes: [
       { path: '/', name: 'settings-preferences-search', component: { template: '<div />' } },
       {
-        path: '/entity/:entityType',
+        path: '/settings/preferences/search-settings/:tab',
         name: 'settings-preferences-search-entity',
+        component: { template: '<div />' },
+      },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      {
+        path: '/settings/:category',
+        name: 'settings-category',
         component: { template: '<div />' },
       },
     ],
@@ -83,41 +111,12 @@ async function makeRouter(): Promise<Router> {
   return router;
 }
 
-function mountView(router: Router) {
-  const i18n = createI18n({
-    legacy: false,
-    locale: 'en-US',
-    messages: {
-      'en-US': {
-        settings: {
-          searchPrefs: {
-            title: 'Search settings',
-            lead: 'Lead',
-            loadFailed: 'load fail',
-            saved: 'saved',
-            saveFailed: 'save fail',
-            enableAccessControl: 'Enable access control',
-            enableColumnIndexing: 'Enable column indexing',
-            maxAggregateSize: 'Max aggregate size',
-            maxResultHits: 'Max result hits',
-            maxAnalyzedOffset: 'Max analyzed offset',
-            save: 'Save',
-            entityTypes: 'Entity types',
-            editEntity: 'Edit',
-          },
-        },
-      },
-    },
-  });
+function mountView(router: Router, stubRouterLink = true) {
   return mount(SearchSettingsView, {
     global: {
-      plugins: [i18n, Antd, router],
+      plugins: [createTestI18n(), Antd, router],
       stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="search-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
-        RouterLink: true,
+        ...(stubRouterLink ? { RouterLink: true } : {}),
       },
     },
   });
@@ -125,6 +124,7 @@ function mountView(router: Router) {
 
 describe('SearchSettingsView save preservation', () => {
   beforeEach(() => {
+    permissionFixture.isAdminUser = true;
     getMock.mockReset();
     updateMock.mockReset();
     getMock.mockImplementation(async (_name: string, mapper: (value: unknown) => unknown) =>
@@ -165,5 +165,79 @@ describe('SearchSettingsView save preservation', () => {
     const expected = settingAsSearch(rawFixture);
     expected.globalSettings = { ...expected.globalSettings, enableColumnIndexing: true };
     expect(updateMock.mock.calls[0][1]).toEqual(expected);
+  });
+});
+
+describe('SearchSettingsView breadcrumb and entity navigation', () => {
+  beforeEach(() => {
+    permissionFixture.isAdminUser = true;
+    getMock.mockReset();
+    updateMock.mockReset();
+    getMock.mockImplementation(async (_name: string, mapper: (value: unknown) => unknown) =>
+      mapper(rawFixture),
+    );
+    updateMock.mockResolvedValue({ configType: 'searchSettings', configValue: {} });
+  });
+
+  it('renders Settings > Preferences > Search above the header', async () => {
+    const router = await makeRouter();
+    const wrapper = mountView(router, false);
+    await flushPromises();
+    const text = wrapper.find('[data-testid="sm-breadcrumb"]').text();
+    expect(text).toContain('Settings');
+    expect(text).toContain('Preferences');
+    expect(text).toContain('Search');
+    expect(text.indexOf('Settings')).toBeLessThan(text.indexOf('Preferences'));
+    expect(text.indexOf('Preferences')).toBeLessThan(text.indexOf('Search'));
+  });
+
+  it('renders the 23 registry entity cards sorted by rendered title', async () => {
+    const router = await makeRouter();
+    const wrapper = mountView(router);
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const cards = wrapper.find('[data-testid="search-entity-cards"]');
+    const titles = cards
+      .findAll('.setting-item-card__title')
+      .map((node) => node.text());
+    expect(titles).toHaveLength(23);
+    expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
+    // The server payload lists one asset type only; the cards do not
+    // come from it.
+    expect(wrapper.find('[data-testid="preferences.search-settings.tables"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="preferences.search-settings.column"]').exists()).toBe(true);
+  });
+
+  it('renders the registry header above the global toggles', async () => {
+    const router = await makeRouter();
+    const wrapper = mountView(router);
+    await flushPromises();
+    const heading = wrapper.find('[data-testid="search-settings-heading"]');
+    expect(heading.text()).toBe('Search');
+    expect(wrapper.text()).toContain(
+      'Ability to configure the search settings to suit your needs.',
+    );
+  });
+
+  it('navigates an entity card to the :tab segment via three-segment dispatch', async () => {
+    const router = await makeRouter();
+    const wrapper = mountView(router);
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.find('[data-testid="preferences.search-settings.tables"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-preferences-search-entity');
+    expect(router.currentRoute.value.params.tab).toBe('tables');
+  });
+
+  it('shows no entity cards to a non-admin (registry ADMIN rule)', async () => {
+    permissionFixture.isAdminUser = false;
+    const router = await makeRouter();
+    const wrapper = mountView(router);
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(
+      wrapper.find('[data-testid="search-entity-cards"]').findAll('.setting-item-card__title'),
+    ).toHaveLength(0);
   });
 });

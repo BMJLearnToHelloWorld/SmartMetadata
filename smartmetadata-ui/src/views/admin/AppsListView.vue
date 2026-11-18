@@ -8,6 +8,9 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { listApps } from '@/api/apps';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -23,6 +26,14 @@ import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminApp } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'apps',
+  ),
+);
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -86,6 +97,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.apps.title')"
     :lead="t('admin.apps.lead')"
     :loading="loading"

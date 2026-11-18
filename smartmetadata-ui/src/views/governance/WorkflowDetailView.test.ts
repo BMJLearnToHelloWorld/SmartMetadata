@@ -126,9 +126,9 @@ describe('WorkflowDetailView', () => {
   });
 
   it('loads execution history on the history tab', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/execution-history',
-    );
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
+    await wrapper.get('[data-testid="workflow-execution-history"]').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="workflow-status-badge-run-1"]').text()).toBe(
       'Success',
     );
@@ -148,9 +148,11 @@ describe('WorkflowDetailView', () => {
     ).toBe('Start Node Configuration');
   });
 
-  it('falls back to the workflow tab for an unknown tab', { timeout: 15000 }, async () => {
-    const { router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
-    expect(router.currentRoute.value.params.tab).toBe('workflow');
+  it('ignores the tab route param and renders the default workflow tab without navigating', { timeout: 15000 }, async () => {
+    const { wrapper, router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
+    expect(router.currentRoute.value.params.tab).toBe('bogus');
+    expect(wrapper.find('[data-testid="workflow-builder-tab"]').exists()).toBe(true);
+    expect(wrapper.findAll('.vue-flow__node')).toHaveLength(4);
   });
 
   it('renders the forbidden card when the definition load is forbidden', { timeout: 15000 }, async () => {

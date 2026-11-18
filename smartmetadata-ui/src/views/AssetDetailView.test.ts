@@ -952,3 +952,139 @@ describe('AssetDetailView usage percentile header (C-F02/C-F03)', () => {
     wrapper.unmount();
   }, 20000);
 });
+
+describe('AssetDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function tableDoc(tabs: Array<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'Table', tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tables/name/')) {
+          return jsonResponse({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            columns: [{ name: 'id', dataType: 'BIGINT' }],
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        if (
+          url.includes('/api/v1/lineage/') ||
+          url.includes('/api/v1/activity/') ||
+          url.includes('/api/v1/conversations') ||
+          url.includes('/customProperties') ||
+          url.includes('/testCases')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  // Scoped to the shell's own tab nav: the lineage pane renders a
+  // nested Tabs (Diagram/Table/Impact analysis) that a global
+  // `.ant-tabs-tab` selector would also catch.
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('reorders and renames tabs from the persona Table page, keeping unlisted tabs', async () => {
+    stubWithDoc(
+      tableDoc([
+        { id: 'lineage', name: 'lineage', displayName: 'Flow' },
+        { id: 'schema', name: 'schema' },
+        { id: 'activity_feed', name: 'activity_feed', displayName: 'Feed' },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual([
+      'Flow',
+      'Schema',
+      'Feed',
+      'Sample data',
+      'Queries',
+      'Profiler',
+      'dbt',
+      'View definition',
+      'Contract',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual([
+      'Schema',
+      'Activity feed',
+      'Sample data',
+      'Queries',
+      'Profiler',
+      'Lineage',
+      'dbt',
+      'View definition',
+      'Contract',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  }, 20000);
+
+  it('ignores customized pages of other types', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Dashboard',
+            tabs: [{ id: 'lineage', name: 'lineage', displayName: 'Flow' }],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)[0]).toBe('Schema');
+    expect(wrapper.text()).not.toContain('Flow');
+    wrapper.unmount();
+  }, 20000);
+});

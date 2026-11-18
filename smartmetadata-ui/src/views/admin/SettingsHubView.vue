@@ -3,116 +3,117 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { RouterLink } from 'vue-router';
-import { Card, Col, Row, Typography } from 'ant-design-vue';
-import { SETTINGS_CATEGORIES, sortSettingsItemsByRenderedTitle } from '@/settings/hub';
+import { useRouter } from 'vue-router';
+import { Col, Row, Spin } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import SettingItemCard from '@/components/shared/SettingItemCard.vue';
+import {
+  filterVisibleSettingsItems,
+  loadAuthProvider,
+} from '@/settings/permissionRules';
+import {
+  SETTINGS_REGISTRY,
+  defaultSettingsPathForKey,
+  resolveSettingsNavigation,
+  type SettingsRegistryItem,
+} from '@/settings/registry';
+import { usePermissionStore } from '@/stores/permissions';
 
+/**
+ * Settings Hub (DESIGN §5), the product equivalent of official
+ * `GlobalSettingPage.tsx` (pin a3012259ca): one card per category from
+ * the registry, in pin order, filtered by the two-stage `isProtected`
+ * semantics (§5.2) through the live permission evaluator. The Hub has
+ * no breadcrumbs. While the permission evaluation is in flight only a
+ * loading state renders, never the full card set (§11.1); when the
+ * filter leaves zero categories, the shared placeholder renders in
+ * place of the header and the grid (§5.4). There is no residual
+ * concept (§5.5).
+ *
+ * Card navigation resolves the registry-derived settings path through
+ * the live router table and navigates by route name, so no route name
+ * is hard-coded here.
+ */
 const { t } = useI18n();
+const router = useRouter();
+const permissionStore = usePermissionStore();
 
-/** Categories render as authored, except flagged ones sort by rendered title (R-2). */
-const sortedCategories = computed(() =>
-  SETTINGS_CATEGORIES.map((category) => ({
-    ...category,
-    items: category.sortItemsByRenderedTitle
-      ? sortSettingsItemsByRenderedTitle(category.items, (key) => t(key))
-      : category.items,
-  })),
+/** Visible categories, or null while the permission evaluation is in flight. */
+const visibleCategories = ref<readonly SettingsRegistryItem[] | null>(null);
+let filterRun = 0;
+
+const subHeader = computed(() =>
+  t('settings.shell.hubDescription', { brandName: t('product.name') }),
 );
+
+async function loadVisibleCategories(run: number): Promise<void> {
+  const filtered = await filterVisibleSettingsItems(SETTINGS_REGISTRY, {
+    isAdminUser: permissionStore.isAdminUser,
+    authProvider: await loadAuthProvider(),
+    getResourceOps: (resourceKey) => permissionStore.getResourcePermission(resourceKey),
+  });
+  if (run === filterRun) {
+    visibleCategories.value = filtered;
+  }
+}
+
+watch(
+  () => permissionStore.isAdminUser,
+  () => {
+    visibleCategories.value = null;
+    filterRun += 1;
+    void loadVisibleCategories(filterRun);
+  },
+  { immediate: true },
+);
+
+function navigateToKey(key: string): void {
+  const target = resolveSettingsNavigation(key);
+  if (!target) {
+    return;
+  }
+  const resolved = router.resolve(defaultSettingsPathForKey(target.key));
+  if (typeof resolved.name === 'string') {
+    void router.push({ name: resolved.name, params: resolved.params });
+  } else {
+    void router.push(defaultSettingsPathForKey(target.key));
+  }
+}
 </script>
 
 <template>
   <PageLayout test-id="settings-hub">
-    <PageHeader :header="t('settings.title')" :sub-header="t('settings.lead')" test-id="settings-hub-title" />
-    <Row :gutter="[16, 16]">
-      <Col v-for="category in sortedCategories" :key="category.key" :xs="24" :md="12" :xl="8">
-        <Card class="settings-hub__card" :data-testid="`settings-category-${category.key}`" size="small">
-          <Typography.Title :level="5">{{ t(category.titleKey) }}</Typography.Title>
-          <Typography.Paragraph type="secondary">{{ t(category.descriptionKey) }}</Typography.Paragraph>
-          <ul class="settings-hub__items">
-            <li v-for="item in category.items" :key="item.key">
-              <RouterLink
-                v-if="item.kind === 'route' && item.routeName"
-                :to="{ name: item.routeName, params: item.routeParams }"
-                :data-testid="`settings-link-${item.key}`"
-                class="settings-hub__link"
-              >
-                <component :is="item.icon" v-if="item.icon" class="settings-hub__icon" />
-                <span class="settings-hub__link-text">
-                  <span>{{ t(item.titleKey) }}</span>
-                  <span
-                    v-if="item.descriptionKey"
-                    class="settings-hub__item-description"
-                  >
-                    {{
-                      item.descriptionEntityKey
-                        ? t(item.descriptionKey, { entity: t(item.descriptionEntityKey) })
-                        : t(item.descriptionKey)
-                    }}
-                  </span>
-                </span>
-              </RouterLink>
-              <span
-                v-else
-                class="settings-hub__residual"
-                :data-testid="`settings-residual-${item.key}`"
-              >
-                {{ t(item.titleKey) }}
-                <span class="settings-hub__residual-why">{{ t(item.residualKey ?? 'settings.residual.generic') }}</span>
-              </span>
-            </li>
-          </ul>
-        </Card>
-      </Col>
-    </Row>
+    <Spin v-if="visibleCategories === null" data-testid="settings-hub-loading" />
+    <PermissionPlaceholder
+      v-else-if="visibleCategories.length === 0"
+      :permission-value="t('settings.title')"
+    />
+    <template v-else>
+      <PageHeader
+        :header="t('settings.title')"
+        :sub-header="subHeader"
+        learning-page-id="settings"
+        test-id="settings-hub-title"
+      />
+      <Row :gutter="[20, 20]" class="settings-hub__grid" data-testid="settings-hub-grid">
+        <Col v-for="category in visibleCategories" :key="category.key" :xs="24" :md="12" :lg="8">
+          <SettingItemCard
+            :data="category"
+            :on-click="navigateToKey"
+            class-name="global-setting-card"
+          />
+        </Col>
+      </Row>
+    </template>
   </PageLayout>
 </template>
 
 <style scoped>
-.settings-hub__card {
-  height: 100%;
-}
-.settings-hub__items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.settings-hub__link {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  color: var(--sm-color-primary);
-}
-.settings-hub__icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-  font-size: 14px;
-}
-.settings-hub__link-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.settings-hub__item-description {
-  color: var(--sm-text-tertiary);
-  font-size: 12px;
-}
-.settings-hub__residual {
-  color: var(--sm-text-tertiary);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 14px;
-}
-.settings-hub__residual-why {
-  color: var(--sm-text-quaternary);
-  font-size: 12px;
+.settings-hub__grid {
+  margin-top: 20px;
 }
 </style>

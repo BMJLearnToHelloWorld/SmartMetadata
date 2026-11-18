@@ -11,6 +11,14 @@ import { listPolicies } from '@/api/policies';
 import FormModal from '@/components/shared/FormModal.vue';
 import { Button, Form, Input, Select, message } from 'ant-design-vue';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -27,6 +35,19 @@ import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminRole } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('access.roles');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: access.roles');
+}
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'access',
+    registryTitle(settingsTranslator, registryEntry),
+  ),
+);
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -138,6 +159,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.roles.title')"
     :lead="t('admin.roles.lead')"
     :loading="loading"

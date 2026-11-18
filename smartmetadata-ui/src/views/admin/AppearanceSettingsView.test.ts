@@ -62,10 +62,6 @@ function mountView() {
     global: {
       plugins: [i18n],
       stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="appearance-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
         RouterLink: true,
       },
     },

@@ -7,6 +7,15 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Dropdown, Empty, Menu, Space, Tooltip, Typography, message } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import FormModal from '@/components/shared/FormModal.vue';
 import {
   createIntakeForm,
@@ -23,6 +32,21 @@ import IntakeFormsTable from './IntakeFormsTable.vue';
 import IntakeFormDesignerModal from './IntakeFormDesignerModal.vue';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('governance.intake-forms');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: governance.intake-forms');
+}
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'governance',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 
 /**
  * Official page shape (pages/IntakeForms): one form per entity type, an
@@ -136,6 +160,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="intake-forms">
+    <SmBreadcrumb :items="breadcrumbItems" />
     <PageHeader :header="t('intakeForms.title')" :sub-header="t('intakeForms.lead')" />
     <Typography.Text v-if="errorMessage" type="danger" data-testid="intake-forms-error">
       {{ errorMessage }}

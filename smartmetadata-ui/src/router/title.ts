@@ -10,7 +10,7 @@
 import { watch } from 'vue';
 import type { Ref } from 'vue';
 import type { RouteLocationNormalized, Router } from 'vue-router';
-import { NAV_ENTRIES, selectedNavKey } from '@/layouts/nav';
+import { NAV_ENTRIES, NAV_FOOTER_ENTRIES, selectedNavKey } from '@/layouts/nav';
 
 /**
  * Browser tab title follows the current page. Resolution order, first hit wins,
@@ -31,7 +31,6 @@ const SPECIAL_TITLES: Record<string, string> = {
   'sso-signup': 'auth.ssoSignUpTitle',
   'registration-confirmation': 'auth.registrationTitle',
   logout: 'auth.logoutTitle',
-  forbidden: 'errors.forbidden',
   'not-found': 'errors.notFound',
 };
 
@@ -39,7 +38,12 @@ type TitleRoute = Pick<RouteLocationNormalized, 'name' | 'meta'>;
 
 function navTitleKey(routeName: string | symbol | null | undefined): string | undefined {
   const selected = selectedNavKey(routeName);
-  for (const entry of NAV_ENTRIES) {
+  // The footer entries carry the Hub entry (admin-settings): a
+  // settings-attributed route resolves to the Settings title here
+  // instead of falling back to the bare product name (DESIGN §6.7
+  // row 8). Action entries (logout) have keys too but are shadowed
+  // by the special titles above, so they never surface here.
+  for (const entry of [...NAV_ENTRIES, ...NAV_FOOTER_ENTRIES]) {
     if (entry.kind === 'section') {
       const item = entry.items.find((child) => child.key === selected);
       if (item) {

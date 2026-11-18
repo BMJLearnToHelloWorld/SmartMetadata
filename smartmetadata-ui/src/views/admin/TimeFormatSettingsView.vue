@@ -4,14 +4,41 @@
   Official defaultTimeFormat on appConfiguration (12h / 24h).
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Select, message } from 'ant-design-vue';
+import { Alert, Button, Form, Select, Spin, message } from 'ant-design-vue';
 import { getTypedSetting, settingAsAppConfiguration, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { AppConfiguration } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.timeFormat');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.timeFormat');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'preferences',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -55,23 +82,26 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="time-format-settings"
-    :title="t('settings.timeFormat.title')"
-    :lead="t('settings.timeFormat.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.timeFormat.time')">
-        <Select v-model:value="form.defaultTimeFormat" data-testid="time-format-select">
-          <Select.Option value="12h">12h</Select.Option>
-          <Select.Option value="24h">24h</Select.Option>
-        </Select>
-      </Form.Item>
-      <Button type="primary" :loading="saving" data-testid="time-format-save" @click="save">
-        {{ t('settings.timeFormat.save') }}
-      </Button>
-    </Form>
-  </PreferencePageShell>
+  <div data-testid="time-format-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="time-format-settings"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Form layout="vertical">
+        <Form.Item :label="t('settings.timeFormat.time')">
+          <Select v-model:value="form.defaultTimeFormat" data-testid="time-format-select">
+            <Select.Option value="12h">12h</Select.Option>
+            <Select.Option value="24h">24h</Select.Option>
+          </Select>
+        </Form.Item>
+        <Button type="primary" :loading="saving" data-testid="time-format-save" @click="save">
+          {{ t('settings.timeFormat.save') }}
+        </Button>
+      </Form>
+    </Spin>
+  </div>
 </template>

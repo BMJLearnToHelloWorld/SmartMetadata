@@ -86,9 +86,70 @@ export const usePersonaStore = defineStore('persona', () => {
   async function selectPersona(id: string | null): Promise<void> {
     selectedPersonaId.value = id;
     persist();
+    // No reset semantics: the document slot is nulled and then
+    // reloaded for the new selection, never reset to a template.
     document.value = null;
     documentLoaded.value = false;
     await loadDocument();
+  }
+
+  /**
+   * Page-level document load, decoupled from the global selection
+   * (C-4 §3.2③): fetches and normalizes the document for the given
+   * persona without switching the globally selected persona, without
+   * touching the persisted selection, and without writing the shared
+   * document slot. The customize page owns its page-level document
+   * state; this loader only supplies it.
+   *
+   * Returns null only when there is no document yet (404) or the
+   * persona has no FQN (disabled-query guard, as official
+   * `personaDocFqn`): the caller then uses the in-memory empty
+   * template. Any other failure throws, so the caller can toast and
+   * keep its document null (C-4 §3.2④: non-404 means toast only, no
+   * document value, and save callbacks early-return) instead of
+   * mistaking a failed read for "no customizations".
+   */
+  async function loadDocumentForPersona(
+    persona: { fullyQualifiedName?: string | null } | null | undefined,
+  ): Promise<PersonaDocument | null> {
+    const fqn = personaDocFqn(persona?.fullyQualifiedName ?? null);
+    if (!fqn) {
+      return null;
+    }
+    try {
+      return normalizePersonaDocument(await getDocumentByFqn(fqn));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * U-09 save synchronization, the product equivalent of the
+   * official `syncSavedDocument` query-cache write: the normalized
+   * saved document is written to the shared slot so consumers of the
+   * selected persona (home, marketplace, landing redirect) see the
+   * new customization without a reload. The write is guarded by FQN:
+   * it applies only when the saved document is the selected
+   * persona's document. A save for any other persona leaves the
+   * shared slot alone — selecting that persona later refetches its
+   * document — so a page-level save can never corrupt the global
+   * selection's document. The product has no query-key cache; this
+   * guarded single-slot write is the equivalent mechanism, and the
+   * save callback's own local ref remains the page-level state.
+   */
+  function syncSavedDocument(saved: PersonaDocument): void {
+    const selected = selectedPersona.value;
+    if (!selected) {
+      return;
+    }
+    if (saved.fullyQualifiedName !== personaDocFqn(selected.fullyQualifiedName)) {
+      return;
+    }
+    document.value = normalizePersonaDocument(saved);
+    documentLoaded.value = true;
   }
 
   async function loadDocument(): Promise<void> {
@@ -136,5 +197,7 @@ export const usePersonaStore = defineStore('persona', () => {
     ensureLoaded,
     selectPersona,
     loadDocument,
+    loadDocumentForPersona,
+    syncSavedDocument,
   };
 });

@@ -5,11 +5,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Card, Dropdown, Empty, Input, Menu, Pagination, Skeleton, Space, Tooltip, Typography } from 'ant-design-vue';
+import { RouterLink } from 'vue-router';
+import { Alert, Breadcrumb, Button, Card, Dropdown, Empty, Input, Menu, Pagination, Skeleton, Space, Tooltip, Typography } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import type { EntityListColumn } from './types';
+import type { EntityBreadcrumb, EntityListColumn } from './types';
 
 const { t } = useI18n();
 
@@ -66,6 +67,14 @@ const props = withDefaults(
     hideHeading?: boolean;
     isBeta?: boolean;
     learningPageId?: string;
+    /**
+     * Settings-shell breadcrumb trail (§8.2): same item type as
+     * EntityDetailShell, rendered inside the Card above the header.
+     * Optional — callers that do not pass it render no breadcrumb,
+     * exactly as before. Items with `to` link; items without render
+     * as plain text, so callers leave `to` off the last item.
+     */
+    breadcrumbs?: EntityBreadcrumb[];
     rowSelection?: import('ant-design-vue').TableProps['rowSelection'];
   }>(),
   {
@@ -94,6 +103,7 @@ const props = withDefaults(
     rowActionsLoading: false,
     rowCanDelete: undefined,
     hideHeading: false,
+    breadcrumbs: () => [],
     rowSelection: undefined,
   },
 );
@@ -140,6 +150,24 @@ const tableColumns = computed<EntityListColumn[]>(() => {
 <template>
   <Card data-testid="entity-list-shell">
     <Space direction="vertical" size="middle" style="width: 100%">
+      <!-- Breadcrumb links use RouterLink, which fails silently on an
+        unresolvable `to` — unlike EntityDetailShell, whose programmatic
+        push surfaces failures with a toast. Accepted: every crumb is
+        caller-supplied through the tested `resolveSettingsLocation`
+        (`settings/locationResolver`), so an unresolvable `to` cannot
+        arise from shell code. -->
+      <Breadcrumb v-if="breadcrumbs.length" data-testid="entity-list-breadcrumb">
+        <Breadcrumb.Item v-for="(item, index) in breadcrumbs" :key="`${item.label}-${index}`">
+          <RouterLink
+            v-if="item.to"
+            :to="item.to"
+            :data-testid="`entity-list-crumb-${index}`"
+          >
+            {{ item.label }}
+          </RouterLink>
+          <span v-else>{{ item.label }}</span>
+        </Breadcrumb.Item>
+      </Breadcrumb>
       <div v-if="!hideHeading || $slots.actions" class="entity-list__head">
         <div v-if="!hideHeading">
           <PageHeader

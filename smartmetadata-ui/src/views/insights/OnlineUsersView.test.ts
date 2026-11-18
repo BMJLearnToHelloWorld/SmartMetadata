@@ -36,7 +36,11 @@ async function mountView(asAdmin = true) {
     : { id: 'u9', name: 'bob' };
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/insights/online-users', name: 'insights-online-users', component: OnlineUsersView }],
+    routes: [
+      { path: '/insights/online-users', name: 'insights-online-users', component: OnlineUsersView },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
+    ],
   });
   await router.push({ name: 'insights-online-users' });
   await router.isReady();
@@ -82,7 +86,7 @@ describe('OnlineUsersView', () => {
 
   it('shows the forbidden view, not the table, for non-admins', async () => {
     const wrapper = await mountView(false);
-    expect(wrapper.find('[data-testid="forbidden-view"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="online-users-table"]').exists()).toBe(false);
   });
 

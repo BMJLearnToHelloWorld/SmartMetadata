@@ -12,6 +12,14 @@ import { createEventSubscription, deleteEventSubscription, listEventSubscription
 import { getLimitByResource } from '@/api/limits';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
@@ -29,6 +37,19 @@ import { usePermissionStore } from '@/stores/permissions';
 import { ALERT_TYPES, type EventSubscription } from '@/types/quality';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('notifications.alerts');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: notifications.alerts');
+}
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'notifications',
+    registryTitle(settingsTranslator, registryEntry),
+  ),
+);
 const router = useRouter();
 /**
  * Official NotificationListPage gating: create from the
@@ -209,6 +230,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('observability.alerts.title')"
     :lead="t('observability.alerts.lead')"
     :loading="loading"

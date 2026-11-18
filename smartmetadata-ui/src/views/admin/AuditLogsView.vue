@@ -22,6 +22,14 @@ import {
   type AuditLogFilters,
 } from '@/catalog/auditLogFilters';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import {
   DEFAULT_PAGE_SIZE,
   canGoNext,
@@ -35,6 +43,19 @@ import {
 import type { EntityListColumn } from '@/features/crud/types';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('access.audit-logs');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: access.audit-logs');
+}
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'access',
+    registryTitle(settingsTranslator, registryEntry),
+  ),
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const logs = ref<AuditLogEntry[]>([]);
@@ -165,6 +186,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.auditLogs.title')"
     :lead="t('admin.auditLogs.lead')"
     :loading="loading"

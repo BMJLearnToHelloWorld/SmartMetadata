@@ -7,9 +7,18 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Card, Checkbox, Form, Input, Pagination, Select, Space, Spin, Tag, Typography, message } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import {
   createRelationshipType,
   deleteRelationshipType,
@@ -46,6 +55,21 @@ import { useAuthStore } from '@/stores/auth';
  * form does not edit them either.
  */
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('governance.glossary-term-relations');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: governance.glossary-term-relations');
+}
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'governance',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const authStore = useAuthStore();
 
 const isAdmin = computed(() => authStore.user?.isAdmin === true);
@@ -262,8 +286,9 @@ onMounted(() => {
 
 <template>
   <div data-testid="glossary-term-relation-settings">
-    <ForbiddenView v-if="!isAdmin" />
+    <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
     <template v-else>
+      <SmBreadcrumb :items="breadcrumbItems" />
       <PageHeader
         :header="t('settings.glossaryTermRelations.title')"
         :sub-header="t('settings.glossaryTermRelations.lead')"

@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import { createTestI18n } from '@/test/i18n';
 import SearchEntitySettingsView from './SearchEntitySettingsView.vue';
 
 vi.mock('@/api/system', async () => {
@@ -84,30 +85,43 @@ function rawFixture(tableRanking: unknown): Record<string, unknown> {
   };
 }
 
-async function makeRouter(): Promise<Router> {
+async function makeRouter(segment = 'tables'): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'settings-preferences-search', component: { template: '<div />' } },
       {
-        path: '/entity/:entityType',
+        path: '/entity/:tab',
         name: 'settings-preferences-search-entity',
+        component: { template: '<div />' },
+      },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      {
+        path: '/settings/:category',
+        name: 'settings-category',
         component: { template: '<div />' },
       },
     ],
   });
-  await router.push('/entity/table');
+  await router.push(`/entity/${segment}`);
   await router.isReady();
   return router;
 }
 
-function mountView(router: Router) {
+function mountView(router: Router, stubRouterLink = true) {
   const i18n = createI18n({
     legacy: false,
     locale: 'en-US',
     messages: {
       'en-US': {
         settings: {
+          title: 'Settings',
+          registry: {
+            preferences: {
+              breadcrumbName: 'Preferences',
+              searchSettings: { breadcrumbName: 'Search' },
+            },
+          },
           searchPrefs: {
             title: 'Search settings',
             lead: 'Lead',
@@ -133,12 +147,8 @@ function mountView(router: Router) {
     global: {
       plugins: [i18n, Antd, router],
       stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="search-entity-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
         SmTable: { template: '<div />' },
-        RouterLink: true,
+        ...(stubRouterLink ? { RouterLink: true } : {}),
       },
     },
   });
@@ -231,5 +241,79 @@ describe('SearchEntitySettingsView save preservation', () => {
     expect(updateMock).toHaveBeenCalledTimes(1);
     const payload = updateMock.mock.calls[0][1] as SearchSettings;
     expect(payload.assetTypeConfigurations?.[0]?.ranking).toEqual(ownRanking);
+  });
+});
+
+describe('SearchEntitySettingsView :tab mapping and breadcrumb', () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    updateMock.mockReset();
+    getMock.mockImplementation(async (_name: string, mapper: (value: unknown) => unknown) =>
+      mapper(rawFixture(undefined)),
+    );
+  });
+
+  it('renders the startCase breadcrumb for the :tab segment', async () => {
+    const router = await makeRouter('databaseSchemas');
+    const wrapper = mountView(router, false);
+    await flushPromises();
+    const text = wrapper.find('[data-testid="sm-breadcrumb"]').text();
+    expect(text).toContain('Settings');
+    expect(text).toContain('Preferences');
+    expect(text).toContain('Search');
+    expect(text).toContain('Database Schemas');
+    expect(text.indexOf('Settings')).toBeLessThan(text.indexOf('Preferences'));
+    expect(text.indexOf('Preferences')).toBeLessThan(text.indexOf('Search'));
+    expect(text.indexOf('Search')).toBeLessThan(text.indexOf('Database Schemas'));
+  });
+
+  it('maps an unknown :tab segment to the in-page error state without falling back', async () => {
+    const router = await makeRouter('bogusSegment');
+    const wrapper = mountView(router);
+    await flushPromises();
+    expect(wrapper.text()).toContain('Missing');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Bogus Segment');
+    expect(router.currentRoute.value.path).toBe('/entity/bogusSegment');
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SearchEntitySettingsView per-segment header (§12.3)', () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    updateMock.mockReset();
+    getMock.mockImplementation(async (_name: string, mapper: (value: unknown) => unknown) =>
+      mapper({
+        globalSettings: {},
+        assetTypeConfigurations: [{ assetType: 'table', searchFields: [], highlightFields: [] }],
+      }),
+    );
+  });
+
+  function mountRealCatalog(router: Router) {
+    return mount(SearchEntitySettingsView, {
+      global: {
+        plugins: [createTestI18n(), Antd, router],
+        stubs: { SmTable: { template: '<div />' }, RouterLink: true },
+      },
+    });
+  }
+
+  it('renders the registry nested-item title and description for the segment', async () => {
+    const router = await makeRouter('tables');
+    const wrapper = mountRealCatalog(router);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-entity-settings-heading"]').text()).toBe('Tables');
+    expect(wrapper.text()).toContain('Search settings based on ranking for Tables');
+    wrapper.unmount();
+  });
+
+  it('renders an empty header for an unknown segment, like pin entityData?.label', async () => {
+    const router = await makeRouter('bogus');
+    const wrapper = mountRealCatalog(router);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="search-entity-settings-heading"]').text()).toBe('');
+    expect(wrapper.find('[data-testid="search-entity-settings-sub"]').exists()).toBe(false);
+    wrapper.unmount();
   });
 });

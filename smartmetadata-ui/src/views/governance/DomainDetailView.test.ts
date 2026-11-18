@@ -214,3 +214,113 @@ describe('DomainDetailView dryRun', () => {
     wrapper.unmount();
   });
 });
+
+describe('DomainDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/d1')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'Finance',
+            displayName: 'Finance Domain',
+            description: 'Finance assets',
+            domainType: 'Consumer-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [],
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function mountDomain() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/d1');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { id: 'd1' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountDomain>>): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('reorders and renames tabs from the persona Domain page, keeping unlisted tabs', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Domain',
+            tabs: [
+              { id: 'activity_feed', name: 'activity_feed', displayName: 'Feed' },
+              { id: 'subdomains', name: 'subdomains' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(tabLabels(wrapper)).toEqual([
+      'Feed',
+      'Sub-domains',
+      'Overview',
+      'Assets',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  });
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(tabLabels(wrapper)).toEqual([
+      'Overview',
+      'Assets',
+      'Sub-domains',
+      'Activity',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  });
+});

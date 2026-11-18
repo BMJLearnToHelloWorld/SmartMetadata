@@ -10,6 +10,7 @@ import {Alert, Button, Descriptions, Form, Input, Select, message} from 'ant-des
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
+import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { listEntityActivity } from '@/api/activity';
 import { getDomainDryRunImpacts, type BulkAssetResponse, type BulkAssetResult } from '@/api/bulkAssets';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
@@ -78,19 +79,30 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(domain.value) || t('governance.domains.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'domain-tab-overview' },
-  { key: 'assets', label: t('governance.domains.assetsTab'), testId: 'domain-tab-assets' },
-  // Official SubDomainsTable: sub-domains live as a flat list on the detail
-  // page, not as nested rows in the domain list.
-  { key: 'subDomains', label: t('governance.domains.subDomainsTab'), testId: 'domain-tab-subdomains' },
-  { key: 'activity', label: t('governance.domains.activityTab'), testId: 'domain-tab-activity' },
-  {
-    key: 'customProperties',
-    label: t('governance.domains.customPropertiesTab'),
-    testId: 'domain-tab-custom-properties',
-  },
-]);
+// C-4 consume side: the selected persona's Domain page reorders and
+// renames these tabs (official `getDetailsTabWithNewLabel`, preserve
+// mode — see `useCustomPages.ts`).
+const { customizedPage } = useCustomPages('Domain');
+
+const tabs = computed<EntityDetailTab[]>(() =>
+  getDetailsTabWithNewLabel(
+    [
+      { key: 'overview', label: t('crud.overview'), testId: 'domain-tab-overview' },
+      { key: 'assets', label: t('governance.domains.assetsTab'), testId: 'domain-tab-assets' },
+      // Official SubDomainsTable: sub-domains live as a flat list on the detail
+      // page, not as nested rows in the domain list.
+      { key: 'subDomains', label: t('governance.domains.subDomainsTab'), testId: 'domain-tab-subdomains' },
+      { key: 'activity', label: t('governance.domains.activityTab'), testId: 'domain-tab-activity' },
+      {
+        key: 'customProperties',
+        label: t('governance.domains.customPropertiesTab'),
+        testId: 'domain-tab-custom-properties',
+      },
+    ],
+    customizedPage.value?.tabs,
+    { preserveUnlisted: true },
+  ),
+);
 
 /**
  * P1 both lines for asset writes: the server authorizes EDIT_ALL on the

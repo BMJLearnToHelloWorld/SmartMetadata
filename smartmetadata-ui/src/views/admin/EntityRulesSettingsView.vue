@@ -4,15 +4,43 @@
   Official entityRulesSettings.entitySemantics toggles (Data Asset Rules).
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Switch, message} from 'ant-design-vue';
+import {Alert, Button, Spin, Switch, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsEntityRules, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { dataAssetRulesBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { EntityRulesSettings, SemanticsRule } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.dataAssetRules');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.dataAssetRules');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    dataAssetRulesBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      (entity) => t('settings.shell.entityConfiguration', { entity }),
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -59,29 +87,32 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="entity-rules-settings"
-    :title="t('settings.entityRules.title')"
-    :lead="t('settings.entityRules.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <SmTable
-      row-key="name"
-      :columns="columns"
-      :data-source="form.entitySemantics"
-      :pagination="false"
-      test-id="entity-semantics-table"
-      style="margin-bottom: 16px"
-    >
-      <template #bodyCell="{ column, index }">
-        <template v-if="column.key === 'enabled'">
-          <Switch v-model:checked="form.entitySemantics[index].enabled" />
+  <div data-testid="entity-rules-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="entity-rules-settings"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <SmTable
+        row-key="name"
+        :columns="columns"
+        :data-source="form.entitySemantics"
+        :pagination="false"
+        test-id="entity-semantics-table"
+        style="margin-bottom: 16px"
+      >
+        <template #bodyCell="{ column, index }">
+          <template v-if="column.key === 'enabled'">
+            <Switch v-model:checked="form.entitySemantics[index].enabled" />
+          </template>
         </template>
-      </template>
-    </SmTable>
-    <Button type="primary" :loading="saving" data-testid="entity-rules-save" @click="save">
-      {{ t('settings.entityRules.save') }}
-    </Button>
-  </PreferencePageShell>
+      </SmTable>
+      <Button type="primary" :loading="saving" data-testid="entity-rules-save" @click="save">
+        {{ t('settings.entityRules.save') }}
+      </Button>
+    </Spin>
+  </div>
 </template>

@@ -7,10 +7,19 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { InputSearch, Select, Spin } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import { usePermissionStore } from '@/stores/permissions';
 import { listOnlineUsers, searchUsers } from '@/api/users';
 import {
@@ -25,11 +34,26 @@ import type { AdminUser } from '@/types/admin';
  * Official OnlineUsersPage, product scope. Activity bands and status colours
  * are the official values (green #52c41a / yellow #faad14 / red #ff4d4f).
  * Admin gating follows the official page (OnlineUsersPage.tsx:255):
- * non-admins get the permission placeholder, here ForbiddenView.
+ * non-admins get the permission placeholder (PermissionPlaceholder).
  * Search results carry no activity timestamp, so their activity cell
  * says so instead of inventing an online state.
  */
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('members.online-users');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: members.online-users');
+}
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'members',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 
 /** Official OnlineUsers gate: isAdminUser from the session. */
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
@@ -128,8 +152,9 @@ onMounted(() => {
 
 <template>
   <PageLayout test-id="online-users-layout">
-    <ForbiddenView v-if="!isAdminUser" />
+    <PermissionPlaceholder v-if="!isAdminUser" :permission-value="t('crud.view')" />
     <template v-else>
+    <SmBreadcrumb :items="breadcrumbItems" />
     <PageHeader :header="t('insights.onlineUsers.title')" :sub-header="t('insights.onlineUsers.lead')" />
     <Spin :spinning="loading">
       <div class="online-users__controls">

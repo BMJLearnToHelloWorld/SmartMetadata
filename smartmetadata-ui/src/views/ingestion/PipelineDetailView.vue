@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRouter, type RouteLocationRaw } from 'vue-router';
 import {Alert, Button, Descriptions, Tag, Tooltip, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import {
@@ -22,6 +22,7 @@ import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { buildCliWorkflowYaml } from '@/ingestion/cliWorkflow';
@@ -33,6 +34,7 @@ import {
 } from '@/ingestion/pipelineDisplay';
 import { useScheduleDescriptionTexts } from '@/ingestion/scheduleDescription';
 import { SERVICE_GET_API } from '@/ingestion/serviceApis';
+import { DATA_OBSERVABILITY_SEGMENT, kindToSegment } from '@/router/serviceTabSegments';
 import type {
   CatalogService,
   IngestionPipeline,
@@ -152,15 +154,62 @@ const actionResultType = computed(() => {
   return actionResult.value.code === 200 ? 'success' : 'info';
 });
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('ingestion.pipelines.title'), to: { name: 'ingestion-pipelines' } },
-  { label: entityLabel(pipeline.value) || t('ingestion.pipelines.title') },
-]);
+/**
+ * Parent of this detail page. The standalone `ingestion-pipelines`
+ * list route was deleted — its content merged into the services
+ * page Pipelines Tab (S-ROUTES §9) — so the parent is the kind's
+ * Pipelines Tab: the dataObservability tab for TestSuite pipelines,
+ * the kind tab otherwise. llm/mcp kinds have no list tab (C-2), so
+ * no parent resolves for them: the crumb stays unlinked, and a
+ * delete lands on the services overview instead (see onDelete).
+ */
+const pipelinesParentLocation = computed<RouteLocationRaw | null>(() => {
+  const current = pipeline.value;
+  if (!current) {
+    return null;
+  }
+  if (current.pipelineType === 'TestSuite') {
+    return {
+      name: 'settings-services',
+      params: { tab: DATA_OBSERVABILITY_SEGMENT },
+      query: { tab: 'pipelines' },
+    };
+  }
+  const segment = kindToSegment(serviceKindFromRef(current.service?.type));
+  if (!segment) {
+    return null;
+  }
+  return { name: 'settings-services', params: { tab: segment }, query: { tab: 'pipelines' } };
+});
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'pipeline-tab-overview' },
-  { key: 'status', label: t('ingestion.pipelines.statusTab'), testId: 'pipeline-tab-status' },
-]);
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => {
+  const parent = pipelinesParentLocation.value;
+  return [
+    parent
+      ? { label: t('ingestion.pipelines.title'), to: parent }
+      : { label: t('ingestion.pipelines.title') },
+    { label: entityLabel(pipeline.value) || t('ingestion.pipelines.title') },
+  ];
+});
+
+// C-4 consume side: the selected persona's Pipeline page reorders and
+// renames these tabs (official `getDetailsTabWithNewLabel`, preserve
+// mode — see `useCustomPages.ts`). This is the ingestion-pipeline
+// surface (overview + runs), not the official catalog-Pipeline tab
+// set, so preserve mode is what keeps the runs (status) tab from
+// being removed by a customization that never mentions it.
+const { customizedPage } = useCustomPages('Pipeline');
+
+const tabs = computed<EntityDetailTab[]>(() =>
+  getDetailsTabWithNewLabel(
+    [
+      { key: 'overview', label: t('crud.overview'), testId: 'pipeline-tab-overview' },
+      { key: 'status', label: t('ingestion.pipelines.statusTab'), testId: 'pipeline-tab-status' },
+    ],
+    customizedPage.value?.tabs,
+    { preserveUnlisted: true },
+  ),
+);
 
 /** P-37: triggeredBy renders when present, the column drops when always empty. */
 const hasTriggeredBy = computed(() => statuses.value.some((status) => Boolean(status.triggeredBy)));
@@ -428,7 +477,9 @@ async function onDelete(): Promise<void> {
     return;
   }
   message.success(t('ingestion.pipelines.deleted', { name: pipeline.value.name }));
-  await router.push({ name: 'ingestion-pipelines' });
+  await router.push(
+    pipelinesParentLocation.value ?? { name: 'settings-category', params: { category: 'services' } },
+  );
 }
 
 async function onCopyYaml(): Promise<void> {

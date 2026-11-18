@@ -9,19 +9,21 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ROUTE_DOMAIN_GROUPS, domainForPath } from './domains';
-import { isAdminPath, resolveGuard } from './guards';
+import { resolveGuard } from './guards';
 
 describe('router domain scheme and guards (Stage 1)', () => {
   it('maps representative paths to exactly one domain group', () => {
     const cases: Record<string, string> = {
       '/login': 'auth',
-      '/forbidden': 'auth',
       '/my-data': 'home',
       '/search': 'discover',
       '/assets/table/foo': 'discover',
       '/insights': 'insights',
       '/lineage': 'lineage',
-      '/admin/settings': 'admin',
+      '/admin/settings/system': 'admin',
+      '/admin/users/u1': 'admin',
+      '/settings': 'settings',
+      '/settings/access/roles': 'settings',
       '/governance/glossaries': 'governance',
       '/govern/metrics': 'governance',
       '/marketplace': 'marketplace',
@@ -31,32 +33,52 @@ describe('router domain scheme and guards (Stage 1)', () => {
       '/ingestion/services': 'ingestion',
       '/activity': 'collaboration',
       '/tasks': 'collaboration',
-      '/announcements': 'collaboration',
     };
     for (const [path, expected] of Object.entries(cases)) {
       expect(domainForPath(path)).toBe(expected);
     }
+    // Retired prefixes map to null (ungrouped); null is not a 404
+    // proof — it only means no domain group claims the path.
+    expect(domainForPath('/forbidden')).toBeNull();
+    expect(domainForPath('/announcements')).toBeNull();
     expect(domainForPath('/no-such-route')).toBeNull();
     const allPrefixes = ROUTE_DOMAIN_GROUPS.flatMap((group) => group.prefixes);
     expect(new Set(allPrefixes).size).toBe(allPrefixes.length);
   });
 
-  it('guards public routes, redirects without a session, and detects admin paths', () => {
+  it('guards public routes, redirects without a session, and denies by declaration', () => {
     expect(resolveGuard({ isPublic: true, hasSession: false, fullPath: '/login' })).toEqual({ kind: 'allow' });
-    expect(resolveGuard({ isPublic: false, hasSession: false, fullPath: '/admin/settings' })).toEqual({
+    expect(resolveGuard({ isPublic: false, hasSession: false, fullPath: '/settings' })).toEqual({
       kind: 'login',
-      redirect: '/admin/settings',
+      redirect: '/settings',
     });
-    // P1 dual line: a session alone no longer passes an admin route.
-    expect(resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings' })).toEqual({
-      kind: 'forbidden',
-    });
+    // P1 dual line, meta-driven: a session alone no longer passes a
+    // declared route; the declaration — never the URL — decides.
     expect(
-      resolveGuard({ isPublic: false, hasSession: true, fullPath: '/admin/settings', isAdminUser: true }),
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/access/roles',
+        declaration: { resource: 'ROLE', operation: 'view' },
+      }),
+    ).toEqual({ kind: 'deny' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/access/roles',
+        isAdminUser: true,
+        declaration: { resource: 'ROLE', operation: 'view' },
+      }),
     ).toEqual({ kind: 'allow' });
-    expect(isAdminPath('/admin/settings')).toBe(true);
-    expect(isAdminPath('/admin')).toBe(true);
-    expect(isAdminPath('/administrator')).toBe(false);
-    expect(isAdminPath('/search')).toBe(false);
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/access/roles',
+        hasPermission: true,
+        declaration: { resource: 'ROLE', operation: 'view' },
+      }),
+    ).toEqual({ kind: 'allow' });
   });
 });

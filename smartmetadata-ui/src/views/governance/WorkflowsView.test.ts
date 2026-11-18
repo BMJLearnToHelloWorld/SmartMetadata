@@ -30,7 +30,7 @@ function mountPage() {
     routes: [
       { path: '/govern/workflows', name: 'workflows', component: WorkflowsView },
       {
-        path: '/govern/workflows/:fqn/:tab',
+        path: '/govern/workflows/:fqn',
         name: 'workflow-detail',
         component: { template: '<div>detail stub</div>' },
       },
@@ -118,7 +118,7 @@ describe('WorkflowsView', () => {
       routes: [
         { path: '/govern/workflows', name: 'workflows', component: WorkflowsView },
         {
-          path: '/govern/workflows/:fqn/:tab',
+          path: '/govern/workflows/:fqn',
           name: 'workflow-detail',
           component: { template: '<div>detail stub</div>' },
         },
@@ -134,7 +134,7 @@ describe('WorkflowsView', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('workflow-detail');
     expect(router.currentRoute.value.params.fqn).toBe('nightly-dq');
-    expect(router.currentRoute.value.params.tab).toBe('workflow');
+    expect(router.currentRoute.value.params.tab).toBeUndefined();
   });
 
   it('shows the forbidden placeholder on 403', { timeout: 15000 }, async () => {
@@ -233,7 +233,7 @@ describe('WorkflowsView', () => {
     });
     expect(router.currentRoute.value.name).toBe('workflow-detail');
     expect(router.currentRoute.value.params.fqn).toBe('weekly-sync');
-    expect(router.currentRoute.value.params.tab).toBe('workflow');
+    expect(router.currentRoute.value.params.tab).toBeUndefined();
     expect(router.currentRoute.value.query.mode).toBe('edit');
   });
 });

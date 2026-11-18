@@ -11,6 +11,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { useAuthStore } from '@/stores/auth';
+import { useGuardDecisionStore } from '@/stores/guardDecision';
 import { router } from './index';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -21,10 +22,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
- * N1 regression: an admin opening an unmapped /admin/* route directly
- * (fresh load, profile not yet fetched) must NOT land on /forbidden.
- * The guard awaits one refreshUser() before deciding; the profile fetch
- * itself is a network boundary (global fetch stub) — refreshUser is never
+ * N1 regression, re-asserted under the meta-driven guard (DESIGN
+ * §10.4 step 3): on a fresh load the guard awaits one refreshUser()
+ * when the target carries a declaration, before deciding. A denial
+ * is an in-place placeholder decision with the URL unchanged (D-3),
+ * never a redirect to a forbidden route. The profile fetch itself
+ * is a network boundary (global fetch stub) — refreshUser is never
  * mocked, because calling it is the behaviour under test.
  */
 describe('admin guard fresh-load race (N1)', () => {
@@ -59,23 +62,28 @@ describe('admin guard fresh-load race (N1)', () => {
     );
   }
 
-  it('admits an admin directly loading unmapped /admin/settings on fresh load', async () => {
+  it('admits an admin directly loading the staged System route on fresh load', async () => {
     stubProfile(true);
-    await router.push('/admin/settings');
-    expect(router.currentRoute.value.fullPath).toBe('/admin/settings');
+    await router.push('/admin/settings/system');
+    expect(router.currentRoute.value.fullPath).toBe('/admin/settings/system');
     expect(useAuthStore().user?.isAdmin).toBe(true);
+    expect(useGuardDecisionStore().isDeniedFor('/admin/settings/system', 'ada')).toBe(false);
   });
 
-  it('still forbids a non-admin directly loading unmapped /admin/roles on fresh load', async () => {
+  it('denies a non-admin in place, with the URL unchanged, on fresh load', async () => {
     stubProfile(false);
-    await router.push('/admin/roles');
-    expect(router.currentRoute.value.name).toBe('forbidden');
+    await router.push('/settings/access/roles');
+    expect(router.currentRoute.value.fullPath).toBe('/settings/access/roles');
+    expect(router.currentRoute.value.name).toBe('admin-roles');
+    expect(useGuardDecisionStore().isDeniedFor('/settings/access/roles', 'ada')).toBe(true);
   });
 
   it('fails closed when the fresh-load profile fetch fails', async () => {
     stubProfile(true, 500);
-    await router.push('/admin/settings/audit-logs');
-    expect(router.currentRoute.value.name).toBe('forbidden');
+    await router.push('/settings/access/audit-logs');
+    expect(router.currentRoute.value.fullPath).toBe('/settings/access/audit-logs');
+    expect(router.currentRoute.value.name).toBe('admin-settings-audit-logs');
+    expect(useGuardDecisionStore().isDeniedFor('/settings/access/audit-logs', null)).toBe(true);
   });
 
   it('redirects to login when there is no session at all', async () => {

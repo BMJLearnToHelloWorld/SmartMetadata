@@ -161,4 +161,144 @@ describe('persona store', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('loads a page document without switching the global selection or slot (C-4 §3.2③)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/personas')) {
+        return jsonResponse({
+          data: [
+            { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' },
+            { id: 'p2', name: 'Steward', fullyQualifiedName: 'Steward' },
+          ],
+          paging: { total: 2 },
+        });
+      }
+      if (url.includes('/v1/docStore/name/persona.Analyst')) {
+        return jsonResponse({
+          name: 'Analyst-Analyst',
+          fullyQualifiedName: 'persona.Analyst',
+          entityType: 'Page',
+          data: { pages: [{ pageType: 'LandingPage', layout: [] }] },
+        });
+      }
+      if (url.includes('/v1/docStore/name/persona.Steward')) {
+        return jsonResponse({
+          name: 'Steward-Steward',
+          fullyQualifiedName: 'persona.Steward',
+          entityType: 'Page',
+          data: { pages: [{ pageType: 'Table', layout: [] }, { layout: {} }] },
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    }));
+    const store = usePersonaStore();
+    await store.ensureLoaded();
+    await store.selectPersona('p1');
+    expect(store.document?.data.pages?.[0]?.pageType).toBe('LandingPage');
+    const pageDoc = await store.loadDocumentForPersona({
+      fullyQualifiedName: 'Steward',
+    });
+    expect(pageDoc?.fullyQualifiedName).toBe('persona.Steward');
+    expect(pageDoc?.data.pages).toHaveLength(1);
+    expect(pageDoc?.data.pages?.[0]?.pageType).toBe('Table');
+    expect(store.selectedPersona?.id).toBe('p1');
+    expect(localStorage.getItem(PERSONA_STORAGE_KEY)).toBe('p1');
+    expect(store.document?.fullyQualifiedName).toBe('persona.Analyst');
+  });
+
+  it('returns null for a missing page document and throws for other failures (§3.2④)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('persona.Missing')) {
+        return new Response('Not found', { status: 404 });
+      }
+      return new Response('Server error', { status: 500 });
+    }));
+    const store = usePersonaStore();
+    await expect(
+      store.loadDocumentForPersona({ fullyQualifiedName: 'Missing' }),
+    ).resolves.toBeNull();
+    await expect(
+      store.loadDocumentForPersona({ fullyQualifiedName: 'Broken' }),
+    ).rejects.toMatchObject({ status: 500 });
+    await expect(store.loadDocumentForPersona(null)).resolves.toBeNull();
+    await expect(store.loadDocumentForPersona({})).resolves.toBeNull();
+    expect(store.document).toBeNull();
+  });
+
+  it('syncs a save only into the selected persona’s document slot (U-09)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/personas')) {
+        return jsonResponse({
+          data: [
+            { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' },
+            { id: 'p2', name: 'Steward', fullyQualifiedName: 'Steward' },
+          ],
+          paging: { total: 2 },
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    }));
+    const store = usePersonaStore();
+    await store.ensureLoaded();
+    await store.selectPersona('p1');
+    store.syncSavedDocument({
+      id: 'doc2',
+      name: 'Steward-Steward',
+      fullyQualifiedName: 'persona.Steward',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'Table', layout: [] }] },
+    });
+    expect(store.document).toBeNull();
+    // The pageType-less entry simulates malformed wire data: it must
+    // reach syncSavedDocument untyped, exactly as a fetch payload
+    // does, because the normalizer's drop is the behavior under test.
+    // Completing the entry would delete the assertion's subject.
+    store.syncSavedDocument(
+      JSON.parse(
+        JSON.stringify({
+          id: 'doc1',
+          name: 'Analyst-Analyst',
+          fullyQualifiedName: 'persona.Analyst',
+          entityType: 'Page',
+          data: { pages: [{ pageType: 'LandingPage', layout: [] }, { layout: {} }] },
+        }),
+      ),
+    );
+    expect(store.document?.data.pages).toHaveLength(1);
+    expect(store.documentLoaded).toBe(true);
+  });
+
+  it('switching personas drops the previous document when the new one is missing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/personas')) {
+        return jsonResponse({
+          data: [
+            { id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' },
+            { id: 'p2', name: 'Steward', fullyQualifiedName: 'Steward' },
+          ],
+          paging: { total: 2 },
+        });
+      }
+      if (url.includes('/v1/docStore/name/persona.Analyst')) {
+        return jsonResponse({
+          name: 'Analyst-Analyst',
+          fullyQualifiedName: 'persona.Analyst',
+          entityType: 'Page',
+          data: { pages: [{ pageType: 'LandingPage', layout: [] }] },
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    }));
+    const store = usePersonaStore();
+    await store.ensureLoaded();
+    await store.selectPersona('p1');
+    expect(store.document).not.toBeNull();
+    await store.selectPersona('p2');
+    expect(store.document).toBeNull();
+    expect(store.documentLoaded).toBe(true);
+  });
 });

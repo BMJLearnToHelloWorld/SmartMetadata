@@ -146,6 +146,7 @@ describe('AppInstallView', () => {
   it('renders the forbidden page for non-admin users', async () => {
     const { wrapper } = await mountInstall({}, false);
     expect(wrapper.find('[data-testid="app-install-verify"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Access not allowed');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Access Denied');
   });
 });

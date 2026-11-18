@@ -10,6 +10,7 @@ import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
+import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -75,16 +76,27 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(product.value) || t('governance.dataProducts.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'data-product-tab-overview' },
-  { key: 'assets', label: t('governance.dataProducts.assetsTab'), testId: 'data-product-tab-assets' },
-  { key: 'activity', label: t('governance.dataProducts.activityTab'), testId: 'data-product-tab-activity' },
-  {
-    key: 'customProperties',
-    label: t('governance.dataProducts.customPropertiesTab'),
-    testId: 'data-product-tab-custom-properties',
-  },
-]);
+// C-4 consume side: the selected persona's DataProduct page reorders
+// and renames these tabs (official `getDetailsTabWithNewLabel`,
+// preserve mode — see `useCustomPages.ts`).
+const { customizedPage } = useCustomPages('DataProduct');
+
+const tabs = computed<EntityDetailTab[]>(() =>
+  getDetailsTabWithNewLabel(
+    [
+      { key: 'overview', label: t('crud.overview'), testId: 'data-product-tab-overview' },
+      { key: 'assets', label: t('governance.dataProducts.assetsTab'), testId: 'data-product-tab-assets' },
+      { key: 'activity', label: t('governance.dataProducts.activityTab'), testId: 'data-product-tab-activity' },
+      {
+        key: 'customProperties',
+        label: t('governance.dataProducts.customPropertiesTab'),
+        testId: 'data-product-tab-custom-properties',
+      },
+    ],
+    customizedPage.value?.tabs,
+    { preserveUnlisted: true },
+  ),
+);
 
 /**
  * P1 both lines for asset writes: the server authorizes EDIT_ALL on the

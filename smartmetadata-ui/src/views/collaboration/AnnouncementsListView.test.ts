@@ -27,7 +27,11 @@ async function mountView() {
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/announcements', name: 'announcements', component: AnnouncementsListView }],
+    routes: [
+      { path: '/announcements', name: 'announcements', component: AnnouncementsListView },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
+    ],
   });
   await router.push('/announcements');
   await router.isReady();
@@ -123,6 +127,8 @@ describe('AnnouncementsListView', () => {
           name: 'announcement-duplicate',
           component: AnnouncementsListView,
         },
+        { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+        { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
       ],
     });
     await router.push('/announcements/duplicate/a1');

@@ -43,6 +43,8 @@ async function mountPolicies() {
     routes: [
       { path: '/admin/policies', name: 'admin-policies', component: PoliciesListView },
       { path: '/admin/policies/:id', name: 'admin-policy', component: { template: '<div>policy</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/policies');

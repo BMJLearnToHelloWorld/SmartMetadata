@@ -7,7 +7,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import {Button, Form, Input, InputNumber, Select, Space, message} from 'ant-design-vue';
+import {Alert, Button, Form, Input, InputNumber, Select, Space, Spin, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import {
   buildEntitySearchSettingsPayload,
@@ -16,7 +16,19 @@ import {
   settingAsSearch,
   updateSetting,
 } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { searchEntitySettingBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryDescription,
+  registryTitle,
+  searchSettingsEntityForSegment,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { AssetTypeConfiguration, SearchRankingConfiguration, SearchSettings } from '@/types/admin';
 
 const { t } = useI18n();
@@ -37,7 +49,32 @@ const form = reactive<
 // the official effective ranking is a function of the loaded config only.
 const effectiveRanking = ref<SearchRankingConfiguration | undefined>(undefined);
 
-const entityType = computed(() => String(route.params.entityType ?? ''));
+const tabSegment = computed(() => String(route.params.tab ?? ''));
+const entityType = computed(() => searchSettingsEntityForSegment(tabSegment.value) ?? '');
+// Pin EntitySearchSettings header is the category entry's label /
+// description (entityData?.label / ?.description): the registry
+// nested item for the segment. An unknown segment yields no item
+// and renders an empty header, exactly like pin — never a throw,
+// never a fallback to another entity (D-10).
+const entityItem = computed(() =>
+  findSettingsRegistryItem(`preferences.search-settings.${tabSegment.value}`),
+);
+const header = computed(() =>
+  entityItem.value ? registryTitle(settingsTranslator, entityItem.value) : '',
+);
+const subHeader = computed(() =>
+  entityItem.value ? registryDescription(settingsTranslator, entityItem.value) : '',
+);
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    searchEntitySettingBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      tabSegment.value,
+    ),
+  ),
+);
 
 const fieldColumns = [
   { title: t('settings.searchPrefs.fieldName'), key: 'field', width: 240 },
@@ -118,56 +155,55 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="search-entity-settings"
-    :title="t('settings.searchPrefs.entityTitle', { type: entityType })"
-    :lead="t('settings.searchPrefs.entityLead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Space style="margin-bottom: 12px">
-      <Button data-testid="search-entity-back" @click="goBack">{{ t('settings.searchPrefs.back') }}</Button>
-      <Button data-testid="search-entity-add-field" @click="addField">{{ t('settings.searchPrefs.addField') }}</Button>
-      <Button type="primary" :loading="saving" data-testid="search-entity-save" @click="save">
-        {{ t('settings.searchPrefs.save') }}
-      </Button>
-    </Space>
+  <div data-testid="search-entity-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader :header="header" :sub-header="subHeader" test-id="search-entity-settings" />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Space style="margin-bottom: 12px">
+        <Button data-testid="search-entity-back" @click="goBack">{{ t('settings.searchPrefs.back') }}</Button>
+        <Button data-testid="search-entity-add-field" @click="addField">{{ t('settings.searchPrefs.addField') }}</Button>
+        <Button type="primary" :loading="saving" data-testid="search-entity-save" @click="save">
+          {{ t('settings.searchPrefs.save') }}
+        </Button>
+      </Space>
 
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.searchPrefs.highlightFields')">
-        <Select
-          v-model:value="form.highlightFields"
-          mode="tags"
-          style="width: 100%"
-          data-testid="search-highlight-fields"
-        />
-      </Form.Item>
-    </Form>
-
-    <SmTable
-      row-key="__idx"
-      :columns="fieldColumns"
-      :data-source="(form.searchFields ?? []).map((row, index) => ({ ...row, __idx: index }))"
-      :pagination="false"
-      test-id="search-fields-table"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'field'">
-          <Input v-model:value="form.searchFields![(record as { __idx: number }).__idx].field" />
-        </template>
-        <template v-else-if="column.key === 'boost'">
-          <InputNumber
-            v-model:value="form.searchFields![(record as { __idx: number }).__idx].boost"
-            :min="0"
-            :step="0.1"
+      <Form layout="vertical">
+        <Form.Item :label="t('settings.searchPrefs.highlightFields')">
+          <Select
+            v-model:value="form.highlightFields"
+            mode="tags"
+            style="width: 100%"
+            data-testid="search-highlight-fields"
           />
+        </Form.Item>
+      </Form>
+
+      <SmTable
+        row-key="__idx"
+        :columns="fieldColumns"
+        :data-source="(form.searchFields ?? []).map((row, index) => ({ ...row, __idx: index }))"
+        :pagination="false"
+        test-id="search-fields-table"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'field'">
+            <Input v-model:value="form.searchFields![(record as { __idx: number }).__idx].field" />
+          </template>
+          <template v-else-if="column.key === 'boost'">
+            <InputNumber
+              v-model:value="form.searchFields![(record as { __idx: number }).__idx].boost"
+              :min="0"
+              :step="0.1"
+            />
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <Button type="link" danger @click="removeField((record as { __idx: number }).__idx)">
+              {{ t('settings.searchPrefs.remove') }}
+            </Button>
+          </template>
         </template>
-        <template v-else-if="column.key === 'actions'">
-          <Button type="link" danger @click="removeField((record as { __idx: number }).__idx)">
-            {{ t('settings.searchPrefs.remove') }}
-          </Button>
-        </template>
-      </template>
-    </SmTable>
-  </PreferencePageShell>
+      </SmTable>
+    </Spin>
+  </div>
 </template>

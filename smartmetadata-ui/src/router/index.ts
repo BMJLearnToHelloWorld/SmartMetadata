@@ -45,7 +45,6 @@ const SearchView = () => import('@/views/SearchView.vue');
 const AppDetailView = () => import('@/views/admin/AppDetailView.vue');
 const AppsListView = () => import('@/views/admin/AppsListView.vue');
 const CustomPropertyTypeDetailView = () => import('@/views/admin/CustomPropertyTypeDetailView.vue');
-const CustomPropertyTypesListView = () => import('@/views/admin/CustomPropertyTypesListView.vue');
 const PoliciesListView = () => import('@/views/admin/PoliciesListView.vue');
 const PolicyDetailView = () => import('@/views/admin/PolicyDetailView.vue');
 const PolicyRuleFormView = () => import('@/views/admin/PolicyRuleFormView.vue');
@@ -53,6 +52,8 @@ const PermissionDebuggerView = () => import('@/views/admin/PermissionDebuggerVie
 const AuditLogsView = () => import('@/views/admin/AuditLogsView.vue');
 const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
 const SettingsHubView = () => import('@/views/admin/SettingsHubView.vue');
+const SettingsCategoryView = () => import('@/views/admin/SettingsCategoryView.vue');
+const SettingsServicesView = () => import('@/views/admin/SettingsServicesView.vue');
 const SystemSettingsView = () => import('@/views/admin/SystemSettingsView.vue');
 const AppearanceSettingsView = () => import('@/views/admin/AppearanceSettingsView.vue');
 const AppModeConfigView = () => import('@/views/admin/AppModeConfigView.vue');
@@ -97,7 +98,6 @@ const TestDefinitionsListView = () => import('@/views/quality/TestDefinitionsLis
 const TestSuiteDetailView = () => import('@/views/quality/TestSuiteDetailView.vue');
 const EditPipelineView = () => import('@/views/ingestion/EditPipelineView.vue');
 const PipelineDetailView = () => import('@/views/ingestion/PipelineDetailView.vue');
-const PipelinesListView = () => import('@/views/ingestion/PipelinesListView.vue');
 const AddServiceView = () => import('@/views/ingestion/AddServiceView.vue');
 const EditServiceConnectionView = () => import('@/views/ingestion/EditServiceConnectionView.vue');
 const ServiceDetailView = () => import('@/views/ingestion/ServiceDetailView.vue');
@@ -141,7 +141,6 @@ const IntakeFormsView = () => import('@/views/admin/IntakeFormsView.vue');
 const TaskFormSettingsView = () => import('@/views/admin/TaskFormSettingsView.vue');
 const PersonaListView = () => import('@/views/admin/PersonaListView.vue');
 const PersonaDetailView = () => import('@/views/admin/PersonaDetailView.vue');
-const PersonaCustomizeView = () => import('@/views/admin/persona/PersonaCustomizeView.vue');
 const SparqlPlaygroundView = () => import('@/views/governance/SparqlPlaygroundView.vue');
 const ColumnBulkOperationsView = () =>
   import('@/views/governance/ColumnBulkOperationsView.vue');
@@ -152,11 +151,18 @@ const MetricBulkEditView = () =>
 const DocsView = () => import('@/views/docs/DocsView.vue');
 const TourStartView = () => import('@/views/tour/TourStartView.vue');
 const PersonaLandingRedirect = () => import('@/views/shell/PersonaLandingRedirect.vue');
-const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
+import type { OperationPermissions } from '@/api/permissions';
+import { isLoginConfigurationApplicable, loadAuthProvider } from '@/settings/permissionRules';
 import { useAuthStore } from '@/stores/auth';
+import { principalKeyFor, useGuardDecisionStore } from '@/stores/guardDecision';
 import { usePermissionStore } from '@/stores/permissions';
-import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, resolveGuard } from '@/router/guards';
+import {
+  evaluateGuardDeclaration,
+  guardDeclarationOf,
+  guardDeclarationResources,
+  resolveGuard,
+} from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -219,13 +225,14 @@ export const router = createRouter({
         { path: '', component: PersonaLandingRedirect },
         { path: 'my-data', name: 'home', component: MyDataView, meta: { flush: true } },
         // Stage D (G-11): the persona landing-page editor, admin-only
-        // (see ADMIN_ROUTE_PREFIXES). `homepage` is the alias pin
-        // renders the LandingPage editor for.
+        // (explicit meta, C-4 §2.6 — never downgraded). `homepage` is
+        // the alias pin renders the LandingPage editor for.
         {
           path: 'customize-page/:fqn/:pageFqn',
           name: 'customize-page',
           component: CustomizePageView,
           props: true,
+          meta: { guard: 'admin-only' },
         },
         // G-01 (visual comparison): official EXPLORE '/explore'
         // (constants.ts:155); the product search lives at /search.
@@ -257,7 +264,12 @@ export const router = createRouter({
           component: KpiFormView,
           props: true,
         },
-        { path: 'insights/online-users', name: 'insights-online-users', component: OnlineUsersView },
+        {
+          path: 'settings/members/online-users',
+          name: 'insights-online-users',
+          component: OnlineUsersView,
+          meta: { guard: 'none' },
+        },
         { path: 'lineage', name: 'lineage-home', component: LineageHomeView },
         {
           path: 'lineage/:entityType/:fqn',
@@ -265,98 +277,118 @@ export const router = createRouter({
           component: LineageView,
           props: true,
         },
-        { path: 'admin/users', name: 'admin-users', component: UsersListView },
+        { path: 'settings/members/users', name: 'admin-users', component: UsersListView, meta: { guard: { resource: 'USER', operation: 'view' } } },
         // P2 B5: official Admins tab surface (UserListPageV1 isAdminPage);
         // no standalone Admins page exists officially, only the tab.
-        { path: 'admin/users/admins', name: 'admin-admins', component: UsersListView },
-        { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true },
-        { path: 'admin/teams', name: 'admin-teams', component: TeamsListView },
-        { path: 'admin/teams/:id', name: 'admin-team', component: TeamDetailView, props: true },
-        { path: 'admin/roles', name: 'admin-roles', component: RolesListView },
-        { path: 'admin/roles/:id', name: 'admin-role', component: RoleDetailView, props: true },
-        { path: 'admin/bots', name: 'admin-bots', component: BotsListView },
-        { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
+        { path: 'settings/members/admins', name: 'admin-admins', component: UsersListView, meta: { guard: { resource: 'USER', operation: 'view' } } },
+        // M1b staged: the old user detail keeps its original URL until
+        // the partition batch atomically migrates it (DESIGN §4.5);
+        // the entry declaration is the pre-migration entry rule.
+        { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
+        { path: 'settings/members/teams', name: 'admin-teams', component: TeamsListView, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
+        { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
+        { path: 'settings/access/roles', name: 'admin-roles', component: RolesListView, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        { path: 'settings/access/roles/:id', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        { path: 'settings/bots', name: 'admin-bots', component: BotsListView, meta: { guard: { resource: 'BOT', operation: 'view' } } },
+        // M1b staged: the old Bot detail keeps its original URL until
+        // the partition batch atomically migrates it (DESIGN §4.5).
+        { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true, meta: { guard: 'admin-only' } },
         // G-09 (visual comparison): official SETTINGS '/settings'
-        // (SettingsRouter at '/settings/*'). The alias is admin-gated
-        // by the '/settings' entry in ADMIN_ROUTE_PREFIXES (guards.ts);
-        // without it the path-based guard would not recognise the
-        // alias URL as an admin path.
-        { path: 'admin/settings', name: 'admin-settings', component: SettingsHubView, alias: 'settings' },
-        { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView },
-        { path: 'admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
+        // (SettingsRouter at '/settings/*'). The old admin/settings
+        // path and the alias are gone (D-1, product compatibility
+        // policy); the Hub is the canonical '/settings' route.
+        { path: 'settings', name: 'admin-settings', component: SettingsHubView, meta: { guard: 'none' } },
+        // Settings category page (DESIGN §6.1): one generic record
+        // reading the registry; the component file is created by the
+        // downstream S-HUB flow at the agreed path below.
+        { path: 'settings/:category', name: 'settings-category', component: SettingsCategoryView, meta: { guard: 'none' } },
+        // Settings services list page (DESIGN §6.4): URL-driven
+        // `:tab` (mapping-key / enum-value segment or
+        // `dataObservability`); inner Services/Pipelines tabs via
+        // `?tab=`. Guard `none`: the route is reachable and its
+        // content is permission-filtered by the view itself, like
+        // the category page above (§10.2).
+        { path: 'settings/services/:tab', name: 'settings-services', component: SettingsServicesView, meta: { guard: 'none' } },
+        // D-8 HOLD: System keeps its original URL; only the explicit
+        // admin-only meta is added. Deletion awaits the D-8 ruling.
+        { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView, meta: { guard: 'admin-only' } },
+        { path: 'settings/access/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView, meta: { guard: { resource: 'AUDIT_LOG', operation: 'AuditLogs' } } },
         // P2 B R-5: official Settings/Users/AdminPermissionDebugger
         // (Access category): user search + evaluate + user permissions.
         {
-          path: 'admin/settings/permission-debugger',
+          path: 'settings/access/permission-debugger',
           name: 'admin-settings-permission-debugger',
           component: PermissionDebuggerView,
-          meta: { titleKey: 'permissionDebugger.title' },
+          meta: { titleKey: 'permissionDebugger.title', guard: 'admin-only' },
         },
         // P2 B5: official Settings SSO page (configuration page only).
         {
-          path: 'admin/settings/sso',
+          path: 'settings/sso',
           name: 'admin-settings-sso',
           component: SsoSettingsView,
-          meta: { titleKey: 'sso.title' },
+          meta: { titleKey: 'sso.title', guard: 'none' },
         },
-        { path: 'admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView },
-        { path: 'admin/settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView },
-        { path: 'admin/settings/preferences/login', name: 'settings-preferences-login', component: LoginConfigurationView },
-        { path: 'admin/settings/preferences/health', name: 'settings-preferences-health', component: OmHealthView },
-        { path: 'admin/settings/preferences/profiler', name: 'settings-preferences-profiler', component: ProfilerConfigurationView },
-        { path: 'admin/settings/preferences/dq-dimensions', name: 'settings-preferences-dq-dimensions', component: DataQualityDimensionsView },
-        { path: 'admin/settings/preferences/search', name: 'settings-preferences-search', component: SearchSettingsView },
+        { path: 'settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/loginConfiguration', name: 'settings-preferences-login', component: LoginConfigurationView, meta: { guard: 'admin-only', loginConfigGate: true } },
+        { path: 'settings/preferences/om-health', name: 'settings-preferences-health', component: OmHealthView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/profiler-configuration', name: 'settings-preferences-profiler', component: ProfilerConfigurationView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/data-quality', name: 'settings-preferences-dq-dimensions', component: DataQualityDimensionsView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/search-settings', name: 'settings-preferences-search', component: SearchSettingsView, meta: { guard: 'admin-only' } },
+        // The view reads :tab directly (route.params.tab) with the
+        // DESIGN §3.5 segment mapping; there is no entityType prop.
         {
-          path: 'admin/settings/preferences/search/:entityType',
+          path: 'settings/preferences/search-settings/:tab',
           name: 'settings-preferences-search-entity',
           component: SearchEntitySettingsView,
           props: true,
+          meta: { guard: 'admin-only' },
         },
-        { path: 'admin/settings/preferences/lineage', name: 'settings-preferences-lineage', component: LineageConfigView },
-        { path: 'admin/settings/preferences/om-url', name: 'settings-preferences-om-url', component: OmUrlConfigView },
-        { path: 'admin/settings/preferences/entity-rules', name: 'settings-preferences-entity-rules', component: EntityRulesSettingsView },
-        { path: 'admin/settings/preferences/learning', name: 'settings-preferences-learning', component: LearningResourcesView },
-        { path: 'admin/settings/preferences/app-mode', name: 'settings-preferences-app-mode', component: AppModeConfigView },
-        { path: 'admin/settings/preferences/glossary', name: 'settings-preferences-glossary', component: GlossarySettingsView },
-        { path: 'admin/settings/preferences/time-format', name: 'settings-preferences-time-format', component: TimeFormatSettingsView },
+        { path: 'settings/preferences/lineageConfig', name: 'settings-preferences-lineage', component: LineageConfigView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/om-url-config', name: 'settings-preferences-om-url', component: OmUrlConfigView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/dataAssetRules', name: 'settings-preferences-entity-rules', component: EntityRulesSettingsView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/learning-resources', name: 'settings-preferences-learning', component: LearningResourcesView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/appMode', name: 'settings-preferences-app-mode', component: AppModeConfigView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/glossary', name: 'settings-preferences-glossary', component: GlossarySettingsView, meta: { guard: 'admin-only' } },
+        { path: 'settings/preferences/timeFormat', name: 'settings-preferences-time-format', component: TimeFormatSettingsView, meta: { guard: 'admin-only' } },
 
-        { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
-        { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
-        { path: 'admin/policies/:id/rules/add', name: 'admin-policy-rule-add', component: PolicyRuleFormView, props: true },
+        { path: 'settings/access/policies', name: 'admin-policies', component: PoliciesListView, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        { path: 'settings/access/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        // M1a: the two policy-rule action routes are canonical this
+        // stage; :id/:fqn spell the same single-segment pattern and
+        // must never be registered twice.
+        { path: 'settings/access/policies/:id/add-rule', name: 'admin-policy-rule-add', component: PolicyRuleFormView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
         {
-          path: 'admin/policies/:id/rules/:ruleName/edit',
+          path: 'settings/access/policies/:id/edit-rule/:ruleName',
           name: 'admin-policy-rule-edit',
           component: PolicyRuleFormView,
           props: true,
+          meta: { guard: { resource: 'POLICY', operation: 'EditAll' } },
         },
-        { path: 'admin/apps', name: 'admin-apps', component: AppsListView },
-        { path: 'admin/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
-        // P2 B5: Persona list + detail + customize (official settings
-        // PERSONA routes; the customize route carries the category and
-        // an optional govern entity type).
-        { path: 'admin/settings/persona', name: 'admin-settings-persona', component: PersonaListView },
+        { path: 'settings/apps', name: 'admin-apps', component: AppsListView, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
+        { path: 'settings/apps/:id', name: 'admin-app', component: AppDetailView, props: true, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
+        // P2 B5: Persona list + detail (official settings PERSONA
+        // routes). The nested customize record is deleted (C-4 §5.3);
+        // the top-level customize-page route keeps admin-only.
+        { path: 'settings/persona', name: 'admin-settings-persona', component: PersonaListView, meta: { guard: 'admin-only' } },
         {
-          path: 'admin/settings/persona/:fqn',
+          path: 'settings/persona/:fqn',
           name: 'admin-settings-persona-detail',
           component: PersonaDetailView,
           props: true,
+          meta: { guard: 'admin-only' },
         },
+        // C-1 option A: the custom-properties card page is served by
+        // the generic settings/:category record; the type-mapped
+        // list record is deleted and the detail route is admin-only
+        // (the in-page per-type gate is untouched). The view reads
+        // :tab directly with the §3.5 segment mapping; there is no
+        // props adapter.
         {
-          path: 'admin/settings/persona/:fqn/customize/:category/:entity?',
-          name: 'admin-settings-persona-customize',
-          component: PersonaCustomizeView,
-          props: true,
-        },
-        {
-          path: 'admin/settings/custom-properties',
-          name: 'admin-settings-custom-properties',
-          component: CustomPropertyTypesListView,
-        },
-        {
-          path: 'admin/settings/custom-properties/:entityType',
+          path: 'settings/customProperties/:tab',
           name: 'admin-settings-custom-property-type',
           component: CustomPropertyTypeDetailView,
-          props: true,
+          meta: { guard: 'admin-only' },
         },
         // G-07 (visual comparison): official GLOSSARY '/glossary'
         // (GlossaryRouter at '/glossary/*').
@@ -584,20 +616,21 @@ export const router = createRouter({
           meta: { titleKey: 'ontology.edit.studioTitle' },
         },
         {
-          path: 'govern/workflows',
+          path: 'settings/governance/workflow-definitions',
           name: 'workflows',
           component: WorkflowsView,
-          alias: 'workflows',
+          meta: { guard: 'admin-only' },
         },
-        // Fixes batch 1: official detail route WORKFLOWS_WITH_FQN_TAB
-        // (/workflows/:fqn/:tab, default tab 'workflow'); the interactive
-        // canvas editor is a later subsystem batch, not this route.
+        // D-5: the detail route drops the :tab segment; the view
+        // keeps activeTab as a local ref, so tab clicks never
+        // navigate. (S-ROUTES §9's "view still reads :tab" note is
+        // stale: the view reads only route.params.fqn.)
         {
-          path: 'govern/workflows/:fqn/:tab',
+          path: 'settings/governance/workflow-definitions/:fqn',
           name: 'workflow-detail',
           component: WorkflowDetailView,
-          alias: 'workflows/:fqn/:tab',
           props: true,
+          meta: { guard: 'admin-only' },
         },
         // A2 app catalog (official MarketPlacePage, /marketplace):
         // /marketplace itself already serves the data marketplace
@@ -622,9 +655,9 @@ export const router = createRouter({
         },
         // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
         // IntakeForms + TaskFormSettings (official settings governance
-        // pages, kept under the product admin/settings tree with the
-        // official settings path as alias), and SparqlPlayground
-        // (official /governance/sparql, product govern/ prefix + alias).
+        // pages, now at their canonical settings paths with no alias),
+        // and SparqlPlayground (official /governance/sparql, product
+        // govern/ prefix + alias).
         {
           path: 'marketplace/apps/:fqn/install',
           name: 'marketplace-app-install',
@@ -633,28 +666,24 @@ export const router = createRouter({
           meta: { titleKey: 'apps.install.title' },
         },
         {
-          path: 'admin/settings/governance/intake-forms',
+          path: 'settings/governance/intake-forms',
           name: 'admin-settings-governance-intake-forms',
           component: IntakeFormsView,
-          alias: 'settings/governance/intake-forms',
-          meta: { titleKey: 'intakeForms.title' },
+          meta: { titleKey: 'intakeForms.title', guard: 'admin-only' },
         },
         {
-          path: 'admin/settings/governance/task-forms',
+          path: 'settings/governance/task-forms',
           name: 'admin-settings-governance-task-forms',
           component: TaskFormSettingsView,
-          alias: 'settings/governance/task-forms',
-          meta: { titleKey: 'taskForms.title' },
+          meta: { titleKey: 'taskForms.title', guard: 'admin-only' },
         },
         // A14 glossary-term relations (official SettingsRouter
-        // GOVERNANCE + GLOSSARY_TERM_RELATIONS): same product-tree
-        // placement and official-path alias as intake/task forms.
+        // GOVERNANCE + GLOSSARY_TERM_RELATIONS).
         {
-          path: 'admin/settings/governance/glossary-term-relations',
+          path: 'settings/governance/glossary-term-relations',
           name: 'admin-settings-governance-glossary-term-relations',
           component: GlossaryTermRelationSettingsView,
-          alias: 'settings/governance/glossary-term-relations',
-          meta: { titleKey: 'settings.glossaryTermRelations.title' },
+          meta: { titleKey: 'settings.glossaryTermRelations.title', guard: 'admin-only' },
         },
         {
           path: 'govern/sparql',
@@ -817,13 +846,17 @@ export const router = createRouter({
           component: IncidentDetailView,
           props: true,
         },
-        { path: 'observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        { path: 'settings/notifications/alerts', name: 'observability-alerts', component: AlertsListView, meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } } },
         {
-          path: 'observability/alerts/:id',
+          path: 'settings/notifications/alerts/:id',
           name: 'observability-alert',
           component: AlertDetailView,
           props: true,
+          meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
         },
+        // B3 staged unit: the aggregate services list keeps its path,
+        // name and current behaviour (all/kind Tabs/?health= buckets)
+        // until the D-1/D-16 deletion ruling executes (DESIGN §4.5).
         { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
         { path: 'ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
         {
@@ -850,18 +883,19 @@ export const router = createRouter({
           component: ServiceVersionView,
           props: true,
         },
-        { path: 'ingestion/pipelines', name: 'ingestion-pipelines', component: PipelinesListView },
         {
           path: 'ingestion/pipelines/:id/edit',
           name: 'ingestion-pipeline-edit',
           component: EditPipelineView,
           props: true,
+          meta: { guard: 'admin-only' },
         },
         {
           path: 'ingestion/pipelines/:id',
           name: 'ingestion-pipeline',
           component: PipelineDetailView,
           props: true,
+          meta: { guard: 'admin-only' },
         },
         { path: 'activity', name: 'activity', component: ActivityFeedView },
         // P2 B5: official Inbox page (personal-space InboxPage).
@@ -872,16 +906,16 @@ export const router = createRouter({
         { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
         { path: 'data-access-requests', name: 'data-access-requests', component: DataAccessRequestsView, meta: { titleKey: 'collaboration.dataAccess.title' } },
         { path: 'data-access-requests/new', name: 'data-access-request-new', component: DataAccessRequestCreateView, meta: { titleKey: 'collaboration.dataAccess.createTitle' } },
-        { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
+        { path: 'settings/notifications/announcements', name: 'announcements', component: AnnouncementsListView, meta: { guard: 'admin-only' } },
         // A20 announcement duplicate (official
         // SETTINGS_ANNOUNCEMENT_DUPLICATE): the list view reuses its
         // create form prefilled from the source announcement.
         {
-          path: 'announcements/duplicate/:id',
+          path: 'settings/notifications/announcements/duplicate/:id',
           name: 'announcement-duplicate',
           component: AnnouncementsListView,
+          meta: { guard: 'admin-only' },
         },
-        { path: 'forbidden', name: 'forbidden', component: ForbiddenView },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },
       ],
     },
@@ -890,41 +924,50 @@ export const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
-  // N1 (M-Next): fresh-load admin race. On a fresh load the guard runs
-  // before AppShell mounts, so auth.user is still null even though the
-  // session is valid — the admin line would read "not admin" and an admin
-  // opening an unmapped /admin/* route directly would land on /forbidden.
-  // When the target is an admin path, a session exists, and the profile
-  // has not loaded yet, wait for one refreshUser() first. A failed profile
-  // fetch is NOT a grant (fail closed): user stays null and the dual line
-  // below decides exactly as before. Unmapped routes stay admin-only by
-  // design (see guards.ts); this only lets an actual admin be recognised
-  // as one on first load — it does not admit non-admins.
+  const guardDecisions = useGuardDecisionStore();
   const session = loadSession(window.localStorage);
-  if (isAdminPath(to.fullPath) && session !== null && auth.user === null) {
+  const declaration = guardDeclarationOf(to.meta.guard);
+  // Step 3 (DESIGN §10.4, N1 semantics preserved): when the target
+  // carries a guard declaration and the profile has not loaded yet,
+  // wait for one refreshUser() before deciding. The trigger is "the
+  // route has a declaration", not a path prefix. A failed profile
+  // fetch is NOT a grant (fail closed).
+  if (declaration !== undefined && session !== null && auth.user === null) {
     try {
       await auth.refreshUser();
     } catch {
       // Fail closed: user stays null; resolveGuard decides below.
     }
   }
+  // Step 4 (S1): the login-configuration provider gate runs BEFORE
+  // the admin line — an admin must not bypass it. A failed load or
+  // an inapplicable provider (including undefined) lands on
+  // not-found, never on the placeholder.
+  let loginConfigApplicable: boolean | undefined;
+  if (session !== null && to.meta.loginConfigGate === true) {
+    loginConfigApplicable = isLoginConfigurationApplicable(await loadAuthProvider());
+  }
   const isAdminUser = auth.user?.isAdmin === true;
-  // Admin dual line, second line: for mapped admin routes, a
-  // view-or-better grant on the route's resource admits entry even
-  // for non-admins (official AdminProtectedRoute hasPermission).
-  // The permission store caches per principal, so repeat navigations
-  // do not re-query. A failed query is NOT a grant (fail closed);
-  // unmapped admin routes stay admin-only (see ADMIN_ROUTE_RESOURCE).
+  // Steps 5-6: an admin never queries the permission API; otherwise
+  // the declared resource lines are evaluated through the permission
+  // store (cached per principal). A failed query is NOT a grant
+  // (fail closed); 'admin-only' and 'none' declare no resources.
   let hasPermission: boolean | undefined;
-  if (isAdminPath(to.fullPath) && !isAdminUser) {
-    const resource = ADMIN_ROUTE_RESOURCE[to.name as string];
-    if (resource) {
-      try {
-        const ops = await usePermissionStore().getResourcePermission(resource);
-        hasPermission = hasAdminEntryGrant(ops);
-      } catch {
-        hasPermission = false;
-      }
+  if (session !== null && !isAdminUser && declaration !== undefined) {
+    const resources = guardDeclarationResources(declaration);
+    if (resources.length > 0) {
+      const opsByResource: Record<string, OperationPermissions | null> = {};
+      await Promise.all(
+        resources.map(async (resourceKey) => {
+          try {
+            opsByResource[resourceKey] =
+              await usePermissionStore().getResourcePermission(resourceKey);
+          } catch {
+            opsByResource[resourceKey] = null;
+          }
+        }),
+      );
+      hasPermission = evaluateGuardDeclaration(declaration, opsByResource);
     }
   }
   const decision = resolveGuard({
@@ -933,12 +976,34 @@ router.beforeEach(async (to) => {
     fullPath: to.fullPath,
     isAdminUser,
     hasPermission,
+    declaration,
+    loginConfigApplicable,
   });
   if (decision.kind === 'login') {
+    guardDecisions.clearDecision();
     return { name: 'login', query: { redirect: decision.redirect } };
   }
-  if (decision.kind === 'forbidden') {
-    return { name: 'forbidden' };
+  if (decision.kind === 'not-found') {
+    guardDecisions.clearDecision();
+    return { name: 'not-found' };
   }
+  // Step 7 (D-3): a denial completes the navigation with the URL
+  // unchanged; the decision is recorded for the AppShell slot,
+  // which renders the shared placeholder instead of mounting the
+  // matched component. Every navigation records its decision, so a
+  // stale denial can never survive into the next navigation.
+  guardDecisions.setDecision({
+    fullPath: to.fullPath,
+    principalKey: principalKeyFor(auth.user),
+    denied: decision.kind === 'deny',
+  });
   return true;
 });
+
+// A decision belongs to its target navigation: sweep one whose
+// fullPath differs from the settled route (redirected, cancelled
+// or competing navigations must not leave a stale decision behind).
+router.afterEach((to) => {
+  useGuardDecisionStore().clearIfStale(to.fullPath);
+});
+

@@ -16,7 +16,8 @@
  * the contract Stage 2 splits against — it is not itself a split, and
  * the flat router file must not grow new structure on top of it.
  * Every product route belongs to exactly one group; unknown paths
- * map to null (they fall through to the catch-all NotFoundView).
+ * map to null (ungrouped — null is not proof that the path 404s at
+ * runtime, see DESIGN §6.7 row 9).
  */
 export interface RouteDomainGroup {
   key: string;
@@ -24,19 +25,20 @@ export interface RouteDomainGroup {
 }
 
 export const ROUTE_DOMAIN_GROUPS: RouteDomainGroup[] = [
-  { key: 'auth', prefixes: ['/login', '/forbidden'] },
+  { key: 'auth', prefixes: ['/login'] },
   { key: 'home', prefixes: ['/my-data'] },
   { key: 'discover', prefixes: ['/search', '/assets'] },
   { key: 'insights', prefixes: ['/insights'] },
   { key: 'lineage', prefixes: ['/lineage'] },
   { key: 'admin', prefixes: ['/admin'] },
+  { key: 'settings', prefixes: ['/settings'] },
   { key: 'governance', prefixes: ['/governance', '/govern'] },
   { key: 'marketplace', prefixes: ['/marketplace'] },
   { key: 'context-center', prefixes: ['/context-center'] },
   { key: 'quality', prefixes: ['/quality'] },
   { key: 'observability', prefixes: ['/observability'] },
   { key: 'ingestion', prefixes: ['/ingestion'] },
-  { key: 'collaboration', prefixes: ['/activity', '/tasks', '/announcements'] },
+  { key: 'collaboration', prefixes: ['/activity', '/tasks'] },
 ];
 
 export function domainForPath(path: string): string | null {

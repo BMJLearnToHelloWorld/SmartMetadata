@@ -50,7 +50,11 @@ const onBackgroundColorUpdate = vi.fn(async (..._args: unknown[]) => {});
 
 let router: Router;
 
-function mountEditor(initialPageData?: PersonaPage | null) {
+function mountEditor(
+  initialPageData?: PersonaPage | null,
+  pageFqn = 'LandingPage',
+  extraProps: Record<string, unknown> = {},
+) {
   router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -62,22 +66,30 @@ function mountEditor(initialPageData?: PersonaPage | null) {
       },
     ],
   });
-  return router.push({ name: 'customize-page', params: { fqn: 'Analyst', pageFqn: 'LandingPage' } }).then(async () => {
-    await router.isReady();
-    return mount(CustomizeMyData, {
-      props: {
-        personaName: 'Analyst',
-        personaFqn: 'Analyst',
-        initialPageData: initialPageData ?? {
+  // Explicit null means "no saved page" (the save fallback then uses
+  // the raw pageFqn); undefined means the default two-widget fixture.
+  const page =
+    initialPageData === undefined
+      ? {
           pageType: 'LandingPage',
           layout: [
             { i: 'KnowledgePanel.Domains', x: 0, y: 0, w: 1, h: 3 },
             { i: 'KnowledgePanel.DataQuality', x: 1, y: 0, w: 1, h: 3 },
           ],
-        },
+        }
+      : initialPageData;
+  return router.push({ name: 'customize-page', params: { fqn: 'Analyst', pageFqn } }).then(async () => {
+    await router.isReady();
+    return mount(CustomizeMyData, {
+      props: {
+        personaName: 'Analyst',
+        personaFqn: 'Analyst',
+        pageFqn,
+        initialPageData: page,
         backgroundColor: '',
         onSaveLayout: (...args: unknown[]) => onSaveLayout(...args),
         onBackgroundColorUpdate: (...args: unknown[]) => onBackgroundColorUpdate(...args),
+        ...extraProps,
       },
       global: { plugins: [router, Antd, createTestI18n()] },
     });
@@ -203,6 +215,29 @@ describe('CustomizeMyData', () => {
     expect(router.currentRoute.value.name).toBe('home');
   });
 
+  it('O-ENTRY-2: with onExit, a clean cancel calls the parent instead of navigating home', async () => {
+    const onExit = vi.fn();
+    const wrapper = await mountEditor(undefined, 'LandingPage', { onExit });
+    await flushPromises();
+    await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
+    await flushPromises();
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.name).toBe('customize-page');
+  });
+
+  it('O-ENTRY-2: with onExit, discard in the leave modal calls the parent instead of navigating home', async () => {
+    const onExit = vi.fn();
+    const wrapper = await mountEditor(undefined, 'LandingPage', { onExit });
+    await flushPromises();
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    await wrapper.get('[data-testid="customize-cancel"]').trigger('click');
+    await flushPromises();
+    clickBody('[data-testid="customize-leave-discard"]');
+    await flushPromises();
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.name).toBe('customize-page');
+  });
+
   it('a placeholder cell opens the picker, and applying adds the widget', async () => {
     const wrapper = await mountEditor();
     await flushPromises();
@@ -296,5 +331,75 @@ describe('CustomizeMyData', () => {
     const dqCell = wrapper.get(cellTestId('KnowledgePanel.DataQuality'));
     expect(dqCell.attributes('style')).toContain('grid-column: 1 / span 1');
     expect(saveButton(wrapper).attributes('disabled')).toBeUndefined();
+  });
+
+  it('uses the raw pageFqn as the save fallback (homepage alias, no LandingPage hardcode)', async () => {
+    const wrapper = await mountEditor(null, 'homepage');
+    await flushPromises();
+    // No saved page: the default layout renders; removing a widget
+    // makes the editor dirty.
+    await wrapper.get('[data-testid="remove-widget-KnowledgePanel.Domains"]').trigger('click');
+    await saveButton(wrapper).trigger('click');
+    await flushPromises();
+    expect(onSaveLayout).toHaveBeenCalledTimes(1);
+    const payload = onSaveLayout.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.pageType).toBe('homepage');
+    expect(Array.isArray(payload.layout)).toBe(true);
+  });
+
+  it('shows the D2 abnormal state for an object layout and converts only on confirm', async () => {
+    const wrapper = await mountEditor({
+      pageType: 'LandingPage',
+      layout: { a: 1 },
+    } as unknown as PersonaPage);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="object-layout-notice"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="customize-my-data-grid"]').exists()).toBe(false);
+    expect(saveButton(wrapper).attributes('disabled')).toBeDefined();
+    expect(
+      wrapper.get('[data-testid="customize-add-widget"]').attributes('disabled'),
+    ).toBeDefined();
+    expect(onSaveLayout).not.toHaveBeenCalled();
+    await wrapper.get('[data-testid="object-layout-convert"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="customize-my-data-grid"]').exists()).toBe(true);
+    expect(saveButton(wrapper).attributes('disabled')).toBeUndefined();
+    await saveButton(wrapper).trigger('click');
+    await flushPromises();
+    expect(onSaveLayout).toHaveBeenCalledTimes(1);
+    const payload = onSaveLayout.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.pageType).toBe('LandingPage');
+    expect(Array.isArray(payload.layout)).toBe(true);
+    expect(payload.layout).toHaveLength(13);
+    expect(JSON.stringify(payload)).not.toContain(EMPTY_WIDGET_PLACEHOLDER);
+  });
+
+  it('treats {} like a non-empty object (D2, no silent default grid)', async () => {
+    const wrapper = await mountEditor({
+      pageType: 'LandingPage',
+      layout: {},
+    } as unknown as PersonaPage);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="object-layout-notice"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="customize-my-data-grid"]').exists()).toBe(false);
+  });
+
+  it('reset under an object layout still deletes via the no-arg save', async () => {
+    const wrapper = await mountEditor({
+      pageType: 'LandingPage',
+      layout: { a: 1 },
+    } as unknown as PersonaPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="customize-reset-layout"]').trigger('click');
+    await flushPromises();
+    const okButton = document.body.querySelector(
+      '.ant-modal-confirm-btns .ant-btn-primary',
+    ) as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton!.click();
+    await flushPromises();
+    expect(onBackgroundColorUpdate).toHaveBeenCalledWith(undefined);
+    expect(onSaveLayout).toHaveBeenCalledTimes(1);
+    expect(onSaveLayout).toHaveBeenCalledWith();
   });
 });

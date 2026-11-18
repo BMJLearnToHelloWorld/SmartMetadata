@@ -553,18 +553,69 @@ describe('AddServiceView', () => {
     });
     await flushPromises();
     const selects = wrapper.findAllComponents(Select);
-    // Kind select first, type select second: switch to llm, then to a
-    // form-less llm type (Anthropic has no connection form in this branch).
-    await selects[0]?.vm.$emit('update:value', 'llm');
-    await selects[1]?.vm.$emit('update:value', 'Anthropic');
+    // Kind select first, type select second: switch to api, then to a
+    // form-less api type (WEBHOOK has no connection form in this branch).
+    await selects[0]?.vm.$emit('update:value', 'api');
+    await selects[1]?.vm.$emit('update:value', 'WEBHOOK');
     await wrapper.find('[data-testid="wizard-next"]').trigger('click');
     expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="wizard-no-connection-form"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('chat');
+    await wrapper.find('[data-testid="wizard-service-name"]').setValue('hook');
     expect((wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled).toBe(true);
     // S-03 gating: no connection form means no test card either.
     expect(wrapper.find('[data-testid="test-connection"]').exists()).toBe(false);
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+  });
+
+  it('offers only the eleven listable kinds in the wizard, never llm/mcp (C-2)', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+      ],
+    });
+    await router.push('/ingestion/services/add');
+    await router.isReady();
+    const wrapper = mount(AddServiceView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const kindSelect = wrapper
+      .findAllComponents(Select)
+      .find((candidate) => candidate.attributes('data-testid') === 'wizard-service-kind');
+    expect(kindSelect?.exists()).toBe(true);
+    // The Select consumes its Option children as data (they never mount
+    // as components), so the offered set is read from the slot VNodes
+    // the wizard passes in — exactly the options a user can pick.
+    const optionValues: unknown[] = [];
+    const collect = (nodes: unknown[]): void => {
+      for (const node of nodes) {
+        const vnode = node as { props?: Record<string, unknown>; children?: unknown[] };
+        if (Array.isArray(vnode.children)) {
+          collect(vnode.children);
+        } else if (vnode.props?.value !== undefined) {
+          optionValues.push(vnode.props.value);
+        }
+      }
+    };
+    collect((kindSelect?.vm.$slots.default?.() ?? []) as unknown[]);
+    expect(optionValues).toEqual([
+      'database',
+      'messaging',
+      'dashboard',
+      'storage',
+      'pipeline',
+      'metadata',
+      'security',
+      'mlmodel',
+      'search',
+      'api',
+      'drive',
+    ]);
+    expect(optionValues).not.toContain('llm');
+    expect(optionValues).not.toContain('mcp');
   });
 
   it('renders the test-connection card on the connection step with live form wiring (S-03)', async () => {

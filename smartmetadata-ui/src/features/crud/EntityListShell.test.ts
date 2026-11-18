@@ -10,6 +10,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { describe, expect, it } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import EntityListShell from './EntityListShell.vue';
 
@@ -227,6 +228,52 @@ describe('EntityListShell', () => {
     await wrapper.find('.ant-pagination-item-2').trigger('click');
     await flushPromises();
     expect(wrapper.emitted('pageChange')).toEqual([[2]]);
+  });
+
+  it('renders no breadcrumb when none is passed', async () => {
+    const wrapper = await mountShell();
+    expect(wrapper.find('[data-testid="entity-list-breadcrumb"]').exists()).toBe(false);
+  });
+
+  it('renders a breadcrumb trail inside the Card above the header when passed', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/settings', name: 'admin-settings', component: { template: '<div>hub</div>' } },
+        { path: '/settings/access', name: 'settings-category', component: { template: '<div>cat</div>' } },
+        { path: '/', name: 'home', component: { template: '<div>home</div>' } },
+      ],
+    });
+    await router.push('/');
+    await router.isReady();
+    const wrapper = mount(EntityListShell, {
+      props: {
+        title: 'Roles',
+        columns,
+        dataSource: [],
+        tableTestId: 'admin-roles-table',
+        breadcrumbs: [
+          { label: 'Settings', to: { name: 'admin-settings' } },
+          { label: 'Access Control', to: { name: 'settings-category' } },
+          { label: 'Roles' },
+        ],
+      },
+      global: { plugins: [Antd, createTestI18n(), router] },
+    });
+    await flushPromises();
+    const breadcrumb = wrapper.get('[data-testid="entity-list-breadcrumb"]');
+    expect(breadcrumb.text()).toContain('Settings');
+    expect(breadcrumb.text()).toContain('Access Control');
+    expect(breadcrumb.text()).toContain('Roles');
+    // The trail sits above the header, and the last item is plain text.
+    const shellHtml = wrapper.get('[data-testid="entity-list-shell"]').html();
+    expect(shellHtml.indexOf('entity-list-breadcrumb')).toBeLessThan(
+      shellHtml.indexOf('entity-list-heading'),
+    );
+    expect(wrapper.find('[data-testid="entity-list-crumb-2"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="entity-list-crumb-0"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings');
   });
 
   it('hides numeric pagination when the total is zero', async () => {

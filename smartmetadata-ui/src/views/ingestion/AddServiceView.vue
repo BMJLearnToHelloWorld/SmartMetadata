@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import { Alert, Button, Form, Input, Select, Steps, message } from 'ant-design-vue';
 import { getOrchestratorStatus } from '@/api/ingestionPipelines';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
+import { isServiceListKind } from '@/router/serviceTabSegments';
 import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import TestConnectionCard from '@/components/ingestion/TestConnectionCard.vue';
 import SchemaField, { type FilterPatternFieldOptions } from '@/components/ingestion/SchemaField.vue';
@@ -146,7 +147,14 @@ const filterSchemas = computed(() =>
   })),
 );
 
-const supportedCategories = computed(() => SERVICE_CATEGORIES.filter((row) => row.supported));
+// C-2: the wizard offers only kinds with a §4.3 list segment. llm/mcp
+// creation is removed (no list tab, no wizard choice); the shared
+// SERVICE_CATEGORIES table is untouched — the staged services list
+// keeps its kind Tabs — and existing llm/mcp services remain
+// editable through their detail pages.
+const supportedCategories = computed(() =>
+  SERVICE_CATEGORIES.filter((row) => row.supported && isServiceListKind(row.key)),
+);
 const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
 /**
  * A9 tightening: a service type with no connection form must not be

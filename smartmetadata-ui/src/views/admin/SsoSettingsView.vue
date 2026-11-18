@@ -7,6 +7,10 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Button, Checkbox, Form, Input, Radio, Select, Spin, Tabs, message } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { setFieldPatch } from '@/admin/jsonPatch';
@@ -55,6 +59,16 @@ import SsoTestLoginModal from './SsoTestLoginModal.vue';
  * one or explicitly saves anyway.
  */
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'sso',
+    ),
+  ),
+);
 
 const SSO_PROVIDERS = [
   'basic',
@@ -384,6 +398,7 @@ onMounted(() => {
 
 <template>
   <PageLayout test-id="sso-settings-layout">
+    <SmBreadcrumb :items="breadcrumbItems" />
     <PageHeader :header="t('sso.title')" :sub-header="t('sso.lead')" />
     <Spin :spinning="loading">
       <SmState

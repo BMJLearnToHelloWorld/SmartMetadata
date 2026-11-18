@@ -22,6 +22,20 @@ import type { PersonaPreferences } from '@/types/persona';
  * not tint the home header (R-G11D-1).
  *
  * ADR:2026-11-10-my-data-customize-page-drag
+ *
+ * C-4 §3.3 read-side check (verified against the pin tree, no code
+ * change): this file's `resolveLandingPageHeaderColor` is the exact
+ * port of the official standalone helper of the same name, including
+ * its two-array fallback — the official helper itself has no
+ * production caller. The customize page's editor colour is a
+ * DIFFERENT read site: the official `CustomizablePage` computes
+ * `backgroundColor` inline from the `personPreferences` array alone,
+ * matched by personaId (`CustomizablePage.tsx:244-251`), with no
+ * fallback to `personaPreferences`. The editor call site must
+ * therefore pass only the `personPreferences` array (third argument
+ * `undefined`) to this same helper — no separate read chain. Passing
+ * both arrays would let an admin-set colour show as the editor's
+ * initial colour where official shows the default gradient.
  */
 
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
