@@ -223,18 +223,6 @@ export async function createUser(body: CreateUserRequest): Promise<AdminUser> {
   return mapped;
 }
 
-export async function updateUser(body: CreateUserRequest): Promise<AdminUser> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/users', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapUser(raw);
-  if (!mapped) {
-    throw new Error('Update user succeeded but the response had no user');
-  }
-  return mapped;
-}
-
 export function deactivateUser(id: string): Promise<unknown> {
   return apiRequest(`/v1/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
@@ -259,6 +247,14 @@ export function assignUserRolesPatch(currentRoles: unknown, roleIds: string[]): 
     '/roles',
     currentRoles,
     roleIds.map((id) => entityRefValue(id, 'role')),
+  );
+}
+
+export function assignUserTeamsPatch(currentTeams: unknown, teamIds: string[]): JsonPatchOp[] {
+  return setFieldPatch(
+    '/teams',
+    currentTeams,
+    teamIds.map((id) => entityRefValue(id, 'team')),
   );
 }
 

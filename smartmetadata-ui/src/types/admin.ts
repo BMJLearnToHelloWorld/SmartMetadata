@@ -94,6 +94,7 @@ export interface PolicyRule {
   operations: string[];
   resources: string[];
   condition?: string;
+  fullyQualifiedName?: string;
 }
 
 export interface AdminPolicy {
@@ -141,6 +142,7 @@ export interface CreatePolicyRuleRequest {
   resources: string[];
   description?: string;
   condition?: string;
+  fullyQualifiedName?: string;
 }
 
 /** Apache CreatePolicy — required name + rules. */
@@ -231,11 +233,32 @@ export interface OmBaseUrlConfiguration {
   openMetadataUrl?: string;
 }
 
+export interface GraphPerformanceConfig {
+  cacheTTLSeconds?: number;
+  enableCaching?: boolean;
+  enableProgressTracking?: boolean;
+  largeGraphBatchSize?: number;
+  maxCachedGraphs?: number;
+  maxInMemoryNodes?: number;
+  mediumGraphBatchSize?: number;
+  mediumGraphThreshold?: number;
+  progressReportInterval?: number;
+  scrollTimeoutMinutes?: number;
+  smallGraphBatchSize?: number;
+  smallGraphThreshold?: number;
+  streamingBatchSize?: number;
+  useScrollForLargeGraphs?: boolean;
+}
+
 export interface LineageSettings {
   upstreamDepth?: number;
   downstreamDepth?: number;
   lineageLayer?: 'EntityLineage' | 'ColumnLevelLineage' | 'DataObservability';
   pipelineViewMode?: 'Edge' | 'Node';
+  // Carried, never edited, by the lineage form: the settings PUT replaces
+  // the whole value, so a save must send it back or the server drops it.
+  // ADR:2026-11-18-lineage-settings-save-preserves-unedited-fields
+  graphPerformanceConfig?: GraphPerformanceConfig;
 }
 
 export interface MetricConfigurationDefinition {
@@ -254,6 +277,74 @@ export interface ProfilerConfiguration {
   sampleDataConfig?: SampleDataIngestionConfig;
 }
 
+export interface SearchFieldBoost {
+  field?: string;
+  boost?: number;
+  // exact | phrase | fuzzy | standard; kept a string so unknown values
+  // round-trip instead of being silently dropped by the parser.
+  matchType?: string;
+}
+
+export interface SearchTermBoost {
+  field?: string;
+  value?: string;
+  boost?: number;
+}
+
+export interface SearchFieldValueBoostRange {
+  gt?: number;
+  gte?: number;
+  lt?: number;
+  lte?: number;
+}
+
+export interface SearchFieldValueBoost {
+  field?: string;
+  factor?: number;
+  // 10-value Modifier enum in the schema; kept a string, see matchType.
+  modifier?: string;
+  missing?: number;
+  condition?: { range?: SearchFieldValueBoostRange };
+}
+
+export interface SearchAggregation {
+  name?: string;
+  // 14-value AggregationType enum in the schema; kept a string, see matchType.
+  type?: string;
+  field?: string;
+  script?: string;
+}
+
+export interface SearchMatchTypeBoostMultipliers {
+  exactMatchMultiplier?: number;
+  phraseMatchMultiplier?: number;
+  fuzzyMatchMultiplier?: number;
+}
+
+/**
+ * Opaque pass-through: the ranking subtree is deep-copied on parse and sent
+ * back untouched; no UI reads its fields. Replaced by a typed mapping when
+ * the Ranking editing surface lands.
+ */
+export type SearchRankingConfiguration = Record<string, unknown>;
+
+/** Opaque pass-through: a free-form mapping in the schema, carried verbatim. */
+export type SearchAdditionalSettings = Record<string, unknown>;
+
+/** Opaque pass-through: NlqConfiguration carries an index signature, so its
+ * contents cannot be enumerated; carried verbatim. */
+export type SearchNlqConfiguration = Record<string, unknown>;
+
+export interface AllowedFieldValueBoostField {
+  name: string;
+  description?: string;
+}
+
+export interface AllowedFieldValueBoostFields {
+  entityType: string;
+  fields: AllowedFieldValueBoostField[];
+}
+
 export interface SearchGlobalSettings {
   enableAccessControl?: boolean;
   enableColumnIndexing?: boolean;
@@ -263,20 +354,23 @@ export interface SearchGlobalSettings {
   highlightFields?: string[];
   keywordWeight?: number;
   semanticWeight?: number;
-  termBoosts?: Array<{ field?: string; value?: string; boost?: number }>;
-  fieldValueBoosts?: Array<{ field?: string; factor?: number; modifier?: string; missing?: number }>;
-  aggregations?: Array<{ name?: string; type?: string; field?: string }>;
+  termBoosts?: SearchTermBoost[];
+  fieldValueBoosts?: SearchFieldValueBoost[];
+  aggregations?: SearchAggregation[];
 }
 
 export interface AssetTypeConfiguration {
   assetType: string;
-  searchFields?: Array<{ field?: string; boost?: number }>;
+  searchFields?: SearchFieldBoost[];
   highlightFields?: string[];
   scoreMode?: string;
   boostMode?: string;
-  termBoosts?: SearchGlobalSettings['termBoosts'];
-  fieldValueBoosts?: SearchGlobalSettings['fieldValueBoosts'];
-  aggregations?: SearchGlobalSettings['aggregations'];
+  termBoosts?: SearchTermBoost[];
+  fieldValueBoosts?: SearchFieldValueBoost[];
+  aggregations?: SearchAggregation[];
+  ranking?: SearchRankingConfiguration;
+  additionalSettings?: SearchAdditionalSettings;
+  matchTypeBoostMultipliers?: SearchMatchTypeBoostMultipliers;
 }
 
 export interface AllowedSearchField {
@@ -295,6 +389,8 @@ export interface SearchSettings {
   assetTypeConfigurations?: AssetTypeConfiguration[];
   defaultConfiguration?: AssetTypeConfiguration;
   allowedFields?: AllowedSearchFields[];
+  allowedFieldValueBoosts?: AllowedFieldValueBoostFields[];
+  nlqConfiguration?: SearchNlqConfiguration;
 }
 
 export interface GlossarySettings {
@@ -308,6 +404,18 @@ export interface SemanticsRule {
   enabled?: boolean;
   entityType?: string;
   ignoredEntities?: string[];
+  // Whether this rule was inherited from a Data Product (basic.json). This
+  // page never edits it; it only round-trips.
+  // ADR:2026-11-18-entity-rules-round-trip-unedited-fields
+  inherited?: boolean;
+  // JSON Tree representing the rule in the UI (basic.json), maintained by
+  // the Data Contract semantics form. Opaque here: never parsed. This page
+  // never edits it; it only round-trips.
+  jsonTree?: string;
+  // providerType in the schema: system | user | automation, default user
+  // (basic.json:179-185). Kept a string so unknown values round-trip; this
+  // page never edits it.
+  provider?: string;
 }
 
 export interface EntityRulesSettings {

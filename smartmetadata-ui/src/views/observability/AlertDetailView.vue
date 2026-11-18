@@ -60,9 +60,10 @@ async function onDeleteAlert(): Promise<void> {
     }
     return;
   }
+  const name = entityLabel(alert.value);
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('crud.deleteConfirm', { name: entityLabel(alert.value) }),
+    title: t('observability.alerts.deleteTitle', { name }),
+    content: t('observability.alerts.deleteConfirm', { name: name.toLowerCase() }),
     okText: t('crud.delete'),
     cancelText: t('crud.cancel'),
   });
@@ -71,7 +72,7 @@ async function onDeleteAlert(): Promise<void> {
   }
   try {
     await deleteEventSubscription(alert.value.id);
-    message.success(t('crud.deletedName', { name: entityLabel(alert.value) }));
+    message.success(t('observability.alerts.deleted', { name }));
     await router.push({ name: 'observability-alerts' });
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));

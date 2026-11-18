@@ -8,16 +8,19 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { createTestI18n } from '@/test/i18n';
 import AlertsListView from './AlertsListView.vue';
 
 const listEventSubscriptions = vi.fn();
 const createEventSubscription = vi.fn();
 const deleteEventSubscription = vi.fn();
+const confirmDelete = vi.fn();
+const getLimitByResource = vi.fn();
 const getResourcePermission = vi.fn();
 const getEntityPermissionByFqn = vi.fn();
 
@@ -26,6 +29,15 @@ vi.mock('@/api/eventSubscriptions', () => ({
   createEventSubscription: (...args: unknown[]) => createEventSubscription(...args),
   deleteEventSubscription: (...args: unknown[]) => deleteEventSubscription(...args),
 }));
+
+vi.mock('@/features/crud/confirmDelete', () => ({
+  confirmDelete: (...args: unknown[]) => confirmDelete(...args),
+}));
+
+vi.mock('@/api/limits', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/limits')>();
+  return { ...actual, getLimitByResource: (...args: unknown[]) => getLimitByResource(...args) };
+});
 
 // P1 gating line: the view reads permissions through the store, which
 // calls this module. Helpers stay real; only the fetchers are stubbed.
@@ -139,5 +151,125 @@ describe('AlertsListView create form (Fix4)', () => {
     });
     const wrapper = await mountView();
     expect(wrapper.find('[data-testid="create-alert"]').attributes('disabled')).not.toBeUndefined();
+  });
+});
+
+describe('AlertsListView delete', () => {
+  const alert = {
+    id: 'al1',
+    name: 'dq-alert',
+    displayName: 'DQ Alert',
+    fullyQualifiedName: 'dq-alert',
+    alertType: 'Observability',
+    enabled: true,
+    destinations: [],
+    owners: [],
+  };
+
+  beforeEach(() => {
+    listEventSubscriptions.mockReset();
+    createEventSubscription.mockReset();
+    deleteEventSubscription.mockReset();
+    confirmDelete.mockReset();
+    getLimitByResource.mockReset();
+    getResourcePermission.mockReset();
+    getEntityPermissionByFqn.mockReset();
+    listEventSubscriptions.mockResolvedValue({ data: [alert], total: 1, after: 'cursor-2' });
+    deleteEventSubscription.mockResolvedValue(undefined);
+    confirmDelete.mockResolvedValue(true);
+    getLimitByResource.mockResolvedValue({});
+    getResourcePermission.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [{ operation: 'Create', access: 'allow' }],
+    });
+    getEntityPermissionByFqn.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [
+        { operation: 'EditAll', access: 'allow' },
+        { operation: 'Delete', access: 'allow' },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function triggerRowDelete(wrapper: Awaited<ReturnType<typeof mountView>>) {
+    await wrapper.find('[data-testid="row-overflow-al1"]').trigger('click');
+    await flushPromises();
+    const item = document.body.querySelector('[data-testid="row-overflow-delete"]');
+    expect(item).not.toBeNull();
+    (item as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+  }
+
+  it('deletes with the permanent-delete wording, refreshes the limit, then reloads the first page', async () => {
+    const successSpy = vi.spyOn(message, 'success');
+    const wrapper = await mountView();
+    // Move to the second page so the reload target is observable: the
+    // delete must reset the cursor back to the first page.
+    await wrapper.findComponent(EntityListShell).vm.$emit('next');
+    await flushPromises();
+    expect(listEventSubscriptions).toHaveBeenLastCalledWith({ limit: 25, after: 'cursor-2' });
+    await triggerRowDelete(wrapper);
+    expect(confirmDelete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete DQ Alert',
+        content: 'Delete this dq alert and all its metadata forever. This can\'t be undone.',
+      }),
+    );
+    expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
+    expect(successSpy).toHaveBeenCalledWith('"DQ Alert" deleted successfully!');
+    expect(getLimitByResource).toHaveBeenCalledTimes(1);
+    expect(getLimitByResource).toHaveBeenCalledWith('eventsubscription');
+    // The limit refresh runs before the reload, and the reload carries
+    // no cursor: pin's fetchAlerts() reloads the first page.
+    const limitOrder = getLimitByResource.mock.invocationCallOrder[0];
+    const listOrders = listEventSubscriptions.mock.invocationCallOrder;
+    expect(limitOrder).toBeLessThan(listOrders[listOrders.length - 1]!);
+    expect(listEventSubscriptions).toHaveBeenLastCalledWith({ limit: 25, after: undefined });
+    successSpy.mockRestore();
+  });
+
+  it('shows an error and does not reload or reset the cursor when the limit refresh fails', async () => {
+    getLimitByResource.mockRejectedValue(new Error('limits down'));
+    const errorSpy = vi.spyOn(message, 'error');
+    const wrapper = await mountView();
+    await wrapper.findComponent(EntityListShell).vm.$emit('next');
+    await flushPromises();
+    const loadsBeforeDelete = listEventSubscriptions.mock.calls.length;
+    await triggerRowDelete(wrapper);
+    expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
+    expect(getLimitByResource).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalled();
+    expect(listEventSubscriptions.mock.calls.length).toBe(loadsBeforeDelete);
+    // The cursor is untouched: a manual refresh still loads page two.
+    await wrapper.findComponent(EntityListShell).vm.$emit('refresh');
+    await flushPromises();
+    expect(listEventSubscriptions).toHaveBeenLastCalledWith({ limit: 25, after: 'cursor-2' });
+    errorSpy.mockRestore();
+  });
+
+  it('does nothing when the delete confirmation is cancelled', async () => {
+    confirmDelete.mockResolvedValue(false);
+    const wrapper = await mountView();
+    await triggerRowDelete(wrapper);
+    expect(confirmDelete).toHaveBeenCalledTimes(1);
+    expect(deleteEventSubscription).not.toHaveBeenCalled();
+    expect(getLimitByResource).not.toHaveBeenCalled();
+    expect(listEventSubscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error and neither refreshes the limit nor reloads when the delete fails', async () => {
+    deleteEventSubscription.mockRejectedValue(new Error('delete boom'));
+    const errorSpy = vi.spyOn(message, 'error');
+    const wrapper = await mountView();
+    await triggerRowDelete(wrapper);
+    expect(deleteEventSubscription).toHaveBeenCalledWith('al1');
+    expect(errorSpy).toHaveBeenCalled();
+    expect(getLimitByResource).not.toHaveBeenCalled();
+    expect(listEventSubscriptions).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
   });
 });

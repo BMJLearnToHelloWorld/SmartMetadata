@@ -58,11 +58,15 @@ async function onExport(): Promise<void> {
       throw new Error(t('admin.auditLogs.exportFailed'));
     }
     let status = job.status;
-    for (let attempt = 0; attempt < 30 && status !== 'completed' && status !== 'failed'; attempt += 1) {
+    // The poll endpoint returns the CsvAsyncJob.Status enum name
+    // verbatim (COMPLETED/FAILED/CANCELLED/...), never lowercase; the
+    // comparison must use the wire vocabulary, not a normalized form.
+    // ADR:2026-11-18-audit-export-poll-uses-uppercase-status
+    for (let attempt = 0; attempt < 30 && status !== 'COMPLETED' && status !== 'FAILED' && status !== 'CANCELLED'; attempt += 1) {
       await sleep(2000);
       status = (await getAuditLogExportJob(job.jobId)).status;
     }
-    if (status !== 'completed') {
+    if (status !== 'COMPLETED') {
       throw new Error(t('admin.auditLogs.exportFailed'));
     }
     const result = await getAuditLogExportResult(job.jobId);

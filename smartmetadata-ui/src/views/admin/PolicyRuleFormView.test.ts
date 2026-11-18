@@ -36,6 +36,7 @@ const policyPayload = {
       operations: ['ViewAll'],
       resources: ['all'],
       condition: 'isOwner()',
+      fullyQualifiedName: 'DataConsumerPolicy.DataConsumerPolicy-Rule',
     },
   ],
 };
@@ -139,5 +140,32 @@ describe('PolicyRuleFormView', () => {
   it('shows an error when the edited rule is not on the policy', async () => {
     const { wrapper } = await mountForm({ id: 'p1', ruleName: 'Missing-Rule' });
     expect(wrapper.text()).toContain('Rule not found');
+  });
+
+  it('keeps the stored FQN on untouched rules and omits it on the new rule', async () => {
+    const { wrapper } = await mountForm({ id: 'p1' });
+    await wrapper.find('[data-testid="policy-rule-save"]').trigger('click');
+    await flushPromises();
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([, init]) => init?.method === 'PATCH');
+    const body = JSON.parse(String(patchCall?.[1]?.body ?? '[]')) as Array<{ value: unknown }>;
+    const rules = body[0].value as Array<{ name: string; fullyQualifiedName?: string }>;
+    expect(rules).toHaveLength(2);
+    expect(rules[0].fullyQualifiedName).toBe('DataConsumerPolicy.DataConsumerPolicy-Rule');
+    expect('fullyQualifiedName' in rules[1]).toBe(false);
+  });
+
+  it('carries the original FQN back when editing a rule', async () => {
+    const { wrapper } = await mountForm({ id: 'p1', ruleName: 'DataConsumerPolicy-Rule' });
+    await wrapper.find('[data-testid="policy-rule-save"]').trigger('click');
+    await flushPromises();
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([, init]) => init?.method === 'PATCH');
+    const body = JSON.parse(String(patchCall?.[1]?.body ?? '[]')) as Array<{ value: unknown }>;
+    const rules = body[0].value as Array<{ name: string; fullyQualifiedName?: string }>;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].fullyQualifiedName).toBe('DataConsumerPolicy.DataConsumerPolicy-Rule');
   });
 });

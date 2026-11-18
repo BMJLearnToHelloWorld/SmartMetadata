@@ -8,7 +8,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Card, Col, Form, InputNumber, Row, Switch, message } from 'ant-design-vue';
-import { getTypedSetting, settingAsSearch, updateSetting } from '@/api/system';
+import { buildSearchSettingsPayload, getTypedSetting, settingAsSearch, updateSetting } from '@/api/system';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type { AssetTypeConfiguration, SearchSettings } from '@/types/admin';
 
@@ -33,6 +33,8 @@ async function load(): Promise<void> {
     form.assetTypeConfigurations = [...(cfg.assetTypeConfigurations ?? [])];
     form.defaultConfiguration = cfg.defaultConfiguration;
     form.allowedFields = cfg.allowedFields;
+    form.allowedFieldValueBoosts = cfg.allowedFieldValueBoosts;
+    form.nlqConfiguration = cfg.nlqConfiguration;
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('settings.searchPrefs.loadFailed');
   } finally {
@@ -40,27 +42,11 @@ async function load(): Promise<void> {
   }
 }
 
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
 async function saveGlobal(): Promise<void> {
   saving.value = true;
   try {
-    await updateSetting('searchSettings', {
-      globalSettings: {
-        enableAccessControl: Boolean(form.globalSettings?.enableAccessControl),
-        enableColumnIndexing: Boolean(form.globalSettings?.enableColumnIndexing),
-        maxAggregateSize: form.globalSettings?.maxAggregateSize,
-        maxResultHits: form.globalSettings?.maxResultHits,
-        maxAnalyzedOffset: form.globalSettings?.maxAnalyzedOffset,
-        highlightFields: form.globalSettings?.highlightFields,
-        keywordWeight: form.globalSettings?.keywordWeight,
-        semanticWeight: form.globalSettings?.semanticWeight,
-        termBoosts: form.globalSettings?.termBoosts,
-        fieldValueBoosts: form.globalSettings?.fieldValueBoosts,
-        aggregations: form.globalSettings?.aggregations,
-      },
-      assetTypeConfigurations: form.assetTypeConfigurations,
-      defaultConfiguration: form.defaultConfiguration,
-      allowedFields: form.allowedFields,
-    });
+    await updateSetting('searchSettings', buildSearchSettingsPayload(form));
     message.success(t('settings.searchPrefs.saved'));
     await load();
   } catch (error) {

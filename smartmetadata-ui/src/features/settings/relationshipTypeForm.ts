@@ -8,7 +8,9 @@ import type {
   RelationshipCardinality,
   RelationshipCategory,
   RelationshipCharacteristic,
+  RelationshipEntityStatus,
   RelationshipPaletteKey,
+  RelationshipSemanticReference,
   RelationshipType,
 } from '@/api/relationshipTypes';
 import type { EntityRef } from '@/types/api';
@@ -17,9 +19,12 @@ import type { EntityRef } from '@/types/api';
  * Pure form mapping + validation for glossary-term relation types,
  * mirroring official RelationshipTypeForm.utils.ts and
  * RelationshipTypeForm.validation.ts exactly in rule, adapted to Vue
- * types: cardinality presets derive from source/target maxima, the
- * request trims identity strings, and owners/reviewers pass through
- * untouched (the official form does not edit them either).
+ * types: cardinality presets derive from source/target maxima, only
+ * description/displayName/name/rdfPredicate are trimmed, and the nine
+ * unedited fields (disjointWith, domain, entityStatus, iri, owners,
+ * propertyChain, range, replacedBy, reviewers) pass through untouched
+ * — the server PUT replaces the whole entity, so the request must
+ * carry them back verbatim.
  */
 export type CardinalityPreset = 'CUSTOM' | 'MANY_TO_MANY' | 'MANY_TO_ONE' | 'ONE_TO_MANY' | 'ONE_TO_ONE';
 
@@ -38,6 +43,12 @@ export interface RelationshipTypeFormValues {
   iri?: string;
   owners?: EntityRef[];
   reviewers?: EntityRef[];
+  disjointWith?: string[];
+  domain?: RelationshipSemanticReference[];
+  entityStatus?: RelationshipEntityStatus;
+  propertyChain?: string[];
+  range?: RelationshipSemanticReference[];
+  replacedBy?: string;
 }
 
 export const DEFAULT_RELATIONSHIP_TYPE_FORM: RelationshipTypeFormValues = {
@@ -93,13 +104,19 @@ export function toRelationshipTypeForm(type: RelationshipType): RelationshipType
     characteristics: type.characteristics ?? [],
     crossGlossaryAllowed: type.crossGlossaryAllowed,
     description: type.description,
+    disjointWith: type.disjointWith,
     displayName: type.displayName,
+    domain: type.domain,
+    entityStatus: type.entityStatus,
     inverse: type.inverse,
     iri: type.iri,
     name: type.name,
     owners: type.owners,
     paletteKey: type.paletteKey,
+    propertyChain: type.propertyChain,
+    range: type.range,
     rdfPredicate: type.rdfPredicate ?? '',
+    replacedBy: type.replacedBy,
     reviewers: type.reviewers,
   };
 }
@@ -111,13 +128,19 @@ export function toRelationshipTypeRequest(form: RelationshipTypeFormValues): Cre
     characteristics: form.characteristics,
     crossGlossaryAllowed: form.crossGlossaryAllowed,
     description: (form.description ?? '').trim(),
+    disjointWith: form.disjointWith,
     displayName: (form.displayName ?? '').trim(),
-    inverse: form.inverse?.trim() || undefined,
-    iri: form.iri?.trim() || undefined,
+    domain: form.domain,
+    entityStatus: form.entityStatus,
+    inverse: form.inverse || undefined,
+    iri: form.iri || undefined,
     name: form.name.trim(),
     owners: form.owners,
     paletteKey: form.paletteKey,
+    propertyChain: form.propertyChain,
+    range: form.range,
     rdfPredicate: form.rdfPredicate.trim(),
+    replacedBy: form.replacedBy,
     reviewers: form.reviewers,
   };
 }

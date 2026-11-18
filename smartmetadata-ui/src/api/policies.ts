@@ -46,6 +46,7 @@ function mapRule(raw: Record<string, unknown>): PolicyRule | null {
     operations: mapStrings(raw.operations),
     resources: mapStrings(raw.resources),
     condition: asString(raw.condition) || undefined,
+    fullyQualifiedName: asString(raw.fullyQualifiedName) || undefined,
   };
 }
 

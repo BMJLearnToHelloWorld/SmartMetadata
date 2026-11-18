@@ -125,7 +125,7 @@ async function onDelete(announcement: Announcement): Promise<void> {
     return;
   }
   try {
-    await deleteAnnouncement(announcement.id);
+    await deleteAnnouncement(announcement.id, true);
     message.success(t('collaboration.announcements.deleted'));
     await load();
   } catch (error) {

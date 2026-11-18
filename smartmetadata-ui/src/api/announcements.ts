@@ -21,8 +21,13 @@ export interface AnnouncementPatchOp {
 /**
  * Delete an announcement. Official shape
  * (openmetadata-ui/.../rest/announcementsAPI.ts deleteAnnouncement):
- * DELETE /{id} with hardDelete defaulting to false. Live acceptance by
- * the product backend is unverified (R8); the shape itself is official.
+ * DELETE /{id} with hardDelete defaulting to false. The default is the
+ * pin API shape and must stay false, but every production caller in pin
+ * passes true explicitly — a system announcement has no entity page to
+ * restore it from — so every caller here must pass true explicitly too.
+ * Live acceptance by the product backend is unverified (R8); the shape
+ * itself is official.
+ * ADR:2026-11-18-announcement-delete-callers-pass-hard-delete
  */
 export async function deleteAnnouncement(id: string, hardDelete = false): Promise<void> {
   await apiRequest<unknown>(`/v1/announcements/${encodeURIComponent(id)}`, {

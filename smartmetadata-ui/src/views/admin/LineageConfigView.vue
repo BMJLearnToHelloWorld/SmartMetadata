@@ -22,21 +22,33 @@ const form = reactive<LineageSettings>({
   lineageLayer: 'EntityLineage',
   pipelineViewMode: 'Node',
 });
+// The loaded configuration in full, kept apart from the form: the save
+// payload spreads it so fields the form does not edit survive the PUT.
+// Null until a load succeeds.
+const storedConfig = ref<LineageSettings | null>(null);
+
+function applyLoaded(loaded: LineageSettings): void {
+  storedConfig.value = loaded;
+  form.upstreamDepth = loaded.upstreamDepth;
+  form.downstreamDepth = loaded.downstreamDepth;
+  form.lineageLayer = loaded.lineageLayer;
+  form.pipelineViewMode = loaded.pipelineViewMode;
+  // A missing server value must not blank the form into an unsavable state:
+  // fall back to the form defaults instead of submitting undefined depths.
+  if (form.upstreamDepth === undefined) {
+    form.upstreamDepth = 2;
+  }
+  if (form.downstreamDepth === undefined) {
+    form.downstreamDepth = 2;
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
     const loaded = await getTypedSetting('lineageSettings', settingAsLineage);
-    Object.assign(form, loaded);
-    // A missing server value must not blank the form into an unsavable state:
-    // fall back to the form defaults instead of submitting undefined depths.
-    if (form.upstreamDepth === undefined) {
-      form.upstreamDepth = 2;
-    }
-    if (form.downstreamDepth === undefined) {
-      form.downstreamDepth = 2;
-    }
+    applyLoaded(loaded);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('settings.lineage.loadFailed');
   } finally {
@@ -44,21 +56,28 @@ async function load(): Promise<void> {
   }
 }
 
+// ADR:2026-11-18-lineage-settings-save-preserves-unedited-fields
 async function save(): Promise<void> {
+  const stored = storedConfig.value;
+  if (stored === null) {
+    message.error(t('settings.lineage.loadFailed'));
+    return;
+  }
   if (!isLineageSettingsDepthValid(form.upstreamDepth) || !isLineageSettingsDepthValid(form.downstreamDepth)) {
     message.error(t('settings.lineage.rangeInvalid'));
     return;
   }
   saving.value = true;
   try {
-    await updateSetting('lineageSettings', {
+    const updated = await updateSetting('lineageSettings', {
+      ...stored,
       upstreamDepth: form.upstreamDepth,
       downstreamDepth: form.downstreamDepth,
       lineageLayer: form.lineageLayer,
       pipelineViewMode: form.pipelineViewMode,
     });
     message.success(t('settings.lineage.saved'));
-    await load();
+    applyLoaded(settingAsLineage(updated.configValue));
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('settings.lineage.saveFailed'));
   } finally {

@@ -222,7 +222,21 @@ export async function updateEventSubscription(
   return mapped;
 }
 
-/** Official deleteAlert (rest/alertsAPI.ts): DELETE {BASE}/{id}. */
+/**
+ * Delete an event subscription with the pin UI's wire shape
+ * (hardDeleteEntity -> deleteEntity): DELETE /v1/events/subscriptions/{id}
+ * with hardDelete=true&recursive=false, in that key order. The server
+ * ignores both parameters — EventSubscriptionResource.deleteEventSubscription
+ * hardcodes recursive=true, hardDelete=true and the base delete never
+ * reads the query — so the delete is unconditionally hard either way;
+ * the parameters are sent so the wire matches pin exactly.
+ * The previous comment cited rest/alertsAPI.ts deleteAlert, which is
+ * dead code in pin (zero callers); the live chain is hardDeleteEntity.
+ * ADR:2026-11-18-event-subscription-delete-wire-matches-pin
+ */
 export function deleteEventSubscription(id: string): Promise<unknown> {
-  return apiRequest(`/v1/events/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return apiRequest(`/v1/events/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: true, recursive: false },
+  });
 }

@@ -10,18 +10,26 @@
 import { asBoolean, asNumber, asRecord, asString, parsePaged } from '@/api/json';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import type {
+  AllowedFieldValueBoostFields,
   AppConfiguration,
   AssetTypeConfiguration,
   AuthConfiguration,
   EmailConfiguration,
   EntityRulesSettings,
   GlossarySettings,
+  GraphPerformanceConfig,
   LineageSettings,
   LoginConfiguration,
   OmBaseUrlConfiguration,
   Paged,
   ProfilerConfiguration,
+  SearchAggregation,
+  SearchFieldBoost,
+  SearchFieldValueBoost,
+  SearchMatchTypeBoostMultipliers,
+  SearchRankingConfiguration,
   SearchSettings,
+  SearchTermBoost,
   SemanticsRule,
   ServerVersion,
   SystemSetting,
@@ -205,6 +213,283 @@ export async function getSecurityConfig(): Promise<{ authenticationConfiguration
 }
 
 /**
+ * The full SecurityConfiguration document, carried verbatim. Validate and
+ * Test Login take the whole document: a truncated body would fail checks
+ * the stored configuration passes (emailClaim/jwtPrincipalClaims, the
+ * secret-restore conditions), so this read must not map anything away.
+ * A missing section reads as an empty object, never undefined, so the
+ * candidate builder and the save gate can always treat both sections as
+ * present. ADR:2026-11-18-sso-candidate-preserves-full-security-document.
+ */
+export interface SecurityConfigurationDocument {
+  authenticationConfiguration: Record<string, unknown>;
+  authorizerConfiguration: Record<string, unknown>;
+}
+
+function cloneJsonSection(value: unknown): Record<string, unknown> {
+  const rec = asRecord(value) ?? {};
+  return JSON.parse(JSON.stringify(rec)) as Record<string, unknown>;
+}
+
+export async function getSecurityConfigurationDocument(): Promise<SecurityConfigurationDocument> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/system/security/config');
+  return {
+    authenticationConfiguration: cloneJsonSection(raw.authenticationConfiguration),
+    authorizerConfiguration: cloneJsonSection(raw.authorizerConfiguration),
+  };
+}
+
+export interface SecurityFieldError {
+  field: string;
+  error: string;
+}
+
+export interface SecurityValidationResponse {
+  status: 'success' | 'failed';
+  errors?: SecurityFieldError[];
+}
+
+/**
+ * POST /v1/system/security/validate: the checks a save runs, against a
+ * candidate (unsaved) document. The endpoint always answers 200 with a
+ * SecurityValidationResponse; a status other than 'success' is a failure,
+ * and an unrecognized status value fails closed the same way.
+ */
+export async function validateSecurityConfiguration(
+  candidate: SecurityConfigurationDocument,
+): Promise<SecurityValidationResponse> {
+  const raw = await apiRequest<unknown>('/v1/system/security/validate', {
+    method: 'POST',
+    json: candidate,
+  });
+  const rec = asRecord(raw) ?? {};
+  const status: SecurityValidationResponse['status'] = rec.status === 'success' ? 'success' : 'failed';
+  const errors = parseSecurityValidationResponse(raw);
+  return errors.length > 0 ? { status, errors } : { status };
+}
+
+/**
+ * Structured parse of a SecurityValidationResponse body, either already
+ * parsed JSON or the raw string an ApiError carries. Each errors entry
+ * contributes its field and error strings; an entry with neither is
+ * dropped, and a body without a usable errors array yields []. The
+ * schema has no `message` key, so none is read: accepting one would let
+ * a fabricated fixture pass for the real wire shape.
+ */
+export function parseSecurityValidationResponse(body: unknown): SecurityFieldError[] {
+  let parsed: unknown = body;
+  if (typeof body === 'string') {
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return [];
+    }
+  }
+  const rec = asRecord(parsed);
+  if (!rec || !Array.isArray(rec.errors)) {
+    return [];
+  }
+  return rec.errors.flatMap((entry) => {
+    const item = asRecord(entry) ?? {};
+    const field = asString(item.field);
+    const error = asString(item.error);
+    return field || error ? [{ field, error }] : [];
+  });
+}
+
+export type TestLoginStatus = 'pending' | 'success' | 'failed';
+
+export type TestLoginStage =
+  | 'STARTED'
+  | 'REDIRECTED'
+  | 'TOKEN_RECEIVED'
+  | 'TOKEN_VALIDATED'
+  | 'TOKEN_REFRESHED'
+  | 'CREDENTIALS_VERIFIED'
+  | 'CLAIMS_EXTRACTED'
+  | 'IDENTITY_RESOLVED'
+  | 'ROLES_MAPPED'
+  | 'DOMAIN_CHECKED';
+
+export type TestLoginStageStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
+
+export interface TestLoginStageResult {
+  stage: TestLoginStage;
+  status: TestLoginStageStatus;
+  message?: string;
+}
+
+export interface TestLoginDomainCheck {
+  enforced?: boolean;
+  passed?: boolean;
+  principalDomain?: string;
+  resolvedDomain?: string;
+}
+
+export interface TestLoginResult {
+  status: TestLoginStatus;
+  stages?: TestLoginStageResult[];
+  stage?: TestLoginStage;
+  protocol?: 'basic' | 'ldap' | 'oidc' | 'saml';
+  resolvedPrincipal?: string;
+  resolvedEmail?: string;
+  mappedRoles?: string[];
+  mappedTeams?: string[];
+  domainCheck?: TestLoginDomainCheck;
+  errors?: string[];
+}
+
+export interface TestLoginSession {
+  testSessionId: string;
+  protocol: TestLoginResult['protocol'];
+  authorizationUrl?: string;
+  requiresCredentials?: boolean;
+  expiresAt?: number;
+}
+
+export interface TestLoginCredentialsRequest {
+  testSessionId: string;
+  email: string;
+  password: string;
+}
+
+const TEST_LOGIN_STAGES = new Set([
+  'STARTED',
+  'REDIRECTED',
+  'TOKEN_RECEIVED',
+  'TOKEN_VALIDATED',
+  'TOKEN_REFRESHED',
+  'CREDENTIALS_VERIFIED',
+  'CLAIMS_EXTRACTED',
+  'IDENTITY_RESOLVED',
+  'ROLES_MAPPED',
+  'DOMAIN_CHECKED',
+]);
+
+const TEST_LOGIN_STAGE_STATUSES = new Set(['pending', 'running', 'passed', 'failed', 'skipped']);
+
+const TEST_LOGIN_PROTOCOLS = new Set(['basic', 'ldap', 'oidc', 'saml']);
+
+function asTestLoginStage(value: unknown): TestLoginStage | undefined {
+  const stage = asString(value);
+  return TEST_LOGIN_STAGES.has(stage) ? (stage as TestLoginStage) : undefined;
+}
+
+function asTestLoginProtocol(value: unknown): TestLoginResult['protocol'] {
+  const protocol = asString(value);
+  return TEST_LOGIN_PROTOCOLS.has(protocol)
+    ? (protocol as NonNullable<TestLoginResult['protocol']>)
+    : undefined;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+/**
+ * Defensive mapping of a TestLoginResult body. An unrecognized overall
+ * status fails closed to 'failed': an unknown state must never read as
+ * a pass. Stage entries with an unrecognized stage or status are
+ * dropped rather than rendered as a stage that does not exist.
+ */
+export function mapTestLoginResult(value: unknown): TestLoginResult {
+  const rec = asRecord(value) ?? {};
+  const status = asString(rec.status);
+  const domain = asRecord(rec.domainCheck);
+  return {
+    status: status === 'pending' || status === 'success' || status === 'failed' ? status : 'failed',
+    stages: Array.isArray(rec.stages)
+      ? rec.stages.flatMap((entry) => {
+          const item = asRecord(entry) ?? {};
+          const stage = asTestLoginStage(item.stage);
+          const stageStatus = asString(item.status);
+          if (!stage || !TEST_LOGIN_STAGE_STATUSES.has(stageStatus)) {
+            return [];
+          }
+          return [
+            {
+              stage,
+              status: stageStatus as TestLoginStageStatus,
+              message: asString(item.message) || undefined,
+            },
+          ];
+        })
+      : undefined,
+    stage: asTestLoginStage(rec.stage),
+    protocol: asTestLoginProtocol(rec.protocol),
+    resolvedPrincipal: asString(rec.resolvedPrincipal) || undefined,
+    resolvedEmail: asString(rec.resolvedEmail) || undefined,
+    mappedRoles: asStringArray(rec.mappedRoles),
+    mappedTeams: asStringArray(rec.mappedTeams),
+    domainCheck: domain
+      ? {
+          enforced: asBoolean(domain.enforced),
+          passed: asBoolean(domain.passed),
+          principalDomain: asString(domain.principalDomain) || undefined,
+          resolvedDomain: asString(domain.resolvedDomain) || undefined,
+        }
+      : undefined,
+    errors: asStringArray(rec.errors),
+  };
+}
+
+export function mapTestLoginSession(value: unknown): TestLoginSession {
+  const rec = asRecord(value) ?? {};
+  return {
+    testSessionId: asString(rec.testSessionId),
+    protocol: asTestLoginProtocol(rec.protocol),
+    authorizationUrl: asString(rec.authorizationUrl) || undefined,
+    requiresCredentials: asBoolean(rec.requiresCredentials),
+    expiresAt: asNumber(rec.expiresAt),
+  };
+}
+
+/** POST /v1/system/security/test-login/validate-token: dry-run an id_token against a candidate. */
+export function testLoginValidateToken(request: {
+  securityConfiguration: SecurityConfigurationDocument;
+  idToken: string;
+}): Promise<TestLoginResult> {
+  return apiRequest<unknown>('/v1/system/security/test-login/validate-token', {
+    method: 'POST',
+    json: request,
+  }).then(mapTestLoginResult);
+}
+
+/** POST /v1/system/security/test-login/start: start a server-driven Test Login round-trip. */
+export function startTestLogin(request: {
+  securityConfiguration: SecurityConfigurationDocument;
+}): Promise<TestLoginSession> {
+  return apiRequest<unknown>('/v1/system/security/test-login/start', {
+    method: 'POST',
+    json: request,
+  }).then(mapTestLoginSession);
+}
+
+/** GET /v1/system/security/test-login/result/{id}: the outcome, or its pending timeline. */
+export function getTestLoginResult(testSessionId: string): Promise<TestLoginResult> {
+  return apiRequest<unknown>(
+    `/v1/system/security/test-login/result/${encodeURIComponent(testSessionId)}`,
+  ).then(mapTestLoginResult);
+}
+
+/**
+ * POST /v1/system/security/test-login/credentials: verify LDAP/Basic
+ * credentials once for a test. The request is sent and never logged or
+ * stored anywhere on the client.
+ */
+export function submitTestLoginCredentials(
+  request: TestLoginCredentialsRequest,
+): Promise<TestLoginResult> {
+  return apiRequest<unknown>('/v1/system/security/test-login/credentials', {
+    method: 'POST',
+    json: request,
+  }).then(mapTestLoginResult);
+}
+
+/**
  * Official securityConfigAPI.patchSecurityConfiguration: JSON Patch on the
  * whole SecurityConfiguration document at /v1/system/security/config.
  * Paths are rooted at /authenticationConfiguration/... (or
@@ -251,35 +536,6 @@ export async function getSettingsSource(): Promise<SettingsSourceInfo> {
   };
 }
 
-/**
- * Parse a 400 SecurityValidationResponse body ({ status, errors: [{ field,
- * message }] }) into readable lines. Returns null when the body carries no
- * usable field errors, so callers can fall back to the generic message.
- */
-export function parseSecurityValidationErrors(body: string): string | null {
-  try {
-    const parsed = asRecord(JSON.parse(body)) ?? {};
-    const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
-    const lines = errors
-      .map((entry) => {
-        const rec = asRecord(entry) ?? {};
-        // asString returns '' (not undefined) for a missing key, so fall
-        // back with ||, not ?? — otherwise a message-only error would
-        // swallow the error field entirely.
-        const field = asString(rec.field);
-        const detail = asString(rec.message) || asString(rec.error);
-        if (field && detail) {
-          return `${field}: ${detail}`;
-        }
-        return detail || field || null;
-      })
-      .filter((line): line is string => typeof line === 'string' && line.length > 0);
-    return lines.length > 0 ? lines.join('\n') : null;
-  } catch {
-    return null;
-  }
-}
-
 export function settingAsLoginConfig(value: unknown): LoginConfiguration {
   return mapLogin(value);
 }
@@ -316,6 +572,30 @@ export function settingAsOmUrl(value: unknown): OmBaseUrlConfiguration {
   return { openMetadataUrl: asString(rec.openMetadataUrl) || undefined };
 }
 
+function mapGraphPerformanceConfig(raw: unknown): GraphPerformanceConfig | undefined {
+  const perf = asRecord(raw);
+  if (!perf) {
+    return undefined;
+  }
+  return {
+    cacheTTLSeconds: asNumber(perf.cacheTTLSeconds),
+    enableCaching: asBoolean(perf.enableCaching),
+    enableProgressTracking: asBoolean(perf.enableProgressTracking),
+    largeGraphBatchSize: asNumber(perf.largeGraphBatchSize),
+    maxCachedGraphs: asNumber(perf.maxCachedGraphs),
+    maxInMemoryNodes: asNumber(perf.maxInMemoryNodes),
+    mediumGraphBatchSize: asNumber(perf.mediumGraphBatchSize),
+    mediumGraphThreshold: asNumber(perf.mediumGraphThreshold),
+    progressReportInterval: asNumber(perf.progressReportInterval),
+    scrollTimeoutMinutes: asNumber(perf.scrollTimeoutMinutes),
+    smallGraphBatchSize: asNumber(perf.smallGraphBatchSize),
+    smallGraphThreshold: asNumber(perf.smallGraphThreshold),
+    streamingBatchSize: asNumber(perf.streamingBatchSize),
+    useScrollForLargeGraphs: asBoolean(perf.useScrollForLargeGraphs),
+  };
+}
+
+// ADR:2026-11-18-lineage-settings-save-preserves-unedited-fields
 export function settingAsLineage(value: unknown): LineageSettings {
   const rec = asRecord(value) ?? {};
   const layer = asString(rec.lineageLayer);
@@ -328,6 +608,7 @@ export function settingAsLineage(value: unknown): LineageSettings {
         ? layer
         : undefined,
     pipelineViewMode: mode === 'Edge' || mode === 'Node' ? mode : undefined,
+    graphPerformanceConfig: mapGraphPerformanceConfig(rec.graphPerformanceConfig),
   };
 }
 
@@ -351,24 +632,127 @@ export function settingAsProfiler(value: unknown): ProfilerConfiguration {
   };
 }
 
+function mapFieldBoost(raw: unknown): SearchFieldBoost {
+  const r = asRecord(raw) ?? {};
+  return {
+    field: asString(r.field) || undefined,
+    boost: asNumber(r.boost),
+    matchType: asString(r.matchType) || undefined,
+  };
+}
+
+function mapTermBoost(raw: unknown): SearchTermBoost {
+  const r = asRecord(raw) ?? {};
+  return {
+    field: asString(r.field) || undefined,
+    value: asString(r.value) || undefined,
+    boost: asNumber(r.boost),
+  };
+}
+
+function mapFieldValueBoost(raw: unknown): SearchFieldValueBoost {
+  const r = asRecord(raw) ?? {};
+  const cond = asRecord(r.condition);
+  const range = cond ? asRecord(cond.range) : null;
+  return {
+    field: asString(r.field) || undefined,
+    factor: asNumber(r.factor),
+    modifier: asString(r.modifier) || undefined,
+    missing: asNumber(r.missing),
+    // An absent condition stays absent; a stored empty condition stays an
+    // empty object, with absent bounds left undefined rather than zeroed.
+    condition:
+      cond === null
+        ? undefined
+        : {
+            range:
+              range === null
+                ? undefined
+                : {
+                    gt: asNumber(range.gt),
+                    gte: asNumber(range.gte),
+                    lt: asNumber(range.lt),
+                    lte: asNumber(range.lte),
+                  },
+          },
+  };
+}
+
+function mapAggregation(raw: unknown): SearchAggregation {
+  const r = asRecord(raw) ?? {};
+  return {
+    name: asString(r.name) || undefined,
+    type: asString(r.type) || undefined,
+    field: asString(r.field) || undefined,
+    script: asString(r.script) || undefined,
+  };
+}
+
+function mapMatchTypeBoostMultipliers(raw: unknown): SearchMatchTypeBoostMultipliers | undefined {
+  const r = asRecord(raw);
+  if (!r) {
+    return undefined;
+  }
+  return {
+    exactMatchMultiplier: asNumber(r.exactMatchMultiplier),
+    phraseMatchMultiplier: asNumber(r.phraseMatchMultiplier),
+    fuzzyMatchMultiplier: asNumber(r.fuzzyMatchMultiplier),
+  };
+}
+
+function cloneJsonObject(raw: unknown): Record<string, unknown> | undefined {
+  const rec = asRecord(raw);
+  if (!rec) {
+    return undefined;
+  }
+  // JSON round-trip, not structuredClone: cloning a Vue reactive object with
+  // structuredClone throws a DataCloneError.
+  return JSON.parse(JSON.stringify(rec)) as Record<string, unknown>;
+}
+
+function mapAllowedFieldValueBoosts(raw: unknown): AllowedFieldValueBoostFields[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw.map((row) => {
+    const r = asRecord(row) ?? {};
+    const fields = Array.isArray(r.fields) ? r.fields : [];
+    return {
+      entityType: asString(r.entityType) || '',
+      fields: fields.map((f) => {
+        const fr = asRecord(f) ?? {};
+        return {
+          name: asString(fr.name) || '',
+          description: asString(fr.description) || undefined,
+        };
+      }),
+    };
+  });
+}
+
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
 function mapAssetType(raw: unknown): AssetTypeConfiguration {
   const r = asRecord(raw) ?? {};
   return {
     assetType: asString(r.assetType) || '',
-    searchFields: Array.isArray(r.searchFields)
-      ? r.searchFields.map((f) => {
-          const fr = asRecord(f) ?? {};
-          return { field: asString(fr.field) || undefined, boost: asNumber(fr.boost) };
-        })
-      : undefined,
+    searchFields: Array.isArray(r.searchFields) ? r.searchFields.map(mapFieldBoost) : undefined,
     highlightFields: Array.isArray(r.highlightFields)
       ? r.highlightFields.map((h) => String(h))
       : undefined,
     scoreMode: asString(r.scoreMode) || undefined,
     boostMode: asString(r.boostMode) || undefined,
+    termBoosts: Array.isArray(r.termBoosts) ? r.termBoosts.map(mapTermBoost) : undefined,
+    fieldValueBoosts: Array.isArray(r.fieldValueBoosts)
+      ? r.fieldValueBoosts.map(mapFieldValueBoost)
+      : undefined,
+    aggregations: Array.isArray(r.aggregations) ? r.aggregations.map(mapAggregation) : undefined,
+    ranking: cloneJsonObject(r.ranking),
+    additionalSettings: cloneJsonObject(r.additionalSettings),
+    matchTypeBoostMultipliers: mapMatchTypeBoostMultipliers(r.matchTypeBoostMultipliers),
   };
 }
 
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
 export function settingAsSearch(value: unknown): SearchSettings {
   const rec = asRecord(value) ?? {};
   const global = asRecord(rec.globalSettings) ?? {};
@@ -385,36 +769,12 @@ export function settingAsSearch(value: unknown): SearchSettings {
         : undefined,
       keywordWeight: asNumber(global.keywordWeight),
       semanticWeight: asNumber(global.semanticWeight),
-      termBoosts: Array.isArray(global.termBoosts)
-        ? global.termBoosts.map((b) => {
-            const r = asRecord(b) ?? {};
-            return {
-              field: asString(r.field) || undefined,
-              value: asString(r.value) || undefined,
-              boost: asNumber(r.boost),
-            };
-          })
-        : undefined,
+      termBoosts: Array.isArray(global.termBoosts) ? global.termBoosts.map(mapTermBoost) : undefined,
       fieldValueBoosts: Array.isArray(global.fieldValueBoosts)
-        ? global.fieldValueBoosts.map((b) => {
-            const r = asRecord(b) ?? {};
-            return {
-              field: asString(r.field) || undefined,
-              factor: asNumber(r.factor),
-              modifier: asString(r.modifier) || undefined,
-              missing: asNumber(r.missing),
-            };
-          })
+        ? global.fieldValueBoosts.map(mapFieldValueBoost)
         : undefined,
       aggregations: Array.isArray(global.aggregations)
-        ? global.aggregations.map((a) => {
-            const r = asRecord(a) ?? {};
-            return {
-              name: asString(r.name) || undefined,
-              type: asString(r.type) || undefined,
-              field: asString(r.field) || undefined,
-            };
-          })
+        ? global.aggregations.map(mapAggregation)
         : undefined,
     },
     assetTypeConfigurations: assets.map(mapAssetType),
@@ -436,14 +796,218 @@ export function settingAsSearch(value: unknown): SearchSettings {
           };
         })
       : undefined,
+    allowedFieldValueBoosts: mapAllowedFieldValueBoosts(rec.allowedFieldValueBoosts),
+    nlqConfiguration: cloneJsonObject(rec.nlqConfiguration),
   };
 }
+
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
+export function buildSearchSettingsPayload(config: SearchSettings): SearchSettings {
+  const { globalSettings, ...rest } = config;
+  return globalSettings ? { ...rest, globalSettings: { ...globalSettings } } : { ...rest };
+}
+
+/** The keys the entity search form owns, plus the effective ranking it carries. */
+export type EntitySearchDraft = Pick<
+  AssetTypeConfiguration,
+  'searchFields' | 'highlightFields' | 'scoreMode' | 'boostMode'
+> & { ranking?: SearchRankingConfiguration };
+
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
+export function buildEntitySearchSettingsPayload(
+  loaded: SearchSettings,
+  entityType: string,
+  draft: EntitySearchDraft,
+): SearchSettings {
+  return {
+    ...loaded,
+    assetTypeConfigurations: (loaded.assetTypeConfigurations ?? []).map((item) =>
+      item.assetType === entityType ? { ...item, ...draft } : item,
+    ),
+  };
+}
+
+// The derivation below ports the official SearchSettingsUtils ranking rules
+// 1:1. The ranking subtree stays an opaque record, so the port reads only the
+// paths it derives through this structural view; every other key survives
+// via spread, exactly as in the official code.
+type RankingStageShape = {
+  name?: string;
+  fields?: string[];
+  [key: string]: unknown;
+};
+
+type RankingConfigurationShape = {
+  signals?: { fields?: string[]; [key: string]: unknown };
+  stages?: RankingStageShape[];
+  stopWords?: string[];
+  stopWordsByLanguage?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+const PRIMARY_NAME_FIELDS = ['name', 'displayName', 'fullyQualifiedName'];
+const RANKING_FIELD_SUFFIXES = ['.keyword', '.ngram', '.compound'];
+
+const normalizeRankingField = (field: string) => {
+  for (const suffix of RANKING_FIELD_SUFFIXES) {
+    if (field.endsWith(suffix)) {
+      return field.slice(0, -suffix.length);
+    }
+  }
+
+  return field;
+};
+
+const isPrimaryNameField = (field: string) =>
+  PRIMARY_NAME_FIELDS.includes(normalizeRankingField(field));
+
+const isDescriptionContextField = (field: string) => {
+  const lowerField = field.toLowerCase();
+
+  return (
+    lowerField.includes('description') ||
+    lowerField === 'querytext' ||
+    lowerField === 'extractedtext'
+  );
+};
+
+const withFallbackFields = (fields: Set<string>, fallbackFields: string[] = []) => {
+  const rankingFields = [...fields];
+
+  return rankingFields.length > 0 ? rankingFields : fallbackFields;
+};
+
+const deriveExactNameFields = (configuredFields: string[], fallbackFields: string[]) => {
+  const fields = new Set<string>();
+
+  ['displayName.keyword', 'name.keyword', 'fullyQualifiedName.keyword'].forEach((field) => {
+    if (configuredFields.includes(field)) {
+      fields.add(field);
+    }
+  });
+
+  if (configuredFields.includes('displayName')) {
+    fields.add('displayName.keyword');
+  }
+  if (configuredFields.includes('name')) {
+    fields.add('name.keyword');
+  }
+  if (configuredFields.includes('fullyQualifiedName')) {
+    fields.add('fullyQualifiedName');
+  }
+
+  return withFallbackFields(fields, fallbackFields);
+};
+
+const deriveCloseNameFields = (configuredFields: string[], fallbackFields: string[]) => {
+  const fields = new Set(
+    configuredFields.filter(
+      (field) =>
+        isPrimaryNameField(field) && !field.endsWith('.keyword') && !field.endsWith('.ngram'),
+    ),
+  );
+
+  return withFallbackFields(fields, fallbackFields);
+};
+
+const deriveNgramNameFields = (configuredFields: string[], fallbackFields: string[]) => {
+  const fields = new Set(
+    configuredFields.filter((field) => field.endsWith('.ngram') && isPrimaryNameField(field)),
+  );
+
+  return withFallbackFields(fields, fallbackFields);
+};
+
+const deriveDescriptionFields = (configuredFields: string[], fallbackFields: string[]) => {
+  const fields = new Set(configuredFields.filter(isDescriptionContextField));
+
+  return withFallbackFields(fields, fallbackFields);
+};
+
+const deriveStructuralFields = (configuredFields: string[], fallbackFields: string[]) => {
+  const fields = new Set(
+    configuredFields.filter(
+      (field) =>
+        !isPrimaryNameField(field) &&
+        !isDescriptionContextField(field) &&
+        !field.startsWith('extension.'),
+    ),
+  );
+
+  return withFallbackFields(fields, fallbackFields);
+};
+
+const deriveRankingStageFields = (stage: RankingStageShape, configuredFields: string[]) => {
+  const fallbackFields = stage.fields ?? [];
+
+  if (configuredFields.length === 0) {
+    return fallbackFields;
+  }
+
+  const stageName = (stage.name ?? '').toLowerCase();
+
+  if (stageName.includes('exact')) {
+    return deriveExactNameFields(configuredFields, fallbackFields);
+  }
+  if (stageName.includes('partial') || stageName.includes('ngram')) {
+    return deriveNgramNameFields(configuredFields, fallbackFields);
+  }
+  if (stageName.includes('close') || stageName.includes('name')) {
+    return deriveCloseNameFields(configuredFields, fallbackFields);
+  }
+  if (stageName.includes('description')) {
+    return deriveDescriptionFields(configuredFields, fallbackFields);
+  }
+
+  return deriveStructuralFields(configuredFields, fallbackFields);
+};
+
+// ADR:2026-11-18-search-settings-save-preserves-unedited-fields
+export const getEffectiveRankingConfiguration = (
+  searchConfig: SearchSettings | undefined,
+  assetConfig: AssetTypeConfiguration | null,
+): SearchRankingConfiguration | undefined => {
+  if (assetConfig?.ranking) {
+    return assetConfig.ranking;
+  }
+
+  const defaultRanking = searchConfig?.defaultConfiguration?.ranking;
+
+  if (!defaultRanking) {
+    return undefined;
+  }
+
+  // The schema guarantees a string field; filtering only keeps dirty data
+  // from throwing inside the derive helpers.
+  const configuredFields = (assetConfig?.searchFields ?? [])
+    .map((fieldBoost) => fieldBoost.field)
+    .filter((field): field is string => typeof field === 'string');
+
+  const ranking = defaultRanking as RankingConfigurationShape;
+
+  return {
+    ...defaultRanking,
+    signals: ranking.signals
+      ? {
+          ...ranking.signals,
+          fields: ranking.signals.fields ? [...ranking.signals.fields] : undefined,
+        }
+      : undefined,
+    stages: ranking.stages?.map((stage) => ({
+      ...stage,
+      fields: deriveRankingStageFields(stage, configuredFields),
+    })),
+    stopWords: ranking.stopWords ? [...ranking.stopWords] : undefined,
+    stopWordsByLanguage: ranking.stopWordsByLanguage ? { ...ranking.stopWordsByLanguage } : undefined,
+  };
+};
 
 export function settingAsGlossary(value: unknown): GlossarySettings {
   const rec = asRecord(value) ?? {};
   return { enableTagPropagation: asBoolean(rec.enableTagPropagation) };
 }
 
+// ADR:2026-11-18-entity-rules-round-trip-unedited-fields
 export function settingAsEntityRules(value: unknown): EntityRulesSettings {
   const rec = asRecord(value) ?? {};
   const rules = Array.isArray(rec.entitySemantics) ? rec.entitySemantics : [];
@@ -459,6 +1023,9 @@ export function settingAsEntityRules(value: unknown): EntityRulesSettings {
         ignoredEntities: Array.isArray(r.ignoredEntities)
           ? r.ignoredEntities.map((e) => String(e))
           : undefined,
+        inherited: asBoolean(r.inherited),
+        jsonTree: asString(r.jsonTree) || undefined,
+        provider: asString(r.provider) || undefined,
       } satisfies SemanticsRule;
     }),
   };

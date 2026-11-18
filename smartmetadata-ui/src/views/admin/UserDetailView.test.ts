@@ -3,8 +3,8 @@
  *
  * Licensed under the Apache License, Version 2.0.
  */
-import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
+import Antd, { Checkbox, Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -14,6 +14,7 @@ import UserDetailView from './UserDetailView.vue';
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  patchUser: vi.fn(),
   listPersonalTokens: vi.fn(),
   createPersonalToken: vi.fn(),
   revokePersonalTokens: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/api/users', async () => {
   return {
     ...actual,
     getUser: mocks.getUser,
+    patchUser: mocks.patchUser,
     listPersonalTokens: mocks.listPersonalTokens,
     createPersonalToken: mocks.createPersonalToken,
     revokePersonalTokens: mocks.revokePersonalTokens,
@@ -268,5 +270,216 @@ describe('UserDetailView P1 dual line', () => {
     userGrant = 'grant';
     const wrapper = await mountDetail('u1', { id: 'u9', name: 'bob' });
     expect(wrapper.find('[data-testid="edit-user"]').exists()).toBe(true);
+  });
+});
+
+describe('UserDetailView edit saves with JSON Patch', () => {
+  const userFixture = {
+    id: 'u1',
+    name: 'alice',
+    displayName: 'Alice',
+    email: 'alice@example.com',
+    description: 'About Alice',
+    isAdmin: false,
+    isBot: false,
+    roles: [
+      { id: 'r1', name: 'DataConsumer', type: 'role' },
+      { id: 'r2', name: 'DataSteward', type: 'role' },
+    ],
+    teams: [
+      { id: 't1', name: 'Engineering', type: 'team' },
+      { id: 't2', name: 'Data', type: 'team' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getUser.mockResolvedValue(userFixture);
+    mocks.patchUser.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  async function openEdit(wrapper: Awaited<ReturnType<typeof mountDetail>>) {
+    await wrapper.find('[data-testid="edit-user"]').trigger('click');
+    await flushPromises();
+  }
+
+  async function saveModal() {
+    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+  }
+
+  function modalInput(currentValue: string) {
+    const input = Array.from(document.body.querySelectorAll('.ant-modal input')).find(
+      (element) => (element as HTMLInputElement).value === currentValue,
+    );
+    expect(input).toBeDefined();
+    return new DOMWrapper(input as HTMLInputElement);
+  }
+
+  function modalDescription() {
+    const textarea = document.body.querySelector('.ant-modal textarea') as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    return new DOMWrapper(textarea!);
+  }
+
+  async function setSelectIds(
+    wrapper: Awaited<ReturnType<typeof mountDetail>>,
+    currentIds: string[],
+    nextIds: string[],
+  ) {
+    const selects = wrapper
+      .findAllComponents(Select)
+      .filter((select) => JSON.stringify(select.props('value')) === JSON.stringify(currentIds));
+    expect(selects.length).toBeGreaterThan(0);
+    for (const select of selects) {
+      await select.vm.$emit('update:value', nextIds);
+    }
+    await flushPromises();
+  }
+
+  function lastPatchArgs(): [string, unknown[]] {
+    const call = mocks.patchUser.mock.calls.at(-1);
+    expect(call).toBeDefined();
+    return call as [string, unknown[]];
+  }
+
+  it('sends only the changed display name as a patch op', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('Alice').setValue('Alicia');
+    await saveModal();
+    expect(mocks.patchUser).toHaveBeenCalledTimes(1);
+    expect(lastPatchArgs()).toEqual([
+      'u1',
+      [{ op: 'replace', path: '/displayName', value: 'Alicia' }],
+    ]);
+  });
+
+  it('sends remove ops when display name and description are cleared', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('Alice').setValue('');
+    await modalDescription().setValue('');
+    await saveModal();
+    expect(lastPatchArgs()).toEqual([
+      'u1',
+      [
+        { op: 'remove', path: '/displayName' },
+        { op: 'remove', path: '/description' },
+      ],
+    ]);
+  });
+
+  it('sends team, role, and admin ops with entity refs when they change', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await setSelectIds(wrapper, ['t1', 't2'], ['t2']);
+    await setSelectIds(wrapper, ['r1', 'r2'], ['r2']);
+    const checkbox = wrapper.findComponent(Checkbox);
+    expect(checkbox.exists()).toBe(true);
+    await checkbox.vm.$emit('update:checked', true);
+    await flushPromises();
+    await saveModal();
+    expect(lastPatchArgs()).toEqual([
+      'u1',
+      [
+        { op: 'replace', path: '/isAdmin', value: true },
+        { op: 'replace', path: '/teams', value: [{ id: 't2', type: 'team' }] },
+        { op: 'replace', path: '/roles', value: [{ id: 'r2', type: 'role' }] },
+      ],
+    ]);
+  });
+
+  it('never sends email or unowned-field ops, even when the email input changes', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('alice@example.com').setValue('new@example.com');
+    await modalInput('Alice').setValue('Alicia');
+    await saveModal();
+    const [, ops] = lastPatchArgs();
+    expect(ops).toEqual([{ op: 'replace', path: '/displayName', value: 'Alicia' }]);
+    const paths = (ops as Array<{ path: string }>).map((op) => op.path);
+    expect(paths).not.toContain('/email');
+    expect(paths).not.toContain('/personas');
+    expect(paths).not.toContain('/defaultPersona');
+    expect(paths).not.toContain('/profile');
+    expect(paths).not.toContain('/timezone');
+    expect(paths).not.toContain('/domains');
+  });
+
+  it('sends an empty patch array when nothing changed', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await saveModal();
+    expect(mocks.patchUser).toHaveBeenCalledTimes(1);
+    expect(lastPatchArgs()).toEqual(['u1', []]);
+  });
+
+  it('sends no op for whitespace-only text edits or reordered teams and roles', async () => {
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('Alice').setValue('  Alice  ');
+    await modalDescription().setValue('  About Alice  ');
+    await setSelectIds(wrapper, ['t1', 't2'], ['t2', 't1']);
+    await setSelectIds(wrapper, ['r1', 'r2'], ['r2', 'r1']);
+    await saveModal();
+    expect(lastPatchArgs()).toEqual(['u1', []]);
+  });
+
+  it('sends no op when clearing a text field that was already absent', async () => {
+    mocks.getUser.mockResolvedValue({
+      id: 'u1',
+      name: 'alice',
+      email: 'alice@example.com',
+      isBot: false,
+      roles: [],
+      teams: [],
+    });
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('').setValue('   ');
+    await saveModal();
+    expect(lastPatchArgs()).toEqual(['u1', []]);
+  });
+
+  it('sends no op when the stored value only differs by surrounding whitespace', async () => {
+    mocks.getUser.mockResolvedValue({
+      ...userFixture,
+      displayName: '  Alice  ',
+      description: '  About Alice  ',
+    });
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('  Alice  ').setValue('Alice');
+    await modalDescription().setValue('About Alice');
+    await saveModal();
+    expect(mocks.patchUser).toHaveBeenCalledTimes(1);
+    expect(lastPatchArgs()).toEqual(['u1', []]);
+  });
+
+  it('sends the trimmed form value when a stored padded value really changes', async () => {
+    mocks.getUser.mockResolvedValue({
+      ...userFixture,
+      displayName: '  Alice  ',
+      description: '  About Alice  ',
+    });
+    const wrapper = await mountDetail('u1', { id: 'admin', name: 'admin', isAdmin: true });
+    await openEdit(wrapper);
+    await modalInput('  Alice  ').setValue('  Alicia  ');
+    await modalDescription().setValue('  About Alicia  ');
+    await saveModal();
+    expect(lastPatchArgs()).toEqual([
+      'u1',
+      [
+        { op: 'replace', path: '/displayName', value: 'Alicia' },
+        { op: 'replace', path: '/description', value: 'About Alicia' },
+      ],
+    ]);
   });
 });
