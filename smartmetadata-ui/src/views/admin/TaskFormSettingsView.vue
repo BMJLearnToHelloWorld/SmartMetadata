@@ -20,6 +20,14 @@ import {
   message,
 } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import {
+  buildSettingsBreadcrumbCatalog,
+  getSettingPageBreadcrumbs,
+  toSmBreadcrumbItems,
+} from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import { asRecord, mapEntityRefs } from '@/api/json';
 import {
   createTaskFormSchema,
@@ -57,6 +65,31 @@ import {
 import TaskFormBuilderSection from './TaskFormBuilderSection.vue';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+/**
+ * Pin call site verbatim (`TaskFormSettingsPage.tsx:539-547`):
+ * `getSettingPageEntityBreadCrumb(GOVERNANCE, t('label.task-form-plural'),
+ * TASK_FORMS)`, rendered straight into `TitleBreadcrumb` (`:1083`). The
+ * entity name is the translated plural label, not a registry title: the
+ * page has no registry entry, and pin passes the label directly.
+ * `task-forms` is absent from pin's `settingCategories` table (13 entries,
+ * `GlobalSettingsClassBase.ts:94-147`), so the shared builder emits the
+ * miss crumb literally — empty name, linked to the Hub — exactly as pin
+ * does (`subCategoryObject?.name ?? ''` through `getSettingPath('')`).
+ * CONFLICT-4 ruling (b): reproduce that four-level output literally;
+ * no special case here, the miss comes from the shared catalog lookup.
+ */
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'governance',
+      t('taskForms.title'),
+      'task-forms',
+    ),
+  ),
+);
 
 /**
  * Official page shape (pages/TaskFormSettingsPage): a schema sidebar, a
@@ -450,6 +483,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="task-form-settings-page">
+    <SmBreadcrumb :items="breadcrumbItems" />
     <PageHeader :header="t('taskForms.title')" :sub-header="t('taskForms.lead')" />
     <Typography.Text v-if="errorMessage" type="danger" data-testid="task-form-error">
       {{ errorMessage }}

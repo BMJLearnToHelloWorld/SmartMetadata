@@ -10,7 +10,7 @@
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
-import type { CreateGlossaryTermRequest, GlossaryTerm } from '@/types/governance';
+import type { CreateGlossaryTermRequest, GlossaryTerm, TermReference } from '@/types/governance';
 import type {
   OntologyDataGraph,
   OntologyDataGraphEdge,
@@ -97,6 +97,31 @@ function mapTermChildren(value: unknown): Array<EntityRef & { description?: stri
   });
 }
 
+function mapSynonyms(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+}
+
+function mapTermReferences(value: unknown): TermReference[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const rec = asRecord(item);
+    if (!rec) {
+      return [];
+    }
+    const name = asString(rec.name) || undefined;
+    const endpoint = asString(rec.endpoint) || undefined;
+    if (!name && !endpoint) {
+      return [];
+    }
+    return [{ name, endpoint }];
+  });
+}
+
 function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
   const id = asString(raw.id);
   const name = asString(raw.name);
@@ -118,6 +143,10 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     relatedTerms: mapRelatedTerms(raw.relatedTerms),
     conceptMappings: mapEntityRefs(raw.conceptMappings),
     owners: mapEntityRefs(raw.owners),
+    reviewers: mapEntityRefs(raw.reviewers),
+    domains: mapEntityRefs(raw.domains),
+    synonyms: mapSynonyms(raw.synonyms),
+    references: mapTermReferences(raw.references),
     tags: mapTags(raw.tags),
     // Ant Table draws an expand icon for any truthy children value and an
     // empty array is truthy, so childless terms must carry no children key

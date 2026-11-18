@@ -161,13 +161,48 @@ export function getDefaultTabs(
   });
 }
 
-/** Default widget layout for one tab; [] when the tab has no default. */
+/**
+ * Default widget layout for one tab; [] when the tab has no default.
+ * A per-tab entry (`defaultLayoutByTab`) wins over the shared
+ * `defaultLayout`: official `getDefaultLayout(tab)` is tab-sensitive,
+ * and Container is the page type where that matters — CHILDREN gets
+ * the single CONTAINER_CHILDREN widget, SCHEMA the LeftPanel layout
+ * (`utils/ContainerDetailsClassBase.ts:115-204`, pin 392b3efd). This
+ * lookup is shared by the editor (`getDefaultTabs` initial tab
+ * layouts, `CustomizeTabWidget` preview) and the read-side default
+ * (`customizeWidgetLayout`), so the correction lands on both paths
+ * at once; neither path may bypass it with the raw table.
+ */
 export function getDefaultWidgetForTab(pageType: string, tab: string): WidgetConfig[] {
   const table = PAGE_DATA_TABLES[pageType];
   if (!table || !table.layoutAppliesTo.includes(tab)) {
     return [];
   }
-  return cloneJson(table.defaultLayout) as WidgetConfig[];
+  return cloneJson(table.defaultLayoutByTab?.[tab] ?? table.defaultLayout) as WidgetConfig[];
+}
+
+/**
+ * Whether the official detail page mounts its widget grid (`GenericTab`)
+ * on this tab. Officially each page type mounts the grid on exactly one
+ * tab (Container: two) — the tab whose `getDefaultLayout` is non-trivial
+ * — and every other tab renders fixed children, so a stored layout on a
+ * non-mount tab is never rendered (verified by `<GenericTab` mount grep
+ * at pin 392b3efd: one mount per `*Utils.tsx` tab builder, e.g.
+ * Table SCHEMA, Glossary TERMS, Container CHILDREN + SCHEMA, Metric
+ * OVERVIEW). The 25 official mount points (24 page types; Container
+ * mounts twice) all fall inside `layoutAppliesTo`; `layoutAppliesTo`
+ * additionally carries DataMarketplace/overview, which has no official
+ * GenericTab mount (the marketplace walks its own chain), and the two
+ * Container mounts are mutually exclusive (see `widgetLayoutFor` in
+ * AssetDetailView.vue). No view consults this gate with DataMarketplace,
+ * so the extra entry has zero runtime effect. Read-side activation must
+ * consult this: mounting a grid on any resolved tab entry would blank
+ * every non-primary tab of any editor-saved page, because the editor
+ * saves all tabs with `layout: []` on the non-editable ones.
+ */
+export function isWidgetLayoutTab(pageType: string, tabId: string): boolean {
+  const table = PAGE_DATA_TABLES[pageType];
+  return table ? table.layoutAppliesTo.includes(tabId) : false;
 }
 
 export function getCustomizableWidgetByPage(pageType: string): CommonWidgetType[] {

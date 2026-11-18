@@ -224,6 +224,8 @@ const ICONS: Record<string, Component> = {
   // app-layout, dataAssets) deliberately have no row; the grid
   // renders no icon for them rather than a guessed one. `askCollateSidebar` needs no row: it
   // is excluded from the card grid (R-C4-SIDEBAR).
+  // Ruling (Bai 2026-11-18, F-4 option (a)): no icon is the permanent final
+  // state for these three keys; do not invent glyphs for them.
   APICollection: ApiOutlined,
   APIEndpoint: GatewayOutlined,
   Chart: LineChartOutlined,

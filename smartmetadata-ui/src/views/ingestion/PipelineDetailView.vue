@@ -7,6 +7,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, type RouteLocationRaw } from 'vue-router';
 import {Alert, Button, Descriptions, Tag, Tooltip, message} from 'ant-design-vue';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import GenericTab from '@/components/customize/GenericTab.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import {
   deleteIngestionPipeline,
@@ -22,7 +24,9 @@ import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
+import { getDetailsTabWithNewLabel, findCustomizedTabEntry, useCustomPages } from '@/composables/useCustomPages';
+import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import { buildCliWorkflowYaml } from '@/ingestion/cliWorkflow';
@@ -43,9 +47,13 @@ import type {
   PipelineStatus,
   ServiceKind,
 } from '@/types/ingestion';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 import IngestionLogsModal from './IngestionLogsModal.vue';
 import IngestionRunDetailsModal from './IngestionRunDetailsModal.vue';
 import KillPipelineModal from './KillPipelineModal.vue';
+import PipelineDetailWidgetCell, {
+  type PipelineDetailWidgetFragment,
+} from './PipelineDetailWidgetCell.vue';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
@@ -193,11 +201,16 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => {
 });
 
 // C-4 consume side: the selected persona's Pipeline page reorders and
-// renames these tabs (official `getDetailsTabWithNewLabel`, preserve
-// mode — see `useCustomPages.ts`). This is the ingestion-pipeline
-// surface (overview + runs), not the official catalog-Pipeline tab
-// set, so preserve mode is what keeps the runs (status) tab from
-// being removed by a customization that never mentions it.
+// renames these tabs (official `getDetailsTabWithNewLabel` — see
+// `useCustomPages.ts`). This is the ingestion-pipeline surface
+// (overview + runs), not the official catalog-Pipeline tab set: the
+// Pipeline TabsIds (`tasks`, `activity_feed`, `executions`, `lineage`,
+// `contract`, `custom_properties`) resolve to neither rendered key,
+// so both keys are product-only surfaces the editor's tab model can
+// never mention (it writes Pipeline TabsIds only — a stored document
+// can still name `overview` through the `documentation` alias, which
+// renames it rather than removing it), and `preserveKeys` keeps
+// them; only an explicitly empty list removes them.
 const { customizedPage } = useCustomPages('Pipeline');
 
 const tabs = computed<EntityDetailTab[]>(() =>
@@ -207,9 +220,53 @@ const tabs = computed<EntityDetailTab[]>(() =>
       { key: 'status', label: t('ingestion.pipelines.statusTab'), testId: 'pipeline-tab-status' },
     ],
     customizedPage.value?.tabs,
-    { preserveUnlisted: true },
+    { preserveKeys: ['overview', 'status'] },
   ),
 );
+
+// B-8 widget layer: a tab renders the widget grid only when the
+// customized page carries a tab entry resolving to the rendered tab
+// key AND the entry's official id is a mount tab for this page type
+// (`isWidgetLayoutTab`). The editor saves an entry for every system
+// tab with `layout: []` on the non-editable ones, so entry existence
+// alone would blank tabs whose official children are fixed. The
+// check uses the ENTRY's id — not the rendered key, which may differ
+// through an alias — because the official mount set is keyed by tab
+// id. The mechanism is currently inert on this surface: the Pipeline
+// mount tab is `tasks`, and this ingestion-pipeline view renders no
+// tasks tab (overview + status only), so no stored entry can both
+// resolve to a rendered key and pass the mount check; the wiring
+// stays so a future tasks surface activates it without a behavior
+// change here. A resolved mount tab whose layout is []/missing/
+// non-array would still render an empty grid. `null` means "no grid"
+// (no entry, a non-mount entry, or no customized page): the existing
+// default pane renders unchanged. An empty array is a real (empty)
+// grid, so callers compare against `null` rather than truthiness.
+function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
+  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, slotKey);
+  if (!entry?.id) {
+    return null;
+  }
+  if (!isWidgetLayoutTab('Pipeline', entry.id)) {
+    return null;
+  }
+  return resolveWidgetLayout('Pipeline', entry.id, customizedPage.value);
+}
+
+// Content-key → widget-cell fragment. This surface is not the
+// official catalog Pipeline page: it has no task graph, no
+// executions widget, and no custom-properties surface, so only the
+// two fragments below have content here. Every other key (including
+// PIPELINE_TASKS) maps to no fragment and its cell stays empty while
+// keeping its grid space.
+const WIDGET_CONTENT_FRAGMENTS: Record<string, PipelineDetailWidgetFragment> = {
+  [DetailWidgetKeys.DESCRIPTION]: 'description',
+  [DetailWidgetKeys.OWNERS]: 'owners',
+};
+
+function fragmentForContentKey(contentKey: string | null): PipelineDetailWidgetFragment | null {
+  return contentKey ? (WIDGET_CONTENT_FRAGMENTS[contentKey] ?? null) : null;
+}
 
 /** P-37: triggeredBy renders when present, the column drops when always empty. */
 const hasTriggeredBy = computed(() => statuses.value.some((status) => Boolean(status.triggeredBy)));
@@ -616,6 +673,20 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
+      <GenericTab
+        v-if="widgetLayoutFor('overview') !== null"
+        :layout="widgetLayoutFor('overview') ?? []"
+        page-type="Pipeline"
+      >
+        <template #widget="{ contentKey }">
+          <PipelineDetailWidgetCell
+            :fragment="fragmentForContentKey(contentKey)"
+            :pipeline="pipeline"
+            :owners-label="ownersLabel"
+          />
+        </template>
+      </GenericTab>
+      <template v-else>
       <Alert
         v-if="orchestratorUnavailable"
         type="warning"
@@ -679,8 +750,23 @@ onMounted(() => {
         </Button>
       </p>
       <pre v-if="cliYaml" class="ing-yaml" data-testid="pipeline-cli-yaml">{{ cliYaml }}</pre>
+      </template>
     </template>
     <template #status>
+      <GenericTab
+        v-if="widgetLayoutFor('status') !== null"
+        :layout="widgetLayoutFor('status') ?? []"
+        page-type="Pipeline"
+      >
+        <template #widget="{ contentKey }">
+          <PipelineDetailWidgetCell
+            :fragment="fragmentForContentKey(contentKey)"
+            :pipeline="pipeline"
+            :owners-label="ownersLabel"
+          />
+        </template>
+      </GenericTab>
+      <template v-else>
       <Alert
         v-if="statusError"
         type="error"
@@ -729,6 +815,7 @@ onMounted(() => {
       >
         {{ t('crud.loadMore') }}
       </Button>
+      </template>
     </template>
   </EntityDetailShell>
   <IngestionLogsModal

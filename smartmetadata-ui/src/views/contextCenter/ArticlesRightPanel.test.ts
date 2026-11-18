@@ -43,7 +43,7 @@ function mountPanel(props: { refreshSignal?: number; canCreate?: boolean } = {})
 
 function tagPayload(fqn: string) {
   return {
-    data: [{ id: `tag-${fqn}`, name: fqn.split('.')[1], fullyQualifiedName: fqn, owners: [] }],
+    data: [{ id: `tag-${fqn}`, name: fqn.split('.')[1], fullyQualifiedName: fqn, owners: [], reviewers: [], domains: [] }],
     total: 1,
   };
 }

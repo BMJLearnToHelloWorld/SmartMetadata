@@ -141,4 +141,37 @@ describe('tags API', () => {
       expect.objectContaining({ name: 'Tier2', style: undefined }),
     ]);
   });
+
+  it('maps the requested reviewers/domains instead of dropping them', async () => {
+    // B-2: TAG_FIELDS requests reviewers/domains, but mapTag dropped
+    // them. No new request is introduced — the mapping only keeps what
+    // the server already returns.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'tg1',
+                name: 'Sensitive',
+                fullyQualifiedName: 'PII.Sensitive',
+                reviewers: [{ id: 'u2', name: 'carol', type: 'user', displayName: 'Carol' }],
+                domains: [{ id: 'd1', name: 'marketing', type: 'domain' }],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listTags({ parent: 'PII' });
+    expect(page.data[0]?.reviewers).toEqual([
+      { id: 'u2', name: 'carol', displayName: 'Carol', type: 'user' },
+    ]);
+    expect(page.data[0]?.domains).toEqual([{ id: 'd1', name: 'marketing', type: 'domain' }]);
+    expect(lastFetch().url).toContain('reviewers');
+    expect(lastFetch().url).toContain('domains');
+  });
 });

@@ -54,8 +54,10 @@ describe('loadGovernanceCatalog', () => {
           description: 'Handle with care',
           fullyQualifiedName: 'PII.Sensitive',
           owners: [],
+          reviewers: [],
+          domains: [],
         },
-        { id: 't2', name: 'Plain', fullyQualifiedName: 'PII.Plain', owners: [] },
+        { id: 't2', name: 'Plain', fullyQualifiedName: 'PII.Plain', owners: [], reviewers: [], domains: [] },
       ],
     });
     const catalog = await loadGovernanceCatalog();
@@ -92,6 +94,10 @@ describe('loadGovernanceCatalog', () => {
           fullyQualifiedName: 'Business.Revenue',
           relatedTerms: [],
           owners: [],
+          reviewers: [],
+          domains: [],
+          synonyms: [],
+          references: [],
           tags: [],
         },
       ],

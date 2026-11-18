@@ -2,6 +2,13 @@
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
   Official CustomizationPageSettings defaultAppMode only (Collate sidebar OUT).
+
+  B-13 (Bai 2026-11-18 21:43, §6.5 R-C4-APPMODE-TENANT close): AI is out of
+  scope, so the tenant `ai` option is DISABLED, not hidden — consistent with
+  the M3 precedent in the persona AppLayoutEditor. Label and testid are kept,
+  a stored `ai` value still renders as the selected (disabled) option, the
+  user cannot newly select `ai`, and leaving `ai` (switch to `classic` or
+  clear via allow-clear) is unrestricted.
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -72,7 +79,7 @@ onMounted(() => {
       <Form layout="vertical">
         <Form.Item :label="t('settings.appMode.defaultMode')">
           <Select v-model:value="form.defaultAppMode" allow-clear data-testid="app-mode-select">
-            <Select.Option value="ai">{{ t('settings.appMode.ai') }}</Select.Option>
+            <Select.Option value="ai" :disabled="true">{{ t('settings.appMode.ai') }}</Select.Option>
             <Select.Option value="classic">{{ t('settings.appMode.classic') }}</Select.Option>
           </Select>
         </Form.Item>

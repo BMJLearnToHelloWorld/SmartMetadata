@@ -13,6 +13,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import GenericTab from '@/components/customize/GenericTab.vue';
 import PipelineDetailView from './PipelineDetailView.vue';
 
 vi.mock('@/features/crud/confirmDelete', () => ({
@@ -696,7 +698,7 @@ describe('PipelineDetailView persona tab customization (C-4)', () => {
 
   // The ingestion-pipeline surface is overview + runs (status); a
   // customization may rename the overview tab through the
-  // `documentation` alias, and preserve mode keeps the runs tab.
+  // `documentation` alias, and preserveKeys keeps the runs tab.
   it('renames the overview tab from the persona Pipeline page and keeps the runs tab', async () => {
     stubWithDoc({
       name: 'analyst-persona',
@@ -745,4 +747,256 @@ describe('PipelineDetailView persona tab customization (C-4)', () => {
     expect(tabLabels(wrapper)).toEqual(['Overview', 'Status']);
     wrapper.unmount();
   });
+
+  it('renders no tab bar for an explicitly empty Pipeline tab list without throwing', async () => {
+    // F-1/F-2 stacking: the empty list short-circuits before
+    // preservation, so even the two preserved keys render no tabs.
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Pipeline',
+            tabs: [],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.ant-tabs-nav').exists()).toBe(false);
+    expect(wrapper.text()).toContain('warehouse-metadata');
+    wrapper.unmount();
+  });
+});
+
+describe('PipelineDetailView widget layer (B-8)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function docWithPage(pageType: string, tabs: Array<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType, tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
+        if (url.includes('/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/pipelineStatus')) {
+          return jsonResponse({
+            data: [{ runId: 'r1', pipelineState: 'success', timestamp: 1710000000000 }],
+          });
+        }
+        if (url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({
+            id: 'p1',
+            name: 'warehouse-metadata',
+            fullyQualifiedName: 'warehouse.warehouse-metadata',
+            description: 'Warehouse metadata pipeline',
+            pipelineType: pipelineTypeOverride ?? 'metadata',
+            service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
+            sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
+            airflowConfig: { pausePipeline: true },
+            enabled: true,
+            deployed: true,
+            owners: [{ id: 'u1', type: 'user', name: 'alice', displayName: 'Alice' }],
+          });
+        }
+        if (url.includes('/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'warehouse',
+            serviceType: 'Postgres',
+            connection: { config: { type: 'Postgres', hostPort: 'localhost:5432', database: 'analytics' } },
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function settle(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): Promise<void> {
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('does not mount a grid for a non-mount tab entry and keeps the default overview', async () => {
+    // Corrected activation: the Pipeline mount tab is `tasks`, and
+    // `documentation` is not a Pipeline tab id at all — the alias
+    // that resolves it to the rendered `overview` tab (a
+    // Domain/DataProduct mapping) must not activate a grid here.
+    // The default overview renders in full: CLI YAML plus the
+    // source-config summary.
+    const layout = [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }];
+    stubWithDoc(
+      docWithPage('Pipeline', [{ id: 'documentation', name: 'documentation', layout }]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Warehouse metadata pipeline');
+    expect(wrapper.text()).toContain('DatabaseMetadata');
+    expect(wrapper.find('[data-testid="pipeline-widget-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the default overview for an empty-layout non-mount entry', async () => {
+    stubWithDoc(
+      docWithPage('Pipeline', [{ id: 'documentation', name: 'documentation', layout: [] }]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('does not mount a grid for an overview-id entry: exact match, non-mount tab', async () => {
+    // The mount check runs on the entry id even when it matches the
+    // rendered key exactly: `overview` is not a Pipeline mount tab.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps both default panes when a customization mentions only non-mount entries', async () => {
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    // Neither tab mounts a grid: the status tab has no customized
+    // entry (no official id resolves to it), and the overview entry
+    // is a non-mount id.
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-status-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('r1');
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the default overview with no grid when there is no persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('stays inert for a realistic editor-saved Pipeline page: the mount entry has no tasks surface', async () => {
+    // Decisive inertness test: the editor saves an entry per
+    // Pipeline tab, with a layout only on the mount tab `tasks`.
+    // This ingestion-pipeline surface renders no `tasks` tab
+    // (overview + status only), so the mount entry resolves to no
+    // rendered key and no grid activates; both default panes render.
+    // The missing tasks surface is a residual, not a reason to build
+    // one here; the widget-cell fragments stay wired for a future
+    // surface but are unreachable while inert.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'tasks',
+          name: 'tasks',
+          editable: true,
+          layout: [{ i: DetailWidgetKeys.PIPELINE_TASKS, x: 0, y: 0, w: 8, h: 4 }],
+        },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'executions', name: 'executions', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Warehouse metadata pipeline');
+    expect(wrapper.find('[data-testid="pipeline-status-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('r1');
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the default overview when widget ids mention owners and tasks fragments', async () => {
+    // Same fixture shape as the old fragment-mapping test, now
+    // asserting the corrected behavior: the non-mount entry mounts
+    // no grid, so the owners/tasks fragments never render as cells;
+    // the owners datum still shows in the default overview.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [
+            { i: DetailWidgetKeys.OWNERS, x: 0, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.PIPELINE_TASKS, x: 4, y: 0, w: 4, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-widget-owners"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Alice');
+    wrapper.unmount();
+  }, 20000);
 });

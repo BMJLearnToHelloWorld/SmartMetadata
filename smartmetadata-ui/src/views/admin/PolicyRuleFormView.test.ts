@@ -11,7 +11,9 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import type { SupportedLocale } from '@/i18n/localePreference';
 import { createTestI18n } from '@/test/i18n';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PolicyRuleFormView from './PolicyRuleFormView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -41,12 +43,13 @@ const policyPayload = {
   ],
 };
 
-async function mountForm(props: { id: string; ruleName?: string }) {
+async function mountForm(props: { id: string; ruleName?: string }, locale: SupportedLocale = 'en-US') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/settings', name: 'admin-settings', component: { template: '<div>hub</div>' } },
       { path: '/admin/policies', name: 'admin-policies', component: { template: '<div>list</div>' } },
       { path: '/admin/policies/:id', name: 'admin-policy', component: { template: '<div>detail</div>' } },
       {
@@ -71,7 +74,7 @@ async function mountForm(props: { id: string; ruleName?: string }) {
   await router.isReady();
   const wrapper = mount(PolicyRuleFormView, {
     props,
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -167,5 +170,35 @@ describe('PolicyRuleFormView', () => {
     const rules = body[0].value as Array<{ name: string; fullyQualifiedName?: string }>;
     expect(rules).toHaveLength(1);
     expect(rules[0].fullyQualifiedName).toBe('DataConsumerPolicy.DataConsumerPolicy-Rule');
+  });
+
+  it('renders the pin self-built four-item breadcrumb on Add, with no Access Control level', async () => {
+    const { wrapper } = await mountForm({ id: 'p1' });
+    expect(wrapper.findComponent(SmBreadcrumb).props('items')).toEqual([
+      { label: 'Settings', routeName: 'admin-settings' },
+      { label: 'Policies', routeName: 'admin-policies' },
+      { label: 'Data Consumer', routeName: 'admin-policy', routeParams: { id: 'p1' } },
+      { label: 'Add New Rule' },
+    ]);
+  });
+
+  it('renders the pin self-built four-item breadcrumb on Add in zh, ending with the template label', async () => {
+    const { wrapper } = await mountForm({ id: 'p1' }, 'zh-CN');
+    expect(wrapper.findComponent(SmBreadcrumb).props('items')).toEqual([
+      { label: '设置', routeName: 'admin-settings' },
+      { label: '策略', routeName: 'admin-policies' },
+      { label: 'Data Consumer', routeName: 'admin-policy', routeParams: { id: 'p1' } },
+      { label: '添加新规则' },
+    ]);
+  });
+
+  it('renders the pin self-built four-item breadcrumb on Edit, ending with the rule name', async () => {
+    const { wrapper } = await mountForm({ id: 'p1', ruleName: 'DataConsumerPolicy-Rule' });
+    expect(wrapper.findComponent(SmBreadcrumb).props('items')).toEqual([
+      { label: 'Settings', routeName: 'admin-settings' },
+      { label: 'Policies', routeName: 'admin-policies' },
+      { label: 'Data Consumer', routeName: 'admin-policy', routeParams: { id: 'p1' } },
+      { label: 'DataConsumerPolicy-Rule' },
+    ]);
   });
 });

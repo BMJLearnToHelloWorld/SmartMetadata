@@ -105,13 +105,31 @@ describe('getSettingPageBreadcrumbs (pin getSettingPageEntityBreadCrumb)', () =>
   it('reproduces pin literally for an unknown sub-category with an entity name', () => {
     // Pin: `getSettingPath(subCategoryObject?.url ?? '')`, and an empty
     // `getSettingPath` input yields `/settings` — the empty-name crumb links
-    // to the Hub. No pin call site produces this; the test pins the literal
-    // mechanism so a future "fix" cannot silently change it.
+    // to the Hub. The Task Forms call site is the pin call site that
+    // produces this (CONFLICT-4 ruling (b)); this case pins the generic
+    // mechanism, the Task Forms case below pins the real input.
     expect(getSettingPageBreadcrumbs(catalog, locate, 'preferences', 'Entity', 'no-such-sub')).toEqual([
       { label: 'Settings', to: '/settings' },
       { label: 'Preferences', to: '/settings/preferences' },
       { label: '', to: '/settings' },
       { label: 'Entity' },
+    ]);
+  });
+
+  it('reproduces the Task Forms four-level trail literally (CONFLICT-4 ruling (b))', () => {
+    // Pin call site `TaskFormSettingsPage.tsx:539-547` passes
+    // (GOVERNANCE, t('label.task-form-plural'), TASK_FORMS); `task-forms`
+    // is absent from pin's 13-entry `settingCategories` table
+    // (`GlobalSettingsClassBase.ts:94-147`), so pin emits the empty-name
+    // sub-category crumb linked to the Hub. The fixture table mirrors
+    // pin's 13 entries: the miss must come from the catalog lookup, never
+    // from a special case in the builder.
+    expect(catalog.entries.has('task-forms')).toBe(false);
+    expect(getSettingPageBreadcrumbs(catalog, locate, 'governance', 'Task Forms', 'task-forms')).toEqual([
+      { label: 'Settings', to: '/settings' },
+      { label: 'Governance', to: '/settings/governance' },
+      { label: '', to: '/settings' },
+      { label: 'Task Forms' },
     ]);
   });
 

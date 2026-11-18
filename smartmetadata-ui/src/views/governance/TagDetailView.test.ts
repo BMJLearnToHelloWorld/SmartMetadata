@@ -8,6 +8,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
@@ -30,10 +31,12 @@ async function mountTag(id: string) {
   });
   await router.push('/governance/classifications/c1');
   await router.isReady();
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const wrapper = mount(TagDetailView, {
     props: { id },
     global: {
-      plugins: [router, Antd, createTestI18n()],
+      plugins: [pinia, router, Antd, createTestI18n()],
     },
   });
   await flushPromises();
@@ -116,10 +119,12 @@ describe('TagDetailView versions entry (M-Next A4)', () => {
     });
     await router.push('/governance/tags/t1');
     await router.isReady();
+    const pinia = createPinia();
+    setActivePinia(pinia);
     const wrapper = mount(TagDetailView, {
       props: { id: 't1' },
       global: {
-        plugins: [router, Antd, createTestI18n()],
+        plugins: [pinia, router, Antd, createTestI18n()],
       },
     });
     await flushPromises();
@@ -127,5 +132,255 @@ describe('TagDetailView versions entry (M-Next A4)', () => {
     await wrapper.find('[data-testid="tag-versions"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe('/governance/tags/t1/versions/0.2');
+  });
+});
+
+describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function tagDoc(tabs: unknown[]) {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'Tag', tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            description: 'Sensitive data',
+            fullyQualifiedName: 'PII.pii',
+            classification: { id: 'c1', name: 'PII', displayName: 'PII' },
+            owners: [{ id: 'u1', name: 'alice', displayName: 'Alice' }],
+            reviewers: [{ id: 'u2', name: 'carol', displayName: 'Carol' }],
+            domains: [{ id: 'd1', name: 'marketing', displayName: 'Marketing' }],
+            disabled: false,
+            usageCount: 7,
+          });
+        }
+        if (url.includes('/api/v1/activity/entity/tag/')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'e1',
+                eventType: 'EntityUpdated',
+                summary: 'description changed',
+                timestamp: 1700000000000,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+  }
+
+  async function mountTagView() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/classifications', name: 'governance-classifications', component: { template: '<div>list</div>' } },
+        { path: '/governance/classifications/:id', name: 'governance-classification', component: { template: '<div>detail</div>' } },
+        { path: '/governance/tags/:id', name: 'governance-tag', component: TagDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/tags/t1');
+    await router.isReady();
+    const wrapper = mount(TagDetailView, {
+      props: { id: 't1' },
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountTagView>>): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  function widgetTestIds(wrapper: Awaited<ReturnType<typeof mountTagView>>): string[] {
+    return wrapper
+      .findAll('[data-testid^="widget-"]')
+      .map((node) => node.attributes('data-testid') as string);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders the fixed official tab list with the existing overview content', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    expect(tabLabels(wrapper)).toEqual([
+      'Overview',
+      'Assets',
+      'Activity feed',
+      'Data Observability',
+    ]);
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    // Assets and data-observability have no product backing: two honest
+    // residual states with distinct stated reasons.
+    const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
+    expect(residuals).toHaveLength(2);
+    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(2);
+    wrapper.unmount();
+  });
+
+  it('does not reorder or rename tabs from a customized Tag page (fixed list)', async () => {
+    stubWithDoc(
+      tagDoc([
+        { id: 'assets', name: 'assets', displayName: 'Stuff' },
+        { id: 'overview', name: 'overview', displayName: 'Home' },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    expect(tabLabels(wrapper)).toEqual([
+      'Overview',
+      'Assets',
+      'Activity feed',
+      'Data Observability',
+    ]);
+    wrapper.unmount();
+  });
+
+  it('renders the widget grid on overview from a stored customized Tag page (history data)', async () => {
+    stubWithDoc(
+      tagDoc([
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [
+            { i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 },
+            { i: 'KnowledgePanel.Owners', x: 6, y: 0, w: 2, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Sensitive data');
+    expect(wrapper.find('[data-testid="widget-owners"]').text()).toContain('Alice');
+    // The disable toggle is overview-pane content: absent in widget mode.
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('renders the domain and reviewer widgets from the mapped tag fields', async () => {
+    // B-2: reviewers/domains were requested (TAG_FIELDS) but dropped by
+    // mapTag. REVIEWER reaches Tag pages through the shared CommonWidgets
+    // registry (official TagClassBase delegates every id to
+    // CommonWidgets; the registry carries REVIEWER), so both branches
+    // render here.
+    stubWithDoc(
+      tagDoc([
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [
+            { i: 'KnowledgePanel.Domain', x: 0, y: 0, w: 4, h: 1 },
+            { i: 'KnowledgePanel.Reviewer', x: 4, y: 0, w: 4, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    expect(wrapper.find('[data-testid="widget-domain"]').text()).toContain('Marketing');
+    expect(wrapper.find('[data-testid="widget-reviewer"]').text()).toContain('Carol');
+    wrapper.unmount();
+  });
+
+  it('renders an empty grid when the entry carries no layout', async () => {
+    stubWithDoc(tagDoc([{ id: 'overview', name: 'overview' }]));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('loads activity through the generic activity APIs', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    const calls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(calls.some((url) => url.includes('/api/v1/activity/entity/tag/name/'))).toBe(true);
+    expect(calls.some((url) => url.includes('/api/v1/conversations'))).toBe(true);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').text()).toContain('description changed');
+    wrapper.unmount();
+  });
+
+  it('keeps existing panels on non-mount tabs when their entries resolve', async () => {
+    stubWithDoc(
+      tagDoc([
+        {
+          id: 'assets',
+          name: 'assets',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+        { id: 'data_observability', name: 'data_observability', layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    // Neither assets nor data-observability is the widget-layout tab:
+    // both keep their residual states, and overview keeps its pane.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('keeps every non-mount tab intact for an editor-saved page (all tabs, layout on overview only)', async () => {
+    stubWithDoc(
+      tagDoc([
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+        { id: 'assets', name: 'assets', layout: [] },
+        { id: 'activity_feed', name: 'activity_feed', layout: [] },
+        { id: 'data_observability', name: 'data_observability', layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    // Mount tab: the grid replaces the overview pane.
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Sensitive data');
+    expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
+    expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
+    // Every other tab keeps its existing panel.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    wrapper.unmount();
   });
 });

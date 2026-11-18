@@ -27,7 +27,12 @@ import { fetchGlossaryGraphData } from '@/features/ontology/glossaryGraph';
 import type { OntologyGraphData } from '@/features/ontology/ontologyGraph';
 import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
-import { getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import GenericTab from '@/components/customize/GenericTab.vue';
+import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
+import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
+import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
@@ -223,9 +228,12 @@ const filteredTerms = computed(() => {
 const activityCount = computed(
   () => activityEvents.value.length + activityConversations.value.length + activityTasks.value.length,
 );
-// C-4 consume side: the selected persona's Glossary page reorders and
-// renames these tabs (official `getDetailsTabWithNewLabel`, preserve
-// mode — see `useCustomPages.ts`).
+// C-4 consume side: the selected persona's Glossary page replaces
+// these tabs (official `getDetailsTabWithNewLabel` — see
+// `useCustomPages.ts`). No tab is preserved: every rendered key
+// resolves to an official Glossary id, exactly (`terms`) or through
+// an alias (`relations_graph` → `relations`, `activity_feed` →
+// `activity`), so a customization can remove any of them.
 const { customizedPage } = useCustomPages('Glossary');
 
 const glossaryTabs = computed(() =>
@@ -240,8 +248,69 @@ const glossaryTabs = computed(() =>
             : t(tab.labelKey),
     })),
     customizedPage.value?.tabs,
-    { preserveUnlisted: true },
   ),
+);
+
+// Widget layer (B-8): the widget grid mounts ONLY on this page type's
+// widget-layout tab (Glossary: terms), and only when the customized
+// page has a tab entry resolving to the rendered tab key whose
+// official id is that mount tab (`isWidgetLayoutTab`, reading
+// layoutAppliesTo — the official GenericTab mount set, one tab per
+// page type). The editor saves ALL tabs with layout: [] on the
+// non-mount ones, so entry resolution alone would blank every other
+// tab; non-mount tabs always keep their existing panels. The grid
+// renders the entry's resolved layout, including empty when the entry
+// carries no layout. The entry's own id — never the rendered key —
+// is passed to the layout resolver, because the official lookup
+// matches tab entries by id only (`customizeWidgetLayout.ts`). The
+// rail aside stays visible in both modes: it is page chrome, not tab
+// content, so a DOMAIN/OWNERS/REVIEWER/TAGS widget duplicates the
+// rail entry it mirrors.
+// Dispatch-resolvable keys with no branch in this view's widget chain,
+// absent on purpose, so their cells stay empty (same disclosure format
+// as AssetDetailView): DATA_PRODUCTS — the Glossary spec carries it,
+// but GLOSSARY_FIELDS does not request it and the Glossary type carries
+// none, so there is no supporting data; EXPERTS — the Glossary spec
+// (`entity/data/glossary.json`) carries no such field; CUSTOM_PROPERTIES
+// — this view loads no custom-property defs and the Glossary type
+// carries no `extension`, so the widget would need a defs fetch (see
+// the defs-fetch pattern in DomainDetailView); KNOWLEDGE_ARTICLE — no
+// knowledge-article data source exists in the product. LEFT_PANEL is
+// structural, not a missing branch: GenericTab renders the panel's
+// children and never offers the panel itself to the slot.
+function customizedEntryFor(tabKey: string) {
+  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
+  if (!entry?.id || !isWidgetLayoutTab('Glossary', entry.id)) {
+    return undefined;
+  }
+  return entry;
+}
+
+function widgetLayoutFor(tabKey: string) {
+  const entry = customizedEntryFor(tabKey);
+  return entry ? resolveWidgetLayout('Glossary', entry.id, customizedPage.value) : [];
+}
+
+// Tag labels split the official way: glossary-sourced labels are the
+// glossary-terms widget, the rest are the tags widget.
+const glossaryTags = computed(() =>
+  (glossary.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
+);
+const glossaryGlossaryTerms = computed(() =>
+  (glossary.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
+);
+const glossaryTierTag = computed(() => getTierTag(glossary.value?.tags ?? []));
+const glossaryCertificationTag = computed(() => getCertificationTag(glossary.value?.tags ?? []));
+
+function tagFqnList(tags: readonly TagRef[]): string {
+  return tags.map((tag) => tag.tagFQN).join(', ');
+}
+
+// The terms-table widget renders the current page flat: children are
+// stripped so no expand icon (and no synthetic lazy-load row) appears
+// inside the grid cell. The full tree stays in the default pane.
+const widgetTerms = computed(() =>
+  pagedTerms.value.map((term) => ({ ...term, children: undefined })),
 );
 
 const statusOptions = computed(() => {
@@ -380,6 +449,32 @@ const termCountLabel = computed(() => {
   const n = glossary.value?.termCount ?? terms.value.length;
   return t('governance.glossaries.termsTabCount', { count: n });
 });
+
+// B-1 clamp (official `getRenderedActiveTab`): the native Tabs below
+// is v-model-bound to `activeTab`, so unlike the shell consumers the
+// state itself must follow the rendered list — a customization that
+// removes the current tab (e.g. `terms`) would otherwise leave no
+// selected tab and a blank content area. The clamp runs immediately
+// (the persona document may already be loaded at mount) and on every
+// tab-list change; it sits here, after `termCountLabel`, because the
+// immediate run evaluates `glossaryTabs`, which reads that label.
+// Assigning `activeTab` fires the lazy-load watcher above when the
+// clamped-to tab is `activity`/`relations`: that fetch is the visible
+// tab's own lazy load, not a duplicate — both loaders are guarded by
+// their loaded-for/loading flags, and `loadDetail` re-checks
+// `activeTab` after the glossary arrives, so a clamp that lands
+// before the detail load still loads exactly once. An empty list
+// clamps to `''` and the `v-if` on Tabs keeps it unmounted, the
+// shell's empty-list guard semantics.
+watch(
+  glossaryTabs,
+  (tabs) => {
+    if (!tabs.some((tab) => tab.key === activeTab.value)) {
+      activeTab.value = tabs[0]?.key ?? '';
+    }
+  },
+  { immediate: true },
+);
 
 function refLabel(ref: EntityRef): string {
   return ref.displayName || ref.name || ref.fullyQualifiedName || '—';
@@ -754,13 +849,100 @@ onMounted(() => {
           />
           <Alert v-if="detailError" type="error" show-icon :message="detailError" class="glossary__alert" />
 
-          <Tabs v-model:active-key="activeTab" data-testid="glossary-tabs">
+          <Tabs v-if="glossaryTabs.length" v-model:active-key="activeTab" data-testid="glossary-tabs">
             <Tabs.TabPane
               v-for="tab in glossaryTabs"
               :key="tab.key"
               :tab="tab.label"
               :data-testid="`glossary-tab-${tab.key}`"
             >
+              <GenericTab v-if="customizedEntryFor(tab.key)" :layout="widgetLayoutFor(tab.key)" page-type="Glossary">
+                <template #widget="{ contentKey }">
+                  <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && glossary" data-testid="widget-description">
+                    <Typography.Text strong>{{ t('crud.description') }}</Typography.Text>
+                    <Typography.Paragraph type="secondary">
+                      {{ glossary.description || t('governance.glossaries.noDescription') }}
+                    </Typography.Paragraph>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.TERMS_TABLE && glossary" data-testid="widget-terms-table">
+                    <SmTable
+                      row-key="id"
+                      test-id="widget-terms-table-grid"
+                      size="small"
+                      :columns="termColumns"
+                      :data-source="widgetTerms"
+                      :pagination="false"
+                    >
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'name'">
+                          <a
+                            href="#"
+                            class="glossary__term-link"
+                            :data-testid="`widget-term-row-${(record as GlossaryTerm).id}`"
+                            @click.prevent="openTerm(record as GlossaryTerm)"
+                          >
+                            {{ entityLabel(record as GlossaryTerm) }}
+                          </a>
+                        </template>
+                        <template v-else-if="column.key === 'description'">
+                          {{ (record as GlossaryTerm).description || '—' }}
+                        </template>
+                        <template v-else-if="column.key === 'status'">
+                          <Tag v-if="(record as GlossaryTerm).status" color="purple">
+                            {{ (record as GlossaryTerm).status }}
+                          </Tag>
+                          <Typography.Text v-else type="secondary">—</Typography.Text>
+                        </template>
+                        <template v-else-if="column.key === 'owners'">
+                          {{
+                            joinRefNames((record as GlossaryTerm).owners) || t('governance.glossaries.noOwners')
+                          }}
+                        </template>
+                      </template>
+                    </SmTable>
+                    <div class="glossary__pager">
+                      <Pagination
+                        data-testid="widget-terms-pagination"
+                        size="small"
+                        :current="termPage"
+                        :page-size="TERMS_PAGE_SIZE"
+                        :total="filteredTerms.length"
+                        :show-size-changer="false"
+                        @change="onTermPageChange"
+                      />
+                    </div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && glossary" data-testid="widget-domain">
+                    <Typography.Text strong>{{ t('governance.glossaries.railDomain') }}</Typography.Text>
+                    <div>{{ joinRefNames(glossary.domains) || t('governance.glossaries.noDomains') }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && glossary" data-testid="widget-owners">
+                    <Typography.Text strong>{{ t('governance.glossaries.railOwners') }}</Typography.Text>
+                    <div>{{ joinRefNames(glossary.owners) || t('governance.glossaries.noOwners') }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && glossary" data-testid="widget-reviewer">
+                    <Typography.Text strong>{{ t('governance.glossaries.railReviewers') }}</Typography.Text>
+                    <div>{{ joinRefNames(glossary.reviewers) || t('governance.glossaries.noReviewers') }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.TAGS && glossary" data-testid="widget-tags">
+                    <Typography.Text strong>{{ t('governance.glossaries.railTags') }}</Typography.Text>
+                    <div>{{ tagFqnList(glossaryTags) || t('governance.glossaries.noTags') }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && glossary" data-testid="widget-glossary-terms">
+                    <Typography.Text strong>{{ t('asset.tabs.glossaryTerms') }}</Typography.Text>
+                    <div>{{ tagFqnList(glossaryGlossaryTerms) || t('governance.glossaries.noTags') }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.TIER && glossary" data-testid="widget-tier">
+                    <Typography.Text strong>{{ t('label.tier') }}</Typography.Text>
+                    <div>{{ glossaryTierTag?.tagFQN || '—' }}</div>
+                  </div>
+                  <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && glossary" data-testid="widget-certification">
+                    <Typography.Text strong>{{ t('label.certification') }}</Typography.Text>
+                    <div>{{ glossaryCertificationTag?.tagFQN || '—' }}</div>
+                  </div>
+                </template>
+              </GenericTab>
+              <template v-else>
               <template v-if="tab.key === 'terms'">
               <section class="glossary__description" data-testid="glossary-description">
                 <div class="glossary__section-head">
@@ -946,6 +1128,7 @@ onMounted(() => {
                     data-testid="glossary-tasks-empty"
                   />
                 </Spin>
+              </template>
               </template>
             </Tabs.TabPane>
           </Tabs>

@@ -70,6 +70,7 @@ function mapDataProduct(raw: Record<string, unknown>): DataProduct | null {
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
     domains: mapEntityRefs(raw.domains),
     owners: mapEntityRefs(raw.owners),
+    reviewers: mapEntityRefs(raw.reviewers),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
     extension:

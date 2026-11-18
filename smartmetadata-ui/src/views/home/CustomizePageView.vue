@@ -223,12 +223,14 @@ async function handleNavigationSave(navigationList: NavigationItem[]): Promise<v
     syncSavedDocument(saved);
     message.success(t('server.pageLayoutOperationSuccess', { operation }));
   } catch {
-    // Official handleNavigationSave swallows the failure after the
-    // error toast (CustomizablePage.tsx:308-351, catch with no
-    // rethrow); only the app-layout callback throws. Implemented per
-    // official source — the C-4 spec §3.3 callback-2 row claiming a
-    // throw conflicts with the official code and is flagged for a
-    // design errata (see the entry-flow report).
+    // Per §6A C-ENTRY-1 ruling (a), the C-4 spec §3.3 callback-2 row
+    // and §7.1 acceptance row claiming a throw on failure are errata:
+    // official handleNavigationSave (CustomizablePage.tsx:308-351)
+    // only toasts in catch with no rethrow — of the four callbacks,
+    // only callback 4 (handleAppLayoutSave) throws. This
+    // implementation matches official. Consequence: on navigation
+    // save failure NavigationBlocker still lets navigation proceed
+    // and the edits are lost, which is the pin's actual behavior.
     message.error(t('server.pageLayoutOperationError', { operation: operating }));
   }
 }

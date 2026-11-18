@@ -168,6 +168,46 @@ export function isOfficiallySplit(entityType: string): boolean {
   return entityType in OFFICIAL_TABS;
 }
 
+/**
+ * Rendered tabs the editor's tab model can never mention, kept and
+ * appended in default order when the customized list omits them (the
+ * `preserveKeys` of `getDetailsTabWithNewLabel`): the editor's tab
+ * model writes official ids only, so a product-only surface would
+ * otherwise vanish the moment any customization exists, with no way
+ * for the customization to keep it. Split tab sets are otherwise
+ * fully resolvable, except the API views' `overview` (the
+ * APICollection/APIEndpoint tab builders and TabsIds carry no
+ * OVERVIEW). Every fallback set carries `quality`, which no fallback
+ * page type's TabsIds names; the pipeline, directory, spreadsheet,
+ * and worksheet sets additionally carry an `overview` no id resolves
+ * to (their TabsIds name neither `overview` nor an id aliasing to
+ * it). Chart's `overview` resolves through the `details` alias and
+ * File's matches the official OVERVIEW id, so neither is preserved.
+ * `hasSplitDefs` is whether the entity has split tab definitions
+ * (`entityDetailTabDefs(...) !== null`), decided by the caller. The
+ * directory/file/spreadsheet/worksheet branches are unreachable
+ * while those types have no detail view (residual R-C4-DRIVE, which
+ * is why no view-level test can execute them); the policy lives here
+ * as a pure function so every branch is still locked by test rather
+ * than trusted.
+ */
+export function preservedTabKeys(entityType: string, hasSplitDefs: boolean): string[] {
+  if (hasSplitDefs) {
+    return entityType === 'apiCollection' || entityType === 'apiEndpoint' ? ['overview'] : [];
+  }
+  const keys: string[] = [];
+  if (
+    entityType === 'pipeline' ||
+    entityType === 'directory' ||
+    entityType === 'spreadsheet' ||
+    entityType === 'worksheet'
+  ) {
+    keys.push('overview');
+  }
+  keys.push('quality');
+  return keys;
+}
+
 export function entityDetailTabDefs(entityType: string): EntityDetailTabDef[] | null {
   return OFFICIAL_TABS[entityType] ?? null;
 }

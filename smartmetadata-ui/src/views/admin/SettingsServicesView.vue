@@ -7,7 +7,9 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Tabs } from 'ant-design-vue';
+import { permissionFlags } from '@/api/permissions';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { SERVICE_LIST_API } from '@/ingestion/serviceApis';
@@ -25,6 +27,11 @@ import {
   SETTINGS_BREADCRUMB_NAMES,
   type SettingsTranslator,
 } from '@/settings/registry';
+import {
+  getResourceEntityFromServiceCategory,
+  getServiceNameForTab,
+  startCase,
+} from '@/settings/serviceCategoryResources';
 import { resolveServiceTab, type ListableServiceKind } from '@/router/serviceTabSegments';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 
@@ -43,11 +50,18 @@ import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
  * The Pipelines tab embeds PipelinesListView as a controlled
  * content component: the scope prop is the resolved kind, or
  * `testSuites` for the Data Observability tab (pin ServicesPage
- * serviceName). The pin in-page
- * view-permission gate (ServicesPage.tsx:85-93, 200-211) is NOT
- * implemented: DESIGN §6.4/§10.2 specify only the `none` route guard,
- * and adding the gate would invent behaviour beyond the approved
- * contract — flagged as an open pin gap for the coordinator.
+ * serviceName).
+ *
+ * The pin in-page view-permission gate (DESIGN §6.4 页内视图门,
+ * §6A GAP-HUB-1→(a)) is implemented below the `none` route guard:
+ * the gate checks ViewBasic/ViewAll on the resource for the raw
+ * `:tab` segment (ServicesPage.tsx:90-100, `hasViewPermissions` in
+ * PermissionsUtils.ts:160-165) and, while the permission is
+ * unloaded or denied, renders only the bare PermissionPlaceholder
+ * — no breadcrumb, no inner Tabs (ServicesPage.tsx:171-172,
+ * 201-212). The resource lookup runs on the raw segment, so tabs
+ * absent from the pin map (including `dataObservability`) check the
+ * database-service permission via the pin fallback.
  */
 const { t } = useI18n();
 const route = useRoute();
@@ -77,6 +91,61 @@ watch(
     }
   },
   { immediate: true },
+);
+
+/** Pin `serviceName` for the current tab (drives the gate's permissionValue). */
+const serviceName = computed(() => getServiceNameForTab(kindSegment.value));
+
+/**
+ * Pin `viewAllPermission` (ServicesPage.tsx:90-100): the permission
+ * must have loaded and grant ViewBasic or ViewAll on the resource
+ * for the raw tab segment. Unloaded and failed reads fail closed
+ * into the placeholder, as pin's empty-permissions check does. The
+ * watcher keys on the mapped resource, so tabs sharing a resource
+ * (including every fallback tab) reuse the same loaded grant.
+ */
+const gateResourceKey = computed(() => getResourceEntityFromServiceCategory(kindSegment.value));
+const viewPermissionLoaded = ref(false);
+const viewPermissionGranted = ref(false);
+let viewPermissionRun = 0;
+
+async function loadViewPermission(run: number): Promise<void> {
+  try {
+    const ops = await permissionStore.getResourcePermission(gateResourceKey.value);
+    if (run === viewPermissionRun) {
+      viewPermissionGranted.value = permissionFlags(ops).hasViewAccess;
+      viewPermissionLoaded.value = true;
+    }
+  } catch {
+    if (run === viewPermissionRun) {
+      viewPermissionGranted.value = false;
+      viewPermissionLoaded.value = false;
+    }
+  }
+}
+
+watch(
+  gateResourceKey,
+  () => {
+    viewPermissionRun += 1;
+    viewPermissionLoaded.value = false;
+    viewPermissionGranted.value = false;
+    void loadViewPermission(viewPermissionRun);
+  },
+  { immediate: true },
+);
+
+const viewAllPermission = computed(
+  () => viewPermissionLoaded.value && viewPermissionGranted.value,
+);
+
+/**
+ * Pin `permissionValue`: t('label.view-entity', { entity:
+ * startCase(serviceName) }) — en "View Database Services", zh
+ * "查看Database Services" (product key `label.viewEntity`).
+ */
+const permissionValue = computed(() =>
+  t('label.viewEntity', { entity: startCase(serviceName.value) }),
 );
 
 const isDataObservability = computed(
@@ -150,7 +219,7 @@ let servicesRun = 0;
 
 async function loadServices(run: number): Promise<void> {
   const resolved = resolution.value;
-  if (resolved === null || 'dataObservability' in resolved) {
+  if (!viewAllPermission.value || resolved === null || 'dataObservability' in resolved) {
     services.value = [];
     servicesLoading.value = false;
     return;
@@ -174,8 +243,11 @@ async function loadServices(run: number): Promise<void> {
   }
 }
 
+// The list loads only once the view gate passes (pin renders the
+// Services content only in the permitted branch, so a denied tab
+// issues no list request); the watcher re-runs when the gate resolves.
 watch(
-  resolution,
+  [resolution, viewAllPermission],
   () => {
     servicesRun += 1;
     void loadServices(servicesRun);
@@ -194,26 +266,29 @@ function serviceRow(record: CatalogService) {
 
 <template>
   <PageLayout test-id="settings-services">
-    <SmBreadcrumb :items="breadcrumbItems" />
-    <Tabs
-      v-if="tabItems.length > 0"
-      :active-key="activeInnerTab ?? undefined"
-      data-testid="settings-services-tabs"
-      @change="switchInnerTab(String($event))"
-    >
-      <Tabs.TabPane v-for="item in tabItems" :key="item.key" :tab="item.label" />
-    </Tabs>
-    <template v-if="activeInnerTab === SERVICES_INNER_TAB && !isDataObservability">
-      <Alert v-if="servicesError" type="error" :message="servicesError" show-icon />
-      <SmTable
-        :columns="columns"
-        :data-source="services"
-        :loading="servicesLoading"
-        :custom-row="serviceRow"
-        :pagination="false"
-        test-id="settings-services-table"
-      />
+    <PermissionPlaceholder v-if="!viewAllPermission" :permission-value="permissionValue" />
+    <template v-else>
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <Tabs
+        v-if="tabItems.length > 0"
+        :active-key="activeInnerTab ?? undefined"
+        data-testid="settings-services-tabs"
+        @change="switchInnerTab(String($event))"
+      >
+        <Tabs.TabPane v-for="item in tabItems" :key="item.key" :tab="item.label" />
+      </Tabs>
+      <template v-if="activeInnerTab === SERVICES_INNER_TAB && !isDataObservability">
+        <Alert v-if="servicesError" type="error" :message="servicesError" show-icon />
+        <SmTable
+          :columns="columns"
+          :data-source="services"
+          :loading="servicesLoading"
+          :custom-row="serviceRow"
+          :pagination="false"
+          test-id="settings-services-table"
+        />
+      </template>
+      <PipelinesListView v-else-if="activeInnerTab === PIPELINES_INNER_TAB && pipelineScope !== null" :kind-filter="pipelineScope" />
     </template>
-    <PipelinesListView v-else-if="activeInnerTab === PIPELINES_INNER_TAB && pipelineScope !== null" :kind-filter="pipelineScope" />
   </PageLayout>
 </template>

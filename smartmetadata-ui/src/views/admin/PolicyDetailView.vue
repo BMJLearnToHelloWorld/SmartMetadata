@@ -33,6 +33,10 @@ const form = reactive({
 });
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  // CONFLICT-3 (a): pin builds this trail by hand as two items — the list
+  // crumb linked to the list page, then the entity name unlinked — with no
+  // Settings root and no Access Control level (PoliciesDetailPage.tsx:114-126).
+  // Do not route it through the §9 constructor: that is the list pages' shape.
   { label: t('admin.policies.title'), to: { name: 'admin-policies' } },
   { label: entityLabel(policy.value) || t('admin.policies.title') },
 ]);

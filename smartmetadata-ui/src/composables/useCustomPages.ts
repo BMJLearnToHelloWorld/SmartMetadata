@@ -10,6 +10,7 @@
 import { computed, onMounted, ref, toValue, type MaybeRefOrGetter } from 'vue';
 import { usePersonaStore } from '@/stores/persona';
 import type { PersonaPage } from '@/types/persona';
+import type { CustomizeTab } from '@/views/admin/persona/editors/customizeTypes';
 import { getPersonaPage } from '@/views/admin/personaPage';
 
 /**
@@ -149,7 +150,15 @@ export function useCustomPages(pageType: MaybeRefOrGetter<string | null | undefi
  * relations pane; `apiEndpoint` is the endpoints tab of both API
  * views, whose keys differ (`apiEndpoints` on the collection view,
  * `endpoint` on the endpoint view) — the first candidate present in
- * the rendered tabs wins.
+ * the rendered tabs wins. `schema` is the APIEndpoint mount tab: the
+ * official SCHEMA tab's content (the APISchema widget) renders in the
+ * product `endpoint` tab, which carries the request/response schema
+ * pane; exact-match precedence confines this alias to views without
+ * a `schema` key, i.e. only the endpoint view. `search-index-settings`
+ * is the hyphenated EntityTabs spelling of the SearchIndex settings
+ * tab, whose product key is the underscored `search_index_settings`;
+ * without the alias the official id would resolve to no rendered tab
+ * and the settings tab would vanish under any customization.
  */
 export const CUSTOMIZED_TAB_KEY_ALIASES: Record<string, readonly string[]> = {
   activity_feed: ['activity'],
@@ -159,6 +168,8 @@ export const CUSTOMIZED_TAB_KEY_ALIASES: Record<string, readonly string[]> = {
   details: ['overview'],
   relations_graph: ['relations'],
   apiEndpoint: ['apiEndpoints', 'endpoint'],
+  schema: ['endpoint'],
+  'search-index-settings': ['search_index_settings'],
 };
 
 function readCustomizedTabIds(value: unknown): string[] | undefined {
@@ -219,6 +230,43 @@ function resolveTabKey(
 }
 
 /**
+ * The customized tab entry that renders as `renderedKey`: the entry
+ * whose `id` matches the rendered key exactly, or — failing that —
+ * whose `id` resolves to it through `CUSTOMIZED_TAB_KEY_ALIASES`
+ * (the same `resolveTabKey` the tab layer uses, so the widget layer
+ * looks up layouts by exactly the tab the tab layer rendered).
+ * Entries without a string `id` are skipped, as in
+ * `readCustomizedTabIds`; a non-array tab list yields `undefined`.
+ * This is a lookup helper only: it does not apply the official
+ * id-only layout resolution (`getLayoutFromCustomizedPage` finds by
+ * `id === tabId`), which callers use once they hold the entry.
+ */
+export function findCustomizedTabEntry(
+  customizedTabs: unknown,
+  renderedKey: string,
+): CustomizeTab | undefined {
+  if (!Array.isArray(customizedTabs)) {
+    return undefined;
+  }
+  const entries = customizedTabs.filter(
+    (entry): entry is CustomizeTab =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { id?: unknown }).id === 'string' &&
+      (entry as { id?: unknown }).id !== '',
+  );
+  const exact = entries.find((entry) => entry.id === renderedKey);
+  if (exact) {
+    return exact;
+  }
+  const renderedKeys = new Set([renderedKey]);
+  return entries.find(
+    (entry) =>
+      resolveTabKey(entry.id ?? '', renderedKeys, CUSTOMIZED_TAB_KEY_ALIASES) === renderedKey,
+  );
+}
+
+/**
  * Official `getDetailsTabWithNewLabel`
  * (`utils/CustomizePage/CustomizePageEntityTabUtils.ts:51-76`): the
  * customized tabs replace the default tab list, in the customized
@@ -230,26 +278,44 @@ function resolveTabKey(
  *   named by tab key, so a foreign key has no content to render. The
  *   editor writes official tab ids for the page type, which resolve
  *   through exact matches and `CUSTOMIZED_TAB_KEY_ALIASES`.
- * - `preserveUnlisted` keeps rendered tabs the customized list does
- *   not mention, appended in default order. Product tab sets carry
- *   tabs with no official id (`overview` on API/chart/pipeline views,
- *   `quality`, `endpoint`, `status`, `assets`, `relations`); the
- *   official replacement would silently remove those surfaces the
- *   moment any customization exists. All product call sites pass
- *   `preserveUnlisted: true` until the editor's tab model covers the
- *   product tabs; the default (`false`) is the official replacement,
- *   kept and tested so a later batch can adopt it per view.
+ * - `preserveKeys` names the rendered tabs the editor's tab model
+ *   can never mention, kept and appended in default order when the
+ *   customized list omits them. The editor's tab model writes official
+ *   ids only, so a product-only surface — one with no official id and
+ *   no alias path — would otherwise vanish the moment any
+ *   customization exists, with no way for the customization to keep
+ *   it. Each call site lists only its own product-only keys, with the
+ *   per-key evidence at the call site; every other unlisted tab is
+ *   removed, as officially, so a customization can actually remove a
+ *   tab. An explicitly empty list short-circuits before preservation
+ *   (below), so preservation can never resurrect a deliberately
+ *   emptied page.
  *
- * An absent tab list leaves the defaults untouched, and so does a
- * present but non-array one — exactly as officially, where
- * `customizedTabs?.map(...) ?? defaultTabs` yields defaults for any
- * value without `.map`. That is not a §4.4 D4 violation: D4 governs
+ * An absent tab list leaves the defaults untouched, as officially
+ * (official `customizedTabs?.map(...) ?? defaultTabs` yields the
+ * defaults for a nullish list). Absence and emptiness are different
+ * statements and must not collapse: an absent list means the page
+ * carries no tab customization at all, so the defaults are the only
+ * honest rendering; an explicitly empty list means the page was
+ * saved with no tabs, so it yields no tabs, as officially — whether
+ * or not preservation is on. Preservation exists to keep surfaces the
+ * editor's tab model cannot name; it must not override a customization
+ * that names none, or the emptied state would be unreachable and
+ * every removed tab would silently return. A present-but-non-array
+ * list also yields the defaults here: a conditional deviation under B-12(a),
+ * not the official behavior — officially a truthy non-array value
+ * throws a TypeError, because `?.` does not short-circuit it and
+ * `??` does not catch a throw. The throw semantics are aligned once
+ * the B-9 error boundary lands; until then the read-mapping discard
+ * layer (S-C4CONSUME §4.3) bounds exposure. That is not a §4.4 D4
+ * violation: D4 governs
  * `layout` fields, and the detail `tabs` list is not one. The
- * `layout` fields themselves (page and per-tab widget layouts) have
- * no product consumer on detail pages yet, so no default layout is
- * ever silently presented for them here; D4 handling for those
- * fields belongs to the future widget-layout renderer (residual).
- * An empty array under replacement yields no tabs, as officially. A
+ * `layout` fields themselves (page and per-tab widget layouts) are
+ * consumed by the widget-layout renderer
+ * (`customizeWidgetLayout.ts` + `GenericTab.vue`): `resolveWidgetLayout`
+ * coerces a non-array resolution to an empty grid and never writes a
+ * default back (D4), and this function never touches those fields —
+ * it only reorders and renames tabs. A
  * version view always renders defaults (official `isVersionView`
  * branch); product detail views are never version views.
  */
@@ -258,7 +324,7 @@ export function getDetailsTabWithNewLabel<T extends { key: string; label: string
   customizedTabs: unknown,
   options: {
     isVersionView?: boolean;
-    preserveUnlisted?: boolean;
+    preserveKeys?: readonly string[];
     keyAliases?: Record<string, readonly string[]>;
   } = {},
 ): T[] {
@@ -268,6 +334,9 @@ export function getDetailsTabWithNewLabel<T extends { key: string; label: string
   const ids = readCustomizedTabIds(customizedTabs);
   if (ids === undefined) {
     return [...defaultTabs];
+  }
+  if (ids.length === 0) {
+    return [];
   }
   const labelMap = getTabLabelMapFromTabs(customizedTabs);
   const byKey = new Map(defaultTabs.map((tab) => [tab.key, tab]));
@@ -285,11 +354,10 @@ export function getDetailsTabWithNewLabel<T extends { key: string; label: string
     const label = labelMap[id];
     ordered.push(label ? { ...tab, label } : tab);
   }
-  if (options.preserveUnlisted) {
-    for (const tab of defaultTabs) {
-      if (!seen.has(tab.key)) {
-        ordered.push(tab);
-      }
+  const preserve = new Set(options.preserveKeys ?? []);
+  for (const tab of defaultTabs) {
+    if (!seen.has(tab.key) && preserve.has(tab.key)) {
+      ordered.push(tab);
     }
   }
   return ordered;

@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { usePersonaStore } from '@/stores/persona';
 import type { PersonaDocument } from '@/types/persona';
 import {
+  findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
   getRenderedActiveTab,
   getTabLabelMapFromTabs,
@@ -123,20 +124,57 @@ describe('getDetailsTabWithNewLabel', () => {
     expect(getDetailsTabWithNewLabel(defaults, [])).toEqual([]);
   });
 
-  it('keeps unlisted tabs, appended in default order, when preserving', () => {
+  it('keeps only the listed preserveKeys, appended in default order, and drops other unlisted tabs', () => {
     expect(
       getDetailsTabWithNewLabel(
         defaults,
         [{ id: 'lineage', displayName: 'Flow' }],
-        { preserveUnlisted: true },
+        { preserveKeys: ['custom_properties'] },
       ),
     ).toEqual([
       { key: 'lineage', label: 'Flow' },
+      { key: 'custom_properties', label: 'Custom Properties' },
+    ]);
+    // Preserved keys append in default order, not in preserveKeys
+    // order, and a key the customized list already mentions is not
+    // duplicated; a preserveKeys entry with no default tab is ignored
+    // rather than synthesized.
+    expect(
+      getDetailsTabWithNewLabel(
+        defaults,
+        [{ id: 'schema' }],
+        { preserveKeys: ['custom_properties', 'schema', 'ghost', 'activity_feed'] },
+      ),
+    ).toEqual([
       { key: 'schema', label: 'Schema' },
       { key: 'activity_feed', label: 'Activity' },
       { key: 'custom_properties', label: 'Custom Properties' },
     ]);
-    expect(getDetailsTabWithNewLabel(defaults, [], { preserveUnlisted: true })).toEqual(defaults);
+    // An empty preserveKeys list is pure replacement.
+    expect(
+      getDetailsTabWithNewLabel(defaults, [{ id: 'lineage' }], { preserveKeys: [] }),
+    ).toEqual([{ key: 'lineage', label: 'Lineage' }]);
+  });
+
+  it('yields no tabs for an explicitly empty customized list, even when preserving', () => {
+    // F-1: the empty list is a stated intent (the page was saved with
+    // no tabs), not an absent customization, so preservation must not
+    // resurrect the defaults — even when every default is preserved.
+    const preserveAll = {
+      preserveKeys: ['schema', 'lineage', 'activity_feed', 'custom_properties'],
+    };
+    expect(getDetailsTabWithNewLabel(defaults, [], preserveAll)).toEqual([]);
+    // The short-circuit runs on the parsed ids: a list whose entries
+    // carry no usable id names no tab either.
+    expect(
+      getDetailsTabWithNewLabel(defaults, [{ name: 'schema' }, null, 'schema'], preserveAll),
+    ).toEqual([]);
+    // Absence still means "no customization": missing and non-array
+    // lists keep the defaults even with preservation on.
+    expect(getDetailsTabWithNewLabel(defaults, undefined, preserveAll)).toEqual(defaults);
+    expect(getDetailsTabWithNewLabel(defaults, null, preserveAll)).toEqual(defaults);
+    expect(getDetailsTabWithNewLabel(defaults, {}, preserveAll)).toEqual(defaults);
+    expect(getDetailsTabWithNewLabel(defaults, 'schema', preserveAll)).toEqual(defaults);
   });
 
   it('resolves official ids to product keys through aliases, exact matches first', () => {
@@ -149,7 +187,9 @@ describe('getDetailsTabWithNewLabel', () => {
       getDetailsTabWithNewLabel(
         productTabs,
         [{ id: 'activity_feed' }, { id: 'custom_properties' }, { id: 'documentation' }],
-        { preserveUnlisted: true },
+        // `overview` is already reached through the `documentation`
+        // alias, so preserving it must not duplicate the tab.
+        { preserveKeys: ['overview'] },
       ),
     ).toEqual([
       { key: 'activity', label: 'Activity' },
@@ -189,6 +229,55 @@ describe('getDetailsTabWithNewLabel', () => {
     ).toEqual([{ key: 'endpoint', label: 'Endpoint' }]);
   });
 
+  it('resolves the APIEndpoint mount id schema to the endpoint tab only where no schema key exists', () => {
+    // The endpoint view has no `schema` key: the official SCHEMA entry
+    // reorders/renames the `endpoint` tab carrying the schema pane.
+    expect(
+      getDetailsTabWithNewLabel(
+        [
+          { key: 'overview', label: 'Overview' },
+          { key: 'endpoint', label: 'Endpoint' },
+        ],
+        [{ id: 'schema', displayName: 'Schema!' }],
+      ),
+    ).toEqual([{ key: 'endpoint', label: 'Schema!' }]);
+    // Exact match wins: on a view with a `schema` key the alias never
+    // fires, so Table/Topic tabs are unaffected.
+    expect(
+      getDetailsTabWithNewLabel(
+        [
+          { key: 'schema', label: 'Schema' },
+          { key: 'endpoint', label: 'Endpoint' },
+        ],
+        [{ id: 'schema' }],
+      ),
+    ).toEqual([{ key: 'schema', label: 'Schema' }]);
+  });
+
+  it('resolves the hyphenated search-index-settings id to the underscored product key', () => {
+    // The official EntityTabs spelling is `search-index-settings`;
+    // the product split key is `search_index_settings`. Without the
+    // alias the official id would resolve to no tab and the settings
+    // tab would vanish under any customization; with it, listing the
+    // id keeps and renames the tab, omitting it removes the tab.
+    const searchIndexTabs = [
+      { key: 'fields', label: 'Fields' },
+      { key: 'search_index_settings', label: 'Search index settings' },
+    ];
+    expect(
+      getDetailsTabWithNewLabel(searchIndexTabs, [
+        { id: 'search-index-settings', displayName: 'Settings' },
+        { id: 'fields' },
+      ]),
+    ).toEqual([
+      { key: 'search_index_settings', label: 'Settings' },
+      { key: 'fields', label: 'Fields' },
+    ]);
+    expect(getDetailsTabWithNewLabel(searchIndexTabs, [{ id: 'fields' }])).toEqual([
+      { key: 'fields', label: 'Fields' },
+    ]);
+  });
+
   // Order dedupes first-wins (the first occurrence fixes the position), while the
   // label map is an official-style reduce, so a later displayName for the same
   // id wins the label. Both halves are pinned: dropping the second entry
@@ -201,6 +290,197 @@ describe('getDetailsTabWithNewLabel', () => {
     expect(
       getDetailsTabWithNewLabel(withCounts, [{ id: 'schema' }, { id: 'schema', displayName: 'Again' }]),
     ).toEqual([{ key: 'schema', label: 'Again', testId: 'tab-schema', count: 3 }]);
+  });
+});
+
+describe('getDetailsTabWithNewLabel per-view preserveKeys contracts (F-2)', () => {
+  // Each row mirrors one call site's rendered keys and preserveKeys:
+  // a customized subset removes every official tab it omits, the
+  // call site's product-only keys survive an unmentioned
+  // customization, and an explicitly empty list still yields no tabs.
+  // Labels default to the key so renames stand out.
+  const tab = (key: string, label = key) => ({ key, label });
+  const cases: Array<{
+    name: string;
+    defaults: Array<{ key: string; label: string }>;
+    options: { preserveKeys?: readonly string[] };
+    customized: unknown;
+    expected: Array<{ key: string; label: string }>;
+  }> = [
+    {
+      name: 'Table split: subset removes unlisted tabs, renames and reorders the rest',
+      defaults: ['schema', 'activity_feed', 'sample_data', 'table_queries', 'profiler', 'lineage', 'dbt', 'view_definition', 'contract', 'custom_properties'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'lineage', displayName: 'Flow' },
+        { id: 'schema' },
+        { id: 'activity_feed', displayName: 'Feed' },
+      ],
+      expected: [tab('lineage', 'Flow'), tab('schema'), tab('activity_feed', 'Feed')],
+    },
+    {
+      name: 'SearchIndex split: the full editor list round-trips, including the hyphenated settings id',
+      defaults: ['fields', 'activity_feed', 'sample_data', 'lineage', 'contract', 'search_index_settings', 'custom_properties'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'fields' },
+        { id: 'activity_feed' },
+        { id: 'sample_data' },
+        { id: 'lineage' },
+        { id: 'contract' },
+        { id: 'search-index-settings' },
+        { id: 'custom_properties' },
+      ],
+      expected: ['fields', 'activity_feed', 'sample_data', 'lineage', 'contract', 'search_index_settings', 'custom_properties'].map((key) => tab(key)),
+    },
+    {
+      name: 'APICollection split: only the product-only overview survives an unmentioned customization',
+      defaults: ['overview', 'apiEndpoints', 'activity_feed', 'custom_properties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview'] },
+      customized: [{ id: 'activity_feed' }],
+      expected: [tab('activity_feed'), tab('overview')],
+    },
+    {
+      name: 'APICollection split: alias rename and reorder keep the preserved overview appended',
+      defaults: ['overview', 'apiEndpoints', 'activity_feed', 'custom_properties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview'] },
+      customized: [
+        { id: 'apiEndpoint', displayName: 'Endpoints!' },
+        { id: 'custom_properties' },
+      ],
+      expected: [tab('apiEndpoints', 'Endpoints!'), tab('custom_properties'), tab('overview')],
+    },
+    {
+      name: 'APICollection split: an explicitly empty list yields no tabs despite preservation',
+      defaults: ['overview', 'apiEndpoints', 'activity_feed', 'custom_properties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview'] },
+      customized: [],
+      expected: [],
+    },
+    {
+      name: 'APIEndpoint split: the schema alias renames the endpoint tab and overview is preserved',
+      defaults: ['overview', 'endpoint', 'activity_feed', 'custom_properties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview'] },
+      customized: [{ id: 'schema', displayName: 'Schema!' }],
+      expected: [tab('endpoint', 'Schema!'), tab('overview')],
+    },
+    {
+      name: 'Chart fallback: quality is preserved, overview is removed when details is unlisted',
+      defaults: ['overview', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['quality'] },
+      customized: [{ id: 'lineage' }],
+      expected: [tab('lineage'), tab('quality')],
+    },
+    {
+      name: 'Chart fallback: the details alias keeps and renames overview, quality is preserved',
+      defaults: ['overview', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['quality'] },
+      customized: [{ id: 'details', displayName: 'Chart!' }],
+      expected: [tab('overview', 'Chart!'), tab('quality')],
+    },
+    {
+      name: 'File fallback: the official overview id keeps overview, quality is preserved',
+      defaults: ['overview', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['quality'] },
+      customized: [{ id: 'overview', displayName: 'File!' }],
+      expected: [tab('overview', 'File!'), tab('quality')],
+    },
+    {
+      name: 'catalog Pipeline fallback: overview and quality are preserved in default order',
+      defaults: ['overview', 'tasks', 'executions', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'quality'] },
+      customized: [{ id: 'tasks' }],
+      expected: [tab('tasks'), tab('overview'), tab('quality')],
+    },
+    {
+      name: 'Directory fallback: an id resolving to no rendered key still leaves the preserved tabs',
+      defaults: ['overview', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'quality'] },
+      customized: [{ id: 'children' }],
+      expected: [tab('overview'), tab('quality')],
+    },
+    {
+      name: 'Worksheet fallback: the schema id resolves to no fallback key, preserved tabs remain',
+      defaults: ['overview', 'lineage', 'quality', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'quality'] },
+      customized: [{ id: 'schema' }],
+      expected: [tab('overview'), tab('quality')],
+    },
+    {
+      name: 'Domain: every key resolves, so a subset removes the rest',
+      defaults: ['overview', 'assets', 'subDomains', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'activity_feed', displayName: 'Feed' },
+        { id: 'subdomains' },
+      ],
+      expected: [tab('activity', 'Feed'), tab('subDomains')],
+    },
+    {
+      name: 'DataProduct: every key resolves, so a subset removes the rest',
+      defaults: ['overview', 'assets', 'activity', 'customProperties'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'custom_properties', displayName: 'Props' },
+        { id: 'activity_feed' },
+      ],
+      expected: [tab('customProperties', 'Props'), tab('activity')],
+    },
+    {
+      name: 'Glossary: every key resolves, so a subset removes the rest',
+      defaults: ['terms', 'relations', 'activity'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'relations_graph', displayName: 'Graph' },
+        { id: 'terms' },
+      ],
+      expected: [tab('relations', 'Graph'), tab('terms')],
+    },
+    {
+      name: 'GlossaryTerm: every key matches exactly, so a subset removes the rest',
+      defaults: ['overview', 'glossary_terms', 'assets', 'activity_feed', 'relations_graph', 'custom_properties', 'data_observability'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'assets', displayName: 'Linked' },
+        { id: 'overview' },
+      ],
+      expected: [tab('assets', 'Linked'), tab('overview')],
+    },
+    {
+      name: 'Metric: every key matches exactly, so a subset removes the rest',
+      defaults: ['overview', 'lineage', 'assets', 'activity_feed', 'custom_properties'].map((key) => tab(key)),
+      options: {},
+      customized: [
+        { id: 'activity_feed', displayName: 'Feed' },
+        { id: 'overview' },
+      ],
+      expected: [tab('activity_feed', 'Feed'), tab('overview')],
+    },
+    {
+      name: 'ingestion Pipeline: catalog ids resolve to neither key, both product-only keys are preserved',
+      defaults: ['overview', 'status'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'status'] },
+      customized: [{ id: 'tasks' }, { id: 'executions' }],
+      expected: [tab('overview'), tab('status')],
+    },
+    {
+      name: 'ingestion Pipeline: the documentation alias renames overview, status is preserved',
+      defaults: ['overview', 'status'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'status'] },
+      customized: [{ id: 'documentation', displayName: 'Summary' }],
+      expected: [tab('overview', 'Summary'), tab('status')],
+    },
+    {
+      name: 'ingestion Pipeline: an explicitly empty list yields no tabs despite preservation',
+      defaults: ['overview', 'status'].map((key) => tab(key)),
+      options: { preserveKeys: ['overview', 'status'] },
+      customized: [],
+      expected: [],
+    },
+  ];
+
+  it.each(cases)('$name', ({ defaults, options, customized, expected }) => {
+    expect(getDetailsTabWithNewLabel(defaults, customized, options)).toEqual(expected);
   });
 });
 
@@ -347,5 +627,76 @@ describe('useCustomPages', () => {
     await nextTick();
     expect(exposed().customizedPage.value?.pageType).toBe('Table');
     expect(exposed().customizedPage.value?.tabs).toHaveLength(1);
+  });
+});
+
+describe('findCustomizedTabEntry', () => {
+  it('returns the entry whose id matches the rendered key exactly', () => {
+    const schema = { id: 'schema', layout: [] };
+    const tabs = [{ id: 'overview' }, schema, { id: 'lineage' }];
+    expect(findCustomizedTabEntry(tabs, 'schema')).toBe(schema);
+  });
+
+  it('resolves through aliases when no entry matches exactly', () => {
+    expect(findCustomizedTabEntry([{ id: 'activity_feed' }], 'activity')).toEqual({
+      id: 'activity_feed',
+    });
+    expect(findCustomizedTabEntry([{ id: 'documentation' }], 'overview')).toEqual({
+      id: 'documentation',
+    });
+    expect(findCustomizedTabEntry([{ id: 'custom_properties' }], 'customProperties')).toEqual({
+      id: 'custom_properties',
+    });
+    expect(findCustomizedTabEntry([{ id: 'subdomains' }], 'subDomains')).toEqual({
+      id: 'subdomains',
+    });
+    expect(findCustomizedTabEntry([{ id: 'relations_graph' }], 'relations')).toEqual({
+      id: 'relations_graph',
+    });
+    expect(findCustomizedTabEntry([{ id: 'search-index-settings' }], 'search_index_settings')).toEqual({
+      id: 'search-index-settings',
+    });
+  });
+
+  it('tries each alias candidate for the shared apiEndpoint id', () => {
+    expect(findCustomizedTabEntry([{ id: 'apiEndpoint' }], 'apiEndpoints')).toEqual({
+      id: 'apiEndpoint',
+    });
+    expect(findCustomizedTabEntry([{ id: 'apiEndpoint' }], 'endpoint')).toEqual({
+      id: 'apiEndpoint',
+    });
+  });
+
+  it('prefers an exact match over an alias match, regardless of order', () => {
+    const aliased = { id: 'documentation' };
+    const exact = { id: 'overview' };
+    expect(findCustomizedTabEntry([aliased, exact], 'overview')).toBe(exact);
+    expect(findCustomizedTabEntry([exact, aliased], 'overview')).toBe(exact);
+  });
+
+  it('returns undefined when nothing resolves to the rendered key', () => {
+    expect(findCustomizedTabEntry([{ id: 'schema' }], 'lineage')).toBeUndefined();
+    expect(findCustomizedTabEntry([], 'overview')).toBeUndefined();
+    expect(findCustomizedTabEntry([{ id: 'activity_feed' }], 'overview')).toBeUndefined();
+  });
+
+  it('returns undefined for a non-array tab list', () => {
+    expect(findCustomizedTabEntry(undefined, 'overview')).toBeUndefined();
+    expect(findCustomizedTabEntry(null, 'overview')).toBeUndefined();
+    expect(findCustomizedTabEntry({ id: 'overview' }, 'overview')).toBeUndefined();
+    expect(findCustomizedTabEntry('overview', 'overview')).toBeUndefined();
+  });
+
+  it('skips entries without a usable string id', () => {
+    const schema = { id: 'schema' };
+    const tabs = [null, 'schema', { name: 'schema' }, { id: '' }, { id: 3 }, schema];
+    expect(findCustomizedTabEntry(tabs, 'schema')).toBe(schema);
+    expect(findCustomizedTabEntry([null, { name: 'overview' }], 'overview')).toBeUndefined();
+  });
+
+  it('returns the entry itself, including its layout', () => {
+    const layout = [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 2 }];
+    const entry = { id: 'schema', layout };
+    expect(findCustomizedTabEntry([entry], 'schema')?.layout).toBe(layout);
   });
 });

@@ -195,7 +195,7 @@ describe('DataProductDetailView persona tab customization (C-4)', () => {
     document.body.innerHTML = '';
   });
 
-  it('reorders and renames tabs from the persona DataProduct page, keeping unlisted tabs', async () => {
+  it('reorders and renames tabs from the persona DataProduct page, dropping unlisted tabs', async () => {
     stubWithDoc({
       name: 'analyst-persona',
       fullyQualifiedName: 'persona.analyst',
@@ -218,7 +218,8 @@ describe('DataProductDetailView persona tab customization (C-4)', () => {
     await flushPromises();
     await flushPromises();
     await wrapper.vm.$nextTick();
-    expect(tabLabels(wrapper)).toEqual(['Props', 'Activity', 'Overview', 'Assets']);
+    // F-2: replacement semantics — only the customized tabs render.
+    expect(tabLabels(wrapper)).toEqual(['Props', 'Activity']);
     wrapper.unmount();
   });
 
@@ -231,6 +232,219 @@ describe('DataProductDetailView persona tab customization (C-4)', () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(tabLabels(wrapper)).toEqual(['Overview', 'Assets', 'Activity', 'Custom Properties']);
+    wrapper.unmount();
+  });
+
+  it('renders no tab bar for an explicitly empty DataProduct tab list without throwing (m-2)', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [{ pageType: 'DataProduct', tabs: [] }],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = mountView();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.ant-tabs-nav').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Churn');
+    wrapper.unmount();
+  });
+});
+
+describe('DataProductDetailView widget grid (B-8)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function productDoc(tabs: unknown[]) {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'DataProduct', tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/dataProducts/dp1')) {
+          return jsonResponse({
+            id: 'dp1',
+            name: 'churn',
+            displayName: 'Churn Scores',
+            fullyQualifiedName: 'marketing.churn',
+            description: 'Predicts customer churn',
+            domains: [{ id: 'dom1', name: 'marketing', displayName: 'Marketing' }],
+            owners: [{ id: 'u1', name: 'alice', displayName: 'Alice' }],
+            reviewers: [{ id: 'u3', name: 'carol', displayName: 'Carol' }],
+            experts: [{ id: 'u2', name: 'bob', displayName: 'Bob' }],
+            tags: [
+              { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' },
+              { tagFQN: 'Business.term', name: 'term', source: 'Glossary' },
+              { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
+            ],
+            extension: {},
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        if (
+          url.includes('/api/v1/activity/entity/dataProduct/') ||
+          url.includes('/api/v1/conversations')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function mountProduct() {
+    const wrapper = mountView();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  function widgetTestIds(wrapper: ReturnType<typeof mountView>): string[] {
+    return wrapper
+      .findAll('[data-testid^="widget-"]')
+      .map((node) => node.attributes('data-testid') as string);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the widget grid on overview when a documentation entry resolves (alias)', async () => {
+    stubWithDoc(
+      productDoc([
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [
+            { i: 'KnowledgePanel.Domain', x: 0, y: 0, w: 2, h: 1 },
+            { i: 'KnowledgePanel.Experts', x: 2, y: 0, w: 2, h: 1 },
+            { i: 'KnowledgePanel.Tier', x: 4, y: 0, w: 2, h: 1 },
+            // Dispatch resolves DomainType to null on DataProduct pages
+            // (exact-=== DOMAIN check only): the cell stays empty.
+            { i: 'KnowledgePanel.DomainType', x: 6, y: 0, w: 2, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    expect(wrapper.find('[data-testid="widget-domain"]').text()).toContain('Marketing');
+    expect(wrapper.find('[data-testid="widget-experts"]').text()).toContain('Bob');
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier.Tier1');
+    expect(wrapper.find('[data-testid="widget-domain-type"]').exists()).toBe(false);
+    // The default overview pane (which shows the description row) is replaced.
+    expect(wrapper.text()).not.toContain('Predicts customer churn');
+    wrapper.unmount();
+  });
+
+  it('renders the reviewer widget from the mapped reviewers field', async () => {
+    // MB-3 (R-2): reviewers were requested (DATA_PRODUCT_FIELDS) but
+    // dropped by mapDataProduct. REVIEWER reaches DataProduct pages
+    // through the shared CommonWidgets registry (official
+    // DataProductClassBase delegates to getDataProductWidgetsFromKey,
+    // whose only specific branch is DOMAIN; the registry carries
+    // REVIEWER), so the branch renders here.
+    stubWithDoc(
+      productDoc([
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [{ i: 'KnowledgePanel.Reviewer', x: 0, y: 0, w: 4, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    expect(wrapper.find('[data-testid="widget-reviewer"]').text()).toContain('Carol');
+    wrapper.unmount();
+  });
+
+  it('renders an empty grid when the mount-tab entry carries no layout', async () => {
+    stubWithDoc(productDoc([{ id: 'documentation', name: 'documentation' }]));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.text()).not.toContain('Predicts customer churn');
+    wrapper.unmount();
+  });
+
+  it('renders existing panes unchanged without a customized entry', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    expect(wrapper.text()).toContain('Predicts customer churn');
+    expect(wrapper.find('[data-testid="add-data-product-assets"]').exists()).toBe(true);
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('keeps the existing assets pane when a non-mount tab entry resolves, even with a layout', async () => {
+    stubWithDoc(
+      productDoc([
+        {
+          id: 'assets',
+          name: 'assets',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    // Assets is not the widget-layout tab: the entry never mounts a grid.
+    // With an assets-only list, only the assets pane renders; the
+    // unlisted overview tab (and its description) is removed (F-2).
+    expect(wrapper.find('[data-testid="add-data-product-assets"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Predicts customer churn');
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('keeps every non-mount tab intact for an editor-saved page (all tabs, layout on documentation only)', async () => {
+    stubWithDoc(
+      productDoc([
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [{ i: 'KnowledgePanel.Domain', x: 0, y: 0, w: 2, h: 1 }],
+        },
+        { id: 'activity_feed', name: 'activity_feed', layout: [] },
+        { id: 'input_output_ports', name: 'input_output_ports', layout: [] },
+        { id: 'assets', name: 'assets', layout: [] },
+        { id: 'contract', name: 'contract', layout: [] },
+        { id: 'data_observability', name: 'data_observability', layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountProduct();
+    // Mount tab: the grid replaces the overview pane.
+    expect(wrapper.find('[data-testid="widget-domain"]').text()).toContain('Marketing');
+    expect(wrapper.text()).not.toContain('Predicts customer churn');
+    expect(widgetTestIds(wrapper)).toEqual(['widget-domain']);
+    // Every other tab keeps its existing panel.
+    expect(wrapper.find('[data-testid="add-data-product-assets"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

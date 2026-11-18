@@ -17,6 +17,7 @@ import {
   getDummyDataByPage,
   getTabDisplayName,
   getWidgetHeight,
+  isWidgetLayoutTab,
 } from './customizePageData';
 import { PAGE_DATA_TABLES } from './pageDataTables';
 
@@ -120,10 +121,31 @@ describe('customizePageData dispatch', () => {
     expect(layout.map((widget) => widget.y)).toEqual([0, 1]);
   });
 
-  it('applies the Container default layout to both children and schema tabs', () => {
-    expect(getDefaultWidgetForTab('Container', 'children').length).toBeGreaterThan(0);
-    expect(getDefaultWidgetForTab('Container', 'schema').length).toBeGreaterThan(0);
+  it('returns distinct Container default layouts per mount tab (official getDefaultLayout)', () => {
+    // Official ContainerDetailsClassBase.ts:120-131: CHILDREN gets a
+    // single CONTAINER_CHILDREN widget (h = defaultWidgetHeight 8,
+    // w: 8); the SCHEMA/default branch gets the LeftPanel layout
+    // (Description + ContainerSchema, :133-162). The extraction had
+    // flattened both tabs onto the SCHEMA layout; the per-tab entry
+    // restores the official split. The editor reads the same lookup
+    // through getDefaultTabs, so its initial tab layouts match.
+    expect(getDefaultWidgetForTab('Container', 'children')).toEqual([
+      { h: 8, i: 'KnowledgePanel.ContainerChildren', w: 8, x: 0, y: 0, static: false },
+    ]);
+    const schema = getDefaultWidgetForTab('Container', 'schema');
+    expect(schema[0]).toMatchObject({ i: 'KnowledgePanel.LeftPanel', w: 6, x: 0, y: 0 });
+    expect(schema[0]?.children?.map((widget) => widget.i)).toEqual([
+      'KnowledgePanel.Description',
+      'KnowledgePanel.ContainerSchema',
+    ]);
     expect(getDefaultWidgetForTab('Container', 'overview')).toEqual([]);
+    const tabs = getDefaultTabs('Container');
+    expect(tabs.find((tab) => tab.id === 'children')?.layout).toEqual(
+      getDefaultWidgetForTab('Container', 'children'),
+    );
+    expect(tabs.find((tab) => tab.id === 'schema')?.layout).toEqual(
+      getDefaultWidgetForTab('Container', 'schema'),
+    );
   });
 
   it('preserves the Topic duplicate KnowledgeArticle widget entry', () => {
@@ -190,15 +212,50 @@ describe('customizePageData dispatch', () => {
 
   it('keeps every default layout within the 8-column grid', () => {
     for (const [pageType, table] of Object.entries(PAGE_DATA_TABLES)) {
-      for (const widget of table.defaultLayout as Array<Record<string, unknown>>) {
-        const x = widget.x as number;
-        const w = widget.w as number;
-        expect(
-          x + w <= 8,
-          `${pageType} widget ${String(widget.i)} exceeds 8 columns`,
-        ).toBe(true);
-        expect(x).toBeGreaterThanOrEqual(0);
+      const layouts = [
+        table.defaultLayout,
+        ...Object.values(table.defaultLayoutByTab ?? {}),
+      ] as Array<Array<Record<string, unknown>>>;
+      for (const layout of layouts) {
+        for (const widget of layout) {
+          const x = widget.x as number;
+          const w = widget.w as number;
+          expect(
+            x + w <= 8,
+            `${pageType} widget ${String(widget.i)} exceeds 8 columns`,
+          ).toBe(true);
+          expect(x).toBeGreaterThanOrEqual(0);
+        }
       }
     }
+  });
+
+  it('reports every layoutAppliesTo entry as a mount tab, exhaustively', () => {
+    // The gate reads layoutAppliesTo verbatim, so this pins the whole
+    // table (26 entries across 25 tables) rather than a spot check.
+    // The 25 official GenericTab mount points all fall inside this set;
+    // DataMarketplace/overview returns true as a table entry even though
+    // official has no DataMarketplace GenericTab mount (the marketplace
+    // walks its own chain) — that is the pinned status quo, not an
+    // endorsed mount, and no view consults the gate with DataMarketplace.
+    // Non-mount tabs never render a grid even when a stored entry exists
+    // for them (the editor saves all tabs with layout [] on the
+    // non-editable ones).
+    let entryCount = 0;
+    for (const [pageType, table] of Object.entries(PAGE_DATA_TABLES)) {
+      for (const tabId of table.layoutAppliesTo) {
+        entryCount += 1;
+        expect(isWidgetLayoutTab(pageType, tabId)).toBe(true);
+      }
+    }
+    expect(entryCount).toBe(26);
+    expect(isWidgetLayoutTab('DataMarketplace', 'overview')).toBe(true);
+    expect(isWidgetLayoutTab('Table', 'activity_feed')).toBe(false);
+    expect(isWidgetLayoutTab('Container', 'activity_feed')).toBe(false);
+    expect(isWidgetLayoutTab('Glossary', 'overview')).toBe(false);
+    expect(isWidgetLayoutTab('Metric', 'lineage')).toBe(false);
+    expect(isWidgetLayoutTab('GlossaryTerm', 'assets')).toBe(false);
+    expect(isWidgetLayoutTab('Pipeline', 'overview')).toBe(false);
+    expect(isWidgetLayoutTab('NoSuchPage', 'overview')).toBe(false);
   });
 });

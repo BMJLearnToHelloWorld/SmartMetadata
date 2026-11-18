@@ -236,4 +236,32 @@ describe('WorkflowsView', () => {
     expect(router.currentRoute.value.params.tab).toBeUndefined();
     expect(router.currentRoute.value.query.mode).toBe('edit');
   });
+
+  it('renders no breadcrumb on the list page (pin Classic: plain PageHeader only)', { timeout: 15000 }, async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            { id: 'w1', name: 'nightly-dq', displayName: 'Nightly DQ', description: 'Runs nightly checks' },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const { pinia, router } = mountPage();
+    await router.push('/govern/workflows');
+    await router.isReady();
+    const wrapper = mount(WorkflowsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    // Pin Classic (WorkflowsPage :416-430) renders only the plain
+    // PageHeader; the breadcrumb exists solely in the AI-mode branch.
+    expect(wrapper.find('[data-testid="page-header"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="page-header-heading"]').text()).toBe('Workflows');
+    expect(wrapper.find('[data-testid="workflows-list"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('.ant-breadcrumb').exists()).toBe(false);
+  });
 });

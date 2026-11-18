@@ -14,6 +14,7 @@ import WorkflowCanvas from '@/components/governance/workflowBuilder/WorkflowCanv
 import WorkflowExecutionHistory from '@/components/governance/workflowBuilder/WorkflowExecutionHistory.vue';
 import WorkflowHeader from '@/components/governance/workflowBuilder/WorkflowHeader.vue';
 import WorkflowSidebar from '@/components/governance/workflowBuilder/WorkflowSidebar.vue';
+import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import { useWorkflowBuilder } from '@/composables/useWorkflowBuilder';
 import { WORKFLOW_BUILDER_TAB_TEST_IDS } from '@/constants/workflowBuilder';
 
@@ -60,6 +61,17 @@ const workflowDisplayName = computed(
 );
 const workflowName = computed(() => state.state.workflowMetadata?.name);
 
+/**
+ * Pin Classic breadcrumb (WorkflowBuilder.tsx:552-562): the builder builds
+ * its own single-item TitleBreadcrumb — {name: workflow-plural, url: list
+ * path} — instead of the settings helper, whose subCategory no pin caller
+ * ever passes WORKFLOW_DEFINITIONS to. The label is the list page's own
+ * i18n key; the link is the list route the back button already uses.
+ */
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
+  { label: t('workflows.title'), routeName: 'workflows' },
+]);
+
 const isForbidden = computed(
   () =>
     logic.loadError.value instanceof ApiError &&
@@ -102,6 +114,11 @@ onMounted(() => {
     >
       {{ t('workflows.detail.back') }}
     </Button>
+
+    <!-- Pin Classic renders TitleBreadcrumb above the header (renderPage)
+         and above the load-error placeholder, but not while loading (bare
+         Loader): one render point, hidden while loading, covers both. -->
+    <SmBreadcrumb v-if="!state.state.loading" :items="breadcrumbItems" />
 
     <div v-if="state.state.loading" style="display: flex; justify-content: center; padding: 48px 0">
       <Spin data-testid="workflow-detail-loading" :tip="t('shared.loading')" />

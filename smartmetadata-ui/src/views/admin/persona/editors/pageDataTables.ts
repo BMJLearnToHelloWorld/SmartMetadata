@@ -13,6 +13,10 @@
 // displayName on its tabs; Glossary default layout children share y: 0.
 // Table KNOWLEDGE_GRAPH (conditional on rdfEnabled) is excluded by design
 // (see customizePageData.ts).
+// Ruling (Bai 2026-11-18, F-3 R-EDIT-4 option (b)): the exclusion is accepted
+// as default-equivalent — it equals the official flag-off default behavior
+// (pin TableClassBase gates KNOWLEDGE_GRAPH on rdfEnabled, default false);
+// recorded as a decided deviation. Wire the flag chain only if an rdf need appears.
 //
 // NOTE: values here are data, not behavior. Behavior lives in
 // customizePageData.ts / gridLayoutUtils.ts.
@@ -23,6 +27,23 @@ export interface PageDataTable {
   heightFallback: number;
   layoutAppliesTo: string[];
   defaultLayout: Array<Record<string, unknown>>;
+  /**
+   * Per-tab default layouts, keyed by tab id, for page types whose
+   * official `getDefaultLayout(tab)` returns a DIFFERENT non-empty
+   * layout per mount tab. At pin 392b3efd only Container qualifies:
+   * `utils/ContainerDetailsClassBase.ts:120-131` returns a single
+   * CONTAINER_CHILDREN widget for CHILDREN and the LeftPanel layout
+   * for SCHEMA/the default branch; every other class base returns one
+   * layout for its single mount tab (and [] elsewhere). Tabs without
+   * an entry here fall back to `defaultLayout`; `getDefaultWidgetForTab`
+   * is the only reader, so the editor (via `getDefaultTabs`) and the
+   * read-side default stay in step. This field is NOT extraction
+   * output: the Container entry below is a hand-verified alignment
+   * correction (the extraction flattened both tabs onto the SCHEMA
+   * layout), pinned by `customizePageData.test.ts`; a re-extraction
+   * must preserve or re-verify it, not silently drop it.
+   */
+  defaultLayoutByTab?: Record<string, Array<Record<string, unknown>>>;
   widgets: Array<{
     fqn: string;
     labelKey: string;
@@ -1739,6 +1760,23 @@ export const PAGE_DATA_TABLES: Record<string, PageDataTable> =
         "static": false
       }
     ],
+    // Verified alignment correction, not extraction output: official
+    // ContainerDetailsClassBase.ts:120-131 returns this single-widget
+    // layout for CHILDREN (h = defaultWidgetHeight[CONTAINER_CHILDREN]
+    // = 8, w: 8), while SCHEMA keeps `defaultLayout` above. See
+    // PageDataTable.defaultLayoutByTab.
+    "defaultLayoutByTab": {
+      "children": [
+        {
+          "h": 8,
+          "i": "KnowledgePanel.ContainerChildren",
+          "w": 8,
+          "x": 0,
+          "y": 0,
+          "static": false
+        }
+      ]
+    },
     "widgets": [
       {
         "fqn": "KnowledgePanel.Description",

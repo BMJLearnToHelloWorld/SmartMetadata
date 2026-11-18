@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import {Alert, Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
+import {Alert, Button, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
@@ -22,16 +22,24 @@ import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTabl
 import { listTestCases } from '@/api/testCases';
 import { getEntityUsage } from '@/api/usage';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
-import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
+import GenericTab from '@/components/customize/GenericTab.vue';
+import AssetDetailPiece, {
+  type AssetDetailPieceContext,
+  type AssetDetailPieceId,
+} from '@/views/AssetDetailPiece.vue';
 import { assetTabKeys, type AssetTabKey } from '@/catalog/assetTabs';
-import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit } from '@/catalog/entityDetailTabs';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import { entityDetailTabDef, entityDetailTabDefs, isOfficiallySplit, preservedTabKeys } from '@/catalog/entityDetailTabs';
 import { isDetailWired, lineageLocation, TABLE_USAGE_SUMMARY_FIELD, USAGE_SUMMARY_ENTITY_TYPES } from '@/catalog/entityRoutes';
 import {
+  findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
   getRenderedActiveTab,
   pageTypeForEntityType,
   useCustomPages,
 } from '@/composables/useCustomPages';
+import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { getTierTag } from '@/ingestion/tierTags';
 import { getUsagePercentile } from '@/catalog/usagePercentile';
 import {
@@ -50,8 +58,6 @@ import AssetProfilerPanel from '@/features/crud/AssetProfilerPanel.vue';
 import AssetSamplePanel from '@/features/crud/AssetSamplePanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { requiredField } from '@/features/crud/formRules';
-import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
-import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import TableQueries from '@/features/queries/TableQueries.vue';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import {
@@ -68,6 +74,7 @@ import { usePermissionStore } from '@/stores/permissions';
 import type { AssetDetail, CatalogPipelineStatus, SchemaRow } from '@/types/api';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 
 const props = defineProps<{
   entityType: string;
@@ -82,10 +89,12 @@ const permissionStore = usePermissionStore();
 
 // C-4 consume side: the selected persona's customized page for this
 // entity type reorders and renames the detail tabs (official
-// `getDetailsTabWithNewLabel` semantics, preserve mode — see
+// `getDetailsTabWithNewLabel` replacement semantics, keeping only the
+// product-only keys listed at the call site — see
 // `useCustomPages.ts`). Types with no PageType (`query`) yield no
 // customization and always render their defaults.
-const { customizedPage } = useCustomPages(() => pageTypeForEntityType(props.entityType));
+const pageType = computed(() => pageTypeForEntityType(props.entityType));
+const { customizedPage } = useCustomPages(pageType);
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -237,14 +246,119 @@ const tabs = computed<EntityDetailTab[]>(() => {
         label: t(`asset.tabs.${key}`),
         testId: TAB_TEST_IDS[key],
       }));
-  // The customized tab list reorders and renames the defaults; tabs
-  // the customization does not mention stay, in default order
-  // (preserve mode — the product tab sets carry tabs with no official
-  // id, which replacement semantics would silently remove).
+  // The customized tab list replaces the defaults, in the customized
+  // order; only product-only tabs survive a customization that never
+  // mentions them — `preservedTabKeys` carries the per-type evidence.
   return getDetailsTabWithNewLabel(defaults, customizedPage.value?.tabs, {
-    preserveUnlisted: true,
+    preserveKeys: preservedTabKeys(props.entityType, defs !== null),
   });
 });
+
+// B-8 widget layer: a tab renders the widget grid only when the
+// customized page carries a tab entry resolving to the rendered tab
+// key AND the entry's official id is a mount tab for this page type
+// (`isWidgetLayoutTab` — the tab whose detail page officially mounts
+// `GenericTab`). The editor saves an entry for every system tab with
+// `layout: []` on the non-editable ones, so entry existence alone
+// would blank every non-primary tab of any editor-saved page; the
+// mount check is what keeps those tabs on their fixed children. The
+// check uses the ENTRY's id — not the rendered key, which may differ
+// through an alias (e.g. rendered `apiEndpoints` from entry
+// `apiEndpoint`, rendered `overview` from entry `details`) — because
+// the official mount set is keyed by tab id. A resolved mount tab
+// whose layout is []/missing/non-array still renders an empty grid:
+// no default pane leaks in — except the Container mount excluded by
+// the data-model mutual-exclusion gate below, which renders its
+// default pane. `null` means "no grid" (no entry, a non-mount entry,
+// an excluded Container mount, or no customized page): the existing
+// default pane renders unchanged. An empty array is a real (empty)
+// grid, so callers compare against `null` rather than truthiness.
+function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
+  const pageTypeValue = pageType.value;
+  if (!pageTypeValue) {
+    return null;
+  }
+  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, slotKey);
+  if (!entry?.id) {
+    return null;
+  }
+  if (!isWidgetLayoutTab(pageTypeValue, entry.id)) {
+    return null;
+  }
+  // Container mount mutual exclusion (official
+  // `utils/ContainerDetailUtils.tsx:103-152`, driven by
+  // `ContainerPage.tsx:329-330` `isDataModelEmpty =
+  // isEmpty(containerData?.dataModel)`): an empty data model mounts
+  // GenericTab ONLY on CHILDREN, a non-empty one ONLY on SCHEMA (the
+  // other tab renders fixed children). The two mounts never coexist,
+  // so at most one Container grid mounts and the two slots can never
+  // emit duplicate widget ids. The product has no dataModel field on
+  // AssetDetail; `schemaRows` is the proxy — `schemaRowsFor` derives
+  // container rows solely from `dataModel.columns` (`api/entities.ts`),
+  // so an empty row list means no named data-model columns. Bounded
+  // divergence (residual R-3): a data model present but yielding no
+  // named columns — zero columns, or only unnamed ones dropped by
+  // `mapColumns` (`api/entities.ts:114-117`) — reads as empty here
+  // while official `isEmpty(dataModel)` reads the non-empty object
+  // as non-empty. The mount tab flips: official mounts the grid on
+  // SCHEMA, the product mounts it on CHILDREN and the schema tab
+  // renders its fixed pane, whose schema piece shows the empty
+  // state rather than a table. The content shown is equivalent
+  // (empty schema plus the children list). The gate fires only for
+  // Container (the sole two-mount page type).
+  if (props.entityType === 'container') {
+    const dataModelEmpty = (asset.value?.schemaRows.length ?? 0) === 0;
+    if (
+      (entry.id === 'children' && !dataModelEmpty) ||
+      (entry.id === 'schema' && dataModelEmpty)
+    ) {
+      return null;
+    }
+  }
+  return resolveWidgetLayout(pageTypeValue, entry.id, customizedPage.value);
+}
+
+// Content-key → shared content piece, following the official
+// per-type widget switches (each type's `getWidgetsFromKey` checks
+// its specific keys, then the shared CommonWidgets dispatcher; see
+// `detailWidgetDispatch.ts` for the file:line table). Keys with no
+// product pane are absent on purpose, so their cells stay empty
+// (residual R-4: data products, related metrics / metric hierarchy):
+// table constraints / partitioned keys / table aliases / asset
+// health (no product panes), data products (no field on the detail
+// payload), experts / tier / certification (no detail surfaces;
+// tier already renders in the shell header), knowledge articles,
+// related metrics / metric hierarchy (no metric surfaces). The
+// widget's `config` (e.g. the custom-properties propertyLayout) is
+// not consumed: the product panels take no layout input.
+const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
+  [DetailWidgetKeys.TABLE_SCHEMA]: 'schemaTable',
+  [DetailWidgetKeys.TOPIC_SCHEMA]: 'schemaTable',
+  [DetailWidgetKeys.CONTAINER_SCHEMA]: 'schemaTable',
+  [DetailWidgetKeys.SEARCH_INDEX_FIELDS]: 'schemaTable',
+  [DetailWidgetKeys.DATA_MODEL]: 'schemaTable',
+  [DetailWidgetKeys.DATABASE_SCHEMA]: 'related',
+  [DetailWidgetKeys.TABLES]: 'related',
+  [DetailWidgetKeys.CONTAINER_CHILDREN]: 'related',
+  [DetailWidgetKeys.FREQUENTLY_JOINED_TABLES]: 'frequentlyJoined',
+  [DetailWidgetKeys.CHARTS_TABLE]: 'chartsTables',
+  [DetailWidgetKeys.PIPELINE_TASKS]: 'tasks',
+  [DetailWidgetKeys.STORED_PROCEDURE_CODE]: 'code',
+  [DetailWidgetKeys.ML_MODEL_FEATURES]: 'features',
+  [DetailWidgetKeys.API_ENDPOINTS]: 'apiEndpoints',
+  [DetailWidgetKeys.API_SCHEMA]: 'apiSchema',
+  [DetailWidgetKeys.METRIC_DEFINITION]: 'metricExpression',
+  [DetailWidgetKeys.CUSTOM_PROPERTIES]: 'customProperties',
+  [DetailWidgetKeys.DESCRIPTION]: 'description',
+  [DetailWidgetKeys.TAGS]: 'tags',
+  [DetailWidgetKeys.GLOSSARY_TERMS]: 'glossaryTerms',
+  [DetailWidgetKeys.OWNERS]: 'owners',
+  [DetailWidgetKeys.DOMAIN]: 'domains',
+};
+
+function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {
+  return contentKey ? (WIDGET_CONTENT_PIECES[contentKey] ?? null) : null;
+}
 
 // Pin detail header: the percentile renders only when usageSummary is
 // present (the `&&` gate), with a missing rank falling back to 0.
@@ -680,6 +794,31 @@ async function onSaveCustomProperties(): Promise<void> {
   }
 }
 
+function onApiEndpointClick(row: ApiEndpointRef): void {
+  void router.push(apiEndpointLocation(row));
+}
+
+// The shared pieces render only inside `v-if="asset"` slots, so the
+// asset cast below never feeds a rendered piece a null asset.
+const pieceContext = computed<AssetDetailPieceContext>(() => ({
+  asset: asset.value as AssetDetail,
+  entityType: props.entityType,
+  schemaColumns: schemaColumns.value,
+  schemaExpandable,
+  featureColumns: featureColumns.value,
+  hyperColumns: hyperColumns.value,
+  refColumns: refColumns.value,
+  apiEndpointColumns: apiEndpointColumns.value,
+  taskGraph: taskGraph.value,
+  taskGraphEmpty: taskGraphEmpty.value,
+  customProperties: customProperties.value,
+  customPropsError: customPropsError.value,
+  apiEndpoints: apiEndpoints.value,
+  apiEndpointsError: apiEndpointsError.value,
+  apiEndpointSchemaJson,
+  onApiEndpointClick,
+}));
+
 watch(
   () => [props.entityType, props.fqn],
   () => {
@@ -779,349 +918,525 @@ onMounted(() => {
         </Button>
       </template>
       <template v-if="asset" #overview>
-          <AssetOverviewFields :asset="asset" :entity-type="entityType" />
-          <template v-if="entityType === 'metric' && (asset.storedProcedureCode?.code || asset.storedProcedureCode?.language)">
-            <Typography.Title :level="5">{{ t('asset.metricExpressionTitle') }}</Typography.Title>
-            <pre data-testid="asset-metric-expression" class="detail__code">{{
-              [asset.storedProcedureCode?.language, asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
-            }}</pre>
+          <GenericTab
+            v-if="widgetLayoutFor('overview') !== null"
+            :layout="widgetLayoutFor('overview') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetOverviewFields :asset="asset" :entity-type="entityType" />
+            <AssetDetailPiece piece="metricExpression" :context="pieceContext" />
           </template>
       </template>
       <template v-if="asset" #schemas>
-          <AssetRelatedPanel :asset="asset" />
+          <GenericTab
+            v-if="widgetLayoutFor('schemas') !== null"
+            :layout="widgetLayoutFor('schemas') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetRelatedPanel :asset="asset" />
+          </template>
       </template>
       <template v-if="asset" #table>
-          <AssetRelatedPanel :asset="asset" />
+          <GenericTab
+            v-if="widgetLayoutFor('table') !== null"
+            :layout="widgetLayoutFor('table') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetRelatedPanel :asset="asset" />
+          </template>
       </template>
       <template v-if="asset" #children>
-          <AssetRelatedPanel :asset="asset" />
+          <GenericTab
+            v-if="widgetLayoutFor('children') !== null"
+            :layout="widgetLayoutFor('children') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetRelatedPanel :asset="asset" />
+          </template>
       </template>
       <template v-if="asset" #model>
-          <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
-          <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
-          <Empty
-            v-if="!asset.schemaRows.length"
-            data-testid="asset-schema-empty"
-            :description="t('asset.schemaEmpty')"
-          />
-          <SmTable
-            v-else
-            row-key="key"
-            test-id="asset-schema-table"
-            :columns="schemaColumns"
-            :data-source="asset.schemaRows"
-            :expandable="schemaExpandable"
-            :pagination="false"
-            size="small"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('model') !== null"
+            :layout="widgetLayoutFor('model') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
+          </template>
       </template>
       <template v-if="asset" #fields>
-          <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
-          <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
-          <Empty
-            v-if="!asset.schemaRows.length"
-            data-testid="asset-schema-empty"
-            :description="t('asset.schemaEmpty')"
-          />
-          <SmTable
-            v-else
-            row-key="key"
-            test-id="asset-schema-table"
-            :columns="schemaColumns"
-            :data-source="asset.schemaRows"
-            :expandable="schemaExpandable"
-            :pagination="false"
-            size="small"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('fields') !== null"
+            :layout="widgetLayoutFor('fields') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
+          </template>
       </template>
       <template v-if="asset" #schema>
-          <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
-          <Typography.Title :level="5">{{ asset.schemaLabel }}</Typography.Title>
-          <Empty
-            v-if="!asset.schemaRows.length"
-            data-testid="asset-schema-empty"
-            :description="t('asset.schemaEmpty')"
-          />
-          <SmTable
-            v-else
-            row-key="key"
-            test-id="asset-schema-table"
-            :columns="schemaColumns"
-            :data-source="asset.schemaRows"
-            :expandable="schemaExpandable"
-            :pagination="false"
-            size="small"
+          <GenericTab
+            v-if="widgetLayoutFor('schema') !== null"
+            :layout="widgetLayoutFor('schema') ?? []"
+            :page-type="pageType ?? ''"
           >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                {{ (record as SchemaRow).name }}
-                <FrequentlyJoinedColumns :joins="asset.joins" :column-name="(record as SchemaRow).name" />
-              </template>
-              <template v-else-if="column.key === 'dataType'">
-                {{ (record as SchemaRow).dataType }}
-              </template>
-              <template v-else>
-                {{ (record as SchemaRow).description }}
-              </template>
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
             </template>
-          </SmTable>
-          <FrequentlyJoinedTables v-if="entityType === 'table'" :joins="asset.joins" />
+          </GenericTab>
+          <template v-else>
+            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetDetailPiece piece="schemaTable" :context="pieceContext" with-joins />
+          </template>
       </template>
       <template v-if="asset" #features>
-          <Typography.Paragraph type="secondary">{{ t('asset.featuresLead') }}</Typography.Paragraph>
-          <Empty
-            v-if="!asset.mlFeatures?.length && !asset.mlHyperParameters?.length"
-            data-testid="asset-features-empty"
-            :description="t('asset.featuresEmpty')"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('features') !== null"
+            :layout="widgetLayoutFor('features') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
           <template v-else>
-            <Typography.Title :level="5">{{ t('asset.featuresTitle') }}</Typography.Title>
-            <SmTable
-              row-key="name"
-              test-id="asset-features-table"
-              :columns="featureColumns"
-              :data-source="asset.mlFeatures ?? []"
-              :pagination="false"
-              size="small"
-            />
-            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.hyperTitle') }}</Typography.Title>
-            <SmTable
-              row-key="name"
-              test-id="asset-hyper-table"
-              :columns="hyperColumns"
-              :data-source="asset.mlHyperParameters ?? []"
-              :pagination="false"
-              size="small"
-            />
+            <AssetDetailPiece piece="features" :context="pieceContext" />
           </template>
       </template>
       <template v-if="asset" #tasks>
-          <Typography.Paragraph type="secondary">{{ t('asset.tasksLead') }}</Typography.Paragraph>
-          <Empty
-            v-if="taskGraphEmpty"
-            data-testid="pipeline-task-empty"
-            :description="t('asset.tasksEmpty')"
-          />
-          <PipelineTaskGraph v-else :model="taskGraph" />
+          <GenericTab
+            v-if="widgetLayoutFor('tasks') !== null"
+            :layout="widgetLayoutFor('tasks') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetDetailPiece piece="tasks" :context="pieceContext" />
+          </template>
       </template>
       <template v-if="asset" #executions>
-          <Typography.Paragraph type="secondary">{{ t('asset.executionsLead') }}</Typography.Paragraph>
-          <Alert
-            v-if="pipelineStatusError && !executionRows.length"
-            type="warning"
-            show-icon
-            :message="pipelineStatusError"
-            class="detail__alert"
-          />
-          <Empty
-            v-if="pipelineStatusTried && !pipelineStatusError && !executionRows.length"
-            data-testid="pipeline-executions-empty"
-            :description="t('asset.executionsEmpty')"
-          />
-          <SmTable
-            v-else-if="executionRows.length"
-            row-key="timestamp"
-            test-id="pipeline-executions-table"
-            :columns="executionColumns"
-            :data-source="executionRows"
-            :pagination="false"
-            size="small"
+          <GenericTab
+            v-if="widgetLayoutFor('executions') !== null"
+            :layout="widgetLayoutFor('executions') ?? []"
+            :page-type="pageType ?? ''"
           >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'timestamp'">
-                {{ formatTs((record as CatalogPipelineStatus).timestamp) }}
-              </template>
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
             </template>
-          </SmTable>
+          </GenericTab>
+          <template v-else>
+            <Typography.Paragraph type="secondary">{{ t('asset.executionsLead') }}</Typography.Paragraph>
+            <Alert
+              v-if="pipelineStatusError && !executionRows.length"
+              type="warning"
+              show-icon
+              :message="pipelineStatusError"
+              class="detail__alert"
+            />
+            <Empty
+              v-if="pipelineStatusTried && !pipelineStatusError && !executionRows.length"
+              data-testid="pipeline-executions-empty"
+              :description="t('asset.executionsEmpty')"
+            />
+            <SmTable
+              v-else-if="executionRows.length"
+              row-key="timestamp"
+              test-id="pipeline-executions-table"
+              :columns="executionColumns"
+              :data-source="executionRows"
+              :pagination="false"
+              size="small"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'timestamp'">
+                  {{ formatTs((record as CatalogPipelineStatus).timestamp) }}
+                </template>
+              </template>
+            </SmTable>
+          </template>
       </template>
       <template v-if="asset" #code>
-          <Typography.Paragraph type="secondary">{{ t('asset.codeLead') }}</Typography.Paragraph>
-          <Empty
-            v-if="!asset.storedProcedureCode?.code && !asset.storedProcedureCode?.language"
-            data-testid="asset-code-empty"
-            :description="t('asset.codeEmpty')"
-          />
-          <pre v-else data-testid="asset-code-block" class="detail__code">{{
-            [asset.storedProcedureCode?.language, asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
-          }}</pre>
+          <GenericTab
+            v-if="widgetLayoutFor('code') !== null"
+            :layout="widgetLayoutFor('code') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetDetailPiece piece="code" :context="pieceContext" />
+          </template>
       </template>
       <template v-if="asset" #lineage>
-          <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" />
+          <GenericTab
+            v-if="widgetLayoutFor('lineage') !== null"
+            :layout="widgetLayoutFor('lineage') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <LineageCanvas :entity-type="entityType" :fqn="decodedFqn" variant="tab" />
+          </template>
       </template>
       <template v-if="asset" #quality>
-          <AssetProfilerPanel
-            :tests="tests"
-            :tests-error="testsError"
-            :test-status-series="testStatusSeries"
-            :table-profile="tableProfile"
-            :row-count-series="rowCountSeries"
-            :usage-series="usageSeries"
-            :column-null-series="columnNullSeries"
-            :entity-type="entityType"
-            :table-id="asset.id"
-            :columns="asset.schemaRows"
-          />
-          <AssetSamplePanel
-            :table-sample="tableSample"
-            :topic-sample="topicSample"
-            :observability-error="observabilityError"
-            :entity-type="entityType"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('quality') !== null"
+            :layout="widgetLayoutFor('quality') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetProfilerPanel
+              :tests="tests"
+              :tests-error="testsError"
+              :test-status-series="testStatusSeries"
+              :table-profile="tableProfile"
+              :row-count-series="rowCountSeries"
+              :usage-series="usageSeries"
+              :column-null-series="columnNullSeries"
+              :entity-type="entityType"
+              :table-id="asset.id"
+              :columns="asset.schemaRows"
+            />
+            <AssetSamplePanel
+              :table-sample="tableSample"
+              :topic-sample="topicSample"
+              :observability-error="observabilityError"
+              :entity-type="entityType"
+            />
+          </template>
       </template>
       <template v-if="asset" #activity>
-          <AssetActivityPanel
-            :activity="activity"
-            :conversations="conversations"
-            :collaboration-error="collaborationError"
-            :entity-type="entityType"
-            :fqn="decodedFqn"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('activity') !== null"
+            :layout="widgetLayoutFor('activity') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetActivityPanel
+              :activity="activity"
+              :conversations="conversations"
+              :collaboration-error="collaborationError"
+              :entity-type="entityType"
+              :fqn="decodedFqn"
+            />
+          </template>
       </template>
       <template v-if="asset" #details>
-          <AssetOverviewFields :asset="asset" :entity-type="entityType" />
-          <Typography.Paragraph type="secondary">{{ t('asset.chartsLead') }}</Typography.Paragraph>
-          <Empty
-            v-if="!asset.charts?.length && !asset.dataModels?.length"
-            data-testid="asset-charts-empty"
-            :description="t('asset.chartsEmpty')"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('details') !== null"
+            :layout="widgetLayoutFor('details') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
           <template v-else>
-            <Typography.Title :level="5">{{ t('asset.chartsTitle') }}</Typography.Title>
-            <SmTable
-              row-key="name"
-              test-id="asset-charts-table"
-              :columns="refColumns"
-              :data-source="asset.charts ?? []"
-              :pagination="false"
-              size="small"
-            />
-            <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.dataModelsTitle') }}</Typography.Title>
-            <SmTable
-              row-key="name"
-              test-id="asset-data-models-table"
-              :columns="refColumns"
-              :data-source="asset.dataModels ?? []"
-              :pagination="false"
-              size="small"
-            />
+            <AssetOverviewFields :asset="asset" :entity-type="entityType" />
+            <AssetDetailPiece piece="chartsTables" :context="pieceContext" />
           </template>
       </template>
       <template v-if="asset" #apiEndpoints>
-          <Alert v-if="apiEndpointsError" type="error" :message="apiEndpointsError" show-icon />
-          <Empty
-            v-else-if="!apiEndpoints.length"
-            data-testid="asset-api-endpoints-empty"
-            :description="t('asset.apiEndpointsEmpty')"
-          />
-          <SmTable
-            v-else
-            row-key="name"
-            test-id="asset-api-endpoints-table"
-            :columns="apiEndpointColumns"
-            :data-source="apiEndpoints"
-            :pagination="false"
-            size="small"
-            :custom-row="(row: ApiEndpointRef) => ({ onClick: () => router.push(apiEndpointLocation(row)) })"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('apiEndpoints') !== null"
+            :layout="widgetLayoutFor('apiEndpoints') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetDetailPiece piece="apiEndpoints" :context="pieceContext" />
+          </template>
       </template>
       <template v-if="asset" #endpoint>
-          <Descriptions bordered size="small" :column="1">
-            <Descriptions.Item :label="t('asset.apiEndpointUrl')">{{ asset.apiEndpointUrl || '—' }}</Descriptions.Item>
-            <Descriptions.Item :label="t('asset.apiRequestMethod')">{{ asset.apiRequestMethod || '—' }}</Descriptions.Item>
-          </Descriptions>
-          <template v-if="asset.apiRequestSchema">
-            <Typography.Title :level="5">{{ t('asset.apiRequestSchema') }}</Typography.Title>
-            <pre data-testid="asset-api-request-schema" class="detail__code">{{ apiEndpointSchemaJson(asset.apiRequestSchema) }}</pre>
-          </template>
-          <template v-if="asset.apiResponseSchema">
-            <Typography.Title :level="5">{{ t('asset.apiResponseSchema') }}</Typography.Title>
-            <pre data-testid="asset-api-response-schema" class="detail__code">{{ apiEndpointSchemaJson(asset.apiResponseSchema) }}</pre>
+          <GenericTab
+            v-if="widgetLayoutFor('endpoint') !== null"
+            :layout="widgetLayoutFor('endpoint') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetDetailPiece piece="apiSchema" :context="pieceContext" />
           </template>
       </template>
       <template v-if="asset" #activity_feed>
-          <AssetActivityPanel
-            :activity="activity"
-            :conversations="conversations"
-            :collaboration-error="collaborationError"
-            :entity-type="entityType"
-            :fqn="decodedFqn"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('activity_feed') !== null"
+            :layout="widgetLayoutFor('activity_feed') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetActivityPanel
+              :activity="activity"
+              :conversations="conversations"
+              :collaboration-error="collaborationError"
+              :entity-type="entityType"
+              :fqn="decodedFqn"
+            />
+          </template>
       </template>
       <template v-if="asset" #sample_data>
-          <Empty
-            v-if="residualReasonFor('sample_data')"
-            data-testid="asset-tab-residual"
-            :description="residualReasonFor('sample_data')"
-          />
-          <AssetSamplePanel
-            v-else
-            :table-sample="tableSample"
-            :topic-sample="topicSample"
-            :observability-error="observabilityError"
-            :entity-type="entityType"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('sample_data') !== null"
+            :layout="widgetLayoutFor('sample_data') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty
+              v-if="residualReasonFor('sample_data')"
+              data-testid="asset-tab-residual"
+              :description="residualReasonFor('sample_data')"
+            />
+            <AssetSamplePanel
+              v-else
+              :table-sample="tableSample"
+              :topic-sample="topicSample"
+              :observability-error="observabilityError"
+              :entity-type="entityType"
+            />
+          </template>
       </template>
       <template v-if="asset" #stored_procedure>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('stored_procedure')" />
+          <GenericTab
+            v-if="widgetLayoutFor('stored_procedure') !== null"
+            :layout="widgetLayoutFor('stored_procedure') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('stored_procedure')" />
+          </template>
       </template>
       <template v-if="asset" #search_index_settings>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('search_index_settings')" />
+          <GenericTab
+            v-if="widgetLayoutFor('search_index_settings') !== null"
+            :layout="widgetLayoutFor('search_index_settings') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('search_index_settings')" />
+          </template>
       </template>
       <template v-if="asset" #assets>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('assets')" />
+          <GenericTab
+            v-if="widgetLayoutFor('assets') !== null"
+            :layout="widgetLayoutFor('assets') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('assets')" />
+          </template>
       </template>
       <template v-if="asset" #profiler>
-          <AssetProfilerPanel
-            :tests="tests"
-            :tests-error="testsError"
-            :test-status-series="testStatusSeries"
-            :table-profile="tableProfile"
-            :row-count-series="rowCountSeries"
-            :usage-series="usageSeries"
-            :column-null-series="columnNullSeries"
-            :entity-type="entityType"
-            :table-id="asset.id"
-            :columns="asset.schemaRows"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('profiler') !== null"
+            :layout="widgetLayoutFor('profiler') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetProfilerPanel
+              :tests="tests"
+              :tests-error="testsError"
+              :test-status-series="testStatusSeries"
+              :table-profile="tableProfile"
+              :row-count-series="rowCountSeries"
+              :usage-series="usageSeries"
+              :column-null-series="columnNullSeries"
+              :entity-type="entityType"
+              :table-id="asset.id"
+              :columns="asset.schemaRows"
+            />
+          </template>
       </template>
       <template v-if="asset" #table_queries>
-          <!-- Mount-gated: the shell force-renders every pane, and the
-               pin mounts only the active tab, so the list fetches only
-               while this tab is selected. -->
-          <TableQueries
-            v-if="activeTab === 'table_queries' && asset.id"
-            :table-id="asset.id"
-            :dataset-fqn="asset.fullyQualifiedName ?? asset.name"
-            :is-table-deleted="asset.deleted === true"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('table_queries') !== null"
+            :layout="widgetLayoutFor('table_queries') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <!-- Mount-gated: the shell force-renders every pane, and the
+                 pin mounts only the active tab, so the list fetches only
+                 while this tab is selected. -->
+            <TableQueries
+              v-if="activeTab === 'table_queries' && asset.id"
+              :table-id="asset.id"
+              :dataset-fqn="asset.fullyQualifiedName ?? asset.name"
+              :is-table-deleted="asset.deleted === true"
+            />
+          </template>
       </template>
       <template v-if="asset" #dbt>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('dbt')" />
+          <GenericTab
+            v-if="widgetLayoutFor('dbt') !== null"
+            :layout="widgetLayoutFor('dbt') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('dbt')" />
+          </template>
       </template>
       <template v-if="asset" #view_definition>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('view_definition')" />
+          <GenericTab
+            v-if="widgetLayoutFor('view_definition') !== null"
+            :layout="widgetLayoutFor('view_definition') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('view_definition')" />
+          </template>
       </template>
       <template v-if="asset" #contract>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('contract')" />
+          <GenericTab
+            v-if="widgetLayoutFor('contract') !== null"
+            :layout="widgetLayoutFor('contract') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('contract')" />
+          </template>
       </template>
       <template v-if="asset" #config>
-          <Empty data-testid="asset-tab-residual" :description="residualReasonFor('config')" />
+          <GenericTab
+            v-if="widgetLayoutFor('config') !== null"
+            :layout="widgetLayoutFor('config') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <Empty data-testid="asset-tab-residual" :description="residualReasonFor('config')" />
+          </template>
       </template>
       <template v-if="asset" #customProperties>
-          <AssetCustomPropertiesPanel
-            :defs="customProperties"
-            :values="asset?.extension ?? {}"
-            :error="customPropsError"
-            :entity-type="entityType"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('customProperties') !== null"
+            :layout="widgetLayoutFor('customProperties') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="asset?.extension ?? {}"
+              :error="customPropsError"
+              :entity-type="entityType"
+            />
+          </template>
       </template>
       <template v-if="asset" #custom_properties>
-          <AssetCustomPropertiesPanel
-            :defs="customProperties"
-            :values="asset?.extension ?? {}"
-            :error="customPropsError"
-            :entity-type="entityType"
-          />
+          <GenericTab
+            v-if="widgetLayoutFor('custom_properties') !== null"
+            :layout="widgetLayoutFor('custom_properties') ?? []"
+            :page-type="pageType ?? ''"
+          >
+            <template #widget="{ contentKey }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            </template>
+          </GenericTab>
+          <template v-else>
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="asset?.extension ?? {}"
+              :error="customPropsError"
+              :entity-type="entityType"
+            />
+          </template>
       </template>
     </EntityDetailShell>
     <FormModal

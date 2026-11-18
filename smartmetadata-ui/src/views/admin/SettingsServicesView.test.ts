@@ -9,22 +9,70 @@
  */
 import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nextTick } from 'vue';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import type { CatalogService, ServiceKind } from '@/types/ingestion';
+import type { SupportedLocale } from '@/i18n/localePreference';
 import { createTestI18n } from '@/test/i18n';
 import SettingsServicesView from './SettingsServicesView.vue';
 
-const permissionFixture = { isAdminUser: false };
+type PermissionOps = Record<string, boolean>;
+
+const permissionFixture = {
+  isAdminUser: false,
+  calls: [] as string[],
+  handler: async (_resource: string): Promise<PermissionOps> => ({ ViewBasic: true }),
+};
 
 vi.mock('@/stores/permissions', () => ({
   usePermissionStore: () => ({
     get isAdminUser() {
       return permissionFixture.isAdminUser;
     },
-    getResourcePermission: async () => ({}),
+    getResourcePermission: async (resource: string) => {
+      permissionFixture.calls.push(resource);
+      return permissionFixture.handler(resource);
+    },
   }),
 }));
+
+/**
+ * B-1 lesson: no real request may escape this suite. The view's data
+ * reads are mocked (serviceApis, permission store), so any fetch call
+ * is a leak; the stub fails loudly instead of reaching the network.
+ * It stays in force for the whole suite (stubGlobal in beforeAll).
+ */
+const fetchStub = vi.fn(async (): Promise<never> => {
+  throw new Error('unexpected fetch in SettingsServicesView suite');
+});
+
+beforeAll(() => {
+  vi.stubGlobal('fetch', fetchStub);
+});
+
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
+/** Settles the chained gate → list watcher updates after a deferred permission resolves. */
+async function settle(): Promise<void> {
+  await flushPromises();
+  await nextTick();
+  await flushPromises();
+  await nextTick();
+}
+
+function deferredOps(): {
+  promise: Promise<PermissionOps>;
+  resolve: (ops: PermissionOps) => void;
+} {
+  let resolve!: (ops: PermissionOps) => void;
+  const promise = new Promise<PermissionOps>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const apiFixture = vi.hoisted(() => ({
   calls: [] as { kind: string; query: unknown }[],
@@ -98,12 +146,12 @@ function testRouter(): Router {
   });
 }
 
-async function mountServices(path: string) {
+async function mountServices(path: string, locale: SupportedLocale = 'en-US') {
   const router = testRouter();
   await router.push(path);
   await router.isReady();
   const wrapper = mount(SettingsServicesView, {
-    global: { plugins: [router, Antd, createTestI18n('en-US')] },
+    global: { plugins: [router, Antd, createTestI18n(locale)] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -138,6 +186,9 @@ function serviceFixture(kind: ServiceKind, name: string): CatalogService {
 
 beforeEach(() => {
   permissionFixture.isAdminUser = false;
+  permissionFixture.calls = [];
+  permissionFixture.handler = async () => ({ ViewBasic: true });
+  fetchStub.mockClear();
   apiFixture.calls = [];
   apiFixture.pages = {
     database: [serviceFixture('database', 'mysql-prod'), serviceFixture('database', 'pg-dev')],
@@ -287,5 +338,143 @@ describe('SettingsServicesView (DESIGN §6.4)', () => {
     expect(wrapper.find('.ant-alert-error').text()).toContain('list failed: database');
     expect(wrapper.findAll('.ant-table-tbody tr')).toHaveLength(1);
     expect(wrapper.find('.ant-table-tbody').text()).toContain('No data');
+  });
+});
+
+describe('SettingsServicesView view gate (DESIGN §6.4 页内视图门, GAP-HUB-1)', () => {
+  it('denies a regular tab without view permission: bare placeholder, no breadcrumb, no tabs, no list request', async () => {
+    permissionFixture.handler = async () => ({});
+    const { wrapper } = await mountServices('/settings/services/databases');
+    const placeholder = wrapper.find('[data-testid="permission-error-placeholder"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain('View Database Services');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-tabs"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-table"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('denies a regular tab without view permission in zh: bare placeholder, template wording with no extra space', async () => {
+    permissionFixture.handler = async () => ({});
+    const { wrapper } = await mountServices('/settings/services/databases', 'zh-CN');
+    const placeholder = wrapper.find('[data-testid="permission-error-placeholder"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain('查看Database Services');
+    expect(placeholder.text()).not.toContain('查看 Database Services');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-tabs"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-table"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('denies when ViewBasic and ViewAll are both explicitly false (Create alone never grants view)', async () => {
+    permissionFixture.handler = async () => ({ ViewBasic: false, ViewAll: false, Create: true });
+    const { wrapper } = await mountServices('/settings/services/databases');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+  });
+
+  it('grants on ViewAll alone', async () => {
+    permissionFixture.handler = async () => ({ ViewAll: true });
+    const { wrapper } = await mountServices('/settings/services/databases');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(wrapper.find('.ant-table-tbody').text()).toContain('mysql-prod');
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('checks the mapped resource for the raw segment (dashboards, enum segment)', async () => {
+    const first = await mountServices('/settings/services/dashboards');
+    expect(permissionFixture.calls).toEqual(['dashboardService']);
+    expect(first.wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    first.wrapper.unmount();
+    permissionFixture.calls = [];
+    const second = await mountServices('/settings/services/databaseServices');
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    expect(second.wrapper.find('.ant-table-tbody').text()).toContain('mysql-prod');
+  });
+
+  it('denies the mlmodels tab when only mlmodelService is granted (pin fallback checks databaseService)', async () => {
+    permissionFixture.handler = async (resource): Promise<PermissionOps> =>
+      resource === 'mlmodelService' ? { ViewBasic: true } : {};
+    const { wrapper } = await mountServices('/settings/services/mlmodels');
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    const placeholder = wrapper.find('[data-testid="permission-error-placeholder"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain('View Mlmodel Services');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+  });
+
+  it('shows the placeholder while the permission is unloaded, then the list once granted', async () => {
+    const deferred = deferredOps();
+    permissionFixture.handler = () => deferred.promise;
+    const { wrapper } = await mountServices('/settings/services/databases');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-tabs"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+    deferred.resolve({ ViewBasic: true });
+    await settle();
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(true);
+    expect(wrapper.find('.ant-table-tbody').text()).toContain('mysql-prod');
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the permission read rejects', async () => {
+    permissionFixture.handler = async () => {
+      throw new Error('permission read failed');
+    };
+    const { wrapper } = await mountServices('/settings/services/databases');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-tabs"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('grants dataObservability by checking databaseService (pin fallback)', async () => {
+    permissionFixture.isAdminUser = true;
+    const { wrapper } = await mountServices('/settings/services/dataObservability');
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Data Observability');
+    expect(wrapper.find('[data-testid="pipelines-list-stub"]').exists()).toBe(true);
+    expect(apiFixture.calls).toEqual([]);
+  });
+
+  it('denies dataObservability with the bare placeholder and no breadcrumb or tabs', async () => {
+    permissionFixture.handler = async () => ({});
+    const { wrapper } = await mountServices('/settings/services/dataObservability');
+    expect(permissionFixture.calls).toEqual(['databaseService']);
+    const placeholder = wrapper.find('[data-testid="permission-error-placeholder"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain('View Data Observability Services');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-services-tabs"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipelines-list-stub"]').exists()).toBe(false);
+    expect(apiFixture.calls).toEqual([]);
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+
+  it('shows the placeholder while the dataObservability permission is unloaded, then the pipelines tab once granted', async () => {
+    permissionFixture.isAdminUser = true;
+    const deferred = deferredOps();
+    permissionFixture.handler = () => deferred.promise;
+    const { wrapper } = await mountServices('/settings/services/dataObservability');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipelines-list-stub"]').exists()).toBe(false);
+    deferred.resolve({ ViewAll: true });
+    await settle();
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Data Observability');
+    expect(wrapper.find('[data-testid="pipelines-list-stub"]').exists()).toBe(true);
+    expect(permissionFixture.calls).toEqual(['databaseService']);
   });
 });
