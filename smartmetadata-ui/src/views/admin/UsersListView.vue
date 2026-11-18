@@ -3,353 +3,535 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import {Button, Checkbox, Form, Input, Select, Tabs, message} from 'ant-design-vue';
+import { Button, Input, Switch, Tooltip, message } from 'ant-design-vue';
+import { DeleteOutlined, RobotOutlined, UndoOutlined } from '@ant-design/icons-vue';
+import { getEntityName } from '@/components/shared/profilePictureUtils';
+import CreatePlaceholder from '@/components/shared/CreatePlaceholder.vue';
+import DeleteEntityModal from '@/features/crud/DeleteEntityModal.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { listRoles } from '@/api/roles';
-import { listTeams } from '@/api/teams';
-import { buildAdminUserQueryFilter, createUser, listUsers, searchUsers } from '@/api/users';
-import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { requiredField } from '@/features/crud/formRules';
+import LimitWrapper from '@/components/shared/LimitWrapper.vue';
+import NextPrevious from '@/components/shared/NextPrevious.vue';
+import NoSearchResultsPlaceholder from '@/components/shared/NoSearchResultsPlaceholder.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import ReferenceListCell from '@/components/shared/ReferenceListCell.vue';
+import SmTable from '@/components/shared/SmTable.vue';
+import UserPopOverCard from '@/components/shared/UserPopOverCard.vue';
+import { useCursorPagedList } from '@/composables/useCursorPagedList';
+import type { DeleteType } from '@/ingestion/serviceDelete';
+import type { Paging } from '@/utils/pagination';
+import { splitTransElement } from '@/utils/emptyPlaceholder';
 import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoNextOffset,
-  canGoPrev,
-  canGoPrevOffset,
-  createCursorPager,
-  createOffsetPager,
-  entityLabel,
-  goNext,
-  goNextOffset,
-  goPrev,
-  goPrevOffset,
-  joinRefNames,
-  resetCursor,
-  resetOffset,
-  type CursorPager,
-  type OffsetPager,
-} from '@/features/crud/paging';
-import type { EntityListColumn } from '@/features/crud/types';
-import type { AdminRole, AdminTeam, AdminUser, IncludeFilter } from '@/types/admin';
-import type { OperationPermissions } from '@/api/permissions';
+  getRoleWithFqnPath,
+  getSettingPath,
+  getTeamsWithFqnPath,
+  getUserPath,
+} from '@/utils/fqnPaths';
+import {
+  buildUserSearchQueryFilter,
+  deactivateUser,
+  listUsers,
+  restoreUser,
+  searchUsers,
+} from '@/api/users';
 import { usePermissionStore } from '@/stores/permissions';
+import { useAuthStore } from '@/stores/auth';
+import type { AdminUser } from '@/types/admin';
+import { userListColumns } from './membersColumns';
+
+/**
+ * Users / Admins list (pin UserListPageV1, 623 lines). One component,
+ * two states: isAdminPage comes from the route (current dual routes
+ * admin-users/admin-admins; the future settings paths keep the same
+ * route names per §1, so the name check survives the migration).
+ *
+ * P4 deletions: no Bots checkbox, no email/isAdmin/isBot columns, no
+ * three-state filter. The list and the search always carry isBot:false
+ * explicitly. The top Tabs control is deleted (A08); the deleted
+ * filter is a two-state Toggle that resets to page 1 and KEEPS the
+ * search value (the pin's "Clear search value" comment is stale).
+ *
+ * The breadcrumb comes from the shell §9 constructor (integration /
+ * shell line); this view renders none. The tab-segment validation
+ * (illegal tab -> NOT_FOUND) belongs to the future segment route and
+ * is a route-shape concern for the integration line.
+ */
 
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
-/**
- * Dual line for user management: isAdminUser (first line) OR a
- * resource grant on 'user' via the permission API (second line,
- * same client as the debugger). Create uses the Create operation,
- * row edit uses EditAll. A failed query is not a grant (fail
- * closed); the server still enforces user writes.
- */
+
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
-const userResourceOps = ref<OperationPermissions | null>(null);
-const canCreateUser = computed(
-  () => isAdminUser.value || userResourceOps.value?.Create === true,
+const isAdminPage = computed(
+  () => route.name === 'admin-admins' || route.params.tab === 'admins',
 );
-const canEditUser = computed(
-  () => isAdminUser.value || userResourceOps.value?.EditAll === true,
+const isDeleted = ref(false);
+const searchInput = ref('');
+const searchValue = ref('');
+const searchPage = ref(1);
+const searchResults = ref<AdminUser[]>([]);
+const searchTotal = ref(0);
+const searchLoading = ref(false);
+const limitKey = ref(0);
+
+const searching = computed(() => searchValue.value.trim().length > 0);
+
+const header = computed(() =>
+  isAdminPage.value
+    ? { title: t('label.admin-plural'), sub: t('message.page-sub-header-for-admins') }
+    : { title: t('label.user-plural'), sub: t('message.page-sub-header-for-users') },
 );
-const loading = ref(false);
-const errorMessage = ref('');
-const users = ref<AdminUser[]>([]);
-const total = ref<number | undefined>();
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
-const offset = ref<OffsetPager>(createOffsetPager());
-const query = ref('');
+const columns = computed(() =>
+  userListColumns(
+    {
+      username: t('label.username'),
+      name: t('label.name'),
+      teams: t('label.team-plural'),
+      roles: t('label.role-plural'),
+      actions: t('label.action-plural'),
+    },
+    isAdminPage.value,
+  ),
+);
+
 /**
- * Official UserListPage tab surface (UserListPageV1.tsx:82 isAdminPage):
- * the Admins tab is a route state (admin-admins), not a checkbox filter.
+ * Cursor-paged list mode. T-5 persistence is opt-in on the hook: the
+ * initial size is read from storage and size changes write back
+ * (gated to 15/25/50 by the helper). While searching, the fetch
+ * function short-circuits without a network call — the search path
+ * below owns the table then — and the resetKey restart refetches the
+ * list when the search clears.
  */
-const isAdminTab = computed(() => route.name === 'admin-admins');
-const isAdminOnly = computed(() => isAdminTab.value);
-const isBotOnly = ref(false);
-const include = ref<IncludeFilter>('non-deleted');
-const createOpen = ref(false);
-const creating = ref(false);
-const teams = ref<AdminTeam[]>([]);
-const roles = ref<AdminRole[]>([]);
-const createForm = reactive({
-  name: '',
-  email: '',
-  displayName: '',
-  description: '',
-  isAdmin: false,
-  password: '',
-  confirmPassword: '',
-  teamIds: [] as string[],
-  roleIds: [] as string[],
-});
-
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.email'), dataIndex: 'email', key: 'email' },
-  { title: t('admin.users.admin'), key: 'isAdmin', width: 90 },
-  { title: t('admin.users.bot'), key: 'isBot', width: 80 },
-  { title: t('admin.users.teams'), key: 'teams' },
-  { title: t('admin.users.roles'), key: 'roles' },
-]);
-
-const searching = computed(() => query.value.trim().length > 0);
-const hasNext = computed(() =>
-  searching.value
-    ? canGoNextOffset(offset.value, users.value.length, total.value)
-    : canGoNext(pageAfter.value),
-);
-const hasPrev = computed(() => (searching.value ? canGoPrevOffset(offset.value) : canGoPrev(cursor.value)));
-
-function resetPaging(): void {
-  cursor.value = resetCursor();
-  offset.value = resetOffset();
-}
-
-async function loadUsers(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
+const list = useCursorPagedList<AdminUser>(
+  async (params) => {
     if (searching.value) {
-      const page = await searchUsers(
-        query.value.trim(),
-        offset.value.from,
-        offset.value.size,
-        isAdminTab.value ? buildAdminUserQueryFilter() : undefined,
-      );
-      users.value = page.data;
-      total.value = page.total;
-      pageAfter.value = undefined;
-    } else {
-      const page = await listUsers({
-        limit: DEFAULT_PAGE_SIZE,
-        after: cursor.value.after,
-        isAdmin: isAdminOnly.value ? true : undefined,
-        isBot: isBotOnly.value ? true : undefined,
-        include: include.value,
-      });
-      users.value = page.data;
-      total.value = page.total;
-      pageAfter.value = page.after;
+      return { data: [], paging: { total: 0 } as Paging };
     }
-    userResourceOps.value = await usePermissionStore()
-      .getResourcePermission('user')
-      .catch(() => null);
-  } catch (error) {
-    users.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void {
-  resetPaging();
-  void loadUsers();
-}
-
-function onFilterChange(): void {
-  resetPaging();
-  void loadUsers();
-}
-
-function onTabChange(key: string | number): void {
-  const target = key === 'admins' ? 'admin-admins' : 'admin-users';
-  if (route.name !== target) {
-    void router.push({ name: target });
-  }
-}
-
-// Same component serves both routes: a tab switch only changes the route
-// name, so reload on it (covers tab clicks and browser back/forward).
-watch(
-  () => route.name,
-  () => {
-    resetPaging();
-    void loadUsers();
+    const page = await listUsers({
+      limit: params.limit,
+      after: params.after,
+      before: params.before,
+      isAdmin: isAdminPage.value,
+      isBot: false,
+      include: isDeleted.value ? 'deleted' : 'non-deleted',
+      fields: 'profile,teams,roles',
+    });
+    return {
+      data: page.data,
+      paging: { after: page.after, before: page.before, total: page.total ?? 0 },
+    };
+  },
+  {
+    persistence: { storage: localStorage, userName: () => useAuthStore().user?.name },
+    resetKey: () => [isAdminPage.value, isDeleted.value, searching.value],
+    onError: (error) => message.error(error instanceof Error ? error.message : t('crud.loadFailed')),
   },
 );
 
-function onNext(): void {
-  if (searching.value) {
-    offset.value = goNextOffset(offset.value);
-  } else if (pageAfter.value) {
-    cursor.value = goNext(cursor.value, pageAfter.value);
-  }
-  void loadUsers();
-}
+// --- Search (pin: typingInterval 350, *text* wrap, freshness guard) ---
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let searchSeq = 0;
 
-function onPrev(): void {
-  if (searching.value) {
-    offset.value = goPrevOffset(offset.value);
-  } else {
-    cursor.value = goPrev(cursor.value);
+watch(searchInput, (value) => {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
   }
-  void loadUsers();
-}
-
-async function loadLookups(): Promise<void> {
-  const [teamPage, rolePage] = await Promise.all([listTeams({ limit: 100 }), listRoles(100)]);
-  teams.value = teamPage.data;
-  roles.value = rolePage.data;
-}
-
-function openUser(user: AdminUser): void {
-  if (!user.id) {
-    return;
-  }
-  void router.push({ name: 'admin-user', params: { id: user.id } });
-}
-
-async function onCreate(): Promise<void> {
-  if (createForm.password !== createForm.confirmPassword) {
-    message.error(t('admin.users.passwordMismatch'));
-    return;
-  }
-  creating.value = true;
-  try {
-    const created = await createUser({
-      name: createForm.name.trim(),
-      email: createForm.email.trim(),
-      displayName: createForm.displayName.trim() || undefined,
-      description: createForm.description.trim() || undefined,
-      isAdmin: createForm.isAdmin,
-      password: createForm.password || undefined,
-      confirmPassword: createForm.confirmPassword || undefined,
-      createPasswordType: createForm.password ? 'ADMIN_CREATE' : undefined,
-      teams: createForm.teamIds,
-      roles: createForm.roleIds,
-    });
-    createOpen.value = false;
-    message.success(t('admin.users.created', { name: created.name }));
-    await loadUsers();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
-
-onMounted(() => {
-  void loadUsers();
-  void loadLookups().catch(() => undefined);
+  searchTimer = setTimeout(() => {
+    searchValue.value = value.trim();
+    searchPage.value = 1;
+  }, 350);
 });
+
+async function runSearch(): Promise<void> {
+  const id = ++searchSeq;
+  const term = searchValue.value;
+  if (!term) {
+    searchResults.value = [];
+    searchTotal.value = 0;
+    return;
+  }
+  searchLoading.value = true;
+  try {
+    const page = await searchUsers(
+      `*${term}*`,
+      (searchPage.value - 1) * list.pageSize.value,
+      list.pageSize.value,
+      buildUserSearchQueryFilter(isAdminPage.value),
+      { includeDeleted: isDeleted.value },
+    );
+    if (id !== searchSeq) {
+      return;
+    }
+    searchResults.value = page.data;
+    searchTotal.value = page.total ?? 0;
+  } catch (error) {
+    if (id === searchSeq) {
+      searchResults.value = [];
+      searchTotal.value = 0;
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  } finally {
+    if (id === searchSeq) {
+      searchLoading.value = false;
+    }
+  }
+}
+
+watch(
+  [searchValue, searchPage, () => list.pageSize.value, isDeleted, isAdminPage],
+  () => {
+    if (searching.value) {
+      void runSearch();
+    }
+  },
+);
+
+const rows = computed(() => (searching.value ? searchResults.value : list.items.value));
+const loading = computed(() => (searching.value ? searchLoading.value : list.isLoading.value));
+
+function onDeletedToggle(value: boolean): void {
+  isDeleted.value = value;
+  // Page 1, search value kept (pin setFilters merge semantics).
+  searchPage.value = 1;
+  void list.onPageChange(1);
+}
+
+function onAddUser(): void {
+  // Pin navigates to /create-user with route state {isAdminPage}; the
+  // state form is preserved (never a query param).
+  void router.push({ path: '/create-user', state: { isAdminPage: isAdminPage.value } });
+}
+
+function refreshLimit(): void {
+  // No force-refresh function exists in api/limits.ts; remounting the
+  // LimitWrapper refetches the resource limit (the pin's
+  // getResourceLimit('user', true, true) equivalent available here).
+  limitKey.value += 1;
+}
+
+// --- Row actions (admin-only, disabled + tooltip) ---
+const selectedUser = ref<AdminUser | undefined>();
+const showRestoreModal = ref(false);
+const showDeleteModal = ref(false);
+const actionLoading = ref(false);
+
+function openRestore(user: AdminUser): void {
+  selectedUser.value = user;
+  showRestoreModal.value = true;
+}
+
+function openDelete(user: AdminUser): void {
+  selectedUser.value = user;
+  showDeleteModal.value = true;
+}
+
+function clearSearch(): void {
+  searchInput.value = '';
+  searchValue.value = '';
+  searchPage.value = 1;
+}
+
+async function handleRestore(): Promise<void> {
+  const user = selectedUser.value;
+  if (!user) {
+    return;
+  }
+  actionLoading.value = true;
+  try {
+    await restoreUser(user.id);
+    // Pin handleReactiveUser: clear the search, toast, refetch.
+    clearSearch();
+    message.success(t('message.entity-restored-success', { entity: t('label.user') }));
+    showRestoreModal.value = false;
+    selectedUser.value = undefined;
+    await list.onPageChange(1);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+async function handleDelete(deleteType: DeleteType): Promise<void> {
+  const user = selectedUser.value;
+  if (!user) {
+    return;
+  }
+  actionLoading.value = true;
+  try {
+    await deactivateUser(user.id, {
+      hardDelete: deleteType === 'hard-delete',
+      recursive: false,
+    });
+    // Pin DeleteEntityModal afterDeleteAction: clear the search and
+    // refresh the limit.
+    clearSearch();
+    refreshLimit();
+    showDeleteModal.value = false;
+    selectedUser.value = undefined;
+    await list.onPageChange(1);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+// --- Empty states ---
+const showCreatePlaceholder = computed(
+  () => rows.value.length === 0 && !isDeleted.value && !loading.value && !searching.value,
+);
+const showSearchPlaceholder = computed(
+  () => rows.value.length === 0 && !loading.value && !showCreatePlaceholder.value,
+);
+const crossLinkMessage = computed(() => {
+  const key = searching.value
+    ? isAdminPage.value
+      ? 'message.no-admin-available-with-name'
+      : 'message.no-user-available-with-name'
+    : isAdminPage.value
+      ? 'message.no-admin-available-with-filters'
+      : 'message.no-user-available-with-filters';
+  return t(key, { searchText: searchValue.value });
+});
+const crossLinkParts = computed(() => splitTransElement(crossLinkMessage.value));
+const crossLinkTo = computed(() =>
+  getSettingPath('members', isAdminPage.value ? 'users' : 'admins'),
+);
+
+function userDetailPath(user: AdminUser): string {
+  return getUserPath(user.fullyQualifiedName ?? user.name);
+}
 </script>
 
 <template>
-  <Tabs :active-key="isAdminTab ? 'admins' : 'all'" data-testid="users-tabs" @change="onTabChange">
-    <Tabs.TabPane key="all" :tab="t('admin.users.allUsers')" />
-    <Tabs.TabPane key="admins" :tab="t('admin.users.admins')" />
-  </Tabs>
-  <EntityListShell
-    :title="t('admin.users.title')"
-    :lead="t('admin.users.lead')"
-    :loading="loading"
-    :error="errorMessage"
-    :columns="columns"
-    :data-source="users"
-    table-test-id="admin-users-table"
-    show-row-actions
-    :show-edit-action="canEditUser"
-    show-search
-    :search-value="query"
-    :search-placeholder="t('admin.users.searchPlaceholder')"
-    :total="total"
-    :has-next="hasNext"
-    :has-prev="hasPrev"
-    @update:search-value="query = $event"
-    @search="onSearch"
-    @refresh="loadUsers"
-    @next="onNext"
-    @prev="onPrev"
-    @view="openUser($event as AdminUser)"
-    @edit="openUser($event as AdminUser)"
-  >
-    <template #actions>
-      <Button v-if="canCreateUser" type="primary" data-testid="create-user" @click="createOpen = true">
-        {{ t('admin.users.create') }}
-      </Button>
-    </template>
-    <template #filters>
-      <Checkbox v-model:checked="isBotOnly" @change="onFilterChange">{{ t('admin.users.bots') }}</Checkbox>
-      <Select v-model:value="include" style="width: 160px" @change="onFilterChange">
-        <Select.Option value="non-deleted">{{ t('crud.includeActive') }}</Select.Option>
-        <Select.Option value="deleted">{{ t('crud.includeDeleted') }}</Select.Option>
-        <Select.Option value="all">{{ t('crud.includeAll') }}</Select.Option>
-      </Select>
-    </template>
-    <template #bodyCell="{ column, record }">
-      <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`user-row-${(record as AdminUser).id}`"
-          @click.prevent="openUser(record as AdminUser)"
+  <div class="users-list-view">
+    <PageHeader
+      :header="header.title"
+      :sub-header="header.sub"
+      learning-page-id="USERS"
+      test-id="users-page-header"
+    />
+    <div class="users-list-view__controls">
+      <Input
+        v-model:value="searchInput"
+        allow-clear
+        :placeholder="`${t('label.search-for-type', { type: t('label.user') })}...`"
+        data-testid="users-search"
+        class="users-list-view__search"
+      />
+      <span class="users-list-view__deleted-toggle">
+        <Switch
+          :checked="isDeleted"
+          data-testid="show-deleted-toggle"
+          @change="onDeletedToggle(Boolean($event))"
+        />
+        <span>{{ t('label.deleted') }}</span>
+      </span>
+      <LimitWrapper v-if="isAdminUser" :key="limitKey" resource="user">
+        <Button type="primary" data-testid="add-user" @click="onAddUser">
+          {{
+            t('label.add-entity', {
+              entity: isAdminPage ? t('label.admin') : t('label.user'),
+            })
+          }}
+        </Button>
+      </LimitWrapper>
+    </div>
+
+    <CreatePlaceholder
+      v-if="showCreatePlaceholder"
+      :permission="isAdminUser"
+      :heading="t('label.user')"
+      :permission-value="t('label.create-entity', { entity: t('label.user') })"
+      :on-create="onAddUser"
+      :test-id="`create-error-placeholder-${t('label.user')}`"
+    />
+    <NoSearchResultsPlaceholder
+      v-else-if="showSearchPlaceholder"
+      test-id="search-error-placeholder"
+    >
+      <template #description>
+        <template v-if="crossLinkParts"
+          >{{ crossLinkParts.before
+          }}<RouterLink :to="crossLinkTo">{{ crossLinkParts.inner }}</RouterLink
+          >{{ crossLinkParts.after }}</template
         >
-          {{ entityLabel(record as AdminUser) }}
-        </a>
+        <template v-else>{{ crossLinkMessage }}</template>
       </template>
-      <template v-else-if="column.key === 'isAdmin'">
-        {{ (record as AdminUser).isAdmin ? t('admin.users.admin') : t('crud.no') }}
+    </NoSearchResultsPlaceholder>
+    <SmTable
+      v-else
+      :columns="columns"
+      :data-source="rows"
+      row-key="id"
+      size="small"
+      :loading="loading"
+      :pagination="false"
+      test-id="admin-users-table"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'username'">
+          <span class="users-list-view__username">
+            <Tooltip v-if="(record as AdminUser).isBot" :title="t('label.bot')">
+              <RobotOutlined data-testid="bot-icon" :style="{ fontSize: '16px' }" />
+            </Tooltip>
+            <UserPopOverCard
+              v-if="(record as AdminUser).name"
+              :user-name="(record as AdminUser).name"
+              :display-name="(record as AdminUser).displayName"
+              show-user-name
+              :profile-width="16"
+              :to="userDetailPath(record as AdminUser)"
+            />
+            <template v-else>{{ getEntityName(record as AdminUser) }}</template>
+          </span>
+        </template>
+        <template v-else-if="column.key === 'name'">
+          {{ getEntityName(record as AdminUser) }}
+        </template>
+        <template v-else-if="column.key === 'teams'">
+          <template v-if="!(record as AdminUser).teams?.length">
+            {{ t('label.no-entity', { entity: t('label.team') }) }}
+          </template>
+          <ReferenceListCell
+            v-else
+            :references="(record as AdminUser).teams"
+            :has-view-permission="true"
+            :path-for="(ref) => getTeamsWithFqnPath(ref.fullyQualifiedName ?? ref.name ?? '')"
+          />
+          <!-- Pin Users.util renders these links without a permission
+               branch on this surface; hasViewPermission=true preserves
+               that (the cell's degraded branch serves other callers). -->
+        </template>
+        <template v-else-if="column.key === 'roles'">
+          <template v-if="!(record as AdminUser).roles?.length">
+            {{ t('label.no-entity', { entity: t('label.role') }) }}
+          </template>
+          <ReferenceListCell
+            v-else
+            :references="(record as AdminUser).roles"
+            :has-view-permission="true"
+            :path-for="(ref) => getRoleWithFqnPath(ref.fullyQualifiedName ?? ref.name ?? '')"
+          />
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <span class="users-list-view__actions">
+            <Tooltip
+              v-if="isDeleted"
+              :title="
+                isAdminUser
+                  ? t('label.restore-entity', { entity: t('label.user') })
+                  : t('message.admin-only-action')
+              "
+            >
+              <Button
+                type="text"
+                size="small"
+                :disabled="!isAdminUser"
+                :data-testid="`restore-user-btn-${(record as AdminUser).name}`"
+                @click="openRestore(record as AdminUser)"
+              >
+                <UndoOutlined />
+              </Button>
+            </Tooltip>
+            <Tooltip
+              :title="
+                isAdminUser
+                  ? t('label.delete-entity', { entity: t('label.user') })
+                  : t('message.admin-only-action')
+              "
+            >
+              <Button
+                type="text"
+                size="small"
+                danger
+                :disabled="!isAdminUser"
+                :data-testid="`delete-user-btn-${(record as AdminUser).name}`"
+                @click="openDelete(record as AdminUser)"
+              >
+                <DeleteOutlined />
+              </Button>
+            </Tooltip>
+          </span>
+        </template>
       </template>
-      <template v-else-if="column.key === 'isBot'">
-        {{ (record as AdminUser).isBot ? t('admin.users.bot') : t('crud.no') }}
-      </template>
-      <template v-else-if="column.key === 'teams'">
-        {{ joinRefNames((record as AdminUser).teams) || '—' }}
-      </template>
-      <template v-else-if="column.key === 'roles'">
-        {{ joinRefNames((record as AdminUser).roles) || '—' }}
-      </template>
-    </template>
-  </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('admin.users.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-    @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="createForm.name" data-testid="create-user-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.email')" :rules="requiredField(t, t('crud.email'))">
-        <Input v-model:value="createForm.email" data-testid="create-user-email" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="createForm.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="createForm.description" :rows="2" />
-      </Form.Item>
-      <Form.Item>
-        <Checkbox v-model:checked="createForm.isAdmin">{{ t('admin.users.administrator') }}</Checkbox>
-      </Form.Item>
-      <Form.Item :label="t('admin.users.password')" :extra="t('admin.users.passwordHelp')">
-        <Input.Password v-model:value="createForm.password" />
-      </Form.Item>
-      <Form.Item :label="t('admin.users.confirmPassword')" :extra="t('admin.users.confirmPasswordHelp')">
-        <Input.Password v-model:value="createForm.confirmPassword" />
-      </Form.Item>
-      <Form.Item :label="t('admin.users.teams')" :extra="t('admin.users.teamsHelp')">
-        <Select v-model:value="createForm.teamIds" mode="multiple" allow-clear>
-          <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
-            {{ entityLabel(team) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('admin.users.roles')" :extra="t('admin.users.rolesHelp')">
-        <Select v-model:value="createForm.roleIds" mode="multiple" allow-clear>
-          <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-            {{ entityLabel(role) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-    </Form>
-  </FormModal>
+    </SmTable>
+
+    <NextPrevious
+      v-if="!searching"
+      :paging="list.paging.value"
+      :paging-handler="({ currentPage }) => list.onPageChange(currentPage)"
+      :page-size="list.pageSize.value"
+      :current-page="list.page.value"
+      :is-loading="list.isLoading.value"
+      :on-show-size-change="list.onPageSizeChange"
+    />
+    <NextPrevious
+      v-else
+      :paging="{ total: searchTotal }"
+      :paging-handler="({ currentPage }) => { searchPage = currentPage; }"
+      :page-size="list.pageSize.value"
+      :current-page="searchPage"
+      :is-number-based="true"
+      :is-loading="searchLoading"
+      :on-show-size-change="list.onPageSizeChange"
+    />
+
+    <FormModal
+      :open="showRestoreModal"
+      :title="t('label.restore-entity', { entity: t('label.user') })"
+      :ok-text="t('label.restore')"
+      :cancel-text="t('crud.cancel')"
+      :confirm-loading="actionLoading"
+      test-id="restore-user-modal"
+      @ok="handleRestore"
+      @cancel="showRestoreModal = false; selectedUser = undefined"
+    >
+      <p>
+        {{
+          t('message.are-you-want-to-restore', {
+            entity: selectedUser ? getEntityName(selectedUser) : '',
+          })
+        }}
+      </p>
+    </FormModal>
+    <DeleteEntityModal
+      :open="showDeleteModal"
+      :entity-name="selectedUser ? getEntityName(selectedUser) : ''"
+      :entity-type-label="t('label.user')"
+      :allow-soft-delete="!isDeleted"
+      :loading="actionLoading"
+      @cancel="showDeleteModal = false; selectedUser = undefined"
+      @confirm="handleDelete"
+    />
+  </div>
 </template>
+
+<style scoped>
+.users-list-view__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.users-list-view__search {
+  width: 320px;
+}
+.users-list-view__deleted-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.users-list-view__username {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.users-list-view__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+</style>

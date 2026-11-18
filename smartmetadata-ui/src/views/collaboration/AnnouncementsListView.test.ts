@@ -3,236 +3,133 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy of the Apache License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
-import Antd, { message } from 'ant-design-vue';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryHistory, createRouter } from 'vue-router';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import SystemAnnouncementsTable from '@/components/notifications/SystemAnnouncementsTable.vue';
 import { createTestI18n } from '@/test/i18n';
+import type { Announcement } from '@/types/collaboration';
 import AnnouncementsListView from './AnnouncementsListView.vue';
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
+const listAnnouncements = vi.fn();
+
+vi.mock('@/api/announcements', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/announcements')>();
+  return { ...actual, listAnnouncements: (...args: unknown[]) => listAnnouncements(...args) };
+});
+
+const NOW = Date.now();
+
+function announcement(overrides: Partial<Announcement> = {}): Announcement {
+  return {
+    id: 'a1',
+    name: 'announcement-1',
+    displayName: 'Downtime window',
+    description: 'The cluster restarts.',
+    startTime: NOW - 10000,
+    endTime: NOW + 10000,
+    type: 'Notice',
+    createdBy: 'admin',
+    ...overrides,
+  } as Announcement;
 }
 
-async function mountView() {
+const stub = { template: '<div />' };
+
+async function mountView(): Promise<{ wrapper: VueWrapper; router: Router }> {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/announcements', name: 'announcements', component: AnnouncementsListView }],
+    routes: [
+      { path: '/settings', name: 'admin-settings', component: stub },
+      { path: '/settings/notifications', name: 'settings-notifications', component: stub },
+      {
+        path: '/settings/notifications/announcements',
+        name: 'settings-announcements',
+        component: AnnouncementsListView,
+      },
+      {
+        path: '/settings/notifications/announcements/add',
+        name: 'settings-announcements-add',
+        component: stub,
+      },
+      {
+        path: '/settings/notifications/announcements/edit/:id',
+        name: 'settings-announcements-edit',
+        component: stub,
+      },
+      {
+        path: '/settings/notifications/announcements/duplicate/:id',
+        name: 'settings-announcements-duplicate',
+        component: stub,
+      },
+    ],
   });
-  await router.push('/announcements');
+  await router.push('/settings/notifications/announcements');
   await router.isReady();
   const wrapper = mount(AnnouncementsListView, {
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
-  return { wrapper };
+  await wrapper.vm.$nextTick();
+  return { wrapper, router };
 }
 
 describe('AnnouncementsListView', () => {
   beforeEach(() => {
-    localStorage.clear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/announcements')) {
-          if (init?.method === 'PATCH') {
-            return jsonResponse({ id: 'a1', displayName: 'Maintenance', description: 'Window moved', type: 'Notice' });
-          }
-          if (init?.method === 'DELETE') {
-            return jsonResponse({});
-          }
-          return jsonResponse({
-            data: [
-              {
-                id: 'a1',
-                displayName: 'Maintenance',
-                description: 'Window',
-                type: 'Notice',
-                startTime: 1762051200000,
-                endTime: 1762054800000,
-              },
-            ],
-            paging: { total: 1 },
-          });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
+    listAnnouncements.mockReset();
+    listAnnouncements.mockResolvedValue({ data: [announcement()], total: 1 });
   });
 
-  afterEach(() => {
-    document.body.innerHTML = '';
-    vi.unstubAllGlobals();
-    localStorage.clear();
-  });
-
-  it('renders announcements from GET /v1/announcements', async () => {
+  it('renders the page with its table, fed by the system-wide list fetch', async () => {
     const { wrapper } = await mountView();
-    expect(wrapper.text()).toContain('Maintenance');
-    expect(wrapper.text()).toContain('Notice');
-    expect(wrapper.find('[data-testid="announcements-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-announcement"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="announcement-edit-a1"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="announcement-duplicate-a1"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="announcement-delete-a1"]').exists()).toBe(true);
-  });
-
-  it('duplicates by prefilling the create form and POSTing a new record', async () => {
-    const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="announcement-duplicate-a1"]').trigger('click');
-    await flushPromises();
-    const title = document.querySelector('[data-testid="announcement-title"]') as HTMLInputElement | null;
-    const description = document.querySelector('[data-testid="announcement-description"]') as HTMLTextAreaElement | null;
-    expect(title).not.toBeNull();
-    expect(title!.value).toBe('Maintenance');
-    expect(description!.value).toBe('Window');
-    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
-    expect(okButton).not.toBeNull();
-    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const post = vi
-      .mocked(fetch)
-      .mock.calls.map(([input, init]) => ({ url: String(input), init }))
-      .find((call) => call.url.includes('/api/v1/announcements') && call.init?.method === 'POST');
-    expect(post).toBeDefined();
-    // A duplicate is a new record: the POST body carries no source id.
-    expect(JSON.parse(String(post!.init?.body))).not.toHaveProperty('id');
-    expect(JSON.parse(String(post!.init?.body)).description).toBe('Window');
-  });
-
-  it('opens the duplicate form from the duplicate route', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/announcements', name: 'announcements', component: AnnouncementsListView },
-        {
-          path: '/announcements/duplicate/:id',
-          name: 'announcement-duplicate',
-          component: AnnouncementsListView,
-        },
-      ],
+    expect(wrapper.find('[data-testid="system-announcements-page"]').exists()).toBe(true);
+    expect(listAnnouncements).toHaveBeenCalledWith({
+      system: true,
+      status: undefined,
+      type: undefined,
+      limit: 1000,
     });
-    await router.push('/announcements/duplicate/a1');
-    await router.isReady();
-    mount(AnnouncementsListView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-    const title = document.querySelector('[data-testid="announcement-title"]') as HTMLInputElement | null;
-    expect(title).not.toBeNull();
-    expect(title!.value).toBe('Maintenance');
-  });
-
-  it('deletes after confirmation with hardDelete=true and reloads the list', async () => {
-    const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
-    await flushPromises();
-    expect(document.body.textContent).toContain('permanently delete this announcement');
-    const confirmButton = document.querySelector('.ant-modal-confirm-btns .ant-btn-primary');
-    expect(confirmButton).not.toBeNull();
-    (confirmButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
     expect(
-      calls.some(
-        (call) => call.url.includes('/api/v1/announcements/a1?hardDelete=true') && call.init?.method === 'DELETE',
-      ),
+      wrapper.find('[data-testid="announcement-title-announcement-1"]').exists(),
     ).toBe(true);
-    const listLoads = calls.filter(
-      (call) => call.url.includes('/api/v1/announcements') && !call.url.includes('/a1'),
-    );
-    expect(listLoads).toHaveLength(2);
   });
 
-  it('sends no DELETE when the delete confirmation is cancelled', async () => {
-    const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
+  it('navigates to the add form from the header button', async () => {
+    const { wrapper, router } = await mountView();
+    await wrapper.find('[data-testid="add-announcement"]').trigger('click');
     await flushPromises();
-    const cancelButton = Array.from(document.body.querySelectorAll('.ant-modal-confirm-btns button')).find(
-      (button) => button.textContent?.includes('Cancel'),
-    );
-    expect(cancelButton).toBeDefined();
-    (cancelButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
-    expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(false);
+    expect(router.currentRoute.value.path).toBe('/settings/notifications/announcements/add');
   });
 
-  it('shows an error and does not reload the list when the delete fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/announcements')) {
-          if (init?.method === 'DELETE') {
-            return new Response('boom', { status: 500 });
-          }
-          return jsonResponse({
-            data: [
-              {
-                id: 'a1',
-                displayName: 'Maintenance',
-                description: 'Window',
-                type: 'Notice',
-                startTime: 1762051200000,
-                endTime: 1762054800000,
-              },
-            ],
-            paging: { total: 1 },
-          });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const errorSpy = vi.spyOn(message, 'error');
-    const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="announcement-delete-a1"]').trigger('click');
+  it('navigates to the edit and duplicate forms by id', async () => {
+    const { wrapper, router } = await mountView();
+    const table = wrapper.findComponent(SystemAnnouncementsTable);
+    await table.vm.$emit('edit', announcement());
     await flushPromises();
-    const confirmButton = document.querySelector('.ant-modal-confirm-btns .ant-btn-primary');
-    expect(confirmButton).not.toBeNull();
-    (confirmButton as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    expect(errorSpy).toHaveBeenCalled();
-    const calls = vi.mocked(fetch).mock.calls.map(([input, init]) => ({ url: String(input), init }));
-    const listLoads = calls.filter(
-      (call) => call.url.includes('/api/v1/announcements') && !call.url.includes('/a1'),
+    expect(router.currentRoute.value.path).toBe(
+      '/settings/notifications/announcements/edit/a1',
     );
-    expect(listLoads).toHaveLength(1);
-    errorSpy.mockRestore();
+    await table.vm.$emit('duplicate', announcement());
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe(
+      '/settings/notifications/announcements/duplicate/a1',
+    );
   });
 
-  it('edits with a patch containing only changed fields', async () => {
-    const { wrapper } = await mountView();
-    await wrapper.find('[data-testid="announcement-edit-a1"]').trigger('click');
+  it('navigates to the add form from the table empty-state action', async () => {
+    listAnnouncements.mockResolvedValue({ data: [], total: 0 });
+    const { wrapper, router } = await mountView();
+    const table = wrapper.findComponent(SystemAnnouncementsTable);
+    await table.vm.$emit('add');
     await flushPromises();
-    const description = document.querySelector('[data-testid="announcement-edit-description"]') as HTMLTextAreaElement | null;
-    expect(description).not.toBeNull();
-    await new DOMWrapper(description!).setValue('Window moved');
-    await flushPromises();
-    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
-    expect(okButton).not.toBeNull();
-    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    const patch = vi
-      .mocked(fetch)
-      .mock.calls.map(([input, init]) => ({ url: String(input), init }))
-      .find((call) => call.init?.method === 'PATCH');
-    expect(patch).toBeDefined();
-    expect(JSON.parse(String(patch!.init?.body))).toEqual([
-      { op: 'replace', path: '/description', value: 'Window moved' },
-    ]);
+    expect(router.currentRoute.value.path).toBe('/settings/notifications/announcements/add');
   });
 });

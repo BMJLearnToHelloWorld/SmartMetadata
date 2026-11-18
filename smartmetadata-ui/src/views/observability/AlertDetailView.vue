@@ -1,273 +1,413 @@
 <!--
-  Copyright 2026 SmartMetadata authors.
-  Licensed under the Apache License, Version 2.0.
+Copyright 2026 SmartMetadata authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { BellOutlined, DeleteOutlined, EditOutlined, SyncOutlined } from '@ant-design/icons-vue';
+import { Button, message, Modal, Skeleton, Spin, Tooltip } from 'ant-design-vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import {Button, Descriptions, Form, Input, InputNumber, Select, Switch, message} from 'ant-design-vue';
-import SmTable from '@/components/shared/SmTable.vue';
-import { deleteEventSubscription, getEventSubscription, updateEventSubscription } from '@/api/eventSubscriptions';
-import { confirmDelete } from '@/features/crud/confirmDelete';
+import { useRoute } from 'vue-router';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import { entityLabel } from '@/features/crud/paging';
-import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
-import type { OperationPermissions } from '@/api/permissions';
-import { usePermissionStore } from '@/stores/permissions';
-import type { EventSubscription } from '@/types/quality';
+import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import AlertConfigDetails from '@/components/notifications/AlertConfigDetails.vue';
+import AlertDeleteModal from '@/components/notifications/AlertDeleteModal.vue';
+import AlertDiagnosticInfoTab from '@/components/notifications/AlertDiagnosticInfoTab.vue';
+import AlertExtraInfo from '@/components/notifications/AlertExtraInfo.vue';
+import AlertOwnersEditor from '@/components/notifications/AlertOwnersEditor.vue';
+import AlertRecentEventsTab from '@/components/notifications/AlertRecentEventsTab.vue';
+import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import SmMarkdown from '@/components/shared/SmMarkdown.vue';
+import SmProfilePicture from '@/components/shared/SmProfilePicture.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import SomethingWentWrongPlaceholder from '@/components/shared/SomethingWentWrongPlaceholder.vue';
+import { isDescriptionContentEmpty } from '@/utils/richTextUtils';
+import { ALERT_DETAIL_TABS, type AlertDetailTab } from '@/types/notifications';
+import { getEntityName, type TranslateFn } from '@/utils/notifications/alertUtils';
+import { hardDeleteAlert } from '@/utils/notifications/alertDelete';
+import { resolveAlertFace } from '@/utils/notifications/alertPaths';
+import type { AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
+import { useAlertDetailsData } from './useAlertDetailsData';
 
-const props = defineProps<{ id: string }>();
-const { t } = useI18n();
-const router = useRouter();
 /**
- * Official NotificationListPage row gating: edit needs EditAll, delete
- * needs Delete on this alert's entity permission by FQN. A missing or
- * failed fetch denies.
+ * Pin `AlertDetailsPage` + `AlertDetailsContent` (AlertDetailsPage.tsx:39-107,
+ * AlertDetailsContent.tsx:52-246): the error split renders instead of the
+ * shell — no view permission yields the permission placeholder with no
+ * breadcrumb, while a missing alert yields the breadcrumb plus the 404 /
+ * 403 / generic placeholder. Inside the shell, the owners row (hidden when
+ * there are no owners and no edit permission), the event counts, the
+ * always-rendered Sync button, the hidden-unless-permitted Edit/Delete
+ * icon buttons, the description block, and the three tabs with
+ * visited-tab keep-alive.
+ *
+ * The view reads the final route contract (`:fqn` / `:tab`); the `:id`
+ * fallback keeps it mounted under the current route until the router
+ * rewiring lands. The face comes from the route path.
  */
-const permissionStore = usePermissionStore();
-const alertOps = ref<OperationPermissions>({});
-const canEditAlert = computed(() => alertOps.value.EditAll === true);
-const canDeleteAlert = computed(() => alertOps.value.Delete === true);
-const loading = ref(false);
-const errorMessage = ref('');
-const alert = ref<EventSubscription | null>(null);
-const activeTab = ref('overview');
-const editOpen = ref(false);
-const saving = ref(false);
-const editForm = reactive({
-  displayName: '',
-  description: '',
-  enabled: true,
-  endpoint: '',
-  destinationType: 'Webhook',
-  readTimeout: 12,
-  resources: [] as string[],
+const route = useRoute();
+const { t } = useI18n();
+const translate = t as unknown as TranslateFn;
+
+const face = computed(() => resolveAlertFace(route.path));
+const fqn = computed(() => String(route.params.fqn ?? route.params.id ?? ''));
+const routeTab = computed(() => String(route.params.tab ?? ''));
+
+const hooks: AlertSearchHooks = {
+  t: translate,
+  notifyError: (text: string) => void message.error(text),
+  notifyWarning: (text: string) => void message.warning(text),
+};
+
+const details = useAlertDetailsData({
+  fqn: () => fqn.value,
+  face: () => face.value,
+  hooks,
+  notifySuccess: (text: string) => void message.success(text),
 });
 
-/** Official AlertDetails filters rendering: Include renders ===, anything else !==. */
-function filterRuleText(rule: { name?: string; effect?: string; condition?: string | string[] }): string {
-  const conditions = Array.isArray(rule.condition) ? rule.condition.join(', ') : (rule.condition ?? '');
-  const effect = rule.effect === 'Include' ? '===' : '!==';
-  return [rule.name, effect, conditions].filter(Boolean).join(' ');
-}
-
-async function onDeleteAlert(): Promise<void> {
-  if (!alert.value || !canDeleteAlert.value) {
-    if (alert.value) {
-      message.error(t('errors.forbidden'));
-    }
-    return;
-  }
-  const name = entityLabel(alert.value);
-  const confirmed = await confirmDelete({
-    title: t('observability.alerts.deleteTitle', { name }),
-    content: t('observability.alerts.deleteConfirm', { name: name.toLowerCase() }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await deleteEventSubscription(alert.value.id);
-    message.success(t('observability.alerts.deleted', { name }));
-    await router.push({ name: 'observability-alerts' });
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
-  }
-}
-
-function openEdit(): void {
-  if (!alert.value || !canEditAlert.value) {
-    if (alert.value) {
-      message.error(t('errors.forbidden'));
-    }
-    return;
-  }
-  editForm.displayName = alert.value.displayName || '';
-  editForm.description = alert.value.description || '';
-  editForm.enabled = alert.value.enabled !== false;
-  editForm.endpoint = alert.value.destinations[0]?.endpoint || '';
-  editForm.destinationType = alert.value.destinations[0]?.type || 'Webhook';
-  editForm.readTimeout = alert.value.destinations[0]?.readTimeout ?? 12;
-  editForm.resources = [...(alert.value.filteringRules?.resources ?? [])];
-  editOpen.value = true;
-}
-
-async function onSaveEdit(): Promise<void> {
-  if (!alert.value || !canEditAlert.value) {
-    if (alert.value) {
-      message.error(t('errors.forbidden'));
-    }
-    return;
-  }
-  saving.value = true;
-  try {
-    await updateEventSubscription({
-      name: alert.value.name,
-      alertType: alert.value.alertType || 'Observability',
-      displayName: editForm.displayName.trim() || undefined,
-      description: editForm.description.trim() || undefined,
-      enabled: editForm.enabled,
-      // Top-level resources, as on create: the schema has no
-      // filteringRules field.
-      resources: editForm.resources,
-      destinations: editForm.endpoint.trim()
-        ? [
-            {
-              category: 'External',
-              type: editForm.destinationType,
-              config: { endpoint: editForm.endpoint.trim() },
-              readTimeout: editForm.readTimeout,
-            },
-          ]
-        : [],
-    });
-    editOpen.value = false;
-    message.success(t('observability.alerts.updated'));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('observability.alerts.updateFailed'));
-  } finally {
-    saving.value = false;
-  }
-}
-
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('observability.alerts.title'), to: { name: 'observability-alerts' } },
-  { label: entityLabel(alert.value) || t('observability.alerts.title') },
-]);
-
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'alert-tab-overview' },
-  { key: 'destinations', label: t('observability.alerts.destinationsTab'), testId: 'alert-tab-destinations' },
-]);
-
-const destinationColumns = computed<EntityListColumn[]>(() => [
-  { title: t('observability.alerts.category'), dataIndex: 'category', key: 'category' },
-  { title: t('crud.type'), dataIndex: 'type', key: 'type' },
-  { title: t('observability.alerts.endpoint'), dataIndex: 'endpoint', key: 'endpoint' },
-  { title: t('observability.alerts.readTimeout'), dataIndex: 'readTimeout', key: 'readTimeout' },
-]);
-
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    alert.value = await getEventSubscription(props.id);
-    try {
-      alertOps.value = alert.value.fullyQualifiedName
-        ? await permissionStore.getEntityPermissionByFqn('eventsubscription', alert.value.fullyQualifiedName)
-        : {};
-    } catch {
-      alertOps.value = {};
-    }
-  } catch (error) {
-    alert.value = null;
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
-}
-
-watch(
-  () => props.id,
-  () => {
-    void load();
-  },
+// getRenderedActiveTab (CustomizePageEntityTabUtils.ts:82-89): the route tab
+// when it names a tab, else the first tab (configuration).
+const activeTab = computed<AlertDetailTab>(() =>
+  (ALERT_DETAIL_TABS as readonly string[]).includes(routeTab.value)
+    ? (routeTab.value as AlertDetailTab)
+    : 'configuration',
 );
 
-onMounted(() => {
-  void load();
+// useVisitedTabs: tabs mount lazily on first visit and stay mounted, so the
+// recent-events filter and page survive tab switches. The shell force-renders
+// every pane, so the gate lives inside each tab slot.
+const visitedTabs = reactive(new Set<string>([activeTab.value]));
+watch(activeTab, (tab) => {
+  visitedTabs.add(tab);
 });
+
+const tabs = computed<EntityDetailTab[]>(() => [
+  { key: 'configuration', label: t('label.configuration') },
+  { key: 'recentEvents', label: t('label.recent-event-plural') },
+  { key: 'diagnostic-info', label: t('label.diagnostic-info') },
+]);
+
+const shellBreadcrumbs = computed<EntityBreadcrumb[]>(() =>
+  details.breadcrumb.value.map((item) =>
+    item.routeName ? { label: item.label, to: { name: item.routeName, params: item.routeParams } } : { label: item.label },
+  ),
+);
+
+const showNoViewPermission = computed(
+  () => details.loadingCount.value === 0 && details.viewPermission.value === false,
+);
+const showLoadError = computed(
+  () => details.loadingCount.value === 0 && details.alertDetails.value === undefined,
+);
+const loadErrorStatus = computed(() => details.alertDetailsError.value?.status);
+
+const isNotificationAlert = computed(() => face.value === 'Notification');
+const hasOwners = computed(() => (details.alertDetails.value?.owners?.length ?? 0) > 0);
+const showOwners = computed(() => hasOwners.value || details.editOwnersPermission.value);
+const canShowActions = computed(
+  () => details.alertDetails.value?.provider !== 'system',
+);
+
+const isDeleting = ref(false);
+
+async function handleAlertHardDelete(): Promise<void> {
+  isDeleting.value = true;
+  const deleted = await hardDeleteAlert(
+    getEntityName(details.alertDetails.value),
+    details.alertDetails.value?.id ?? '',
+    { ...hooks, notifySuccess: (text: string) => void message.success(text) },
+  );
+  if (deleted) {
+    await details.handleAlertDelete();
+  }
+  details.hideDeleteModal();
+  isDeleting.value = false;
+}
+
+const isDescriptionEdit = ref(false);
+const descriptionDraft = ref('');
+
+function openDescriptionEditor(): void {
+  descriptionDraft.value = details.alertDetails.value?.description ?? '';
+  isDescriptionEdit.value = true;
+}
+
+async function saveDescription(): Promise<void> {
+  await details.onDescriptionUpdate(descriptionDraft.value);
+  isDescriptionEdit.value = false;
+}
 </script>
 
 <template>
-  <EntityDetailShell
-    :title="entityLabel(alert) || t('observability.alerts.title')"
-    :name="alert?.name"
-    :fqn="alert?.fullyQualifiedName"
-    :lead="t('observability.alerts.lead')"
-    :loading="loading"
-    :error="errorMessage"
-    :empty="!alert && !loading && !errorMessage"
-    :breadcrumbs="breadcrumbs"
-    :tabs="alert ? tabs : []"
-    v-model:active-tab="activeTab"
+  <div
+    v-if="showNoViewPermission"
+    class="alert-detail__no-view"
   >
-    <template #actions>
-      <Button data-testid="edit-alert" :disabled="!alert || !canEditAlert" @click="openEdit">{{ t('observability.alerts.edit') }}</Button>
-      <Button danger data-testid="delete-alert" :disabled="!alert || !canDeleteAlert" @click="onDeleteAlert">{{ t('crud.delete') }}</Button>
-    </template>
-    <template #overview>
-      <Descriptions v-if="alert" bordered :column="1" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ alert.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('observability.alerts.type')">{{ alert.alertType || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.enabled')">
-          {{ alert.enabled === false ? t('crud.no') : t('crud.yes') }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ alert.description || '—' }}</Descriptions.Item>
-        <Descriptions.Item v-if="alert.filteringRules?.resources?.length" :label="t('observability.alerts.trigger')">
-          {{ alert.filteringRules.resources.join(', ') }}
-        </Descriptions.Item>
-        <Descriptions.Item v-if="alert.filteringRules?.rules?.length" :label="t('observability.alerts.filters')">
-          <div v-for="rule in alert.filteringRules.rules" :key="rule.name">
-            <code>{{ filterRuleText(rule) }}</code>
+    <PermissionPlaceholder
+      test-id="permission-error-placeholder"
+      :permission-value="t('label.view-entity', { entity: t('label.alert-detail-plural') })"
+    />
+  </div>
+  <PageLayout
+    v-else-if="showLoadError"
+    :document-title="t('label.alert-detail-plural')"
+  >
+    <div class="alert-detail__error">
+      <SmBreadcrumb :items="details.breadcrumb.value" />
+      <div class="alert-detail__error-box">
+        <NoDataPlaceholder
+          v-if="loadErrorStatus === 404"
+          :icon="BellOutlined"
+          :title="t('label.alert-not-found')"
+          :description="t('message.alert-not-found-description')"
+        />
+        <PermissionPlaceholder
+          v-else-if="loadErrorStatus === 403"
+          :permission-value="t('label.view-entity', { entity: t('label.alert-detail-plural') })"
+        />
+        <SomethingWentWrongPlaceholder
+          v-else
+          :on-reload="details.fetchAlertDetails"
+        />
+      </div>
+    </div>
+  </PageLayout>
+  <PageLayout v-else :document-title="getEntityName(details.alertDetails.value)">
+    <div v-if="details.loadingCount.value > 0" class="alert-detail__loader">
+      <Spin />
+    </div>
+    <EntityDetailShell
+      v-else-if="details.alertDetails.value"
+      :title="getEntityName(details.alertDetails.value)"
+      :name="details.alertDetails.value?.name ?? ''"
+      :fqn="details.alertDetails.value?.fullyQualifiedName ?? ''"
+      :breadcrumbs="shellBreadcrumbs"
+      :tabs="tabs"
+      :active-tab="activeTab"
+      @update:active-tab="details.handleTabChange"
+    >
+      <template #meta>
+        <div class="alert-detail__meta-row">
+          <Skeleton.Button
+            v-if="details.ownerLoading.value"
+            active
+            :style="{ width: '80px', height: '40px' }"
+          />
+          <div v-else-if="showOwners" class="alert-detail__owners" data-testid="alert-owners">
+            <span class="alert-detail__owners-label">{{ t('label.owner-plural') }}</span>
+            <span v-if="hasOwners && !details.editOwnersPermission.value" class="alert-detail__owner-list">
+              <span
+                v-for="owner in details.alertDetails.value?.owners ?? []"
+                :key="owner.id || owner.name"
+                class="alert-detail__owner"
+              >
+                <SmProfilePicture :name="owner.name" :display-name="owner.displayName" />
+                {{ getEntityName(owner) }}
+              </span>
+            </span>
+            <AlertOwnersEditor
+              v-if="details.editOwnersPermission.value"
+              :model-value="details.alertDetails.value?.owners ?? []"
+              @update:model-value="details.onOwnerUpdate"
+            />
           </div>
-        </Descriptions.Item>
-        <Descriptions.Item v-if="alert.owners?.length" :label="t('crud.owners')">
-          {{ alert.owners.map((owner) => owner.displayName || owner.name).filter(Boolean).join(', ') }}
-        </Descriptions.Item>
-      </Descriptions>
-    </template>
-    <template #destinations>
-      <SmTable
-        v-if="alert"
-        row-key="type"
-        size="small"
-        :columns="destinationColumns"
-        :data-source="alert.destinations"
-        :pagination="false"
+          <AlertExtraInfo
+            :loading="details.alertEventCountsLoading.value"
+            :counts="details.alertEventCounts.value"
+          />
+        </div>
+        <div class="alert-detail__description" data-testid="alert-description">
+          <span class="alert-detail__description-head">
+            <span>{{ t('label.description') }}</span>
+            <Button
+              v-if="details.editDescriptionPermission.value"
+              type="text"
+              size="small"
+              data-testid="edit-description"
+              :title="t('label.edit-entity', { entity: t('label.description') })"
+              :aria-label="t('label.edit-entity', { entity: t('label.description') })"
+              @click="openDescriptionEditor"
+            >
+              <EditOutlined />
+            </Button>
+          </span>
+          <SmMarkdown
+            v-if="!isDescriptionContentEmpty(details.alertDetails.value?.description)"
+            :markdown="details.alertDetails.value?.description ?? ''"
+          />
+          <span v-else class="alert-detail__no-description">
+            {{ t('label.no-description') }}
+          </span>
+        </div>
+      </template>
+      <template #actions>
+        <Tooltip :title="t('label.sync-alert-offset', { entity: t('label.alert') })">
+          <span>
+            <Button
+              type="text"
+              size="large"
+              data-testid="sync-button"
+              :disabled="details.isSyncing.value"
+              @click="details.handleAlertSync"
+            >
+              <SyncOutlined />
+            </Button>
+          </span>
+        </Tooltip>
+        <Tooltip
+          v-if="details.editPermission.value && canShowActions"
+          :title="t('label.edit-entity', { entity: t('label.alert') })"
+        >
+          <Button
+            type="text"
+            size="large"
+            data-testid="edit-button"
+            @click="details.handleAlertEdit"
+          >
+            <EditOutlined />
+          </Button>
+        </Tooltip>
+        <Tooltip
+          v-if="details.deletePermission.value && canShowActions"
+          :title="t('label.delete-entity', { entity: t('label.alert') })"
+        >
+          <Button
+            type="text"
+            size="large"
+            data-testid="delete-button"
+            @click="details.setShowDeleteModal(true)"
+          >
+            <DeleteOutlined />
+          </Button>
+        </Tooltip>
+      </template>
+      <template #configuration>
+        <AlertConfigDetails
+          v-if="visitedTabs.has('configuration')"
+          :alert-details="details.alertDetails.value"
+          :is-notification-alert="isNotificationAlert"
+          :hooks="hooks"
+        />
+      </template>
+      <template #recentEvents>
+        <AlertRecentEventsTab
+          v-if="visitedTabs.has('recentEvents')"
+          :alert-details="details.alertDetails.value"
+          :hooks="hooks"
+        />
+      </template>
+      <template #diagnostic-info>
+        <AlertDiagnosticInfoTab
+          v-if="visitedTabs.has('diagnostic-info')"
+          :fqn="fqn"
+          :hooks="hooks"
+        />
+      </template>
+    </EntityDetailShell>
+    <AlertDeleteModal
+      :open="details.showDeleteModal.value"
+      :entity-title="getEntityName(details.alertDetails.value)"
+      :message="t('message.permanently-delete-common-message', { entity: getEntityName(details.alertDetails.value).toLowerCase() })"
+      :deleting="isDeleting"
+      @cancel="details.hideDeleteModal"
+      @confirm="handleAlertHardDelete"
+    />
+    <Modal
+      :open="isDescriptionEdit"
+      :title="t('label.edit-description-for', { entityName: getEntityName(details.alertDetails.value) })"
+      :ok-text="t('label.save')"
+      :cancel-text="t('label.cancel')"
+      destroy-on-close
+      @ok="saveDescription"
+      @cancel="isDescriptionEdit = false"
+    >
+      <SmRichTextEditor
+        :initial-value="details.alertDetails.value?.description ?? ''"
+        :place-holder="t('label.enter-entity', { entity: t('label.description') })"
+        @text-change="descriptionDraft = $event"
       />
-    </template>
-  </EntityDetailShell>
-  <FormModal
-    v-model:open="editOpen"
-    :title="t('observability.alerts.editTitle')"
-    :confirm-loading="saving"
-    test-id="edit-alert-modal"
-    @ok="onSaveEdit"
-    @cancel="editOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')">
-        <Input v-model:value="editForm.displayName" data-testid="edit-alert-display-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')">
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('crud.enabled')">
-        <Switch v-model:checked="editForm.enabled" data-testid="edit-alert-enabled" />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.destinationType')">
-        <Select v-model:value="editForm.destinationType">
-          <Select.Option value="Webhook">Webhook</Select.Option>
-          <Select.Option value="Slack">Slack</Select.Option>
-          <Select.Option value="MsTeams">MsTeams</Select.Option>
-          <Select.Option value="GChat">GChat</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.endpoint')">
-        <Input v-model:value="editForm.endpoint" data-testid="edit-alert-endpoint" />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.readTimeout')">
-        <InputNumber v-model:value="editForm.readTimeout" :min="0" data-testid="edit-alert-read-timeout" />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.resources')">
-        <Select v-model:value="editForm.resources" mode="tags" data-testid="edit-alert-resources" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+    </Modal>
+  </PageLayout>
 </template>
+
+<style scoped>
+.alert-detail__no-view {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  min-height: 240px;
+}
+
+.alert-detail__error {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.alert-detail__error-box {
+  position: relative;
+  min-height: calc(100vh - 16rem);
+  width: 100%;
+}
+
+.alert-detail__loader {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.alert-detail__meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-detail__owners {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.alert-detail__owners-label {
+  color: var(--sm-text-secondary);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.alert-detail__owner-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-detail__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alert-detail__description {
+  margin-top: 8px;
+}
+
+.alert-detail__description-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alert-detail__no-description {
+  color: var(--sm-text-secondary);
+}
+</style>

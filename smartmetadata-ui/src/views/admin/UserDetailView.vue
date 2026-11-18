@@ -3,546 +3,505 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Alert, Button, Checkbox, Descriptions, Form, Input, Popconfirm, Select, Space, Tag, message} from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import SmTable from '@/components/shared/SmTable.vue';
-import { removeFieldPatch, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
-import { listRoles } from '@/api/roles';
-import { listTeams } from '@/api/teams';
+import { useRoute, useRouter } from 'vue-router';
+import { Button, Spin, Tabs, Tooltip, message } from 'ant-design-vue';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
+import ExplorePreview from '@/features/explore/ExplorePreview.vue';
+import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
+import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
+import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
+import { getEntityName } from '@/components/shared/profilePictureUtils';
+import { extensionPatch } from '@/governance/assetPatch';
+import { listCustomProperties } from '@/api/customProperties';
+import type { CustomPropertyDef } from '@/types/collaboration';
+import { fetchAuthConfig } from '@/api/system';
+import { getLimitByResource } from '@/api/limits';
+import type { DeleteType } from '@/ingestion/serviceDelete';
 import {
-  JWT_TOKEN_EXPIRY_OPTIONS,
-  assignUserRolesPatch,
-  assignUserTeamsPatch,
-  createPersonalToken,
+  USER_DETAIL_FIELDS,
+  changePassword,
   deactivateUser,
-  generateUserToken,
-  getUser,
-  listPersonalTokens,
+  getUserByName,
   patchUser,
   restoreUser,
-  revokePersonalTokens,
-  type JwtTokenExpiry,
-  type PersonalAccessToken,
+  type ChangePasswordPayload,
 } from '@/api/users';
-import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
-import { entityLabel, joinRefNames } from '@/features/crud/paging';
-import MyPermissionsPanel from '@/views/admin/MyPermissionsPanel.vue';
-import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
-import type { AdminRole, AdminTeam, AdminUser } from '@/types/admin';
-import type { OperationPermissions } from '@/api/permissions';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
+import type { AdminUser } from '@/types/admin';
+import type { SearchHit } from '@/types/api';
+import { splitTransElement } from '@/utils/emptyPlaceholder';
+import { getUserPath } from '@/utils/fqnPaths';
+import { assetLocation, isDetailWired, parentTableLocation } from '@/catalog/entityRoutes';
+import MembersAccessTokenCard from './MembersAccessTokenCard.vue';
+import MembersAssetList from './MembersAssetList.vue';
+import UserLeftColumn from './UserLeftColumn.vue';
+import UserPermissionsPanel from './UserPermissionsPanel.vue';
+import { buildFollowingQueryFilter, buildMyDataQueryFilter } from './membersSearchFilters';
+import {
+  USER_TAB_ACCESS_TOKEN,
+  USER_TAB_ACTIVITY,
+  USER_TAB_CUSTOM_PROPERTIES,
+  USER_TAB_FOLLOWING,
+  USER_TAB_MY_DATA,
+  USER_TAB_PERMISSIONS,
+  USER_TAB_TASK,
+  getUserTabs,
+  resolveEffectiveUserTab,
+  shouldRedirectAccessToken,
+} from './userLogic';
+import { useMembersPermissions } from './useMembersPermissions';
 
-const props = defineProps<{ id: string }>();
-const { t } = useI18n();
 /**
- * Dual line for user management: isAdminUser (first line) OR an
- * EditAll grant on this user via the permission API (second line,
- * same client as the debugger). A failed query is not a grant
- * (fail closed); the server still enforces user writes. Token
- * issuance for other users (the PAT admin panel below) stays
- * admin-only on purpose: minting another user's token is not
- * covered by user EditAll semantics.
+ * UserPage + Users.component equivalent (pin pages/UserPage +
+ * components/Settings/Users/Users.component.tsx). Top-level detail:
+ * NO breadcrumb (P7), NO page-level permission gate (the pin routes
+ * are bare-mounted), NO shell constructor. Fetched by name with the
+ * 9-field set + include All; a fetch failure toasts
+ * server.entity-fetch-error and renders the no-username placeholder
+ * only when there is no user data.
+ *
+ * Layout: 250px left column + tabs area. Tab keys come from the URL
+ * segments (/users/:fqn/:tab/:subTab); an unknown tab renders the
+ * first tab with the URL unchanged; MENTIONS/TASKS subTabs force the
+ * TASK tab; a non-self direct visit to access-token redirects to
+ * Activity. The Access Token tab is disabled (with the pin's
+ * hardcoded "You have reached the limit" tooltip) when the user
+ * limit's disabledFields include personalAccessToken.
+ *
+ * Activity/Tasks tabs are HELD: no embeddable feed-tab equivalent
+ * exists (ActivityFeedView is a full page, ActivityFeedWidget is a
+ * digest, listActivityEvents has no user filter), and §7 forbids a
+ * second feed. The tabs keep full URL semantics; the panels render
+ * empty held containers with no fake content.
+ *
+ * Entity permissions are fetched ONLY for the custom-properties tab
+ * gates (pin useEntityPermissions(USER, username, {deleted})); the
+ * view gate uses hasViewAccess as the canViewCustomFields
+ * equivalent (the product derivation has no separate view-custom-
+ * fields flag).
  */
-const isAdminUser = computed(() => usePermissionStore().isAdminUser);
-const userOps = ref<OperationPermissions | null>(null);
-const canManageUser = computed(
-  () => isAdminUser.value || userOps.value?.EditAll === true,
+
+const { t, locale } = useI18n();
+const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
+const permissionStore = usePermissionStore();
+
+const username = computed(() => String(route.params.fqn ?? route.params.id ?? ''));
+const tabParam = computed(() =>
+  typeof route.params.tab === 'string' ? route.params.tab : undefined,
 );
+const subTabParam = computed(() =>
+  typeof route.params.subTab === 'string' ? route.params.subTab : undefined,
+);
+
+const user = ref<AdminUser | undefined>();
+const isError = ref(false);
 const loading = ref(false);
-const errorMessage = ref('');
-const user = ref<AdminUser | null>(null);
-const activeTab = ref('overview');
-const editOpen = ref(false);
-const saving = ref(false);
-const teams = ref<AdminTeam[]>([]);
-const roles = ref<AdminRole[]>([]);
 
-function idsOf(refs: { id?: string }[]): string[] {
-  return refs.map((item) => item.id).filter((id): id is string => Boolean(id));
-}
+const isLoggedInUser = computed(
+  () => authStore.user?.name !== undefined && authStore.user.name === user.value?.name,
+);
 
-/** Order-insensitive id comparison: reordering alone is not a change. */
-function sameIdSet(current: string[], next: string[]): boolean {
-  if (current.length !== next.length) {
-    return false;
-  }
-  const sortedCurrent = [...current].sort();
-  const sortedNext = [...next].sort();
-  return sortedCurrent.every((id, index) => id === sortedNext[index]);
-}
-
-/**
- * Ops for a trimmable text field: compare after trimming, an emptied
- * form value removes a stored value, and an already-absent value stays
- * absent without an op.
- */
-function textFieldOps(path: string, current: string | undefined, formValue: string): JsonPatchOp[] {
-  const next = formValue.trim() || undefined;
-  const stored = current?.trim() || undefined;
-  if (next === stored) {
-    return [];
-  }
-  if (next === undefined) {
-    return [removeFieldPatch(path)];
-  }
-  return setFieldPatch(path, current, next);
-}
-
-const editForm = reactive({
-  displayName: '',
-  email: '',
-  description: '',
-  isAdmin: false,
-  teamIds: [] as string[],
-  roleIds: [] as string[],
-});
-
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('admin.users.title'), to: { name: 'admin-users' } },
-  { label: entityLabel(user.value) || t('admin.users.title') },
-]);
-
-const isOwnProfile = computed(() => useAuthStore().user?.id === props.id);
-const showTokensTab = computed(() => isOwnProfile.value || isAdminUser.value);
-const tabs = computed<EntityDetailTab[]>(() => {
-  const base: EntityDetailTab[] = [
-    { key: 'overview', label: t('crud.overview'), testId: 'user-tab-overview' },
-    { key: 'roles', label: t('admin.users.rolesTab'), testId: 'user-tab-roles' },
-  ];
-  if (showTokensTab.value) {
-    base.push({ key: 'tokens', label: t('tokens.title'), testId: 'user-tab-tokens' });
-  }
-  // Self-service permissions: the own profile only. Other users'
-  // profiles never show this tab — admins use the debugger page.
-  if (isOwnProfile.value) {
-    base.push({ key: 'permissions', label: t('permissionDebugger.myPermissions'), testId: 'user-tab-permissions' });
-  }
-  return base;
-});
-
-// Personal access tokens: the profile page IS the product's profile view
-// (AppShell routes profile to admin-user), so both PAT landings live here.
-const tokens = ref<PersonalAccessToken[]>([]);
-const tokensError = ref('');
-const createdSecret = ref('');
-const newTokenName = ref('');
-const newTokenExpiry = ref<JwtTokenExpiry>('30');
-const adminExpiry = ref<JwtTokenExpiry>('30');
-const adminGeneratedSecret = ref('');
-
-const tokenColumns = computed(() => [
-  { title: t('tokens.name'), dataIndex: 'tokenName', key: 'tokenName' },
-  { title: t('tokens.type'), dataIndex: 'tokenType', key: 'tokenType' },
-  { title: t('tokens.expiryDate'), dataIndex: 'expiryDate', key: 'expiryDate' },
-  { title: t('tokens.actions'), dataIndex: 'actions', key: 'actions' },
-]);
-
-const expiryLabel = (value: JwtTokenExpiry): string => {
-  if (value === 'OneHour') {
-    return t('tokens.expiryOneHour');
-  }
-  if (value === 'Unlimited') {
-    return t('tokens.expiryUnlimited');
-  }
-  return t('tokens.expiryDays', { days: value });
-};
-
-async function loadTokens(): Promise<void> {
-  if (!isOwnProfile.value) {
-    return;
-  }
-  try {
-    const page = await listPersonalTokens();
-    tokens.value = page.data;
-    tokensError.value = '';
-  } catch (error) {
-    tokens.value = [];
-    tokensError.value = error instanceof Error ? error.message : t('tokens.loadFailed');
-  }
-}
-
-async function onCreateToken(): Promise<void> {
-  if (!newTokenName.value.trim()) {
-    return;
-  }
-  try {
-    const created = await createPersonalToken(newTokenName.value.trim(), newTokenExpiry.value);
-    createdSecret.value = created?.secret ?? '';
-    newTokenName.value = '';
-    await loadTokens();
-    message.success(t('tokens.created'));
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('tokens.createFailed'));
-  }
-}
-
-async function onRevokeToken(token: PersonalAccessToken): Promise<void> {
-  try {
-    await revokePersonalTokens([token.token]);
-    await loadTokens();
-    message.success(t('tokens.revoked'));
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('tokens.revokeFailed'));
-  }
-}
-
-async function onGenerateAdminToken(): Promise<void> {
-  if (!user.value?.id) {
-    return;
-  }
-  try {
-    const created = await generateUserToken(user.value.id, adminExpiry.value);
-    adminGeneratedSecret.value = created?.secret ?? '';
-    message.success(t('tokens.generated'));
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('tokens.generateFailed'));
-  }
-}
-
-async function onRevokeAllTokens(): Promise<void> {
-  if (!user.value?.name) {
-    return;
-  }
-  try {
-    await revokePersonalTokens([], { username: user.value.name, removeAll: true });
-    message.success(t('tokens.revokedAll'));
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('tokens.revokeFailed'));
-  }
-}
-
-async function load(): Promise<void> {
+async function fetchUser(): Promise<void> {
   loading.value = true;
-  errorMessage.value = '';
+  isError.value = false;
   try {
-    user.value = await getUser(props.id, 'all');
-    editForm.roleIds = idsOf(user.value.roles);
-    editForm.teamIds = idsOf(user.value.teams);
-    userOps.value = await usePermissionStore()
-      .getEntityPermissionById('user', user.value.id)
-      .catch(() => null);
-  } catch (error) {
-    user.value = null;
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    user.value = await getUserByName(username.value, {
+      fields: USER_DETAIL_FIELDS,
+      include: 'all',
+    });
+  } catch {
+    isError.value = true;
+    message.error(t('server.entity-fetch-error'));
   } finally {
     loading.value = false;
   }
 }
 
-function openEdit(): void {
-  if (!user.value) {
-    return;
-  }
-  editForm.displayName = user.value.displayName || '';
-  editForm.email = user.value.email || '';
-  editForm.description = user.value.description || '';
-  editForm.isAdmin = Boolean(user.value.isAdmin);
-  editForm.teamIds = idsOf(user.value.teams);
-  editForm.roleIds = idsOf(user.value.roles);
-  editOpen.value = true;
+onMounted(() => {
+  void fetchUser();
+});
+
+watch(username, () => {
+  void fetchUser();
+});
+
+// --- Tabs ---
+const tabs = computed(() => getUserTabs(isLoggedInUser.value));
+const effectiveTab = computed(() =>
+  resolveEffectiveUserTab(tabParam.value, subTabParam.value, tabs.value),
+);
+
+const USER_TAB_LABEL_KEYS: Record<string, string> = {
+  [USER_TAB_ACTIVITY]: 'label.activity',
+  [USER_TAB_TASK]: 'label.task-plural',
+  [USER_TAB_MY_DATA]: 'label.my-data',
+  [USER_TAB_FOLLOWING]: 'label.following',
+  [USER_TAB_PERMISSIONS]: 'label.permissions',
+  [USER_TAB_CUSTOM_PROPERTIES]: 'label.custom-property-plural',
+  [USER_TAB_ACCESS_TOKEN]: 'label.access-token',
+};
+
+watch(
+  [tabParam, isLoggedInUser, () => user.value?.id],
+  () => {
+    if (user.value && shouldRedirectAccessToken(tabParam.value, isLoggedInUser.value)) {
+      void router.replace(getUserPath(username.value, USER_TAB_ACTIVITY));
+    }
+  },
+  { immediate: true },
+);
+
+function onTabChange(key: string): void {
+  void router.push(getUserPath(username.value, key));
 }
 
-async function onSave(): Promise<void> {
+// --- Access-token tab disable (limit disabledFields) ---
+const accessTokenDisabled = ref(false);
+
+onMounted(async () => {
+  try {
+    const limit = await getLimitByResource('user');
+    const status =
+      limit.featureLimitStatuses.find((entry) => entry.name === 'user') ??
+      limit.featureLimitStatuses[0];
+    const configured = status?.configuredLimit;
+    const disabled = configured?.disabledFields ?? configured?.disableFields ?? [];
+    accessTokenDisabled.value = disabled.includes('personalAccessToken');
+  } catch {
+    accessTokenDisabled.value = false;
+  }
+});
+
+const limitTooltip = computed(() =>
+  locale.value.startsWith('zh') ? '你已达到上限' : 'You have reached the limit',
+);
+
+// --- Auth provider (change-password gating) ---
+const isAuthProviderBasic = ref(false);
+
+onMounted(async () => {
+  try {
+    const config = await fetchAuthConfig();
+    isAuthProviderBasic.value = config.provider === 'basic' || config.provider === 'ldap';
+  } catch {
+    isAuthProviderBasic.value = false;
+  }
+});
+
+// --- Custom-properties gates ---
+const deletedRef = computed(() => user.value?.deleted ?? false);
+const perms = useMembersPermissions('user', username, deletedRef);
+
+// --- Patch (pin updateUserDetails: roles->isAdmin and teams->domains
+// syncs arrive with the refetched user; defaultPersona set toasts;
+// self-update syncs the current user) ---
+async function applyUserPatch(ops: JsonPatchOp[]): Promise<void> {
   const current = user.value;
   if (!current) {
     return;
   }
-  saving.value = true;
+  const setsDefaultPersona = ops.some(
+    (op) => op.path === '/defaultPersona' && (op.op === 'add' || op.op === 'replace'),
+  );
   try {
-    // A whole-entity PUT would drop every field this form does not
-    // carry (personas, profile, timezone, ...), so the edit saves as
-    // a JSON Patch limited to the five fields the form owns. Fields
-    // the patch never mentions keep their stored values server-side.
-    // Email is never sent: the server ignores it on PATCH too, and an
-    // address change only goes through the change-email ops.
-    // ADR:2026-11-18-user-team-detail-saves-use-json-patch
-    const ops: JsonPatchOp[] = [];
-    ops.push(...textFieldOps('/displayName', current.displayName, editForm.displayName));
-    ops.push(...textFieldOps('/description', current.description, editForm.description));
-    if (Boolean(current.isAdmin) !== editForm.isAdmin) {
-      ops.push(...setFieldPatch('/isAdmin', current.isAdmin, editForm.isAdmin));
-    }
-    if (!sameIdSet(idsOf(current.teams), editForm.teamIds)) {
-      ops.push(...assignUserTeamsPatch(current.teams, editForm.teamIds));
-    }
-    if (!sameIdSet(idsOf(current.roles), editForm.roleIds)) {
-      ops.push(...assignUserRolesPatch(current.roles, editForm.roleIds));
-    }
-    // Pin sends the compare() result unguarded, so an unchanged edit
-    // still sends an empty patch array rather than skipping the call.
     await patchUser(current.id, ops);
-    editOpen.value = false;
-    message.success(t('admin.users.updated'));
-    await load();
+    await fetchUser();
+    if (setsDefaultPersona && user.value?.defaultPersona) {
+      message.success(
+        t('message.field-value-updated-notification', {
+          fieldName: t('label.default-persona'),
+          fieldValue: getEntityName(user.value.defaultPersona),
+        }),
+      );
+    }
+    if (isLoggedInUser.value) {
+      await authStore.refreshUser();
+    }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
-  } finally {
-    saving.value = false;
+    message.error(
+      error instanceof Error
+        ? error.message
+        : t('server.entity-updating-error', { entity: t('label.user') }),
+    );
   }
 }
 
-async function onDeactivate(): Promise<void> {
-  if (!user.value) {
+// --- Change password / delete / restore (function props: throw on
+// failure so the column's modal stays open, matching the pin card) ---
+async function requestChangePassword(payload: ChangePasswordPayload): Promise<void> {
+  try {
+    await changePassword(payload);
+    message.success(t('server.update-entity-success', { entity: t('label.password') }));
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    throw error;
+  }
+}
+
+async function deleteCurrentUser(deleteType: DeleteType): Promise<void> {
+  const current = user.value;
+  if (!current) {
     return;
   }
   try {
-    await deactivateUser(user.value.id);
-    message.success(t('admin.users.deactivated'));
-    await load();
+    await deactivateUser(current.id, {
+      hardDelete: deleteType === 'hard-delete',
+      recursive: true,
+    });
+    message.success(t('server.entity-deleted-successfully'));
+    if (deleteType === 'hard-delete') {
+      void router.push('/');
+    } else {
+      user.value = { ...current, deleted: !current.deleted };
+    }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(t('server.delete-entity-error'));
+    throw error;
   }
 }
 
-async function onRestore(): Promise<void> {
-  if (!user.value) {
+async function restoreCurrentUser(): Promise<void> {
+  const current = user.value;
+  if (!current) {
     return;
   }
   try {
-    await restoreUser(user.value.id);
-    message.success(t('admin.users.restored'));
-    await load();
+    await restoreUser(current.id);
+    message.success(t('message.entity-restored-success', { entity: t('label.user') }));
+    await fetchUser();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.updateFailed'));
+    message.error(t('message.entity-restored-error', { entity: t('label.user') }));
+    throw error;
   }
 }
 
-async function onAssignRoles(roleIds: string[]): Promise<void> {
-  if (!user.value) {
-    return;
-  }
-  try {
-    await patchUser(user.value.id, assignUserRolesPatch(user.value.roles, roleIds));
-    message.success(t('admin.users.rolesUpdated'));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('admin.users.roleAssignFailed'));
-  }
-}
-
-onMounted(() => {
-  void load();
-  void Promise.all([listTeams({ limit: 100 }), listRoles(100)])
-    .then(([teamPage, rolePage]) => {
-      teams.value = teamPage.data;
-      roles.value = rolePage.data;
-    })
-    .catch(() => undefined);
-});
-
-watch(
-  () => props.id,
-  () => {
-    void load();
-  },
+// --- My Data / Following preview ---
+const previewAsset = ref<SearchHit | undefined>();
+const myDataFilter = computed(() =>
+  user.value
+    ? buildMyDataQueryFilter([
+        ...(user.value.teams ?? []).flatMap((team) => (team.id === undefined ? [] : [team.id])),
+        user.value.id,
+      ])
+    : '',
+);
+const followingFilter = computed(() =>
+  user.value ? buildFollowingQueryFilter(user.value.id) : '',
 );
 
-watch(activeTab, (tab) => {
-  if (tab === 'tokens') {
-    void loadTokens();
+function openPreviewAsset(hit: SearchHit): void {
+  const parent = parentTableLocation(hit.entityType, hit.tableFqn);
+  if (parent) {
+    void router.push(parent);
+    return;
   }
+  if (!hit.fullyQualifiedName || !hit.entityType || !isDetailWired(hit.entityType)) {
+    return;
+  }
+  void router.push(assetLocation(hit.entityType, hit.fullyQualifiedName));
+}
+
+watch(effectiveTab, () => {
+  previewAsset.value = undefined;
 });
+
+// --- Permissions tab ---
+// UserPermissionsPanel loads the debug info itself (own -> debugMyPermissions,
+// other -> debugUserPermissions); the page only passes username + self flag.
+
+// --- Custom properties tab ---
+const customPropDefs = ref<CustomPropertyDef[]>([]);
+const customPropsError = ref('');
+const customPropsOpen = ref(false);
+const customPropsSaving = ref(false);
+
+watch(
+  () => user.value?.id,
+  async () => {
+    try {
+      customPropDefs.value = await listCustomProperties('user');
+      customPropsError.value = '';
+    } catch (error) {
+      customPropDefs.value = [];
+      customPropsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    }
+  },
+  { immediate: true },
+);
+
+async function onSaveCustomProperties(next: Record<string, unknown>): Promise<void> {
+  const current = user.value;
+  if (!current) {
+    return;
+  }
+  customPropsSaving.value = true;
+  try {
+    await patchUser(current.id, extensionPatch(current.extension, next));
+    customPropsOpen.value = false;
+    await fetchUser();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
+  } finally {
+    customPropsSaving.value = false;
+  }
+}
+
+// --- No-username placeholder (Trans <0> element, bold username) ---
+const noUsernameParts = computed(() =>
+  splitTransElement(t('message.no-username-available', { user: username.value })),
+);
 </script>
 
 <template>
-  <EntityDetailShell
-    :title="entityLabel(user) || t('admin.users.title')"
-    :name="user?.name"
-    :deleted="user?.deleted"
-    :lead="t('admin.users.detailLead')"
-    :loading="loading"
-    :error="errorMessage"
-    :empty="!user && !loading && !errorMessage"
-    :breadcrumbs="breadcrumbs"
-    :tabs="user ? tabs : []"
-    v-model:active-tab="activeTab"
-  >
-    <template #actions>
-      <Button v-if="user && canManageUser" data-testid="edit-user" @click="openEdit">{{ t('crud.edit') }}</Button>
-      <Button v-if="user && !user.deleted && canManageUser" danger data-testid="deactivate-user" @click="onDeactivate">
-        {{ t('admin.users.deactivate') }}
-      </Button>
-      <Button v-if="user?.deleted && canManageUser" type="primary" data-testid="restore-user" @click="onRestore">
-        {{ t('admin.users.restore') }}
-      </Button>
-    </template>
-    <template #overview>
-      <Descriptions v-if="user" bordered :column="2" size="small">
-        <Descriptions.Item :label="t('crud.name')">{{ user.name }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.email')">{{ user.email || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('admin.users.admin')">
-          <Tag v-if="user.isAdmin" color="blue">{{ t('admin.users.admin') }}</Tag>
-          <span v-else>—</span>
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('admin.users.bot')">
-          <Tag v-if="user.isBot">{{ t('admin.users.bot') }}</Tag>
-          <span v-else>—</span>
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('admin.users.status')">
-          <Tag :color="user.deleted ? 'red' : 'green'">
-            {{ user.deleted ? t('crud.deleted') : t('crud.active') }}
-          </Tag>
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')" :span="2">{{ user.description || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('admin.users.teams')" :span="2">
-          {{ joinRefNames(user.teams) || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('admin.users.roles')" :span="2">
-          {{ joinRefNames(user.roles) || '—' }}
-        </Descriptions.Item>
-      </Descriptions>
-    </template>
-    <template #roles>
-      <p class="entity-detail__tab-lead">{{ t('admin.users.rolesLead') }}</p>
-      <Select
-        v-if="user"
-        v-model:value="editForm.roleIds"
-        mode="multiple"
-        style="width: 100%"
-        :placeholder="t('admin.users.selectRoles')"
-        data-testid="user-roles-select"
-      >
-        <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-          {{ entityLabel(role) }}
-        </Select.Option>
-      </Select>
-      <Button
-        type="primary"
-        style="margin-top: 12px"
-        data-testid="save-user-roles"
-        @click="onAssignRoles(editForm.roleIds)"
-      >
-        {{ t('admin.users.saveRoles') }}
-      </Button>
-    </template>
-    <template #tokens>
-      <template v-if="isOwnProfile">
-        <p class="entity-detail__tab-lead">{{ t('tokens.lead') }}</p>
-        <Space wrap>
-          <Input
-            v-model:value="newTokenName"
-            style="width: 240px"
-            :placeholder="t('tokens.namePlaceholder')"
-            data-testid="pat-name"
-          />
-          <Select v-model:value="newTokenExpiry" style="width: 160px" data-testid="pat-expiry">
-            <Select.Option v-for="option in JWT_TOKEN_EXPIRY_OPTIONS" :key="option" :value="option">
-              {{ expiryLabel(option) }}
-            </Select.Option>
-          </Select>
-          <Button type="primary" data-testid="pat-generate" :disabled="!newTokenName.trim()" @click="onCreateToken">
-            {{ t('tokens.generate') }}
-          </Button>
-        </Space>
-        <Alert
-          v-if="createdSecret"
-          type="success"
-          show-icon
-          style="margin-top: 12px"
-          :message="t('tokens.createdSecret')"
-          :description="createdSecret"
-          data-testid="pat-created-secret"
-        />
-        <Alert v-if="tokensError" type="error" show-icon style="margin-top: 12px" :message="tokensError" />
-        <Empty v-else-if="!tokens.length" style="margin-top: 12px" data-testid="pat-empty" :description="t('tokens.empty')" />
-        <SmTable
-          v-else
-          style="margin-top: 12px"
-          row-key="token"
-          test-id="pat-table"
-          :columns="tokenColumns"
-          :data-source="tokens"
-          :pagination="false"
-          size="small"
+  <div class="user-detail">
+    <Spin v-if="loading" :spinning="true" data-testid="user-detail-loader" />
+    <NoDataPlaceholder v-else-if="isError && !user" test-id="no-data-placeholder">
+      <template #title>
+        <template v-if="noUsernameParts"
+          >{{ noUsernameParts.before }}<strong>{{ noUsernameParts.inner }}</strong
+          >{{ noUsernameParts.after }}</template
         >
-          <template #bodyCell="{ column, record }: { column: { key: string }; record: PersonalAccessToken }">
-            <template v-if="column.key === 'actions'">
-              <Popconfirm :title="t('tokens.revokeConfirm')" @confirm="onRevokeToken(record)">
-                <Button danger size="small" :data-testid="`pat-revoke-${record.tokenName ?? record.token}`">
-                  {{ t('tokens.revoke') }}
-                </Button>
-              </Popconfirm>
+        <template v-else>{{ t('message.no-username-available', { username: username }) }}</template>
+      </template>
+    </NoDataPlaceholder>
+    <div v-else-if="user" class="user-detail__layout">
+      <UserLeftColumn
+        :user="user"
+        :is-logged-in-user="isLoggedInUser"
+        :is-admin-user="permissionStore.isAdminUser"
+        :is-auth-provider-basic="isAuthProviderBasic"
+        :change-password-request="requestChangePassword"
+        :delete-user="deleteCurrentUser"
+        :restore-user="restoreCurrentUser"
+        @patch="applyUserPatch"
+      />
+      <div class="user-detail__tabs">
+        <Tabs
+          :active-key="effectiveTab"
+          data-testid="user-detail-tabs"
+          @change="onTabChange(String($event))"
+        >
+          <Tabs.TabPane
+            v-for="tab in tabs"
+            :key="tab"
+            :disabled="tab === USER_TAB_ACCESS_TOKEN && accessTokenDisabled"
+          >
+            <template #tab>
+              <Tooltip
+                v-if="tab === USER_TAB_ACCESS_TOKEN && accessTokenDisabled"
+                :title="limitTooltip"
+              >
+                <span>{{ t(USER_TAB_LABEL_KEYS[tab] ?? tab) }}</span>
+              </Tooltip>
+              <span v-else>{{ t(USER_TAB_LABEL_KEYS[tab] ?? tab) }}</span>
             </template>
-          </template>
-        </SmTable>
-      </template>
-      <template v-if="isAdminUser && !isOwnProfile">
-        <p class="entity-detail__tab-lead">{{ t('tokens.adminLead') }}</p>
-        <Space wrap>
-          <Select v-model:value="adminExpiry" style="width: 160px" data-testid="pat-admin-expiry">
-            <Select.Option v-for="option in JWT_TOKEN_EXPIRY_OPTIONS" :key="option" :value="option">
-              {{ expiryLabel(option) }}
-            </Select.Option>
-          </Select>
-          <Button type="primary" data-testid="pat-admin-generate" @click="onGenerateAdminToken">
-            {{ t('tokens.generate') }}
-          </Button>
-          <Popconfirm :title="t('tokens.revokeAllConfirm')" @confirm="onRevokeAllTokens">
-            <Button danger data-testid="pat-revoke-all">{{ t('tokens.revokeAll') }}</Button>
-          </Popconfirm>
-        </Space>
-        <Alert
-          v-if="adminGeneratedSecret"
-          type="success"
-          show-icon
-          style="margin-top: 12px"
-          :message="t('tokens.createdSecret')"
-          :description="adminGeneratedSecret"
-          data-testid="pat-admin-secret"
-        />
-      </template>
-    </template>
-    <template #permissions>
-      <template v-if="isOwnProfile">
-        <p class="entity-detail__tab-lead">{{ t('permissionDebugger.myPermissionsLead') }}</p>
-        <MyPermissionsPanel :active="activeTab === 'permissions'" />
-      </template>
-    </template>
-  </EntityDetailShell>
-  <FormModal
-    :open="editOpen"
-    :title="t('admin.users.editTitle')"
-    :ok-text="t('crud.edit')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="saving"
-    @ok="onSave" @cancel="editOpen = false">
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="editForm.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('crud.email')">
-        <Input v-model:value="editForm.email" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="editForm.description" :rows="2" />
-      </Form.Item>
-      <Form.Item>
-        <Checkbox v-model:checked="editForm.isAdmin">{{ t('admin.users.administrator') }}</Checkbox>
-      </Form.Item>
-      <Form.Item :label="t('admin.users.teams')" :extra="t('admin.users.teamsHelp')">
-        <Select v-model:value="editForm.teamIds" mode="multiple" allow-clear>
-          <Select.Option v-for="team in teams" :key="team.id" :value="team.id">
-            {{ entityLabel(team) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('admin.users.roles')" :extra="t('admin.users.rolesHelp')">
-        <Select v-model:value="editForm.roleIds" mode="multiple" allow-clear>
-          <Select.Option v-for="role in roles" :key="role.id" :value="role.id">
-            {{ entityLabel(role) }}
-          </Select.Option>
-        </Select>
-      </Form.Item>
-    </Form>
-  </FormModal>
+            <!-- Activity / Tasks: HELD (see the header comment). The
+                 containers stay empty; no fake feed content. -->
+            <div
+              v-if="tab === USER_TAB_ACTIVITY && effectiveTab === USER_TAB_ACTIVITY"
+              data-testid="activity-tab-held"
+            />
+            <div
+              v-if="tab === USER_TAB_TASK && effectiveTab === USER_TAB_TASK"
+              data-testid="task-tab-held"
+            />
+            <div
+              v-if="
+                (tab === USER_TAB_MY_DATA || tab === USER_TAB_FOLLOWING) &&
+                effectiveTab === tab
+              "
+              class="user-detail__assets"
+            >
+              <div class="user-detail__assets-main">
+                <MembersAssetList
+                  :query-filter="tab === USER_TAB_MY_DATA ? myDataFilter : followingFilter"
+                  :asset-kind="tab === USER_TAB_MY_DATA ? 'my-data' : 'following'"
+                  :can-create="true"
+                  :summary-panel-open="Boolean(previewAsset)"
+                  @asset-click="previewAsset = $event"
+                  @add-asset="router.push({ name: 'search' })"
+                />
+              </div>
+              <div v-if="previewAsset" class="user-detail__assets-preview">
+                <ExplorePreview :hit="previewAsset" @open="openPreviewAsset" />
+                <Button size="small" @click="previewAsset = undefined">{{
+                  t('label.close')
+                }}</Button>
+              </div>
+            </div>
+            <div v-if="tab === USER_TAB_PERMISSIONS && effectiveTab === USER_TAB_PERMISSIONS">
+              <UserPermissionsPanel :username="user.name" :is-logged-in-user="isLoggedInUser" />
+            </div>
+            <div
+              v-if="
+                tab === USER_TAB_CUSTOM_PROPERTIES &&
+                effectiveTab === USER_TAB_CUSTOM_PROPERTIES &&
+                perms.flags.value.hasViewAccess
+              "
+            >
+              <div style="margin-bottom: 12px">
+                <Button
+                  data-testid="edit-user-custom-properties"
+                  :disabled="!perms.flags.value.canEditCustomFields || customPropDefs.length === 0"
+                  @click="customPropsOpen = true"
+                >
+                  {{ t('asset.editCustomProperties') }}
+                </Button>
+              </div>
+              <AssetCustomPropertiesPanel
+                :defs="customPropDefs"
+                :values="user.extension || {}"
+                :error="customPropsError"
+                entity-type="user"
+              />
+            </div>
+            <MembersAccessTokenCard
+              v-if="tab === USER_TAB_ACCESS_TOKEN && effectiveTab === USER_TAB_ACCESS_TOKEN"
+              :user="user"
+            />
+          </Tabs.TabPane>
+        </Tabs>
+      </div>
+    </div>
+
+    <CustomPropertiesEditModal
+      :open="customPropsOpen"
+      :defs="customPropDefs"
+      :values="user?.extension || {}"
+      :saving="customPropsSaving"
+      @save="onSaveCustomProperties"
+      @cancel="customPropsOpen = false"
+    />
+  </div>
 </template>
 
 <style scoped>
-.entity-detail__tab-lead {
-  color: var(--sm-text-secondary);
-  margin-bottom: 12px;
+.user-detail__layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.user-detail__tabs {
+  flex: 1;
+  min-width: 0;
+}
+.user-detail__assets {
+  display: flex;
+  gap: 16px;
+}
+.user-detail__assets-main {
+  flex: 1;
+  min-width: 0;
+}
+.user-detail__assets-preview {
+  flex: 0 0 400px;
+  min-width: 0;
+  border-left: 1px solid var(--sm-border-color);
+  padding-left: 16px;
 }
 </style>

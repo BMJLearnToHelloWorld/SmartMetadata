@@ -3,193 +3,309 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { InputSearch, Select, Spin } from 'ant-design-vue';
+import { Input, Select, Tooltip, message } from 'ant-design-vue';
+import { RobotOutlined } from '@ant-design/icons-vue';
+import { getEntityName } from '@/components/shared/profilePictureUtils';
+import NoSearchResultsPlaceholder from '@/components/shared/NoSearchResultsPlaceholder.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
-import PageLayout from '@/components/shared/PageLayout.vue';
-import SmState from '@/components/shared/SmState.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import ReferenceListCell from '@/components/shared/ReferenceListCell.vue';
 import SmTable from '@/components/shared/SmTable.vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
-import { usePermissionStore } from '@/stores/permissions';
-import { listOnlineUsers, searchUsers } from '@/api/users';
+import UserPopOverCard from '@/components/shared/UserPopOverCard.vue';
 import {
   ONLINE_USERS_TIME_WINDOWS,
   ONLINE_USER_ACTIVITY_COLORS,
-  onlineUserActivityBand,
   onlineUsersWindowFromKey,
 } from '@/catalog/insightsTabs';
+import {
+  buildOnlineUserSearchQueryFilter,
+  listOnlineUsers,
+  searchUsers,
+} from '@/api/users';
+import { usePermissionStore } from '@/stores/permissions';
 import type { AdminUser } from '@/types/admin';
+import { PAGE_SIZE_BASE } from '@/utils/pagination';
+import { getRoleWithFqnPath, getTeamsWithFqnPath, getUserPath } from '@/utils/fqnPaths';
+import { onlineUsersColumns } from '../admin/membersColumns';
+import {
+  filterOnlineUsersByWindow,
+  formatAbsoluteDateTime,
+  getOnlineActivityCell,
+} from '../admin/userLogic';
 
 /**
- * Official OnlineUsersPage, product scope. Activity bands and status colours
- * are the official values (green #52c41a / yellow #faad14 / red #ff4d4f).
- * Admin gating follows the official page (OnlineUsersPage.tsx:255):
- * non-admins get the permission placeholder, here ForbiddenView.
- * Search results carry no activity timestamp, so their activity cell
- * says so instead of inventing an online state.
+ * Online Users (pin OnlineUsersPage, 355 lines). Page-level isAdminUser
+ * check renders the shared PermissionPlaceholder with NO permissionValue
+ * (R-M3: the pin call site passes none and uses the default). No pager
+ * ever (pin comment "Add pagination component here if needed"); one
+ * page of PAGE_SIZE_BASE (15, R-M4). The breadcrumb (Settings > Members
+ * > Online Users) comes from the shell §9 constructor; the route move
+ * into the settings space is an integration request (this file still
+ * mounts at /insights/online-users).
  */
-const { t } = useI18n();
 
-/** Official OnlineUsers gate: isAdminUser from the session. */
+const { t } = useI18n();
 const isAdminUser = computed(() => usePermissionStore().isAdminUser);
 
 const loading = ref(false);
-const errorMessage = ref('');
 const users = ref<AdminUser[]>([]);
 const windowKey = ref(onlineUsersWindowFromKey(undefined).key);
-const searchQuery = ref('');
-const searchMode = ref(false);
+const searchInput = ref('');
+const searchValue = ref('');
 
+const timeWindow = computed(() => onlineUsersWindowFromKey(windowKey.value).minutes);
 const windowOptions = computed(() =>
   ONLINE_USERS_TIME_WINDOWS.map((window) => ({ value: window.key, label: t(window.labelKey) })),
 );
+const columns = computed(() =>
+  onlineUsersColumns({
+    username: t('label.username'),
+    name: t('label.name'),
+    lastActivity: t('label.last-activity'),
+    teams: t('label.team-plural'),
+    roles: t('label.role-plural'),
+  }),
+);
+const searching = computed(() => searchValue.value.trim().length > 0);
+const emptyDescription = computed(() =>
+  searching.value
+    ? t('message.no-entity-found-for-name', {
+        entity: t('label.user-lowercase'),
+        name: searchValue.value,
+      })
+    : t('message.no-online-users-found'),
+);
 
-const columns = computed(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.email'), dataIndex: 'email', key: 'email' },
-  { title: t('crud.teams'), key: 'teams' },
-  { title: t('crud.roles'), key: 'roles' },
-  { title: t('insights.onlineUsers.lastActivity'), key: 'lastActivity' },
-]);
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let searchSeq = 0;
 
-function refNames(refs: AdminUser['teams']): string {
-  const names = refs.map((ref) => ref.displayName || ref.name).filter(Boolean);
-  return names.join(', ') || '—';
-}
-
-function userRowKey(row: AdminUser): string {
-  return row.id || row.name;
-}
-
-function activityMinutes(user: AdminUser): number | undefined {
-  const ts = user.lastActivityTime ?? user.lastLoginTime;
-  return ts === undefined ? undefined : Math.floor((Date.now() - ts) / 60000);
-}
-
-function activityColor(user: AdminUser): string {
-  return ONLINE_USER_ACTIVITY_COLORS[onlineUserActivityBand(activityMinutes(user))];
-}
-
-function activityText(user: AdminUser): string {
-  const ts = user.lastActivityTime ?? user.lastLoginTime;
-  if (ts === undefined) {
-    return t('insights.onlineUsers.noActivityTime');
-  }
-  return new Date(ts).toLocaleString();
-}
-
-async function load(): Promise<void> {
+async function loadList(): Promise<void> {
   loading.value = true;
-  errorMessage.value = '';
-  searchMode.value = false;
   try {
     const page = await listOnlineUsers({
-      timeWindow: onlineUsersWindowFromKey(windowKey.value).minutes,
+      timeWindow: timeWindow.value,
+      fields: 'profile,teams,roles,lastLoginTime,lastActivityTime',
+      limit: PAGE_SIZE_BASE,
     });
     users.value = page.data;
   } catch (error) {
     users.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('insights.onlineUsers.loadFailed');
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
   } finally {
     loading.value = false;
   }
 }
 
-async function onSearch(value: string): Promise<void> {
-  searchQuery.value = value;
-  if (!value.trim()) {
-    await load();
+async function runSearch(): Promise<void> {
+  const id = ++searchSeq;
+  const term = searchValue.value;
+  if (!term) {
+    void loadList();
     return;
   }
   loading.value = true;
-  errorMessage.value = '';
-  searchMode.value = true;
   try {
-    const page = await searchUsers(value);
-    users.value = page.data;
+    // Raw query text (no * wrapping) + explicit isBot:false filter.
+    const page = await searchUsers(
+      term,
+      0,
+      PAGE_SIZE_BASE,
+      buildOnlineUserSearchQueryFilter(),
+    );
+    if (id !== searchSeq) {
+      return;
+    }
+    users.value = filterOnlineUsersByWindow(page.data, timeWindow.value);
   } catch (error) {
-    users.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('insights.onlineUsers.loadFailed');
+    if (id === searchSeq) {
+      users.value = [];
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
   } finally {
-    loading.value = false;
+    if (id === searchSeq) {
+      loading.value = false;
+    }
   }
 }
 
-function onWindowChange(value: string): void {
-  windowKey.value = value;
-  void load();
-}
+watch(searchInput, (value) => {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+  }
+  searchTimer = setTimeout(() => {
+    searchValue.value = value.trim();
+    void runSearch();
+  }, 400);
+});
+
+watch(timeWindow, () => {
+  if (!isAdminUser.value) {
+    return;
+  }
+  if (searching.value) {
+    void runSearch();
+  } else {
+    void loadList();
+  }
+});
 
 onMounted(() => {
-  void load();
+  // Pin OnlineUsersPage.tsx:179-185: the list fetch runs only for admins.
+  if (isAdminUser.value) {
+    void loadList();
+  }
 });
+
+function activityText(user: AdminUser): { relative: string; absolute?: string; color: string } {
+  const cell = getOnlineActivityCell(user);
+  const color = ONLINE_USER_ACTIVITY_COLORS[cell.band];
+  if (cell.band === 'never') {
+    return { relative: t('label.never'), color };
+  }
+  const relative =
+    cell.band === 'now'
+      ? t('label.online-now')
+      : cell.band === 'recent'
+        ? t('label.n-minutes-ago', { count: cell.diffMinutes })
+        : cell.band === 'hours'
+          ? t('label.n-hours-ago', { count: cell.diffHours })
+          : t('label.n-days-ago', { count: cell.diffDays });
+  return {
+    relative,
+    absolute: cell.activityTime ? formatAbsoluteDateTime(cell.activityTime) : undefined,
+    color,
+  };
+}
+
+function userDetailPath(user: AdminUser): string {
+  return getUserPath(user.fullyQualifiedName ?? user.name);
+}
 </script>
 
 <template>
-  <PageLayout test-id="online-users-layout">
-    <ForbiddenView v-if="!isAdminUser" />
+  <div class="online-users-view">
+    <PermissionPlaceholder v-if="!isAdminUser" test-id="permission-placeholder" />
     <template v-else>
-    <PageHeader :header="t('insights.onlineUsers.title')" :sub-header="t('insights.onlineUsers.lead')" />
-    <Spin :spinning="loading">
-      <div class="online-users__controls">
+      <PageHeader
+        :header="t('label.online-user-plural')"
+        :sub-header="t('message.page-sub-header-for-online-users')"
+        test-id="online-users-page-header"
+      />
+      <div class="online-users-view__controls">
         <Select
           :value="windowKey"
           data-testid="online-users-window"
           style="width: 200px"
           :options="windowOptions"
-          @change="(value) => onWindowChange(value as string)"
+          @change="(value) => { windowKey = value as string; }"
         />
-        <InputSearch
-          v-model:value="searchQuery"
+        <Input
+          v-model:value="searchInput"
+          allow-clear
           data-testid="online-users-search"
           style="width: 260px"
-          :placeholder="t('insights.onlineUsers.searchPlaceholder')"
-          @search="onSearch"
+          :placeholder="`${t('label.search-for-type', { type: t('label.user') })}...`"
         />
       </div>
-      <SmState
-        v-if="errorMessage"
-        state="error"
-        test-id="online-users-state"
-        :error-text="errorMessage"
-        show-retry
-        @retry="load"
-      />
-      <SmState
-        v-else-if="!loading && users.length === 0"
-        state="empty"
-        test-id="online-users-state"
-        :empty-text="searchMode ? t('insights.onlineUsers.searchEmpty') : t('insights.onlineUsers.empty')"
+      <NoSearchResultsPlaceholder
+        v-if="!loading && users.length === 0"
+        test-id="search-error-placeholder"
+        :description="emptyDescription"
       />
       <SmTable
         v-else
-        test-id="online-users-table"
         :columns="columns"
         :data-source="users"
-        :row-key="userRowKey"
+        row-key="id"
+        size="small"
+        :loading="loading"
         :pagination="false"
+        test-id="online-users-table"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'name'">{{ record.displayName || record.name }}</template>
-          <template v-else-if="column.key === 'email'">{{ record.email || '—' }}</template>
-          <template v-else-if="column.key === 'teams'">{{ refNames(record.teams) }}</template>
-          <template v-else-if="column.key === 'roles'">{{ refNames(record.roles) }}</template>
-          <template v-else-if="column.key === 'lastActivity'">
-            <span :style="{ color: activityColor(record as AdminUser) }">{{ activityText(record as AdminUser) }}</span>
+          <template v-if="column.key === 'username'">
+            <span class="online-users-view__username">
+              <Tooltip v-if="(record as AdminUser).isBot" :title="t('label.bot')">
+                <RobotOutlined data-testid="bot-icon" :style="{ fontSize: '16px' }" />
+              </Tooltip>
+              <UserPopOverCard
+                v-if="(record as AdminUser).name"
+                :user-name="(record as AdminUser).name"
+                :display-name="(record as AdminUser).displayName"
+                show-user-name
+                :profile-width="16"
+                :to="userDetailPath(record as AdminUser)"
+              />
+              <template v-else>{{ getEntityName(record as AdminUser) }}</template>
+            </span>
+          </template>
+          <template v-else-if="column.key === 'name'">
+            {{ getEntityName(record as AdminUser) }}
+          </template>
+          <template v-else-if="column.key === 'lastActivityTime'">
+            <div class="online-users-view__activity">
+              <span :style="{ color: activityText(record as AdminUser).color }">
+                {{ activityText(record as AdminUser).relative }}
+              </span>
+              <span
+                v-if="activityText(record as AdminUser).absolute"
+                class="online-users-view__activity-absolute"
+              >
+                {{ activityText(record as AdminUser).absolute }}
+              </span>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'teams'">
+            <template v-if="!(record as AdminUser).teams?.length">
+              {{ t('label.no-entity', { entity: t('label.team') }) }}
+            </template>
+            <ReferenceListCell
+              v-else
+              :references="(record as AdminUser).teams"
+              :has-view-permission="true"
+              :path-for="(ref) => getTeamsWithFqnPath(ref.fullyQualifiedName ?? ref.name ?? '')"
+            />
+          </template>
+          <template v-else-if="column.key === 'roles'">
+            <template v-if="!(record as AdminUser).roles?.length">
+              {{ t('label.no-entity', { entity: t('label.role') }) }}
+            </template>
+            <ReferenceListCell
+              v-else
+              :references="(record as AdminUser).roles"
+              :has-view-permission="true"
+              :path-for="(ref) => getRoleWithFqnPath(ref.fullyQualifiedName ?? ref.name ?? '')"
+            />
           </template>
         </template>
       </SmTable>
-    </Spin>
+      <!-- Pagination placeholder only: the pin leaves an empty div here
+           ("Add pagination component here if needed"). Never add a pager. -->
+      <div />
     </template>
-  </PageLayout>
+  </div>
 </template>
 
 <style scoped>
-.online-users__controls {
+.online-users-view__controls {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   margin-block: 12px;
+}
+.online-users-view__username {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.online-users-view__activity {
+  display: flex;
+  flex-direction: column;
+}
+.online-users-view__activity-absolute {
+  font-size: 12px;
+  color: var(--sm-text-secondary);
 }
 </style>

@@ -1,114 +1,151 @@
 /**
  * Copyright 2026 SmartMetadata authors.
  *
- * Licensed under the Apache License, Version 2.0.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { flushPromises, mount } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
+import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import { createTestI18n } from '@/test/i18n';
+import { getMarketPlaceApplicationList } from '@/api/marketplaceApps';
 import { useAuthStore } from '@/stores/auth';
+import type { LoginUser } from '@/types/api';
 import MarketplaceAppCatalogView from './MarketplaceAppCatalogView.vue';
-import MarketplaceAppDetailView from './MarketplaceAppDetailView.vue';
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
+vi.mock('@/api/marketplaceApps', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/marketplaceApps')>();
+  return { ...actual, getMarketPlaceApplicationList: vi.fn() };
+});
 
-async function mountCatalog() {
+const mockedList = vi.mocked(getMarketPlaceApplicationList);
+
+const MESSAGES = {
+  en: {
+    label: {
+      'application-plural': 'Applications',
+      'market-place': 'Market Place',
+      'extend-open-meta-data': 'Extend OpenMetadata',
+      'read-type': 'Read {type}',
+      more: 'More',
+    },
+    message: {
+      'application-to-improve-data': 'Applications to improve data',
+      'cache-service-not-configured-message': 'Cache service not configured',
+    },
+  },
+};
+
+const DUMMY = { template: '<div />' };
+
+async function mountCatalog(isAdmin = true) {
   const pinia = createPinia();
   setActivePinia(pinia);
-  useAuthStore().user = { id: 'admin', name: 'admin', isAdmin: true };
+  useAuthStore().user = { name: 'admin', isAdmin } as LoginUser;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: MarketplaceAppCatalogView },
-      { path: '/marketplace/apps/:fqn', name: 'marketplace-app-detail', component: MarketplaceAppDetailView, props: true },
-      { path: '/marketplace', name: 'marketplace-overview', component: { template: '<div>data market</div>' } },
+      { path: '/admin/apps', name: 'admin-apps', component: DUMMY },
+      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: DUMMY },
+      { path: '/marketplace/apps/:fqn', name: 'marketplace-app-detail', component: DUMMY },
     ],
   });
   await router.push('/marketplace/apps');
   await router.isReady();
   const wrapper = mount(MarketplaceAppCatalogView, {
-    global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    global: {
+      plugins: [Antd, pinia, router, createI18n({ legacy: false, locale: 'en', messages: MESSAGES })],
+      stubs: {
+        ForbiddenView: { template: '<div class="forbidden-stub" />' },
+        PageHeader: { template: '<div class="page-header-stub" />' },
+        SmBreadcrumb: { template: '<div class="breadcrumb-stub" />' },
+        NextPrevious: { template: '<div class="pagination-stub" />' },
+        ApplicationCard: {
+          props: {
+            appName: String,
+            description: String,
+            disabled: Boolean,
+            disabledReason: String,
+            linkTitle: String,
+            title: String,
+            onClick: Function,
+          },
+          template:
+            '<button type="button" class="card-stub" :data-app-name="appName" :data-disabled-reason="disabledReason" :data-link-title="linkTitle" @click="onClick" />',
+        },
+      },
+    },
   });
   await flushPromises();
   return { wrapper, router };
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  window.localStorage.clear();
+});
+
 describe('MarketplaceAppCatalogView', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/v1/apps/marketplace') && !url.includes('/name/')) {
-          return jsonResponse({
-            data: [
-              {
-                name: 'DataInsightsApplication',
-                displayName: 'Data Insights',
-                description: 'Insights app',
-                fullyQualifiedName: 'DataInsightsApplication',
-                developer: 'Collate',
-                enabled: true,
-              },
-              {
-                name: 'CacheWarmupApplication',
-                displayName: 'Cache Warmup',
-                description: 'Warmup app',
-                fullyQualifiedName: 'CacheWarmupApplication',
-                enabled: false,
-              },
-            ],
-            paging: { total: 2 },
-          });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    localStorage.clear();
-  });
-
-  it('renders catalog cards from GET /v1/apps/marketplace, not the installed list', async () => {
-    const { wrapper } = await mountCatalog();
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/api/v1/apps/marketplace'))).toBe(true);
-    expect(wrapper.find('[data-testid="marketplace-app-card-DataInsightsApplication"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Data Insights');
-    expect(wrapper.text()).toContain('Insights app');
-  });
-
-  it('marks a disabled cache-warmup card with the cache reason', async () => {
-    const { wrapper } = await mountCatalog();
-    const card = wrapper.find('[data-testid="marketplace-app-card-CacheWarmupApplication"]');
-    expect(card.exists()).toBe(true);
-    expect(card.text()).toContain('Cache Service');
-  });
-
-  it('navigates to the app detail on card click', async () => {
+  it('renders marketplace cards and navigates to the detail by FQN', async () => {
+    mockedList.mockResolvedValue({
+      data: [
+        {
+          name: 'DataInsightsApplication',
+          fullyQualifiedName: 'DataInsightsApplication',
+          displayName: 'Data Insights',
+          description: 'Insights app',
+          enabled: true,
+        },
+      ],
+      total: 1,
+    });
     const { wrapper, router } = await mountCatalog();
-    await wrapper.find('[data-testid="marketplace-app-card-DataInsightsApplication"]').trigger('click');
+    expect(mockedList).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 15 }),
+    );
+    const card = wrapper.find('.card-stub');
+    expect(card.attributes('data-link-title')).toBe('Read More');
+    await card.trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('marketplace-app-detail');
-    expect(String(router.currentRoute.value.params.fqn)).toBe('DataInsightsApplication');
+    expect(router.currentRoute.value.params.fqn).toBe('DataInsightsApplication');
+    wrapper.unmount();
   });
 
-  it('shows an empty state when the catalog is empty', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ data: [], paging: { total: 0 } })),
-    );
+  it('passes the cache reason only when the NAME is the cache app', async () => {
+    mockedList.mockResolvedValue({
+      data: [
+        { name: 'CacheWarmupApplication', fullyQualifiedName: 'CacheWarmupApplication', enabled: false },
+        // FQN matches but the name does not: pin checks the name only.
+        { name: 'OtherApp', fullyQualifiedName: 'CacheWarmupApplication', enabled: false },
+      ],
+      total: 2,
+    });
     const { wrapper } = await mountCatalog();
-    expect(wrapper.find('[data-testid="marketplace-app-catalog-empty"]').exists()).toBe(true);
+    const cards = wrapper.findAll('.card-stub');
+    expect(cards[0].attributes('data-disabled-reason')).toBe('Cache service not configured');
+    expect(cards[1].attributes('data-disabled-reason')).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('renders no empty or error UI when the catalog is empty', async () => {
+    mockedList.mockResolvedValue({ data: [], total: 0 });
+    const { wrapper } = await mountCatalog();
+    expect(wrapper.find('.card-stub').exists()).toBe(false);
+    expect(wrapper.find('.pagination-stub').exists()).toBe(false);
+    expect(wrapper.text()).toBe('');
+    wrapper.unmount();
+  });
+
+  it('shows the forbidden view for non-admins without fetching', async () => {
+    const { wrapper } = await mountCatalog(false);
+    expect(wrapper.find('.forbidden-stub').exists()).toBe(true);
+    expect(mockedList).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 });

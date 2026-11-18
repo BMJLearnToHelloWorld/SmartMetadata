@@ -6,7 +6,7 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Modal, message } from 'ant-design-vue';
-import { killIngestionPipeline, isPipelineClientDisabled } from '@/api/ingestionPipelines';
+import { killIngestionPipeline, isPipelineDeployed } from '@/api/ingestionPipelines';
 
 const props = defineProps<{
   open: boolean;
@@ -31,11 +31,9 @@ async function handleConfirm(): Promise<void> {
   isLoading.value = true;
   try {
     const result = await killIngestionPipeline(props.pipelineId);
-    if (isPipelineClientDisabled(result)) {
-      message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
-      return;
-    }
-    if (result.code !== undefined && result.code !== 200) {
+    // T-1: the shared strict C-01 predicate governs kill responses
+    // too — code 200 with the client actually running the call.
+    if (!isPipelineDeployed(result)) {
       message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
       return;
     }

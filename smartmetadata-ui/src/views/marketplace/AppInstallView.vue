@@ -2,31 +2,44 @@
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
 -->
+<!--
+  Vue port of pin pages/AppInstall/AppInstall.tsx. The page declares no
+  PageHeader/breadcrumb (08-D4: the install page is out of D4 V1-V5
+  scope); the step-2 panels belong to the nested ApplicationConfiguration
+  component. Steps are dynamically filtered (NoSchedule drops step 3,
+  !allowConfiguration drops step 2) — never a fixed three steps. Any
+  load failure (definition or schema) toasts the single
+  `server.no-application-schema-found` message. The inline admin gate
+  is kept under the DEL-22 HOLD (see the batch report). The schedule
+  field seeds its display from the model value, not pin's
+  `defaultSchedule` prop (ScheduleIntervalField has no such prop) — a
+  display-only divergence for DataInsightsReportApplication's weekly
+  default, recorded in the batch report.
+-->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import { Button, Spin, message } from 'ant-design-vue';
 import {
-  Button,
-  Card,
-  Collapse,
-  Empty,
-  Form,
-  Input,
-  Space,
-  Steps,
-  Typography,
-  message,
-} from 'ant-design-vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
-import {
-  getMarketplaceAppByFqn,
-  installApp,
+  getMarketPlaceApplicationByFqn,
+  installApplication,
+  type EntityReferenceInput,
   type MarketplaceApp,
 } from '@/api/marketplaceApps';
+import ScheduleIntervalField from '@/components/ingestion/ScheduleIntervalField.vue';
+import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
+import { getCronDefaultValue, getDefaultScheduleValue } from '@/ingestion/schedule';
 import { useAuthStore } from '@/stores/auth';
-import AppScheduleForm from './AppScheduleForm.vue';
+import { useShellConfigStore } from '@/stores/shellConfig';
+import type { EntityRef } from '@/types/api';
+import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import AppInstallStepper from './AppInstallStepper.vue';
+import AppInstallVerifyCard from './AppInstallVerifyCard.vue';
+import ApplicationConfiguration from './ApplicationConfiguration.vue';
+import { importSchema, type JsonSchema } from './appAssets';
+import { getScheduleOptionsForApp, getEntityName } from './appUtils';
+import { formatFormDataForSubmit } from './formDataFormat';
 
 const props = defineProps<{ fqn?: string }>();
 
@@ -34,378 +47,275 @@ const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const shellConfig = useShellConfigStore();
 
-/**
- * Official page shape (pages/AppInstall): a three-step install wizard —
- * verify (step 1), configure (step 2), schedule (step 3) — over the
- * marketplace definition, ending in POST /v1/apps. Steps are filtered
- * exactly like the official stepper: NoSchedule drops the schedule step,
- * allowConfiguration false drops the configure step. The official
- * configure step renders a schema-driven form from a bundled per-app
- * schema store the product does not ship, so the configuration here is
- * edited as the same appConfiguration object in a JSON editor; the
- * schema-driven widgets are a recorded gap, not a silent omission.
- * The official page is AdminProtectedRoute-gated without a permission
- * prop, so the gate here is the admin line alone.
- */
 const fqn = computed(() => props.fqn ?? String(route.params.fqn ?? ''));
-
 const isAdmin = computed(() => authStore.user?.isAdmin === true);
-const loading = ref(true);
-const loadError = ref('');
-const appData = ref<MarketplaceApp | null>(null);
-const activeStep = ref(1);
-const saving = ref(false);
-const saveError = ref('');
-
-// `undefined` is a valid on-demand selection, so initialization needs its own flag.
+const appData = ref<MarketplaceApp | undefined>();
+const isLoading = ref(true);
+const isSavingLoading = ref(false);
+const scheduleValue = ref<string | undefined>();
 const scheduleInitialized = ref(false);
-const scheduleValue = ref<string | undefined>(undefined);
-const scheduleValid = ref(true);
+const isScheduleValid = ref(true);
+const activeServiceStep = ref(1);
+const storedAppConfiguration = ref<Record<string, unknown> | undefined>();
+const jsonSchema = ref<JsonSchema | undefined>();
+const selectedIngestionRunner = ref<EntityReferenceInput | undefined>();
 
-const configText = ref('');
-const configError = ref('');
-
-const appName = computed(() => appData.value?.displayName || appData.value?.name || '');
-
-const stepperSteps = computed(() => {
-  const steps = [
-    { step: 1, title: t('apps.install.steps.details') },
-    { step: 2, title: t('apps.install.steps.configure') },
-    { step: 3, title: t('apps.install.steps.schedule') },
-  ];
-  return steps.filter((item) => {
-    if (item.step === 3 && appData.value?.scheduleType === 'NoSchedule') {
-      return false;
-    }
-    if (item.step === 2 && !appData.value?.allowConfiguration) {
-      return false;
-    }
-    return true;
-  });
-});
-
-const stepperIndex = computed(() =>
-  Math.max(
-    0,
-    stepperSteps.value.findIndex((item) => item.step === activeStep.value),
-  ),
+const shouldShowIngestionRunner = computed(
+  () => appData.value?.appType === 'External' && appData.value?.supportsIngestionRunner,
 );
 
-const schedulePeriodOptions = computed<string[] | undefined>(() => {
-  const app = appData.value;
-  if (!app) {
-    return undefined;
+const stepperList = computed(() => {
+  let steps = [
+    { name: t('label.detail-plural'), step: 1 },
+    { name: t('label.configure'), step: 2 },
+    { name: t('label.schedule'), step: 3 },
+  ];
+  if (appData.value?.scheduleType === 'NoSchedule') {
+    steps = steps.filter((item) => item.step !== 3);
   }
-  if (app.name === 'DataInsightsReportApplication') {
-    return ['week'];
+  if (!appData.value?.allowConfiguration) {
+    steps = steps.filter((item) => item.step !== 2);
   }
-  if (app.appType === 'External') {
-    return ['day'];
-  }
-  // The official third source is the limits config pipelineSchedules,
-  // which the product has no client for; internal apps fall back to the
-  // daily default cron below.
-  return undefined;
+  return steps;
 });
 
-function getCronDefaultValue(appNameValue: string): string {
-  return appNameValue === 'DataInsightsReportApplication' ? '0 0 * * 0' : '0 0 * * *';
-}
+const initialOptions = computed(() => {
+  if (!appData.value) {
+    return undefined;
+  }
+  const feature = shellConfig.limit?.limits.config.featureLimits.find(
+    (entry) => entry.name === 'app',
+  );
+  return getScheduleOptionsForApp(
+    appData.value.name,
+    appData.value.appType,
+    feature?.pipelineSchedules,
+  );
+});
 
-function getDefaultScheduleValue(): string | undefined {
-  const defaultSchedule = getCronDefaultValue(appData.value?.name ?? '');
-  const includePeriodOptions = schedulePeriodOptions.value;
-  if (includePeriodOptions === undefined) {
-    return defaultSchedule;
-  }
-  if (includePeriodOptions.includes('day')) {
-    return '0 0 * * *';
-  }
-  if (includePeriodOptions.includes('week')) {
-    return '0 0 * * 0';
-  }
-  if (includePeriodOptions.includes('month')) {
-    return '0 0 1 * *';
-  }
-  if (includePeriodOptions.includes('hour')) {
-    return '0 * * * *';
-  }
-  return defaultSchedule;
-}
+const defaultValue = computed(() => getCronDefaultValue(appData.value?.name ?? ''));
+
+// Pin pageTitle (AppInstall.component.tsx:368-373): the install-entity
+// label with the app name once loaded, the applications plural before
+// (and when the load fails). title.ts has no dynamic-title mechanism,
+// so the view owns its document.title; the locale watch re-renders it
+// on language switches, and the immediate run covers the loading state.
+watch(
+  [appData, locale],
+  () => {
+    document.title = appData.value
+      ? t('label.install-entity', { entity: getEntityName(appData.value) })
+      : t('label.application-plural');
+  },
+  { immediate: true },
+);
 
 function openScheduleStep(): void {
   if (!scheduleInitialized.value) {
-    scheduleValue.value = getDefaultScheduleValue();
+    scheduleValue.value = getDefaultScheduleValue({
+      defaultSchedule: defaultValue.value,
+      includePeriodOptions: initialOptions.value,
+      allowNoSchedule: true,
+    });
     scheduleInitialized.value = true;
   }
-  scheduleValid.value = true;
-  activeStep.value = 3;
+  isScheduleValid.value = true;
+  activeServiceStep.value = 3;
 }
 
-function relativeTime(timestamp?: number): string {
-  if (!timestamp) {
-    return '';
-  }
-  const rtf = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' });
-  const delta = timestamp - Date.now();
-  const days = Math.round(delta / 86_400_000);
-  if (Math.abs(days) >= 1) {
-    return rtf.format(days, 'day');
-  }
-  const hours = Math.round(delta / 3_600_000);
-  if (Math.abs(hours) >= 1) {
-    return rtf.format(hours, 'hour');
-  }
-  return rtf.format(Math.round(delta / 60_000), 'minute');
-}
-
-async function loadApp(): Promise<void> {
-  loading.value = true;
-  loadError.value = '';
+async function fetchAppDetails(): Promise<void> {
+  isLoading.value = true;
   try {
-    const data = await getMarketplaceAppByFqn(fqn.value, 'owners');
+    const data = await getMarketPlaceApplicationByFqn(fqn.value, 'owners');
     appData.value = data;
-    configText.value =
-      data.appConfiguration !== undefined
-        ? JSON.stringify(data.appConfiguration, null, 2)
-        : '';
-  } catch (error) {
-    loadError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    jsonSchema.value = await importSchema(fqn.value);
+  } catch {
+    message.error(t('server.no-application-schema-found', { appName: fqn.value }));
   } finally {
-    loading.value = false;
+    isLoading.value = false;
   }
 }
 
 function onCancel(): void {
-  // The official cancel target is the marketplace app details page.
   void router.push({ name: 'marketplace-app-detail', params: { fqn: fqn.value } });
 }
 
-function goToAppsPage(): void {
+function goToAppPage(): void {
   void router.push({ name: 'admin-apps' });
 }
 
-async function submitInstall(appConfiguration: unknown): Promise<void> {
-  const app = appData.value;
-  if (!app) {
-    return;
-  }
-  saving.value = true;
-  saveError.value = '';
+async function installAppRequest(data: {
+  appConfiguration?: unknown;
+  appSchedule?: { scheduleTimeline: 'None' | 'Custom'; cronExpression?: string };
+  name: string;
+  description?: string;
+  displayName?: string;
+  ingestionRunner?: EntityReferenceInput;
+}): Promise<void> {
   try {
-    const cron = scheduleValue.value;
-    await installApp({
-      appConfiguration: appConfiguration ?? app.appConfiguration,
-      appSchedule:
-        app.scheduleType === 'NoSchedule'
-          ? undefined
-          : {
-              scheduleTimeline: !cron ? 'None' : 'Custom',
-              ...(cron ? { cronExpression: cron } : {}),
-            },
-      name: fqn.value,
-      description: app.description,
-      displayName: app.displayName,
-    });
-    message.success(t('apps.install.installed'));
-    goToAppsPage();
+    isSavingLoading.value = true;
+    await installApplication(data);
+    message.success(t('message.app-installed-successfully'));
+    await shellConfig.refreshLimitConfig();
+    goToAppPage();
   } catch (error) {
-    saveError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    message.error(error instanceof Error ? error.message : String(error));
   } finally {
-    saving.value = false;
+    isSavingLoading.value = false;
   }
 }
 
-function onVerifyNext(): void {
-  if (appData.value?.allowConfiguration) {
-    activeStep.value = 2;
-  } else {
-    openScheduleStep();
-  }
+async function onSubmit(): Promise<void> {
+  const cron = scheduleValue.value;
+  await installAppRequest({
+    appConfiguration:
+      storedAppConfiguration.value ?? (appData.value?.appConfiguration as unknown),
+    appSchedule: {
+      scheduleTimeline: !cron ? 'None' : 'Custom',
+      ...(cron ? { cronExpression: cron } : {}),
+    },
+    name: fqn.value,
+    description: appData.value?.description,
+    displayName: appData.value?.displayName,
+    ingestionRunner: shouldShowIngestionRunner.value
+      ? selectedIngestionRunner.value
+      : undefined,
+  });
 }
 
-function onSaveConfiguration(): void {
-  const text = configText.value.trim();
-  let parsed: unknown;
-  if (!text) {
-    parsed = undefined;
-  } else {
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      configError.value = t('apps.install.invalidJson');
-      return;
-    }
-  }
-  configError.value = '';
+function onSaveConfiguration(
+  formData: Record<string, unknown>,
+  ingestionRunner?: EntityRef,
+): void {
+  const updatedFormData = formatFormDataForSubmit(formData);
+  storedAppConfiguration.value = updatedFormData;
+  const ingestionRunnerRef = ingestionRunner?.id
+    ? {
+        id: ingestionRunner.id,
+        type: 'ingestionRunner',
+        name: ingestionRunner.name,
+        fullyQualifiedName: ingestionRunner.fullyQualifiedName,
+      }
+    : undefined;
+  selectedIngestionRunner.value = ingestionRunnerRef;
+
   if (appData.value?.scheduleType !== 'NoSchedule') {
     openScheduleStep();
   } else {
-    void submitInstall(parsed);
+    void installAppRequest({
+      appConfiguration: updatedFormData,
+      name: fqn.value,
+      description: appData.value?.description,
+      displayName: appData.value?.displayName,
+      ...(ingestionRunnerRef ? { ingestionRunner: ingestionRunnerRef } : {}),
+    });
   }
 }
 
-function onDeploy(): void {
-  let parsed: unknown;
-  const text = configText.value.trim();
-  if (!text) {
-    parsed = undefined;
-  } else {
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      configError.value = t('apps.install.invalidJson');
-      activeStep.value = 2;
-      return;
-    }
-  }
-  void submitInstall(parsed);
-}
+const missingErrorTitle = computed(
+  () =>
+    `${t('label.application')} ${t('label.instance-lowercase')} ${t('label.for-lowercase')} ${fqn.value} ${t('label.not-found-lowercase')}`,
+);
 
 onMounted(() => {
-  void loadApp();
+  if (isAdmin.value) {
+    void fetchAppDetails();
+  } else {
+    isLoading.value = false;
+  }
 });
+
+watch(isAdmin, (admin) => {
+  if (admin) {
+    void fetchAppDetails();
+  }
+});
+
+watch(
+  () => fqn.value,
+  () => {
+    if (isAdmin.value) {
+      void fetchAppDetails();
+    }
+  },
+);
 </script>
 
 <template>
   <div data-testid="app-install">
     <ForbiddenView v-if="!isAdmin" />
     <template v-else>
-      <PageHeader
-        :header="appData ? t('apps.install.titleWithApp', { app: appName }) : t('apps.install.title')"
-        :sub-header="appData?.description"
-      />
-      <Typography.Text v-if="loadError" type="danger" data-testid="app-install-error">
-        {{ loadError }}
-      </Typography.Text>
-      <Typography.Text v-if="saveError" type="danger" data-testid="app-install-save-error">
-        {{ saveError }}
-      </Typography.Text>
-      <template v-if="!loading && appData">
-        <Steps :current="stepperIndex" style="margin-bottom: 16px" data-testid="app-install-steps">
-          <Steps.Step v-for="step in stepperSteps" :key="step.step" :title="step.title" />
-        </Steps>
-        <div v-if="activeStep === 1" data-testid="app-install-verify">
-          <Card style="max-width: 500px; margin: 0 auto">
-            <Typography.Title :level="5" style="margin-top: 0">
-              {{ t('apps.install.authorizeApp', { app: appName }) }}
-            </Typography.Title>
-            <Typography.Paragraph type="secondary">
-              {{ appName }} {{ t('apps.install.by') }}
-              <a
-                v-if="appData.developerUrl"
-                :href="appData.developerUrl"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {{ appData.developer }}
-              </a>
-              <span v-else>{{ appData.developer }}</span>
-            </Typography.Paragraph>
-            <Typography.Paragraph type="secondary">
-              {{ t('apps.install.wantsAccess', { username: authStore.displayName }) }}
-            </Typography.Paragraph>
-            <Collapse style="margin: 16px 0">
-              <Collapse.Panel key="permissions" :header="t('apps.install.allMetadata')">
-                <Empty :description="t('shared.empty')" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
-              </Collapse.Panel>
-            </Collapse>
-            <Space style="width: 100%; justify-content: flex-end">
-              <Button data-testid="app-install-cancel" @click="onCancel">
-                {{ t('crud.cancel') }}
-              </Button>
-              <Button
-                type="primary"
-                data-testid="app-install-next"
-                @click="onVerifyNext"
-              >
-                {{ appData.allowConfiguration ? t('apps.install.configure') : t('apps.install.schedule') }}
-              </Button>
-            </Space>
-          </Card>
-          <Card style="max-width: 500px; margin: 16px auto 0">
-            <Space style="width: 100%; justify-content: space-between">
-              <Typography.Text type="secondary">
-                {{ t('apps.install.developedBy', { developer: appData.developer ?? '' }) }}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {{ t('apps.install.updated', { time: relativeTime(appData.updatedAt) }) }}
-              </Typography.Text>
-            </Space>
-          </Card>
-        </div>
-        <div v-if="activeStep === 2" data-testid="app-install-configure">
-          <Card style="max-width: 720px; margin: 0 auto">
-            <Typography.Title :level="5" style="margin-top: 0">
-              {{ t('apps.install.configureTitle') }}
-            </Typography.Title>
-            <Typography.Paragraph type="secondary">
-              {{ t('apps.install.configureHelp') }}
-            </Typography.Paragraph>
-            <Form layout="vertical">
-              <Form.Item
-                :validate-status="configError ? 'error' : undefined"
-                :help="configError || undefined"
-              >
-                <Input.TextArea
-                  v-model:value="configText"
-                  data-testid="app-install-config"
-                  :rows="12"
-                  style="font-family: monospace"
-                  :placeholder="t('apps.install.configPlaceholder')"
-                />
-              </Form.Item>
-            </Form>
-            <Space style="width: 100%; justify-content: flex-end">
-              <Button data-testid="app-install-back" @click="activeStep = 1">
-                {{ t('crud.back') }}
-              </Button>
-              <Button
-                type="primary"
-                data-testid="app-install-save-config"
-                :loading="saving"
-                @click="onSaveConfiguration"
-              >
-                {{ appData.scheduleType === 'NoSchedule' ? t('crud.create') : t('apps.install.schedule') }}
-              </Button>
-            </Space>
-          </Card>
-        </div>
-        <div v-if="activeStep === 3" data-testid="app-install-schedule">
-          <Card style="max-width: 720px; margin: 0 auto">
-            <Typography.Title :level="5" style="margin-top: 0">
-              {{ t('apps.install.schedule') }}
-            </Typography.Title>
-            <AppScheduleForm
-              v-model:model-value="scheduleValue"
-              :period-options="schedulePeriodOptions"
-              @update:valid="scheduleValid = $event"
+      <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
+        <Spin size="large" />
+      </div>
+      <div
+        v-else-if="!appData"
+        style="position: relative; min-height: 240px"
+      >
+        <NoDataPlaceholder test-id="no-data-placeholder" :title="missingErrorTitle" />
+      </div>
+      <div v-else>
+        <AppInstallStepper :steps="stepperList" :active-step="activeServiceStep" />
+        <div v-if="appData && jsonSchema" style="margin-top: 16px">
+          <AppInstallVerifyCard
+            v-if="activeServiceStep === 1"
+            :app-data="appData"
+            :next-button-label="
+              appData.allowConfiguration ? t('label.configure') : t('label.schedule')
+            "
+            :on-save="
+              () => {
+                if (appData?.allowConfiguration) {
+                  activeServiceStep = 2;
+                } else {
+                  openScheduleStep();
+                }
+              }
+            "
+            :on-cancel="onCancel"
+          />
+          <ApplicationConfiguration
+            v-else-if="activeServiceStep === 2"
+            :app-data="appData"
+            :is-loading="false"
+            :json-schema="jsonSchema"
+            :on-cancel="() => (activeServiceStep = 1)"
+            :on-config-save="onSaveConfiguration"
+          />
+          <div
+            v-else-if="activeServiceStep === 3"
+            style="margin: 0 auto; width: 60%; padding: 16px"
+          >
+            <h5 style="margin: 0 0 16px">{{ t('label.schedule') }}</h5>
+            <ScheduleIntervalField
+              :model-value="scheduleValue"
+              :include-period-options="initialOptions"
+              test-id-prefix="app-install-schedule"
+              @update:model-value="(value) => (scheduleValue = value)"
+              @validity-change="(valid) => (isScheduleValid = valid)"
             />
-            <Space style="width: 100%; justify-content: flex-end; margin-top: 16px">
+            <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px">
               <Button
-                data-testid="app-install-schedule-back"
-                @click="activeStep = appData.allowConfiguration ? 2 : 1"
+                data-testid="back-button"
+                @click="activeServiceStep = appData.allowConfiguration ? 2 : 1"
               >
-                {{ t('crud.back') }}
+                {{ t('label.back') }}
               </Button>
               <Button
                 type="primary"
-                data-testid="app-install-deploy"
-                :disabled="!scheduleValid"
-                :loading="saving"
-                @click="onDeploy"
+                data-testid="deploy-button"
+                :disabled="!isScheduleValid"
+                :loading="isSavingLoading"
+                @click="onSubmit"
               >
-                {{ t('crud.create') }}
+                {{ t('label.create') }}
               </Button>
-            </Space>
-          </Card>
+            </div>
+          </div>
         </div>
-      </template>
-      <Empty
-        v-if="!loading && !appData && !loadError"
-        :description="t('apps.install.notFound', { app: fqn })"
-      />
+      </div>
     </template>
   </div>
 </template>

@@ -3,81 +3,90 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Card, Col, Empty, Form, Input, Row, Select, Space, Typography, message } from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
+import { Button, Card, Form, Input, Spin, Typography, message } from 'ant-design-vue';
+import { AimOutlined, NodeIndexOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue';
+import FeaturesPlaceholder from '@/components/shared/FeaturesPlaceholder.vue';
+import NextPrevious from '@/components/shared/NextPrevious.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
+import SmDrawer from '@/components/shared/SmDrawer.vue';
+import SomethingWentWrongPlaceholder from '@/components/shared/SomethingWentWrongPlaceholder.vue';
 import { ApiError } from '@/api/client';
 import { createWorkflow, listWorkflows } from '@/api/workflows';
 import type { WorkflowDefinition } from '@/types/governance';
-import { getWorkflowCapabilities } from '@/utils/workflowCapabilities';
+import type { EmptyPlaceholderAction, EmptyPlaceholderFeature } from '@/utils/emptyPlaceholder';
 import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  entityLabel,
-  goNext,
-  goPrev,
-  resetCursor,
-  type CursorPager,
-} from '@/features/crud/paging';
+  CursorType,
+  INITIAL_PAGING,
+  PAGE_SIZE_MEDIUM,
+  type Paging,
+  type PagingHandlerParams,
+} from '@/utils/pagination';
+import { getWorkflowCapabilities } from '@/utils/workflowCapabilities';
 
 const { t } = useI18n();
 const router = useRouter();
 
 /**
- * The list-page create button is gated by the same capability the builder
- * reads (useWorkflowLogic): creation is a product capability
- * (allowCreateWorkflow true by product decision, Bai 2026-11-07 option B),
- * not the OSS default. Official gates the button and the modal the same way
- * (WorkflowsPage :284 / :434).
+ * Official page shape (pages/WorkflowDefinitions/WorkflowsPage): a
+ * classic header (bordered box, PageHeader + create button in one
+ * row) above every non-loading branch; loading shows only a Loader;
+ * errors split 403 (permission placeholder) from the rest (reload
+ * placeholder); the empty state is a features placeholder; the list
+ * is a responsive card grid with cursor pagination. The create
+ * drawer (640 wide, gated by allowCreateWorkflow) validates the raw
+ * name, sends the complete minimal definition, refetches page 1 and
+ * navigates into the builder edit mode — with no success toast.
+ * Creation itself is a product capability (allowCreateWorkflow true
+ * by product decision, Bai 2026-11-07 option B), not the OSS
+ * default; official gates the button and the drawer the same way
+ * (WorkflowsPage :284 / :437).
  */
 const allowCreateWorkflow = getWorkflowCapabilities().allowCreateWorkflow;
 
-/**
- * Official click-through (WorkflowsPage onWorkflowClick): a card navigates
- * to the detail route with the default tab 'workflow'
- * (WorkflowRouterUtils.getWorkflowDefinitionDetailPath).
- */
-function goDetail(workflow: WorkflowDefinition): void {
-  const fqn = workflow.fullyQualifiedName || workflow.name;
-  void router.push({ name: 'workflow-detail', params: { fqn, tab: 'workflow' } });
-}
-
-/**
- * Official page shape (pages/WorkflowDefinitions/WorkflowsPage): a header
- * with subtitle and a create action, a card grid (displayName ?? name plus
- * description), cursor pagination with page sizes 15/25/50, a create modal
- * (name validated against ^[a-zA-Z0-9_-]+$, 3–50 chars, plus a required
- * description — both are required by the create schema), a three-feature
- * empty state, and a permission placeholder on 403. The create modal sends
- * the complete minimal definition per official handleModalSubmit (empty
- * nodes/edges plus a default event-based trigger) and navigates into the
- * builder edit mode after creation; the create action is gated by
- * getWorkflowCapabilities(). Card click-through to the builder/detail route
- * lands with that route, not here.
- */
 const WORKFLOW_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 const WORKFLOW_NAME_MIN_LENGTH = 3;
 const WORKFLOW_NAME_MAX_LENGTH = 50;
-const PAGE_SIZE_OPTIONS = [15, 25, 50];
 
 const loading = ref(false);
-const errorMessage = ref('');
-const forbidden = ref(false);
+const loadError = ref<unknown>();
 const workflows = ref<WorkflowDefinition[]>([]);
-const total = ref(0);
-const pageSize = ref(DEFAULT_PAGE_SIZE);
-const cursor = ref<CursorPager>(createCursorPager());
-const pageAfter = ref<string | undefined>();
+const paging = ref<Paging>({ ...INITIAL_PAGING });
+const currentPage = ref(1);
+const pageSize = ref(PAGE_SIZE_MEDIUM);
+
+const isForbidden = computed(
+  () => loadError.value instanceof ApiError && loadError.value.status === 403,
+);
 
 const showCreateModal = ref(false);
 const creating = ref(false);
-const formError = ref('');
+const nameError = ref('');
 const createForm = ref({ name: '', description: '' });
+
+// Official name field: typing clears the inline error
+// (WorkflowsPage.tsx:476-480).
+watch(
+  () => createForm.value.name,
+  () => {
+    nameError.value = '';
+  },
+);
+
+/**
+ * Official click-through (WorkflowsPage onWorkflowClick): a card
+ * navigates to the detail route. The `:tab` segment is gone (shell
+ * B-5 / D-5, landed by the sections integration): the builder tab
+ * is component state in the detail view, so navigations carry only
+ * the FQN and the legacy tab URLs redirect at the router.
+ */
+function goDetail(workflow: WorkflowDefinition): void {
+  const fqn = workflow.fullyQualifiedName || workflow.name;
+  void router.push({ name: 'workflow-detail', params: { fqn } });
+}
 
 function validateName(value: string): string {
   if (!value) {
@@ -95,211 +104,348 @@ function validateName(value: string): string {
   return '';
 }
 
-async function load(): Promise<void> {
+async function fetchWorkflows(
+  page = 1,
+  cursor?: Partial<Record<CursorType, string>>,
+): Promise<void> {
   loading.value = true;
-  errorMessage.value = '';
-  forbidden.value = false;
+  loadError.value = undefined;
   try {
-    const page = await listWorkflows({ limit: pageSize.value, after: cursor.value.after });
-    workflows.value = page.data;
-    total.value = page.total ?? page.data.length;
-    pageAfter.value = page.after;
+    const result = await listWorkflows({ limit: pageSize.value, ...cursor });
+    workflows.value = result.data;
+    paging.value = {
+      after: result.after,
+      before: result.before,
+      total: result.total ?? result.data.length,
+    };
+    currentPage.value = page;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 403) {
-      forbidden.value = true;
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-    }
-    workflows.value = [];
+    // Official getWorkflows: the error is recorded without clearing
+    // the list; the error placeholder covers the page.
+    loadError.value = error;
   } finally {
     loading.value = false;
   }
 }
 
-function onNext(): void {
-  if (pageAfter.value) {
-    cursor.value = goNext(cursor.value, pageAfter.value);
+function handlePageChange({ cursorType, currentPage: page }: PagingHandlerParams): void {
+  // Official handlePageChange (WorkflowsPage.tsx:210-217): fetch only
+  // when both the cursor type and its cursor are truthy.
+  const cursor = cursorType ? paging.value[cursorType] : undefined;
+  if (cursorType && cursor) {
+    void fetchWorkflows(page, { [cursorType]: cursor });
   }
-  void load();
 }
 
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
+function handleSizeChange(size: number): void {
+  // Official size change refetches from page 1 (getWorkflows depends
+  // on pageSize and defaults to page 1).
+  pageSize.value = size;
+  void fetchWorkflows(1);
 }
 
-function onPageSizeChange(value: string | number): void {
-  pageSize.value = Number(value);
-  cursor.value = resetCursor();
-  void load();
+function resetCreateForm(): void {
+  createForm.value = { name: '', description: '' };
+  nameError.value = '';
+}
+
+function closeCreate(): void {
+  showCreateModal.value = false;
+  creating.value = false;
+  resetCreateForm();
 }
 
 async function onCreate(): Promise<void> {
-  const name = createForm.value.name.trim();
-  const description = createForm.value.description.trim();
-  const nameError = validateName(name);
-  if (nameError || !description) {
-    formError.value = nameError || t('workflows.descriptionRequired');
+  if (creating.value) {
     return;
   }
-  formError.value = '';
+  // Validation and payload use the raw, untrimmed values
+  // (WorkflowsPage.tsx:123-144, 238-247).
+  const error = validateName(createForm.value.name);
+  if (error) {
+    nameError.value = error;
+    return;
+  }
   creating.value = true;
   try {
-    // Official handleModalSubmit (WorkflowsPage): the create modal sends the
-    // complete minimal definition — empty nodes/edges plus a default
-    // event-based trigger — and navigates into the builder edit mode after
-    // creation. A bare {name, description} POST 500s server-side (the
-    // trigger is null), which is official behavior, not a product bug.
+    // Official handleModalSubmit: the complete minimal definition —
+    // empty nodes/edges plus a default event-based trigger. A bare
+    // {name, description} POST 500s server-side (the trigger is
+    // null), which is official behavior, not a product bug.
     const created = await createWorkflow({
-      description: description || '',
-      displayName: name,
+      description: createForm.value.description || '',
+      displayName: createForm.value.name,
       edges: [],
-      name,
+      name: createForm.value.name,
       nodes: [],
       trigger: { config: {}, output: [], type: 'eventBasedEntity' },
     });
-    showCreateModal.value = false;
-    createForm.value = { name: '', description: '' };
-    message.success(t('workflows.created', { name: created.name }));
-    cursor.value = resetCursor();
-    await load();
+    await fetchWorkflows(1);
+    closeCreate();
     const fqn = created.fullyQualifiedName || created.name;
     void router.push({
       name: 'workflow-detail',
-      params: { fqn, tab: 'workflow' },
+      params: { fqn },
       query: { mode: 'edit' },
     });
   } catch (error) {
-    formError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    message.error(error instanceof Error ? error.message : t('workflows.createEntityError'));
   } finally {
     creating.value = false;
   }
 }
 
+const emptyFeatures = computed<EmptyPlaceholderFeature[]>(() => [
+  {
+    key: 'trigger',
+    icon: ThunderboltOutlined,
+    title: t('workflows.emptyFeatures.trigger.title'),
+    description: t('workflows.emptyFeatures.trigger.description'),
+  },
+  {
+    key: 'action',
+    icon: AimOutlined,
+    title: t('workflows.emptyFeatures.action.title'),
+    description: t('workflows.emptyFeatures.action.description'),
+  },
+  {
+    key: 'sitBack',
+    icon: SettingOutlined,
+    title: t('workflows.emptyFeatures.sitBack.title'),
+    description: t('workflows.emptyFeatures.sitBack.description'),
+  },
+]);
+
+const emptyActions = computed<EmptyPlaceholderAction[]>(() =>
+  allowCreateWorkflow
+    ? [
+        {
+          key: 'new-workflow',
+          label: t('workflows.newWorkflow'),
+          testId: 'workflows-empty-create',
+          onPress: () => {
+            showCreateModal.value = true;
+          },
+          color: 'primary',
+        },
+      ]
+    : [],
+);
+
 onMounted(() => {
-  void load();
+  void fetchWorkflows();
 });
 </script>
 
 <template>
   <div data-testid="workflows">
-    <PageHeader :header="t('workflows.title')" :sub-header="t('workflows.lead')" />
-    <Space style="margin-bottom: 16px">
-      <Button
-        v-if="allowCreateWorkflow"
-        type="primary"
-        data-testid="workflows-create"
-        @click="showCreateModal = true"
-      >
-        {{ t('workflows.create') }}
-      </Button>
-    </Space>
-    <Typography.Text v-if="errorMessage" type="danger" data-testid="workflows-error">
-      {{ errorMessage }}
-      <Button type="link" @click="load">{{ t('shared.retry') }}</Button>
-    </Typography.Text>
-    <Empty
-      v-if="forbidden"
-      :description="t('errors.forbidden')"
-      data-testid="workflows-forbidden"
-    />
-    <div v-else-if="!loading && workflows.length === 0 && !errorMessage" data-testid="workflows-empty">
-      <Typography.Title :level="4">{{ t('workflows.emptyTitle') }}</Typography.Title>
-      <Row :gutter="16" style="margin-bottom: 16px">
-        <Col :span="8">
-          <Card :title="t('workflows.emptyFeatures.trigger.title')">
-            {{ t('workflows.emptyFeatures.trigger.description') }}
-          </Card>
-        </Col>
-        <Col :span="8">
-          <Card :title="t('workflows.emptyFeatures.action.title')">
-            {{ t('workflows.emptyFeatures.action.description') }}
-          </Card>
-        </Col>
-        <Col :span="8">
-          <Card :title="t('workflows.emptyFeatures.sitBack.title')">
-            {{ t('workflows.emptyFeatures.sitBack.description') }}
-          </Card>
-        </Col>
-      </Row>
-      <Button
-        v-if="allowCreateWorkflow"
-        type="primary"
-        data-testid="workflows-empty-create"
-        @click="showCreateModal = true"
-      >
-        {{ t('workflows.create') }}
-      </Button>
+    <div v-if="loading" class="workflows__loader">
+      <Spin />
     </div>
-    <div v-else data-testid="workflows-list">
-      <Card :loading="loading">
-        <Row :gutter="16">
-          <Col v-for="workflow in workflows" :key="workflow.id" :span="8" style="margin-bottom: 16px">
-            <Card
-              hoverable
-              class="workflows__card"
-              :data-testid="`workflow-card-${workflow.id}`"
-              :title="entityLabel(workflow)"
-              tabindex="0"
-              @click="goDetail(workflow)"
-              @keydown.enter="goDetail(workflow)"
-            >
-              <p class="workflows__card-description">{{ workflow.description || '—' }}</p>
-            </Card>
-          </Col>
-        </Row>
-        <Space data-testid="workflows-pagination">
-          <Typography.Text>{{ t('workflows.total', { count: total }) }}</Typography.Text>
-          <Select
-            :value="pageSize"
-            data-testid="workflows-page-size"
-            style="width: 90px"
-            @change="onPageSizeChange"
+    <template v-else>
+      <div class="workflows__header">
+        <PageHeader :header="t('workflows.title')" :sub-header="t('workflows.lead')" />
+        <Button
+          v-if="allowCreateWorkflow"
+          type="primary"
+          data-testid="workflows-create"
+          @click="showCreateModal = true"
+        >
+          {{ t('workflows.newWorkflow') }}
+        </Button>
+      </div>
+      <div v-if="loadError" class="workflows__placeholder-host" data-testid="workflows-error">
+        <PermissionPlaceholder
+          v-if="isForbidden"
+          :permission-value="t('workflows.viewWorkflows')"
+        />
+        <SomethingWentWrongPlaceholder
+          v-else
+          :title="t('workflows.entityFetchError')"
+          :on-reload="() => fetchWorkflows()"
+        />
+      </div>
+      <div
+        v-else-if="workflows.length === 0"
+        class="workflows__placeholder-host"
+        data-testid="workflows-empty"
+      >
+        <FeaturesPlaceholder
+          :title="t('workflows.emptyTitle')"
+          :description="t('workflows.emptyDescription')"
+          :features="emptyFeatures"
+          :actions="emptyActions"
+        />
+      </div>
+      <div v-else data-testid="workflows-list">
+        <div class="workflows__grid">
+          <Card
+            v-for="workflow in workflows"
+            :key="workflow.id"
+            hoverable
+            class="workflows__card"
+            :data-testid="`workflow-card-${workflow.id}`"
+            tabindex="0"
+            @click="goDetail(workflow)"
+            @keydown.enter="goDetail(workflow)"
           >
-            <Select.Option v-for="size in PAGE_SIZE_OPTIONS" :key="size" :value="size">{{ size }}</Select.Option>
-          </Select>
-          <Button :disabled="!canGoPrev(cursor)" data-testid="workflows-prev" @click="onPrev">
-            {{ t('workflows.prev') }}
-          </Button>
-          <Button :disabled="!canGoNext(pageAfter)" data-testid="workflows-next" @click="onNext">
-            {{ t('workflows.next') }}
-          </Button>
-        </Space>
-      </Card>
-    </div>
-    <FormModal
-      :get-container="false"
-      :open="showCreateModal && allowCreateWorkflow"
-      :title="t('workflows.create')"
-      :ok-text="t('crud.create')"
-      :cancel-text="t('crud.cancel')"
-      :confirm-loading="creating"
-      @ok="onCreate"
-      @cancel="showCreateModal = false"
-    >
-      <Typography.Text v-if="formError" type="danger" data-testid="workflows-form-error">{{ formError }}</Typography.Text>
-      <Form layout="vertical">
-        <Form.Item :label="t('crud.name')" required>
-          <Input v-model:value="createForm.name" data-testid="workflows-create-name" />
-        </Form.Item>
-        <Form.Item :label="t('crud.description')" required>
-          <Input.TextArea v-model:value="createForm.description" :rows="3" data-testid="workflows-create-description" />
-        </Form.Item>
-      </Form>
-    </FormModal>
+            <div class="workflows__card-head">
+              <span class="workflows__card-icon"><NodeIndexOutlined /></span>
+              <span
+                class="workflows__card-title"
+                :title="workflow.displayName ?? workflow.name"
+              >
+                {{ workflow.displayName ?? workflow.name }}
+              </span>
+            </div>
+            <div class="workflows__card-divider" />
+            <p
+              class="workflows__card-description"
+              :title="workflow.description || undefined"
+            >
+              {{ workflow.description }}
+            </p>
+          </Card>
+        </div>
+        <div data-testid="workflows-pagination">
+          <NextPrevious
+            :paging="paging"
+            :paging-handler="handlePageChange"
+            :page-size="pageSize"
+            :current-page="currentPage"
+            :is-loading="loading"
+            :on-show-size-change="handleSizeChange"
+          />
+        </div>
+      </div>
+      <SmDrawer
+        :open="showCreateModal && allowCreateWorkflow"
+        width-key="workflowCreate"
+        test-id="workflows-create-drawer"
+        :title="t('workflows.createNewWorkflow')"
+        :ok-text="t('workflows.saveAndNext')"
+        :cancel-text="t('crud.cancel')"
+        :confirm-loading="creating"
+        :ok-disabled="creating"
+        @ok="onCreate"
+        @cancel="closeCreate"
+      >
+        <Typography.Paragraph>{{ t('workflows.createDescription') }}</Typography.Paragraph>
+        <Form layout="vertical">
+          <Form.Item
+            :label="t('workflows.workflowName')"
+            required
+            :validate-status="nameError ? 'error' : undefined"
+            :help="nameError"
+          >
+            <Input
+              v-model:value="createForm.name"
+              :placeholder="t('workflows.workflowNamePlaceholder')"
+              :disabled="creating"
+              data-testid="workflows-create-name"
+            />
+          </Form.Item>
+          <Form.Item :label="t('crud.description')">
+            <Input.TextArea
+              v-model:value="createForm.description"
+              :rows="4"
+              :placeholder="t('crud.description')"
+              :disabled="creating"
+              data-testid="workflows-create-description"
+            />
+          </Form.Item>
+        </Form>
+      </SmDrawer>
+    </template>
   </div>
 </template>
 
 <style scoped>
+.workflows__loader {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.workflows__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--sm-bg-container);
+  border: 1px solid var(--sm-border-secondary);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.workflows__placeholder-host {
+  position: relative;
+  min-height: 240px;
+  width: 100%;
+}
+
 /*
- * Official card geometry (WorkflowCard): min-height 160px (tw:min-h-40),
- * flex column, description clamped to 3 lines. The Ant Row already
- * stretches its columns, so height: 100% makes every card in a row equal
- * height instead of sizing to its own description length.
+ * Official card grid (WorkflowList): 1 column below 640px, 2 below
+ * 1024px, 3 above, 20px gaps, 16px bottom padding. Official card
+ * geometry (WorkflowCard): min-height 160px, a 24px brand icon box
+ * with a 12px white icon, a 1-row ellipsis medium title, a divider,
+ * and a description clamped to 3 lines.
  */
+.workflows__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  padding-bottom: 16px;
+}
+
+@media (min-width: 640px) {
+  .workflows__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .workflows__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .workflows__card {
   height: 100%;
   min-height: 160px;
+}
+
+.workflows__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflows__card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--sm-color-primary);
+  color: var(--sm-text-on-primary);
+  font-size: 12px;
+}
+
+.workflows__card-title {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflows__card-divider {
+  border-top: 1px solid var(--sm-border-secondary);
+  margin: 12px 0;
 }
 
 .workflows__card-description {

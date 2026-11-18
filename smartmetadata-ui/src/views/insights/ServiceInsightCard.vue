@@ -13,7 +13,7 @@ import { Button, Card, Input, Progress, Typography } from 'ant-design-vue';
 import SmChart from '@/features/charts/SmChart.vue';
 import SmState from '@/components/shared/SmState.vue';
 import type { ChartSeries } from '@/features/charts/types';
-import { SM_COLOR_PRIMARY, SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
+import { SM_DATA_INSIGHT_COLORS } from '@/theme/tokens';
 
 export interface ServiceLatestValue {
   service: string;
@@ -115,7 +115,7 @@ function toggleService(service: string): void {
         <Progress
           :percent="Math.min(100, Math.max(0, headline))"
           :show-info="false"
-          :stroke-color="SM_COLOR_PRIMARY"
+          stroke-color="var(--sm-color-primary)"
           size="small"
         />
         <Typography.Paragraph v-if="change !== undefined" type="secondary">

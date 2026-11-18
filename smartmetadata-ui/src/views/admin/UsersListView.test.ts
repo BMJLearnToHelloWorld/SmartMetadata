@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
-import EntityListShell from '@/features/crud/EntityListShell.vue';
 import UsersListView from './UsersListView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -24,335 +23,170 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountUsers(asAdmin = true, initialPath = '/admin/users') {
-  const pinia = createPinia();
-  setActivePinia(pinia);
-  // P1 gating line: the view reads isAdminUser from the auth store.
-  useAuthStore().user = asAdmin ? { id: 'admin', name: 'admin', isAdmin: true } : { id: 'u9', name: 'bob' };
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/admin/users', name: 'admin-users', component: UsersListView },
-      { path: '/admin/users/admins', name: 'admin-admins', component: UsersListView },
-      { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
-    ],
-  });
-  await router.push(initialPath);
-  await router.isReady();
-  const wrapper = mount(UsersListView, {
-    global: {
-      plugins: [pinia, router, Antd, createTestI18n()],
-    },
-  });
-  await flushPromises();
-  return { wrapper, router };
-}
+const ALICE = {
+  id: 'u1',
+  name: 'alice',
+  displayName: 'Alice Admin',
+  email: 'alice@example.com',
+  isAdmin: true,
+  isBot: false,
+  teams: [{ id: 't1', name: 'Engineering', type: 'team' }],
+  roles: [{ id: 'r1', name: 'Admin', type: 'role' }],
+};
 
-describe('UsersListView', () => {
+const BOT = {
+  id: 'u2',
+  name: 'ingestion-bot',
+  displayName: 'Ingestion Bot',
+  email: 'bot@example.com',
+  isAdmin: false,
+  isBot: true,
+  teams: [],
+  roles: [],
+};
+
+describe('UsersListView (pin UserListPageV1)', () => {
+  const requestedUrls: string[] = [];
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let listData: unknown[];
+
   beforeEach(() => {
     localStorage.clear();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/v1/users?') || url.endsWith('/api/v1/users')) {
-          return jsonResponse({
-            data: [
-              {
-                id: 'u1',
-                name: 'alice',
-                displayName: 'Alice Admin',
-                email: 'alice@example.com',
-                isAdmin: true,
-                teams: [{ id: 't1', name: 'Engineering', type: 'team' }],
-                roles: [{ id: 'r1', name: 'Admin', type: 'role' }],
-              },
-            ],
-            paging: { total: 1 },
-          });
+    requestedUrls.length = 0;
+    listData = [ALICE];
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requestedUrls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.includes('/api/v1/users/name/')) {
+        return jsonResponse(ALICE);
+      }
+      if (url.includes('/api/v1/search/query')) {
+        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
+      }
+      if (url.includes('/api/v1/users/restore')) {
+        return jsonResponse({});
+      }
+      if (url.includes('/api/v1/users')) {
+        if ((init?.method ?? 'GET') === 'DELETE') {
+          return jsonResponse({});
         }
-        if (url.includes('/api/v1/teams')) {
-          return jsonResponse({ data: [{ id: 't1', name: 'Engineering', teamType: 'Group' }], paging: {} });
-        }
-        if (url.includes('/api/v1/roles')) {
-          return jsonResponse({ data: [{ id: 'r1', name: 'Admin' }], paging: {} });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
+        return jsonResponse({ data: listData, paging: { total: listData.length } });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    localStorage.clear();
-    document.querySelectorAll('.ant-dropdown').forEach((node) => node.remove());
+    vi.useRealTimers();
   });
 
-  it('renders users from GET /v1/users', async () => {
+  async function mountUsers(asAdmin = true, initialPath = '/admin/users') {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useAuthStore().user = asAdmin
+      ? { id: 'admin', name: 'admin', isAdmin: true }
+      : { id: 'u9', name: 'bob' };
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/admin/users', name: 'admin-users', component: UsersListView },
+        { path: '/admin/users/admins', name: 'admin-admins', component: UsersListView },
+        { path: '/create-user', name: 'create-user', component: { template: '<div>create</div>' } },
+      ],
+    });
+    await router.push(initialPath);
+    await router.isReady();
+    const wrapper = mount(UsersListView, {
+      global: {
+        plugins: [pinia, router, Antd, createTestI18n()],
+      },
+    });
+    await flushPromises();
+    return { wrapper, router };
+  }
+
+  it('lists with explicit isBot:false and the pin field set', async () => {
     const { wrapper } = await mountUsers();
     expect(wrapper.text()).toContain('Alice Admin');
-    expect(wrapper.text()).toContain('alice@example.com');
-    expect(wrapper.find('[data-testid="admin-users-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
+    const listCall = requestedUrls.find((url) => url.startsWith('GET ') && url.includes('/api/v1/users?'));
+    expect(listCall).toBeDefined();
+    expect(listCall).toContain('isBot=false');
+    expect(listCall).toContain('fields=profile%2Cteams%2Croles');
   });
 
-  it('loads the Admins tab with isAdmin=true on the admins route', async () => {
-    const { wrapper, router } = await mountUsers(true, '/admin/users/admins');
-    expect(router.currentRoute.value.name).toBe('admin-admins');
-    const usersCalls = vi.mocked(fetch).mock.calls.filter((call) => String(call[0]).includes('/api/v1/users'));
-    expect(usersCalls.length).toBeGreaterThan(0);
-    expect(String(usersCalls[0][0])).toContain('isAdmin=true');
-    expect(wrapper.find('[data-testid="users-tabs"]').exists()).toBe(true);
-  });
-
-  it('navigates back to all users when the All tab is clicked', async () => {
-    const { wrapper, router } = await mountUsers(true, '/admin/users/admins');
-    const tabs = wrapper.findAll('.ant-tabs-tab');
-    expect(tabs.length).toBeGreaterThanOrEqual(2);
-    await tabs[0].trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-users');
-  });
-
-  it('hides create and edit entry points for a non-admin viewer (P1)', async () => {
-    const { wrapper } = await mountUsers(false);
-    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(false);
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="row-overflow-edit"]')).toBeNull();
-    // Close the dropdown again so its overlay cannot shadow later tests'
-    // first-match queries (the file's Edit test already guards with
-    // last-match for the same reason).
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-  });
-
-  it('shows create and edit entry points for a non-admin with a user grant (P1)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes('/api/v1/permissions/user')) {
-          return jsonResponse({
-            resource: 'user',
-            permissions: [
-              { operation: 'Create', access: 'allow' },
-              { operation: 'EditAll', access: 'allow' },
-            ],
-          });
-        }
-        if (url.includes('/api/v1/users?') || url.endsWith('/api/v1/users')) {
-          return jsonResponse({
-            data: [
-              {
-                id: 'u1',
-                name: 'alice',
-                displayName: 'Alice Admin',
-                email: 'alice@example.com',
-                isAdmin: true,
-                teams: [{ id: 't1', name: 'Engineering', type: 'team' }],
-                roles: [{ id: 'r1', name: 'Admin', type: 'role' }],
-              },
-            ],
-            paging: { total: 1 },
-          });
-        }
-        if (url.includes('/api/v1/teams')) {
-          return jsonResponse({ data: [{ id: 't1', name: 'Engineering', teamType: 'Group' }], paging: {} });
-        }
-        if (url.includes('/api/v1/roles')) {
-          return jsonResponse({ data: [{ id: 'r1', name: 'Admin' }], paging: {} });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const { wrapper } = await mountUsers(false);
-    expect(wrapper.find('[data-testid="create-user"]').exists()).toBe(true);
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-    expect(document.querySelector('[data-testid="row-overflow-edit"]')).not.toBeNull();
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-  });
-
-  it('opens user detail from the overflow menu', async () => {
-    const { wrapper, router } = await mountUsers();
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-    // Last-match, not first-match: the beforeEach opens+closes a dropdown on
-    // a different router whose portal stays in the document, so a first-match
-    // query can return the stale overlay's item (the Edit test below guards
-    // the same way).
-    const views = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-view"]');
-    const view = views[views.length - 1];
-    expect(view?.textContent).toContain('View');
-    const edits = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]');
-    expect(edits[edits.length - 1]?.textContent).toContain('Edit');
-    view?.click();
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-user');
-    expect(router.currentRoute.value.params.id).toBe('u1');
-  });
-
-  it('opens user detail from the overflow Edit action', async () => {
-    const { wrapper, router } = await mountUsers();
-    await wrapper.get('[data-testid="row-overflow-u1"]').trigger('click');
-    await flushPromises();
-    const edits = document.querySelectorAll<HTMLElement>('[data-testid="row-overflow-edit"]');
-    edits[edits.length - 1]?.click();
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-user');
-    expect(router.currentRoute.value.params.id).toBe('u1');
-  });
-
-  it('opens user detail on name click', async () => {
-    const { wrapper, router } = await mountUsers();
-    const link = wrapper.find('[data-testid="user-row-u1"]');
-    expect(link.exists()).toBe(true);
-    await link.trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-user');
-    expect(router.currentRoute.value.params.id).toBe('u1');
-  });
-
-  it('searches the user index instead of listing when a query is set', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/v1/search/query')) {
-        return jsonResponse({
-          hits: {
-            total: { value: 1 },
-            hits: [
-              {
-                _id: 'u9',
-                _source: {
-                  id: 'u9',
-                  name: 'search-hit',
-                  displayName: 'Search Hit',
-                  email: 'hit@example.com',
-                  teams: [],
-                  roles: [],
-                },
-              },
-            ],
-          },
-        });
-      }
-      if (url.includes('/api/v1/users')) {
-        return jsonResponse({ data: [], paging: { total: 0 } });
-      }
-      if (url.includes('/api/v1/teams') || url.includes('/api/v1/roles')) {
-        return jsonResponse({ data: [], paging: {} });
-      }
-      return new Response('not found', { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('renders the pin column set without email/isAdmin/isBot columns (P4)', async () => {
     const { wrapper } = await mountUsers();
-    const shell = wrapper.getComponent(EntityListShell);
-    await shell.vm.$emit('update:searchValue', 'alice');
-    await shell.vm.$emit('search');
-    await flushPromises();
-    const searchCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes('/api/v1/search/query'));
-    expect(searchCalls.some((url) => url.includes('index=user') && url.includes('q=alice'))).toBe(true);
+    const header = wrapper.find('thead').text();
+    expect(header).toContain('Username');
+    expect(header).toContain('Name');
+    expect(header).not.toContain('Email');
+    expect(header).not.toContain('Admin');
+    expect(header).not.toContain('Bot');
+    // No Bots checkbox and no three-state filter: no checkbox inputs.
+    expect(wrapper.findAll('input[type="checkbox"]').length).toBe(0);
+    expect(wrapper.find('[data-testid="show-deleted-toggle"]').exists()).toBe(true);
   });
 
-  it('passes the isAdmin term filter when searching from the Admins tab (R-16)', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/v1/search/query')) {
-        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
-      }
-      if (url.includes('/api/v1/users')) {
-        return jsonResponse({ data: [], paging: { total: 0 } });
-      }
-      if (url.includes('/api/v1/teams') || url.includes('/api/v1/roles')) {
-        return jsonResponse({ data: [], paging: {} });
-      }
-      return new Response('not found', { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('adds isAdmin=true on the Admins tab and drops the roles column', async () => {
     const { wrapper } = await mountUsers(true, '/admin/users/admins');
-    const shell = wrapper.getComponent(EntityListShell);
-    await shell.vm.$emit('update:searchValue', 'alice');
-    await shell.vm.$emit('search');
-    await flushPromises();
-    const searchCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes('/api/v1/search/query'));
-    expect(searchCalls.length).toBeGreaterThan(0);
-    const filter = new URL(searchCalls[0], 'http://localhost').searchParams.get('query_filter');
-    expect(filter).not.toBeNull();
-    expect(JSON.parse(filter!)).toEqual({
-      query: { bool: { must: [{ term: { isAdmin: 'true' } }] } },
-    });
+    const listCall = requestedUrls.find((url) => url.startsWith('GET ') && url.includes('/api/v1/users?'));
+    expect(listCall).toContain('isAdmin=true');
+    expect(wrapper.find('thead').text()).not.toContain('label.role-plural');
   });
 
-  it('sends no query filter when searching from the All users tab (R-16)', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/v1/search/query')) {
-        return jsonResponse({ hits: { total: { value: 0 }, hits: [] } });
-      }
-      if (url.includes('/api/v1/users')) {
-        return jsonResponse({ data: [], paging: { total: 0 } });
-      }
-      if (url.includes('/api/v1/teams') || url.includes('/api/v1/roles')) {
-        return jsonResponse({ data: [], paging: {} });
-      }
-      return new Response('not found', { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const { wrapper } = await mountUsers(true, '/admin/users');
-    const shell = wrapper.getComponent(EntityListShell);
-    await shell.vm.$emit('update:searchValue', 'alice');
-    await shell.vm.$emit('search');
+  it('shows the Add button only for admins and navigates with route state', async () => {
+    const { wrapper, router } = await mountUsers(true);
+    const add = wrapper.find('[data-testid="add-user"]');
+    expect(add.exists()).toBe(true);
+    await add.trigger('click');
     await flushPromises();
-    const searchCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes('/api/v1/search/query'));
-    expect(searchCalls.length).toBeGreaterThan(0);
-    expect(new URL(searchCalls[0], 'http://localhost').searchParams.has('query_filter')).toBe(false);
+    expect(router.currentRoute.value.path).toBe('/create-user');
+    expect(
+      (router.options.history.state as { isAdminPage?: boolean } | null)?.isAdminPage,
+    ).toBe(false);
+
+    const nonAdmin = await mountUsers(false);
+    expect(nonAdmin.wrapper.find('[data-testid="add-user"]').exists()).toBe(false);
   });
 
-  it('requests the next cursor page from GET /v1/users', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/v1/users')) {
-        const after = new URL(url, 'http://localhost').searchParams.get('after');
-        return jsonResponse({
-          data: [
-            {
-              id: after === 'c1' ? 'u2' : 'u1',
-              name: after === 'c1' ? 'bob' : 'alice',
-              displayName: after === 'c1' ? 'Bob' : 'Alice Admin',
-              email: after === 'c1' ? 'bob@example.com' : 'alice@example.com',
-              teams: [],
-              roles: [],
-            },
-          ],
-          paging: { total: 2, after: after === 'c1' ? undefined : 'c1' },
-        });
-      }
-      if (url.includes('/api/v1/teams')) {
-        return jsonResponse({ data: [], paging: {} });
-      }
-      if (url.includes('/api/v1/roles')) {
-        return jsonResponse({ data: [], paging: {} });
-      }
-      return new Response('not found', { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('debounces search and sends the isBot term in the query filter', async () => {
     const { wrapper } = await mountUsers();
-    expect(wrapper.text()).toContain('Alice Admin');
-    expect(wrapper.find('[data-testid="entity-list-next"]').exists()).toBe(true);
-    await wrapper.get('[data-testid="entity-list-next"]').trigger('click');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const input = wrapper.find('[data-testid="users-search"]');
+    expect(input.exists()).toBe(true);
+    await input.setValue('alice');
+    await vi.advanceTimersByTimeAsync(400);
     await flushPromises();
-    const userCalls = fetchMock.mock.calls
-      .map((call) => String(call[0]))
-      .filter((url) => url.includes('/api/v1/users'));
-    expect(userCalls.some((url) => url.includes('after=c1'))).toBe(true);
-    expect(wrapper.text()).toContain('Bob');
+    const searchCall = requestedUrls.find((url) => url.includes('/api/v1/search/query'));
+    expect(searchCall).toBeDefined();
+    expect(searchCall).toContain('*alice*');
+    expect(decodeURIComponent(searchCall ?? '')).toContain('"isBot":"false"');
+  });
+
+  it('shows the delete action and opens the delete modal', async () => {
+    const { wrapper } = await mountUsers();
+    const deleteButton = wrapper.find('[data-testid="delete-user-btn-alice"]');
+    expect(deleteButton.exists()).toBe(true);
+    await deleteButton.trigger('click');
+    await flushPromises();
+    // DeleteEntityModal teleports to the document body.
+    expect(document.body.querySelector('.ant-modal')).not.toBeNull();
+    document.body.querySelectorAll('.ant-modal-root').forEach((node) => node.remove());
+  });
+
+  it('renders the create placeholder for an empty list', async () => {
+    listData = [];
+    const { wrapper } = await mountUsers();
+    const placeholder = wrapper.find('[data-testid="create-error-placeholder-User"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain('User');
+  });
+
+  it('renders the bot indicator for bot rows', async () => {
+    listData = [BOT];
+    const { wrapper } = await mountUsers();
+    expect(wrapper.find('[data-testid="bot-icon"]').exists()).toBe(true);
   });
 });
