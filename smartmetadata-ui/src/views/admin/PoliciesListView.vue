@@ -3,77 +3,99 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Checkbox, Form, Input, Select, message} from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import { createPolicy, deletePolicy, listPolicies } from '@/api/policies';
+import { DeleteOutlined } from '@ant-design/icons-vue';
+import { Button, Tooltip, message } from 'ant-design-vue';
+import { hardDeleteEntity } from '@/api/entityDelete';
+import { permissionFlags, type OperationPermissions } from '@/api/permissions';
+import { listPolicies } from '@/api/policies';
+import DescriptionCell from '@/components/shared/DescriptionCell.vue';
+import EntityNameLink from '@/components/shared/EntityNameLink.vue';
+import ReferenceListCell from '@/components/shared/ReferenceListCell.vue';
+import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
+import { getEntityName } from '@/components/shared/profilePictureUtils';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
-import { requiredField } from '@/features/crud/formRules';
 import {
-  DEFAULT_PAGE_SIZE,
   canGoNext,
   canGoPrev,
   createCursorPager,
-  entityLabel,
   goNext,
   goPrev,
   resetCursor,
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
 import type { AdminPolicy } from '@/types/admin';
+import {
+  actionTooltipTitle,
+  descriptionColumnDef,
+  entityNameColumnDef,
+  referenceListColumnDef,
+} from '@/utils/columns';
+import { readGlobalPageSize } from '@/utils/userPageSizePreference';
+import { getErrorText } from './accessApiErrors';
+import { addPolicyLocation, policyDetailLocation, roleDetailLocation } from './accessPaths';
 
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const policies = ref<AdminPolicy[]>([]);
 const total = ref<number | undefined>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
-const createOpen = ref(false);
-const creating = ref(false);
-const form = reactive({
-  name: '',
-  displayName: '',
-  description: '',
-  enabled: true,
-  ruleName: '',
-  effect: 'allow' as 'allow' | 'deny',
-  operations: ['ViewAll'] as string[],
-  resources: ['All'] as string[],
-});
+const policyOps = ref<OperationPermissions>({});
+const roleOps = ref<OperationPermissions>({});
 
+// T-5 (03 §6.1/§3.3): the page size is the stored global preference,
+// default 15; the shell pager has no size selector, so it is read once.
+const pageSize = readGlobalPageSize(window.localStorage, useAuthStore().user?.name);
+
+const canAdd = computed(() => permissionFlags(policyOps.value).canCreate);
+const canDelete = computed(() => permissionFlags(policyOps.value).canDelete);
+const canViewRoles = computed(() => permissionFlags(roleOps.value).hasViewAccess);
+
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
+  { label: t('label.setting-plural'), routeName: 'admin-settings' },
+  { label: t('label.access-control') },
+  { label: t('label.policy-plural') },
+]);
+
+// Exactly four columns (03 §6.1): name + description + roles + actions.
+// The shell row-actions usage (show-row-actions/show-edit-action/
+// show-delete-action) is removed from this page: the shell would append
+// a fifth column duplicating the Name link and the Actions column. The
+// shell component itself is untouched (CSV 03:#12).
 const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('admin.policies.rules'), key: 'rules', width: 90 },
-  { title: t('admin.policies.roles'), key: 'roles', width: 90 },
-  { title: t('admin.policies.teams'), key: 'teams', width: 90 },
-  { title: t('crud.enabled'), key: 'enabled', width: 100 },
+  ...entityNameColumnDef(t('label.name')),
+  ...descriptionColumnDef(t('label.description')),
+  ...referenceListColumnDef(t('label.role-plural'), 'roles'),
+  { title: t('label.action-plural'), dataIndex: 'actions', key: 'actions', width: 80 },
 ]);
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
 
-function resetForm(): void {
-  form.name = '';
-  form.displayName = '';
-  form.description = '';
-  form.enabled = true;
-  form.ruleName = '';
-  form.effect = 'allow';
-  form.operations = ['ViewAll'];
-  form.resources = ['All'];
+async function loadPermissions(): Promise<void> {
+  const [policy, role] = await Promise.all([
+    permissionStore.getResourcePermission('policy').catch(() => ({}) as OperationPermissions),
+    permissionStore.getResourcePermission('role').catch(() => ({}) as OperationPermissions),
+  ]);
+  policyOps.value = policy;
+  roleOps.value = role;
 }
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const page = await listPolicies({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
+    const page = await listPolicies({ limit: pageSize, after: cursor.value.after, fields: 'roles' });
     policies.value = page.data;
     total.value = page.total;
     pageAfter.value = page.after;
@@ -98,182 +120,122 @@ function onPrev(): void {
   void load();
 }
 
-function onRefresh(): void {
-  cursor.value = resetCursor();
-  void load();
+function goAdd(): void {
+  void router.push(addPolicyLocation());
 }
 
-function openDetail(policy: AdminPolicy): void {
-  void router.push({ name: 'admin-policy', params: { id: policy.id } });
+function rolePathFor(ref: { fullyQualifiedName?: string; name?: string }) {
+  return roleDetailLocation(ref.fullyQualifiedName ?? ref.name ?? '');
 }
 
-async function onCreate(): Promise<void> {
-  const name = form.name.trim();
-  const ruleName = (form.ruleName.trim() || `${name}Rule`).trim();
-  if (!name || !form.operations.length || !form.resources.length) {
-    message.error(t('admin.policies.createInvalid'));
+function deleteTooltipTitle(): string {
+  // D-DEV-1: the pin tooltip interpolates the SINGULAR label.policy
+  // here (PoliciesListPage.tsx:242-244), unlike the Roles list, which
+  // uses the plural. The asymmetry is pin-native; keep it.
+  return actionTooltipTitle(
+    canDelete.value,
+    t('label.delete-entity', { entity: t('label.policy') }),
+    t('message.no-permission-for-action'),
+  );
+}
+
+async function onDelete(record: AdminPolicy): Promise<void> {
+  // 03 §6.2 asymmetry: the pin renders this page's delete modal only
+  // when `selectedPolicy && deletePolicyPermission`. The button is
+  // disabled without the grant; this guard is the modal-render gate,
+  // and the Roles list deliberately has no equivalent.
+  if (!canDelete.value) {
     return;
   }
-  creating.value = true;
-  try {
-    const created = await createPolicy({
-      name,
-      displayName: form.displayName.trim() || undefined,
-      description: form.description.trim() || undefined,
-      enabled: form.enabled,
-      rules: [
-        {
-          name: ruleName,
-          effect: form.effect,
-          operations: [...form.operations],
-          resources: [...form.resources],
-        },
-      ],
-    });
-    createOpen.value = false;
-    resetForm();
-    message.success(t('admin.policies.created', { name: created.name }));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
-
-async function onDelete(policy: AdminPolicy): Promise<void> {
+  const entityName = getEntityName(record);
+  let deleted = false;
   const confirmed = await confirmDelete({
-    title: t('crud.deleteTitle'),
-    content: t('admin.policies.deleteConfirm', { name: policy.name }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
+    title: `${t('label.delete')} ${entityName}`,
+    content: t('message.permanently-delete-common-message', { entity: entityName.toLowerCase() }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
+    onOk: async () => {
+      deleted = await hardDeleteEntity(record.id, 'policy', {
+        onSuccess: () => message.success(t('server.entity-deleted-successfully', { entity: entityName })),
+        onError: (error) =>
+          message.error(getErrorText(error, t('server.delete-entity-error', { entity: entityName }))),
+      });
+    },
   });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await deletePolicy(policy.id);
-    message.success(t('admin.policies.deleted', { name: policy.name }));
+  if (confirmed && deleted) {
+    cursor.value = resetCursor();
     await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
   }
 }
 
 onMounted(() => {
+  void loadPermissions();
   void load();
 });
 </script>
 
 <template>
+  <SmBreadcrumb :items="breadcrumbItems" />
   <EntityListShell
-    :title="t('admin.policies.title')"
-    :lead="t('admin.policies.lead')"
+    :title="t('label.policy-plural')"
+    :lead="t('message.page-sub-header-for-policies')"
+    learning-page-id="policies"
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
     :data-source="policies"
+    row-key="id"
     table-test-id="admin-policies-table"
-    show-row-actions
-    show-edit-action
-    show-delete-action
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
-    @refresh="onRefresh"
+    @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => openDetail(record as AdminPolicy)"
-    @edit="(record) => openDetail(record as AdminPolicy)"
-    @delete="(record) => onDelete(record as AdminPolicy)"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-policy" @click="createOpen = true">
-        {{ t('admin.policies.create') }}
+      <Button v-if="canAdd" type="primary" data-testid="add-policy" @click="goAdd">
+        {{ t('label.add-entity', { entity: t('label.policy') }) }}
+      </Button>
+    </template>
+    <template #emptyExtra>
+      <Button v-if="canAdd" type="primary" data-testid="add-policy-empty" @click="goAdd">
+        {{ t('label.add-entity', { entity: t('label.policy') }) }}
       </Button>
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`policy-row-${(record as AdminPolicy).id}`"
-          @click.prevent="openDetail(record as AdminPolicy)"
-        >
-          {{ entityLabel(record as AdminPolicy) }}
-        </a>
+        <EntityNameLink
+          :record="record as AdminPolicy"
+          :to="policyDetailLocation((record as AdminPolicy).fullyQualifiedName ?? (record as AdminPolicy).name)"
+          test-id="policy-name"
+        />
       </template>
-      <template v-else-if="column.key === 'rules'">
-        {{ (record as AdminPolicy).rules.length }}
+      <template v-else-if="column.key === 'description'">
+        <DescriptionCell :markdown="(record as AdminPolicy).description" />
       </template>
       <template v-else-if="column.key === 'roles'">
-        {{ (record as AdminPolicy).roles.length }}
+        <ReferenceListCell
+          :references="(record as AdminPolicy).roles"
+          :has-view-permission="canViewRoles"
+          :path-for="rolePathFor"
+        />
       </template>
-      <template v-else-if="column.key === 'teams'">
-        {{ (record as AdminPolicy).teams.length }}
-      </template>
-      <template v-else-if="column.key === 'enabled'">
-        {{
-          (record as AdminPolicy).enabled === undefined
-            ? '—'
-            : (record as AdminPolicy).enabled
-              ? t('settings.system.enabled')
-              : t('settings.system.disabled')
-        }}
+      <template v-else-if="column.key === 'actions'">
+        <Tooltip :title="deleteTooltipTitle()" placement="left">
+          <span>
+            <Button
+              type="text"
+              size="small"
+              :disabled="!canDelete"
+              :data-testid="`delete-action-${getEntityName(record as AdminPolicy)}`"
+              @click="onDelete(record as AdminPolicy)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </Button>
+          </span>
+        </Tooltip>
       </template>
     </template>
   </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('admin.policies.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    :get-container="false"
-    @ok="onCreate" @cancel="createOpen = false">
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-policy-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')">
-        <Input.TextArea v-model:value="form.description" :rows="2" />
-      </Form.Item>
-      <Form.Item>
-        <Checkbox v-model:checked="form.enabled">{{ t('admin.policies.enabledHint') }}</Checkbox>
-      </Form.Item>
-      <Form.Item :label="t('admin.policies.ruleName')" :extra="t('admin.policies.ruleNameHelp')">
-        <Input v-model:value="form.ruleName" data-testid="create-policy-rule-name" />
-      </Form.Item>
-      <Form.Item :label="t('admin.policies.effect')" required>
-        <Select
-          v-model:value="form.effect"
-          data-testid="create-policy-effect"
-          :options="[
-            { value: 'allow', label: t('admin.policies.effectAllow') },
-            { value: 'deny', label: t('admin.policies.effectDeny') },
-          ]"
-        />
-      </Form.Item>
-      <Form.Item :label="t('admin.policies.operations')" :extra="t('admin.policies.operationsHelp')" required>
-        <Select
-          v-model:value="form.operations"
-          mode="tags"
-          data-testid="create-policy-operations"
-          :token-separators="[',']"
-          style="width: 100%"
-        />
-      </Form.Item>
-      <Form.Item :label="t('admin.policies.resources')" :extra="t('admin.policies.resourcesHelp')" required>
-        <Select
-          v-model:value="form.resources"
-          mode="tags"
-          data-testid="create-policy-resources"
-          :token-separators="[',']"
-          style="width: 100%"
-        />
-      </Form.Item>
-    </Form>
-  </FormModal>
 </template>

@@ -3,9 +3,9 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Card, Checkbox, Input, Select, Typography } from 'ant-design-vue';
+import { Button, Card, Checkbox, Input, Select, Tag, Typography } from 'ant-design-vue';
 import {
   buildDesignerSchema,
   createEmptyDesignerField,
@@ -35,6 +35,31 @@ const previewConfig = computed(() =>
   buildDesignerSchema(props.fields, props.baseFormSchema, props.baseUiSchema),
 );
 const previewPayload = computed(() => getDesignerPreviewPayload(props.fields));
+
+// Draft text for each field's option chip input, keyed by the field's
+// stable key. The official options editor is an Autocomplete with no
+// dropdown: typing never offers a list, Enter inserts the typed value.
+const optionDrafts = ref<Record<string, string>>({});
+
+function insertOption(index: number, field: TaskFormDesignerField): void {
+  const draft = optionDrafts.value[field.key] ?? '';
+  if (draft === '') {
+    return;
+  }
+  // Insert the verbatim draft: no trim, no filtering, duplicates kept,
+  // matching the official Autocomplete insertion (String(key) as-is).
+  updateField(index, (current) => ({ ...current, options: [...current.options, draft] }));
+  optionDrafts.value = { ...optionDrafts.value, [field.key]: '' };
+}
+
+function removeOption(index: number, option: string): void {
+  // Exact-match removal drops every equal option, matching the official
+  // withoutOption helper, which filters all equal entries.
+  updateField(index, (current) => ({
+    ...current,
+    options: current.options.filter((candidate) => candidate !== option),
+  }));
+}
 
 function updateField(
   index: number,
@@ -98,7 +123,7 @@ function fieldSummary(field: TaskFormDesignerField): string {
             :data-testid="`${testIdPrefix}-field-remove-${index}`"
             @click="emit('change', fields.filter((_, currentIndex) => currentIndex !== index))"
           >
-            {{ t('crud.delete') }}
+            {{ t('crud.remove') }}
           </Button>
         </template>
         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px">
@@ -148,13 +173,24 @@ function fieldSummary(field: TaskFormDesignerField): string {
         </div>
         <div v-if="field.type === 'singleSelect' || field.type === 'multiSelect'" style="margin-top: 12px">
           <Typography.Text>{{ t('taskForms.options') }}</Typography.Text>
-          <Input.TextArea
-            :value="field.options.join('\n')"
-            :data-testid="`${testIdPrefix}-field-options-${index}`"
-            :rows="3"
-            :placeholder="t('taskForms.optionsPlaceholder')"
-            @change="(event: { target: { value: string } }) => updateField(index, (current) => ({ ...current, options: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))"
-          />
+          <div :data-testid="`${testIdPrefix}-field-options-${index}`">
+            <Tag
+              v-for="(option, optionIndex) in field.options"
+              :key="optionIndex"
+              closable
+              style="margin-bottom: 4px"
+              @close="removeOption(index, option)"
+            >
+              {{ option }}
+            </Tag>
+            <Input
+              :value="optionDrafts[field.key] ?? ''"
+              :aria-label="t('taskForms.options')"
+              :placeholder="t('taskForms.addOptions')"
+              @update:value="(value: string) => { optionDrafts = { ...optionDrafts, [field.key]: value }; }"
+              @press-enter="insertOption(index, field)"
+            />
+          </div>
         </div>
         <div style="margin-top: 12px">
           <Typography.Text>{{ t('taskForms.helpText') }}</Typography.Text>

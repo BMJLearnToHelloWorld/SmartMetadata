@@ -3,212 +3,121 @@
 
   Licensed under the Apache License, Version 2.0.
 -->
+<!--
+  Vue port of pin PersonaPage.tsx: breadcrumb + PageHeader + an
+  unconditional Add button, a card grid with cursor paging, three
+  skeleton cards while loading, and an early-return CreatePlaceholder
+  (no doc link) when the list is empty and not loading. There is no
+  page-size selector: pin never passes onShowSizeChange (K-1). Paging
+  goes through the shared useCursorPagedList + NextPrevious contract
+  (§15): the hook has no initial-page-size option, so the list starts
+  at 15 (or the persisted T-5 preference) rather than pin's 12, and
+  it does not sync cursors to the URL — both are recorded divergences
+  in the batch report. After a create, the current page is refetched
+  without resetting the cursor.
+-->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { createPersona, listPersonas } from '@/api/persona';
-import FormModal from '@/components/shared/FormModal.vue';
-import { Button, Card, Col, Empty, Form, Input, Row, message } from 'ant-design-vue';
-import {
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  goNext,
-  goPrev,
-  resetCursor,
-  type CursorPager,
-} from '@/features/crud/paging';
+import { Button, Card, Col, Row, Skeleton } from 'ant-design-vue';
+import { listPersonas } from '@/api/persona';
+import { useCursorPagedList } from '@/composables/useCursorPagedList';
+import CreatePlaceholder from '@/components/shared/CreatePlaceholder.vue';
+import NextPrevious from '@/components/shared/NextPrevious.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { useAuthStore } from '@/stores/auth';
-import type { Persona } from '@/types/persona';
-import PersonaUserPicker from './PersonaUserPicker.vue';
-
-/**
- * Persona list, mirroring the official PersonaPage: a card grid with
- * cursor paging (page size 12) and an admin-only create modal (name,
- * displayName, description, users). Card click opens the detail page.
- */
-const PERSONA_PAGE_SIZE = 12;
+import AddEditPersona from './persona/AddEditPersona.vue';
+import PersonaDetailsCard from './persona/PersonaDetailsCard.vue';
 
 const { t } = useI18n();
-const router = useRouter();
-const auth = useAuthStore();
+const authStore = useAuthStore();
 
-const loading = ref(false);
-const errorMessage = ref('');
-const personas = ref<Persona[]>([]);
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
 const createOpen = ref(false);
-const creating = ref(false);
-const createForm = reactive({ name: '', displayName: '', description: '', userIds: [] as string[] });
+const isAdminUser = computed(() => authStore.user?.isAdmin === true);
 
-const isAdminUser = computed(() => auth.user?.isAdmin === true);
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
+const { items, paging, isLoading, page, pageSize, showPagination, onPageChange } =
+  useCursorPagedList(
+    async ({ after, before, limit }) => {
+      const response = await listPersonas({ limit, fields: 'users', after, before });
+      return {
+        data: response.data,
+        paging: { after: response.after, before: response.before, total: response.total ?? 0 },
+      };
+    },
+    {
+      persistence: { storage: window.localStorage, userName: () => authStore.user?.name },
+    },
+  );
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    const page = await listPersonas({ limit: PERSONA_PAGE_SIZE, after: cursor.value.after });
-    personas.value = page.data;
-    pageAfter.value = page.after;
-  } catch (error) {
-    personas.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
+const isEmpty = computed(() => items.value.length === 0);
+
+async function handleSave(): Promise<void> {
+  createOpen.value = false;
+  await onPageChange(page.value);
 }
-
-async function onCreate(): Promise<void> {
-  if (!createForm.name.trim()) {
-    return;
-  }
-  creating.value = true;
-  try {
-    await createPersona({
-      name: createForm.name.trim(),
-      displayName: createForm.displayName.trim() || undefined,
-      description: createForm.description.trim() || undefined,
-      users: createForm.userIds.length ? createForm.userIds : undefined,
-    });
-    createOpen.value = false;
-    message.success(t('persona.saved'));
-    createForm.name = '';
-    createForm.displayName = '';
-    createForm.description = '';
-    createForm.userIds = [];
-    cursor.value = resetCursor();
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
-
-function onNext(): void {
-  cursor.value = goNext(cursor.value, pageAfter.value ?? '');
-  void load();
-}
-
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
-}
-
-function openDetail(persona: Persona): void {
-  void router.push({
-    name: 'admin-settings-persona-detail',
-    params: { fqn: persona.fullyQualifiedName },
-  });
-}
-
-onMounted(() => {
-  void load();
-});
 </script>
 
 <template>
   <div data-testid="persona-list">
-    <div class="persona-list__header">
-      <h2>{{ t('persona.title') }}</h2>
-      <Button
-        v-if="isAdminUser"
-        type="primary"
-        data-testid="persona-create-button"
-        @click="createOpen = true"
-      >
-        {{ t('persona.create') }}
-      </Button>
+    <div v-if="isEmpty && !isLoading" style="text-align: center; width: 100%">
+      <div style="position: relative; height: 100%; width: 100%; min-height: 240px">
+        <CreatePlaceholder
+          button-id="add-persona-button"
+          :test-id="`create-error-placeholder-${t('label.persona')}`"
+          :heading="t('label.persona')"
+          :permission="isAdminUser"
+          :permission-value="t('label.create-entity', { entity: t('label.persona') })"
+          :on-create="() => { createOpen = true; }"
+        />
+      </div>
     </div>
-    <p v-if="errorMessage" class="persona-list__error">{{ errorMessage }}</p>
-    <Empty v-if="!loading && personas.length === 0" :description="t('persona.empty')" />
-    <p v-if="!loading && personas.length === 0">{{ t('persona.emptyDescription') }}</p>
-    <Row :gutter="[16, 16]">
-      <Col v-for="persona in personas" :key="persona.id" :xs="24" :sm="12" :lg="8">
-        <Card
-          hoverable
-          :data-testid="`persona-card-${persona.name}`"
-          @click="openDetail(persona)"
-        >
-          <Card.Meta
-            :title="persona.displayName || persona.name"
-            :description="persona.description || persona.name"
-          />
-          <div class="persona-list__meta">
-            <span v-if="persona.default">{{ t('persona.defaultBadge') }}</span>
-            <span v-if="persona.users">
-              {{ t('persona.users') }}: {{ persona.users.length }}
-            </span>
-          </div>
-        </Card>
-      </Col>
-    </Row>
-    <div class="persona-list__pager">
-      <Button
-        data-testid="persona-prev"
-        :disabled="!hasPrev"
-        @click="onPrev()"
-      >
-        {{ t('crud.previous') }}
-      </Button>
-      <Button
-        data-testid="persona-next"
-        :disabled="!hasNext"
-        @click="onNext()"
-      >
-        {{ t('crud.next') }}
-      </Button>
-    </div>
-    <FormModal
-      :get-container="false"
+    <template v-else>
+      <SmBreadcrumb
+        :items="[
+          { label: t('label.setting-plural'), routeName: 'admin-settings' },
+          { label: t('label.persona') },
+        ]"
+      />
+      <div style="display: flex; align-items: flex-start; justify-content: space-between">
+        <PageHeader
+          :header="t('label.persona-plural')"
+          :sub-header="t('message.page-sub-header-for-persona')"
+        />
+        <Button type="primary" data-testid="add-persona-button" @click="createOpen = true">
+          {{ t('label.add-entity', { entity: t('label.persona') }) }}
+        </Button>
+      </div>
+      <Row :gutter="[16, 16]">
+        <template v-if="isLoading">
+          <Col v-for="key in [1, 2, 3]" :key="key" :xs="24" :sm="12" :lg="8">
+            <div data-testid="skeleton-card-loader">
+              <Card>
+                <Skeleton :paragraph="{ rows: 3 }" :title="false" active />
+              </Card>
+            </div>
+          </Col>
+        </template>
+        <template v-else>
+          <Col v-for="persona in items" :key="persona.id" :xs="24" :sm="12" :lg="8">
+            <PersonaDetailsCard :persona="persona" />
+          </Col>
+        </template>
+      </Row>
+      <div v-if="showPagination" style="display: flex; justify-content: center; margin: 12px 0">
+        <NextPrevious
+          :paging="paging"
+          :paging-handler="({ currentPage }) => onPageChange(currentPage)"
+          :page-size="pageSize"
+          :current-page="page"
+          :is-loading="isLoading"
+        />
+      </div>
+    </template>
+    <AddEditPersona
       :open="createOpen"
-      :title="t('persona.create')"
-      :confirm-loading="creating"
-      test-id="persona-create-modal"
-      @ok="void onCreate()"
-      @cancel="createOpen = false"
-    >
-      <Form layout="vertical">
-        <Form.Item :label="t('persona.name')" required>
-          <Input v-model:value="createForm.name" data-testid="persona-create-name" />
-        </Form.Item>
-        <Form.Item :label="t('persona.displayName')">
-          <Input v-model:value="createForm.displayName" data-testid="persona-create-display-name" />
-        </Form.Item>
-        <Form.Item :label="t('persona.description')">
-          <Input.TextArea v-model:value="createForm.description" data-testid="persona-create-description" />
-        </Form.Item>
-        <Form.Item :label="t('persona.users')">
-          <PersonaUserPicker v-model="createForm.userIds" />
-        </Form.Item>
-      </Form>
-    </FormModal>
+      :on-save="() => void handleSave()"
+      :on-cancel="() => { createOpen = false; }"
+    />
   </div>
 </template>
-
-<style scoped>
-.persona-list__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.persona-list__meta {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
-  color: var(--sm-text-secondary);
-}
-.persona-list__pager {
-  display: flex;
-  gap: 8px;
-  margin-top: 16px;
-}
-.persona-list__error {
-  color: var(--sm-color-error-text);
-}
-</style>

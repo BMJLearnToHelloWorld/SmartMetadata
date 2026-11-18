@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Checkbox, Divider, Input, Space, Spin, Switch, Tag, Typography } from 'ant-design-vue';
+import { Alert, Checkbox, Divider, Input, Space, Spin, Switch, Tag, Typography, message } from 'ant-design-vue';
 import type { CreateIntakeForm, IntakeForm, TargetEntityType } from '@/api/intakeForms';
 import { listCustomProperties } from '@/api/customProperties';
 import {
@@ -30,7 +30,6 @@ const enabled = ref(true);
 const edits = ref<Record<string, Partial<IntakeFormFieldRow>>>({});
 const customProperties = ref<Array<{ name: string; displayName?: string }>>([]);
 const loadingProps = ref(true);
-const propsError = ref('');
 
 function reset(): void {
   description.value = props.initialValue?.description ?? '';
@@ -40,12 +39,18 @@ function reset(): void {
 
 async function loadCustomProperties(): Promise<void> {
   loadingProps.value = true;
-  propsError.value = '';
   try {
     customProperties.value = await listCustomProperties(props.entityType);
   } catch (error) {
+    // Official failure handling (IntakeFormDesignerBody.tsx:102-109):
+    // an empty list plus a bare error toast, no inline error. The
+    // guard only skips the unreachable message-less, non-Error throw
+    // (api/client.ts: every API failure carries a message); it never
+    // fabricates a fallback message.
     customProperties.value = [];
-    propsError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    if (error instanceof Error && error.message) {
+      message.error(error.message);
+    }
   } finally {
     loadingProps.value = false;
   }
@@ -140,55 +145,73 @@ onMounted(() => {
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in nativeRows" :key="row.path" style="border-top: 1px solid #f0f0f0">
-          <td style="padding: 8px 16px">
-            <Checkbox
-              :checked="row.required"
-              :data-testid="`require-${row.path}`"
-              :aria-label="row.label"
-              @change="(event: { target: { checked: boolean } }) => updateRow(row.path, { required: event.target.checked, errorMessage: event.target.checked ? row.errorMessage : undefined })"
-            />
-          </td>
-          <td style="padding: 8px 16px">
-            <Typography.Text strong>{{ row.label }}</Typography.Text>
-            <br />
-            <Typography.Text type="secondary">{{ row.path }}</Typography.Text>
-          </td>
-          <td style="padding: 8px 16px">
-            <Input
-              :value="row.errorMessage ?? ''"
-              :disabled="!row.required"
-              :data-testid="`error-${row.path}`"
-              :aria-label="t('intakeForms.customErrorMessage')"
-              :placeholder="t('intakeForms.optionalCustomError')"
-              @change="(event: { target: { value: string } }) => updateRow(row.path, { errorMessage: event.target.value })"
-            />
-          </td>
-        </tr>
+        <template v-if="nativeRows.length === 0">
+          <tr>
+            <td colspan="3" style="padding: 8px 16px; text-align: center">
+              <Typography.Text type="secondary">{{ t('intakeForms.noNativeFields') }}</Typography.Text>
+            </td>
+          </tr>
+        </template>
+        <template v-else>
+          <tr v-for="row in nativeRows" :key="row.path" style="border-top: 1px solid #f0f0f0">
+            <td style="padding: 8px 16px">
+              <Checkbox
+                :checked="row.required"
+                :data-testid="`require-${row.path}`"
+                :aria-label="row.label"
+                @change="(event: { target: { checked: boolean } }) => updateRow(row.path, { required: event.target.checked, errorMessage: event.target.checked ? row.errorMessage : undefined })"
+              />
+            </td>
+            <td style="padding: 8px 16px">
+              <Typography.Text strong>{{ row.label }}</Typography.Text>
+              <br />
+              <Typography.Text type="secondary">{{ row.path }}</Typography.Text>
+            </td>
+            <td style="padding: 8px 16px">
+              <Input
+                :value="row.errorMessage ?? ''"
+                :disabled="!row.required"
+                :data-testid="`error-${row.path}`"
+                :aria-label="t('intakeForms.customErrorMessage')"
+                :placeholder="t('intakeForms.optionalCustomError')"
+                @change="(event: { target: { value: string } }) => updateRow(row.path, { errorMessage: event.target.value })"
+              />
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
-    <Typography.Paragraph v-if="nativeRows.length === 0" type="secondary">
-      {{ t('intakeForms.noNativeFields') }}
-    </Typography.Paragraph>
     <Divider />
     <Space>
       <Typography.Title :level="5" style="margin: 0">{{ t('intakeForms.customProperties') }}</Typography.Title>
       <Tag>{{ customRows.length }}</Tag>
     </Space>
     <Typography.Paragraph type="secondary">{{ t('intakeForms.customPropertiesHelp') }}</Typography.Paragraph>
-    <Typography.Paragraph v-if="propsError" type="danger">{{ propsError }}</Typography.Paragraph>
-    <Spin v-if="loadingProps" />
-    <template v-else>
-      <table style="width: 100%; border-collapse: collapse" data-testid="intake-form-custom-table">
-        <thead>
-          <tr style="background: var(--sm-bg-secondary, #fafafa)">
-            <th style="width: 80px; padding: 8px 16px; text-align: left">{{ t('intakeForms.include') }}</th>
-            <th style="width: 80px; padding: 8px 16px; text-align: left">{{ t('intakeForms.required') }}</th>
-            <th style="padding: 8px 16px; text-align: left">{{ t('intakeForms.field') }}</th>
-            <th style="padding: 8px 16px; text-align: left">{{ t('intakeForms.customErrorMessage') }}</th>
+    <table style="width: 100%; border-collapse: collapse" data-testid="intake-form-custom-table">
+      <thead>
+        <tr style="background: var(--sm-bg-secondary, #fafafa)">
+          <th style="width: 80px; padding: 8px 16px; text-align: left">{{ t('intakeForms.include') }}</th>
+          <th style="width: 80px; padding: 8px 16px; text-align: left">{{ t('intakeForms.required') }}</th>
+          <th style="padding: 8px 16px; text-align: left">{{ t('intakeForms.field') }}</th>
+          <th style="padding: 8px 16px; text-align: left">{{ t('intakeForms.customErrorMessage') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template v-if="loadingProps">
+          <tr>
+            <td colspan="4" style="padding: 8px 16px; text-align: center">
+              <Spin />
+            </td>
           </tr>
-        </thead>
-        <tbody>
+        </template>
+        <template v-else-if="customRows.length === 0">
+          <tr>
+            <td colspan="4" style="padding: 8px 16px; text-align: center">
+              <Typography.Text type="secondary">{{ t('intakeForms.noCustomProperties') }}</Typography.Text>
+            </td>
+          </tr>
+        </template>
+        <template v-else>
           <tr v-for="row in customRows" :key="row.path" style="border-top: 1px solid #f0f0f0">
             <td style="padding: 8px 16px">
               <Checkbox
@@ -223,11 +246,8 @@ onMounted(() => {
               />
             </td>
           </tr>
-        </tbody>
-      </table>
-      <Typography.Paragraph v-if="customRows.length === 0" type="secondary">
-        {{ t('intakeForms.noCustomProperties') }}
-      </Typography.Paragraph>
-    </template>
+        </template>
+      </tbody>
+    </table>
   </div>
 </template>

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -84,6 +84,148 @@ describe('IntakeFormsView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the header and Add action in one row', async () => {
+    const { wrapper } = await mountIntake();
+    const header = wrapper.find('.intake-forms-header');
+    expect(header.exists()).toBe(true);
+    expect(header.find('[data-testid="page-header"]').exists()).toBe(true);
+    expect(header.find('[data-testid="add-intake-form"]').exists()).toBe(true);
+  });
+
+  it('opens the delete confirm at 480 wide and closes it before the delete runs', async () => {
+    let resolveDelete!: (response: Response) => void;
+    const deleteGate = new Promise<Response>((resolve) => {
+      resolveDelete = resolve;
+    });
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, init });
+        if (url.includes('/v1/governance/intakeForms') && init?.method === 'DELETE') {
+          return deleteGate;
+        }
+        if (url.includes('/v1/governance/intakeForms') && (!init?.method || init?.method === 'GET')) {
+          return jsonResponse({ data: [FORM], paging: { total: 1 } });
+        }
+        return jsonResponse({});
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/admin/settings/governance/intake-forms',
+          name: 'admin-settings-governance-intake-forms',
+          component: IntakeFormsView,
+        },
+      ],
+    });
+    await router.push('/admin/settings/governance/intake-forms');
+    await router.isReady();
+    const wrapper = mount(IntakeFormsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="delete-dataProduct"]').trigger('click');
+    await flushPromises();
+    const modal = wrapper.find('.ant-modal');
+    expect(modal.exists()).toBe(true);
+    expect((modal.element as HTMLElement).style.width).toBe('480px');
+    expect(modal.text()).toContain(createTestI18n().global.t('intakeForms.deleteConfirm'));
+    await wrapper.find('.ant-modal-footer .ant-btn-primary').trigger('click');
+    await flushPromises();
+    // The dialog is already closed while the delete is still pending,
+    // and the delete button never shows a loading state.
+    expect(wrapper.find('.ant-modal').exists()).toBe(false);
+    expect(requests.some((request) => request.init?.method === 'DELETE')).toBe(true);
+    resolveDelete(jsonResponse({}));
+    await flushPromises();
+    expect(requests.filter((request) => !request.init?.method || request.init?.method === 'GET')).toHaveLength(2);
+  });
+
+  it('toasts a load failure with the server message and no inline error', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ message: 'intake down' }, 500)),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/admin/settings/governance/intake-forms',
+          name: 'admin-settings-governance-intake-forms',
+          component: IntakeFormsView,
+        },
+      ],
+    });
+    await router.push('/admin/settings/governance/intake-forms');
+    await router.isReady();
+    const wrapper = mount(IntakeFormsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('intake down');
+    expect(wrapper.find('[data-testid="intake-forms-error"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Failed to load');
+    expect(wrapper.find('[data-testid="intake-forms-empty"]').exists()).toBe(true);
+  });
+
+  it('toasts toggle and delete failures without reopening the dialog', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/v1/governance/intakeForms') && init?.method === 'PATCH') {
+          return jsonResponse({ message: 'toggle down' }, 500);
+        }
+        if (url.includes('/v1/governance/intakeForms') && init?.method === 'DELETE') {
+          return jsonResponse({ message: 'delete down' }, 500);
+        }
+        if (url.includes('/v1/governance/intakeForms') && (!init?.method || init?.method === 'GET')) {
+          return jsonResponse({ data: [FORM], paging: { total: 1 } });
+        }
+        return jsonResponse({});
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/admin/settings/governance/intake-forms',
+          name: 'admin-settings-governance-intake-forms',
+          component: IntakeFormsView,
+        },
+      ],
+    });
+    await router.push('/admin/settings/governance/intake-forms');
+    await router.isReady();
+    const wrapper = mount(IntakeFormsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="toggle-dataProduct"]').trigger('click');
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('toggle down');
+    await wrapper.find('[data-testid="delete-dataProduct"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('.ant-modal-footer .ant-btn-primary').trigger('click');
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('delete down');
+    expect(wrapper.find('.ant-modal').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Data Product');
   });
 
   it('lists forms with entity type, fields and the enabled toggle', async () => {
@@ -99,6 +241,51 @@ describe('IntakeFormsView', () => {
     expect(wrapper.find('[data-testid="intake-forms-empty"]').exists()).toBe(true);
   });
 
+  it('toasts a submit failure and keeps the designer open', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/v1/governance/intakeForms') && init?.method === 'PUT') {
+          return jsonResponse({ message: 'submit down' }, 500);
+        }
+        if (url.includes('/v1/governance/intakeForms') && (!init?.method || init?.method === 'GET')) {
+          return jsonResponse({ data: [FORM], paging: { total: 1 } });
+        }
+        return jsonResponse({ data: [] });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/admin/settings/governance/intake-forms',
+          name: 'admin-settings-governance-intake-forms',
+          component: IntakeFormsView,
+        },
+      ],
+    });
+    await router.push('/admin/settings/governance/intake-forms');
+    await router.isReady();
+    const wrapper = mount(IntakeFormsView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await wrapper.find('[data-testid="edit-dataProduct"]').trigger('click');
+    await flushPromises();
+    const save = document.querySelector(
+      '.ant-drawer-open [data-testid="intake-form-designer-modal-save"]',
+    ) as HTMLElement | null;
+    expect(save).not.toBeNull();
+    save!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('submit down');
+    expect(document.querySelector('.ant-drawer-open')).not.toBeNull();
+  });
+
   it('PATCHes only /enabled when the toggle flips', async () => {
     const { wrapper, requests } = await mountIntake();
     const toggle = wrapper.find('[data-testid="toggle-dataProduct"]');
@@ -110,16 +297,5 @@ describe('IntakeFormsView', () => {
     const body = JSON.parse(String(patch?.init?.body)) as Array<Record<string, unknown>>;
     expect(body).toEqual([{ op: 'replace', path: '/enabled', value: false }]);
     expect(patch?.init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
-  });
-
-  it('opens the delete confirm and deletes on confirm', async () => {
-    const { wrapper, requests } = await mountIntake();
-    await wrapper.find('[data-testid="delete-dataProduct"]').trigger('click');
-    await flushPromises();
-    expect(wrapper.find('.ant-modal').exists()).toBe(true);
-    expect(wrapper.text()).toContain('This action cannot be undone');
-    await wrapper.find('.ant-modal-footer .ant-btn-primary').trigger('click');
-    await flushPromises();
-    expect(requests.some((request) => request.init?.method === 'DELETE')).toBe(true);
   });
 });

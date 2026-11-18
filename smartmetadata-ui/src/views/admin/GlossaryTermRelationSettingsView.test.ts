@@ -4,7 +4,8 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Modal, Pagination, Tag, Tooltip, message } from 'ant-design-vue';
+import { CheckOutlined, CloseOutlined } from '@ant-design/icons-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -86,6 +87,12 @@ function putBodies(): Array<Record<string, unknown>> {
     .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>);
 }
 
+function openDrawerEl(testId: string): HTMLElement | null {
+  // The form lives in an antd Drawer teleported to document.body;
+  // scope to the open drawer so a closing drawer never shadows it.
+  return document.querySelector(`.ant-drawer-open [data-testid="${testId}"]`);
+}
+
 async function editFieldAndSave(
   wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'],
   testId: string,
@@ -93,11 +100,11 @@ async function editFieldAndSave(
 ): Promise<void> {
   await wrapper.find('[data-testid="edit-customRel-btn"]').trigger('click');
   await flushPromises();
-  const input = document.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement | null;
+  const input = openDrawerEl(testId) as HTMLInputElement | null;
   expect(input).not.toBeNull();
   await new DOMWrapper(input!).setValue(value);
   await flushPromises();
-  const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+  const okButton = openDrawerEl('relation-type-drawer-save');
   expect(okButton).not.toBeNull();
   okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await flushPromises();
@@ -162,7 +169,7 @@ describe('GlossaryTermRelationSettingsView', () => {
     localStorage.clear();
   });
 
-  it('lists types with usage counts and blocks edit/delete for system types', async () => {
+  it('lists types and blocks edit/delete for system types', async () => {
     const { wrapper } = await mountView();
     expect(wrapper.find('[data-testid="relation-type-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('isA');
@@ -174,20 +181,141 @@ describe('GlossaryTermRelationSettingsView', () => {
     expect(wrapper.find('[data-testid="delete-partOf-btn"]').attributes('disabled')).toBeUndefined();
   });
 
-  it('creates a type through the form with a POST to /v1/relationshipTypes', async () => {
+  it('renders eight columns with no Usage column', async () => {
+    const { wrapper } = await mountView();
+    const headers = wrapper.findAll('th').map((cell) => cell.text());
+    expect(headers).toHaveLength(8);
+    expect(headers).not.toContain('Usage');
+  });
+
+  it('renders badge cells, a lock on system names, and check/cross for cross-glossary', async () => {
+    const { wrapper } = await mountView();
+    // Tag colors in row order: isA (category blue, characteristic
+    // default, cardinality default, color purple), partOf (category
+    // default, cardinality default, color blue).
+    const tagColors = wrapper
+      .findAllComponents(Tag)
+      .map((tag) => tag.props('color'));
+    expect(tagColors).toEqual(['blue', 'default', 'default', 'purple', 'default', 'default', 'blue']);
+    expect(wrapper.find('[data-testid="relation-type-system"]').exists()).toBe(true);
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].find('[data-testid="relation-type-system"]').exists()).toBe(true);
+    expect(rows[1].find('[data-testid="relation-type-system"]').exists()).toBe(false);
+    expect(rows[0].findComponent(CheckOutlined).exists()).toBe(true);
+    expect(rows[1].findComponent(CloseOutlined).exists()).toBe(true);
+  });
+
+  it('shows the in-use tooltip only when usage is positive', async () => {
+    const { wrapper } = await mountView();
+    const i18n = createTestI18n();
+    const t = i18n.global.t;
+    const titles = wrapper.findAllComponents(Tooltip).map((tip) => tip.props('title'));
+    expect(titles).toEqual([
+      t('settings.glossaryTermRelations.systemDefined'),
+      t('settings.glossaryTermRelations.cannotDeleteInUse', { count: 2 }),
+      t('crud.edit'),
+      t('crud.delete'),
+    ]);
+  });
+
+  it('shows the plain Delete tooltip for a disabled delete with zero usage', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/relationTypes/usage')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/relationshipTypes')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'r1',
+                name: 'isA',
+                displayName: 'Is A',
+                rdfPredicate: 'http://example.test/isA',
+                category: 'CORE',
+                characteristics: [],
+                systemDefined: true,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    const i18n = createTestI18n();
+    expect(wrapper.find('[data-testid="delete-isA-btn"]').attributes('disabled')).toBeDefined();
+    const titles = wrapper.findAllComponents(Tooltip).map((tip) => tip.props('title'));
+    expect(titles).toContain(i18n.global.t('crud.delete'));
+    expect(titles).not.toContain(
+      i18n.global.t('settings.glossaryTermRelations.cannotDeleteInUse', { count: 0 }),
+    );
+  });
+
+  it('lists types in server order without sorting', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/relationTypes/usage')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/relationshipTypes')) {
+          return jsonResponse({
+            data: [
+              {
+                id: 'r1',
+                name: 'zebra',
+                displayName: 'Zebra',
+                rdfPredicate: 'http://example.test/zebra',
+                category: 'CUSTOM',
+                characteristics: [],
+                systemDefined: false,
+              },
+              {
+                id: 'r2',
+                name: 'alpha',
+                displayName: 'Alpha',
+                rdfPredicate: 'http://example.test/alpha',
+                category: 'CUSTOM',
+                characteristics: [],
+                systemDefined: false,
+              },
+            ],
+            paging: { total: 2 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    const names = wrapper
+      .findAll('[data-testid^="relation-name-"]')
+      .map((cell) => cell.attributes('data-testid'));
+    expect(names).toEqual(['relation-name-zebra', 'relation-name-alpha']);
+  });
+
+  it('creates a type through the drawer form with a POST to /v1/relationshipTypes', async () => {
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="add-relation-type-btn"]').trigger('click');
     await flushPromises();
-    const name = document.querySelector('[data-testid="relation-type-name"]') as HTMLInputElement | null;
-    const displayName = document.querySelector('[data-testid="relation-type-display-name"]') as HTMLInputElement | null;
-    const predicate = document.querySelector('[data-testid="relation-type-rdf-predicate"]') as HTMLInputElement | null;
+    const drawerWrapper = document.querySelector('.ant-drawer-content-wrapper') as HTMLElement | null;
+    expect(drawerWrapper?.style.width).toBe('500px');
+    const name = openDrawerEl('relation-type-name') as HTMLInputElement | null;
+    const displayName = openDrawerEl('relation-type-display-name') as HTMLInputElement | null;
+    const predicate = openDrawerEl('relation-type-rdf-predicate') as HTMLInputElement | null;
     expect(name).not.toBeNull();
     await new DOMWrapper(name!).setValue('relatedTo');
     await new DOMWrapper(displayName!).setValue('Related To');
     await new DOMWrapper(predicate!).setValue('http://example.test/relatedTo');
     await flushPromises();
-    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    const okButton = openDrawerEl('relation-type-drawer-save');
     expect(okButton).not.toBeNull();
+    expect(okButton?.textContent).toContain(createTestI18n().global.t('crud.add'));
     okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushPromises();
     const post = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'POST');
@@ -195,6 +323,154 @@ describe('GlossaryTermRelationSettingsView', () => {
     expect(String(post?.[0])).toContain('/api/v1/relationshipTypes');
     expect(JSON.parse(String(post?.[1]?.body)).name).toBe('relatedTo');
     expect(wrapper.text()).toContain('relatedTo');
+  });
+
+  it('marks only name, display name and predicate required and clears errors on change', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="add-relation-type-btn"]').trigger('click');
+    await flushPromises();
+    const required = document.querySelectorAll('.ant-drawer-open .ant-form-item-required');
+    expect(required).toHaveLength(3);
+    const okButton = openDrawerEl('relation-type-drawer-save');
+    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(document.querySelectorAll('.ant-drawer-open .ant-form-item-explain-error').length).toBeGreaterThan(0);
+    const name = openDrawerEl('relation-type-name') as HTMLInputElement | null;
+    await new DOMWrapper(name!).setValue('relatedTo');
+    await flushPromises();
+    expect(document.querySelectorAll('.ant-drawer-open .ant-form-item-explain-error')).toHaveLength(0);
+  });
+
+  it('deletes through a 480-wide confirm that closes only on success', async () => {
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="delete-partOf-btn"]').trigger('click');
+    await flushPromises();
+    const modal = document.querySelector('.ant-modal') as HTMLElement | null;
+    expect(modal).not.toBeNull();
+    expect(modal?.style.width).toBe('480px');
+    const okButton = document.querySelector('.ant-modal-confirm-btns .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'DELETE'),
+    ).toBe(true);
+    expect(wrapper.text()).not.toContain('partOf');
+  });
+
+  it('keeps the delete confirm open when the delete fails', async () => {
+    // Modal.confirm is mocked, as in confirmDelete.test.ts: real
+    // antd rethrows an async onOk rejection inside ActionButton,
+    // which surfaces as an unhandled rejection. The stay-open
+    // property itself is antd behavior, covered by the P-18 unit
+    // test; here the view's onOk logic is exercised: toast, rethrow
+    // (consumed by the assertion), no state change.
+    let capturedOnOk: (() => unknown) | undefined;
+    let capturedWidth: number | undefined;
+    const spy = vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
+      capturedOnOk = config.onOk as (() => unknown) | undefined;
+      capturedWidth = config.width as number | undefined;
+      return { destroy: vi.fn(), update: vi.fn() } as never;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/relationTypes/usage')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/relationshipTypes')) {
+          if (init?.method === 'DELETE') {
+            return jsonResponse({ message: 'delete down' }, 500);
+          }
+          return jsonResponse({
+            data: [
+              {
+                id: 'r2',
+                name: 'partOf',
+                displayName: 'Part Of',
+                rdfPredicate: 'http://example.test/partOf',
+                category: 'CUSTOM',
+                characteristics: [],
+                systemDefined: false,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="delete-partOf-btn"]').trigger('click');
+    await flushPromises();
+    expect(capturedWidth).toBe(480);
+    expect(capturedOnOk).toBeDefined();
+    await expect(capturedOnOk!() as Promise<unknown>).rejects.toThrow('delete down');
+    await flushPromises();
+    expect(
+      vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'DELETE'),
+    ).toBe(true);
+    expect(wrapper.text()).toContain('partOf');
+    spy.mockRestore();
+  });
+
+  it('toasts the same save failure for create and edit and keeps the drawer open', async () => {
+    // The update-entity fallback itself only fires on a non-Error
+    // throw, unreachable through the API layer (every failure is an
+    // ApiError); what is observable is the shared failure path: no
+    // create/edit distinction, drawer left open.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/relationTypes/usage')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/relationshipTypes')) {
+          if (init?.method === 'POST' || init?.method === 'PUT') {
+            return jsonResponse({ message: 'save boom' }, 500);
+          }
+          return jsonResponse({
+            data: [
+              {
+                id: 'r2',
+                name: 'partOf',
+                displayName: 'Part Of',
+                rdfPredicate: 'http://example.test/partOf',
+                category: 'CUSTOM',
+                characteristics: [],
+                systemDefined: false,
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const errorSpy = vi.spyOn(message, 'error');
+    const { wrapper } = await mountView();
+    await wrapper.find('[data-testid="add-relation-type-btn"]').trigger('click');
+    await flushPromises();
+    await new DOMWrapper(openDrawerEl('relation-type-name')!).setValue('relatedTo');
+    await new DOMWrapper(openDrawerEl('relation-type-display-name')!).setValue('Related To');
+    await new DOMWrapper(openDrawerEl('relation-type-rdf-predicate')!).setValue('http://example.test/relatedTo');
+    await flushPromises();
+    openDrawerEl('relation-type-drawer-save')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledWith('save boom');
+    expect(document.querySelector('.ant-drawer-open')).not.toBeNull();
+    openDrawerEl('relation-type-drawer-cancel')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    await wrapper.find('[data-testid="edit-partOf-btn"]').trigger('click');
+    await flushPromises();
+    openDrawerEl('relation-type-drawer-save')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenNthCalledWith(2, 'save boom');
+    expect(document.querySelector('.ant-drawer-open')).not.toBeNull();
+    errorSpy.mockRestore();
   });
 
   it('shows the forbidden page for non-admin users', async () => {
@@ -351,6 +627,54 @@ describe('GlossaryTermRelationSettingsView', () => {
     expect(
       vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === 'DELETE'),
     ).toBe(false);
+  });
+
+  // 15s cap, not the 5s default: mounting 16 tooltip/tag rows plus
+  // the Pagination interaction measures 5.6–7.8s single-run on this
+  // VM. Assertions are unchanged; the cap still fails a hung fetch.
+  it('shows the pager only past 15 types and resets to page 1 on size change', { timeout: 15000 }, async () => {
+    const types = Array.from({ length: 16 }, (_, index) => ({
+      id: `r${index + 1}`,
+      name: `t${String(index + 1).padStart(2, '0')}`,
+      displayName: `T ${index + 1}`,
+      rdfPredicate: `http://example.test/t${index + 1}`,
+      category: 'CUSTOM',
+      characteristics: [],
+      systemDefined: false,
+    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/relationTypes/usage')) {
+          return jsonResponse([]);
+        }
+        if (url.includes('/api/v1/relationshipTypes')) {
+          return jsonResponse({ data: types, paging: { total: 16 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView();
+    expect(wrapper.find('.ant-pagination').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="relation-name-t01"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="relation-name-t16"]').exists()).toBe(false);
+    await wrapper.find('.ant-pagination-item-2').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="relation-name-t01"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="relation-name-t16"]').exists()).toBe(true);
+    const pagination = wrapper.findComponent(Pagination);
+    expect(pagination.props('pageSizeOptions')).toEqual(['15', '25', '50']);
+    expect(wrapper.find('.ant-pagination-options .ant-select-selection-item').text()).toBe('15 / page');
+    // Drive the size change through the Pagination change event: the
+    // view logic under test is the reset-to-page-1 handler, not
+    // antd's dropdown mechanics.
+    await pagination.vm.$emit('change', 2, 25);
+    await flushPromises();
+    expect(pagination.props('pageSize')).toBe(25);
+    expect(wrapper.find('.ant-pagination-item-active').text()).toBe('1');
+    expect(wrapper.find('[data-testid="relation-name-t01"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="relation-name-t16"]').exists()).toBe(true);
   });
 
   it('renders empty with an error when the list endpoint fails', async () => {

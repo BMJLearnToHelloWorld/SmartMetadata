@@ -3,105 +3,98 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { createRole, listRoles, searchRoles } from '@/api/roles';
-import { listPolicies } from '@/api/policies';
-import FormModal from '@/components/shared/FormModal.vue';
-import { Button, Form, Input, Select, message } from 'ant-design-vue';
+import { DeleteOutlined } from '@ant-design/icons-vue';
+import { Button, Tooltip, message } from 'ant-design-vue';
+import { permissionFlags, type OperationPermissions } from '@/api/permissions';
+import { listRoles } from '@/api/roles';
+import { hardDeleteEntity } from '@/api/entityDelete';
+import DescriptionCell from '@/components/shared/DescriptionCell.vue';
+import EntityNameLink from '@/components/shared/EntityNameLink.vue';
+import ReferenceListCell from '@/components/shared/ReferenceListCell.vue';
+import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
+import { getEntityName } from '@/components/shared/profilePictureUtils';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { confirmDelete } from '@/features/crud/confirmDelete';
 import {
-  DEFAULT_PAGE_SIZE,
   canGoNext,
   canGoPrev,
   createCursorPager,
-  entityLabel,
   goNext,
   goPrev,
-  joinRefNames,
   resetCursor,
   type CursorPager,
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
+import { useAuthStore } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissions';
 import type { AdminRole } from '@/types/admin';
+import {
+  actionTooltipTitle,
+  descriptionColumnDef,
+  entityNameColumnDef,
+  referenceListColumnDef,
+} from '@/utils/columns';
+import { readGlobalPageSize } from '@/utils/userPageSizePreference';
+import { getErrorText } from './accessApiErrors';
+import { addRoleLocation, policyDetailLocation, roleDetailLocation } from './accessPaths';
 
 const { t } = useI18n();
 const router = useRouter();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const roles = ref<AdminRole[]>([]);
 const total = ref<number | undefined>();
 const pageAfter = ref<string | undefined>();
 const cursor = ref<CursorPager>(createCursorPager());
-const query = ref('');
-const createOpen = ref(false);
-const creating = ref(false);
-const policies = ref<{ id: string; name: string }[]>([]);
-const createForm = reactive({ name: '', displayName: '', description: '', policyIds: [] as string[] });
+const roleOps = ref<OperationPermissions>({});
+const policyOps = ref<OperationPermissions>({});
 
-async function openCreate(): Promise<void> {
-  createOpen.value = true;
-  try {
-    const page = await listPolicies({ limit: 100 });
-    policies.value = page.data.filter((item) => item.id).map((item) => ({ id: item.id as string, name: item.name }));
-  } catch {
-    policies.value = [];
-  }
-}
+// T-5 (03 §3.3): the page size is the stored global preference, default
+// 15; the shell pager has no size selector, so the size is read once.
+const pageSize = readGlobalPageSize(window.localStorage, useAuthStore().user?.name);
 
-async function onCreate(): Promise<void> {
-  if (!createForm.name.trim()) {
-    return;
-  }
-  creating.value = true;
-  try {
-    const created = await createRole({
-      name: createForm.name.trim(),
-      displayName: createForm.displayName.trim() || undefined,
-      description: createForm.description.trim() || undefined,
-      policies: createForm.policyIds,
-    });
-    createOpen.value = false;
-    message.success(t('admin.roles.created', { name: created.name }));
-    createForm.name = '';
-    createForm.displayName = '';
-    createForm.description = '';
-    createForm.policyIds = [];
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('admin.roles.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
+const canAdd = computed(() => permissionFlags(roleOps.value).canCreate);
+const canDelete = computed(() => permissionFlags(roleOps.value).canDelete);
+const canViewPolicies = computed(() => permissionFlags(policyOps.value).hasViewAccess);
 
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('admin.roles.policies'), key: 'policies' },
-  { title: t('admin.roles.users'), key: 'users', width: 90 },
-  { title: t('admin.roles.teams'), key: 'teams', width: 90 },
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
+  { label: t('label.setting-plural'), routeName: 'admin-settings' },
+  { label: t('label.access-control') },
+  { label: t('label.role-plural') },
 ]);
 
-const searching = computed(() => query.value.trim().length > 0);
-const hasNext = computed(() => (searching.value ? false : canGoNext(pageAfter.value)));
-const hasPrev = computed(() => (searching.value ? false : canGoPrev(cursor.value)));
+// Exactly four columns (03 §3.1): name + description + policies + actions.
+const columns = computed<EntityListColumn[]>(() => [
+  ...entityNameColumnDef(t('label.name')),
+  ...descriptionColumnDef(t('label.description')),
+  ...referenceListColumnDef(t('label.policy-plural'), 'policies'),
+  { title: t('label.action-plural'), dataIndex: 'actions', key: 'actions', width: 80 },
+]);
+
+const hasNext = computed(() => canGoNext(pageAfter.value));
+const hasPrev = computed(() => canGoPrev(cursor.value));
+
+async function loadPermissions(): Promise<void> {
+  const [role, policy] = await Promise.all([
+    permissionStore.getResourcePermission('role').catch(() => ({}) as OperationPermissions),
+    permissionStore.getResourcePermission('policy').catch(() => ({}) as OperationPermissions),
+  ]);
+  roleOps.value = role;
+  policyOps.value = policy;
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   try {
-    if (searching.value) {
-      const page = await searchRoles(query.value.trim(), DEFAULT_PAGE_SIZE);
-      roles.value = page.data;
-      total.value = page.total;
-      pageAfter.value = undefined;
-    } else {
-      const page = await listRoles(DEFAULT_PAGE_SIZE, cursor.value.after);
-      roles.value = page.data;
-      total.value = page.total;
-      pageAfter.value = page.after;
-    }
+    const page = await listRoles(pageSize, cursor.value.after, 'policies');
+    roles.value = page.data;
+    total.value = page.total;
+    pageAfter.value = page.after;
   } catch (error) {
     roles.value = [];
     errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
@@ -110,13 +103,8 @@ async function load(): Promise<void> {
   }
 }
 
-function onSearch(): void {
-  cursor.value = resetCursor();
-  void load();
-}
-
 function onNext(): void {
-  if (searching.value || !pageAfter.value) {
+  if (!pageAfter.value) {
     return;
   }
   cursor.value = goNext(cursor.value, pageAfter.value);
@@ -124,95 +112,116 @@ function onNext(): void {
 }
 
 function onPrev(): void {
-  if (searching.value) {
-    return;
-  }
   cursor.value = goPrev(cursor.value);
   void load();
 }
 
+function goAdd(): void {
+  void router.push(addRoleLocation());
+}
+
+function policyPathFor(ref: { fullyQualifiedName?: string; name?: string }) {
+  return policyDetailLocation(ref.fullyQualifiedName ?? ref.name ?? '');
+}
+
+function deleteTooltipTitle(): string {
+  return actionTooltipTitle(
+    canDelete.value,
+    t('label.delete-entity', { entity: t('label.role-plural') }),
+    t('message.no-permission-for-action'),
+  );
+}
+
+async function onDelete(record: AdminRole): Promise<void> {
+  const entityName = getEntityName(record);
+  let deleted = false;
+  const confirmed = await confirmDelete({
+    title: `${t('label.delete')} ${entityName}`,
+    content: t('message.permanently-delete-common-message', { entity: entityName.toLowerCase() }),
+    okText: t('label.delete'),
+    cancelText: t('label.cancel'),
+    onOk: async () => {
+      deleted = await hardDeleteEntity(record.id, 'role', {
+        onSuccess: () => message.success(t('server.entity-deleted-successfully', { entity: entityName })),
+        onError: (error) =>
+          message.error(getErrorText(error, t('server.delete-entity-error', { entity: entityName }))),
+      });
+    },
+  });
+  if (confirmed && deleted) {
+    cursor.value = resetCursor();
+    await load();
+  }
+}
+
 onMounted(() => {
+  void loadPermissions();
   void load();
 });
 </script>
 
 <template>
+  <SmBreadcrumb :items="breadcrumbItems" />
   <EntityListShell
-    :title="t('admin.roles.title')"
-    :lead="t('admin.roles.lead')"
+    :title="t('label.role-plural')"
+    :lead="t('message.page-sub-header-for-roles')"
+    learning-page-id="roles"
     :loading="loading"
     :error="errorMessage"
     :columns="columns"
     :data-source="roles"
+    row-key="name"
     table-test-id="admin-roles-table"
-    show-row-actions
-    show-search
-    :search-value="query"
-    :search-placeholder="t('admin.roles.searchPlaceholder')"
     :total="total"
     :has-next="hasNext"
     :has-prev="hasPrev"
-    @update:search-value="query = $event"
-    @search="onSearch"
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => router.push({ name: 'admin-role', params: { id: (record as AdminRole).id } })"
   >
     <template #actions>
-      <Button type="primary" data-testid="create-role" @click="openCreate">
-        {{ t('admin.roles.create') }}
+      <Button v-if="canAdd" type="primary" data-testid="add-role" @click="goAdd">
+        {{ t('label.add-entity', { entity: t('label.role') }) }}
+      </Button>
+    </template>
+    <template #emptyExtra>
+      <Button v-if="canAdd" type="primary" data-testid="add-role-empty" @click="goAdd">
+        {{ t('label.add-entity', { entity: t('label.role') }) }}
       </Button>
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`role-row-${(record as AdminRole).id}`"
-          @click.prevent="router.push({ name: 'admin-role', params: { id: (record as AdminRole).id } })"
-        >
-          {{ entityLabel(record as AdminRole) }}
-        </a>
+        <EntityNameLink
+          :record="record as AdminRole"
+          :to="roleDetailLocation((record as AdminRole).fullyQualifiedName ?? (record as AdminRole).name)"
+          test-id="role-name"
+        />
+      </template>
+      <template v-else-if="column.key === 'description'">
+        <DescriptionCell :markdown="(record as AdminRole).description" />
       </template>
       <template v-else-if="column.key === 'policies'">
-        {{ joinRefNames((record as AdminRole).policies) || '—' }}
+        <ReferenceListCell
+          :references="(record as AdminRole).policies"
+          :has-view-permission="canViewPolicies"
+          :path-for="policyPathFor"
+        />
       </template>
-      <template v-else-if="column.key === 'users'">
-        {{ (record as AdminRole).users.length }}
-      </template>
-      <template v-else-if="column.key === 'teams'">
-        {{ (record as AdminRole).teams.length }}
+      <template v-else-if="column.key === 'actions'">
+        <Tooltip :title="deleteTooltipTitle()" placement="left">
+          <span>
+            <Button
+              type="text"
+              size="small"
+              :disabled="!canDelete"
+              :data-testid="`delete-action-${getEntityName(record as AdminRole)}`"
+              @click="onDelete(record as AdminRole)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </Button>
+          </span>
+        </Tooltip>
       </template>
     </template>
   </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('admin.roles.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-    @cancel="createOpen = false"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')">
-        <Input v-model:value="createForm.name" data-testid="create-role-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')">
-        <Input v-model:value="createForm.displayName" data-testid="create-role-display-name" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')">
-        <Input.TextArea v-model:value="createForm.description" data-testid="create-role-description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('admin.roles.policies')">
-        <Select
-          v-model:value="createForm.policyIds"
-          mode="multiple"
-          data-testid="create-role-policies"
-          style="width: 100%"
-          :options="policies.map((item) => ({ value: item.id, label: item.name }))"
-        />
-      </Form.Item>
-    </Form>
-  </FormModal>
 </template>

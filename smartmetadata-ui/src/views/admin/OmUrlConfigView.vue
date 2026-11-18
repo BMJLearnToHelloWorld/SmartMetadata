@@ -1,42 +1,129 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official Brand Name URL / openMetadataBaseUrlConfiguration.
+  Official UrlConfigurationPage + EditUrlConfigurationPage, rendered as
+  view-internal detail/edit modes until the shell batch lands the §4.4
+  edit routes. The edit form validates the URL as an http(s) hyperlink.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Input, message } from 'ant-design-vue';
-import { getTypedSetting, settingAsOmUrl, updateSetting } from '@/api/system';
+import { Button, Col, Form, Input, Row, Space, Typography, message } from 'ant-design-vue';
+import type { SsoSettingSource } from '@/admin/ssoSettingsSource';
+import {
+  getSettingsSource,
+  getTypedSetting,
+  settingAsOmUrl,
+  updateSetting,
+} from '@/api/system';
+import SettingsSourceBanner from '@/components/shared/SettingsSourceBanner.vue';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
-import type { OmBaseUrlConfiguration } from '@/types/admin';
+import { findSettingSource, isPathManaged } from '@/utils/settingsSource';
 
 const { t } = useI18n();
-const loading = ref(false);
-const saving = ref(false);
-const errorMessage = ref('');
-const form = reactive<OmBaseUrlConfiguration>({ openMetadataUrl: '' });
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
+const openMetadataUrl = ref<string | undefined>(undefined);
+const loading = ref(false);
+const sourcesLoading = ref(false);
+const sources = ref<SsoSettingSource[]>([]);
+const editMode = ref(false);
+const saving = ref(false);
+const activeField = ref('');
+const urlValue = ref('');
+const saveAttempted = ref(false);
+const urlTouched = ref(false);
+
+const omUrlSource = computed(() =>
+  findSettingSource(sources.value, 'openMetadataBaseUrlConfiguration'),
+);
+const isManaged = computed(() => isPathManaged(omUrlSource.value, '/openMetadataUrl'));
+
+// Official getHyperlinkUrlValidationErrorKey: empty passes this rule (the
+// required rule owns emptiness); an unparseable value is an invalid URL; a
+// parseable non-http(s) value must use http or https.
+function hyperlinkError(value: string): string | null {
+  if (!value) {
+    return null;
+  }
   try {
-    Object.assign(form, await getTypedSetting('openMetadataBaseUrlConfiguration', settingAsOmUrl));
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return t('settings.omUrl.urlMustUseHttpOrHttps');
+    }
+    return null;
+  } catch {
+    return t('settings.omUrl.invalidUrl');
+  }
+}
+
+function urlError(): string | null {
+  if (!urlValue.value) {
+    return t('settings.omUrl.fieldRequired', { field: t('settings.omUrl.url') });
+  }
+  return hyperlinkError(urlValue.value);
+}
+
+function showError(): boolean {
+  return saveAttempted.value || urlTouched.value;
+}
+
+async function loadConfig(): Promise<void> {
+  loading.value = true;
+  try {
+    const parsed = await getTypedSetting(
+      'openMetadataBaseUrlConfiguration',
+      settingAsOmUrl,
+    );
+    openMetadataUrl.value = parsed.openMetadataUrl;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('settings.omUrl.loadFailed');
+    message.error(error instanceof Error ? error.message : t('settings.omUrl.loadFailed'));
   } finally {
     loading.value = false;
   }
 }
 
+async function loadSources(): Promise<void> {
+  sourcesLoading.value = true;
+  try {
+    sources.value = await getSettingsSource();
+  } catch {
+    sources.value = [];
+  } finally {
+    sourcesLoading.value = false;
+  }
+}
+
+function enterEdit(): void {
+  urlValue.value = openMetadataUrl.value ?? '';
+  saveAttempted.value = false;
+  urlTouched.value = false;
+  editMode.value = true;
+}
+
+function cancelEdit(): void {
+  editMode.value = false;
+}
+
+function onFormFocusIn(event: FocusEvent): void {
+  const id = (event.target as HTMLElement | null)?.id ?? '';
+  if (id.startsWith('root/')) {
+    activeField.value = id;
+  }
+}
+
 async function save(): Promise<void> {
+  saveAttempted.value = true;
+  if (urlError() !== null) {
+    return;
+  }
   saving.value = true;
   try {
     await updateSetting('openMetadataBaseUrlConfiguration', {
-      openMetadataUrl: form.openMetadataUrl,
+      openMetadataUrl: urlValue.value,
     });
     message.success(t('settings.omUrl.saved'));
-    await load();
+    editMode.value = false;
+    await loadConfig();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('settings.omUrl.saveFailed'));
   } finally {
@@ -45,7 +132,8 @@ async function save(): Promise<void> {
 }
 
 onMounted(() => {
-  void load();
+  void loadConfig();
+  void loadSources();
 });
 </script>
 
@@ -55,15 +143,69 @@ onMounted(() => {
     :title="t('settings.omUrl.title')"
     :lead="t('settings.omUrl.lead')"
     :loading="loading"
-    :error-message="errorMessage"
   >
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.omUrl.url')">
-        <Input v-model:value="form.openMetadataUrl" data-testid="om-url-input" />
-      </Form.Item>
-      <Button type="primary" :loading="saving" data-testid="om-url-save" @click="save">
-        {{ t('settings.omUrl.save') }}
-      </Button>
-    </Form>
+    <SettingsSourceBanner
+      :sources="sources"
+      :on-refetch="loadSources"
+      :on-adopted="loadConfig"
+    />
+    <template v-if="!editMode">
+      <div class="om-url-actions">
+        <Button
+          v-if="!sourcesLoading && !isManaged"
+          data-testid="edit-button"
+          @click="enterEdit"
+        >
+          {{ t('settings.omUrl.edit') }}
+        </Button>
+      </div>
+      <Row :gutter="[16, 16]">
+        <Col :span="12">
+          <Typography.Text type="secondary">{{ t('settings.omUrl.url') }}</Typography.Text>
+          <div data-testid="open-metadata-url">{{ openMetadataUrl ?? '--' }}</div>
+        </Col>
+      </Row>
+    </template>
+    <template v-else>
+      <Form layout="vertical" @focusin="onFormFocusIn">
+        <Form.Item
+          :label="t('settings.omUrl.url')"
+          required
+          :validate-status="showError() && urlError() ? 'error' : ''"
+          :help="showError() ? (urlError() ?? '') : ''"
+        >
+          <Input
+            :id="`root/openMetadataUrl-input`"
+            :value="urlValue"
+            data-testid="open-metadata-url-input"
+            :disabled="isManaged"
+            @update:value="urlValue = $event"
+            @blur="urlTouched = true"
+          />
+        </Form.Item>
+        <Space>
+          <Button data-testid="cancel-button" @click="cancelEdit">
+            {{ t('settings.omUrl.cancel') }}
+          </Button>
+          <Button
+            v-if="!isManaged"
+            type="primary"
+            :loading="saving"
+            data-testid="save-button"
+            @click="save"
+          >
+            {{ t('settings.omUrl.save') }}
+          </Button>
+        </Space>
+      </Form>
+    </template>
   </PreferencePageShell>
 </template>
+
+<style scoped>
+.om-url-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+</style>

@@ -25,7 +25,6 @@ async function mountHub(locale: 'en-US' | 'zh-CN' = 'en-US') {
       { path: '/admin/settings', name: 'admin-settings', component: SettingsHubView },
       { path: '/admin/apps', name: 'admin-apps', component: stub('apps') },
       { path: '/admin/users', name: 'admin-users', component: stub('users') },
-      { path: '/admin/teams', name: 'admin-teams', component: stub('teams') },
       { path: '/admin/bots', name: 'admin-bots', component: stub('bots') },
       { path: '/admin/settings/system', name: 'admin-settings-system', component: stub('system') },
       {
@@ -37,12 +36,7 @@ async function mountHub(locale: 'en-US' | 'zh-CN' = 'en-US') {
       { path: '/admin/roles', name: 'admin-roles', component: stub('roles') },
       { path: '/admin/policies', name: 'admin-policies', component: stub('policies') },
       {
-        path: '/admin/settings/custom-properties',
-        name: 'admin-settings-custom-properties',
-        component: stub('defs'),
-      },
-      {
-        path: '/admin/settings/custom-properties/:entityType',
+        path: '/admin/settings/custom-properties/:tab',
         name: 'admin-settings-custom-property-type',
         component: stub('def'),
       },
@@ -108,7 +102,9 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-category-members"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-category-access"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-users"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-teams"]').exists()).toBe(true);
+    // P1: the standalone teams list page is deleted; teams live under
+    // the members detail surface, so the hub has no teams link.
+    expect(wrapper.find('[data-testid="settings-link-teams"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-link-bots"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="settings-link-classifications"]').exists()).toBe(true);
     // Combined Preferences "system" card removed; login/email are separate routes.
@@ -154,7 +150,7 @@ describe('SettingsHubView', () => {
     await wrapper.find('[data-testid="settings-link-custom-properties-table"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-settings-custom-property-type');
-    expect(router.currentRoute.value.params.entityType).toBe('table');
+    expect(router.currentRoute.value.params.tab).toBe('table');
   });
 
   it('shows residual sections as text, not fake forms or dead buttons', async () => {
@@ -163,8 +159,9 @@ describe('SettingsHubView', () => {
     expect(wrapper.find('[data-testid="settings-residual-apps"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
-    // B5-3: inbox flipped residual → route.
-    expect(wrapper.find('[data-testid="settings-link-inbox"]').exists()).toBe(true);
+    // 07 #14: the inbox hub item is deleted (the inbox route stays
+    // reachable directly); no hub link and no residual entry render.
+    expect(wrapper.find('[data-testid="settings-link-inbox"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(false);
     // B5-8: SSO flipped residual → route.
     expect(wrapper.find('[data-testid="settings-link-sso"]').exists()).toBe(true);

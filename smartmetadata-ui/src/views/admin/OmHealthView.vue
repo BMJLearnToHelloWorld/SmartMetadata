@@ -1,54 +1,88 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official OmHealthPage: GET /v1/system/status step validations.
+  Official OmHealthPage: dynamic map over every key of the /system/status
+  response (the response type has an index signature), one
+  ConnectionStepCard per key. The card markup is rendered view-locally:
+  the product's TestConnectionCard is a workflow machine, not reusable
+  here, and shared components are outside this batch's ownership.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Tag} from 'ant-design-vue';
-import SmTable from '@/components/shared/SmTable.vue';
+import {
+  CheckCircleFilled,
+  CloseCircleFilled,
+  CopyOutlined,
+  InfoCircleOutlined,
+  RightOutlined,
+} from '@ant-design/icons-vue';
+import { Button, Divider, Tooltip, message } from 'ant-design-vue';
 import { fetchSystemStatus } from '@/api/system';
+import { startCase } from '@/api/customProperties';
+import type { SystemValidationResponse } from '@/types/admin';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
-import type { StepValidation, SystemValidationResponse } from '@/types/admin';
+import { copyTextToClipboard } from '@/utils/codeMirrorUtils';
 
 const { t } = useI18n();
 const loading = ref(false);
-const errorMessage = ref('');
 const status = ref<SystemValidationResponse | null>(null);
+const expandedLogs = reactive(new Set<string>());
 
-interface Row {
+interface HealthCard {
   key: string;
-  label: string;
-  step?: StepValidation;
+  name: string;
+  description: string;
+  passed: boolean;
+  message?: string;
+  errorLog?: string;
 }
 
-const rows = computed<Row[]>(() => {
-  const s = status.value;
-  if (!s) return [];
-  return [
-    { key: 'database', label: t('settings.health.database'), step: s.database },
-    { key: 'searchInstance', label: t('settings.health.search'), step: s.searchInstance },
-    { key: 'pipelineServiceClient', label: t('settings.health.pipeline'), step: s.pipelineServiceClient },
-    { key: 'jwks', label: t('settings.health.jwks'), step: s.jwks },
-    { key: 'migrations', label: t('settings.health.migrations'), step: s.migrations },
-    { key: 'logStorage', label: t('settings.health.logStorage'), step: s.logStorage },
-  ].filter((row) => row.step != null);
+const cards = computed<HealthCard[]>(() => {
+  if (!status.value) {
+    return [];
+  }
+  const result: HealthCard[] = [];
+  for (const [key, validation] of Object.entries(status.value)) {
+    // Official `validation &&` guard: falsy entries render nothing.
+    if (!validation) {
+      continue;
+    }
+    const passed = Boolean(validation.passed);
+    result.push({
+      key,
+      name: startCase(key),
+      description: validation.description ?? '',
+      passed,
+      message: passed ? validation.message : validation.description,
+      ...(!passed ? { errorLog: validation.message } : {}),
+    });
+  }
+  return result;
 });
 
-const columns = [
-  { title: 'Check', dataIndex: 'label', key: 'label', width: 220 },
-  { title: 'Status', key: 'passed', width: 120 },
-  { title: 'Detail', key: 'detail' },
-];
+function logsFor(card: HealthCard): string {
+  return card.errorLog ?? t('settings.health.noLogs');
+}
+
+function toggleLogs(key: string): void {
+  if (expandedLogs.has(key)) {
+    expandedLogs.delete(key);
+  } else {
+    expandedLogs.add(key);
+  }
+}
+
+async function copyLogs(card: HealthCard): Promise<void> {
+  await copyTextToClipboard(logsFor(card));
+}
 
 async function load(): Promise<void> {
   loading.value = true;
-  errorMessage.value = '';
   try {
     status.value = await fetchSystemStatus();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('settings.health.loadFailed');
+    message.error(error instanceof Error ? error.message : t('settings.health.loadFailed'));
   } finally {
     loading.value = false;
   }
@@ -65,22 +99,146 @@ onMounted(() => {
     :title="t('settings.health.title')"
     :lead="t('settings.health.lead')"
     :loading="loading"
-    :error-message="errorMessage"
   >
-    <Button style="margin-bottom: 12px" data-testid="om-health-refresh" @click="load">
+    <Button type="primary" data-testid="om-health-refresh" style="margin-bottom: 12px" @click="load">
       {{ t('settings.health.refresh') }}
     </Button>
-    <SmTable row-key="key" :columns="columns" :data-source="rows" :pagination="false" test-id="om-health-table">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'passed'">
-          <Tag :color="(record as Row).step?.passed ? 'success' : 'error'">
-            {{ (record as Row).step?.passed ? t('settings.health.passed') : t('settings.health.failed') }}
-          </Tag>
+    <div
+      v-for="card in cards"
+      :key="card.key"
+      :data-testid="card.key"
+      class="health-card"
+      :class="card.passed ? 'health-card--success' : 'health-card--failure'"
+    >
+      <div class="health-card__header">
+        <span class="health-card__name">
+          {{ card.name }} <span class="health-card__required">*</span>
+          <Tooltip :title="card.description" placement="bottom">
+            <InfoCircleOutlined class="health-card__info" />
+          </Tooltip>
+        </span>
+        <span v-if="card.passed" class="health-card__status health-card__status--success">
+          {{ t('settings.health.passed') }}
+          <CheckCircleFilled data-testid="success-badge" />
+        </span>
+        <span v-else class="health-card__status health-card__status--failure">
+          {{ t('settings.health.failed') }}
+          <CloseCircleFilled data-testid="fail-badge" />
+        </span>
+      </div>
+      <div v-if="!card.passed || card.message" class="health-card__content">
+        <span>{{ card.message }}</span>
+        <template v-if="card.errorLog">
+          <Divider class="health-card__divider" />
+          <div class="health-card__logs" data-testid="lazy-log">
+            <div class="health-card__logs-header">
+              <Button type="link" class="health-card__logs-toggle" @click="toggleLogs(card.key)">
+                <RightOutlined
+                  class="health-card__logs-chevron"
+                  :class="{ 'health-card__logs-chevron--open': expandedLogs.has(card.key) }"
+                />
+                {{ t('settings.health.showLogs') }}
+              </Button>
+              <Button
+                :aria-label="t('settings.health.copyToClipboard')"
+                :title="t('settings.health.copyToClipboard')"
+                data-testid="query-entity-copy-button"
+                @click="copyLogs(card)"
+              >
+                <CopyOutlined />
+              </Button>
+            </div>
+            <pre v-if="expandedLogs.has(card.key)" class="health-card__log-text">{{ logsFor(card) }}</pre>
+          </div>
         </template>
-        <template v-else-if="column.key === 'detail'">
-          {{ (record as Row).step?.message || (record as Row).step?.description || '—' }}
-        </template>
-      </template>
-    </SmTable>
+      </div>
+    </div>
   </PreferencePageShell>
 </template>
+
+<style scoped>
+.health-card {
+  border: 1px solid var(--sm-border-color);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.health-card--success {
+  border-left: 4px solid var(--sm-color-success);
+}
+
+.health-card--failure {
+  border-left: 4px solid var(--sm-color-error);
+}
+
+.health-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.health-card__name {
+  font-weight: 600;
+}
+
+.health-card__required {
+  color: var(--sm-color-error);
+}
+
+.health-card__info {
+  margin-left: 8px;
+  font-size: 14px;
+}
+
+.health-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.health-card__status--success {
+  color: var(--sm-color-success);
+}
+
+.health-card__status--failure {
+  color: var(--sm-color-error);
+}
+
+.health-card__content {
+  padding: 0 16px 12px;
+}
+
+.health-card__divider {
+  margin: 12px 0;
+}
+
+.health-card__logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.health-card__logs-toggle {
+  padding: 0;
+}
+
+.health-card__logs-chevron {
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+
+.health-card__logs-chevron--open {
+  transform: rotate(90deg);
+}
+
+.health-card__log-text {
+  height: 300px;
+  overflow: auto;
+  padding: 4px 16px 0 24px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>

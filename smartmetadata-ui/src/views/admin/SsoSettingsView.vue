@@ -3,520 +3,392 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { Spin, Switch, Tabs } from 'ant-design-vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Checkbox, Form, Input, Radio, Select, Spin, Tabs, message } from 'ant-design-vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
-import PageLayout from '@/components/shared/PageLayout.vue';
-import SmState from '@/components/shared/SmState.vue';
-import { setFieldPatch } from '@/admin/jsonPatch';
+import { useRoute, useRouter } from 'vue-router';
 import {
-  applySecurityFieldErrors,
-  buildCandidateConfiguration,
-  carriesOidcSecret,
-  clearFieldErrorForKey,
-  firstErrorControlKey,
-  FORM_FIELD_ORDER,
-  storedAcceptsOidcSecret,
-} from '@/admin/ssoConfiguration';
-import { requiresTestLogin } from '@/admin/ssoTestLogin';
-import { ApiError } from '@/api/client';
+  SSO_PROVIDER_VALUES,
+  getSsoProviderDisplayName,
+  getSsoProviderIcon,
+} from '@/admin/ssoProviders';
+import type { SsoFormData } from '@/admin/ssoSchemas';
+import {
+  resolveSsoSecuritySources,
+  type SsoSettingSource,
+} from '@/admin/ssoSettingsSource';
+import { showSsoErrorToast } from '@/admin/ssoToasts';
 import {
   getSecurityConfigurationDocument,
   getSettingsSource,
-  mapSsoAuthConfiguration,
-  parseSecurityValidationResponse,
   patchSecurityConfiguration,
-  validateSecurityConfiguration,
-  type SecurityConfigurationDocument,
-  type SecurityFieldError,
-  type SsoAuthConfiguration,
 } from '@/api/system';
-import {
-  testLoginErrorText,
-  useSsoTestLogin,
-  type ConfigurationCheckOutcome,
-} from '@/composables/useSsoTestLogin';
-import SsoTestLoginModal from './SsoTestLoginModal.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmBreadcrumb, {
+  type SmBreadcrumbItem,
+} from '@/components/shared/SmBreadcrumb.vue';
+import SsoProviderIcon from './SsoProviderIcon.vue';
+import SsoProviderSelector from './SsoProviderSelector.vue';
+import SsoSchemaForm from './SsoSchemaForm.vue';
+import SsoSettingsSourceBanner from './SsoSettingsSourceBanner.vue';
 
 /**
- * Official SettingsSso, configuration page only (the login chain itself
- * is untouched). Overview tab shows the loaded configuration; the
- * configuration tab edits it through the official save path: JSON Patch
- * on the whole SecurityConfiguration document at
- * /v1/system/security/config (securityConfigAPI.patchSecurityConfiguration,
- * paths rooted at /authenticationConfiguration/...). An empty secret
- * sends no op, so the server keeps its masked stored value. Fields the
- * deployment owns (GET /v1/system/settings/source) are locked in the form
- * and never sent, so a stale form cannot produce a 409. A save-time 400
- * reports its errors back onto the fields they name (or a problems list
- * for paths with no control), and edits that change how users sign in
- * stay gated behind a passing Test Login until the admin either passes
- * one or explicitly saves anyway.
+ * Settings SSO page (pin SettingsSso.tsx): three render branches driven by
+ * the URL provider parameter and the stored configuration — a loading
+ * branch, a provider-selector / deployment-managed branch, a no-config
+ * form branch, and the existing-config branch with provider header and
+ * tabs. The page owns the GET; the form owns the configuration state.
+ * No client permission checks: the server enforces authorizeAdmin on
+ * GET/PUT/PATCH, and a 403 follows the GET-failure branch.
  */
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 
-const SSO_PROVIDERS = [
-  'basic',
-  'azure',
-  'google',
-  'okta',
-  'auth0',
-  'aws-cognito',
-  'custom-oidc',
-  'ldap',
-  'saml',
-  'openmetadata',
-] as const;
+const hasExistingConfig = ref(false);
+const isLoading = ref(true);
+const activeTab = ref('configure');
+const currentProvider = ref('');
+const showProviderSelector = ref(false);
+const ssoEnabled = ref(true);
+const securityConfig = ref<SsoFormData | null | undefined>(undefined);
+const configReloadKey = ref(0);
+const sources = ref<SsoSettingSource[]>([]);
 
-const loading = ref(false);
-const saving = ref(false);
-const errorMessage = ref('');
-const loaded = ref<SsoAuthConfiguration | undefined>();
-const authEditable = ref(true);
-const authManagedPaths = ref<string[]>([]);
+let configFetched = false;
 
-/** True when the deployment owns this auth field (relative pointer, e.g. /provider). */
-function isManagedField(field: string): boolean {
-  return !authEditable.value || authManagedPaths.value.includes(`/${field}`);
-}
-
-const hasManagedFields = computed(() => !authEditable.value || authManagedPaths.value.length > 0);
-const form = reactive({
-  provider: 'basic',
-  providerName: '',
-  clientType: '',
-  authority: '',
-  clientId: '',
-  clientSecret: '',
-  callbackUrl: '',
-  enableSelfSignup: false,
-});
-const activeTab = ref('overview');
-
-const providerOptions = SSO_PROVIDERS.map((provider) => ({
-  value: provider,
-  label: t(`sso.providers.${provider}`),
-}));
-const clientTypeOptions = [
-  { value: 'public', label: t('sso.clientTypes.public') },
-  { value: 'confidential', label: t('sso.clientTypes.confidential') },
-];
-const showProviderName = computed(() => form.provider === 'custom-oidc');
-
-/** The stored document as loaded, never mutated: the diff base for save, candidate, and gate. */
-const rawDocument = ref<SecurityConfigurationDocument | undefined>();
-
-/** Validation errors keyed by form field, plus the problems list for paths with no control. */
-const fieldErrors = reactive<Record<string, string>>({});
-const validationProblems = ref<string[]>([]);
-const formRef = ref<InstanceType<typeof Form> | null>(null);
-
-function clearAllValidation(): void {
-  for (const key of Object.keys(fieldErrors)) {
-    delete fieldErrors[key];
-  }
-  validationProblems.value = [];
-}
-
-async function scrollToFirstError(): Promise<void> {
-  await nextTick();
-  const key = firstErrorControlKey(fieldErrors, validationProblems.value, FORM_FIELD_ORDER);
-  if (!key) {
-    return;
-  }
-  const root = formRef.value?.$el as HTMLElement | undefined;
-  if (!root) {
-    return;
-  }
-  const target =
-    key === 'problems'
-      ? root.querySelector('[data-testid="sso-validation-problems"]')
-      : root.querySelector('.ant-form-item-has-error');
-  target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-}
-
-function reportValidationErrors(errors: SecurityFieldError[]): void {
-  const applied = applySecurityFieldErrors(errors);
-  Object.assign(fieldErrors, applied.fieldErrors);
-  validationProblems.value = applied.problems;
-  void scrollToFirstError();
-}
-
-// Editing a field clears only that field's error: the admin has seen it,
-// and the next save or check re-reports whatever is still wrong. The
-// problems list is not cleared on edit — it names paths with no control.
-for (const key of [
-  'provider',
-  'providerName',
-  'clientType',
-  'authority',
-  'clientId',
-  'callbackUrl',
-  'enableSelfSignup',
-] as const) {
-  watch(
-    () => form[key],
-    () => clearFieldErrorForKey(fieldErrors, key),
-  );
-}
-
-const managedInfo = computed(() => ({
-  authenticationEditable: authEditable.value,
-  authenticationManagedPaths: authManagedPaths.value,
-}));
-
-/**
- * The candidate the form describes, shared by the gate and Test Login so
- * the configuration that passes the test is the configuration the gate
- * unlocks. The empty document stands in before the first load finishes.
- */
-const EMPTY_DOCUMENT: SecurityConfigurationDocument = {
-  authenticationConfiguration: {},
-  authorizerConfiguration: {},
-};
-const candidate = computed(() =>
-  buildCandidateConfiguration(
-    rawDocument.value ?? EMPTY_DOCUMENT,
-    form,
-    managedInfo.value,
-    form.clientSecret,
-  ),
+const resolvedSources = computed(() => resolveSsoSecuritySources(sources.value));
+const managedPaths = computed(() => resolvedSources.value.managedPaths);
+const isReadOnly = computed(() => resolvedSources.value.isReadOnly);
+const isProviderManaged = computed(() => resolvedSources.value.isProviderManaged);
+const isSelfSignupManaged = computed(
+  () => resolvedSources.value.isSelfSignupManaged,
 );
 
-const {
-  isTesting: isTestingLogin,
-  isAwaitingCredentials: isAwaitingCredentialsLogin,
-  configurationCheck: testLoginCheck,
-  result: testLoginResult,
-  error: testLoginError,
-  runTestLogin,
-  submitCredentials: submitTestLoginCredentials,
-  reset: resetTestLogin,
-} = useSsoTestLogin();
-
-const showTestLoginModal = ref(false);
-/** The candidate content a Test Login passed for; a pass binds to content, not to the attempt. */
-const passedTestLoginKey = ref<string | undefined>();
-const testedPayloadKeyRef = ref<string | undefined>();
-
-watch(testLoginResult, (next) => {
-  if (next?.status === 'success' && testedPayloadKeyRef.value) {
-    passedTestLoginKey.value = testedPayloadKeyRef.value;
+const providerParam = computed(() => {
+  const raw = route.query.provider;
+  if (Array.isArray(raw)) {
+    return raw[0] ?? null;
   }
+  return raw ?? null;
 });
 
-const canTestLogin = computed(() => !!form.provider && form.provider !== 'basic');
-const hasExistingConfig = computed(() => {
-  const provider = rawDocument.value?.authenticationConfiguration.provider;
-  return typeof provider === 'string' && provider !== 'basic';
-});
-const isSaveGatedOnTestLogin = computed(() => {
-  if (!canTestLogin.value) {
-    return false;
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => {
+  const baseBreadcrumb: SmBreadcrumbItem[] = [
+    { label: t('settings.title'), routeName: 'admin-settings' },
+    { label: t('settings.categories.sso.title') },
+  ];
+  const urlProvider = providerParam.value;
+
+  if (urlProvider && urlProvider !== 'basic') {
+    const providerDisplayName = getSsoProviderDisplayName(urlProvider);
+
+    if (hasExistingConfig.value) {
+      return [
+        ...baseBreadcrumb.slice(0, -1),
+        { label: providerDisplayName },
+      ];
+    }
+
+    return [
+      ...baseBreadcrumb.slice(0, -1),
+      {
+        ...baseBreadcrumb[baseBreadcrumb.length - 1],
+        routeName: 'admin-settings-sso',
+      },
+      { label: providerDisplayName },
+    ];
   }
-  return (
-    requiresTestLogin(rawDocument.value, candidate.value) &&
-    passedTestLoginKey.value !== JSON.stringify(candidate.value)
-  );
+
+  return baseBreadcrumb;
 });
-const testLoginGateMessage = computed(() =>
-  hasExistingConfig.value
-    ? t('sso.testLogin.requiredForEdit')
-    : t('sso.testLogin.requiredBeforeSave'),
+
+const tabItems = computed(() => {
+  const items: Array<{ key: string; label: string }> = [];
+  if (currentProvider.value && currentProvider.value !== 'basic') {
+    items.push({ key: 'overview', label: t('sso.overview') });
+  }
+  items.push({ key: 'configure', label: t('sso.configure') });
+  return items;
+});
+
+// Pin getRenderedActiveTab: the selected tab when it is rendered, else the
+// first rendered tab.
+const renderedActiveTab = computed(() =>
+  tabItems.value.some((item) => item.key === activeTab.value)
+    ? activeTab.value
+    : tabItems.value[0].key,
 );
 
-async function checkConfiguration(
-  candidateToCheck: SecurityConfigurationDocument,
-): Promise<ConfigurationCheckOutcome> {
-  clearAllValidation();
+async function handleSSOToggle(checked: boolean): Promise<void> {
+  ssoEnabled.value = checked;
+
   try {
-    const response = await validateSecurityConfiguration(candidateToCheck);
-    const errors = response.errors ?? [];
-    const passed = errors.length === 0 && response.status === 'success';
-    if (!passed) {
-      reportValidationErrors(errors);
-    }
-    return { passed, problems: errors.map((entry) => entry.error) };
+    await patchSecurityConfiguration([
+      {
+        op: 'replace',
+        path: '/authenticationConfiguration/enableSelfSignup',
+        value: checked,
+      },
+    ]);
   } catch (error) {
-    if (error instanceof ApiError) {
-      const errors = parseSecurityValidationResponse(error.body);
-      if (errors.length > 0) {
-        reportValidationErrors(errors);
-        return { passed: false, problems: errors.map((entry) => entry.error) };
-      }
-    }
-    return { passed: false, problems: [testLoginErrorText(error, t('sso.testLogin.error'))] };
+    ssoEnabled.value = !checked;
+    showSsoErrorToast(error, t('sso.unexpectedError'), 'PATCH');
   }
 }
 
-function handleTestLogin(): void {
-  testedPayloadKeyRef.value = JSON.stringify(candidate.value);
-  resetTestLogin();
-  showTestLoginModal.value = true;
-  void runTestLogin(candidate.value, checkConfiguration);
+function handleChangeProvider(): void {
+  void router.push({ query: { provider: 'basic' } });
 }
 
-function closeTestLoginModal(): void {
-  resetTestLogin();
-  showTestLoginModal.value = false;
+// The deployment values may name a different identity provider, so the page
+// reloads the configuration without the provider the URL pinned.
+function handleSettingsAdopted(): void {
+  configFetched = false;
+  isLoading.value = true;
+  void router.replace({ query: {} });
+  configReloadKey.value += 1;
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
+function handleProviderSelect(provider: string): void {
+  currentProvider.value = provider;
+  showProviderSelector.value = false;
+  void router.push({ query: { provider } });
+  hasExistingConfig.value = false;
+}
+
+function handleTabChange(key: string): void {
+  activeTab.value = key;
+}
+
+async function refetchSources(): Promise<void> {
   try {
-    const document = await getSecurityConfigurationDocument();
-    rawDocument.value = document;
-    loaded.value = mapSsoAuthConfiguration(document.authenticationConfiguration);
-    // Deployment-ownership is best-effort: a failed source read leaves the
-    // form unlocked, and the server's 409 remains the final guard.
-    try {
-      const source = await getSettingsSource();
-      authEditable.value = source.authenticationEditable;
-      authManagedPaths.value = source.authenticationManagedPaths;
-    } catch {
-      authEditable.value = true;
-      authManagedPaths.value = [];
-    }
-    const auth = loaded.value ?? {};
-    form.provider = auth.provider ?? 'basic';
-    form.providerName = auth.providerName ?? '';
-    form.clientType = auth.clientType ?? '';
-    form.authority = auth.authority ?? '';
-    form.clientId = auth.clientId ?? '';
-    form.clientSecret = '';
-    form.callbackUrl = auth.callbackUrl ?? '';
-    form.enableSelfSignup = auth.enableSelfSignup ?? false;
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('sso.loadFailed');
-  } finally {
-    loading.value = false;
+    sources.value = await getSettingsSource();
+  } catch {
+    // A failed source request renders as DB-only (pin useSettingsSource).
+    sources.value = [];
   }
 }
 
-async function save(): Promise<void> {
-  saving.value = true;
-  clearAllValidation();
-  try {
-    // A typed secret the PATCH cannot carry must never save silently
-    // under the stored secret while the gate proved the new one: when
-    // the stored document cannot accept the secret op, refuse visibly
-    // instead of sending a patch that stores something other than what
-    // was tested. Clearing the secret saves the other changes.
-    // ADR:2026-11-18-sso-candidate-secret-mapping.
-    if (
-      form.clientSecret &&
-      carriesOidcSecret(form.provider, form.clientType) &&
-      !storedAcceptsOidcSecret(rawDocument.value ?? EMPTY_DOCUMENT)
-    ) {
-      message.error(t('sso.secretSaveBlocked'));
+onMounted(refetchSources);
+
+// Combined watcher handling URL parameters and the existing configuration
+// (pin's combined effect, deps [searchParams, configReloadKey]).
+watch(
+  () => [providerParam.value, configReloadKey.value],
+  () => {
+    const param = providerParam.value;
+
+    // If URL explicitly shows provider=basic, show provider selector
+    // immediately without fetching.
+    if (param === 'basic') {
+      currentProvider.value = param;
+      hasExistingConfig.value = false;
+      showProviderSelector.value = true;
+      activeTab.value = 'configure';
+      isLoading.value = false;
       return;
     }
-    const current = loaded.value ?? {};
-    const ops: { op: 'add' | 'remove' | 'replace'; path: string; value?: unknown }[] = [];
-    // Managed fields send no op at all: pinning them to the saved value
-    // would still write a deployment-owned field back. Unmanaged fields
-    // send an op only when changed, matching official's diff-then-patch.
-    const pushField = (field: string, saved: unknown, next: unknown): void => {
-      if (!isManagedField(field) && next !== saved) {
-        ops.push(...setFieldPatch(`/authenticationConfiguration/${field}`, saved, next));
+
+    if (param && (SSO_PROVIDER_VALUES as readonly string[]).includes(param)) {
+      currentProvider.value = param;
+      showProviderSelector.value = false;
+    } else {
+      showProviderSelector.value = true;
+      currentProvider.value = '';
+    }
+
+    const applyNoConfigState = () => {
+      hasExistingConfig.value = false;
+      activeTab.value = 'configure';
+      // Only show provider selector if no specific provider in URL.
+      if (!param) {
+        showProviderSelector.value = true;
+        currentProvider.value = '';
       }
     };
-    pushField('provider', current.provider, form.provider);
-    pushField('clientType', current.clientType, form.clientType || undefined);
-    if (showProviderName.value) {
-      pushField('providerName', current.providerName, form.providerName || undefined);
-    }
-    pushField('authority', current.authority, form.authority || undefined);
-    pushField('clientId', current.clientId, form.clientId || undefined);
-    pushField('callbackUrl', current.callbackUrl, form.callbackUrl || undefined);
-    pushField('enableSelfSignup', current.enableSelfSignup, form.enableSelfSignup);
-    // The secret op lands on the oidcConfiguration block, and only when
-    // the server can accept it: a leaf add the patch filter would drop
-    // or JSON Patch would reject must never be sent. 'add' is used
-    // because RFC 6902 'add' replaces an existing member, so it works
-    // for first-time and rotation alike; an empty secret sends no op,
-    // so the server keeps its masked stored value.
-    // ADR:2026-11-18-sso-candidate-secret-mapping.
-    if (
-      form.clientSecret &&
-      carriesOidcSecret(form.provider, form.clientType) &&
-      !isManagedField('oidcConfiguration/secret') &&
-      storedAcceptsOidcSecret(rawDocument.value ?? EMPTY_DOCUMENT)
-    ) {
-      ops.push({ op: 'add', path: '/authenticationConfiguration/oidcConfiguration/secret', value: form.clientSecret });
-    }
-    if (ops.length > 0) {
-      await patchSecurityConfiguration(ops);
-    }
-    message.success(t('sso.saved'));
-    await load();
-  } catch (error) {
-    if (error instanceof ApiError) {
-      if (error.status === 400) {
-        const errors = parseSecurityValidationResponse(error.body);
-        if (errors.length > 0) {
-          reportValidationErrors(errors);
-        } else {
-          message.error(t('sso.saveFailed'));
-        }
-      } else if (error.status === 409) {
-        message.error(t('sso.saveManagedConflict'));
-      } else if (error.status === 412) {
-        message.error(t('sso.saveConflictRetry'));
-        await load();
-      } else {
-        message.error(error.message || t('sso.saveFailed'));
-      }
-    } else {
-      message.error(error instanceof Error ? error.message : t('sso.saveFailed'));
-    }
-  } finally {
-    saving.value = false;
-  }
-}
 
-onMounted(() => {
-  void load();
-});
+    const checkExistingConfig = async () => {
+      // Prevent duplicate API calls.
+      if (configFetched) {
+        return;
+      }
+      configFetched = true;
+
+      try {
+        const config = await getSecurityConfigurationDocument();
+        // Carry the two document sections into the form shape; the
+        // document type has no index signature, so assign the sections
+        // explicitly rather than the whole document object.
+        securityConfig.value = {
+          authenticationConfiguration: config.authenticationConfiguration,
+          authorizerConfiguration: config.authorizerConfiguration,
+        };
+
+        if (config?.authenticationConfiguration?.provider) {
+          if (config.authenticationConfiguration.provider !== 'basic') {
+            hasExistingConfig.value = true;
+            ssoEnabled.value = Boolean(
+              config.authenticationConfiguration.enableSelfSignup,
+            );
+
+            // Default tab: Overview for Google, Azure and Okta.
+            const provider = config.authenticationConfiguration.provider;
+            if (
+              provider === 'azure' ||
+              provider === 'okta' ||
+              provider === 'google'
+            ) {
+              activeTab.value = 'overview';
+            } else {
+              activeTab.value = 'configure';
+            }
+
+            // Set current provider for breadcrumb display only if no URL
+            // parameter, writing the stored provider back to the URL.
+            if (!param) {
+              // The stored provider is a string on the wire; narrow the
+              // untyped document value before it reaches the breadcrumb/URL.
+              const providerName = typeof provider === 'string' ? provider : '';
+              currentProvider.value = providerName;
+              void router.replace({
+                query: { provider: providerName },
+              });
+            }
+            showProviderSelector.value = false;
+          } else {
+            applyNoConfigState();
+          }
+        } else {
+          applyNoConfigState();
+        }
+      } catch (error) {
+        configFetched = false; // Reset on error to allow retry.
+        showSsoErrorToast(error, t('sso.unexpectedError'), 'GET');
+        applyNoConfigState();
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    void checkExistingConfig();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
-  <PageLayout test-id="sso-settings-layout">
-    <PageHeader :header="t('sso.title')" :sub-header="t('sso.lead')" />
-    <Spin :spinning="loading">
-      <SmState
-        v-if="errorMessage"
-        state="error"
-        test-id="sso-state"
-        :error-text="errorMessage"
-        show-retry
-        @retry="load"
+  <PageLayout
+    test-id="sso-settings-layout"
+    :document-title="t('settings.categories.sso.title')"
+  >
+    <template v-if="isLoading">
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <Spin />
+    </template>
+
+    <template
+      v-else-if="showProviderSelector || (!hasExistingConfig && isProviderManaged)"
+    >
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <SsoSettingsSourceBanner
+        :sources="sources"
+        :on-refetch="refetchSources"
+        :on-adopted="handleSettingsAdopted"
       />
-      <Tabs v-else v-model:active-key="activeTab">
-        <Tabs.TabPane key="overview" :tab="t('sso.overview')">
-          <dl class="sso__facts">
-            <div>
-              <dt>{{ t('sso.currentProvider') }}</dt>
-              <dd data-testid="sso-current-provider">{{ loaded?.provider ?? '—' }}</dd>
+      <p
+        v-if="isProviderManaged"
+        data-testid="sso-provider-set-by-deployment"
+      >
+        {{ t('sso.providerSetByDeployment') }}
+      </p>
+      <div v-else class="sso-provider-selection">
+        <SsoProviderSelector
+          :selected-provider="currentProvider"
+          @provider-select="handleProviderSelect"
+        />
+      </div>
+    </template>
+
+    <template v-else-if="!hasExistingConfig">
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <SsoSettingsSourceBanner
+        :sources="sources"
+        :on-refetch="refetchSources"
+        :on-adopted="handleSettingsAdopted"
+      />
+      <SsoSchemaForm
+        :is-read-only="isReadOnly"
+        :managed-paths="managedPaths"
+        :security-config="securityConfig"
+        :selected-provider="currentProvider"
+        :on-change-provider="handleChangeProvider"
+        :on-provider-select="handleProviderSelect"
+      />
+    </template>
+
+    <template v-else>
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <SsoSettingsSourceBanner
+        :sources="sources"
+        :on-refetch="refetchSources"
+        :on-adopted="handleSettingsAdopted"
+      />
+      <div class="settings-sso">
+        <div
+          v-if="currentProvider && currentProvider !== 'basic'"
+          class="sso-provider-header"
+        >
+          <div class="provider-icon-container">
+            <SsoProviderIcon
+              v-if="getSsoProviderIcon(currentProvider)"
+              :alt="getSsoProviderDisplayName(currentProvider)"
+              :icon="getSsoProviderIcon(currentProvider)"
+              :size="22"
+            />
+          </div>
+          <h1>{{ getSsoProviderDisplayName(currentProvider) }}</h1>
+        </div>
+
+        <Tabs :active-key="renderedActiveTab" @change="(key) => handleTabChange(String(key))">
+          <Tabs.TabPane
+            v-if="currentProvider && currentProvider !== 'basic'"
+            key="overview"
+            :tab="t('sso.overview')"
+            force-render
+          >
+            <div class="enable-sso-card-container">
+              <div>
+                <h1 class="enable-self-signup-header">
+                  {{ t('sso.enableSso') }}
+                </h1>
+                <p class="enable-self-signup-desc">
+                  {{ t('sso.allowUserToLoginViaSso') }}
+                </p>
+              </div>
+              <Switch
+                :checked="ssoEnabled"
+                :disabled="isSelfSignupManaged"
+                @change="(checked) => handleSSOToggle(checked === true)"
+              />
             </div>
-            <div>
-              <dt>{{ t('sso.clientType') }}</dt>
-              <dd>{{ loaded?.clientType ?? '—' }}</dd>
-            </div>
-            <div>
-              <dt>{{ t('sso.selfSignup') }}</dt>
-              <dd>{{ loaded?.enableSelfSignup ? t('crud.yes') : t('crud.no') }}</dd>
-            </div>
-            <div>
-              <dt>{{ t('sso.callbackUrl') }}</dt>
-              <dd>{{ loaded?.callbackUrl ?? '—' }}</dd>
-            </div>
-          </dl>
-        </Tabs.TabPane>
-        <Tabs.TabPane key="configuration" :tab="t('sso.configuration')">
-          <Form ref="formRef" layout="vertical" class="sso__form">
-            <p v-if="hasManagedFields" data-testid="sso-managed-note">{{ t('sso.managedNote') }}</p>
-            <Alert
-              v-if="validationProblems.length > 0"
-              type="error"
-              show-icon
-              data-testid="sso-validation-problems"
-            >
-              <template #description>
-                <div v-for="problem in validationProblems" :key="problem">{{ problem }}</div>
-              </template>
-            </Alert>
-            <Form.Item :label="t('sso.provider')" :validate-status="fieldErrors.provider ? 'error' : ''" :help="fieldErrors.provider">
-              <Radio.Group v-model:value="form.provider" data-testid="sso-provider-group" :options="providerOptions" :disabled="isManagedField('provider')" />
-            </Form.Item>
-            <Form.Item v-if="showProviderName" :label="t('sso.providerName')" :validate-status="fieldErrors.providerName ? 'error' : ''" :help="fieldErrors.providerName">
-              <Input v-model:value="form.providerName" data-testid="sso-provider-name" :disabled="isManagedField('providerName')" />
-            </Form.Item>
-            <Form.Item :label="t('sso.clientType')" :validate-status="fieldErrors.clientType ? 'error' : ''" :help="fieldErrors.clientType">
-              <Select v-model:value="form.clientType" data-testid="sso-client-type" :options="clientTypeOptions" allow-clear :disabled="isManagedField('clientType')" />
-            </Form.Item>
-            <Form.Item :label="t('sso.authority')" :validate-status="fieldErrors.authority ? 'error' : ''" :help="fieldErrors.authority">
-              <Input v-model:value="form.authority" data-testid="sso-authority" :disabled="isManagedField('authority')" />
-            </Form.Item>
-            <Form.Item :label="t('sso.clientId')" :validate-status="fieldErrors.clientId ? 'error' : ''" :help="fieldErrors.clientId">
-              <Input v-model:value="form.clientId" data-testid="sso-client-id" :disabled="isManagedField('clientId')" />
-            </Form.Item>
-            <Form.Item :label="t('sso.clientSecret')" :extra="t('sso.clientSecretKeep')">
-              <Input.Password v-model:value="form.clientSecret" data-testid="sso-client-secret" :disabled="isManagedField('oidcConfiguration/secret')" />
-            </Form.Item>
-            <Form.Item :label="t('sso.callbackUrl')" :validate-status="fieldErrors.callbackUrl ? 'error' : ''" :help="fieldErrors.callbackUrl">
-              <Input v-model:value="form.callbackUrl" data-testid="sso-callback-url" :disabled="isManagedField('callbackUrl')" />
-            </Form.Item>
-            <Form.Item :validate-status="fieldErrors.enableSelfSignup ? 'error' : ''" :help="fieldErrors.enableSelfSignup">
-              <Checkbox v-model:checked="form.enableSelfSignup" data-testid="sso-self-signup" :disabled="isManagedField('enableSelfSignup')">
-                {{ t('sso.selfSignup') }}
-              </Checkbox>
-            </Form.Item>
-            <Form.Item>
-              <Button
-                v-if="canTestLogin"
-                data-testid="test-login-sso-configuration"
-                :disabled="saving || isTestingLogin || !form.provider || !authEditable"
-                :loading="isTestingLogin"
-                @click="handleTestLogin"
-              >
-                {{ t('sso.testLogin.title') }}
-              </Button>
-              <Button type="primary" data-testid="sso-save" :loading="saving" :disabled="!authEditable || isSaveGatedOnTestLogin" @click="save">
-                {{ t('sso.save') }}
-              </Button>
-            </Form.Item>
-            <Alert
-              v-if="isSaveGatedOnTestLogin"
-              type="warning"
-              show-icon
-              data-testid="sso-test-login-required"
-            >
-              <template #description>
-                <span>{{ testLoginGateMessage }}</span>
-                <Button data-testid="save-anyway-sso-configuration" :disabled="saving" @click="save">
-                  {{ t('sso.testLogin.saveAnyway') }}
-                </Button>
-              </template>
-            </Alert>
-          </Form>
-        </Tabs.TabPane>
-      </Tabs>
-    </Spin>
-    <SsoTestLoginModal
-      :open="showTestLoginModal"
-      :is-testing="isTestingLogin"
-      :is-awaiting-credentials="isAwaitingCredentialsLogin"
-      :configuration-check="testLoginCheck"
-      :result="testLoginResult"
-      :error="testLoginError"
-      :on-submit-credentials="submitTestLoginCredentials"
-      @close="closeTestLoginModal"
-    />
+          </Tabs.TabPane>
+          <Tabs.TabPane
+            key="configure"
+            :tab="t('sso.configure')"
+            force-render
+          >
+            <SsoSchemaForm
+              hide-border
+              :force-edit-mode="activeTab === 'configure'"
+              :is-read-only="isReadOnly"
+              :managed-paths="managedPaths"
+              :security-config="securityConfig"
+              :on-change-provider="handleChangeProvider"
+            />
+          </Tabs.TabPane>
+        </Tabs>
+      </div>
+    </template>
   </PageLayout>
 </template>
-
-<style scoped>
-.sso__facts {
-  display: grid;
-  gap: 12px;
-  margin-block: 12px;
-}
-
-.sso__facts div {
-  display: flex;
-  gap: 12px;
-}
-
-.sso__facts dt {
-  min-width: 160px;
-  color: var(--sm-text-secondary);
-}
-
-.sso__form {
-  max-width: 640px;
-  margin-block: 12px;
-}
-</style>
