@@ -9,9 +9,12 @@ import { describe, expect, it } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
 import ScheduleIntervalField from './ScheduleIntervalField.vue';
 
-function mountField(modelValue: string | undefined) {
+function mountField(
+  modelValue: string | undefined,
+  extraProps: { defaultSchedule?: string; includePeriodOptions?: string[] } = {},
+) {
   return mount(ScheduleIntervalField, {
-    props: { modelValue, testIdPrefix: 'test-schedule' },
+    props: { modelValue, testIdPrefix: 'test-schedule', ...extraProps },
     global: { plugins: [Antd, createTestI18n()] },
   });
 }
@@ -63,6 +66,31 @@ describe('ScheduleIntervalField', () => {
     await flushPromises();
     expect(wrapper.find('[data-testid="test-schedule-card-schedule"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="test-schedule-frequency-day"]').exists()).toBe(false);
+  });
+
+  it('seeds the display from an explicit defaultSchedule without emitting on mount', async () => {
+    const wrapper = mountField(undefined, {
+      defaultSchedule: '0 0 * * 0',
+      includePeriodOptions: ['day', 'week', 'month'],
+    });
+    await flushPromises();
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    await wrapper.find('[data-testid="test-schedule-card-schedule"]').trigger('click');
+    expect(
+      wrapper.find('[data-testid="test-schedule-frequency-week"]').attributes('aria-pressed'),
+    ).toBe('true');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['0 0 * * 0']);
+  });
+
+  it('falls back to the period-derived default without an explicit defaultSchedule', async () => {
+    const wrapper = mountField(undefined, { includePeriodOptions: ['day', 'week', 'month'] });
+    await flushPromises();
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+    await wrapper.find('[data-testid="test-schedule-card-schedule"]').trigger('click');
+    expect(
+      wrapper.find('[data-testid="test-schedule-frequency-day"]').attributes('aria-pressed'),
+    ).toBe('true');
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['0 0 * * *']);
   });
 
   it('emits the hourly cron when the period changes to hour', async () => {

@@ -24,11 +24,24 @@ function testRouter() {
 
 describe('shared presentation tables (R1)', () => {
   it('keeps modal sizes at the observed official widths', () => {
-    expect(MODAL_SIZES).toEqual({ confirm: 400, form: 520, export: 480, wide: 720, xl: 1080 });
+    expect(MODAL_SIZES).toEqual({
+      confirm: 400,
+      form: 520,
+      export: 480,
+      deleteDialog: 480,
+      wide: 720,
+      xl: 1080,
+    });
   });
 
   it('keeps drawer widths at the official slideout widths', () => {
-    expect(DRAWER_WIDTHS).toEqual({ feed: 'max(40vw, 480px)', form: 700 });
+    expect(DRAWER_WIDTHS).toEqual({
+      feed: 'max(40vw, 480px)',
+      form: 700,
+      relationTypeForm: 500,
+      workflowCreate: 640,
+      intakeDesigner: '75%',
+    });
   });
 
   it('renders SmDrawer footer actions and emits ok on save', async () => {

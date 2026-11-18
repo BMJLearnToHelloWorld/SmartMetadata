@@ -31,7 +31,18 @@ export type ResourceEntity =
   | 'ontologyAxiom'
   | 'relationshipType'
   | 'glossary'
-  | 'glossaryTerm';
+  | 'glossaryTerm'
+  | 'role'
+  | 'policy'
+  | 'persona'
+  // Members surfaces (02): the union admits the team/user resources so
+  // future consumers type-check. The Members views keep
+  // useMembersPermissions for now: they need the gated AND ungated
+  // derivations simultaneously (pin's three ungated sites), which this
+  // single-derivation composable does not expose — migrating them is a
+  // convergence design decision, not a rename.
+  | 'team'
+  | 'user';
 
 /** FQN as a plain string (primary); `{ id }` for call sites that only hold an entity id. */
 export type EntityPermissionIdentifier = string | { id: string };
@@ -47,6 +58,10 @@ export interface UseEntityPermissionsResult {
   hasViewAccess: ComputedRef<boolean>;
   canEditAll: ComputedRef<boolean>;
   canEditStatus: ComputedRef<boolean>;
+  /** Field-key EditDescription prioritized over EditAll; derived by getDerivedPermissionFlags. */
+  canEditDescription: ComputedRef<boolean>;
+  /** Field-key EditDisplayName prioritized over EditAll (03 §2.5); derived by getDerivedPermissionFlags. */
+  canEditDisplayName: ComputedRef<boolean>;
   canCreate: ComputedRef<boolean>;
   canDelete: ComputedRef<boolean>;
   canViewAll: ComputedRef<boolean>;
@@ -199,6 +214,8 @@ export function useEntityPermissions(
     hasViewAccess: computed(() => flags.value.hasViewAccess),
     canEditAll: computed(() => flags.value.canEditAll),
     canEditStatus: computed(() => flags.value.canEditStatus),
+    canEditDescription: computed(() => flags.value.canEditDescription),
+    canEditDisplayName: computed(() => flags.value.canEditDisplayName),
     canCreate: computed(() => flags.value.canCreate),
     canDelete: computed(() => flags.value.canDelete),
     canViewAll: computed(() => flags.value.canViewAll),

@@ -35,15 +35,28 @@ import CronSummaryCard from './CronSummaryCard.vue';
  * The parent owns the value; this component only emits changes and a
  * validity flag (only the custom expression can be left invalid — every
  * other frequency derives a valid cron on its own).
+ *
+ * `defaultSchedule` (pin `defaultCron`) is the display default when the
+ * parent holds no value: an explicit default wins over the
+ * period-derived fallback, in both the initial state and the
+ * schedule-card restore. Absent the prop, behavior is unchanged. The
+ * default never emits on mount — it only seeds the pickers.
  */
 const props = withDefaults(
   defineProps<{
     modelValue?: string;
     disabled?: boolean;
     includePeriodOptions?: string[];
+    /** Explicit display default (pin defaultCron); wins over the period-derived fallback. */
+    defaultSchedule?: string;
     testIdPrefix: string;
   }>(),
-  { modelValue: undefined, disabled: false, includePeriodOptions: undefined },
+  {
+    modelValue: undefined,
+    disabled: false,
+    includePeriodOptions: undefined,
+    defaultSchedule: undefined,
+  },
 );
 const emit = defineEmits<{
   'update:modelValue': [value: string | undefined];
@@ -52,11 +65,14 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-const initialDefaultSchedule = getDefaultScheduleValue({
-  defaultSchedule: DEFAULT_SCHEDULE_CRON_DAILY,
-  includePeriodOptions: props.includePeriodOptions,
-  allowNoSchedule: true,
-});
+const explicitDefaultSchedule = props.defaultSchedule;
+const initialDefaultSchedule =
+  explicitDefaultSchedule ??
+  getDefaultScheduleValue({
+    defaultSchedule: DEFAULT_SCHEDULE_CRON_DAILY,
+    includePeriodOptions: props.includePeriodOptions,
+    allowNoSchedule: true,
+  });
 const initialCron = props.modelValue ?? initialDefaultSchedule;
 
 const selectedSchedular = ref<'schedule' | 'on-demand'>(props.modelValue ? 'schedule' : 'on-demand');
@@ -134,7 +150,7 @@ function emitChange(cron?: string): void {
 
 function getScheduleRestoreValue(): string | undefined {
   return (
-    savedCron.value ||
+    (savedCron.value || explicitDefaultSchedule) ??
     getDefaultScheduleValue({
       defaultSchedule: DEFAULT_SCHEDULE_CRON_DAILY,
       includePeriodOptions: props.includePeriodOptions,
