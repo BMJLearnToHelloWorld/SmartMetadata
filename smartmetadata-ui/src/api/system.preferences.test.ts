@@ -17,13 +17,17 @@ import {
   EDITABLE_SETTING_TYPES,
   fetchSystemStatus,
   getEffectiveRankingConfiguration,
+  getCustomUiThemePreference,
   getTypedSetting,
+  patchAppConfiguration,
+  restoreSettingsConfig,
   settingAsAppConfiguration,
   settingAsEntityRules,
   settingAsLineage,
   settingAsProfiler,
   settingAsSearch,
   settingAsUiTheme,
+  testEmailConnection,
   updateSetting,
 } from './system';
 import type { AssetTypeConfiguration, SearchSettings } from '@/types/admin';
@@ -102,6 +106,21 @@ describe('preferences system API', () => {
     expect(status.database?.passed).toBe(true);
     expect(status.searchInstance?.passed).toBe(false);
     expect(mocked).toHaveBeenCalledWith('/v1/system/status');
+  });
+
+  it('fetchSystemStatus preserves unknown response keys', async () => {
+    mocked.mockResolvedValueOnce({
+      database: { passed: true, message: 'ok' },
+      futureCheck: { passed: true, description: 'Future check', message: 'ok' },
+      emptyCheck: null,
+    });
+    const status = await fetchSystemStatus();
+    expect(status.futureCheck).toEqual({
+      description: 'Future check',
+      passed: true,
+      message: 'ok',
+    });
+    expect(status.emptyCheck).toBeUndefined();
   });
 
   it('getTypedSetting + updateSetting round-trip shape', async () => {
@@ -760,5 +779,81 @@ describe('settingAsEntityRules round-trips unedited fields', () => {
     expect(serialized.entitySemantics[1]).not.toHaveProperty('inherited');
     expect(serialized.entitySemantics[1]).not.toHaveProperty('jsonTree');
     expect(serialized.entitySemantics[1]).not.toHaveProperty('provider');
+  });
+});
+
+describe('patchAppConfiguration', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    mocked.mockResolvedValue(undefined);
+  });
+
+  it('patches only the given key with a single RFC 6902 add op', async () => {
+    await patchAppConfiguration({ defaultTimeFormat: '24h' });
+    expect(mocked).toHaveBeenCalledWith('/v1/system/settings/appConfiguration', {
+      method: 'PATCH',
+      json: [{ op: 'add', path: '/defaultTimeFormat', value: '24h' }],
+      contentType: 'application/json-patch+json',
+    });
+  });
+
+  it('sends JSON null for the no-default app mode sentinel', async () => {
+    await patchAppConfiguration({ defaultAppMode: null });
+    expect(mocked).toHaveBeenCalledWith('/v1/system/settings/appConfiguration', {
+      method: 'PATCH',
+      json: [{ op: 'add', path: '/defaultAppMode', value: null }],
+      contentType: 'application/json-patch+json',
+    });
+  });
+});
+
+describe('testEmailConnection', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    mocked.mockResolvedValue('Email sent');
+  });
+
+  it('PUTs the address and reads the body as text (DR-1)', async () => {
+    await expect(testEmailConnection('ops@example.com')).resolves.toBe('Email sent');
+    expect(mocked).toHaveBeenCalledWith('/v1/system/email/test', {
+      method: 'PUT',
+      json: { email: 'ops@example.com' },
+      response: 'text',
+    });
+  });
+});
+
+describe('restoreSettingsConfig', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    mocked.mockResolvedValue({ globalSettings: { maxResultHits: 1000 } });
+  });
+
+  it('PUTs the reset endpoint with no body and returns the bare response', async () => {
+    await expect(restoreSettingsConfig('searchSettings')).resolves.toEqual({
+      globalSettings: { maxResultHits: 1000 },
+    });
+    expect(mocked).toHaveBeenCalledWith('/v1/system/settings/reset/searchSettings', {
+      method: 'PUT',
+    });
+  });
+});
+
+describe('getCustomUiThemePreference', () => {
+  beforeEach(() => {
+    mocked.mockReset();
+    mocked.mockResolvedValue({
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/logo.svg' },
+      customTheme: { primaryColor: '#112233' },
+      unknownField: 'dropped by the display whitelist',
+    });
+  });
+
+  it('reads the bare preference from the public config endpoint', async () => {
+    await expect(getCustomUiThemePreference()).resolves.toEqual({
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/logo.svg' },
+      customTheme: { primaryColor: '#112233' },
+    });
+    expect(mocked).toHaveBeenCalledWith('/v1/system/config/customUiThemePreference');
   });
 });

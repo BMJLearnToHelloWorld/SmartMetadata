@@ -10,8 +10,9 @@
 import { entityTypeForKind } from '@/ingestion/connections';
 import type { Paged } from '@/types/admin';
 import type { IngestionPipeline, ServiceKind } from '@/types/ingestion';
+import { getEncodedFqn } from '@/utils/fqnPaths';
 import { listIngestionPipelines, mapIngestionPipeline } from './ingestionPipelines';
-import { escapeESReservedCharacters, getEncodedFqn } from './search';
+import { escapeESReservedCharacters } from './search';
 import {
   getServiceDisplayNameQueryFilter,
   searchServiceIndex,

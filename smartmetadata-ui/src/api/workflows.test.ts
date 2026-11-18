@@ -65,6 +65,24 @@ describe('workflows API', () => {
     expect(page.total).toBe(1);
   });
 
+  it('keeps a server-sent empty displayName so the card ?? chain sees it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            { id: 'w1', name: 'empty-label', displayName: '' },
+            { id: 'w2', name: 'no-label' },
+          ],
+          paging: { total: 2 },
+        }),
+      ),
+    );
+    const page = await listWorkflows({ limit: 25 });
+    expect(page.data[0]?.displayName).toBe('');
+    expect(page.data[1]?.displayName).toBeUndefined();
+  });
+
   it('lists workflow instances by definition fqn', async () => {
     vi.stubGlobal(
       'fetch',

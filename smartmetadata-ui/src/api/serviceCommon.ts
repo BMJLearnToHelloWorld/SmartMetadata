@@ -65,6 +65,24 @@ export function mapServiceTags(value: unknown): ServiceTagLabel[] {
 }
 
 /**
+ * Shared mapper for a service entity's `style` property (pin
+ * generated/type/entityStyle.ts): color + iconURL, both optional. A
+ * missing or malformed value maps to undefined; a present record maps
+ * field by field. The logo resolver reads iconURL from here.
+ */
+export function mapServiceStyle(value: unknown): EntityStyle | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const style: EntityStyle = {
+    color: asString(rec.color) || undefined,
+    iconURL: asString(rec.iconURL) || undefined,
+  };
+  return style.color || style.iconURL ? style : undefined;
+}
+
+/**
  * Shared mapper for a service entity's `serviceAttributes` property
  * (pin generated/entity/services/serviceAttributes.ts). A missing or
  * malformed value maps to undefined; a present record maps field by

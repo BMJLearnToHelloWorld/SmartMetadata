@@ -13,6 +13,7 @@ import type {
   DataQualityDimension,
   Paged,
 } from '@/types/admin';
+import type { Operation } from 'fast-json-patch';
 import { apiRequest } from './client';
 
 function mapDimension(raw: Record<string, unknown>): DataQualityDimension | null {
@@ -59,7 +60,40 @@ export function createDataQualityDimension(
 }
 
 export function deleteDataQualityDimension(id: string): Promise<void> {
-  return apiRequest<unknown>(`/v1/dataQuality/dimensions/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }).then(() => undefined);
+  return apiRequest<unknown>(
+    `/v1/dataQuality/dimensions/${encodeURIComponent(id)}?hardDelete=true`,
+    { method: 'DELETE' },
+  ).then(() => undefined);
+}
+
+/** Test cases referencing each dimension, keyed by dimension id. */
+export function getDataQualityDimensionTestCaseCounts(): Promise<Record<string, number>> {
+  return apiRequest<Record<string, number>>('/v1/dataQuality/dimensions/testCaseCounts');
+}
+
+/** Test definitions classified under each dimension, keyed by dimension id. */
+export function getDataQualityDimensionTestDefinitionCounts(): Promise<
+  Record<string, number>
+> {
+  return apiRequest<Record<string, number>>(
+    '/v1/dataQuality/dimensions/testDefinitionCounts',
+  );
+}
+
+export function patchDataQualityDimension(
+  id: string,
+  patch: Operation[],
+): Promise<DataQualityDimension> {
+  return apiRequest<Record<string, unknown>>(
+    `/v1/dataQuality/dimensions/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      json: patch,
+      contentType: 'application/json-patch+json',
+    },
+  ).then((raw) => {
+    const mapped = mapDimension(raw);
+    if (!mapped) throw new Error('patchDataQualityDimension missing id/name');
+    return mapped;
+  });
 }

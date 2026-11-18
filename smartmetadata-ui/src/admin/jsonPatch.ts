@@ -18,14 +18,29 @@ function escapePointerSegment(segment: string): string {
   return segment.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
+/** Key-order-insensitive deep equality for JSON values (undefined keys count as absent). */
 function jsonEquals(a: unknown, b: unknown): boolean {
   if (a === b) {
     return true;
   }
-  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
-    return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => jsonEquals(item, b[index]))
+    );
   }
-  return JSON.stringify(a) === JSON.stringify(b);
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aRecord = a as Record<string, unknown>;
+    const bRecord = b as Record<string, unknown>;
+    const aKeys = Object.keys(aRecord).filter((key) => aRecord[key] !== undefined);
+    const bKeys = Object.keys(bRecord).filter((key) => bRecord[key] !== undefined);
+    return (
+      aKeys.length === bKeys.length && aKeys.every((key) => jsonEquals(aRecord[key], bRecord[key]))
+    );
+  }
+  return false;
 }
 
 /**
@@ -33,12 +48,12 @@ function jsonEquals(a: unknown, b: unknown): boolean {
  * key that was added, removed, or changed; unchanged keys emit nothing.
  * Arrays and nested objects are replaced wholesale when they differ —
  * the server applies the ops to reach the same final state as a
- * field-by-field diff, without a patch library.
+ * field-by-field diff.
  *
  * ADR:2026-11-08-context-center-memory-create-edit-payload — the memory
- * edit path needs fast-json-patch `compare` semantics; the UI carries no
- * patch library, so this covers the flat edit shape instead of adding a
- * dependency for one call site.
+ * edit path needs fast-json-patch `compare` semantics for the flat edit
+ * shape; fast-json-patch is a dependency (package.json), and this
+ * helper covers the flat-record case its call sites need.
  */
 export function diffJsonPatch(
   original: Record<string, unknown>,

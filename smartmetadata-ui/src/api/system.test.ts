@@ -13,7 +13,6 @@ import {
   fetchAuthConfig,
   getSecurityConfig,
   getSecurityConfigurationDocument,
-  getSettingsSource,
   getTestLoginResult,
   listSettings,
   mapSsoAuthConfiguration,
@@ -145,48 +144,6 @@ describe('system SSO API', () => {
     await patchSecurityConfiguration([
       { op: 'replace', path: '/authenticationConfiguration/provider', value: 'google' },
     ]);
-  });
-
-  it('maps the settings source auth entry to editable and managed paths', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            settings: [
-              {
-                configType: 'authenticationConfiguration',
-                source: 'ENV',
-                editable: true,
-                managedPaths: ['/provider'],
-              },
-              { configType: 'authorizerConfiguration', source: 'DB', editable: true, managedPaths: [] },
-            ],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    );
-    const source = await getSettingsSource();
-    expect(source.authenticationEditable).toBe(true);
-    expect(source.authenticationManagedPaths).toEqual(['/provider']);
-  });
-
-  it('treats editable false as wholesale deployment ownership', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            settings: [{ configType: 'authenticationConfiguration', source: 'ENV', editable: false }],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    );
-    const source = await getSettingsSource();
-    expect(source.authenticationEditable).toBe(false);
-    expect(source.authenticationManagedPaths).toEqual([]);
   });
 
   it('loads the full security document verbatim, with a missing section as an empty object', async () => {

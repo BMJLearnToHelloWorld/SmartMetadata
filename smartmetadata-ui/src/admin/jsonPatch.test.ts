@@ -39,6 +39,27 @@ describe('diffJsonPatch', () => {
     expect(diffJsonPatch({ tags: [{ tagFQN: 'a' }] }, { tags: [{ tagFQN: 'a' }] })).toEqual([]);
   });
 
+  it('ignores key order inside nested objects', () => {
+    expect(
+      diffJsonPatch(
+        { config: { host: 'h', port: 1, nested: { a: 1, b: 2 } } },
+        { config: { nested: { b: 2, a: 1 }, port: 1, host: 'h' } },
+      ),
+    ).toEqual([]);
+  });
+
+  it('still replaces arrays whose element order changed', () => {
+    expect(diffJsonPatch({ tags: ['a', 'b'] }, { tags: ['b', 'a'] })).toEqual([
+      { op: 'replace', path: '/tags', value: ['b', 'a'] },
+    ]);
+  });
+
+  it('treats undefined-valued keys as absent inside nested objects', () => {
+    expect(diffJsonPatch({ config: { host: 'h', port: undefined } }, { config: { host: 'h' } })).toEqual(
+      [],
+    );
+  });
+
   it('escapes JSON Pointer segments', () => {
     expect(diffJsonPatch({}, { 'a/b': 1 })).toEqual([{ op: 'add', path: '/a~1b', value: 1 }]);
   });

@@ -98,6 +98,37 @@ describe('service versions API', () => {
     expect(lastFetch().url).toContain('/api/v1/services/apiServices/s1/versions');
   });
 
+  it('parses JSON-string version elements, the wire shape the server sends', async () => {
+    stubJson({
+      versions: [
+        JSON.stringify({
+          version: 0.2,
+          updatedAt: 2000,
+          updatedBy: 'admin',
+          changeDescription: {
+            previousVersion: 0.1,
+            fieldsUpdated: [{ name: 'displayName', oldValue: 'A', newValue: 'B' }],
+          },
+        }),
+        JSON.stringify({ version: 0.1, updatedAt: 1000, updatedBy: 'admin' }),
+      ],
+    });
+    const versions = await listServiceVersions('api', 's1');
+    expect(versions).toHaveLength(2);
+    expect(versions[0].version).toBe(0.2);
+    expect(versions[0].changeDescription?.previousVersion).toBe('0.1');
+    expect(versions[0].changeDescription?.fieldsUpdated).toHaveLength(1);
+  });
+
+  it('drops unparseable version elements instead of failing the list', async () => {
+    stubJson({
+      versions: ['{not json', JSON.stringify({ version: 0.1 })],
+    });
+    const versions = await listServiceVersions('api', 's1');
+    expect(versions).toHaveLength(1);
+    expect(versions[0].version).toBe(0.1);
+  });
+
   it('loads a version snapshot through the per-kind mapper', async () => {
     stubJson({ id: 's1', name: 'svc', serviceType: 'Rest' });
     const snapshot = await getServiceVersion('api', 's1', 0.1);

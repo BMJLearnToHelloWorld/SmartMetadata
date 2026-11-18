@@ -152,13 +152,15 @@ describe('R6 write surfaces', () => {
     expect(lastFetch().init?.method).toBe('PATCH');
   });
 
-  it('creates a role with policy refs', async () => {
+  it('creates a role with policy FQN strings', async () => {
     stubFetch({ id: 'r1', name: 'Analyst', policies: [], users: [], teams: [] });
     const role = await createRole({ name: 'Analyst', policies: ['p1'] });
     expect(role.name).toBe('Analyst');
+    // U6 (03 §5.1): CreateRole declares policies as entity-name (FQN)
+    // strings; the former {id, type} object array violated the schema.
     expect(JSON.parse(String(lastFetch().init?.body ?? '{}'))).toMatchObject({
       name: 'Analyst',
-      policies: [{ id: 'p1', type: 'policy' }],
+      policies: ['p1'],
     });
   });
 

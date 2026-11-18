@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useShellConfigStore } from '@/stores/shellConfig';
 import { useShellPreferencesStore } from '@/stores/shellPreferences';
 import { SM_BORDER_RADIUS, SM_COLOR_PRIMARY } from '@/theme/tokens';
 import App from './App.vue';
@@ -58,5 +59,21 @@ describe('App', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     shellPreferences.setThemeMode('light');
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+  });
+
+  it('writes the custom favicon URL to link[rel=icon] and data:, when empty', async () => {
+    const { wrapper } = await mountApp();
+    const linkHref = () =>
+      document.querySelector<HTMLLinkElement>("link[rel='icon']")?.getAttribute('href');
+    expect(linkHref()).toBe('data:,');
+    useShellConfigStore().uiThemePreference = {
+      customLogoConfig: { customFaviconUrlPath: 'https://example.com/f.ico' },
+      customTheme: {},
+    };
+    await wrapper.vm.$nextTick();
+    expect(linkHref()).toBe('https://example.com/f.ico');
+    useShellConfigStore().uiThemePreference = { customLogoConfig: {}, customTheme: {} };
+    await wrapper.vm.$nextTick();
+    expect(linkHref()).toBe('data:,');
   });
 });
