@@ -142,7 +142,15 @@ type UpdateFn = (body: CreateDatabaseServiceRequest) => Promise<CatalogService>;
 type GetFn = (id: string, include?: IncludeFilter) => Promise<CatalogService>;
 type DeleteFn = (id: string, options?: ServiceDeleteOptions) => Promise<AsyncDeleteJob>;
 type RestoreFn = (id: string) => Promise<CatalogService>;
-type ListFn = (query?: { limit?: number; after?: string; include?: IncludeFilter }) => Promise<Paged<CatalogService>>;
+type ListFn = (
+  query?: {
+    limit?: number;
+    after?: string;
+    before?: string;
+    include?: IncludeFilter;
+    fields?: string;
+  },
+) => Promise<Paged<CatalogService>>;
 type MapFn = (raw: Record<string, unknown>) => CatalogService | null;
 
 export const SERVICE_CREATE_API: Record<ServiceKind, CreateFn> = {

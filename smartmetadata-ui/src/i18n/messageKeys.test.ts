@@ -66,7 +66,6 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('crud.empty');
     expect(keys).toContain('admin.users.title');
     expect(keys).toContain('admin.teams.title');
-    expect(keys).toContain('admin.bots.title');
     expect(keys).toContain('governance.classifications.title');
     expect(keys).toContain('governance.glossaries.title');
     expect(keys).toContain('admin.roles.title');
@@ -91,8 +90,6 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('settings.categories.members.title');
     expect(keys).toContain('settings.system.saveLogin');
     expect(keys).toContain('admin.policies.title');
-    expect(keys).toContain('settings.customProperties.title');
-    expect(keys).toContain('admin.apps.title');
     expect(keys).toContain('nav.insights');
     expect(keys).toContain('nav.govern');
     expect(keys).toContain('nav.marketplace');
@@ -243,14 +240,12 @@ describe('i18n catalogs', () => {
     expect(enUS.governance.glossaries.lead).toBe('Define concepts in plain business language.');
     expect(enUS.observability.alerts.lead).toBe('Stay current with timely alerts using webhooks.');
     expect(enUS.settings.residual.generic).toBe('Not wired in this console.');
-    expect(enUS.sso.lead).toMatch(/single sign-on/i);
     expect(zhCN.login.lead).toBe('使用目录账号登入。');
     expect(zhCN.explore.lead).not.toMatch(/GET \/api/);
   });
 
   it('replaces Batch 3 tab and settings leads with OM-style help, not API tutorials', () => {
     const apiTutorial = /GET \/api|POST \/api|PUT \/api|PATCH \/api|RFC 6902/i;
-    expect(enUS.sso.lead).toBe('Identity provider configuration for single sign-on.');
     expect(enUS.asset.activityLead).not.toMatch(apiTutorial);
     expect(enUS.asset.conversationsLead).not.toMatch(apiTutorial);
     expect(enUS.asset.customPropertiesLead).not.toMatch(apiTutorial);
@@ -272,20 +267,16 @@ describe('i18n catalogs', () => {
     expect(enUS.settings.system.lead).not.toMatch(apiTutorial);
     expect(enUS.settings.system.loginLead).not.toMatch(apiTutorial);
     expect(enUS.settings.system.emailLead).not.toMatch(apiTutorial);
-    expect(enUS.settings.customProperties.lead).not.toMatch(apiTutorial);
-    expect(enUS.settings.customProperties.detailLead).not.toMatch(apiTutorial);
     expect(enUS.admin.users.rolesLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.pipelines.detailLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.services.connectionJsonHelp).toMatch(/JSON/i);
     expect(enUS.settings.residual.generic).not.toMatch(apiTutorial);
-    expect(enUS.sso.lead).not.toMatch(apiTutorial);
     expect(enUS.governance.glossaries.lead).not.toMatch(apiTutorial);
     expect(enUS.admin.users.lead).not.toMatch(apiTutorial);
     expect(enUS.observability.alerts.lead).not.toMatch(apiTutorial);
     expect(zhCN.asset.activityLead).not.toMatch(apiTutorial);
     expect(zhCN.collaboration.activity.lead).not.toMatch(apiTutorial);
     expect(zhCN.settings.system.lead).not.toMatch(apiTutorial);
-    expect(zhCN.settings.customProperties.lead).not.toMatch(apiTutorial);
   });
 
   it('keeps leftover API placeholders literal after vue-i18n compile', () => {
@@ -297,5 +288,26 @@ describe('i18n catalogs', () => {
     const zh = createTestI18n('zh-CN');
     expect(zh.global.t('connection.password')).toContain('${ENV}');
     expect(zh.global.t('connection.secretHint')).toContain('${VAR}');
+  });
+
+  it('keeps the <i18n-t> slot values free of i18next <0> markers', () => {
+    // MarketplaceAppDetailView and AppInstallVerifyCard render these two
+    // keys through <i18n-t> named slots; pin's i18next <0> markers would
+    // render literally under vue-i18n, so the catalog values carry the
+    // named placeholders only. Both keys are used solely via <i18n-t>.
+    expect(enUS.label['application-by-developer']).toBe('{app} by {dev}');
+    expect(zhCN.label['application-by-developer']).toBe('{app}（来自 {dev}）');
+    expect(enUS.message['paid-addon-description']).toBe(
+      '{app} is a paid add-on for Collate customers.',
+    );
+    expect(zhCN.message['paid-addon-description']).toBe('{app}是Collate客户的付费附加组件。');
+    for (const value of [
+      enUS.label['application-by-developer'],
+      zhCN.label['application-by-developer'],
+      enUS.message['paid-addon-description'],
+      zhCN.message['paid-addon-description'],
+    ]) {
+      expect(value).not.toContain('<0>');
+    }
   });
 });

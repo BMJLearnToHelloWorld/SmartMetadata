@@ -1,0 +1,234 @@
+/**
+ * Copyright 2026 SmartMetadata authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ */
+
+/**
+ * FQN path constructors (PAT-FQN, 00-systemic D1; FQN-2).
+ *
+ * Ported from official `utils/RouterPaths.ts` (`getSettingPath`,
+ * `getTeamAndUserDetailsPath`, `getUserPath`) and `utils/RouterUtils.ts`
+ * (entity constructors) at pin a3012259ca, with the segment vocabulary
+ * of the final partition route table (t363 staged contract: the settings
+ * space lives under `/settings`; user/bot details are top-level bare
+ * routes `/users/:fqn` and `/bots/:fqn`). The settings root is a single
+ * constant: if the shell registry ever moves the settings space, only
+ * SETTINGS_BASE changes — no call site hardcodes a path (FQN-2).
+ *
+ * Encoding: `getEncodedFqn` is official `utils/StringUtils.ts`
+ * `getEncodedFqn` verbatim — `encodeURIComponent`, with the `spaceAsPlus`
+ * variant opt-in (default false) and only for call points the partition
+ * designs cite. Write paths keep using entity ids (FQN-5); FQN is for
+ * routes and reads only.
+ */
+
+export function getEncodedFqn(fqn: string, spaceAsPlus = false): string {
+  let uri = encodeURIComponent(fqn);
+  if (spaceAsPlus) {
+    uri = uri.replaceAll('%20', '+');
+  }
+  return uri;
+}
+
+export function getDecodedFqn(fqn: string, plusAsSpace = false): string {
+  let uri = decodeURIComponent(fqn);
+  if (plusAsSpace) {
+    uri = uri.replaceAll('+', ' ');
+  }
+  return uri;
+}
+
+/** Settings-space root (t363 shell contract; single point of change). */
+export const SETTINGS_BASE = '/settings';
+
+const PLACEHOLDER_CATEGORY = ':settingCategory';
+const PLACEHOLDER_TAB = ':tab';
+const PLACEHOLDER_FQN = ':fqn';
+const PLACEHOLDER_ACTION = ':action';
+const PLACEHOLDER_RULE_NAME = ':ruleName';
+
+/** Route templates, mirroring official `ROUTES` settings entries. */
+export const SETTINGS_TEMPLATES = {
+  settings: `${SETTINGS_BASE}`,
+  withCategory: `${SETTINGS_BASE}/${PLACEHOLDER_CATEGORY}`,
+  withCategoryFqn: `${SETTINGS_BASE}/${PLACEHOLDER_CATEGORY}/${PLACEHOLDER_FQN}`,
+  withTab: `${SETTINGS_BASE}/${PLACEHOLDER_CATEGORY}/${PLACEHOLDER_TAB}`,
+  withTabFqn: `${SETTINGS_BASE}/${PLACEHOLDER_CATEGORY}/${PLACEHOLDER_TAB}/${PLACEHOLDER_FQN}`,
+  withTabFqnAction: `${SETTINGS_BASE}/${PLACEHOLDER_CATEGORY}/${PLACEHOLDER_TAB}/${PLACEHOLDER_FQN}/${PLACEHOLDER_ACTION}`,
+  addPolicyRule: `${SETTINGS_BASE}/access/policies/${PLACEHOLDER_FQN}/add-rule`,
+  editPolicyRule: `${SETTINGS_BASE}/access/policies/${PLACEHOLDER_FQN}/edit-rule/${PLACEHOLDER_RULE_NAME}`,
+} as const;
+
+/**
+ * Official `getSettingPath(category, tab, withFqn, withAction)`
+ * (`RouterPaths.ts:36-64`): template selection only — the `:fqn`
+ * placeholder is left for the caller to substitute with an encoded FQN.
+ */
+export function getSettingPath(
+  category?: string,
+  tab?: string,
+  withFqn = false,
+  withAction = false,
+): string {
+  let path: string = SETTINGS_TEMPLATES.settings;
+  if (tab && category) {
+    path = withFqn
+      ? withAction
+        ? SETTINGS_TEMPLATES.withTabFqnAction
+        : SETTINGS_TEMPLATES.withTabFqn
+      : SETTINGS_TEMPLATES.withTab;
+    path = path.replace(PLACEHOLDER_TAB, tab);
+    path = path.replace(PLACEHOLDER_CATEGORY, category);
+  } else if (category) {
+    path = withFqn ? SETTINGS_TEMPLATES.withCategoryFqn : SETTINGS_TEMPLATES.withCategory;
+    path = path.replace(PLACEHOLDER_CATEGORY, category);
+  }
+  return path;
+}
+
+/** Official `getSettingPathRelative` (`RouterUtils.ts:233`): strips the settings root. */
+export function getSettingPathRelative(
+  category?: string,
+  tab?: string,
+  withFqn = false,
+  withAction = false,
+): string {
+  return getSettingPath(category, tab, withFqn, withAction).replace(SETTINGS_BASE, '');
+}
+
+/**
+ * Official `getSettingsPathWithFqn` (`RouterUtils.ts:245`): three-level
+ * detail path with the FQN substituted, plus an optional `:action` segment.
+ */
+export function getSettingsPathWithFqn(
+  category: string,
+  tab: string,
+  fqn: string,
+  action?: string,
+): string {
+  let path: string = action ? SETTINGS_TEMPLATES.withTabFqnAction : SETTINGS_TEMPLATES.withTabFqn;
+  if (action) {
+    path = path.replace(PLACEHOLDER_ACTION, action);
+  }
+  path = path.replace(PLACEHOLDER_TAB, tab);
+  path = path.replace(PLACEHOLDER_CATEGORY, category);
+  path = path.replace(PLACEHOLDER_FQN, getEncodedFqn(fqn));
+  return path;
+}
+
+/** Official `getUserPath` (`RouterPaths.ts:83-97`): top-level bare route. */
+export function getUserPath(username: string, tab?: string, subTab?: string): string {
+  let path = `/users/${getEncodedFqn(username)}`;
+  if (tab) {
+    path += `/${tab}`;
+    if (subTab) {
+      path += `/${subTab}`;
+    }
+  }
+  return path;
+}
+
+/** Official `getBotPath` shape: top-level bare route (10-draft S-7). */
+export function getBotPath(fqn: string): string {
+  return `/bots/${getEncodedFqn(fqn)}`;
+}
+
+/**
+ * Official `getTeamAndUserDetailsPath` (`RouterPaths.ts:66-81`): empty
+ * name returns the list path without an FQN segment.
+ */
+export function getTeamAndUserDetailsPath(name?: string): string {
+  if (!name) {
+    return getSettingPath('members', 'teams');
+  }
+  return getSettingPath('members', 'teams', true).replace(
+    PLACEHOLDER_FQN,
+    getEncodedFqn(name),
+  );
+}
+
+/** Official `getTeamsWithFqnPath` (`RouterUtils.ts:282`), incl. `?activeTab=`. */
+export function getTeamsWithFqnPath(fqn: string, options?: { activeTab?: string }): string {
+  const path = getSettingsPathWithFqn('members', 'teams', fqn);
+  const query = options?.activeTab ? `?activeTab=${encodeURIComponent(options.activeTab)}` : '';
+  return `${path}${query}`;
+}
+
+/** Official `getRoleWithFqnPath` (`RouterUtils.ts:300`). */
+export function getRoleWithFqnPath(fqn: string): string {
+  return getSettingsPathWithFqn('access', 'roles', fqn);
+}
+
+/** Official `getPolicyWithFqnPath` (`RouterUtils.ts:311`). */
+export function getPolicyWithFqnPath(fqn: string): string {
+  return getSettingsPathWithFqn('access', 'policies', fqn);
+}
+
+/** Official `getAddPolicyRulePath` (`RouterUtils.ts:353`): `:fqn/add-rule`. */
+export function getAddPolicyRulePath(fqn: string): string {
+  return SETTINGS_TEMPLATES.addPolicyRule.replace(PLACEHOLDER_FQN, getEncodedFqn(fqn));
+}
+
+/** Official `getEditPolicyRulePath` (`RouterUtils.ts:361`): `:fqn/edit-rule/:ruleName`. */
+export function getEditPolicyRulePath(fqn: string, ruleName: string): string {
+  return SETTINGS_TEMPLATES.editPolicyRule
+    .replace(PLACEHOLDER_FQN, getEncodedFqn(fqn))
+    .replace(PLACEHOLDER_RULE_NAME, getEncodedFqn(ruleName));
+}
+
+/** Official `getPersonaDetailsPath` (`RouterUtils.ts:599`): two-level settings path. */
+export function getPersonaDetailsPath(fqn: string): string {
+  return SETTINGS_TEMPLATES.withCategoryFqn
+    .replace(PLACEHOLDER_CATEGORY, 'persona')
+    .replace(PLACEHOLDER_FQN, getEncodedFqn(fqn));
+}
+
+/** Official `getApplicationDetailsPath` (`RouterUtils.ts:206`): two-level settings path. */
+export function getApplicationDetailsPath(fqn: string): string {
+  return SETTINGS_TEMPLATES.withCategoryFqn
+    .replace(PLACEHOLDER_CATEGORY, 'apps')
+    .replace(PLACEHOLDER_FQN, getEncodedFqn(fqn));
+}
+
+/**
+ * Official `getNotificationAlertDetailsPath` (`RouterUtils.ts:639`):
+ * `:fqn/:tab`, tab defaulting to `configuration` (AlertDetailTabs).
+ */
+export function getNotificationAlertDetailsPath(fqn: string, tab?: string): string {
+  return `${getSettingsPathWithFqn('notifications', 'alerts', fqn)}/${tab ?? 'configuration'}`;
+}
+
+/** Official `getObservabilityAlertDetailsPath` (`RouterUtils.ts:628`): `/observability/alert/:fqn/:tab`. */
+export function getObservabilityAlertDetailsPath(fqn: string, tab?: string): string {
+  return `/observability/alert/${getEncodedFqn(fqn)}/${tab ?? 'configuration'}`;
+}
+
+/**
+ * Entity → constructor table (FQN-2). Views, list cells, breadcrumbs and
+ * post-create navigation call this table; no path strings are handwritten
+ * at call sites. Entities without a detail route in the final table
+ * (configuration pages, custom properties, governance) are absent on
+ * purpose — do not add invented entries.
+ */
+export const FQN_PATH_CONSTRUCTORS = {
+  user: (fqn: string) => getUserPath(fqn),
+  bot: (fqn: string) => getBotPath(fqn),
+  team: (fqn: string) => getTeamAndUserDetailsPath(fqn),
+  role: (fqn: string) => getRoleWithFqnPath(fqn),
+  policy: (fqn: string) => getPolicyWithFqnPath(fqn),
+  persona: (fqn: string) => getPersonaDetailsPath(fqn),
+  application: (fqn: string) => getApplicationDetailsPath(fqn),
+  notificationAlert: (fqn: string) => getNotificationAlertDetailsPath(fqn),
+  observabilityAlert: (fqn: string) => getObservabilityAlertDetailsPath(fqn),
+} as const;
+
+export type FqnPathEntity = keyof typeof FQN_PATH_CONSTRUCTORS;
+
+export function getFqnPath(entity: FqnPathEntity, fqn: string): string {
+  return FQN_PATH_CONSTRUCTORS[entity](fqn);
+}

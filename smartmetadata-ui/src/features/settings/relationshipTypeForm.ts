@@ -170,17 +170,21 @@ export function validateRelationshipTypeForm(
       field: t('crud.displayName'),
     });
   }
-  if (!ABSOLUTE_IRI_PATTERN.test(form.rdfPredicate.trim())) {
+  // Official RelationshipTypeForm.validation.ts: the IRI pattern
+  // tests the untrimmed value (:58), and the duplicate check runs
+  // independently afterwards (:61-70), overwriting the pattern error
+  // when the trimmed value duplicates another type. The duplicate
+  // message carries the stored displayName with no name fallback (:68).
+  if (!ABSOLUTE_IRI_PATTERN.test(form.rdfPredicate)) {
     errors.rdfPredicate = t('settings.glossaryTermRelations.invalidUrl');
-  } else {
-    const duplicate = relationshipTypes.find(
-      (type) => type.id !== editing?.id && type.rdfPredicate === form.rdfPredicate.trim(),
-    );
-    if (duplicate) {
-      errors.rdfPredicate = t('settings.glossaryTermRelations.rdfPredicateAlreadyUsed', {
-        name: duplicate.displayName ?? duplicate.name,
-      });
-    }
+  }
+  const duplicate = relationshipTypes.find(
+    (type) => type.id !== editing?.id && type.rdfPredicate === form.rdfPredicate.trim(),
+  );
+  if (duplicate) {
+    errors.rdfPredicate = t('settings.glossaryTermRelations.rdfPredicateAlreadyUsed', {
+      name: duplicate.displayName,
+    });
   }
   const characteristics = new Set(form.characteristics ?? []);
   const cardinality = cardinalityForPreset(form);

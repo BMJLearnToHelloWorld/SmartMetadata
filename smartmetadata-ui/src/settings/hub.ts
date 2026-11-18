@@ -69,14 +69,12 @@ export function sortSettingsItemsByRenderedTitle<T extends { titleKey: string }>
 /** Route names this hub may navigate to. Keep in lockstep with router/index.ts. */
 export const SETTINGS_LIVE_ROUTE_NAMES = [
   'admin-users',
-  'admin-teams',
   'admin-roles',
   'admin-bots',
   'admin-settings-system',
   'admin-settings-audit-logs',
   'admin-settings-permission-debugger',
   'admin-policies',
-  'admin-settings-custom-properties',
   'admin-settings-custom-property-type',
   'admin-apps',
   'governance-glossaries',
@@ -86,9 +84,7 @@ export const SETTINGS_LIVE_ROUTE_NAMES = [
   'insights-online-users',
   'admin-settings-sso',
   'admin-admins',
-  'inbox',
   'admin-settings-governance-intake-forms',
-  'admin-settings-governance-task-forms',
   'admin-settings-governance-glossary-term-relations',
   'admin-settings-persona',
   'ingestion-services',
@@ -120,7 +116,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     descriptionKey: 'settings.categories.members.description',
     items: [
       { key: 'users', titleKey: 'nav.users', kind: 'route', routeName: 'admin-users' },
-      { key: 'teams', titleKey: 'nav.teams', kind: 'route', routeName: 'admin-teams' },
       { key: 'admins', titleKey: 'settings.items.admins', kind: 'route', routeName: 'admin-admins' },
       {
         key: 'online-users',
@@ -138,16 +133,16 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       { key: 'roles', titleKey: 'nav.roles', kind: 'route', routeName: 'admin-roles' },
       { key: 'policies', titleKey: 'settings.items.policies', kind: 'route', routeName: 'admin-policies' },
       {
-        key: 'audit-logs',
-        titleKey: 'settings.items.auditLogs',
-        kind: 'route',
-        routeName: 'admin-settings-audit-logs',
-      },
-      {
         key: 'permission-debugger',
         titleKey: 'settings.items.permissionDebugger',
         kind: 'route',
         routeName: 'admin-settings-permission-debugger',
+      },
+      {
+        key: 'audit-logs',
+        titleKey: 'settings.items.auditLogs',
+        kind: 'route',
+        routeName: 'admin-settings-audit-logs',
       },
     ],
   },
@@ -176,12 +171,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
         titleKey: 'settings.items.intakeForms',
         kind: 'route',
         routeName: 'admin-settings-governance-intake-forms',
-      },
-      {
-        key: 'task-forms',
-        titleKey: 'settings.items.taskForms',
-        kind: 'route',
-        routeName: 'admin-settings-governance-task-forms',
       },
       {
         key: 'glossary-term-relations',
@@ -298,7 +287,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     items: [
       { key: 'alerts', titleKey: 'nav.alerts', kind: 'route', routeName: 'observability-alerts' },
       { key: 'announcements', titleKey: 'nav.announcements', kind: 'route', routeName: 'announcements' },
-      { key: 'inbox', titleKey: 'settings.items.inbox', kind: 'route', routeName: 'inbox' },
     ],
   },
   {
@@ -352,7 +340,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
       titleKey: item.titleKey,
       kind: 'route' as const,
       routeName: 'admin-settings-custom-property-type',
-      routeParams: { entityType: item.type },
+      routeParams: { tab: item.type },
       icon: item.icon,
       descriptionKey: item.entityKey
         ? 'settings.customProperties.defineForEntity'

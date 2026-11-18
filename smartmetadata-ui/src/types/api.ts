@@ -43,6 +43,12 @@ export interface LoginUser {
    * store uses it as the selection fallback.
    */
   defaultPersona?: EntityRef;
+  /**
+   * Official User.personas: the personas assigned to the user. Read
+   * with fields=personas; the persona detail page refreshes the current
+   * user with this field after membership changes (PER-D8).
+   */
+  personas?: EntityRef[];
 }
 
 export interface EntityRef {

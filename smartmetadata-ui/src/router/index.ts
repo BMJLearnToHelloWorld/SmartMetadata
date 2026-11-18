@@ -45,10 +45,14 @@ const SearchView = () => import('@/views/SearchView.vue');
 const AppDetailView = () => import('@/views/admin/AppDetailView.vue');
 const AppsListView = () => import('@/views/admin/AppsListView.vue');
 const CustomPropertyTypeDetailView = () => import('@/views/admin/CustomPropertyTypeDetailView.vue');
-const CustomPropertyTypesListView = () => import('@/views/admin/CustomPropertyTypesListView.vue');
 const PoliciesListView = () => import('@/views/admin/PoliciesListView.vue');
 const PolicyDetailView = () => import('@/views/admin/PolicyDetailView.vue');
-const PolicyRuleFormView = () => import('@/views/admin/PolicyRuleFormView.vue');
+const AddPolicyRuleView = () => import('@/views/admin/AddPolicyRuleView.vue');
+const EditPolicyRuleView = () => import('@/views/admin/EditPolicyRuleView.vue');
+const AddRoleView = () => import('@/views/admin/AddRoleView.vue');
+const AddPolicyView = () => import('@/views/admin/AddPolicyView.vue');
+const ImportTeamsPage = () => import('@/views/admin/ImportTeamsPage.vue');
+const CreateUserPage = () => import('@/views/admin/CreateUserPage.vue');
 const PermissionDebuggerView = () => import('@/views/admin/PermissionDebuggerView.vue');
 const AuditLogsView = () => import('@/views/admin/AuditLogsView.vue');
 const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
@@ -71,7 +75,6 @@ const SearchSettingsView = () => import('@/views/admin/SearchSettingsView.vue');
 const TimeFormatSettingsView = () => import('@/views/admin/TimeFormatSettingsView.vue');
 
 const TeamDetailView = () => import('@/views/admin/TeamDetailView.vue');
-const TeamsListView = () => import('@/views/admin/TeamsListView.vue');
 const UserDetailView = () => import('@/views/admin/UserDetailView.vue');
 const UsersListView = () => import('@/views/admin/UsersListView.vue');
 const ClassificationDetailView = () => import('@/views/governance/ClassificationDetailView.vue');
@@ -88,6 +91,7 @@ const GlossaryTermDetailView = () => import('@/views/governance/GlossaryTermDeta
 const TagDetailView = () => import('@/views/governance/TagDetailView.vue');
 const AlertDetailView = () => import('@/views/observability/AlertDetailView.vue');
 const AlertsListView = () => import('@/views/observability/AlertsListView.vue');
+const AlertFormView = () => import('@/views/observability/AlertFormView.vue');
 const IncidentDetailView = () => import('@/views/observability/IncidentDetailView.vue');
 const IncidentsListView = () => import('@/views/observability/IncidentsListView.vue');
 const DataQualityLandingView = () => import('@/views/quality/DataQualityLandingView.vue');
@@ -108,6 +112,7 @@ const AddQueryView = () => import('@/views/AddQueryView.vue');
 const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
+const AnnouncementFormView = () => import('@/views/collaboration/AnnouncementFormView.vue');
 const TaskDetailView = () => import('@/views/collaboration/TaskDetailView.vue');
 const DataAccessRequestsView = () => import('@/views/collaboration/DataAccessRequestsView.vue');
 const DataAccessRequestCreateView = () => import('@/views/collaboration/DataAccessRequestCreateView.vue');
@@ -156,7 +161,7 @@ const ForbiddenView = () => import('@/views/shell/ForbiddenView.vue');
 const NotFoundView = () => import('@/views/shell/NotFoundView.vue');
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, resolveGuard } from '@/router/guards';
+import { ADMIN_ROUTE_RESOURCE, hasAdminEntryGrant, isAdminPath, membersTabGuard, resolveGuard } from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
 
 export const router = createRouter({
@@ -270,10 +275,30 @@ export const router = createRouter({
         // no standalone Admins page exists officially, only the tab.
         { path: 'admin/users/admins', name: 'admin-admins', component: UsersListView },
         { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true },
-        { path: 'admin/teams', name: 'admin-teams', component: TeamsListView },
         { path: 'admin/teams/:id', name: 'admin-team', component: TeamDetailView, props: true },
+        // Sections batch (02/10, staged contract t363): the final
+        // top-level user/bot/create-user faces. The old admin-* detail
+        // routes above stay this phase with equivalent guards; these
+        // routes close the fqnPaths 404s. Pin: USER_PROFILE* /
+        // BOTS_PROFILE / CREATE_USER* (AuthenticatedAppRouter.tsx:
+        // 505-530). No guard mapping applies: these paths are not
+        // admin paths, so ADMIN_ROUTE_RESOURCE is never consulted
+        // for them (see guards.ts); the create-user Create/ conjunction
+        // gap is recorded in the integration report.
+        {
+          path: 'users/:fqn/:tab?/:subTab?',
+          name: 'user-detail',
+          component: UserDetailView,
+        },
+        { path: 'bots/:fqn', name: 'bot-detail', component: BotDetailView, props: true },
+        { path: 'create-user', name: 'create-user', component: CreateUserPage },
+        { path: 'create-user/bot', name: 'create-user-bot', component: CreateUserPage },
         { path: 'admin/roles', name: 'admin-roles', component: RolesListView },
-        { path: 'admin/roles/:id', name: 'admin-role', component: RoleDetailView, props: true },
+        // 03 §12: the add-role route lands with the :fqn segment rename;
+        // it is declared before the detail route so `add` is never
+        // swallowed as an :fqn value.
+        { path: 'admin/roles/add', name: 'admin-role-add', component: AddRoleView },
+        { path: 'admin/roles/:fqn', name: 'admin-role', component: RoleDetailView, props: true },
         { path: 'admin/bots', name: 'admin-bots', component: BotsListView },
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true },
         // G-09 (visual comparison): official SETTINGS '/settings'
@@ -297,7 +322,7 @@ export const router = createRouter({
           path: 'admin/settings/sso',
           name: 'admin-settings-sso',
           component: SsoSettingsView,
-          meta: { titleKey: 'sso.title' },
+          meta: { titleKey: 'settings.categories.sso.title' },
         },
         { path: 'admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView },
         { path: 'admin/settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView },
@@ -321,16 +346,17 @@ export const router = createRouter({
         { path: 'admin/settings/preferences/time-format', name: 'settings-preferences-time-format', component: TimeFormatSettingsView },
 
         { path: 'admin/policies', name: 'admin-policies', component: PoliciesListView },
-        { path: 'admin/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true },
-        { path: 'admin/policies/:id/rules/add', name: 'admin-policy-rule-add', component: PolicyRuleFormView, props: true },
+        { path: 'admin/policies/add', name: 'admin-policy-add', component: AddPolicyView },
+        { path: 'admin/policies/:fqn', name: 'admin-policy', component: PolicyDetailView, props: true },
+        { path: 'admin/policies/:fqn/rules/add', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true },
         {
-          path: 'admin/policies/:id/rules/:ruleName/edit',
+          path: 'admin/policies/:fqn/rules/:ruleName/edit',
           name: 'admin-policy-rule-edit',
-          component: PolicyRuleFormView,
+          component: EditPolicyRuleView,
           props: true,
         },
         { path: 'admin/apps', name: 'admin-apps', component: AppsListView },
-        { path: 'admin/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
+        { path: 'admin/apps/:fqn', name: 'admin-app', component: AppDetailView, props: true },
         // P2 B5: Persona list + detail + customize (official settings
         // PERSONA routes; the customize route carries the category and
         // an optional govern entity type).
@@ -347,16 +373,97 @@ export const router = createRouter({
           component: PersonaCustomizeView,
           props: true,
         },
+        // CP-D1: the per-type list page is deleted; the hub navigates
+        // straight to the per-type detail route below.
         {
-          path: 'admin/settings/custom-properties',
-          name: 'admin-settings-custom-properties',
-          component: CustomPropertyTypesListView,
-        },
-        {
-          path: 'admin/settings/custom-properties/:entityType',
+          path: 'admin/settings/custom-properties/:tab',
           name: 'admin-settings-custom-property-type',
           component: CustomPropertyTypeDetailView,
-          props: true,
+          props: (route) => ({ entityType: String(route.params.tab) }),
+        },
+        // Sections batch settings faces (02 members, 07 notifications).
+        // Members (pin SettingsRouter.tsx:672-714, 903-918): the bare
+        // teams path redirects to the Organization detail — the only
+        // redirect exception in the staged contract — and users/admins
+        // share one :tab route whose illegal segments resolve to /404
+        // (membersTabGuard; pin NOT_FOUND '/404', constants.ts:139).
+        // The :tab route is declared last among the members routes so
+        // the static `teams` / `online-users` segments win.
+        {
+          path: 'settings/members/teams',
+          name: 'settings-members-teams',
+          redirect: { name: 'settings-members-team', params: { fqn: 'Organization' } },
+        },
+        {
+          path: 'settings/members/teams/:fqn',
+          name: 'settings-members-team',
+          component: TeamDetailView,
+        },
+        {
+          path: 'settings/members/teams/:fqn/import',
+          name: 'settings-members-team-import',
+          component: ImportTeamsPage,
+        },
+        {
+          path: 'settings/members/online-users',
+          name: 'settings-members-online-users',
+          component: OnlineUsersView,
+        },
+        {
+          path: 'settings/members/:tab',
+          name: 'settings-members',
+          component: UsersListView,
+          beforeEnter: membersTabGuard,
+        },
+        // Pin SettingsRouter.tsx:616-619 + RouterUtils.ts:839
+        // (getBotsPagePath): the bots list lives at /settings/bots.
+        { path: 'settings/bots', name: 'settings-bots', component: BotsListView },
+        // Notifications (07 §12, pin SettingsRouter.tsx:515-607 +
+        // constants.ts:318-334). Detail :tab is optional: the table
+        // requires a missing/illegal tab to default to `configuration`
+        // in the view, which a required segment could never reach.
+        // The add/edit faces keep pin's literal shapes
+        // (add-notification / edit-notification / alerts/add /
+        // alerts/edit/:fqn) — they are NOT nested under `alerts/`.
+        {
+          path: 'settings/notifications/alerts',
+          name: 'settings-notification-alerts',
+          component: AlertsListView,
+        },
+        {
+          path: 'settings/notifications/add-notification',
+          name: 'settings-notification-alert-add',
+          component: AlertFormView,
+        },
+        {
+          path: 'settings/notifications/edit-notification/:fqn',
+          name: 'settings-notification-alert-edit',
+          component: AlertFormView,
+        },
+        {
+          path: 'settings/notifications/alerts/:fqn/:tab?',
+          name: 'settings-notification-alert',
+          component: AlertDetailView,
+        },
+        {
+          path: 'settings/notifications/announcements',
+          name: 'settings-notification-announcements',
+          component: AnnouncementsListView,
+        },
+        {
+          path: 'settings/notifications/announcements/add',
+          name: 'settings-notification-announcement-add',
+          component: AnnouncementFormView,
+        },
+        {
+          path: 'settings/notifications/announcements/edit/:id',
+          name: 'settings-notification-announcement-edit',
+          component: AnnouncementFormView,
+        },
+        {
+          path: 'settings/notifications/announcements/duplicate/:id',
+          name: 'settings-notification-announcement-duplicate',
+          component: AnnouncementFormView,
         },
         // G-07 (visual comparison): official GLOSSARY '/glossary'
         // (GlossaryRouter at '/glossary/*').
@@ -589,15 +696,27 @@ export const router = createRouter({
           component: WorkflowsView,
           alias: 'workflows',
         },
-        // Fixes batch 1: official detail route WORKFLOWS_WITH_FQN_TAB
-        // (/workflows/:fqn/:tab, default tab 'workflow'); the interactive
-        // canvas editor is a later subsystem batch, not this route.
+        // Shell B-5 / pin: the builder route carries no `:tab`
+        // (SettingsRouter.tsx:1100 `/settings/governance/workflow-
+        // definitions/:fqn`); the active tab is component state
+        // (WorkflowBuilder.tsx:252-253,720-721). The detail view
+        // already ignores the segment (WF-D6), so the canonical route
+        // drops it; the two legacy shapes below redirect, leaving no
+        // 404 window for bookmarked tab URLs.
         {
-          path: 'govern/workflows/:fqn/:tab',
+          path: 'govern/workflows/:fqn',
           name: 'workflow-detail',
           component: WorkflowDetailView,
-          alias: 'workflows/:fqn/:tab',
+          alias: 'workflows/:fqn',
           props: true,
+        },
+        {
+          path: 'govern/workflows/:fqn/:tab',
+          redirect: (to) => ({ name: 'workflow-detail', params: { fqn: to.params.fqn } }),
+        },
+        {
+          path: 'workflows/:fqn/:tab',
+          redirect: (to) => ({ name: 'workflow-detail', params: { fqn: to.params.fqn } }),
         },
         // A2 app catalog (official MarketPlacePage, /marketplace):
         // /marketplace itself already serves the data marketplace
@@ -608,7 +727,7 @@ export const router = createRouter({
           path: 'marketplace/apps',
           name: 'marketplace-app-catalog',
           component: MarketplaceAppCatalogView,
-          meta: { titleKey: 'apps.catalog.title' },
+          meta: { titleKey: 'label.market-place' },
         },
         // P2 R-4: marketplace app detail (official
         // /marketplace/apps/:fqn). The install route below keeps its own
@@ -818,11 +937,32 @@ export const router = createRouter({
           props: true,
         },
         { path: 'observability/alerts', name: 'observability-alerts', component: AlertsListView },
+        // 07 §12 #6-8 (pin constants.ts:320-324): the detail face is
+        // the singular `/observability/alert/:fqn/:tab?`; add/edit keep
+        // the plural `alerts/` prefix. The old plural detail shape
+        // redirects to the canonical detail with the default tab, so
+        // no 404 window opens for existing links.
         {
-          path: 'observability/alerts/:id',
+          path: 'observability/alerts/add',
+          name: 'observability-alert-add',
+          component: AlertFormView,
+        },
+        {
+          path: 'observability/alerts/edit/:fqn',
+          name: 'observability-alert-edit',
+          component: AlertFormView,
+        },
+        {
+          path: 'observability/alert/:fqn/:tab?',
           name: 'observability-alert',
           component: AlertDetailView,
-          props: true,
+        },
+        {
+          path: 'observability/alerts/:id',
+          redirect: (to) => ({
+            name: 'observability-alert',
+            params: { fqn: to.params.id, tab: 'configuration' },
+          }),
         },
         { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
         { path: 'ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
@@ -872,14 +1012,23 @@ export const router = createRouter({
         { path: 'tasks/:id', name: 'task', component: TaskDetailView, props: true },
         { path: 'data-access-requests', name: 'data-access-requests', component: DataAccessRequestsView, meta: { titleKey: 'collaboration.dataAccess.title' } },
         { path: 'data-access-requests/new', name: 'data-access-request-new', component: DataAccessRequestCreateView, meta: { titleKey: 'collaboration.dataAccess.createTitle' } },
-        { path: 'announcements', name: 'announcements', component: AnnouncementsListView },
-        // A20 announcement duplicate (official
-        // SETTINGS_ANNOUNCEMENT_DUPLICATE): the list view reuses its
-        // create form prefilled from the source announcement.
+        // 07 §12 #9-12: the top-level announcement paths reroute to
+        // the settings faces (the duplicate face is the form view now,
+        // not the list view). Names are kept so existing named
+        // navigations keep resolving; the guards of the redirect
+        // targets apply.
+        {
+          path: 'announcements',
+          name: 'announcements',
+          redirect: { name: 'settings-notification-announcements' },
+        },
         {
           path: 'announcements/duplicate/:id',
           name: 'announcement-duplicate',
-          component: AnnouncementsListView,
+          redirect: (to) => ({
+            name: 'settings-notification-announcement-duplicate',
+            params: { id: to.params.id },
+          }),
         },
         { path: 'forbidden', name: 'forbidden', component: ForbiddenView },
         { path: ':pathMatch(.*)*', name: 'not-found', component: NotFoundView },

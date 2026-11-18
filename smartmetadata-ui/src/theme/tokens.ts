@@ -261,6 +261,12 @@ export const SM_SURFACES = {
   triggerHoverBg: '#e3e6e8',
   menuHoverBg: SM_PALETTE.primary[25],
   rowHoverBg: '#f7f8fa',
+  // Q-TH-2(a) (Bai 2026-11-18 18:34): the iSmart default for the
+  // selected-row surface. The theme effect (src/theme/customTheme.ts)
+  // overwrites Table.rowSelectedBg and --sm-row-selected-bg with the
+  // effective custom hoverColor; empty custom value falls back to this
+  // constant. Dark form: rgba at alpha 0.16 derived from hoverColor —
+  // see the dark-block rule comment in styles/theme.css.
   rowSelectedBg: SM_PALETTE.primary[25],
   tableHeaderBg: '#f7f8fa',
   overlay: 'rgba(10, 13, 18, 0.55)',

@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import { membersTabGuard } from './guards';
 import { router } from './index';
 import { isAdminPath, resolveGuard } from './guards';
 
@@ -109,5 +110,137 @@ describe('settings alias stays admin-gated', () => {
         isAdminUser: true,
       }),
     ).toEqual({ kind: 'allow' });
+  });
+});
+
+// Settings sections batch: the integration-wired faces. resolve()
+// returns the matched record, not the redirect target, so redirect
+// shapes assert through resolveRedirect below, which evaluates the
+// record's own redirect declaration and resolves the result.
+// resolve() does not run beforeEnter, so the members :tab rule is
+// asserted by wiring identity here and by behaviour in guards.test.ts
+// (membersTabGuard).
+describe('settings sections faces', () => {
+  function resolveRedirect(path: string) {
+    const matched = router.resolve(path);
+    const record = matched.matched[matched.matched.length - 1];
+    expect(record?.redirect, `${path} must declare a redirect`).toBeDefined();
+    const redirect = record?.redirect as
+      | { name?: string; params?: Record<string, string> }
+      | ((to: typeof matched) => { name?: string; params?: Record<string, string> })
+      | undefined;
+    const target = typeof redirect === 'function' ? redirect(matched) : redirect;
+    return router.resolve(target as { name: string; params: Record<string, string> });
+  }
+
+  const redirectCases: Array<[path: string, name: string, params: Record<string, string>]> = [
+    ['/settings/members/teams', 'settings-members-team', { fqn: 'Organization' }],
+    ['/govern/workflows/w1/whatever', 'workflow-detail', { fqn: 'w1' }],
+    ['/workflows/w1/whatever', 'workflow-detail', { fqn: 'w1' }],
+    ['/observability/alerts/a1', 'observability-alert', { fqn: 'a1', tab: 'configuration' }],
+    ['/announcements', 'settings-notification-announcements', {}],
+    ['/announcements/duplicate/42', 'settings-notification-announcement-duplicate', { id: '42' }],
+  ];
+  it.each(redirectCases)('redirects %s to %s', (path, name, params) => {
+    const resolved = resolveRedirect(path);
+    expect(resolved.name).toBe(name);
+    expect(resolved.params).toMatchObject(params);
+  });
+
+  const cases: Array<[path: string, name: string, params?: Record<string, string>]> = [
+    // 02 members faces (pin SettingsRouter.tsx:672-714, 903-918).
+    ['/settings/members/teams/Eng', 'settings-members-team', { fqn: 'Eng' }],
+    ['/settings/members/teams/Eng/import', 'settings-members-team-import', { fqn: 'Eng' }],
+    ['/settings/members/users', 'settings-members', { tab: 'users' }],
+    ['/settings/members/admins', 'settings-members', { tab: 'admins' }],
+    ['/settings/members/online-users', 'settings-members-online-users', {}],
+    ['/settings/bots', 'settings-bots', {}],
+    // 02/10 top-level faces (staged contract: old admin-* routes stay).
+    ['/users/alice', 'user-detail', { fqn: 'alice' }],
+    ['/users/alice/activity', 'user-detail', { fqn: 'alice', tab: 'activity' }],
+    ['/users/alice/activity/all', 'user-detail', { fqn: 'alice', tab: 'activity', subTab: 'all' }],
+    ['/users/registrationConfirmation', 'registration-confirmation', {}],
+    ['/bots/b1', 'bot-detail', { fqn: 'b1' }],
+    ['/create-user', 'create-user', {}],
+    ['/create-user/bot', 'create-user-bot', {}],
+    // 03 access faces: add routes + :fqn segments.
+    ['/admin/roles/add', 'admin-role-add', {}],
+    ['/admin/roles/r1', 'admin-role', { fqn: 'r1' }],
+    ['/admin/policies/add', 'admin-policy-add', {}],
+    ['/admin/policies/p1', 'admin-policy', { fqn: 'p1' }],
+    ['/admin/policies/p1/rules/add', 'admin-policy-rule-add', { fqn: 'p1' }],
+    ['/admin/policies/p1/rules/r1/edit', 'admin-policy-rule-edit', { fqn: 'p1', ruleName: 'r1' }],
+    // 08 admin-app :fqn.
+    ['/admin/apps/a1', 'admin-app', { fqn: 'a1' }],
+    // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
+    ['/govern/workflows/w1', 'workflow-detail', { fqn: 'w1' }],
+    ['/workflows/w1', 'workflow-detail', { fqn: 'w1' }],
+    // 07 notifications table (pin constants.ts:318-334).
+    ['/settings/notifications/alerts', 'settings-notification-alerts', {}],
+    ['/settings/notifications/alerts/a1', 'settings-notification-alert', { fqn: 'a1' }],
+    [
+      '/settings/notifications/alerts/a1/diagnostic-info',
+      'settings-notification-alert',
+      { fqn: 'a1', tab: 'diagnostic-info' },
+    ],
+    ['/settings/notifications/add-notification', 'settings-notification-alert-add', {}],
+    ['/settings/notifications/edit-notification/a1', 'settings-notification-alert-edit', { fqn: 'a1' }],
+    ['/observability/alerts', 'observability-alerts', {}],
+    ['/observability/alert/a1', 'observability-alert', { fqn: 'a1' }],
+    ['/observability/alert/a1/recentEvents', 'observability-alert', { fqn: 'a1', tab: 'recentEvents' }],
+    ['/observability/alerts/add', 'observability-alert-add', {}],
+    ['/observability/alerts/edit/a1', 'observability-alert-edit', { fqn: 'a1' }],
+    ['/settings/notifications/announcements', 'settings-notification-announcements', {}],
+    ['/settings/notifications/announcements/add', 'settings-notification-announcement-add', {}],
+    ['/settings/notifications/announcements/edit/42', 'settings-notification-announcement-edit', { id: '42' }],
+    [
+      '/settings/notifications/announcements/duplicate/42',
+      'settings-notification-announcement-duplicate',
+      { id: '42' },
+    ],
+  ];
+  it.each(cases)('resolves %s to %s', (path, name, params) => {
+    const resolved = router.resolve(path);
+    expect(resolved.name).toBe(name);
+    if (params) {
+      expect(resolved.params).toMatchObject(params);
+    }
+  });
+
+  it('registers each new path exactly once', () => {
+    const paths = router.getRoutes().map((route) => route.path);
+    for (const path of [
+      '/settings/members/teams',
+      '/settings/members/teams/:fqn',
+      '/settings/members/teams/:fqn/import',
+      '/settings/members/online-users',
+      '/settings/members/:tab',
+      '/settings/bots',
+      '/users/:fqn/:tab?/:subTab?',
+      '/bots/:fqn',
+      '/create-user',
+      '/create-user/bot',
+      '/admin/roles/add',
+      '/admin/policies/add',
+      '/settings/notifications/alerts',
+      '/settings/notifications/add-notification',
+      '/settings/notifications/edit-notification/:fqn',
+      '/settings/notifications/alerts/:fqn/:tab?',
+      '/settings/notifications/announcements',
+      '/settings/notifications/announcements/add',
+      '/settings/notifications/announcements/edit/:id',
+      '/settings/notifications/announcements/duplicate/:id',
+      '/observability/alert/:fqn/:tab?',
+      '/observability/alerts/add',
+      '/observability/alerts/edit/:fqn',
+    ]) {
+      expect(paths.filter((candidate) => candidate === path).length, path).toBe(1);
+    }
+  });
+
+  it('wires the members :tab guard onto the :tab route', () => {
+    const record = router.getRoutes().find((route) => route.name === 'settings-members');
+    const guards = Array.isArray(record?.beforeEnter) ? record.beforeEnter : [record?.beforeEnter];
+    expect(guards).toContain(membersTabGuard);
   });
 });

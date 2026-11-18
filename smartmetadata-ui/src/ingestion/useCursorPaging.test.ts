@@ -157,3 +157,123 @@ describe('useCursorPaging (pin usePaging, without the saved preference)', () => 
     unmount();
   });
 });
+
+function createMemoryStorage(initial?: Record<string, string>): Storage {
+  const store = new Map<string, string>(Object.entries(initial ?? {}));
+  return {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => [...store.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value));
+    },
+  };
+}
+
+async function mountPagingWithPersistence(
+  initialPath: string,
+  storage: Storage,
+  userName: string | undefined,
+  defaultPageSize?: number,
+): Promise<{ router: Router; paging: UseCursorPagingReturn; unmount: () => void }> {
+  const holder = {} as UseCursorPagingReturn;
+  const Page = defineComponent({
+    setup() {
+      Object.assign(
+        holder,
+        useCursorPaging(defaultPageSize, undefined, { storage, userName: () => userName }),
+      );
+      return () => h('div', 'page');
+    },
+  });
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: Page }],
+  });
+  await router.push(initialPath);
+  await router.isReady();
+  const wrapper = mount(defineComponent({ setup: () => () => h(RouterView) }), {
+    global: { plugins: [router] },
+  });
+  await flushPromises();
+  return { router, paging: holder, unmount: () => wrapper.unmount() };
+}
+
+describe('useCursorPaging with T-5 persistence', () => {
+  const seed = (size: number) =>
+    JSON.stringify({ version: 1, preferences: { alice: { globalPageSize: size } } });
+
+  it('falls back to the persisted size when neither URL nor default provides one', async () => {
+    const storage = createMemoryStorage({ 'sm.userPreferences.v1': seed(25) });
+    const { paging, unmount } = await mountPagingWithPersistence('/', storage, 'alice');
+    expect(paging.pageSize.value).toBe(25);
+    unmount();
+  });
+
+  it('prefers the URL size, then the default, over the persisted size', async () => {
+    const storage = createMemoryStorage({ 'sm.userPreferences.v1': seed(50) });
+    const urlWins = await mountPagingWithPersistence('/?pageSize=25', storage, 'alice');
+    expect(urlWins.paging.pageSize.value).toBe(25);
+    urlWins.unmount();
+    const defaultWins = await mountPagingWithPersistence('/', storage, 'alice', 15);
+    expect(defaultWins.paging.pageSize.value).toBe(15);
+    defaultWins.unmount();
+  });
+
+  it('persists gated sizes on change and resets to page 1', async () => {
+    const storage = createMemoryStorage();
+    const { router, paging, unmount } = await mountPagingWithPersistence(
+      '/?currentPage=3&cursorType=after&cursorValue=abc',
+      storage,
+      'alice',
+    );
+    paging.handlePageSizeChange(50);
+    await flushPromises();
+    expect(paging.currentPage.value).toBe(1);
+    expect(paging.pageSize.value).toBe(50);
+    expect(router.currentRoute.value.query).toEqual({ currentPage: '1', pageSize: '50' });
+    expect(JSON.parse(storage.getItem('sm.userPreferences.v1') ?? '{}')).toEqual({
+      version: 1,
+      preferences: { alice: { globalPageSize: 50 } },
+    });
+    unmount();
+  });
+
+  it('never persists ungated sizes; off-scale sizes normalize back to the fallback', async () => {
+    const storage = createMemoryStorage();
+    const { paging, unmount } = await mountPagingWithPersistence('/', storage, 'alice');
+    paging.handlePageSizeChange(10);
+    await flushPromises();
+    expect(storage.getItem('sm.userPreferences.v1')).toBeNull();
+    expect(paging.pageSize.value).toBe(15);
+    unmount();
+  });
+
+  it('reads the default and writes nothing without a user name', async () => {
+    const storage = createMemoryStorage({ 'sm.userPreferences.v1': seed(25) });
+    const { paging, unmount } = await mountPagingWithPersistence('/', storage, undefined);
+    expect(paging.pageSize.value).toBe(15);
+    paging.handlePageSizeChange(50);
+    await flushPromises();
+    expect(storage.getItem('sm.userPreferences.v1')).toBe(seed(25));
+    unmount();
+  });
+
+  it('persists the size branch of handlePageChange', async () => {
+    const storage = createMemoryStorage();
+    const { paging, unmount } = await mountPagingWithPersistence('/', storage, 'alice');
+    paging.handlePageChange(2, undefined, 25);
+    await flushPromises();
+    expect(JSON.parse(storage.getItem('sm.userPreferences.v1') ?? '{}')).toEqual({
+      version: 1,
+      preferences: { alice: { globalPageSize: 25 } },
+    });
+    unmount();
+  });
+});

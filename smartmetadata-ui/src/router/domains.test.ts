@@ -25,6 +25,7 @@ describe('router domain scheme and guards (Stage 1)', () => {
       '/governance/glossaries': 'governance',
       '/govern/metrics': 'governance',
       '/marketplace': 'marketplace',
+      '/data-marketplace': 'data-marketplace',
       '/context-center': 'context-center',
       '/quality/test-cases': 'quality',
       '/observability/incidents': 'observability',
@@ -37,6 +38,12 @@ describe('router domain scheme and guards (Stage 1)', () => {
       expect(domainForPath(path)).toBe(expected);
     }
     expect(domainForPath('/no-such-route')).toBeNull();
+    // The settings/user/bot top-level faces have no domain group yet:
+    // the Stage 2 split owns their grouping, and the table must not
+    // grow new structure on top of the flat router (domains.ts).
+    expect(domainForPath('/settings/members/teams')).toBeNull();
+    expect(domainForPath('/users/alice')).toBeNull();
+    expect(domainForPath('/bots/b1')).toBeNull();
     const allPrefixes = ROUTE_DOMAIN_GROUPS.flatMap((group) => group.prefixes);
     expect(new Set(allPrefixes).size).toBe(allPrefixes.length);
   });

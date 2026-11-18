@@ -140,7 +140,6 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'admin-user': 'admin-settings',
   'admin-users': 'admin-settings',
   'admin-team': 'admin-settings',
-  'admin-teams': 'admin-settings',
   'admin-role': 'admin-settings',
   'admin-roles': 'admin-settings',
   'admin-bot': 'admin-settings',
@@ -148,7 +147,6 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'admin-settings-system': 'admin-settings',
   'admin-policies': 'admin-settings',
   'admin-policy': 'admin-settings',
-  'admin-settings-custom-properties': 'admin-settings',
   'admin-settings-custom-property-type': 'admin-settings',
   'governance-glossary': 'governance-glossaries',
   'governance-term': 'governance-glossaries',
@@ -184,12 +182,30 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'settings-preferences-glossary': 'admin-settings',
   'settings-preferences-time-format': 'admin-settings',
   'admin-apps': 'admin-settings',
-  'marketplace-app-install': 'marketplace-overview',
+  // Q5: no marketplace-app-catalog / marketplace-app-install entries —
+  // those pages must not highlight the data-marketplace group, and the
+  // app detail stays unmapped for the same reason.
   'admin-settings-governance-intake-forms': 'admin-settings',
   'admin-settings-governance-task-forms': 'admin-settings',
   'admin-settings-governance-glossary-term-relations': 'admin-settings',
-  'marketplace-app-catalog': 'marketplace-overview',
   'announcement-duplicate': 'admin-settings',
+  // Sections batch settings faces: hub attribution, like the other
+  // settings routes above (reached from the hub, no top-level group).
+  'settings-members': 'admin-settings',
+  'settings-members-team': 'admin-settings',
+  'settings-members-team-import': 'admin-settings',
+  'settings-members-online-users': 'admin-settings',
+  'settings-bots': 'admin-settings',
+  'settings-notification-alerts': 'admin-settings',
+  'settings-notification-alert': 'admin-settings',
+  'settings-notification-alert-add': 'admin-settings',
+  'settings-notification-alert-edit': 'admin-settings',
+  'settings-notification-announcements': 'admin-settings',
+  'settings-notification-announcement-add': 'admin-settings',
+  'settings-notification-announcement-edit': 'admin-settings',
+  'settings-notification-announcement-duplicate': 'admin-settings',
+  'observability-alert-add': 'observability-alerts',
+  'observability-alert-edit': 'observability-alerts',
   // Insights is a top-level-only leaf (same as search / lineage-home).
   // /insights redirects to /insights/data-assets; child routes must keep
   // highlighting `insights`, not a missing menu key.

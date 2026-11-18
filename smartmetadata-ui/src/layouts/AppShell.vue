@@ -28,10 +28,13 @@ import {
 import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
 import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
+import { useShellConfigStore } from '@/stores/shellConfig';
+import { resolveBrandImageSrc } from '@/theme/customTheme';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const shellConfig = useShellConfigStore();
 const { t, locale } = useI18n();
 
 const collapsed = ref(false);
@@ -42,7 +45,34 @@ const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
 
 const displayName = computed(() => auth.displayName || t('chrome.signedIn'));
-const profileUserId = computed(() => auth.user?.id || '');
+
+/**
+ * Brand image (pin BrandImage.tsx:40-51): a non-empty custom URL wins,
+ * otherwise the bundled asset; collapsed shows the monogram. The error
+ * fallback below mirrors BrandImage.tsx:64-66.
+ */
+const brandImageSrc = computed(() => {
+  const logoConfig = shellConfig.uiThemePreference?.customLogoConfig;
+  return collapsed.value
+    ? resolveBrandImageSrc(logoConfig?.customMonogramUrlPath, monogramUrl)
+    : resolveBrandImageSrc(logoConfig?.customLogoUrlPath, logoUrl);
+});
+
+function onBrandImageError(event: Event): void {
+  const target = event.currentTarget as HTMLImageElement | null;
+  // One-shot fallback guard (same fallbackApplied dataset-guard form as
+  // the AppearanceSettingsView preview handler): if the bundled asset
+  // also fails, the second error must not re-apply the fallback and loop.
+  if (!target || target.dataset.fallbackApplied) {
+    return;
+  }
+  target.dataset.fallbackApplied = 'true';
+  target.src = collapsed.value ? monogramUrl : logoUrl;
+}
+// The profile link targets the final top-level user page
+// (/users/:fqn, 02 #7), which addresses the user by name; the menu
+// item only renders once the profile name is known.
+const profileUserName = computed(() => auth.user?.name || '');
 const avatarLetter = computed(() => (displayName.value || 'A').slice(0, 1).toUpperCase());
 const localeMark = computed(() => (locale.value.startsWith('zh') ? 'ZH' : 'EN'));
 
@@ -205,8 +235,8 @@ function popupParent(node: HTMLElement): HTMLElement {
 
 function onUserMenu({ key }: { key: string | number }): void {
   const action = String(key);
-  if (action === 'profile' && profileUserId.value) {
-    void router.push({ name: 'admin-user', params: { id: profileUserId.value } });
+  if (action === 'profile' && profileUserName.value) {
+    void router.push({ name: 'user-detail', params: { fqn: profileUserName.value } });
     return;
   }
   if (action === 'settings') {
@@ -242,7 +272,7 @@ async function onLogout(): Promise<void> {
       theme="light"
     >
       <div class="shell__brand" :class="{ 'shell__brand--collapsed': collapsed }">
-        <img class="shell__logo" :src="collapsed ? monogramUrl : logoUrl" alt="iSmart" />
+        <img class="shell__logo" :src="brandImageSrc" alt="iSmart" @error="onBrandImageError" />
       </div>
       <div class="shell__nav">
         <Menu
@@ -339,7 +369,7 @@ async function onLogout(): Promise<void> {
             </button>
             <template #overlay>
               <Menu data-testid="user-menu" @click="onUserMenu">
-                <Menu.Item v-if="profileUserId" key="profile" data-testid="user-profile-item">
+                <Menu.Item v-if="profileUserName" key="profile" data-testid="user-profile-item">
                   {{ t('chrome.viewProfile') }}
                 </Menu.Item>
                 <Menu.Item key="settings" data-testid="user-settings-item">

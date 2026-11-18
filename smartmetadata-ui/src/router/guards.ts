@@ -78,28 +78,57 @@ export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements', '/
  * Admin route name -> permission resource for the guard's second
  * line. Only routes with a determined mapping are listed: users and
  * teams are entity resources served by GET /v1/permissions/{resource}
- * (the same client the debugger and the governance views use), and
- * the custom-properties routes map to 'type' (G-23 stage 4: the
- * per-type entity gate on the detail page needs the route to admit
- * non-admins holding a type grant — without the mapping the guard
- * would forbid them before they could ever reach the gated buttons;
- * entry is the existing hasAdminEntryGrant rule, unchanged).
- * Roles, bots, policies, other settings routes, personas,
- * intake/task forms and the permission debugger stay admin-only until
- * their mappings are determined — the debugger in particular is
- * admin-only by design (its debug/user/{username} endpoint is
- * admin-only server-side).
- * ADR:2026-11-10-custom-properties-stage-4-per-type-gate
+ * (the same client the debugger and the governance views use).
+ * Roles and policies joined with the sections batch (03 §12:
+ * hasViewPermissions(ROLE/POLICY) entry, operations gated in-view);
+ * the add-rule/add-role/add-policy routes stay unmapped because
+ * their §12 declarations are Create/EditAll operations, which this
+ * view-or-better entry vocabulary cannot express, and their views
+ * carry no in-view Create gate — mapping them would admit
+ * view-only users to ungated create forms. Bots, other settings
+ * routes, personas, intake/task forms and the permission debugger
+ * stay admin-only until their mappings are determined — the
+ * debugger in particular is admin-only by design (its
+ * debug/user/{username} endpoint is admin-only server-side).
+ * Audit logs stay unmapped: no `auditLog` resource vocabulary
+ * exists and the view carries no permission gate, so the §12
+ * checkPermission line for it is unimplemented at both levels.
+ * C-1 erratum (Bai 2026-11-18): the two 'type' mappings for the
+ * custom-properties routes (G-23 stage 4) are deleted; the per-type
+ * gate lives in the detail page, not at route level. The ADR pointer
+ * below named no file present in this repo, so the erratum is
+ * recorded here and in the integration report.
+ * ADR:2026-11-10-custom-properties-stage-4-per-type-gate (superseded by C-1)
  */
 export const ADMIN_ROUTE_RESOURCE: Record<string, string> = {
   'admin-users': 'user',
   'admin-user': 'user',
   'admin-admins': 'user',
-  'admin-teams': 'team',
   'admin-team': 'team',
-  'admin-settings-custom-properties': 'type',
-  'admin-settings-custom-property-type': 'type',
+  'settings-members': 'user',
+  'settings-members-team': 'team',
+  'settings-members-team-import': 'team',
+  'admin-roles': 'role',
+  'admin-role': 'role',
+  'admin-policies': 'policy',
+  'admin-policy': 'policy',
 };
+
+/**
+ * Members :tab segment guard (02 §8.3). Pin renders one
+ * UserListPageV1 for the members category and derives isAdminPage
+ * from the tab (`tab === GlobalSettingOptions.ADMINS`,
+ * UserListPageV1.tsx:82); a segment outside {users, admins} is not
+ * a page, so the guard resolves to pin's NOT_FOUND path ('/404',
+ * constants.ts:139), which the catch-all renders as NotFoundView.
+ * Kept as a named export so the route wiring is assertable by
+ * identity and the segment rule is unit-testable without mounting
+ * the router.
+ */
+export function membersTabGuard(to: { params: { tab?: string | string[] } }): boolean | string {
+  const tab = to.params.tab;
+  return tab === 'users' || tab === 'admins' ? true : '/404';
+}
 
 /**
  * Entry grant for a mapped admin route: any view-or-better grant

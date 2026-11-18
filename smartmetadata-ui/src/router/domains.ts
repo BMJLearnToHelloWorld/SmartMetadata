@@ -32,6 +32,10 @@ export const ROUTE_DOMAIN_GROUPS: RouteDomainGroup[] = [
   { key: 'admin', prefixes: ['/admin'] },
   { key: 'governance', prefixes: ['/governance', '/govern'] },
   { key: 'marketplace', prefixes: ['/marketplace'] },
+  // Q7: /data-marketplace is a separate semantic group from
+  // /marketplace (it is the marketplace route's alias, but the two
+  // URL spaces must not collapse into one group).
+  { key: 'data-marketplace', prefixes: ['/data-marketplace'] },
   { key: 'context-center', prefixes: ['/context-center'] },
   { key: 'quality', prefixes: ['/quality'] },
   { key: 'observability', prefixes: ['/observability'] },

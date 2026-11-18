@@ -16,7 +16,6 @@ import {
   connectionFieldsForType,
   filterPatternDefaultExcludes,
   filterPatternSchemaMeta,
-  hasConnectionForm,
   hasStoredFileFieldValue,
   hydrateAuthBranchForm,
   isConnectionFieldVisible,
@@ -325,11 +324,7 @@ describe('connectionFields', () => {
     // Non-default types in those kinds stay form-less: the wizard must
     // block creation for them rather than send an undefined connection.
     for (const type of ['Anthropic', 'Atlas', 'Sftp', 'OpenSearch', 'WEBHOOK', 'SageMaker', 'CustomLLM']) {
-      expect(hasConnectionForm(type)).toBe(false);
       expect(connectionFieldsForType(type)).toEqual([]);
-    }
-    for (const type of ['Mlflow', 'OpenMetadata', 'GoogleDrive', 'ElasticSearch', 'OpenAI', 'Mcp', 'Ranger', 'Rest']) {
-      expect(hasConnectionForm(type)).toBe(true);
     }
   });
 

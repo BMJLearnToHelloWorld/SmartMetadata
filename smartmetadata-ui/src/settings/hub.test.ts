@@ -32,8 +32,7 @@ describe('settings hub catalog', () => {
     }
   });
 
-  it('covers official landing groups that the product can honestly host', () => {
-    const keys = SETTINGS_CATEGORIES.map((category) => category.key);
+  it('covers official landing groups that the product can honestly host', () => {    const keys = SETTINGS_CATEGORIES.map((category) => category.key);
     expect(keys).toEqual(
       expect.arrayContaining([
         'members',
@@ -48,7 +47,8 @@ describe('settings hub catalog', () => {
     expect(liveSettingsItems().map((item) => item.key)).toEqual(
       expect.arrayContaining([
         'users',
-        'teams',
+        // P1: no standalone teams item; teams live under the members
+        // detail surface.
         'roles',
         'bots',
         'glossaries',
@@ -91,6 +91,25 @@ describe('settings hub catalog', () => {
     );
   });
 
+  it('orders the access category Roles, Policies, Debugger, Audit Logs (03 §6.5)', () => {
+    const access = SETTINGS_CATEGORIES.find((category) => category.key === 'access');
+    expect(access?.items.map((item) => item.key)).toEqual([
+      'roles',
+      'policies',
+      'permission-debugger',
+      'audit-logs',
+    ]);
+  });
+
+  it('drops the inbox hub item (07 #14) and the task-forms card (06 DEL-2); routes stay', () => {
+    expect(liveSettingsItems().some((item) => item.key === 'inbox')).toBe(false);
+    expect(liveSettingsItems().some((item) => item.key === 'task-forms')).toBe(false);
+    expect(SETTINGS_LIVE_ROUTE_NAMES).not.toContain('inbox');
+    expect(SETTINGS_LIVE_ROUTE_NAMES).not.toContain('admin-settings-governance-task-forms');
+    expect(residualSettingsItems().some((item) => item.key === 'inbox')).toBe(false);
+    expect(residualSettingsItems().some((item) => item.key === 'task-forms')).toBe(false);
+  });
+
   it('expands custom-properties into 26 rows to the detail route, one per official type', () => {
     const category = SETTINGS_CATEGORIES.find((c) => c.key === 'custom-properties');
     expect(category).toBeTruthy();
@@ -100,10 +119,10 @@ describe('settings hub catalog', () => {
     for (const item of items) {
       expect(item.kind).toBe('route');
       expect(item.routeName).toBe('admin-settings-custom-property-type');
-      const entityType = item.routeParams?.entityType;
-      expect(entityType, item.key).toBeTruthy();
-      expect(types.has(entityType ?? ''), entityType).toBe(false);
-      types.add(entityType ?? '');
+      const tab = item.routeParams?.tab;
+      expect(tab, item.key).toBeTruthy();
+      expect(types.has(tab ?? ''), tab).toBe(false);
+      types.add(tab ?? '');
       expect(item.icon, item.key).toBeTruthy();
       expect(item.descriptionKey, item.key).toBeTruthy();
     }
