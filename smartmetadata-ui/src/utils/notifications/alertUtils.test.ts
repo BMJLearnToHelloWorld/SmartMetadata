@@ -33,9 +33,9 @@ import {
   getSubscriptionTypeOptions,
   isSubscriptionCategoryName,
   normalizeDestinationConfig,
-  startCase,
   type TranslateFn,
 } from './alertUtils';
+import { startCase } from '@/utils/text';
 
 const t = ((key: string, params?: Record<string, unknown>) =>
   params ? `${key}:${JSON.stringify(params)}` : key) as TranslateFn;

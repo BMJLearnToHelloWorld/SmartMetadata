@@ -36,7 +36,6 @@ import {
   mapCustomProperty,
   mapMetadataType,
   propertyTypeLabel,
-  startCase,
   toCustomPropertyPayload,
   updateCustomPropertyByName,
   validateCustomPropertyEditForm,
@@ -44,6 +43,7 @@ import {
   type CustomPropertyFieldLabels,
   type CustomPropertyFormValues,
 } from './customProperties';
+import { startCase } from '@/utils/text';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);

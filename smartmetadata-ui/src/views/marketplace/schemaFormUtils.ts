@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { JsonSchema } from './appAssets';
+import { getFormDisplayLabel } from '@/utils/text';
 
 /**
  * Pure logic for the scoped schema form (AppSchemaForm). The reachable
@@ -18,55 +19,6 @@ import type { JsonSchema } from './appAssets';
  * AnyOf/OneOf/LayoutGrid fields are therefore unreachable and are not
  * rendered; the boundary is reported, not silently shrunk.
  */
-
-/** Lodash `startCase` approximation for ASCII schema field names. */
-export function startCase(value: string): string {
-  const words = value.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g) ?? [];
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-}
-
-const FORM_LABEL_ACRONYMS: Record<string, string> = {
-  api: 'API',
-  arn: 'ARN',
-  aws: 'AWS',
-  dbt: 'dbt',
-  gcp: 'GCP',
-  gcs: 'GCS',
-  iam: 'IAM',
-  id: 'ID',
-  jdbc: 'JDBC',
-  jwt: 'JWT',
-  odbc: 'ODBC',
-  oidc: 'OIDC',
-  s3: 'S3',
-  saml: 'SAML',
-  sql: 'SQL',
-  ssh: 'SSH',
-  ssl: 'SSL',
-  uri: 'URI',
-  url: 'URL',
-};
-
-/** Official getFormDisplayLabel (formBuilderV1LabelUtils.ts). */
-export function getFormDisplayLabel(value: string): string {
-  const tokens = startCase(value).split(' ');
-  const merged = tokens.reduce<string[]>((acc, token) => {
-    const previous = acc[acc.length - 1];
-    if (previous && /^[0-9]+$/.test(token) && /^[A-Z]{1,3}$/.test(previous)) {
-      acc[acc.length - 1] = `${previous}${token}`;
-      return acc;
-    }
-    acc.push(token);
-    return acc;
-  }, []);
-  return merged
-    .map((token) => FORM_LABEL_ACRONYMS[token.toLowerCase()] ?? token)
-    .join(' ')
-    .replace(/\bO Auth\b/g, 'OAuth')
-    .replace(/\bOauth\b/g, 'OAuth');
-}
 
 export const ALL_VALUE = 'all';
 

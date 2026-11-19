@@ -13,11 +13,3 @@ export function fieldTermQuery(field: string, value: string): string {
   const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `${field}:"${escaped}"`;
 }
-
-export function startCaseName(value: string): string {
-  return value
-    .replace(/[_.\-/]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .replace(/\s+/g, ' ')
-    .trim();
-}

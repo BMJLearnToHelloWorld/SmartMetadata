@@ -15,7 +15,6 @@ import {
   childLabelPrefix,
   enumOptionKey,
   fieldLabelPrefix,
-  formDisplayLabel,
   resolveBranchDescription,
   resolveBranchFocusMeta,
   resolveBranchTitle,
@@ -27,6 +26,7 @@ import {
   type Exists,
   type Translate,
 } from './schemaFieldLabels';
+import { getFormDisplayLabel } from '@/utils/text';
 
 /** Fake `t`/`te` over a small dictionary; `{n}` interpolation included. */
 function fakeI18n(dict: Record<string, string>): { t: Translate; te: Exists } {
@@ -91,33 +91,33 @@ describe('schemaFieldLabels', () => {
     expect(branchTypeKey('something-else')).toBeUndefined();
   });
 
-  it('formDisplayLabel matches the official vectors', () => {
+  it('getFormDisplayLabel matches the official vectors', () => {
     // formBuilderV1LabelUtils.test.ts, assertion for assertion.
-    expect(formDisplayLabel('hostPort')).toBe('Host Port');
-    expect(formDisplayLabel('supportsMetadataExtraction')).toBe('Supports Metadata Extraction');
-    expect(formDisplayLabel('connection_options')).toBe('Connection Options');
-    expect(formDisplayLabel('apiVersion')).toBe('API Version');
-    expect(formDisplayLabel('awsRegion')).toBe('AWS Region');
-    expect(formDisplayLabel('sslMode')).toBe('SSL Mode');
-    expect(formDisplayLabel('dbtConfigSource')).toBe('dbt Config Source');
-    expect(formDisplayLabel('DBT Cloud Config')).toBe('dbt Cloud Config');
-    expect(formDisplayLabel('s3Config')).toBe('S3 Config');
-    expect(formDisplayLabel('DBT S3 Config')).toBe('dbt S3 Config');
-    expect(formDisplayLabel('oAuthToken')).toBe('OAuth Token');
-    expect(formDisplayLabel('oauthConfig')).toBe('OAuth Config');
-    const rendered = formDisplayLabel('DBT S3 Config');
-    expect(formDisplayLabel(rendered)).toBe(rendered);
+    expect(getFormDisplayLabel('hostPort')).toBe('Host Port');
+    expect(getFormDisplayLabel('supportsMetadataExtraction')).toBe('Supports Metadata Extraction');
+    expect(getFormDisplayLabel('connection_options')).toBe('Connection Options');
+    expect(getFormDisplayLabel('apiVersion')).toBe('API Version');
+    expect(getFormDisplayLabel('awsRegion')).toBe('AWS Region');
+    expect(getFormDisplayLabel('sslMode')).toBe('SSL Mode');
+    expect(getFormDisplayLabel('dbtConfigSource')).toBe('dbt Config Source');
+    expect(getFormDisplayLabel('DBT Cloud Config')).toBe('dbt Cloud Config');
+    expect(getFormDisplayLabel('s3Config')).toBe('S3 Config');
+    expect(getFormDisplayLabel('DBT S3 Config')).toBe('dbt S3 Config');
+    expect(getFormDisplayLabel('oAuthToken')).toBe('OAuth Token');
+    expect(getFormDisplayLabel('oauthConfig')).toBe('OAuth Config');
+    const rendered = getFormDisplayLabel('DBT S3 Config');
+    expect(getFormDisplayLabel(rendered)).toBe(rendered);
     for (const title of ['DBT S3 Config', 'Backend Connection', 'Local Path']) {
-      expect(formDisplayLabel(title).toLowerCase()).toBe(title.toLowerCase());
+      expect(getFormDisplayLabel(title).toLowerCase()).toBe(title.toLowerCase());
     }
     // Tokenizer edges from the design: acronym runs, letter/digit splits.
-    expect(formDisplayLabel('XMLHttpRequest')).toBe('XML Http Request');
-    expect(formDisplayLabel('x509Certificate')).toBe('X509 Certificate');
-    expect(formDisplayLabel('')).toBe('');
-    expect(formDisplayLabel('FOO')).toBe('FOO');
+    expect(getFormDisplayLabel('XMLHttpRequest')).toBe('XML Http Request');
+    expect(getFormDisplayLabel('x509Certificate')).toBe('X509 Certificate');
+    expect(getFormDisplayLabel('')).toBe('');
+    expect(getFormDisplayLabel('FOO')).toBe('FOO');
   });
 
-  it('formDisplayLabel leaves every in-scope branch title unchanged', () => {
+  it('getFormDisplayLabel leaves every in-scope branch title unchanged', () => {
     const titles = [
       'No Global Manifest',
       'Storage Metadata Local Config',
@@ -133,17 +133,17 @@ describe('schemaFieldLabels', () => {
       'Multiple Project ID',
     ];
     for (const title of titles) {
-      expect(formDisplayLabel(title)).toBe(title);
+      expect(getFormDisplayLabel(title)).toBe(title);
     }
   });
 
-  it('formDisplayLabel formats bare type words', () => {
-    expect(formDisplayLabel('string')).toBe('String');
-    expect(formDisplayLabel('object')).toBe('Object');
-    expect(formDisplayLabel('integer')).toBe('Integer');
-    expect(formDisplayLabel('number')).toBe('Number');
-    expect(formDisplayLabel('boolean')).toBe('Boolean');
-    expect(formDisplayLabel('array')).toBe('Array');
+  it('getFormDisplayLabel formats bare type words', () => {
+    expect(getFormDisplayLabel('string')).toBe('String');
+    expect(getFormDisplayLabel('object')).toBe('Object');
+    expect(getFormDisplayLabel('integer')).toBe('Integer');
+    expect(getFormDisplayLabel('number')).toBe('Number');
+    expect(getFormDisplayLabel('boolean')).toBe('Boolean');
+    expect(getFormDisplayLabel('array')).toBe('Array');
   });
 
   it('resolveFieldLabel prefers the key, then title, then startCase', () => {

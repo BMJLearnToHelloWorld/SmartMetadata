@@ -23,10 +23,10 @@ import {
   applySchemaDefaults,
   deref,
   neutralizeUnresolvableRefs,
-  startCase,
   validateOwnerConfigMaps,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import { fieldLabelPrefix, schemaSlugFor } from '@/ingestion/schemaFieldLabels';
 import type { PipelineType } from '@/types/ingestion';
 import ToggleField from '@/components/shared/ToggleField.vue';

@@ -24,9 +24,9 @@
  */
 import type { RouteLocationRaw } from 'vue-router';
 import type { EntityBreadcrumb } from '@/features/crud/types';
+import { startCase } from '@/utils/text';
 import {
   getSettingPageBreadcrumbs,
-  startCaseSegment,
   type SettingsBreadcrumbCatalog,
   type SettingsLocationResolver,
 } from './breadcrumbs';
@@ -142,7 +142,7 @@ export function searchEntitySettingBreadcrumbs(
     catalog,
     locate,
     SETTINGS_CATEGORY_PREFERENCES,
-    startCaseSegment(entityType),
+    startCase(entityType),
     SETTINGS_SUBCATEGORY_SEARCH_SETTINGS,
   );
 }
@@ -162,7 +162,7 @@ export function customPropertyTypeBreadcrumbs(
     catalog,
     locate,
     SETTINGS_CATEGORY_CUSTOM_PROPERTIES,
-    startCaseSegment(tab),
+    startCase(tab),
   );
 }
 

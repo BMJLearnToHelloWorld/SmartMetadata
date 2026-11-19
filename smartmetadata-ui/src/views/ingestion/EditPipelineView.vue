@@ -48,9 +48,9 @@ import { buildSourceConfig } from '@/ingestion/sourceConfig';
 import {
   SERVICE_CATEGORY_BY_KIND,
   getSchemaByWorkflowType,
-  startCase,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import { effectiveOwnersForPipeline, isSettingsPipelineType } from '@/ingestion/owners';
 import { cronValidator } from '@/ingestion/schedule';
 import { useAuthStore } from '@/stores/auth';

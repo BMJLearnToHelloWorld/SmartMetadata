@@ -25,7 +25,7 @@ import {
   message,
 } from 'ant-design-vue';
 import { getSetting, updateSetting } from '@/api/system';
-import { startCase } from '@/api/customProperties';
+import { startCase } from '@/utils/text';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';

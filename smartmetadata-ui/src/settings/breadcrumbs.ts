@@ -140,25 +140,6 @@ export function getSettingPageBreadcrumbs(
 }
 
 /**
- * Lodash `startCase` for URL segments, as pin applies it to `tab` /
- * `entityType` (`CustomPropertiesPageV1.tsx:73`, `EntitySearchSettings.tsx:166`;
- * both import it from lodash). The product has no lodash dependency, and the
- * input vocabulary is the §3.4/§3.5 segment set, so the rule is implemented
- * for segments: split camelCase and separators into words, upper-case each
- * word's first letter, keep the rest untouched (`databaseSchemas` becomes
- * `Database Schemas`, `mlmodels` becomes `Mlmodels`).
- */
-export function startCaseSegment(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-/**
  * Lodash `capitalize` for URL segments, as pin applies it to the services
  * `tab` (`ServicesPage.tsx:109`, lodash import at `:15`): first letter
  * upper-cased, the rest lower-cased. That lower-casing is pin behaviour, not

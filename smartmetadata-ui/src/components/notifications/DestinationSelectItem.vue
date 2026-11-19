@@ -33,7 +33,8 @@ import {
   getDestinationTypeUpdate,
   getDestinationWithNotifyDownstream,
 } from '@/utils/notifications/alertFormUtils';
-import { getSubscriptionTypeOptions, startCase, type TranslateFn } from '@/utils/notifications/alertUtils';
+import { getSubscriptionTypeOptions, type TranslateFn } from '@/utils/notifications/alertUtils';
+import { startCase } from '@/utils/text';
 import { splitTransElement } from '@/utils/emptyPlaceholder';
 import type { AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
 import DestinationConfigField from './DestinationConfigField.vue';

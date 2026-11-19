@@ -11,7 +11,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { ApartmentOutlined, ShareAltOutlined } from '@ant-design/icons-vue';
 import { Alert, Button, Card, Form, Input, Space, Spin, message } from 'ant-design-vue';
-import { startCase } from '@/api/customProperties';
+import { startCase } from '@/utils/text';
 import {
   getSetting,
   settingAsUiTheme,

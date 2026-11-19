@@ -24,6 +24,7 @@ import type {
   WebhookDestinationConfig,
 } from '@/types/quality';
 import { EXTERNAL_CATEGORY_OPTIONS } from './alertConstants';
+import { startCase } from '@/utils/text';
 
 /**
  * Pure alert helpers, ported from pin utils/Alerts/AlertsUtilPure.ts.
@@ -34,24 +35,6 @@ import { EXTERNAL_CATEGORY_OPTIONS } from './alertConstants';
  */
 
 export type TranslateFn = (key: string, params?: Record<string, unknown>) => string;
-
-/**
- * lodash `startCase` for ASCII identifiers: word boundaries at
- * lower-to-upper transitions, at uppercase-run ends (GChat -> G Chat),
- * and at `_`/`-` separators; each word keeps the rest of its casing
- * (FOO_BAR -> FOO BAR). Matches the product's local copies in
- * stores/limitBanner.ts plus the uppercase-run rule lodash applies.
- */
-export function startCase(value: string): string {
-  return value
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
 
 /** getEntityName (EntityNameUtils.ts:27-32): displayName || name || ''. */
 export function getEntityName(entity: { displayName?: string; name?: string } | undefined): string {

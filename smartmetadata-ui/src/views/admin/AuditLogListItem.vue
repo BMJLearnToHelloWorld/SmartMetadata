@@ -23,7 +23,7 @@ import {
   getChangeDetails,
   type AuditLogChangeDetail,
 } from './auditLogFeed';
-import { startCase } from './accessText';
+import { startCase } from '@/utils/text';
 
 const props = defineProps<{ log: AuditLogEntry }>();
 const { t } = useI18n();

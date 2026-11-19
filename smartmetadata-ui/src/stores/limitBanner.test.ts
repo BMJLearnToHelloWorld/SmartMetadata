@@ -12,9 +12,9 @@ import { createPinia, setActivePinia } from 'pinia';
 import type { ResourceLimitStatus } from '@/api/limits';
 import {
   buildBannerDetails,
-  startCase,
   useLimitBannerStore,
 } from './limitBanner';
+import { startCase } from '@/utils/text';
 
 function status(overrides: Partial<ResourceLimitStatus> = {}): ResourceLimitStatus {
   return {

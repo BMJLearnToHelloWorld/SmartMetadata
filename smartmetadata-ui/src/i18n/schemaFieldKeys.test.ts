@@ -12,14 +12,13 @@ import {
   deref,
   getSchemaByWorkflowType,
   SERVICE_CATEGORY_BY_KIND,
-  startCase,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
 import {
-  formDisplayLabel,
   schemaSlugFor,
   type MetadataSchemaSlug,
 } from '@/ingestion/schemaFieldLabels';
+import { getFormDisplayLabel } from '@/utils/text';
 import type { ServiceKind } from '@/types/ingestion';
 import enUS from './locales/en-US';
 import zhCN from './locales/zh-CN';
@@ -128,7 +127,7 @@ function walkMetadataSchema(root: RjsfSchema, slug: MetadataSchemaSlug): Expecte
       }
       return;
     }
-    out.push({ key: `${prefix}.label`, enValue: resolved.title ?? startCase(fieldName) });
+    out.push({ key: `${prefix}.label`, enValue: resolved.title ?? getFormDisplayLabel(fieldName) });
     if (typeof resolved.description === 'string') {
       out.push({ key: `${prefix}.description`, enValue: resolved.description });
     }
@@ -139,7 +138,7 @@ function walkMetadataSchema(root: RjsfSchema, slug: MetadataSchemaSlug): Expecte
         if (resolvedBranch.title !== undefined) {
           out.push({
             key: `${prefix}.branches.b${index}.label`,
-            enValue: formDisplayLabel(resolvedBranch.title),
+            enValue: getFormDisplayLabel(resolvedBranch.title),
           });
         }
         if (typeof resolvedBranch.description === 'string') {

@@ -9,7 +9,7 @@
  */
 import { onUnmounted, ref, type Ref } from 'vue';
 import { OPTIONAL_SCOPE_PROPERTIES, type GroupableSchema } from '@/ingestion/formSections';
-import { startCase } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import type { ServiceKind } from '@/types/ingestion';
 
 /**

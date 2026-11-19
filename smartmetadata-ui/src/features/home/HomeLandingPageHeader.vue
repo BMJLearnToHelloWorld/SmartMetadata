@@ -7,20 +7,13 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Avatar } from 'ant-design-vue';
 import { useAuthStore } from '@/stores/auth';
+import { startCase } from '@/utils/text';
 
 const auth = useAuthStore();
 const { t } = useI18n();
 
 // Official greets with the display name in start case
 // (`getEntityName` + lodash `startCase`).
-function startCase(value: string): string {
-  return value
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
 const displayName = computed(() => {
   const name = auth.displayName || auth.user?.name || '';
   return name ? startCase(name) : t('chrome.signedIn');

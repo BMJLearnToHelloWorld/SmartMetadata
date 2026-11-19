@@ -14,11 +14,11 @@ import {
   DATA_OBSERVABILITY_TAB,
   getSettingPageBreadcrumbs,
   servicesTabEntityName,
-  startCaseSegment,
   toSmBreadcrumbItems,
   type SettingsBreadcrumbCatalog,
   type SettingsLocationResolver,
 } from './breadcrumbs';
+import { startCase } from '@/utils/text';
 
 /**
  * The DESIGN §9.2 category-name table, with pin en-us values (pin
@@ -238,7 +238,7 @@ describe('buildSettingsBreadcrumbCatalog', () => {
   });
 });
 
-describe('startCaseSegment (lodash startCase over the §3.4/§3.5 segment vocabulary)', () => {
+describe('startCase (lodash startCase over the §3.4/§3.5 segment vocabulary)', () => {
   const cases: Record<string, string> = {
     tables: 'Tables',
     dashboards: 'Dashboards',
@@ -278,7 +278,7 @@ describe('startCaseSegment (lodash startCase over the §3.4/§3.5 segment vocabu
   };
 
   it.each(Object.entries(cases))('derives %s as %s', (segment, expected) => {
-    expect(startCaseSegment(segment)).toBe(expected);
+    expect(startCase(segment)).toBe(expected);
   });
 });
 

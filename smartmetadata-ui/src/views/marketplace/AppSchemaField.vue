@@ -21,9 +21,9 @@ import {
   fieldIdForPath,
   fieldLabel,
   getNextEnumSelection,
-  startCase,
   type SchemaFormError,
 } from './schemaFormUtils';
+import { startCase } from '@/utils/text';
 
 const props = withDefaults(
   defineProps<{

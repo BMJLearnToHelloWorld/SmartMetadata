@@ -8,7 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { capitalize, startCase } from './accessText';
+import { capitalize } from './accessText';
+import { startCase } from '@/utils/text';
 
 describe('accessText', () => {
   it('startCases camelCase, separators, and all-caps words like lodash', () => {

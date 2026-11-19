@@ -27,7 +27,7 @@ import NextPrevious from '@/components/shared/NextPrevious.vue';
 import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 import { getEntityName } from '@/components/shared/profilePictureUtils';
 import { formatBulkDeployFailureText, summarizeBulkDeploy } from '@/ingestion/bulkDeploy';
-import { startCase } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import { getEntityTypeFromServiceCategory } from '@/ingestion/serviceCategories';
 import { useCursorPaging } from '@/ingestion/useCursorPaging';
 import { useAuthStore } from '@/stores/auth';

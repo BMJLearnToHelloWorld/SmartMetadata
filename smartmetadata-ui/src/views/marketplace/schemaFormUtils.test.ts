@@ -12,13 +12,12 @@ import {
   dotPathForPath,
   fieldIdForPath,
   fieldLabel,
-  getFormDisplayLabel,
   getNextEnumSelection,
   omitExtraData,
   seedSchemaDefaults,
-  startCase,
   validateSchemaForm,
 } from './schemaFormUtils';
+import { getFormDisplayLabel, startCase } from '@/utils/text';
 
 describe('schemaFormUtils', () => {
   it('start-cases camelCase, snake_case, and acronyms like lodash', () => {

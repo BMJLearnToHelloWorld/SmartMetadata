@@ -30,8 +30,8 @@ import {
 import {
   getResourceEntityFromServiceCategory,
   getServiceNameForTab,
-  startCase,
 } from '@/settings/serviceCategoryResources';
+import { startCase } from '@/utils/text';
 import { resolveServiceTab, type ListableServiceKind } from '@/router/serviceTabSegments';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 

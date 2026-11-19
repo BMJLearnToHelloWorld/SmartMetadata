@@ -16,6 +16,7 @@ import type {
   MetadataType,
 } from '@/types/collaboration';
 import { ApiError, apiRequest } from './client';
+import { startCase } from '@/utils/text';
 
 /** TypeResource list filter for entity types that may carry customProperties. */
 export const ENTITY_TYPE_CATEGORY = 'entity';
@@ -128,24 +129,6 @@ export function getPropertyConfigSummary(
     };
   }
   return undefined;
-}
-
-/**
- * Lodash `startCase` equivalent (official code uses lodash startCase for
- * tab breadcrumbs, config values, and type-select labels): split into
- * words on camelCase/separator boundaries and capitalize every word.
- * Discriminator: `foo_bar` → "Foo Bar" (not "Foo bar").
- */
-export function startCase(value: string): string {
-  const words = value.match(
-    /[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g,
-  );
-  if (!words) {
-    return '';
-  }
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
 }
 
 /**

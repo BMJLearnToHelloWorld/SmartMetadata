@@ -8,7 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { fieldTermQuery, startCaseName } from './fieldQuery';
+import { fieldTermQuery } from './fieldQuery';
+import { startCase } from '@/utils/text';
 
 describe('fieldTermQuery', () => {
   it('quotes a Lucene field term and escapes quotes', () => {
@@ -17,10 +18,10 @@ describe('fieldTermQuery', () => {
   });
 });
 
-describe('startCaseName', () => {
+describe('startCase', () => {
   it('title-cases dotted or underscored display names for the greeting', () => {
-    expect(startCaseName('alice.admin')).toBe('Alice Admin');
-    expect(startCaseName('data_steward')).toBe('Data Steward');
-    expect(startCaseName('')).toBe('');
+    expect(startCase('alice.admin')).toBe('Alice Admin');
+    expect(startCase('data_steward')).toBe('Data Steward');
+    expect(startCase('')).toBe('');
   });
 });

@@ -8,7 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { Button, Modal } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import type { EntityListColumn } from '@/features/crud/types';
-import { formatRunTimestamp, startCaseState } from '@/ingestion/pipelineDisplay';
+import { formatRunTimestamp } from '@/ingestion/pipelineDisplay';
+import { startCase } from '@/utils/text';
 import type { PipelineStatus, PipelineStepStatus } from '@/types/ingestion';
 
 const props = defineProps<{
@@ -28,7 +29,7 @@ const { t } = useI18n();
  */
 const title = computed(() =>
   t('ingestion.pipelines.runStatusAt', {
-    status: startCaseState(props.status?.pipelineState),
+    status: props.status?.pipelineState ? startCase(props.status.pipelineState) : '—',
     timestamp: formatRunTimestamp(props.status?.timestamp),
   }),
 );

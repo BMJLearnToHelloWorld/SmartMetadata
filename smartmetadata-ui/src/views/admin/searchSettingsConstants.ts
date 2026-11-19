@@ -7,13 +7,11 @@
  */
 import { getEncodedFqn } from '@/utils/fqnPaths';
 import { escapeESReservedCharacters } from '@/api/search';
-import { startCase } from '@/api/customProperties';
+import { startCase } from '@/utils/text';
 import type {
   SearchFieldValueBoost,
   SearchTermBoost,
 } from '@/types/admin';
-
-export { startCase };
 
 /**
  * The 23 registry nested items, in registry order (GlobalSettingsClassBase

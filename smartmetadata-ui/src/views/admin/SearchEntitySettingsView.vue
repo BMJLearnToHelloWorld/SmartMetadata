@@ -26,7 +26,8 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import { listCustomProperties, startCase } from '@/api/customProperties';
+import { listCustomProperties } from '@/api/customProperties';
+import { startCase } from '@/utils/text';
 import { asNumber, asRecord, asString } from '@/api/json';
 
 import {
