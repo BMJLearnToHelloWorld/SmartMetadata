@@ -10,7 +10,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { tagsPatch } from '@/governance/assetPatch';
-import { fetchAssetDetail, mapTags, patchAsset } from './entities';
+import type { SchemaRow } from '@/types/api';
+import { fetchAssetDetail, mapTags, patchAsset, updateSchemaRowTags } from './entities';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -213,12 +214,14 @@ describe('asset entity writes', () => {
       }),
     );
     const container = await fetchAssetDetail('container', 's3.lake');
-    expect(container.schemaRows).toEqual([{ key: 'event_id', name: 'event_id', dataType: 'STRING' }]);
+    expect(container.schemaRows).toEqual([
+      { key: 'event_id', name: 'event_id', dataType: 'STRING', indexPath: [0] },
+    ]);
     expect(container.prefix).toBe('raw/');
     expect(container.fileFormats).toEqual(['parquet']);
 
     const index = await fetchAssetDetail('searchIndex', 'os.logs');
-    expect(index.schemaRows).toEqual([{ key: 'message', name: 'message', dataType: 'TEXT' }]);
+    expect(index.schemaRows).toEqual([{ key: 'message', name: 'message', dataType: 'TEXT', indexPath: [0] }]);
     expect(index.indexType).toBe('Index');
 
     const proc = await fetchAssetDetail('storedProcedure', 'svc.db.schema.refresh_mart');
@@ -313,7 +316,7 @@ describe('asset entity writes', () => {
     expect(lastFetch().url).toContain('/api/v1/metrics/name/');
 
     const model = await fetchAssetDetail('dashboardDataModel', 'bi.sales.model');
-    expect(model.schemaRows).toEqual([{ key: 'amount', name: 'amount', dataType: 'DECIMAL' }]);
+    expect(model.schemaRows).toEqual([{ key: 'amount', name: 'amount', dataType: 'DECIMAL', indexPath: [0] }]);
     expect(model.dataModelType).toBe('SupersetDataModel');
     expect(model.project).toBe('Finance');
     expect(lastFetch().url).toContain('/api/v1/dashboard/datamodels/name/');
@@ -385,6 +388,21 @@ describe('mapTags labelType', () => {
     expect(mapTags(null)).toEqual([]);
     expect(mapTags('PII.Sensitive')).toEqual([]);
   });
+
+  it('preserves the pin label state values and drops the rest', () => {
+    for (const state of ['Confirmed', 'Suggested'] as const) {
+      const [tag] = mapTags([
+        { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', state },
+      ]);
+      expect(tag?.state).toBe(state);
+    }
+    for (const state of ['confirmed', 'Bogus', '', 42, null]) {
+      const [tag] = mapTags([
+        { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', state },
+      ]);
+      expect(tag?.state).toBeUndefined();
+    }
+  });
 });
 
 describe('fetchAssetDetail usage and joins fields', () => {
@@ -445,5 +463,95 @@ describe('fetchAssetDetail usage and joins fields', () => {
     const fields = new URL(urls[0] as string).searchParams.get('fields') ?? '';
     expect(fields.split(',')).toContain('usageSummary');
     expect(fields.split(',').filter((field) => field === 'joins')).toHaveLength(1);
+  });
+});
+
+describe('D-F2 schema rows', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    persistSession(localStorage, { accessToken: 'tok', tokenType: 'Bearer' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('keeps column tags, FQN and index paths through the table mapping, including nested STRUCT children', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            columns: [
+              {
+                name: 'address',
+                dataType: 'STRUCT',
+                fullyQualifiedName: 'svc.db.schema.orders.address',
+                tags: [{ tagFQN: 'PII.Address', name: 'Address', source: 'Classification', labelType: 'Generated' }],
+                children: [
+                  {
+                    name: 'city',
+                    dataType: 'STRING',
+                    fullyQualifiedName: 'svc.db.schema.orders.address.city',
+                    tags: [{ tagFQN: 'Glossary.City', name: 'City', source: 'Glossary', labelType: 'Manual' }],
+                  },
+                ],
+              },
+              { name: 'id', dataType: 'BIGINT', fullyQualifiedName: 'svc.db.schema.orders.id' },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders');
+    expect(asset.schemaRows).toHaveLength(2);
+    expect(asset.schemaRows[0]).toMatchObject({
+      key: 'address',
+      fullyQualifiedName: 'svc.db.schema.orders.address',
+      indexPath: [0],
+    });
+    expect(asset.schemaRows[0].tags).toEqual([
+      { tagFQN: 'PII.Address', name: 'Address', source: 'Classification', labelType: 'Generated' },
+    ]);
+    expect(asset.schemaRows[0].children).toHaveLength(1);
+    expect(asset.schemaRows[0].children?.[0]).toMatchObject({
+      key: 'address.city',
+      fullyQualifiedName: 'svc.db.schema.orders.address.city',
+      indexPath: [0, 0],
+    });
+    expect(asset.schemaRows[0].children?.[0].tags).toEqual([
+      { tagFQN: 'Glossary.City', name: 'City', source: 'Glossary', labelType: 'Manual' },
+    ]);
+    expect(asset.schemaRows[1].tags).toBeUndefined();
+    expect(asset.schemaRows[1].indexPath).toEqual([1]);
+  });
+
+  it('replaces only the targeted row tags, at any nesting depth', () => {
+    const rows: SchemaRow[] = [
+      {
+        key: 'address',
+        name: 'address',
+        dataType: 'STRUCT',
+        tags: [{ tagFQN: 'PII.Address', name: 'Address', source: 'Classification' as const }],
+        children: [
+          { key: 'address.city', name: 'city', dataType: 'STRING', indexPath: [0, 0] },
+        ],
+        indexPath: [0],
+      },
+      { key: 'id', name: 'id', dataType: 'BIGINT', indexPath: [1] },
+    ];
+    const next = updateSchemaRowTags(rows, 'address.city', [
+      { tagFQN: 'Glossary.City', name: 'City', source: 'Glossary' as const },
+    ]);
+    expect(next[0].tags).toEqual([{ tagFQN: 'PII.Address', name: 'Address', source: 'Classification' }]);
+    expect(next[0].children?.[0].tags).toEqual([{ tagFQN: 'Glossary.City', name: 'City', source: 'Glossary' }]);
+    expect(next[1].tags).toBeUndefined();
+    // The input rows are untouched: the update returns new rows.
+    expect(rows[0].children?.[0].tags).toBeUndefined();
   });
 });

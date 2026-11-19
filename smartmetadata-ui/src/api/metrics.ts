@@ -12,6 +12,7 @@ import { asNumber, asRecord, asString, mapEntityRefs, parsePaged } from './json'
 import { mapTags } from './entities';
 import type { Paged } from '@/types/admin';
 import type { EntityRef, TagRef } from '@/types/api';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 
 /**
  * Official deleteMetricAsync (rest/metricsAPI.ts): metric deletion is async —
@@ -35,6 +36,22 @@ export function deleteMetricAsync(id: string, recursive = true): Promise<unknown
   return apiRequest(`/v1/metrics/async/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     query: { recursive },
+  });
+}
+
+/**
+ * Official patchMetric (rest/metricsAPI.ts:117-124): PATCH
+ * /v1/metrics/{id} with a JSON Patch document. The product Metric
+ * detail page reads the metric through the generic entity detail
+ * endpoint, but the description write goes through this endpoint —
+ * the server is the pin tree, so the endpoint exists with no backend
+ * change. Same call shape as patchDomain (application/json-patch+json).
+ */
+export function patchMetric(id: string, patch: JsonPatchOp[]): Promise<unknown> {
+  return apiRequest(`/v1/metrics/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
   });
 }
 

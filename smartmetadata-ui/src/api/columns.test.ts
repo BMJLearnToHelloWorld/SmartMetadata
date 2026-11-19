@@ -13,6 +13,8 @@ import {
   bulkUpdateColumnsAsync,
   bulkUpdateColumnsPreview,
   getColumnGrid,
+  updateDataModelColumn,
+  updateTableColumn,
 } from './columns';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -158,5 +160,73 @@ describe('columns API', () => {
       { columnFQN: 'svc.db.schema.users.email', entityType: 'table', displayName: 'Email' },
     ]);
     expect(lastFetch().url).toContain('/api/v1/columns/bulk-update-async');
+  });
+
+  it('PUTs table column tags to the single-column endpoint with entityType=table', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          name: 'email',
+          fullyQualifiedName: 'svc.db.schema.users.email',
+          tags: [
+            { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+          ],
+        }),
+      ),
+    );
+    const tags = await updateTableColumn('svc.db.schema.users.email', [
+      { tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+    const { url, init } = lastFetch();
+    expect(url).toContain('/api/v1/columns/name/svc.db.schema.users.email?entityType=table');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      tags: [{ tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' }],
+    });
+    expect(tags).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+  });
+
+  it('PUTs data-model column tags with entityType=dashboardDataModel, not dataModel', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          name: 'revenue',
+          fullyQualifiedName: 'model.revenue',
+          tags: [{ tagFQN: 'Glossary.Revenue', name: 'Revenue', source: 'Glossary', labelType: 'Manual', state: 'Confirmed' }],
+        }),
+      ),
+    );
+    const tags = await updateDataModelColumn('model.revenue', [
+      { tagFQN: 'Glossary.Revenue', source: 'Glossary', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+    expect(lastFetch().url).toContain('/api/v1/columns/name/model.revenue?entityType=dashboardDataModel');
+    expect(tags).toEqual([
+      { tagFQN: 'Glossary.Revenue', name: 'Revenue', source: 'Glossary', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+  });
+
+  it('falls back to the sent labels when the PUT response carries no tags', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ name: 'email' })));
+    const tags = await updateTableColumn('svc.db.schema.users.email', [
+      { tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'PersonalData', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+    expect(tags).toEqual([
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      { tagFQN: 'PersonalData', name: 'PersonalData', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+    ]);
+  });
+
+  it('propagates a failed single-column PUT instead of reporting success', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
+    await expect(
+      updateTableColumn('svc.db.schema.users.email', [
+        { tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+      ]),
+    ).rejects.toThrow();
   });
 });

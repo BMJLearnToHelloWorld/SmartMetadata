@@ -291,6 +291,41 @@ export function getTextFromHtmlString(description?: string): string {
   return description.replace(/<[^>]{1,1000}>/g, '').trim();
 }
 
+/**
+ * Official `DESCRIPTION_MAX_PREVIEW_CHARACTERS`
+ * (`constants/constants.ts:75`): a description longer than this gets the
+ * read-more fold in the previewer.
+ */
+export const DESCRIPTION_PREVIEW_MAX_LENGTH = 350;
+
+/**
+ * Port of official `getTrimmedContent` (`utils/StringUtils.ts:43-64`):
+ * keep the first three lines, cut to `limit` characters, then drop the
+ * trailing word so a cut never ends mid-word (or mid-URL). The caller
+ * appends the ellipsis, as official `RichTextEditorPreviewerV1` does.
+ */
+export function getTrimmedContent(content: string, limit: number): string {
+  const lines = content.split('\n');
+  // Selecting the content in three lines
+  const contentInThreeLines = lines.slice(0, 3).join('\n');
+
+  const slicedContent = contentInThreeLines.slice(0, limit);
+
+  // Logic for eliminating any broken words at the end
+  // To avoid any URL being cut
+  const words = slicedContent.split(' ');
+  const wordsCount = words.length;
+
+  if (wordsCount === 1) {
+    return slicedContent;
+  }
+
+  // Eliminate word at the end to avoid using broken words
+  const refinedContent = words.slice(0, wordsCount - 1);
+
+  return refinedContent.join(' ');
+}
+
 export function stripPendingUploadNodes(html: string): string {
   if (!html.includes('data-uploading="true"')) {
     return html;

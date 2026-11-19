@@ -368,3 +368,88 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     wrapper.unmount();
   });
 });
+
+describe('GlossaryTermDetailView description gate (D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaryTerms/term1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/glossaryTerms/term1')) {
+          return jsonResponse({
+            id: 'term1',
+            name: 'revenue',
+            displayName: 'Revenue',
+            description: 'Money in',
+            fullyQualifiedName: 'Business.revenue',
+            glossary: { id: 'g1', name: 'Business', displayName: 'Business' },
+            relatedTerms: [],
+            owners: [],
+            reviewers: [],
+            domains: [],
+            synonyms: [],
+            references: [],
+            tags: [],
+            children: [],
+            entityStatus: 'Approved',
+          });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/entity/glossaryTerm/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/permissions/glossaryTerm/name/')) {
+          return jsonResponse({ resource: 'glossaryTerm', permissions: operations });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/terms', name: 'governance-terms', component: { template: '<div>list</div>' } },
+        { path: '/governance/terms/:id', name: 'governance-term', component: GlossaryTermDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/terms/term1');
+    await router.isReady();
+    const wrapper = mount(GlossaryTermDetailView, {
+      props: { id: 'term1' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});

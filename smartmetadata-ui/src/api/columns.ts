@@ -9,6 +9,10 @@
  */
 import { asRecord, asString } from '@/api/json';
 import { mapCsvImportResult, type CsvImportResult } from '@/api/csvImport';
+import { encodeFqnForApi } from '@/catalog/entityRoutes';
+import type { TagRef } from '@/types/api';
+import type { TagLabelValue } from '@/governance/assetPatch';
+import { mapTags } from './entities';
 import { apiRequest } from './client';
 
 /**
@@ -326,4 +330,52 @@ export async function importColumnsCsv(
     { method: 'POST', text: csv },
   );
   return mapCsvImportResult(payload);
+}
+
+/**
+ * D-F2 single-column PUT (official `rest/tableAPI.ts:352-361`
+ * `updateTableColumn` and `rest/dataModelsAPI.ts:165-175`
+ * `updateDataModelColumn`): `PUT /v1/columns/name/{fqn}?entityType=...`
+ * with body `{ tags }`. The official UI calls this only for Table
+ * (`entityType=table`) and DataModel (`entityType=dashboardDataModel`);
+ * Topic / Container / SearchIndex go through the whole-entity PATCH
+ * instead (see `columnTagsPatch`). The response is the updated column:
+ * its tags are the write-back source, and when the response carries no
+ * tags at all the sent labels stand in — the server contract returns
+ * the updated column, so a tag-less body means a malformed response,
+ * not a silent wipe. The stand-in display name is the tag FQN's last
+ * segment (the same display name the server returns for a classified
+ * tag, e.g. `PII.Email` -> `Email`), never the bare FQN.
+ */
+async function updateSingleColumn(
+  columnFqn: string,
+  entityType: 'table' | 'dashboardDataModel',
+  tags: TagLabelValue[],
+): Promise<TagRef[]> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/columns/name/${encodeFqnForApi(columnFqn)}?entityType=${entityType}`,
+    { method: 'PUT', json: { tags } },
+  );
+  const returned = mapTags(payload.tags);
+  if (payload.tags === undefined) {
+    return tags.map((tag) => ({
+      tagFQN: tag.tagFQN,
+      name: tag.tagFQN.split('.').pop() ?? tag.tagFQN,
+      source: tag.source,
+      labelType: tag.labelType,
+      state: tag.state,
+    }));
+  }
+  return returned;
+}
+
+export async function updateTableColumn(columnFqn: string, tags: TagLabelValue[]): Promise<TagRef[]> {
+  return updateSingleColumn(columnFqn, 'table', tags);
+}
+
+export async function updateDataModelColumn(
+  columnFqn: string,
+  tags: TagLabelValue[],
+): Promise<TagRef[]> {
+  return updateSingleColumn(columnFqn, 'dashboardDataModel', tags);
 }

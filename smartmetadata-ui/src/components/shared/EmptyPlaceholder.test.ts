@@ -63,8 +63,6 @@ function createPlaceholderI18n() {
         settings: {
           shell: {
             accessDenied: 'Access Denied',
-            noAccessPlaceholder:
-              "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
           },
         },
       },
@@ -256,22 +254,27 @@ describe('NoSearchResultsPlaceholder', () => {
 });
 
 describe('PermissionPlaceholder', () => {
-  it('shows the access-denied title and the entity message as plain text', () => {
+  it('shows the access-denied title and bolds the entity in the message', () => {
     const wrapper = mountWithI18n(PermissionPlaceholder);
     expect(wrapper.find('.empty-placeholder__title').text()).toBe('Access Denied');
     const description = wrapper.find('.empty-placeholder__description');
     expect(description.text()).toBe(
       "You don't have necessary permissions. Please check with the admin to get the Resource permission."
     );
+    expect(description.find('b').exists()).toBe(true);
+    expect(description.find('b').text()).toBe('Resource');
     expect(wrapper.find('.anticon-lock').exists()).toBe(true);
     wrapper.unmount();
   });
 
   it('names the missing permission from permissionValue', () => {
     const wrapper = mountWithI18n(PermissionPlaceholder, { props: { permissionValue: 'Bots' } });
-    expect(wrapper.find('.empty-placeholder__description').text()).toContain(
+    const description = wrapper.find('.empty-placeholder__description');
+    expect(description.text()).toContain(
       'get the Bots permission'
     );
+    expect(description.find('b').exists()).toBe(true);
+    expect(description.find('b').text()).toBe('Bots');
     wrapper.unmount();
   });
 

@@ -76,6 +76,7 @@ export function mapTags(value: unknown): TagRef[] {
     const name = asString(rec.name) || tagFQN;
     const source = asString(rec.source);
     const labelType = asString(rec.labelType);
+    const state = asString(rec.state);
     return name || tagFQN
       ? [
           {
@@ -90,6 +91,11 @@ export function mapTags(value: unknown): TagRef[] {
               labelType === 'Propagated'
                 ? labelType
                 : undefined,
+            // D-F2: the column write round-trip preserves a Suggested
+            // label's state through the mapping, so a later edit does
+            // not silently flip it to Confirmed (same validation shape
+            // as labelType above).
+            state: state === 'Confirmed' || state === 'Suggested' ? state : undefined,
           },
         ]
       : [];
@@ -100,13 +106,16 @@ export function mapTags(value: unknown): TagRef[] {
  * Maps columns recursively: a STRUCT column's nested columns become its
  * children, following the official SchemaTable's two guards — empty children
  * are dropped rather than attached, so leaf columns never draw an expand
- * icon for an empty list.
+ * icon for an empty list. Tags, the column FQN and the positional path are
+ * carried (D-F2): tags feed the Tags / Glossary Terms columns, the FQN
+ * feeds the single-column PUT, and the index path feeds the PATCH group's
+ * JSON Patch path for nested fields.
  */
-function mapColumns(value: unknown, prefix = ''): SchemaRow[] {
+function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((item) => {
+  return value.flatMap((item, index) => {
     const rec = asRecord(item);
     if (!rec) {
       return [];
@@ -116,7 +125,9 @@ function mapColumns(value: unknown, prefix = ''): SchemaRow[] {
       return [];
     }
     const key = prefix ? `${prefix}.${name}` : name;
-    const children = mapColumns(rec.children, key);
+    const indexPath = [...path, index];
+    const children = mapColumns(rec.children, key, indexPath);
+    const tags = mapTags(rec.tags);
     return [
       {
         key,
@@ -124,8 +135,30 @@ function mapColumns(value: unknown, prefix = ''): SchemaRow[] {
         dataType: asString(rec.dataTypeDisplay) || asString(rec.dataType),
         description: asString(rec.description) || undefined,
         children: children.length ? children : undefined,
+        tags: tags.length ? tags : undefined,
+        fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
+        indexPath,
       },
     ];
+  });
+}
+
+/**
+ * Returns a copy of `rows` with the tags of the row whose `key` matches
+ * replaced by `tags` (D-F2 write回写): the match may sit at any nesting
+ * depth, and only that row is touched. The replacement list is the row's
+ * full tag list (both sources merged, as the official TagsContainerV2
+ * sends it), never a single-source subset.
+ */
+export function updateSchemaRowTags(rows: SchemaRow[], key: string, tags: TagRef[]): SchemaRow[] {
+  return rows.map((row) => {
+    if (row.key === key) {
+      return { ...row, tags: tags.length ? [...tags] : undefined };
+    }
+    if (row.children?.length) {
+      return { ...row, children: updateSchemaRowTags(row.children, key, tags) };
+    }
+    return row;
   });
 }
 

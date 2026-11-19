@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
+import { columnTagsPatch, descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
 
 describe('asset governance patches', () => {
   it('builds a TagLabel with the schema-required keys', () => {
@@ -129,5 +129,58 @@ describe('asset governance patches', () => {
         ],
       },
     ]);
+  });
+
+  it('replaces one topic field tags array by its schemaFields index', () => {
+    expect(
+      columnTagsPatch(
+        'topic',
+        [1],
+        [{ tagFQN: 'PII.Old', name: 'Old', source: 'Classification' }],
+        [{ tagFQN: 'PII.Email', name: 'Email', source: 'Classification' }],
+      ),
+    ).toEqual([
+      {
+        op: 'replace',
+        path: '/messageSchema/schemaFields/1/tags',
+        value: [{ tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' }],
+      },
+    ]);
+  });
+
+  it('descends through children for a nested container column', () => {
+    expect(
+      columnTagsPatch('container', [0, 2], [], [
+        { tagFQN: 'Glossary.City', name: 'City', source: 'Glossary' },
+      ]),
+    ).toEqual([
+      {
+        op: 'replace',
+        path: '/dataModel/columns/0/children/2/tags',
+        value: [{ tagFQN: 'Glossary.City', source: 'Glossary', labelType: 'Manual', state: 'Confirmed' }],
+      },
+    ]);
+  });
+
+  it('adds the tags array when a search index field has none', () => {
+    expect(
+      columnTagsPatch('searchIndex', [0], undefined, [
+        { tagFQN: 'PII.Email', name: 'Email', source: 'Classification' },
+      ]),
+    ).toEqual([
+      {
+        op: 'add',
+        path: '/fields/0/tags',
+        value: [{ tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' }],
+      },
+    ]);
+  });
+
+  it('rejects an entity type with no column-tags patch base', () => {
+    expect(() => columnTagsPatch('table', [0], [], [])).toThrow('No column-tags patch base');
+  });
+
+  it('rejects an empty index path instead of patching the whole array', () => {
+    expect(() => columnTagsPatch('topic', [], [], [])).toThrow('non-empty index path');
   });
 });

@@ -4047,7 +4047,6 @@ const zhCN = {
     shell: {
       hubDescription: '可根据需要配置 {brandName} 应用。',
       accessDenied: '访问被拒绝',
-      noAccessPlaceholder: '您没有必要的权限。请联系管理员，获取 {entity} 权限。',
       entityConfiguration: '{entity}配置',
       learningResource: '学习资源',
     },

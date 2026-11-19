@@ -8,14 +8,17 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {Alert, Button, Empty, Form, Input, Select, Space, Tag, Typography, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
 import { apiEndpointLocation, listApiEndpoints, type ApiEndpointRef } from '@/api/apiCollections';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
-import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset } from '@/api/entities';
+import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset, updateSchemaRowTags } from '@/api/entities';
+import { updateDataModelColumn, updateTableColumn } from '@/api/columns';
 import { getDerivedPermissionFlags } from '@/api/permissions';
+import type { OperationPermissions } from '@/api/permissions';
 import { getQueryCount } from '@/api/queries';
 import { getVoteStatus, voteAsset, type VoteType } from '@/api/votes';
 import { getLatestTableProfile, getTableSampleData, getTopicSampleData, listTableProfiles } from '@/api/profiler';
@@ -66,12 +69,13 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, type TagLabelInput } from '@/governance/assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import type { AssetDetail, CatalogPipelineStatus, SchemaRow } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, SchemaRow, TagRef } from '@/types/api';
+import type { TagSource } from '@/types/governance';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
 import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
@@ -101,6 +105,73 @@ const errorMessage = ref('');
 const asset = ref<AssetDetail | null>(null);
 const queryCount = ref<number | undefined>(undefined);
 const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+/** D-F2 schema-cell edit flags (per-surface derived permissions) plus the
+    deleted read-only gate; fail-closed (all false) until loaded. */
+const schemaTagAccess = ref({ canEditTags: false, canEditGlossaryTerms: false, readOnly: false });
+/** D-4 description + custom-properties derivation source: the entity's
+    permission operations from the store (cache-shared with the
+    usageSummary and schema branches below). */
+const assetOps = ref<OperationPermissions | null>(null);
+
+/**
+ * D-4 derived flags (official getDerivedPermissionFlags, DescriptionWidget
+ * shape): the entity's `deleted` gates every Edit* flag. The D-F2
+ * per-surface deleted convention applies only to column tags, not to
+ * the description derivation, which always passes `deleted`.
+ */
+const assetFlags = computed(() =>
+  getDerivedPermissionFlags(assetOps.value ?? {}, asset.value?.deleted === true),
+);
+const canEditDescription = computed(() => assetFlags.value.canEditDescription);
+const canEditCustomFields = computed(() => assetFlags.value.canEditCustomFields);
+/** Custom-properties read gate: null while the permission fetch is still resolving. */
+const customPropsCanView = computed<boolean | null>(() =>
+  loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
+);
+
+/**
+ * Official isDescriptionExpandedFor (DescriptionWidget): the description
+ * starts unfolded when the entity type's primary content collection is
+ * empty, so the page is not blank. `schemaRows` is the proxy for the
+ * column/field collections (table / dataModel / topic / searchIndex).
+ */
+const descriptionExpanded = computed(() => {
+  const a = asset.value;
+  if (!a) {
+    return false;
+  }
+  switch (props.entityType) {
+    case 'table':
+    case 'dashboardDataModel':
+    case 'topic':
+    case 'searchIndex':
+      return a.schemaRows.length === 0;
+    case 'dashboard':
+      return (a.charts?.length ?? 0) === 0;
+    case 'mlmodel':
+      return (a.mlFeatures?.length ?? 0) === 0;
+    case 'pipeline':
+      return (a.tasks?.length ?? 0) === 0;
+    case 'storedProcedure':
+      return !(a.storedProcedureCode?.code ?? '').trim();
+    default:
+      return false;
+  }
+});
+
+/**
+ * D-3 description-cell save: the same description JSON Patch as
+ * onSaveGovernance, on its own. Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(props.entityType, asset.value.id, descriptionPatch(asset.value.description, description));
+  message.success(t('asset.updated'));
+  await load();
+}
 const tests = ref<TestCase[]>([]);
 const testsError = ref('');
 const tableSample = ref<TableSampleData | null>(null);
@@ -123,6 +194,8 @@ const apiEndpoints = ref<ApiEndpointRef[]>([]);
 const apiEndpointsError = ref('');
 const activeTab = ref('');
 const editOpen = ref(false);
+const editKey = ref(0);
+const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
 const commentOpen = ref(false);
 const propsOpen = ref(false);
 const saving = ref(false);
@@ -409,11 +482,46 @@ const executionRows = computed(() => {
   return asset.value?.pipelineStatus ? [asset.value.pipelineStatus] : [];
 });
 
-const schemaColumns = computed(() => [
-  { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
-  { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: 180 },
-  { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
-]);
+/**
+ * D-F2 schema-column widths per surface, taken from the official column
+ * definitions (see DF2-BENCHMARK.md §1.1): name / type / description /
+ * Tags / Glossary Terms. The five surfaces do not share one width — a
+ * single shared width would misalign every surface against official.
+ */
+const SCHEMA_COLUMN_WIDTHS: Record<
+  string,
+  { name: number; dataType: number; description: number; tags: number; glossaryTerms: number }
+> = {
+  table: { name: 200, dataType: 150, description: 300, tags: 230, glossaryTerms: 230 },
+  topic: { name: 220, dataType: 220, description: 350, tags: 300, glossaryTerms: 300 },
+  container: { name: 300, dataType: 220, description: 350, tags: 300, glossaryTerms: 300 },
+  searchIndex: { name: 220, dataType: 180, description: 320, tags: 250, glossaryTerms: 250 },
+  dashboardDataModel: { name: 250, dataType: 100, description: 350, tags: 250, glossaryTerms: 250 },
+};
+
+/** Entity types whose detail view renders the D-F2 schema table. */
+const SCHEMA_COLUMN_ENTITY_TYPES = Object.keys(SCHEMA_COLUMN_WIDTHS);
+
+const schemaColumns = computed(() => {
+  const widths = SCHEMA_COLUMN_WIDTHS[props.entityType];
+  if (!widths) {
+    return [
+      { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+      { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: 180 },
+      { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
+    ];
+  }
+  return [
+    { title: t('asset.columns.name'), dataIndex: 'name', key: 'name', width: widths.name },
+    { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: widths.dataType },
+    { title: t('asset.columns.description'), dataIndex: 'description', key: 'description', width: widths.description },
+    // D-F2 read side: Tags and Glossary Terms share the row's single tags
+    // list (official SchemaTable's shared `TAGS` dataIndex, split by
+    // TagSource at render time); widths are per surface, not unified.
+    { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags', width: widths.tags },
+    { title: t('asset.tabs.glossaryTerms'), dataIndex: 'tags', key: 'glossaryTerms', width: widths.glossaryTerms },
+  ];
+});
 
 // Official SchemaTable's second guard: only STRUCT columns with loaded
 // nested columns get an expand icon.
@@ -482,6 +590,7 @@ async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
   asset.value = null;
+  schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: false };
   resetSecondary();
   if (!isDetailWired(props.entityType)) {
     errorMessage.value = t('asset.unwired', { type: props.entityType });
@@ -509,6 +618,37 @@ async function load(): Promise<void> {
       decodedFqn.value,
       extraFields ? { extraFields } : undefined,
     );
+    // D-4: one store read for the description + custom-properties
+    // derivation. The usageSummary branch above and the schema branch
+    // below populate the same per-entity cache key, so this is a cache
+    // hit whenever they ran; no extra request is issued for those
+    // types. A failed read fails closed (assetOps stays null).
+    assetOps.value = await permissionStore
+      .getEntityPermissionByFqn(props.entityType, decodedFqn.value)
+      .catch(() => null);
+    // D-F2 schema-cell permissions, per-surface official convention: Table
+    // and Container pass `deleted` into the derivation, Topic /
+    // SearchIndex / DataModel do not (their cells take `deleted` as a
+    // separate read-only gate instead). A failed permission read fails
+    // closed — the cells stay read-only — like the usageSummary gate
+    // above.
+    if (SCHEMA_COLUMN_ENTITY_TYPES.includes(props.entityType)) {
+      const deleted = asset.value.deleted === true;
+      const ops = await permissionStore
+        .getEntityPermissionByFqn(props.entityType, decodedFqn.value)
+        .catch(() => null);
+      if (ops) {
+        const passDeleted = props.entityType === 'table' || props.entityType === 'container';
+        const flags = getDerivedPermissionFlags(ops, passDeleted ? deleted : false);
+        schemaTagAccess.value = {
+          canEditTags: flags.canEditTags,
+          canEditGlossaryTerms: flags.canEditGlossaryTerms,
+          readOnly: deleted,
+        };
+      } else {
+        schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: deleted };
+      }
+    }
     const requestedTab = typeof route.query.tab === 'string' ? route.query.tab : '';
     activeTab.value = getRenderedActiveTab(tabs.value, requestedTab || undefined);
     // Pin tableQueryCountFn runs on the table page: the count resolves
@@ -525,6 +665,7 @@ async function load(): Promise<void> {
     await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses(), loadApiEndpoints()]);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
+    assetOps.value = null;
   } finally {
     loading.value = false;
   }
@@ -671,6 +812,8 @@ function openEdit(): void {
     .map((owner) => ownerKey(owner.id as string, owner.type as string));
   editForm.tagFqns = asset.value.tags.map((tag) => tag.tagFQN);
   editForm.domainIds = asset.value.domains.map((domain) => domain.id).filter((id): id is string => Boolean(id));
+  // Rebuild the rich-text editor so it opens on the current description.
+  editKey.value += 1;
   editOpen.value = true;
 }
 
@@ -711,7 +854,7 @@ async function onSaveGovernance(): Promise<void> {
       return parsed ? [parsed] : [];
     });
     await patchAsset(props.entityType, asset.value.id, [
-      ...descriptionPatch(asset.value.description, editForm.description),
+      ...descriptionPatch(asset.value.description, descriptionEditorRef.value?.getEditorContent()?.trim() ?? editForm.description),
       ...ownersPatch(asset.value.owners, owners),
       ...tagsPatch(asset.value.tags, selectedTagOptions()),
       ...domainsPatch(asset.value.domains, editForm.domainIds),
@@ -723,6 +866,82 @@ async function onSaveGovernance(): Promise<void> {
     message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
   } finally {
     saving.value = false;
+  }
+}
+
+async function onSchemaTagChange(row: SchemaRow, source: TagSource, tagFqns: string[]): Promise<void> {
+  if (!asset.value?.id) {
+    message.error(t('asset.patchNeedsId'));
+    return;
+  }
+  // Merge rule (official TagsContainerV2): the write carries the row's
+  // full tag list — the edited source's new selection plus the other
+  // source's existing labels untouched — because both the single-column
+  // PUT body and the PATCH tags op replace the whole list.
+  const otherSource: TagSource = source === 'Classification' ? 'Glossary' : 'Classification';
+  const kept = (row.tags ?? []).filter(
+    (tag) => tag.source === otherSource || (otherSource === 'Classification' && !tag.source),
+  );
+  const toInput = (tag: TagRef): TagLabelInput => ({
+    tagFQN: tag.tagFQN,
+    name: tag.name,
+    source: tag.source || 'Classification',
+    labelType: tag.labelType,
+    state: tag.state,
+  });
+  const picked: TagLabelInput[] = tagFqns.flatMap((fqn) => {
+    // The catalog carries no labelType/state, so the existing row tag's
+    // values are overlaid onto whichever option wins — the same rule as
+    // selectedTagOptions above, so an edit never flips a Generated label
+    // to Manual.
+    const existing = (row.tags ?? []).find((tag) => tag.tagFQN === fqn);
+    const fromCatalog = catalog.value.tags.find((tag) => tag.tagFQN === fqn);
+    if (fromCatalog) {
+      return [{ ...fromCatalog, labelType: existing?.labelType, state: existing?.state }];
+    }
+    if (existing) {
+      return [toInput(existing)];
+    }
+    return [];
+  });
+  const nextInputs: TagLabelInput[] = [...kept.map(toInput), ...picked];
+  const nextLabels = nextInputs.map((input) => toTagLabel(input));
+  const nextTags: TagRef[] = nextInputs.map((input) => {
+    const label = toTagLabel(input);
+    return {
+      tagFQN: label.tagFQN,
+      name: input.name,
+      source: label.source,
+      labelType: label.labelType,
+      state: label.state,
+    };
+  });
+  try {
+    let writtenTags: TagRef[];
+    if (props.entityType === 'table' || props.entityType === 'dashboardDataModel') {
+      // PUT group (official tableAPI / dataModelsAPI single-column PUT).
+      if (!row.fullyQualifiedName) {
+        message.error(t('asset.updateFailed'));
+        return;
+      }
+      const update = props.entityType === 'table' ? updateTableColumn : updateDataModelColumn;
+      writtenTags = await update(row.fullyQualifiedName, nextLabels);
+    } else if (
+      props.entityType === 'topic' ||
+      props.entityType === 'container' ||
+      props.entityType === 'searchIndex'
+    ) {
+      // PATCH group (official whole-entity PATCH, one JSON Patch op on
+      // this field's tags array via patchAsset).
+      const ops = columnTagsPatch(props.entityType, row.indexPath, row.tags, nextInputs);
+      await patchAsset(props.entityType, asset.value.id, ops);
+      writtenTags = nextTags;
+    } else {
+      return;
+    }
+    asset.value.schemaRows = updateSchemaRowTags(asset.value.schemaRows, row.key, writtenTags);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
   }
 }
 
@@ -817,6 +1036,13 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   apiEndpointsError: apiEndpointsError.value,
   apiEndpointSchemaJson,
   onApiEndpointClick,
+  descriptionAccess: canEditDescription.value,
+  descriptionExpanded: descriptionExpanded.value,
+  onDescriptionUpdate,
+  customPropsCanView: customPropsCanView.value,
+  schemaTagOptions: catalog.value.tags,
+  schemaTagAccess: schemaTagAccess.value,
+  onSchemaTagChange,
 }));
 
 watch(
@@ -911,7 +1137,7 @@ onMounted(() => {
         </Button>
         <Button
           data-testid="edit-custom-properties"
-          :disabled="!asset?.id || !customProperties.length"
+          :disabled="!asset?.id || !canEditCustomFields || !customProperties.length"
           @click="openCustomProperties"
         >
           {{ t('asset.editCustomProperties') }}
@@ -928,7 +1154,13 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetOverviewFields :asset="asset" :entity-type="entityType" />
+            <AssetOverviewFields
+              :asset="asset"
+              :entity-type="entityType"
+              :description-access="canEditDescription"
+              :description-expanded="descriptionExpanded"
+              :on-description-update="onDescriptionUpdate"
+            />
             <AssetDetailPiece piece="metricExpression" :context="pieceContext" />
           </template>
       </template>
@@ -985,7 +1217,14 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetOverviewFields
+              v-if="isSplit"
+              :asset="asset"
+              :entity-type="entityType"
+              :description-access="canEditDescription"
+              :description-expanded="descriptionExpanded"
+              :on-description-update="onDescriptionUpdate"
+            />
             <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
           </template>
       </template>
@@ -1000,7 +1239,14 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetOverviewFields
+              v-if="isSplit"
+              :asset="asset"
+              :entity-type="entityType"
+              :description-access="canEditDescription"
+              :description-expanded="descriptionExpanded"
+              :on-description-update="onDescriptionUpdate"
+            />
             <AssetDetailPiece piece="schemaTable" :context="pieceContext" />
           </template>
       </template>
@@ -1015,7 +1261,14 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetOverviewFields v-if="isSplit" :asset="asset" :entity-type="entityType" />
+            <AssetOverviewFields
+              v-if="isSplit"
+              :asset="asset"
+              :entity-type="entityType"
+              :description-access="canEditDescription"
+              :description-expanded="descriptionExpanded"
+              :on-description-update="onDescriptionUpdate"
+            />
             <AssetDetailPiece piece="schemaTable" :context="pieceContext" with-joins />
           </template>
       </template>
@@ -1178,7 +1431,13 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetOverviewFields :asset="asset" :entity-type="entityType" />
+            <AssetOverviewFields
+              :asset="asset"
+              :entity-type="entityType"
+              :description-access="canEditDescription"
+              :description-expanded="descriptionExpanded"
+              :on-description-update="onDescriptionUpdate"
+            />
             <AssetDetailPiece piece="chartsTables" :context="pieceContext" />
           </template>
       </template>
@@ -1416,6 +1675,7 @@ onMounted(() => {
               :values="asset?.extension ?? {}"
               :error="customPropsError"
               :entity-type="entityType"
+              :can-view="customPropsCanView"
             />
           </template>
       </template>
@@ -1435,6 +1695,7 @@ onMounted(() => {
               :values="asset?.extension ?? {}"
               :error="customPropsError"
               :entity-type="entityType"
+              :can-view="customPropsCanView"
             />
           </template>
       </template>
@@ -1449,7 +1710,14 @@ onMounted(() => {
       @ok="onSaveGovernance" @cancel="editOpen = false">
       <Form layout="vertical">
         <Form.Item :label="t('asset.fields.description')">
-          <Input.TextArea v-model:value="editForm.description" data-testid="asset-description" :rows="3" />
+          <div data-testid="asset-description">
+            <SmRichTextEditor
+              :key="editKey"
+              ref="descriptionEditorRef"
+              :autofocus="true"
+              :initial-value="editForm.description"
+            />
+          </div>
         </Form.Item>
         <Form.Item :label="t('asset.fields.owners')">
           <Select v-model:value="editForm.ownerKeys" mode="multiple" allow-clear data-testid="asset-owners">

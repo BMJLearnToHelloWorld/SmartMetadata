@@ -41,6 +41,7 @@ function mapTag(raw: Record<string, unknown>): ClassificationTag | null {
     parent: parentRefs[0],
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),
     disabled: asBoolean(raw.disabled),
+    deleted: asBoolean(raw.deleted),
     usageCount: asNumber(raw.usageCount),
     owners: mapEntityRefs(raw.owners),
     reviewers: mapEntityRefs(raw.reviewers),

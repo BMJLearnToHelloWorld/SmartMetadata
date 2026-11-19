@@ -8,6 +8,9 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
@@ -45,7 +48,29 @@ const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const editOpen = ref(false);
+const editKey = ref(0);
+const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
 const saving = ref(false);
+
+/**
+ * D-4: the composable fetches the term's permissions by FQN and derives
+ * the flags (deleted-gated). A fetch failure is toasted once via the
+ * error watcher; the flags stay all-false (fail-closed).
+ */
+const termPermissions = useEntityPermissions(
+  'glossaryTerm',
+  () => term.value?.fullyQualifiedName || term.value?.name || '',
+  { deleted: () => term.value?.deleted === true },
+);
+const canEditDescription = computed(() => termPermissions.canEditDescription.value);
+watch(
+  () => termPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
 const editForm = reactive({
   displayName: '',
   description: '',
@@ -219,6 +244,8 @@ function openEdit(): void {
   editForm.relatedTermFqns = term.value.relatedTerms
     .map((item) => item.fullyQualifiedName || item.name)
     .filter(Boolean);
+  // Rebuild the rich-text editor so it opens on the current description.
+  editKey.value += 1;
   editOpen.value = true;
 }
 
@@ -232,7 +259,7 @@ async function onSave(): Promise<void> {
     await updateGlossaryTerm({
       glossary: term.value.glossary.fullyQualifiedName || term.value.glossary.name,
       name: term.value.name,
-      description: editForm.description.trim(),
+      description: descriptionEditorRef.value?.getEditorContent()?.trim() ?? editForm.description.trim(),
       displayName: editForm.displayName.trim() || undefined,
       parent: term.value.parent?.fullyQualifiedName || term.value.parent?.name,
       relatedTerms: editForm.relatedTermFqns,
@@ -245,6 +272,31 @@ async function onSave(): Promise<void> {
   } finally {
     saving.value = false;
   }
+}
+
+/**
+ * D-3 description-cell save: the same full-body PUT as onSave, built
+ * from the loaded entity (not the edit form, which is only populated
+ * while the page modal is open). Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!term.value?.glossary) {
+    message.error(t('terms.missingGlossary'));
+    return;
+  }
+  await updateGlossaryTerm({
+    glossary: term.value.glossary.fullyQualifiedName || term.value.glossary.name,
+    name: term.value.name,
+    description,
+    displayName: term.value.displayName || undefined,
+    parent: term.value.parent?.fullyQualifiedName || term.value.parent?.name,
+    relatedTerms: term.value.relatedTerms
+      .map((item) => item.fullyQualifiedName || item.name)
+      .filter(Boolean),
+  });
+  message.success(t('terms.updated'));
+  await load();
 }
 
 async function onDeleteTerm(): Promise<void> {
@@ -342,9 +394,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -416,7 +471,14 @@ onMounted(() => {
         <Descriptions.Item :label="t('crud.fqn')">{{ term.fullyQualifiedName }}</Descriptions.Item>
         <Descriptions.Item :label="t('terms.glossary')">{{ term.glossary?.name || '—' }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.parent')">{{ term.parent?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">
+              <EntityDescriptionCell
+                :description="term.description"
+                :entity-name="term.displayName || term.name"
+                :has-edit-access="canEditDescription"
+                :on-description-update="onDescriptionUpdate"
+              />
+            </Descriptions.Item>
         <Descriptions.Item :label="t('terms.relatedTerms')">
           {{ term.relatedTerms.map((item) => item.displayName || item.name).join(', ') || '—' }}
         </Descriptions.Item>
@@ -426,9 +488,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('glossary_terms')" :layout="widgetLayoutFor('glossary_terms')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -522,9 +587,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -624,9 +692,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -706,9 +777,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('relations_graph')" :layout="widgetLayoutFor('relations_graph')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -781,9 +855,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('custom_properties')" :layout="widgetLayoutFor('custom_properties')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -856,9 +933,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="GlossaryTerm">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ term.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="term.description"
+              :entity-name="term.displayName || term.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
             <Descriptions bordered :column="1" size="small">
@@ -940,7 +1020,12 @@ onMounted(() => {
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+        <SmRichTextEditor
+              :key="editKey"
+              ref="descriptionEditorRef"
+              :autofocus="true"
+              :initial-value="editForm.description"
+            />
       </Form.Item>
       <Form.Item :label="t('terms.relatedTerms')">
         <Select v-model:value="editForm.relatedTermFqns" mode="multiple" allow-clear>

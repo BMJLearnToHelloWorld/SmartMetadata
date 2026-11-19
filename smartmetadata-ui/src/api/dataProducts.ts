@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDataProductRequest, DataProduct } from '@/types/governance';
@@ -68,6 +68,7 @@ function mapDataProduct(raw: Record<string, unknown>): DataProduct | null {
     displayName: asString(raw.displayName) || undefined,
     description: asString(raw.description) || undefined,
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
+    deleted: asBoolean(raw.deleted),
     domains: mapEntityRefs(raw.domains),
     owners: mapEntityRefs(raw.owners),
     reviewers: mapEntityRefs(raw.reviewers),

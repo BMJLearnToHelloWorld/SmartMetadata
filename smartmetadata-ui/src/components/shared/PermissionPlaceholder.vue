@@ -42,7 +42,7 @@ const hasTitle = computed(() => !!props.title || !!slots.title);
 const hasDescription = computed(() => !!props.description || !!slots.description);
 const showNoAccess = computed(() => !hasDescription.value && !hasTitle.value);
 const noAccessMessage = computed(() =>
-  t('settings.shell.noAccessPlaceholder', { entity: props.permissionValue ?? t('label.resource') })
+  t('message.no-access-placeholder', { entity: props.permissionValue ?? t('label.resource') })
 );
 const noAccessParts = computed(() => splitTransElement(noAccessMessage.value));
 </script>

@@ -11,7 +11,16 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
+
+// The description cell's read-only editor applies its content on a 0ms
+// timer (SmRichTextEditor content effect), so mounts wait a real tick
+// before asserting rendered description text.
+async function tick(ms = 10) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  await nextTick();
+}
 import AddAssetsModal from '@/features/crud/AddAssetsModal.vue';
 import DomainDetailView from './DomainDetailView.vue';
 
@@ -35,7 +44,7 @@ describe('DomainDetailView delete', () => {
         if (url.includes('/api/v1/domains/d1') && init?.method === 'DELETE') {
           return jsonResponse({});
         }
-        if (url.includes('/api/v1/domains/d1')) {
+        if (url.includes('/api/v1/domains/name/Finance')) {
           return jsonResponse({
             id: 'd1',
             name: 'Finance',
@@ -66,13 +75,13 @@ describe('DomainDetailView delete', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
       ],
     });
-    await router.push('/governance/domains/d1');
+    await router.push('/governance/domains/Finance');
     await router.isReady();
     const wrapper = mount(DomainDetailView, {
-      props: { id: 'd1' },
+      props: { fqn: 'Finance' },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
       attachTo: document.body,
     });
@@ -103,13 +112,13 @@ describe('DomainDetailView delete', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
       ],
     });
-    await router.push('/governance/domains/d1');
+    await router.push('/governance/domains/Finance');
     await router.isReady();
     const wrapper = mount(DomainDetailView, {
-      props: { id: 'd1' },
+      props: { fqn: 'Finance' },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
       attachTo: document.body,
     });
@@ -151,7 +160,7 @@ describe('DomainDetailView dryRun', () => {
         if (url.includes('/api/v1/domains/d1/assets')) {
           return jsonResponse({ data: [], paging: { total: 0 } });
         }
-        if (url.includes('/api/v1/domains/d1')) {
+        if (url.includes('/api/v1/domains/name/Finance')) {
           return jsonResponse({
             id: 'd1',
             name: 'Finance',
@@ -182,13 +191,13 @@ describe('DomainDetailView dryRun', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
       ],
     });
-    await router.push('/governance/domains/d1');
+    await router.push('/governance/domains/Finance');
     await router.isReady();
     const wrapper = mount(DomainDetailView, {
-      props: { id: 'd1' },
+      props: { fqn: 'Finance' },
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
       attachTo: document.body,
     });
@@ -223,7 +232,7 @@ describe('DomainDetailView persona tab customization (C-4)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/domains/d1')) {
+        if (url.includes('/api/v1/domains/name/Finance')) {
           return jsonResponse({
             id: 'd1',
             name: 'Finance',
@@ -254,13 +263,13 @@ describe('DomainDetailView persona tab customization (C-4)', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
       ],
     });
-    await router.push('/governance/domains/d1');
+    await router.push('/governance/domains/Finance');
     await router.isReady();
     const wrapper = mount(DomainDetailView, {
-      props: { id: 'd1' },
+      props: { fqn: 'Finance' },
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
@@ -268,6 +277,7 @@ describe('DomainDetailView persona tab customization (C-4)', () => {
     await flushPromises();
     await flushPromises();
     await wrapper.vm.$nextTick();
+    await tick();
     return wrapper;
   }
 
@@ -386,7 +396,7 @@ describe('DomainDetailView widget grid (B-8)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/domains/d1')) {
+        if (url.includes('/api/v1/domains/name/Finance')) {
           return jsonResponse({
             id: 'd1',
             name: 'finance',
@@ -423,13 +433,13 @@ describe('DomainDetailView widget grid (B-8)', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
       ],
     });
-    await router.push('/governance/domains/d1');
+    await router.push('/governance/domains/Finance');
     await router.isReady();
     const wrapper = mount(DomainDetailView, {
-      props: { id: 'd1' },
+      props: { fqn: 'Finance' },
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
@@ -437,6 +447,7 @@ describe('DomainDetailView widget grid (B-8)', () => {
     await flushPromises();
     await flushPromises();
     await wrapper.vm.$nextTick();
+    await tick();
     return wrapper;
   }
 
@@ -562,6 +573,205 @@ describe('DomainDetailView widget grid (B-8)', () => {
     // Every other tab keeps its existing panel.
     expect(wrapper.find('[data-testid="add-domain-assets"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+});
+
+describe('DomainDetailView FQN addressing (B-9)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountDomainWithFqn(fqn: string, domainBody: Record<string, unknown> | null) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/name/')) {
+          return domainBody ? jsonResponse(domainBody) : new Response('not found', { status: 404 });
+        }
+        if (url.includes('/api/v1/domains/d1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push(`/governance/domains/${encodeURIComponent(fqn)}`);
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { fqn },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it('loads a dotted FQN by name and renders the domain', async () => {
+    const wrapper = await mountDomainWithFqn('Finance.Sub', {
+      id: 'd9',
+      name: 'Sub',
+      displayName: 'Finance Sub',
+      fullyQualifiedName: 'Finance.Sub',
+      description: 'Sub-domain assets',
+      domainType: 'Consumer-aligned',
+      owners: [],
+      experts: [],
+      tags: [],
+      children: [],
+    });
+    const detailCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([input]) => String(input).includes('/api/v1/domains/name/'));
+    expect(String(detailCall?.[0])).toContain('/api/v1/domains/name/Finance.Sub');
+    expect(wrapper.text()).toContain('Finance Sub');
+    wrapper.unmount();
+  });
+
+  it('shows the error state, not a blank page, for a legacy UUID deep link', async () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000';
+    const wrapper = await mountDomainWithFqn(uuid, null);
+    const detailCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([input]) => String(input).includes('/api/v1/domains/name/'));
+    expect(String(detailCall?.[0])).toContain(`/api/v1/domains/name/${uuid}`);
+    const error = wrapper.find('[data-testid="entity-detail-error"]');
+    expect(error.exists()).toBe(true);
+    // The message is the fetch failure's own text (the stub answers a
+    // plain 404 body); the assertion is that an error state renders at
+    // all — no blank page, no hang — not the stub's wording.
+    expect(error.text().length).toBeGreaterThan(0);
+    expect(wrapper.text()).not.toContain('Finance Sub');
+    wrapper.unmount();
+  });
+});
+
+describe('DomainDetailView description gate (D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/name/Finance')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'finance',
+            displayName: 'Finance Domain',
+            fullyQualifiedName: 'finance.fqn',
+            description: 'Finance assets',
+            domainType: 'Source-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [],
+          });
+        }
+        if (url.includes('/v1/permissions/domain/name/')) {
+          return jsonResponse({ resource: 'domain', permissions: operations });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/Finance');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { fqn: 'Finance' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await tick();
+    return wrapper;
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button when the permission fetch fails', async () => {
+    // No /v1/permissions branch in this stub: 404, fail-closed.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/name/Finance')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'finance',
+            displayName: 'Finance Domain',
+            fullyQualifiedName: 'finance.fqn',
+            description: 'Finance assets',
+            domainType: 'Source-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/Finance');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { fqn: 'Finance' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await tick();
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

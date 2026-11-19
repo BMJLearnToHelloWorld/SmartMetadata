@@ -137,6 +137,7 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     displayName: asString(raw.displayName) || undefined,
     description: asString(raw.description) || undefined,
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
+    deleted: asBoolean(raw.deleted),
     glossary: glossaryRefs[0],
     parent: parentRefs[0],
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),

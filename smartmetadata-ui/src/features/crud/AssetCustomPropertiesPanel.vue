@@ -6,14 +6,27 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Alert, Table, Typography } from 'ant-design-vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import type { CustomPropertyDef } from '@/types/collaboration';
 
-const props = defineProps<{
-  defs: CustomPropertyDef[];
-  values: Record<string, unknown>;
-  error: string;
-  entityType: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    defs: CustomPropertyDef[];
+    values: Record<string, unknown>;
+    error: string;
+    entityType: string;
+    /**
+     * Read permission for custom fields (official CustomPropertyTable:
+     * without it the table is replaced by a PermissionPlaceholder).
+     * `null` means the permission is still resolving — render nothing
+     * rather than flashing either the table or the placeholder.
+     * Defaults to true so existing callers without permission wiring
+     * keep the current table.
+     */
+    canView?: boolean | null;
+  }>(),
+  { canView: true },
+);
 
 const { t } = useI18n();
 
@@ -33,7 +46,12 @@ function extensionValue(name: string): string {
 </script>
 
 <template>
-  <div>
+  <div v-if="canView === false" class="custom-properties__no-access">
+    <PermissionPlaceholder
+      :permission-value="t('label.view-entity', { entity: t('label.custom-property-plural') })"
+    />
+  </div>
+  <div v-else-if="canView === true">
     <Typography.Paragraph type="secondary">
       {{ t('asset.customPropertiesLead', { type: entityType }) }}
     </Typography.Paragraph>
@@ -61,5 +79,12 @@ function extensionValue(name: string): string {
 <style scoped>
 .detail__alert {
   margin-bottom: 16px;
+}
+
+/* Official CustomPropertyTable placeholder host: relative, full-size,
+   min-height so the absolutely-positioned placeholder stays visible. */
+.custom-properties__no-access {
+  position: relative;
+  min-height: 240px;
 }
 </style>

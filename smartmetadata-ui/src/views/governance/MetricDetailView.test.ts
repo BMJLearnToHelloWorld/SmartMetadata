@@ -427,3 +427,105 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     wrapper.unmount();
   });
 });
+
+describe('MetricDetailView description gate + PATCH save (D-3/D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    confirmDelete.mockReset();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/metrics/name/')) {
+          return jsonResponse({
+            id: 'm1',
+            name: 'mau',
+            displayName: 'Monthly Active Users',
+            fullyQualifiedName: 'kpi.mau',
+            description: 'Active users per month',
+            metricType: 'NUMBER',
+            unitOfMeasurement: 'users',
+            granularity: 'MONTHLY',
+            metricExpression: { language: 'SQL', code: 'count(distinct user_id)' },
+            owners: [],
+            tags: [],
+            domains: [],
+          });
+        }
+        if (url.includes('/v1/permissions/metric/name/')) {
+          return jsonResponse({ resource: 'metric', permissions: operations });
+        }
+        if (url.includes('/api/v1/activity/entity/metric/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/metadata/types/name/metric/customProperties')) {
+          return jsonResponse([]);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/metrics', name: 'governance-metrics', component: { template: '<div>list</div>' } },
+        { path: '/governance/metrics/:fqn', name: 'governance-metric', component: MetricDetailView, props: true },
+        { path: '/assets/:entityType/:fqn/versions', name: 'asset-version', component: { template: '<div>versions</div>' } },
+      ],
+    });
+    await router.push('/governance/metrics/kpi.mau');
+    await router.isReady();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(MetricDetailView, {
+      props: { fqn: 'kpi.mau' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('saves the description with PATCH /v1/metrics/{id} (official patchMetric)', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    await wrapper.find('[data-testid="edit-description"]').trigger('click');
+    // The modal editor applies its content on a 0ms timer before save reads it.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await wrapper.vm.$nextTick();
+    const save = document.body.querySelector('[data-testid="save"]') as HTMLElement | null;
+    expect(save).not.toBeNull();
+    save?.click();
+    await flushPromises();
+    await flushPromises();
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url, init]) => String(url).includes('/api/v1/metrics/m1') && init?.method === 'PATCH');
+    expect(patchCall).toBeDefined();
+    const body = JSON.parse(String((patchCall?.[1] as RequestInit)?.body ?? '[]')) as Array<Record<string, unknown>>;
+    expect(body.some((op) => op.path === '/description')).toBe(true);
+    expect(String(body.find((op) => op.path === '/description')?.value)).toContain('Active users per month');
+    wrapper.unmount();
+  });
+});

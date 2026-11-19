@@ -7,12 +7,21 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Descriptions, Empty, Space, Table, Tag, Typography } from 'ant-design-vue';
 import { StarOutlined } from '@ant-design/icons-vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import type { AssetDetail, TagRef } from '@/types/api';
 
-const props = defineProps<{
-  asset: AssetDetail;
-  entityType: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    asset: AssetDetail;
+    entityType: string;
+    /** D-3: derived canEditDescription; without onDescriptionUpdate the cell is preview-only. */
+    descriptionAccess?: boolean;
+    /** D-3: official isDescriptionExpandedFor for this entity type. */
+    descriptionExpanded?: boolean;
+    onDescriptionUpdate?: (description: string) => Promise<unknown> | unknown;
+  }>(),
+  { descriptionAccess: false, descriptionExpanded: false },
+);
 
 const { t } = useI18n();
 
@@ -109,7 +118,15 @@ const showRelated = computed(
         <a :href="asset.sourceUrl" target="_blank" rel="noreferrer">{{ asset.sourceUrl }}</a>
       </Descriptions.Item>
       <Descriptions.Item :label="t('asset.fields.fqn')">{{ asset.fullyQualifiedName }}</Descriptions.Item>
-      <Descriptions.Item :label="t('asset.fields.description')">{{ asset.description || '—' }}</Descriptions.Item>
+      <Descriptions.Item :label="t('asset.fields.description')">
+        <EntityDescriptionCell
+          :description="asset.description"
+          :entity-name="asset.displayName || asset.name"
+          :has-edit-access="descriptionAccess"
+          :expanded="descriptionExpanded"
+          :on-description-update="onDescriptionUpdate"
+        />
+      </Descriptions.Item>
       <Descriptions.Item :label="t('asset.fields.owners')">
         <Space wrap>
           <span v-for="owner in asset.owners" :key="owner.id || owner.name">

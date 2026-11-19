@@ -820,3 +820,62 @@ describe('GlossaryDetailView widget grid (B-8)', () => {
     wrapper.unmount();
   });
 });
+
+describe('GlossaryDetailView description gate (D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/glossaries/g1')) {
+          return jsonResponse({
+            id: 'g1',
+            name: 'Business',
+            displayName: 'Business Glossary',
+            description: 'Core terms',
+            fullyQualifiedName: 'Business',
+            owners: [],
+            reviewers: [],
+            tags: [],
+            domains: [],
+            termCount: 1,
+          });
+        }
+        if (url.includes('/api/v1/glossaries')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/permissions/glossary/name/')) {
+          return jsonResponse({ resource: 'glossary', permissions: operations });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountView('g1');
+    await flushPromises();
+    await flushPromises();
+    return wrapper;
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="glossary-description"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});

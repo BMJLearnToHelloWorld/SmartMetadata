@@ -32,6 +32,7 @@ function mapGlossary(raw: Record<string, unknown>): Glossary | null {
     displayName: asString(raw.displayName) || undefined,
     description: asString(raw.description) || undefined,
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
+    deleted: asBoolean(raw.deleted),
     mutuallyExclusive: asBoolean(raw.mutuallyExclusive),
     termCount: asNumber(raw.termCount),
     owners: mapEntityRefs(raw.owners),
