@@ -19,7 +19,6 @@ import {
   getApiService,
   listApiServices,
   mapApiService,
-  updateApiService,
 } from '@/api/apiServices';
 import {
   createDashboardService,
@@ -28,7 +27,6 @@ import {
   getDashboardService,
   listDashboardServices,
   mapDashboardService,
-  updateDashboardService,
 } from '@/api/dashboardServices';
 import {
   createDatabaseService,
@@ -37,7 +35,6 @@ import {
   getDatabaseService,
   listDatabaseServices,
   mapDatabaseService,
-  updateDatabaseService,
 } from '@/api/databaseServices';
 import {
   createDriveService,
@@ -46,7 +43,6 @@ import {
   getDriveService,
   listDriveServices,
   mapDriveService,
-  updateDriveService,
 } from '@/api/driveServices';
 import {
   createLlmService,
@@ -55,7 +51,6 @@ import {
   getLlmService,
   listLlmServices,
   mapLlmService,
-  updateLlmService,
 } from '@/api/llmServices';
 import {
   createMcpService,
@@ -64,7 +59,6 @@ import {
   getMcpService,
   listMcpServices,
   mapMcpService,
-  updateMcpService,
 } from '@/api/mcpServices';
 import {
   createMessagingService,
@@ -73,7 +67,6 @@ import {
   getMessagingService,
   listMessagingServices,
   mapMessagingService,
-  updateMessagingService,
 } from '@/api/messagingServices';
 import {
   createMetadataService,
@@ -82,7 +75,6 @@ import {
   getMetadataService,
   listMetadataServices,
   mapMetadataService,
-  updateMetadataService,
 } from '@/api/metadataServices';
 import {
   createMlModelService,
@@ -91,7 +83,6 @@ import {
   getMlModelService,
   listMlModelServices,
   mapMlModelService,
-  updateMlModelService,
 } from '@/api/mlmodelServices';
 import {
   createPipelineService,
@@ -100,7 +91,6 @@ import {
   getPipelineService,
   listPipelineServices,
   mapPipelineService,
-  updatePipelineService,
 } from '@/api/pipelineServices';
 import {
   createSearchService,
@@ -109,7 +99,6 @@ import {
   getSearchService,
   listSearchServices,
   mapSearchService,
-  updateSearchService,
 } from '@/api/searchServices';
 import {
   createSecurityService,
@@ -118,7 +107,6 @@ import {
   getSecurityService,
   listSecurityServices,
   mapSecurityService,
-  updateSecurityService,
 } from '@/api/securityServices';
 import {
   createStorageService,
@@ -127,7 +115,6 @@ import {
   getStorageService,
   listStorageServices,
   mapStorageService,
-  updateStorageService,
 } from '@/api/storageServices';
 import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
 import type {
@@ -138,7 +125,6 @@ import type {
 import type { IncludeFilter, Paged } from '@/types/admin';
 
 type CreateFn = (body: CreateDatabaseServiceRequest) => Promise<CatalogService>;
-type UpdateFn = (body: CreateDatabaseServiceRequest) => Promise<CatalogService>;
 type GetFn = (id: string, include?: IncludeFilter) => Promise<CatalogService>;
 type DeleteFn = (id: string, options?: ServiceDeleteOptions) => Promise<AsyncDeleteJob>;
 type RestoreFn = (id: string) => Promise<CatalogService>;
@@ -167,22 +153,6 @@ export const SERVICE_CREATE_API: Record<ServiceKind, CreateFn> = {
   llm: createLlmService,
   mcp: createMcpService,
   security: createSecurityService,
-};
-
-export const SERVICE_UPDATE_API: Record<ServiceKind, UpdateFn> = {
-  database: updateDatabaseService,
-  messaging: updateMessagingService,
-  dashboard: updateDashboardService,
-  storage: updateStorageService,
-  pipeline: updatePipelineService,
-  api: updateApiService,
-  mlmodel: updateMlModelService,
-  metadata: updateMetadataService,
-  drive: updateDriveService,
-  search: updateSearchService,
-  llm: updateLlmService,
-  mcp: updateMcpService,
-  security: updateSecurityService,
 };
 
 export const SERVICE_GET_API: Record<ServiceKind, GetFn> = {

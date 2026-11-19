@@ -98,18 +98,6 @@ export async function createDashboardService(body: CreateDashboardServiceRequest
   return mapped;
 }
 
-export async function updateDashboardService(body: CreateDashboardServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/dashboardServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapDashboardService(raw);
-  if (!mapped) {
-    throw new Error('Update dashboard service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

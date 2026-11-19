@@ -98,18 +98,6 @@ export async function createDatabaseService(body: CreateDatabaseServiceRequest):
   return mapped;
 }
 
-export async function updateDatabaseService(body: CreateDatabaseServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/databaseServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapDatabaseService(raw);
-  if (!mapped) {
-    throw new Error('Update database service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

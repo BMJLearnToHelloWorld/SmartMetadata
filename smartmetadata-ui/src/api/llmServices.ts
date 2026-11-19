@@ -98,18 +98,6 @@ export async function createLlmService(body: CreateDatabaseServiceRequest): Prom
   return mapped;
 }
 
-export async function updateLlmService(body: CreateDatabaseServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/llmServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapLlmService(raw);
-  if (!mapped) {
-    throw new Error('Update llm service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

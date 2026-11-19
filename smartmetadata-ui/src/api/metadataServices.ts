@@ -98,18 +98,6 @@ export async function createMetadataService(body: CreateDatabaseServiceRequest):
   return mapped;
 }
 
-export async function updateMetadataService(body: CreateDatabaseServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/metadataServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapMetadataService(raw);
-  if (!mapped) {
-    throw new Error('Update metadata service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

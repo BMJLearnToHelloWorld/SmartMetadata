@@ -98,18 +98,6 @@ export async function createDriveService(body: CreateDatabaseServiceRequest): Pr
   return mapped;
 }
 
-export async function updateDriveService(body: CreateDatabaseServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/driveServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapDriveService(raw);
-  if (!mapped) {
-    throw new Error('Update drive service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin
