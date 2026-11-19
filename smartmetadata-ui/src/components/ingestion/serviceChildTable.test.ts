@@ -66,6 +66,62 @@ describe('serviceChildTable columns and helpers', () => {
     expect(typeof columns[0].sorter).toBe('function');
   });
 
+  it('adds the version-page extras in pin order when titles are provided', () => {
+    const titles = {
+      name: 'Name',
+      description: 'Description',
+      owners: 'Owners',
+      tags: 'Tags',
+      tier: 'Tier',
+      certification: 'Certification',
+    };
+    const columns = serviceChildColumns(titles, {
+      domains: 'Domains',
+      dataProducts: 'Data Products',
+      scheduleInterval: 'Schedule Interval',
+      usage: 'Usage',
+    }) as Array<{ key: string; width: number }>;
+    expect(columns.map((column) => column.key)).toEqual([
+      'name',
+      'description',
+      'scheduleInterval',
+      'owners',
+      'domains',
+      'dataProducts',
+      'tags',
+      'tier',
+      'certification',
+      'usageSummary',
+    ]);
+    expect(columns.map((column) => column.width)).toEqual([
+      280, 300, 200, 280, 200, 200, 240, 120, 150, 200,
+    ]);
+  });
+
+  it('omits each extra column whose title is not provided', () => {
+    const columns = serviceChildColumns(
+      {
+        name: 'Name',
+        description: 'Description',
+        owners: 'Owners',
+        tags: 'Tags',
+        tier: 'Tier',
+        certification: 'Certification',
+      },
+      { domains: 'Domains', dataProducts: 'Data Products' },
+    ) as Array<{ key: string }>;
+    expect(columns.map((column) => column.key)).toEqual([
+      'name',
+      'description',
+      'owners',
+      'domains',
+      'dataProducts',
+      'tags',
+      'tier',
+      'certification',
+    ]);
+  });
+
   it('sorts by name and stays inert without string names', () => {
     expect(compareChildNames({ name: 'b' }, { name: 'a' })).toBeGreaterThan(0);
     expect(compareChildNames({ name: 'a' }, { name: 'b' })).toBeLessThan(0);

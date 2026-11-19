@@ -18,6 +18,12 @@ export const MODAL_SIZES = {
   form: 520,
   /** Export dialogs. EntityExportModal.component.tsx:165 (width 480). */
   export: 480,
+  /**
+   * Delete-confirmation dialogs. GlossaryTermRelationSettings.tsx:430
+   * and IntakeFormsPage.tsx:289 (Dialog width 480). A separate entry
+   * from `export`: same width, different official surface.
+   */
+  deleteDialog: 480,
   /** Wide forms. EditCustomPropertyModal.tsx:27,55 (MODAL_WIDTH = 720). */
   wide: 720,
   /** Extra-wide dialogs. AdvanceSearchModal.component.tsx:52 (Dialog width 1080). */
@@ -37,6 +43,21 @@ export const DRAWER_WIDTHS = {
    * when no side panel is shown).
    */
   form: 700,
+  /**
+   * Relation-type form panel. GlossaryTermRelationSettings.tsx:368
+   * (SlideoutMenu width 500).
+   */
+  relationTypeForm: 500,
+  /**
+   * Workflow creation panel. WorkflowsPage.tsx:438 (SlideoutMenu
+   * width 640).
+   */
+  workflowCreate: 640,
+  /**
+   * Intake-form designer panel. IntakeFormDesignerModal.tsx:56
+   * (SlideoutMenu width "75%").
+   */
+  intakeDesigner: '75%',
 } as const;
 
 export type DrawerWidthKey = keyof typeof DRAWER_WIDTHS;
