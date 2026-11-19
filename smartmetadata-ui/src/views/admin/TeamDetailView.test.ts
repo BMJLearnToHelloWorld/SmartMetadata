@@ -12,9 +12,11 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { useAuthStore } from '@/stores/auth';
 import TeamDetailView from './TeamDetailView.vue';
+import TeamHierarchyTable from './TeamHierarchyTable.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -190,5 +192,45 @@ describe('TeamDetailView (pin TeamsPage)', () => {
     teamFixture = null;
     const wrapper = await mountTeam('Missing');
     expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
+  });
+
+  it('renders the drag-confirm message with both team names bold and no raw markers', async () => {
+    const wrapper = await mountTeam('Organization');
+    try {
+      const hierarchy = wrapper.findComponent(TeamHierarchyTable);
+      expect(hierarchy.exists()).toBe(true);
+      // Group dropped on the root: not restricted (teamLogic.isDropRestricted),
+      // so the move-team confirm modal opens.
+      await hierarchy.vm.$emit('drop', {
+        dragged: {
+          id: 'g1',
+          name: 'DataEngineering',
+          displayName: 'Data Engineering',
+          fullyQualifiedName: 'Organization.DataEngineering',
+          teamType: 'Group',
+        },
+        target: null,
+      });
+      await nextTick();
+      await flushPromises();
+      // FormModal portals the antd Modal to document.body. The test-id
+      // does not reach the DOM (antd Modal drops the data-testid attr),
+      // so locate the single open modal by class and pin it by title.
+      const modal = document.querySelector('.ant-modal');
+      expect(modal).not.toBeNull();
+      const text = modal?.textContent ?? '';
+      expect(text).toContain('Move the Team');
+      expect(text).not.toContain('<0>');
+      expect(text).not.toContain('</0>');
+      expect(text).not.toContain('{entity}');
+      expect(text).toContain('Data Engineering');
+      expect(text).toContain('team');
+      const strongs = modal?.querySelectorAll('strong') ?? [];
+      expect(strongs.length).toBe(2);
+      expect(strongs[0].textContent).toBe('Data Engineering');
+      expect(strongs[1].textContent).toBe('Organization');
+    } finally {
+      wrapper.unmount();
+    }
   });
 });

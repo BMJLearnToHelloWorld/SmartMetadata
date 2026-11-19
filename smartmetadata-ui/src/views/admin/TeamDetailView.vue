@@ -62,6 +62,7 @@ import { usePermissionStore } from '@/stores/permissions';
 import type { AdminEntityRef, AdminTeam, AdminUser } from '@/types/admin';
 import type { SearchHit } from '@/types/api';
 import { getEncodedFqn, getTeamsWithFqnPath } from '@/utils/fqnPaths';
+import { splitTransElements } from '@/utils/emptyPlaceholder';
 import {
   assetLocation,
   isDetailWired,
@@ -503,6 +504,25 @@ async function onRemoveUser(user: AdminUser): Promise<void> {
 // --- Drag to re-parent ---
 const dragConfirm = ref<{ dragged: AdminTeam; target: AdminTeam | null } | undefined>();
 const dragSaving = ref(false);
+
+// Drag-confirm transfer message (Trans <0> elements, bold team names).
+// Pin renders message.entity-transfer-message with Transi18next
+// renderElement={<strong />} and entity=t('label.team-lowercase')
+// (TeamHierarchy.tsx:379-389). The locale value carries two <0> pairs,
+// so the single-pair splitTransElement cannot render it; split it with
+// the multi-pair helper instead. Locale values stay untouched.
+const transferMessage = computed(() =>
+  t('message.entity-transfer-message', {
+    from: dragConfirm.value ? getEntityName(dragConfirm.value.dragged) : '',
+    to: dragConfirm.value?.target
+      ? getEntityName(dragConfirm.value.target)
+      : team.value
+        ? getEntityName(team.value)
+        : '',
+    entity: t('label.team-lowercase'),
+  }),
+);
+const transferMessageParts = computed(() => splitTransElements(transferMessage.value));
 
 function onHierarchyDrop(payload: { dragged: AdminTeam; target: AdminTeam | null }): void {
   if (isDropRestricted(payload.dragged.teamType, payload.target?.teamType)) {
@@ -1034,16 +1054,13 @@ function onBreadcrumbNavigate(to: unknown): void {
       @cancel="dragConfirm = undefined"
     >
       <p>
-        {{
-          t('message.entity-transfer-message', {
-            from: dragConfirm ? getEntityName(dragConfirm.dragged) : '',
-            to: dragConfirm?.target
-              ? getEntityName(dragConfirm.target)
-              : team
-                ? getEntityName(team)
-                : '',
-          })
-        }}
+        <template v-if="transferMessageParts">
+          <template v-for="(segment, index) in transferMessageParts" :key="index">
+            <strong v-if="segment.strong">{{ segment.text }}</strong>
+            <template v-else>{{ segment.text }}</template>
+          </template>
+        </template>
+        <template v-else>{{ transferMessage }}</template>
       </p>
     </FormModal>
     <FormModal

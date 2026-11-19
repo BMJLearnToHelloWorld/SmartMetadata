@@ -352,9 +352,12 @@ async function onSaveCustomProperties(next: Record<string, unknown>): Promise<vo
 }
 
 // --- No-username placeholder (Trans <0> element, bold username) ---
-const noUsernameParts = computed(() =>
-  splitTransElement(t('message.no-username-available', { user: username.value })),
+// The fallback branch renders the same message, so both branches share
+// one interpolation (pin values={{ user }}; UserPage.component.tsx:95-112).
+const noUsernameMessage = computed(() =>
+  t('message.no-username-available', { user: username.value }),
 );
+const noUsernameParts = computed(() => splitTransElement(noUsernameMessage.value));
 </script>
 
 <template>
@@ -366,7 +369,7 @@ const noUsernameParts = computed(() =>
           >{{ noUsernameParts.before }}<strong>{{ noUsernameParts.inner }}</strong
           >{{ noUsernameParts.after }}</template
         >
-        <template v-else>{{ t('message.no-username-available', { username: username }) }}</template>
+        <template v-else>{{ noUsernameMessage }}</template>
       </template>
     </NoDataPlaceholder>
     <div v-else-if="user" class="user-detail__layout">
