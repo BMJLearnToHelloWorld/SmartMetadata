@@ -58,7 +58,7 @@ function makeRouter() {
       { path: '/admin/settings', name: 'admin-settings', component: DUMMY },
       { path: '/admin/apps', name: 'admin-apps', component: DUMMY },
       { path: '/admin/apps/:fqn', name: 'admin-app', component: DUMMY },
-      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: DUMMY },
+      { path: '/marketplace', name: 'marketplace-app-catalog', component: DUMMY },
     ],
   });
 }

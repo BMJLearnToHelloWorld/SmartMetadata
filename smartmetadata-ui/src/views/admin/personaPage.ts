@@ -246,7 +246,7 @@ export const LANDING_PAGE_SECTIONS: LandingPageSection[] = [
   {
     titleKey: 'persona.landingSections.marketplace',
     options: [
-      { path: '/marketplace', labelKey: 'persona.landingMarketplace' },
+      { path: '/data-marketplace', labelKey: 'persona.landingMarketplace' },
       { path: '/governance/domains', labelKey: 'persona.landingDomains' },
       { path: '/governance/data-products', labelKey: 'persona.landingDataProducts' },
     ],

@@ -82,7 +82,7 @@ export interface ListMarketplaceAppsQuery {
  * GET /v1/apps/marketplace (AppMarketPlaceResource.list, server-side
  * @Path("/v1/apps/marketplace")). This is the installable-app catalog —
  * distinct from the installed-app list (GET /v1/apps) and from the data
- * marketplace overview the product's /marketplace route already serves.
+ * marketplace overview at /data-marketplace.
  * No page-size default is applied here; callers pass the limit they need.
  */
 export function listMarketplaceApps(query: ListMarketplaceAppsQuery = {}): Promise<Paged<MarketplaceApp>> {

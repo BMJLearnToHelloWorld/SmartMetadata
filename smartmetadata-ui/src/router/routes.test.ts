@@ -631,3 +631,42 @@ describe('settings sections faces', () => {
     expect(guards).toContain(membersTabGuard);
   });
 });
+
+// AP-D3 hard cut (ADR:2026-11-20-ap-d3-marketplace-routes-hard-cut):
+// /marketplace is the app catalog and /data-marketplace is the data
+// marketplace overview — the pre-cut table had them the other way
+// round, with the overview reached through an alias. Route names are
+// unchanged; the old /marketplace/apps catalog path matches nothing
+// and falls into the catch-all.
+describe('marketplace routes (AP-D3 hard cut)', () => {
+  it('registers the four marketplace records at their official paths', () => {
+    const routes = router.getRoutes();
+    const byName = (name: string) => routes.find((route) => route.name === name);
+    expect(byName('marketplace-overview')?.path).toBe('/data-marketplace');
+    expect(byName('marketplace-app-catalog')?.path).toBe('/marketplace');
+    expect(byName('marketplace-app-detail')?.path).toBe('/marketplace/apps/:fqn');
+    expect(byName('marketplace-app-install')?.path).toBe('/marketplace/apps/:fqn/install');
+  });
+
+  it('registers no alias on the marketplace overview record', () => {
+    // getRoutes() flattens aliases into records sharing the route's
+    // name, so a surviving alias would surface as a second
+    // marketplace-overview record (and a second /data-marketplace path).
+    const routes = router.getRoutes();
+    expect(routes.filter((route) => route.name === 'marketplace-overview')).toHaveLength(1);
+    expect(routes.filter((route) => route.path === '/data-marketplace')).toHaveLength(1);
+  });
+
+  it('sends the old /marketplace/apps catalog path to the catch-all', () => {
+    expect(router.resolve('/marketplace/apps').name).toBe('not-found');
+  });
+
+  it('resolves the four marketplace paths to their route names', () => {
+    expect(router.resolve('/data-marketplace').name).toBe('marketplace-overview');
+    expect(router.resolve('/marketplace').name).toBe('marketplace-app-catalog');
+    expect(router.resolve('/marketplace/apps/some-app').name).toBe('marketplace-app-detail');
+    expect(router.resolve('/marketplace/apps/some-app/install').name).toBe(
+      'marketplace-app-install',
+    );
+  });
+});

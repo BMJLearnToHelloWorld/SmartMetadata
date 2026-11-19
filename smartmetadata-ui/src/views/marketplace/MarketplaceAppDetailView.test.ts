@@ -116,7 +116,7 @@ async function mountDetail(
         component: DUMMY,
         props: true,
       },
-      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: DUMMY },
+      { path: '/marketplace', name: 'marketplace-app-catalog', component: DUMMY },
       { path: '/marketplace/apps/:fqn/install', name: 'marketplace-app-install', component: DUMMY },
     ],
   });

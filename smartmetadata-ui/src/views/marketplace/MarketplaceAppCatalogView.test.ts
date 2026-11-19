@@ -51,11 +51,11 @@ async function mountCatalog(isAdmin = true) {
     history: createMemoryHistory(),
     routes: [
       { path: '/admin/apps', name: 'admin-apps', component: DUMMY },
-      { path: '/marketplace/apps', name: 'marketplace-app-catalog', component: DUMMY },
+      { path: '/marketplace', name: 'marketplace-app-catalog', component: DUMMY },
       { path: '/marketplace/apps/:fqn', name: 'marketplace-app-detail', component: DUMMY },
     ],
   });
-  await router.push('/marketplace/apps');
+  await router.push('/marketplace');
   await router.isReady();
   const wrapper = mount(MarketplaceAppCatalogView, {
     global: {
