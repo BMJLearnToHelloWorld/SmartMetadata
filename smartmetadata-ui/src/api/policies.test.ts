@@ -13,10 +13,14 @@ import {
   createPolicy,
   deletePolicy,
   getPolicy,
+  getPolicyByName,
+  getPolicyFunctions,
+  getPolicyResources,
   listPolicies,
   mapPolicy,
   POLICY_FIELDS,
   updatePolicy,
+  validateRuleCondition,
 } from './policies';
 
 function lastFetch(): string {
@@ -161,12 +165,98 @@ describe('policies API', () => {
     expect(init?.method).toBe('PUT');
   });
 
-  it('deletes a policy with DELETE /v1/policies/{id}', async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+  it('deletes a policy with the hardDelete/recursive wire', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 200 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     await deletePolicy('p1');
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toContain('/api/v1/policies/p1');
+    const parsed = new URL(String(url));
+    expect(`${parsed.pathname}${parsed.search}`).toBe('/api/v1/policies/p1?hardDelete=true&recursive=false');
     expect(init?.method).toBe('DELETE');
+  });
+
+  it('carries the entity FQN verbatim and keeps rule FQNs', () => {
+    const mapped = mapPolicy({
+      ...samplePolicy,
+      fullyQualifiedName: 'DataConsumerPolicy',
+      rules: [
+        {
+          name: 'DataConsumerPolicy-Rule',
+          effect: 'allow',
+          operations: ['ViewAll'],
+          resources: ['all'],
+          fullyQualifiedName: 'DataConsumerPolicy.DataConsumerPolicy-Rule',
+        },
+      ],
+    });
+    expect(mapped?.fullyQualifiedName).toBe('DataConsumerPolicy');
+    expect(mapped?.rules[0]?.fullyQualifiedName).toBe('DataConsumerPolicy.DataConsumerPolicy-Rule');
+  });
+
+  it('gets one policy by name with the requested fields', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(samplePolicy), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    const policy = await getPolicyByName('DataConsumerPolicy', POLICY_FIELDS);
+    expect(policy.name).toBe('DataConsumerPolicy');
+    const url = decodeURIComponent(lastFetch());
+    expect(url).toContain('/api/v1/policies/name/DataConsumerPolicy');
+    expect(url).toContain(`fields=${POLICY_FIELDS}`);
+  });
+
+  it('fetches policy resources and functions for the rule form', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/policies/resources')) {
+          return new Response(
+            JSON.stringify([{ name: 'table', operations: ['ViewAll', 'Create'] }]),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return new Response(JSON.stringify([{ name: 'isOwner', examples: ['isOwner()'] }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    await expect(getPolicyResources()).resolves.toEqual([{ name: 'table', operations: ['ViewAll', 'Create'] }]);
+    await expect(getPolicyFunctions()).resolves.toEqual([{ name: 'isOwner', examples: ['isOwner()'] }]);
+  });
+
+  it('validates a rule condition with the raw interpolated expression', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(validateRuleCondition('isOwner()')).resolves.toBeUndefined();
+    // The pin interpolates without URL encoding (rolesAPIV1.ts:174-186).
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/policies/validation/condition/isOwner()');
+  });
+
+  it('rejects on an invalid condition so the caller reads the error text', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ message: 'Invalid expression' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    await expect(validateRuleCondition('nope(')).rejects.toMatchObject({ status: 400 });
   });
 });

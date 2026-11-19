@@ -63,17 +63,39 @@ describe('auditLogs API', () => {
     expect(url).toContain('entityType=table');
   });
 
-  it('drops entries with no identity instead of rendering blank rows', async () => {
+  it('keeps entries with no numeric id, keyed by the feed fallback', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        new Response(JSON.stringify({ data: [{ summary: 'orphan' }], paging: {} }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                changeEventId: 'ce1',
+                summary: 'orphan',
+                changeEvent: {
+                  entityType: 'table',
+                  entityFullyQualifiedName: 'svc.db.orders',
+                  changeDescription: { fieldsAdded: [{ name: 'description', newValue: 'hi' }] },
+                },
+                rawEventJson: '{"x":1}',
+              },
+            ],
+            paging: {},
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
       ),
     );
     const page = await listAuditLogs({});
-    expect(page.data).toEqual([]);
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]).toMatchObject({
+      changeEventId: 'ce1',
+      summary: 'orphan',
+      rawEventJson: '{"x":1}',
+    });
+    expect(page.data[0]?.changeEvent?.changeDescription?.fieldsAdded).toEqual([
+      { name: 'description', oldValue: undefined, newValue: 'hi' },
+    ]);
   });
 });

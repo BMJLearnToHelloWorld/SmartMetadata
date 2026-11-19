@@ -10,8 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   escapeESReservedCharacters,
-  getEncodedFqn,
   getNLPEnabledStatus,
+  getReindexFailures,
+  getSearchEntityTypes,
   mapAggregateBuckets,
   nlqSearch,
   postAggregateFieldOptions,
@@ -249,14 +250,6 @@ describe('escapeESReservedCharacters', () => {
   });
 });
 
-describe('getEncodedFqn', () => {
-  it('encodes an FQN as a URI component', () => {
-    expect(getEncodedFqn('svc.db.schema')).toBe('svc.db.schema');
-    expect(getEncodedFqn('a/b c')).toBe('a%2Fb%20c');
-    expect(getEncodedFqn('a/b c', true)).toBe('a%2Fb+c');
-    expect(getEncodedFqn('')).toBe('');
-  });
-});
 
 describe('searchQueries', () => {
   afterEach(() => {
@@ -305,5 +298,68 @@ describe('searchQueries', () => {
     expect(page.queries[0]?.query).toBe('select 1');
     expect(page.queries[0]?.duration).toBe(250);
     expect(page.queries[0]?.queryUsedIn).toHaveLength(1);
+  });
+});
+
+describe('getReindexFailures', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('applies pin defaults and omits an empty entityType', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({
+        data: [
+          {
+            id: 'f1',
+            jobId: 'j1',
+            runId: 'r1',
+            entityType: 'table',
+            entityId: 'e1',
+            failureStage: 'sink',
+            errorMessage: 'boom',
+            timestamp: 1700000000000,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const page = await getReindexFailures({ entityType: '' });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('/api/v1/search/reindex/failures');
+    expect(url).toContain('offset=0');
+    expect(url).toContain('limit=50');
+    expect(url).not.toContain('entityType=');
+    expect(page.total).toBe(1);
+    expect(page.data[0]).toMatchObject({ id: 'f1', entityType: 'table', failureStage: 'sink' });
+  });
+
+  it('passes explicit paging and entityType through', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({ data: [], total: 0, offset: 20, limit: 20 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await getReindexFailures({ offset: 20, limit: 20, entityType: 'dashboard' });
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain('offset=20');
+    expect(url).toContain('limit=20');
+    expect(url).toContain('entityType=dashboard');
+  });
+});
+
+describe('getSearchEntityTypes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns only string entries', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(['table', 42, 'dashboard', null])));
+    await expect(getSearchEntityTypes()).resolves.toEqual(['table', 'dashboard']);
+  });
+
+  it('returns an empty list for a non-array payload', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    await expect(getSearchEntityTypes()).resolves.toEqual([]);
   });
 });

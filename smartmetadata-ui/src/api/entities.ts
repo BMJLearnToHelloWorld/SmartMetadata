@@ -329,6 +329,8 @@ export interface ChangeDescription {
   fieldsAdded?: ChangeField[];
   fieldsDeleted?: ChangeField[];
   fieldsUpdated?: ChangeField[];
+  /** Version this change supersedes (EntityHistory previousVersion); drives the Major badge. */
+  previousVersion?: string;
 }
 
 export interface EntityVersion {
@@ -365,10 +367,18 @@ export function mapChangeDescription(value: unknown): ChangeDescription | undefi
   const fieldsAdded = mapChangeFields(rec.fieldsAdded);
   const fieldsDeleted = mapChangeFields(rec.fieldsDeleted);
   const fieldsUpdated = mapChangeFields(rec.fieldsUpdated);
+  // The wire shape is numeric (auditLogs maps it with asNumber); the
+  // interface keeps the string form the diff module parses, so coerce
+  // numbers instead of dropping them the way asString would.
+  const rawPrevious = rec.previousVersion;
+  const previousVersion =
+    typeof rawPrevious === 'number'
+      ? String(rawPrevious)
+      : asString(rawPrevious) || undefined;
   if (!fieldsAdded.length && !fieldsDeleted.length && !fieldsUpdated.length) {
-    return undefined;
+    return previousVersion ? { fieldsAdded, fieldsDeleted, fieldsUpdated, previousVersion } : undefined;
   }
-  return { fieldsAdded, fieldsDeleted, fieldsUpdated };
+  return { fieldsAdded, fieldsDeleted, fieldsUpdated, previousVersion };
 }
 
 /**

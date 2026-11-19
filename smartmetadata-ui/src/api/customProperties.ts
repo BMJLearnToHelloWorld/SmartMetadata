@@ -21,13 +21,19 @@ import { ApiError, apiRequest } from './client';
 export const ENTITY_TYPE_CATEGORY = 'entity';
 /** TypeResource category for property types (string, integer, …). */
 export const FIELD_TYPE_CATEGORY = 'field';
-/** Detail fetch carries the JSON Schema as well as the definitions (stage 2). */
-export const TYPE_FIELDS = 'customProperties,schema';
+/** Detail fetch fields (official getTypeByFQN: only `customProperties`). */
+export const TYPE_FIELDS = 'customProperties';
 
 export interface ListMetadataTypesQuery {
   category?: string;
-  limit?: number;
+  /** String or number; the official property-type list sends the string `'20'`. */
+  limit?: number | string;
   after?: string;
+  /**
+   * Fields to request; defaults to TYPE_FIELDS. Pass `null` to omit the
+   * fields parameter entirely (official getTypeListByCategory sends none).
+   */
+  fields?: string | null;
 }
 
 function mapCustomPropertyConfig(raw: unknown): CustomPropertyConfig | undefined {
@@ -124,16 +130,23 @@ export function getPropertyConfigSummary(
   return undefined;
 }
 
-function startCase(value: string): string {
-  return value
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^./, (first) => first.toUpperCase());
+/**
+ * Lodash `startCase` equivalent (official code uses lodash startCase for
+ * tab breadcrumbs, config values, and type-select labels): split into
+ * words on camelCase/separator boundaries and capitalize every word.
+ * Discriminator: `foo_bar` → "Foo Bar" (not "Foo bar").
+ */
+export function startCase(value: string): string {
+  const words = value.match(
+    /[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g,
+  );
+  if (!words) {
+    return '';
+  }
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
-
-export { startCase };
 
 /**
  * Stage 3 write side (Wave 2 G-23): official customPropertyConfig forms,
@@ -229,6 +242,280 @@ export const ENTITY_REFERENCE_LABELS: Readonly<Record<string, string>> = {
   metric: 'Metric',
 };
 
+/** Official getEntityName (utils/EntityNameUtils.ts): displayName, else name. */
+export function getEntityName(entity: { name?: string; displayName?: string }): string {
+  return entity.displayName || entity.name || '';
+}
+
+/**
+ * Official property-type badge metadata
+ * (CustomPropertyCard.constants.ts CUSTOM_PROPERTY_BADGE_COLOR_MAP, pin
+ * a3012259ca): one entry per mapped property type, keyed by type name.
+ * `color` is the pin color role; the view expresses it with dev_ui tokens.
+ * `labelKey` is the official i18n key for the badge label.
+ */
+export interface CustomPropertyTypeBadgeMeta {
+  color: string;
+  labelKey: string;
+  isWide?: boolean;
+}
+
+export const CUSTOM_PROPERTY_TYPE_BADGE_META: Readonly<
+  Record<string, CustomPropertyTypeBadgeMeta>
+> = {
+  string: { color: 'gray-blue', labelKey: 'label.string' },
+  integer: { color: 'blue-light', labelKey: 'label.integer' },
+  number: { color: 'blue-light', labelKey: 'label.number' },
+  email: { color: 'pink', labelKey: 'label.email' },
+  'date-cp': { color: 'orange', labelKey: 'label.date' },
+  'dateTime-cp': { color: 'orange', labelKey: 'label.date-and-time' },
+  'time-cp': { color: 'orange', labelKey: 'label.time' },
+  timestamp: { color: 'warning', labelKey: 'label.timestamp' },
+  duration: { color: 'warning', labelKey: 'label.duration' },
+  enum: { color: 'purple', labelKey: 'label.enum' },
+  'hyperlink-cp': { color: 'blue', labelKey: 'label.hyperlink' },
+  entityReference: { color: 'indigo', labelKey: 'label.entity-ref' },
+  entityReferenceList: { color: 'indigo', labelKey: 'label.entity-ref-list' },
+  timeInterval: { color: 'brand', labelKey: 'label.time-interval', isWide: true },
+  'table-cp': { color: 'error', labelKey: 'label.table', isWide: true },
+  sqlQuery: { color: 'success', labelKey: 'label.sql-uppercase', isWide: true },
+  markdown: { color: 'gray', labelKey: 'label.markdown', isWide: true },
+};
+
+/** Official DEFAULT_CUSTOM_PROPERTY_BADGE_META (fallback for unmapped types). */
+export const DEFAULT_CUSTOM_PROPERTY_TYPE_BADGE_META: CustomPropertyTypeBadgeMeta = {
+  color: 'gray',
+  labelKey: 'label.value',
+};
+
+export interface CustomPropertyTypeBadge {
+  color: string;
+  /** Official label key when the type is mapped; absent for the fallback. */
+  labelKey?: string;
+  /** startCase fallback label for unmapped types (empty when mapped). */
+  fallbackLabel: string;
+  isWide: boolean;
+}
+
+/**
+ * Official getPropertyTypeBadge (CustomPropertyTable.utils.ts): mapped
+ * types use the badge table; unmapped types fall back to the default gray
+ * color with a startCase label derived from the type name (`-cp` removed).
+ * The caller resolves `labelKey` through i18n, else uses `fallbackLabel`.
+ */
+export function getPropertyTypeBadge(
+  propertyTypeName: string | undefined,
+): CustomPropertyTypeBadge {
+  const meta = propertyTypeName ? CUSTOM_PROPERTY_TYPE_BADGE_META[propertyTypeName] : undefined;
+  if (meta) {
+    return { color: meta.color, labelKey: meta.labelKey, fallbackLabel: '', isWide: meta.isWide === true };
+  }
+  return {
+    color: DEFAULT_CUSTOM_PROPERTY_TYPE_BADGE_META.color,
+    fallbackLabel: startCase((propertyTypeName ?? '').replace(/-cp/g, '')),
+    isWide: false,
+  };
+}
+
+/**
+ * Official custom-properties page headers
+ * (utils/CustomProperty.utils.ts getCustomPropertyPageHeaderFromEntity +
+ * constants/PageHeaders.constant.ts, pin a3012259ca), keyed by entity type
+ * name (ENTITY_PATH value). `subHeaderEntityKey` is the label key passed as
+ * the `entity` param of `message.define-custom-property-for-entity`;
+ * absent only for the column header, whose subHeader takes no params.
+ */
+export interface CustomPropertyPageHeader {
+  headerKey: string;
+  subHeaderKey: string;
+  subHeaderEntityKey?: string;
+}
+
+export const CUSTOM_PROPERTY_PAGE_HEADERS: Readonly<
+  Record<string, CustomPropertyPageHeader>
+> = {
+  table: {
+    headerKey: 'label.table-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.table-plural',
+  },
+  topic: {
+    headerKey: 'label.topic-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.topic-plural',
+  },
+  dashboard: {
+    headerKey: 'label.dashboard-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.dashboard-plural',
+  },
+  dashboardDataModel: {
+    headerKey: 'label.dashboard-data-model-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.dashboard-data-model-plural',
+  },
+  dataProduct: {
+    headerKey: 'label.data-product-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.data-product-plural',
+  },
+  pipeline: {
+    headerKey: 'label.pipeline-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.pipeline-plural',
+  },
+  mlmodel: {
+    headerKey: 'label.ml-model-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.ml-model-plural',
+  },
+  container: {
+    headerKey: 'label.container-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.container-plural',
+  },
+  storedProcedure: {
+    headerKey: 'label.stored-procedure-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.stored-procedure-plural',
+  },
+  domain: {
+    headerKey: 'label.domain-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.domain-plural',
+  },
+  searchIndex: {
+    headerKey: 'label.search-index-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.search-index-plural',
+  },
+  glossaryTerm: {
+    headerKey: 'label.glossary-term',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.glossary-term',
+  },
+  database: {
+    headerKey: 'label.database',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.database',
+  },
+  databaseSchema: {
+    headerKey: 'label.database-schema',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.database-schema',
+  },
+  apiCollection: {
+    headerKey: 'label.api-collection-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.api-collection-plural',
+  },
+  apiEndpoint: {
+    headerKey: 'label.api-endpoint-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.api-endpoint-plural',
+  },
+  metric: {
+    headerKey: 'label.metric-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.metric-plural',
+  },
+  chart: {
+    headerKey: 'label.chart-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.chart-plural',
+  },
+  directory: {
+    headerKey: 'label.directory-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.directory-plural',
+  },
+  file: {
+    headerKey: 'label.file-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.file-plural',
+  },
+  spreadsheet: {
+    headerKey: 'label.spreadsheet-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.spreadsheet-plural',
+  },
+  worksheet: {
+    headerKey: 'label.worksheet-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.worksheet-plural',
+  },
+  team: {
+    headerKey: 'label.team-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.team-plural',
+  },
+  page: {
+    headerKey: 'label.article-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.article-plural',
+  },
+  tableColumn: {
+    headerKey: 'label.column-plural',
+    subHeaderKey: 'message.define-custom-property-for-column',
+  },
+  user: {
+    headerKey: 'label.user-plural',
+    subHeaderKey: 'message.define-custom-property-for-entity',
+    subHeaderEntityKey: 'label.user-plural',
+  },
+};
+
+/**
+ * Official getCustomPropertyPageHeaderFromEntity: unmapped entity types
+ * fall back to the Tables header.
+ */
+export function getCustomPropertyPageHeader(entityType: string): CustomPropertyPageHeader {
+  return CUSTOM_PROPERTY_PAGE_HEADERS[entityType] ?? CUSTOM_PROPERTY_PAGE_HEADERS.table!;
+}
+
+/**
+ * Reverse of the official ENTITY_PATH map (constants.ts): entity type name
+ * → settings route segment. Used to derive the breadcrumb entity name
+ * (`startCase(segment)`) while the detail route still carries the type
+ * name; unmapped types fall back to the type name itself.
+ */
+export const CUSTOM_PROPERTY_ROUTE_SEGMENT_BY_TYPE: Readonly<Record<string, string>> = {
+  table: 'tables',
+  topic: 'topics',
+  dashboard: 'dashboards',
+  dashboardDataModel: 'dashboardDataModels',
+  dataProduct: 'dataProducts',
+  pipeline: 'pipelines',
+  mlmodel: 'mlmodels',
+  container: 'containers',
+  storedProcedure: 'storedProcedures',
+  domain: 'domains',
+  searchIndex: 'searchIndexes',
+  glossaryTerm: 'glossaryTerm',
+  database: 'databases',
+  databaseSchema: 'databaseSchemas',
+  apiCollection: 'apiCollections',
+  apiEndpoint: 'apiEndpoints',
+  metric: 'metrics',
+  chart: 'charts',
+  directory: 'directories',
+  file: 'files',
+  spreadsheet: 'spreadsheets',
+  worksheet: 'worksheets',
+  team: 'teams',
+  page: 'articles',
+  tableColumn: 'column',
+  user: 'users',
+};
+
+export function getCustomPropertyRouteSegment(entityType: string): string {
+  return CUSTOM_PROPERTY_ROUTE_SEGMENT_BY_TYPE[entityType] ?? entityType;
+}
+
+/** Official ADD_CUSTOM_PROPERTIES_DOCS (docs.open-metadata.org default base URL). */
+export const ADD_CUSTOM_PROPERTIES_DOCS =
+  'https://docs.open-metadata.org/latest/how-to-guides/guide-for-data-users/custom';
+
 export interface CustomPropertyTypeFlags {
   hasEnumConfig: boolean;
   hasFormatConfig: boolean;
@@ -254,18 +541,12 @@ export function getCustomPropertyTypeFlags(propertyTypeName: string): CustomProp
 
 /**
  * Official property-type dropdown label (CustomPropertyFormFields.tsx):
- * `sqlQuery` → the SQL query label; otherwise
- * `startCase(displayName || name with '-cp' removed)`.
+ * `startCase(displayName || name with '-cp' removed)`. There is no
+ * sqlQuery special case on this surface; the badge table's "SQL" label
+ * applies only to the table Type column and the type filter.
  */
-export function propertyTypeLabel(
-  name: string,
-  displayName: string | undefined,
-  sqlQueryLabel: string,
-): string {
-  if (name === 'sqlQuery') {
-    return sqlQueryLabel;
-  }
-  return startCase((displayName || name).replaceAll('-cp', ''));
+export function propertyTypeLabel(name: string, displayName: string | undefined): string {
+  return startCase(getEntityName({ name, displayName }).replaceAll('-cp', ''));
 }
 
 export interface CustomPropertyConfigFormValues {
@@ -281,8 +562,10 @@ function uniq(values: readonly string[]): string[] {
 }
 
 /**
- * Official buildCustomPropertyConfig (CustomPropertiesPanel.utils.ts:61-90).
- * Enum values and columns are deduplicated (official `uniq` semantics).
+ * Official buildCustomPropertyConfig (CustomPropertiesPanel.utils.ts:43-69).
+ * The create path preserves order and duplicates: no deduplication on the
+ * enum or columns branches (deduplication lives only on the edit path,
+ * in getCustomPropertyChanges).
  */
 export function buildCustomPropertyConfig(
   values: CustomPropertyConfigFormValues,
@@ -292,20 +575,30 @@ export function buildCustomPropertyConfig(
     return {
       config: {
         multiSelect: Boolean(values.multiSelect),
-        values: uniq(values.enumConfig ?? []),
+        values: (values.enumConfig ?? []).map(toId),
       },
     };
   }
   if (flags.hasFormatConfig && values.formatConfig) {
-    return { config: values.formatConfig };
+    return { config: toId(values.formatConfig) };
   }
   if (flags.hasEntityReferenceConfig && values.entityReferenceConfig) {
-    return { config: [...values.entityReferenceConfig] };
+    return { config: values.entityReferenceConfig.map(toId) };
   }
   if (flags.hasTableTypeConfig && values.columns) {
-    return { config: { columns: uniq(values.columns) } };
+    return { config: { columns: values.columns.map(toId) } };
   }
   return undefined;
+}
+
+/**
+ * Official toId (CustomPropertiesPanel.utils.ts:35-41): extracts the id
+ * from a select option. Product form values are already id strings, so
+ * the mapping passes them through unchanged, preserving order and
+ * duplicates.
+ */
+function toId(value: string): string {
+  return value;
 }
 
 /** Form values for one custom property (create and edit share the shape). */
@@ -324,9 +617,9 @@ export interface CustomPropertyFormValues extends CustomPropertyConfigFormValues
 /**
  * Official toCustomPropertyPayload (CustomPropertiesPanel.utils.ts:92-123):
  * condition fields stay out of the top level, `propertyType: { id, type:
- * 'type' }`, `displayName || undefined`, undefined fields omitted. The
- * product keeps the `name` in propertyType (its existing request shape,
- * accepted by the server); only the config assembly is new.
+ * 'type' }` (no `name`), `displayName || undefined`, undefined fields
+ * omitted, no trimming. `CreateCustomPropertyRequest.propertyType.name`
+ * is optional to match that payload shape.
  */
 export function toCustomPropertyPayload(
   values: CustomPropertyFormValues,
@@ -334,93 +627,133 @@ export function toCustomPropertyPayload(
 ): CreateCustomPropertyRequest {
   const flags = getCustomPropertyTypeFlags(propertyType.name);
   const customPropertyConfig = buildCustomPropertyConfig(values, flags);
-  return {
+  const payload = {
     name: values.name,
     description: values.description,
-    propertyType: { id: propertyType.id, type: 'type', name: propertyType.name },
+    propertyType: { id: propertyType.id, type: 'type' as const },
     ...(values.displayName ? { displayName: values.displayName } : {}),
     ...(customPropertyConfig ? { customPropertyConfig } : {}),
   };
+  return payload;
+}
+
+export type CustomPropertyFormField =
+  | 'name'
+  | 'displayName'
+  | 'description'
+  | 'propertyType'
+  | 'enumConfig'
+  | 'multiSelect'
+  | 'formatConfig'
+  | 'entityReferenceConfig'
+  | 'columns';
+
+/** Translated field labels the validators interpolate into message params. */
+export interface CustomPropertyFieldLabels {
+  name: string;
+  displayName: string;
+  description: string;
+  propertyType: string;
+  enumConfig: string;
+  formatConfig: string;
+  entityReferenceConfig: string;
+  columns: string;
 }
 
 export interface CustomPropertyFormIssue {
+  field: CustomPropertyFormField;
   key: string;
   params?: Record<string, string | number>;
 }
 
 /**
- * Submit-time validation for the create/edit form, mirroring official
- * CustomPropertyFormFields rules (required + 256 + name regex +
- * case-insensitive uniqueness against the type's existing names; enum /
- * format / entity-reference / columns required when their type is
- * selected). Values are expected trimmed (the view trims before calling).
- * Uniqueness is UI-side only: the server still compares case-sensitively
- * (see the ADR residual). Returns issues in field order; empty means valid.
+ * Create-form validation, mirroring official CustomPropertyFormFields
+ * rules (required + 256 + name regex; enum / entity-reference / columns
+ * required when their type is selected; format validated only when a
+ * value is present). There is no uniqueness rule and no format-required
+ * rule in the pin. Values are used as-is; the pin trims nothing.
+ * Returns issues in field order; empty means valid.
  */
 export function validateCustomPropertyForm(
   values: CustomPropertyFormValues,
-  options: { existingNames: string[]; isEdit: boolean },
+  fieldLabels: CustomPropertyFieldLabels,
 ): CustomPropertyFormIssue[] {
   const issues: CustomPropertyFormIssue[] = [];
   if (!values.name) {
-    issues.push({ key: 'settings.customProperties.nameRequired' });
+    issues.push({
+      field: 'name',
+      key: 'label.field-required',
+      params: { field: fieldLabels.name },
+    });
   } else {
     if (values.name.length > CUSTOM_PROPERTY_NAME_MAX_LENGTH) {
       issues.push({
-        key: 'settings.customProperties.nameLength',
-        params: { min: 1, max: CUSTOM_PROPERTY_NAME_MAX_LENGTH },
+        field: 'name',
+        key: 'message.entity-size-in-between',
+        params: { entity: fieldLabels.name, min: 1, max: CUSTOM_PROPERTY_NAME_MAX_LENGTH },
       });
     }
     if (!CUSTOM_PROPERTY_NAME_REGEX.test(values.name)) {
-      issues.push({ key: 'settings.customProperties.nameInvalid' });
-    }
-    if (
-      !options.isEdit &&
-      options.existingNames.some(
-        (existing) => existing.toLowerCase() === values.name.toLowerCase(),
-      )
-    ) {
-      issues.push({ key: 'settings.customProperties.nameExists' });
+      issues.push({ field: 'name', key: 'message.custom-property-name-validation' });
     }
   }
   if (!values.description) {
-    issues.push({ key: 'settings.customProperties.descriptionRequired' });
+    issues.push({
+      field: 'description',
+      key: 'label.field-required',
+      params: { field: fieldLabels.description },
+    });
   }
   if (!values.propertyTypeName) {
-    issues.push({ key: 'settings.customProperties.propertyTypeRequired' });
+    issues.push({
+      field: 'propertyType',
+      key: 'label.field-required',
+      params: { field: fieldLabels.propertyType },
+    });
     return issues;
   }
   const flags = getCustomPropertyTypeFlags(values.propertyTypeName);
   if (flags.hasEnumConfig && values.enumConfig.length === 0) {
-    issues.push({ key: 'settings.customProperties.enumValuesRequired' });
+    issues.push({
+      field: 'enumConfig',
+      key: 'label.field-required',
+      params: { field: fieldLabels.enumConfig },
+    });
   }
-  if (flags.hasFormatConfig) {
-    if (!values.formatConfig) {
-      issues.push({ key: 'settings.customProperties.formatRequired' });
-    } else if (!flags.supportedFormats.includes(values.formatConfig)) {
-      issues.push({ key: 'settings.customProperties.formatInvalid' });
-    }
+  if (flags.hasFormatConfig && values.formatConfig && !flags.supportedFormats.includes(values.formatConfig)) {
+    issues.push({
+      field: 'formatConfig',
+      key: 'label.field-invalid',
+      params: { field: fieldLabels.formatConfig },
+    });
   }
   if (flags.hasEntityReferenceConfig && values.entityReferenceConfig.length === 0) {
-    issues.push({ key: 'settings.customProperties.entityReferenceRequired' });
+    issues.push({
+      field: 'entityReferenceConfig',
+      key: 'label.field-required',
+      params: { field: fieldLabels.entityReferenceConfig },
+    });
   }
   if (flags.hasTableTypeConfig) {
     if (values.columns.length === 0) {
-      issues.push({ key: 'settings.customProperties.columnsRequired' });
+      issues.push({
+        field: 'columns',
+        key: 'label.field-required',
+        params: { field: fieldLabels.columns },
+      });
     } else {
       if (values.columns.length > MAX_TABLE_CONFIG_COLUMNS) {
         issues.push({
-          key: 'settings.customProperties.columnsTooMany',
-          params: { max: MAX_TABLE_CONFIG_COLUMNS },
+          field: 'columns',
+          key: 'message.maximum-count-allowed',
+          params: { count: MAX_TABLE_CONFIG_COLUMNS, label: fieldLabels.columns },
         });
       }
-      const reserved = values.columns.find((column) =>
-        RESERVED_TABLE_COLUMN_NAMES.includes(column),
-      );
-      if (reserved !== undefined) {
+      if (values.columns.some((column) => RESERVED_TABLE_COLUMN_NAMES.includes(column))) {
         issues.push({
-          key: 'settings.customProperties.columnReserved',
-          params: { name: reserved },
+          field: 'columns',
+          key: 'message.reserved-column-name',
+          params: { name: RESERVED_TABLE_COLUMN_NAMES.join(', ') },
         });
       }
     }
@@ -501,6 +834,45 @@ export function getCustomPropertyChanges(
   };
 }
 
+/**
+ * Edit-form validation, mirroring official CustomPropertyEditForm rules:
+ * description is required; enum values are required for enum properties;
+ * entity-reference types are required for entity-reference properties.
+ * Display name is optional; format and table configs have no edit
+ * controls. Returns issues in field order; empty means valid.
+ */
+export function validateCustomPropertyEditForm(
+  values: CustomPropertyEditFormValues,
+  property: CustomPropertyDef,
+  fieldLabels: CustomPropertyFieldLabels,
+): CustomPropertyFormIssue[] {
+  const issues: CustomPropertyFormIssue[] = [];
+  const isEnum = property.propertyType === 'enum';
+  const isEntityRef = PROPERTY_TYPES_WITH_ENTITY_REFERENCE.includes(property.propertyType ?? '');
+  if (isEnum && values.enumConfig.length === 0) {
+    issues.push({
+      field: 'enumConfig',
+      key: 'label.field-required',
+      params: { field: fieldLabels.enumConfig },
+    });
+  }
+  if (isEntityRef && values.entityReferenceConfig.length === 0) {
+    issues.push({
+      field: 'entityReferenceConfig',
+      key: 'label.field-required',
+      params: { field: fieldLabels.entityReferenceConfig },
+    });
+  }
+  if (!values.description) {
+    issues.push({
+      field: 'description',
+      key: 'label.field-required',
+      params: { field: fieldLabels.description },
+    });
+  }
+  return issues;
+}
+
 /** Key-order-insensitive deep equality for JSON values (undefined keys count as absent). */
 function jsonEquals(a: unknown, b: unknown): boolean {
   if (a === b) {
@@ -529,8 +901,7 @@ function jsonEquals(a: unknown, b: unknown): boolean {
 
 /**
  * Hand-written equivalent of fast-json-patch `compare` for the three
- * editable fields (the product has no fast-json-patch dependency and must
- * not add it): an unchanged field emits no op; a field absent from the
+ * editable fields: an unchanged field emits no op; a field absent from the
  * server copy emits `add`, otherwise `replace`.
  */
 function diffCustomPropertyChanges(
@@ -581,6 +952,14 @@ export function filterCustomProperties(
   });
 }
 
+/**
+ * Official columnSorter (utils/EntitySortUtils.ts): compare by entity
+ * name (displayName, else name).
+ */
+export function customPropertySorter(a: CustomPropertyDef, b: CustomPropertyDef): number {
+  return getEntityName(a).localeCompare(getEntityName(b));
+}
+
 export interface CustomPropertyTypeOption {
   value: string;
   label: string;
@@ -588,13 +967,16 @@ export interface CustomPropertyTypeOption {
 }
 
 /**
- * Official getPropertyTypeOptions: one option per property type present in
- * the current definitions, sorted by label, with a count. Types whose last
- * property was removed drop out of the active filter (callers intersect the
- * selection with these values).
+ * Official getPropertyTypeOptions: one option per property type present
+ * in the current definitions, sorted by resolved label, with a count.
+ * Types whose last property was removed drop out of the active filter
+ * (callers intersect the selection with these values). Labels come from
+ * the badge evaluator via `resolveBadgeLabel` (the caller resolves the
+ * badge label key through i18n, else the fallback label).
  */
 export function getPropertyTypeOptions(
   properties: CustomPropertyDef[],
+  resolveBadgeLabel: (badge: CustomPropertyTypeBadge) => string,
 ): CustomPropertyTypeOption[] {
   const options = new Map<string, CustomPropertyTypeOption>();
   for (const property of properties) {
@@ -607,7 +989,7 @@ export function getPropertyTypeOptions(
     } else {
       options.set(property.propertyType, {
         value: property.propertyType,
-        label: property.propertyType,
+        label: resolveBadgeLabel(getPropertyTypeBadge(property.propertyType)),
         count: 1,
       });
     }
@@ -641,7 +1023,7 @@ export function listMetadataTypes(query: ListMetadataTypesQuery = {}): Promise<P
   return apiRequest<unknown>('/v1/metadata/types', {
     query: {
       category: query.category ?? ENTITY_TYPE_CATEGORY,
-      fields: TYPE_FIELDS,
+      fields: query.fields === null ? undefined : (query.fields ?? TYPE_FIELDS),
       limit: query.limit ?? 25,
       after: query.after,
     },
@@ -672,29 +1054,29 @@ export async function getMetadataTypeByName(name: string): Promise<MetadataType>
   return mapped;
 }
 
-/** Property types usable as CustomProperty.propertyType (category=field). */
-export function listPropertyTypes(limit = 100): Promise<Paged<MetadataType>> {
-  return listMetadataTypes({ category: FIELD_TYPE_CATEGORY, limit });
+/**
+ * Property types usable as CustomProperty.propertyType (category=field).
+ * Official getTypeListByCategory sends `limit: '20'` and no fields.
+ */
+export function listPropertyTypes(limit: number | string = '20'): Promise<Paged<MetadataType>> {
+  return listMetadataTypes({ category: FIELD_TYPE_CATEGORY, limit, fields: null });
 }
 
 /**
  * Apache TypeResource.addOrUpdateProperty —
- * PUT /v1/metadata/types/{id} with CustomProperty body.
+ * PUT /v1/metadata/types/{id} with CustomProperty body. The response is
+ * ignored by the caller (official addPropertyToEntity: the page shows the
+ * success toast and refetches); a missing or unusable response body is
+ * not an error.
  */
 export async function addOrUpdateCustomProperty(
   typeId: string,
   body: CreateCustomPropertyRequest,
-): Promise<MetadataType> {
-  const raw = await apiRequest<unknown>(`/v1/metadata/types/${encodeURIComponent(typeId)}`, {
+): Promise<void> {
+  await apiRequest<unknown>(`/v1/metadata/types/${encodeURIComponent(typeId)}`, {
     method: 'PUT',
     json: body,
   });
-  const rec = asRecord(raw);
-  const mapped = rec ? mapMetadataType(rec) : null;
-  if (!mapped) {
-    throw new Error('Add/update custom property succeeded but the response had no type');
-  }
-  return mapped;
 }
 
 /** Official MAX_CUSTOM_PROPERTY_PATCH_ATTEMPTS (metadataTypeAPI.ts:126). */

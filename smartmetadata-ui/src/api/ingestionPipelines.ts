@@ -34,6 +34,17 @@ export function isPipelineClientDisabled(
   return response.reason === PIPELINE_CLIENT_DISABLED_REASON;
 }
 
+/**
+ * T-1 (precondition 07 §1.4, t364 Q-T1-1): strictly deployed — the
+ * response code is exactly 200 AND the pipeline client actually ran
+ * the call. A missing code cannot prove a real 200 deploy, so it
+ * counts as not deployed. Single-row and bulk paths share this one
+ * predicate; no call site may keep the old loose reading.
+ */
+export function isPipelineDeployed(response: PipelineServiceClientResponse): boolean {
+  return response.code === 200 && !isPipelineClientDisabled(response);
+}
+
 export const INGESTION_PIPELINE_FIELDS = 'owners,pipelineStatuses';
 
 export interface ListIngestionPipelinesQuery {

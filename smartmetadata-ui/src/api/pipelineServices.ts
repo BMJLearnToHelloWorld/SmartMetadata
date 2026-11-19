@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
-import { mapServiceAttributes, mapServiceTags, mapTestConnectionResult } from '@/api/serviceCommon';
+import { mapServiceAttributes, mapServiceStyle, mapServiceTags, mapTestConnectionResult } from '@/api/serviceCommon';
 import type { AsyncDeleteJob, ServiceDeleteOptions } from '@/ingestion/serviceDelete';
 import type { IncludeFilter, Paged } from '@/types/admin';
 import type { CatalogService, CreatePipelineServiceRequest, ServiceConnection } from '@/types/ingestion';
@@ -19,6 +19,9 @@ export const PIPELINE_SERVICE_FIELDS = 'owners,pipelines,tags,followers,domains,
 export interface ListPipelineServicesQuery {
   limit?: number;
   after?: string;
+  before?: string;
+  /** Field-set override; defaults to the per-kind constant below. */
+  fields?: string;
   include?: IncludeFilter;
 }
 
@@ -52,6 +55,7 @@ export function mapPipelineService(raw: Record<string, unknown>): CatalogService
     dataProducts: mapEntityRefs(raw.dataProducts),
     version: asNumber(raw.version),
     serviceAttributes: mapServiceAttributes(raw.serviceAttributes),
+    style: mapServiceStyle(raw.style),
     connection: mapConnection(raw.connection),
     testConnectionResult: mapTestConnectionResult(raw.testConnectionResult),
     deleted: asBoolean(raw.deleted),
@@ -61,9 +65,10 @@ export function mapPipelineService(raw: Record<string, unknown>): CatalogService
 export function listPipelineServices(query: ListPipelineServicesQuery = {}): Promise<Paged<CatalogService>> {
   return apiRequest<unknown>('/v1/services/pipelineServices', {
     query: {
-      fields: PIPELINE_SERVICE_FIELDS,
+      fields: query.fields ?? PIPELINE_SERVICE_FIELDS,
       limit: query.limit ?? 50,
       after: query.after,
+      before: query.before,
       include: query.include,
     },
   }).then((payload) => parsePaged(payload, mapPipelineService));

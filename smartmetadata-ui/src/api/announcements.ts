@@ -13,7 +13,7 @@ import type { Announcement, CreateAnnouncementRequest } from '@/types/collaborat
 import { apiRequest } from './client';
 
 export interface AnnouncementPatchOp {
-  op: 'replace' | 'remove';
+  op: 'add' | 'replace' | 'remove';
   path: string;
   value?: unknown;
 }
@@ -39,13 +39,11 @@ export async function deleteAnnouncement(id: string, hardDelete = false): Promis
 /**
  * Edit an announcement with JSON Patch ops. Official shape
  * (openmetadata-ui/.../rest/announcementsAPI.ts patchAnnouncement):
- * PATCH with Content-Type application/json-patch+json. Callers send only
- * ops for fields that actually changed; an empty op list sends nothing.
+ * PATCH with Content-Type application/json-patch+json. An empty op list
+ * is SENT (pin's edit save sends the empty diff and still toasts
+ * success); it must not throw.
  */
 export async function patchAnnouncement(id: string, ops: AnnouncementPatchOp[]): Promise<Announcement> {
-  if (!ops.length) {
-    throw new Error('No announcement changes to save');
-  }
   const raw = await apiRequest<Record<string, unknown>>(`/v1/announcements/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     contentType: 'application/json-patch+json',
@@ -148,11 +146,27 @@ export async function createAnnouncement(body: CreateAnnouncementRequest): Promi
       displayName: body.displayName,
       type: body.type,
       entityLink: body.entityLink,
+      color: body.color,
+      customTypeName: body.customTypeName,
     },
   });
   const mapped = mapAnnouncement(raw);
   if (!mapped) {
     throw new Error('Create announcement succeeded but the response had no announcement');
+  }
+  return mapped;
+}
+
+/**
+ * Fetch one announcement by id (pin getAnnouncementById). The
+ * announcement form loader uses it for edit/duplicate; the list never
+ * guesses a record from the first page.
+ */
+export async function getAnnouncementById(id: string): Promise<Announcement> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/announcements/${encodeURIComponent(id)}`);
+  const mapped = mapAnnouncement(raw);
+  if (!mapped) {
+    throw new Error('Announcement response was missing id');
   }
   return mapped;
 }
