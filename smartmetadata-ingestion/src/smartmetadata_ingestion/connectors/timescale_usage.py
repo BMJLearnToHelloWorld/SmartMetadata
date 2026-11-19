@@ -39,3 +39,4 @@ class TimescaleUsageSource(QueryLogSource):
 
     def prepare(self) -> None:
         timescale.run_connection_test(self._config.connection or {})
+        self.verify_statement_source_dbid()

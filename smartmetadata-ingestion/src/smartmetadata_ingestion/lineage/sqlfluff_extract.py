@@ -345,6 +345,12 @@ class _StatementWalk:
         if node_type == "common_table_expression":
             self._visit_cte(node, enclosing_ctes)
             return
+        if node_type in (
+            "create_view_statement",
+            "create_materialized_view_statement",
+        ):
+            self._visit_create_view(node, enclosing_ctes)
+            return
         if node_type == "from_expression_element":
             self._visit_from_element(node, enclosing_ctes)
             return
@@ -375,6 +381,52 @@ class _StatementWalk:
             return
         for child in _children(node):
             self._visit(child, enclosing_ctes)
+
+    def _visit_create_view(
+        self, node: Any, enclosing_ctes: frozenset[str]
+    ) -> None:
+        """A CREATE (MATERIALIZED) VIEW statement: the view being
+        created is the write target. Some dialects (Exasol, TSQL)
+        put the view name in a view_reference / object_reference
+        segment instead of a table_reference, so the target-id rule
+        cannot see it; the first such direct child is emitted as
+        TARGET here, and the rest of the statement (the SELECT body)
+        is visited normally. A view_reference / object_reference
+        anywhere else (e.g. a TSQL EXEC call) never reaches this
+        branch, so it cannot be mistaken for a write target."""
+        target_emitted = False
+        for child in _children(node):
+            if (
+                child.get_type() in ("view_reference", "object_reference")
+                and not target_emitted
+            ):
+                self._emit_view_target(child)
+                target_emitted = True
+            else:
+                self._visit(child, enclosing_ctes)
+
+    def _emit_view_target(self, node: Any) -> None:
+        # The view name reads exactly like a table reference:
+        # identifiers strictly alternating with dots.
+        segments = _reference_segments(node)
+        identifier = _build_identifier(segments) if segments is not None else None
+        if identifier is not None:
+            self._emit(
+                identifier=identifier,
+                role=NameRole.TARGET,
+                alias=None,
+                alias_quoted=False,
+                is_function=False,
+            )
+        else:
+            self._emit(
+                identifier=None,
+                role=NameRole.TARGET,
+                alias=None,
+                alias_quoted=False,
+                is_function=False,
+                reason=UnsupportedReason.NON_IDENTIFIER_NAME,
+            )
 
     def _visit_cte(self, node: Any, enclosing_ctes: frozenset[str]) -> None:
         """A CTE definition: its bracketed body is visited with the

@@ -347,11 +347,13 @@ def test_parse_failure_is_recorded_and_run_continues(
     real_parse = usage_workflow_module.parse_sql_statement
     calls = {"count": 0}
 
-    def _boom_once(record, dialect, parser_type):
+    def _boom_once(record, dialect, parser_type, **kwargs: Any):
+        # The stub forwards the parse call contract, including the
+        # D-L2c I fidelity callback kwarg; only the first call fails.
         calls["count"] += 1
         if calls["count"] == 1:
             raise QueryParseFailure("boom")
-        return real_parse(record, dialect, parser_type)
+        return real_parse(record, dialect, parser_type, **kwargs)
 
     monkeypatch.setattr(usage_workflow_module, "parse_sql_statement", _boom_once)
     client = RestClient(_server(), transport=httpx.MockTransport(_catalog_handler([])))
@@ -384,11 +386,13 @@ def test_parse_failure_ignores_fail_fast(tmp_path: Path, monkeypatch: pytest.Mon
     real_parse = usage_workflow_module.parse_sql_statement
     calls = {"count": 0}
 
-    def _boom_once(record, dialect, parser_type):
+    def _boom_once(record, dialect, parser_type, **kwargs: Any):
+        # The stub forwards the parse call contract, including the
+        # D-L2c I fidelity callback kwarg; only the first call fails.
         calls["count"] += 1
         if calls["count"] == 1:
             raise QueryParseFailure("boom")
-        return real_parse(record, dialect, parser_type)
+        return real_parse(record, dialect, parser_type, **kwargs)
 
     monkeypatch.setattr(usage_workflow_module, "parse_sql_statement", _boom_once)
     config = _config(tmp_path / "staging")
@@ -660,4 +664,37 @@ def test_usage_progress_entries_pair_totals_with_processed(tmp_path: Path) -> No
     assert (processor_entry.total, processor_entry.processed) == (2, 2)
     sink_summary = step_summary(workflow.sink_status)
     assert sink_summary["progress"]["table"] == {"total": 1, "processed": 1}
+    client.close()
+
+
+def test_usage_run_counts_fidelity_skip_for_failed_extraction_with_no_tables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # D-L2c I, usage chain end to end: the query touches no tables
+    # and its extraction fails, so parse returns None — the fidelity
+    # skip must still land in the resolver's counts through the
+    # callback, and no cost record may be published for it (the None
+    # semantics are the red line: no empty ParsedData, no cost).
+    def _boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("extractor down")
+
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.lineage.parser.extract_names", _boom
+    )
+    seen: list[tuple[str, str, Any]] = []
+    client = RestClient(_server(), transport=httpx.MockTransport(_catalog_handler(seen)))
+    source = _StubSource(
+        [TableQueryRecord(query="SELECT 1", service_name="warehouse")]
+    )
+    workflow = UsageWorkflow(_config(tmp_path / "staging"), client=client, source=source)
+    report = workflow.execute()
+    workflow.stop()
+    assert report.failed == 0
+    assert report.succeeded == 0
+    assert report.skipped == 1
+    stage = workflow._stage
+    assert stage is not None
+    assert stage.binding_counts["fidelity_unproven_skip"] == {"SqlGlot": 1}
+    creates = [call for call in seen if call[0] == "PUT" and call[1] == "/api/v1/queries"]
+    assert creates == []
     client.close()

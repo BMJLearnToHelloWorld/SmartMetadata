@@ -921,3 +921,63 @@ def test_lineage_source_summary_folds_binding_counts(
     assert source.summary.binding_counts["unresolved_404"] == 1
     assert "bindingCounts=" in caplog.text
     assert "'unresolved_404': 1" in caplog.text
+
+# --- parse_sql_statement: fidelity callback on the None path (D-L2c I) -----
+
+
+def _boom_extraction(*args: Any, **kwargs: Any) -> Any:
+    raise RuntimeError("extractor down")
+
+
+def test_parse_none_with_failed_extraction_calls_fidelity_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # D-L2c I: winner exists (SqlGlot), involved is empty, extraction
+    # fails — the None return must still count the fidelity skip
+    # through the callback, since no ParsedData exists to carry it.
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.lineage.parser.extract_names", _boom_extraction
+    )
+    calls: list[str] = []
+    parsed = parse_sql_statement(
+        _record("SELECT 1"),
+        Dialect.POSTGRES,
+        QueryParserType.AUTO,
+        on_fidelity_skip=calls.append,
+    )
+    assert parsed is None
+    assert calls == ["SqlGlot"]
+
+
+def test_parse_none_with_failed_extraction_without_callback_is_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No callback, no behavior change: still None, still no raise.
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.lineage.parser.extract_names", _boom_extraction
+    )
+    parsed = parse_sql_statement(
+        _record("SELECT 1"), Dialect.POSTGRES, QueryParserType.AUTO
+    )
+    assert parsed is None
+
+
+def test_parse_failed_extraction_with_tables_does_not_call_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # When tables exist the fidelity skip rides the ParsedData, so
+    # the callback must not fire on the non-None path.
+    monkeypatch.setattr(
+        "smartmetadata_ingestion.lineage.parser.extract_names", _boom_extraction
+    )
+    calls: list[str] = []
+    parsed = parse_sql_statement(
+        _record("SELECT * FROM public.orders"),
+        Dialect.POSTGRES,
+        QueryParserType.AUTO,
+        on_fidelity_skip=calls.append,
+    )
+    assert parsed is not None
+    assert parsed.tables == []
+    assert parsed.fidelity_skip_branch
+    assert calls == []
