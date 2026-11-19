@@ -23,12 +23,21 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('GovernanceVersionView', () => {
+  // B-9 #3: the domain back link resolves the FQN via one getDomain call.
+  // The flag lets a single test fail that lookup while the version calls
+  // still succeed, so the list fallback is exercised, not the error page.
+  let domainLookupFails = false;
+  const requestedUrls: string[] = [];
+
   beforeEach(() => {
     localStorage.clear();
+    domainLookupFails = false;
+    requestedUrls.length = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        requestedUrls.push(url);
         if (url.includes('/api/v1/domains/d1/versions/')) {
           return jsonResponse({ id: 'd1', name: 'Finance', description: 'new desc', version: 0.2 });
         }
@@ -46,6 +55,17 @@ describe('GovernanceVersionView', () => {
             ],
           });
         }
+        if (url.includes('/api/v1/domains/d1?')) {
+          return domainLookupFails
+            ? new Response('not found', { status: 404 })
+            : jsonResponse({ id: 'd1', name: 'Finance', fullyQualifiedName: 'Finance' });
+        }
+        if (url.includes('/api/v1/glossaries/g1/versions/')) {
+          return jsonResponse({ id: 'g1', name: 'Glossary', description: 'g desc', version: 1.0 });
+        }
+        if (url.includes('/api/v1/glossaries/g1/versions')) {
+          return jsonResponse({ versions: [{ version: 1.0, updatedAt: 10 }] });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -56,6 +76,47 @@ describe('GovernanceVersionView', () => {
     localStorage.clear();
     document.body.innerHTML = '';
   });
+
+  function createVersionRouter() {
+    return createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>domains</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: { template: '<div>domain</div>' } },
+        {
+          path: '/governance/domains/:id/versions/:version',
+          name: 'governance-domain-version',
+          component: GovernanceVersionView,
+          props: true,
+        },
+        { path: '/governance/glossaries/:id', name: 'governance-glossary', component: { template: '<div>glossary</div>' } },
+        {
+          path: '/governance/glossaries/:id/versions/:version',
+          name: 'governance-glossary-version',
+          component: GovernanceVersionView,
+          props: true,
+        },
+      ],
+    });
+  }
+
+  async function mountVersionPage(
+    path: string,
+    props: { kind: 'domain' | 'glossary'; id: string; version: string },
+  ) {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createVersionRouter();
+    await router.push(path);
+    await router.isReady();
+    const wrapper = mount(GovernanceVersionView, {
+      props,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    return { wrapper, router };
+  }
 
   it('shows the snapshot, the change diff and the plain-text rich-text fallback', async () => {
     const pinia = createPinia();
@@ -89,6 +150,49 @@ describe('GovernanceVersionView', () => {
     await wrapper.find('[data-testid="governance-version-0.1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.path).toBe('/governance/domains/d1/versions/0.1');
+    wrapper.unmount();
+  });
+
+  it('navigates back to the domain detail by FQN, not by id (B-9 #3)', async () => {
+    const { wrapper, router } = await mountVersionPage('/governance/domains/d1/versions/0.2', {
+      kind: 'domain',
+      id: 'd1',
+      version: '0.2',
+    });
+    expect(wrapper.text()).toContain('Finance');
+    expect(requestedUrls.some((url) => url.includes('/api/v1/domains/d1?'))).toBe(true);
+    await wrapper.find('[data-testid="governance-version-back"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/governance/domains/Finance');
+    wrapper.unmount();
+  });
+
+  it('falls back to the domains list when the domain lookup fails (B-9 #3)', async () => {
+    domainLookupFails = true;
+    const { wrapper, router } = await mountVersionPage('/governance/domains/d1/versions/0.2', {
+      kind: 'domain',
+      id: 'd1',
+      version: '0.2',
+    });
+    // The version page itself still renders: only the back-link lookup failed.
+    expect(wrapper.text()).toContain('Finance');
+    await wrapper.find('[data-testid="governance-version-back"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/governance/domains');
+    wrapper.unmount();
+  });
+
+  it('keeps the id back link for non-domain kinds and never fetches a domain (B-9 #3)', async () => {
+    const { wrapper, router } = await mountVersionPage('/governance/glossaries/g1/versions/1.0', {
+      kind: 'glossary',
+      id: 'g1',
+      version: '1.0',
+    });
+    expect(wrapper.text()).toContain('Glossary');
+    expect(requestedUrls.some((url) => url.includes('/api/v1/domains/'))).toBe(false);
+    await wrapper.find('[data-testid="governance-version-back"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/governance/glossaries/g1');
     wrapper.unmount();
   });
 });

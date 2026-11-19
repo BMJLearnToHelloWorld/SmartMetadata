@@ -48,5 +48,10 @@ describe('versionPaths', () => {
     expect(getGovernanceDetailPath('glossary', 'g1')).toBe('/governance/glossaries/g1');
     expect(getGovernanceDetailPath('term', 't1')).toBe('/governance/terms/t1');
     expect(getGovernanceDetailPath('classification', 'c1')).toBe('/governance/classifications/c1');
+    // B-9 #3: the domain back link carries the FQN the version page
+    // resolved (the detail route is :fqn-addressed); the version path
+    // itself stays id-based (see the :version test above).
+    expect(getGovernanceDetailPath('domain', 'Finance')).toBe('/governance/domains/Finance');
+    expect(getGovernanceDetailPath('domain', 'Sales.East')).toBe('/governance/domains/Sales.East');
   });
 });
