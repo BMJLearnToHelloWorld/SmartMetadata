@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { membersTabGuard } from './guards';
+import { membersTabGuard, resolveGuard } from './guards';
 import { router } from './index';
 import type { GuardDeclaration } from './guards';
 
@@ -668,5 +668,24 @@ describe('marketplace routes (AP-D3 hard cut)', () => {
     expect(router.resolve('/marketplace/apps/some-app/install').name).toBe(
       'marketplace-app-install',
     );
+  });
+
+  it('resolves a login redirect captured as /marketplace under its new meaning (T-20)', () => {
+    // Migration list §5 T-20: a ?redirect=/marketplace captured inside
+    // the cut window is carried verbatim by the guard and resolved
+    // after login under the new meaning — the app catalog, not the
+    // data marketplace, which now lives at /data-marketplace. (The
+    // non-admin placeholder on the catalog is pinned by
+    // MarketplaceAppCatalogView.test.ts, 'shows the forbidden view for
+    // non-admins without fetching'.)
+    expect(resolveGuard({ isPublic: false, hasSession: false, fullPath: '/marketplace' })).toEqual(
+      {
+        kind: 'login',
+        redirect: '/marketplace',
+      },
+    );
+    expect(router.resolve('/marketplace').name).toBe('marketplace-app-catalog');
+    expect(router.resolve('/marketplace').name).not.toBe('marketplace-overview');
+    expect(router.resolve('/data-marketplace').name).toBe('marketplace-overview');
   });
 });
