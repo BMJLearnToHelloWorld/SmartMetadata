@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   resolveSingleAction,
   splitTransElement,
+  splitTransElements,
   type EmptyPlaceholderAction,
 } from './emptyPlaceholder';
 
@@ -60,5 +61,61 @@ describe('splitTransElement', () => {
 
   it('handles an empty inner element', () => {
     expect(splitTransElement('a<0></0>b')).toEqual({ before: 'a', inner: '', after: 'b' });
+  });
+
+  it('only splits the first pair of a two-pair message', () => {
+    // Documents why the drag-confirm message cannot use this helper:
+    // the second pair stays inside `after` with its markers intact.
+    expect(
+      splitTransElement('Move <0>Team A</0> team under <0>Team B</0> team.'),
+    ).toEqual({
+      before: 'Move ',
+      inner: 'Team A',
+      after: ' team under <0>Team B</0> team.',
+    });
+  });
+});
+
+describe('splitTransElements', () => {
+  it('splits a two-pair message into plain and strong segments in order', () => {
+    expect(
+      splitTransElements(
+        'Click on Confirm if you’d like to move <0>Data Engineering</0> team under <0>Organization</0> team.',
+      ),
+    ).toEqual([
+      { text: 'Click on Confirm if you’d like to move ', strong: false },
+      { text: 'Data Engineering', strong: true },
+      { text: ' team under ', strong: false },
+      { text: 'Organization', strong: true },
+      { text: ' team.', strong: false },
+    ]);
+  });
+
+  it('splits a single-pair message exactly like splitTransElement', () => {
+    expect(
+      splitTransElements('Still need help? Refer to our <0>docs</0> for more information.'),
+    ).toEqual([
+      { text: 'Still need help? Refer to our ', strong: false },
+      { text: 'docs', strong: true },
+      { text: ' for more information.', strong: false },
+    ]);
+  });
+
+  it('returns null when the message carries no element tags', () => {
+    expect(splitTransElements('Plain message.')).toBeNull();
+    expect(splitTransElements('Open <0> only.')).toBeNull();
+    expect(splitTransElements('Close </0> only.')).toBeNull();
+  });
+
+  it('returns null when a later pair is unclosed', () => {
+    expect(splitTransElements('Move <0>Team A</0> team under <0>Team B team.')).toBeNull();
+  });
+
+  it('handles an empty inner element', () => {
+    expect(splitTransElements('a<0></0>b')).toEqual([
+      { text: 'a', strong: false },
+      { text: '', strong: true },
+      { text: 'b', strong: false },
+    ]);
   });
 });

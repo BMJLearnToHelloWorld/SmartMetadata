@@ -139,3 +139,50 @@ export function splitTransElement(rendered: string): TransElementParts | null {
     after: rendered.slice(close + 4),
   };
 }
+
+export interface TransElementSegment {
+  /** Segment text with the `<0>`/`</0>` markers removed. */
+  text: string;
+  /** True when the segment was wrapped in `<0>...</0>` (rendered bold, pin renderElement). */
+  strong: boolean;
+}
+
+/**
+ * Multi-pair form of `splitTransElement`: splits a rendered Trans-style
+ * message on every `<0>...</0>` element, in order. Only one locale
+ * message carries two pairs (`message.entity-transfer-message`: the
+ * dragged and the target team are each wrapped), so this stays a narrow
+ * parser for that shape rather than a general Trans renderer. Returns
+ * null when the message carries no pair or a pair is unclosed; callers
+ * then render the whole message as plain text (same fallback contract
+ * as the single-pair helper).
+ */
+export function splitTransElements(rendered: string): TransElementSegment[] | null {
+  const segments: TransElementSegment[] = [];
+  let rest = rendered;
+  let found = false;
+  for (;;) {
+    const open = rest.indexOf('<0>');
+    if (open === -1) {
+      break;
+    }
+    const close = rest.indexOf('</0>', open + 3);
+    if (close === -1) {
+      return null;
+    }
+    found = true;
+    const before = rest.slice(0, open);
+    if (before) {
+      segments.push({ text: before, strong: false });
+    }
+    segments.push({ text: rest.slice(open + 3, close), strong: true });
+    rest = rest.slice(close + 4);
+  }
+  if (!found) {
+    return null;
+  }
+  if (rest) {
+    segments.push({ text: rest, strong: false });
+  }
+  return segments;
+}
