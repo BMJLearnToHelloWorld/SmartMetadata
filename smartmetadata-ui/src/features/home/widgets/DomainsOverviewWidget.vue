@@ -74,8 +74,11 @@ function openDomains(): void {
   void router.push({ name: 'governance-domains' });
 }
 
-function openDomain(id: string): void {
-  void router.push({ name: 'governance-domain', params: { id } });
+function openDomain(fqn: string): void {
+  if (!fqn) {
+    return;
+  }
+  void router.push({ name: 'governance-domain', params: { fqn } });
 }
 </script>
 
@@ -125,7 +128,7 @@ function openDomain(id: string): void {
               type="button"
               class="overview-widget__name"
               data-testid="domain-name"
-              @click="openDomain(domain.id)"
+              @click="openDomain(domain.fullyQualifiedName)"
             >
               {{ domain.name }}
             </button>

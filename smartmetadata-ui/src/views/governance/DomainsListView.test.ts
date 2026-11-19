@@ -35,6 +35,7 @@ describe('DomainsListView', () => {
               {
                 id: 'd1',
                 name: 'Marketing',
+                fullyQualifiedName: 'Marketing',
                 description: 'Growth',
                 domainType: 'Consumer-aligned',
               },
@@ -59,7 +60,7 @@ describe('DomainsListView', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/governance/domains', name: 'governance-domains', component: DomainsListView },
-        { path: '/governance/domains/:id', name: 'governance-domain', component: { template: '<div>d</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: { template: '<div>d</div>' } },
       ],
     });
     await router.push('/governance/domains');
@@ -75,6 +76,7 @@ describe('DomainsListView', () => {
     await wrapper.find('[data-testid="domain-row-d1"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-domain');
+    expect(router.currentRoute.value.params).toMatchObject({ fqn: 'Marketing' });
   });
 
   it('requests the next cursor page from GET /v1/domains', async () => {

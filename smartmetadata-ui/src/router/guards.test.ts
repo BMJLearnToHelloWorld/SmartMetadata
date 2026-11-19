@@ -389,7 +389,7 @@ describe('guard declaration evaluation', () => {
   });
 });
 
-describe('create-user guard contract (§10.6, reserved, no routes)', () => {
+describe('create-user guard contract (§10.6, R-1: mounted on the routes)', () => {
   it('declares Create(user) for the plain branch', () => {
     expect(CREATE_USER_GUARD_DECLARATIONS['/create-user']).toEqual({
       resource: 'USER',

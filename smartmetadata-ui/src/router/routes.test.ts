@@ -202,7 +202,18 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
     expect(router.resolve('/ingestion/services').name).toBe('ingestion-services');
     expect(router.resolve('/ingestion/services/database/s1').name).toBe('ingestion-service');
-    expect(router.resolve('/ingestion/services/add').name).toBe('ingestion-service-add');
+    // D-17: the official `/:serviceCategory/add-service` form; the
+    // retained `/ingestion/services/add` path is deleted with it.
+    expect(router.resolve('/databaseServices/add-service').name).toBe('ingestion-service-add');
+    expect(router.resolve('/databaseServices/add-service').params).toMatchObject({
+      serviceCategory: 'databaseServices',
+    });
+    expect(router.resolve('/all/add-service').name).toBe('ingestion-service-add');
+    expect(router.resolve('/all/add-service').params).toMatchObject({ serviceCategory: 'all' });
+    expect(router.resolve('/ingestion/services/add').name).toBe('not-found');
+    // B-9: the domain detail segment is `:fqn`.
+    expect(router.resolve('/governance/domains/Finance').name).toBe('governance-domain');
+    expect(router.resolve('/governance/domains/Finance').params).toMatchObject({ fqn: 'Finance' });
     expect(router.resolve('/ingestion/pipelines/p1').name).toBe('ingestion-pipeline');
     expect(router.resolve('/ingestion/pipelines/p1/edit').name).toBe('ingestion-pipeline-edit');
     expect(router.resolve('/inbox').name).toBe('inbox');
@@ -343,6 +354,24 @@ describe('guard declaration table (§10.2)', () => {
       resource: 'AUDIT_LOG',
       operation: 'AuditLogs',
     });
+  });
+
+  it('declares the create-user Create guards (R-1)', () => {
+    expect(declarationOf('create-user')).toEqual({ resource: 'USER', operation: 'Create' });
+    expect(declarationOf('create-user-bot')).toEqual({
+      allOf: [
+        { resource: 'USER', operation: 'Create' },
+        { resource: 'BOT', operation: 'Create' },
+      ],
+    });
+  });
+
+  it('leaves the settings notification add/edit faces session-only (R-3)', () => {
+    // Pin mounts the add/edit faces bare (SettingsRouter.tsx:575-607);
+    // the page-level useAlertFormAccess gate is the only front-end
+    // check, so no declaration is mounted here.
+    expect(declarationOf('settings-notification-alert-add')).toBeUndefined();
+    expect(declarationOf('settings-notification-alert-edit')).toBeUndefined();
   });
 
   it('declares admin-only for the admin-only surfaces', () => {

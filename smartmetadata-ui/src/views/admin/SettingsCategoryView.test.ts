@@ -72,7 +72,7 @@ function testRouter(): Router {
         name: 'admin-settings-custom-property-type',
         component: stub('cp-type'),
       },
-      { path: '/ingestion/services/add', name: 'ingestion-service-add', component: stub('add') },
+      { path: '/:serviceCategory/add-service', name: 'ingestion-service-add', component: stub('add') },
     ],
   });
 }
@@ -282,11 +282,12 @@ describe('SettingsCategoryView (DESIGN §6)', () => {
     expect(wrapper.find('[data-testid="add-service-skeleton"]').exists()).toBe(false);
   });
 
-  it('navigates the Add Service button to the retained wizard route by name (D-17)', async () => {
+  it('navigates the Add Service button to the official add-service route with the all sentinel (D-17)', async () => {
     permissionFixture.opsByResource = { databaseService: { Create: true } };
     const { wrapper, router } = await mountCategory('/settings/services');
     await wrapper.find('[data-testid="add-service-button"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'all' });
   });
 });

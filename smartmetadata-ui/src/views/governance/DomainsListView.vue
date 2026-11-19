@@ -101,6 +101,18 @@ async function onCreate(): Promise<void> {
   }
 }
 
+/**
+ * B-9: the detail route is `:fqn` — a domain without a fullyQualifiedName
+ * has no addressable target, so no navigation happens (never fall back
+ * to id or name for the link).
+ */
+function openDomain(record: Domain): void {
+  if (!record.fullyQualifiedName) {
+    return;
+  }
+  void router.push({ name: 'governance-domain', params: { fqn: record.fullyQualifiedName } });
+}
+
 async function onDelete(record: Domain): Promise<void> {
   const confirmed = await confirmDelete({
     title: t('crud.deleteTitle'),
@@ -142,8 +154,8 @@ onMounted(() => {
     @refresh="load"
     @next="onNext"
     @prev="onPrev"
-    @view="(record) => router.push({ name: 'governance-domain', params: { id: (record as Domain).id } })"
-    @edit="(record) => router.push({ name: 'governance-domain', params: { id: (record as Domain).id } })"
+    @view="(record) => openDomain(record as Domain)"
+    @edit="(record) => openDomain(record as Domain)"
     @delete="(record) => onDelete(record as Domain)"
   >
     <template #actions>
@@ -156,7 +168,7 @@ onMounted(() => {
         <a
           href="#"
           :data-testid="`domain-row-${(record as Domain).id}`"
-          @click.prevent="router.push({ name: 'governance-domain', params: { id: (record as Domain).id } })"
+          @click.prevent="openDomain(record as Domain)"
         >
           {{ entityLabel(record as Domain) }}
         </a>

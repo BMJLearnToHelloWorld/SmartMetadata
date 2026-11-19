@@ -51,7 +51,7 @@ function router() {
         component: { template: '<div>domains</div>' },
       },
       {
-        path: '/governance/domains/:id',
+        path: '/governance/domains/:fqn',
         name: 'governance-domain',
         component: { template: '<div>domain</div>' },
       },
@@ -113,6 +113,28 @@ describe('DomainsOverviewWidget', () => {
     // The sub-domain is in the count map but never a row.
     expect(wrapper.text()).not.toContain('Payroll');
     expect(wrapper.get('[data-testid="domains-chip-empty"]').text()).toContain('1');
+  });
+
+  it('navigates a domain row to its FQN detail route (B-9)', async () => {
+    getAllDomainsWithAssetsCount.mockResolvedValue({ Finance: 5, Marketing: 0 });
+    searchAssets.mockImplementation(async (_q: string, _from: number, size: number) => {
+      if (size === 0) {
+        return { hits: [], total: 1, facets: [] };
+      }
+      return { hits: [hit('d1', 'Finance'), hit('d2', 'Marketing')], total: 2, facets: [] };
+    });
+    const r = router();
+    const wrapper = mount(DomainsOverviewWidget, {
+      props: { widgetKey: 'domains' },
+      global: { plugins: [r, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.findAll('[data-testid="domain-name"]')[0]!.trigger('click');
+    await flushPromises();
+    expect(r.currentRoute.value.name).toBe('governance-domain');
+    expect(r.currentRoute.value.params).toMatchObject({ fqn: 'Finance' });
   });
 });
 

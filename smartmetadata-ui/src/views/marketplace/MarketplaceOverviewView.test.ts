@@ -108,7 +108,7 @@ function mountPage() {
       { path: '/marketplace', name: 'marketplace-overview', component: MarketplaceOverviewView },
       { path: '/governance/domains', name: 'governance-domains', component: { template: '<div />' } },
       { path: '/governance/data-products', name: 'governance-data-products', component: { template: '<div />' } },
-      { path: '/governance/domains/:id', name: 'governance-domain', component: { template: '<div />' } },
+      { path: '/governance/domains/:fqn', name: 'governance-domain', component: { template: '<div />' } },
       { path: '/governance/data-products/:id', name: 'governance-data-product', component: { template: '<div />' } },
     ],
   });
@@ -242,7 +242,7 @@ describe('MarketplaceOverviewView', () => {
     await item.trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('governance-domain');
-    expect(router.currentRoute.value.params.id).toBe('d1');
+    expect(router.currentRoute.value.params.fqn).toBe('sales');
   });
 
   it('offers NLQ only when enabled, and NLQ search hits the nlq endpoint', { timeout: 15000 }, async () => {

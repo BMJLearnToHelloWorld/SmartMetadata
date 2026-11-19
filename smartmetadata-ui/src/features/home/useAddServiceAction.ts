@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { permissionFlags } from '@/api/permissions';
+import { serviceCategoryByKind } from '@/ingestion/serviceCategories';
 import { usePermissionStore } from '@/stores/permissions';
 import { computed, ref, watchEffect, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -21,13 +22,14 @@ import { useRouter } from 'vue-router';
  * the category it was clicked from, and must be absent when the user
  * cannot create that kind of service.
  *
- * Product adaptation: the wizard is one page with a kind selector
- * (AddServiceView reads no kind query), so every category navigates
- * to the same `ingestion-service-add` route — only the permission
- * check is per-category. The 'all' check mirrors official
- * canCreateAnyServiceCategory over the eleven classic categories;
- * llm/mcp are outside the connections overview universe (official
- * CONNECTIONS_ENTITY_TYPES), so they are not counted.
+ * Product adaptation: the wizard is one page with a kind selector, so
+ * the 'all' action opens it on the 'all' sentinel and every other
+ * category on its ServiceCategory enum value (D-17, pin
+ * getAddServicePath) — only the permission check is per-category. The
+ * 'all' check mirrors official canCreateAnyServiceCategory over the
+ * eleven classic categories; llm/mcp are outside the connections
+ * overview universe (official CONNECTIONS_ENTITY_TYPES), so they are
+ * not counted.
  * ADR:2026-11-08-my-data-add-service-action
  */
 export type AddServiceCategory =
@@ -84,7 +86,11 @@ export function useAddServiceAction(category: AddServiceCategory): {
   });
 
   function addService(): void {
-    void router.push({ name: 'ingestion-service-add' });
+    // D-17: the official `/:serviceCategory/add-service` form — the
+    // ServiceCategory enum value, or the 'all' sentinel.
+    const serviceCategory =
+      category === 'all' ? 'all' : (serviceCategoryByKind(category)?.enumValue ?? 'all');
+    void router.push({ name: 'ingestion-service-add', params: { serviceCategory } });
   }
 
   return { addService, canAddService: computed(() => canAddService.value) };

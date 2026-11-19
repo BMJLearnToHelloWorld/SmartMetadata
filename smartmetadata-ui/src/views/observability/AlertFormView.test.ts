@@ -209,6 +209,21 @@ describe('AlertFormView', () => {
     expect(getAlertCapabilities).not.toHaveBeenCalled();
   });
 
+  it('denies entry on the settings face without the create permission, and issues no save (R-3)', async () => {
+    getResourcePermission.mockResolvedValue({
+      resource: 'eventsubscription',
+      permissions: [{ operation: 'ViewBasic', access: 'allow' }],
+    });
+    const { wrapper } = await mountView('/settings/notifications/add-notification');
+    expect(wrapper.find('[data-testid="displayName"]').exists()).toBe(false);
+    const placeholder = wrapper.findComponent(PermissionPlaceholder);
+    expect(placeholder.exists()).toBe(true);
+    expect(String(placeholder.props('permissionValue'))).toContain('Create Alert');
+    expect(getAlertCapabilities).not.toHaveBeenCalled();
+    expect(createNotificationAlert).not.toHaveBeenCalled();
+    expect(createObservabilityAlert).not.toHaveBeenCalled();
+  });
+
   it('loads the edit form per face, prefilled from the stored alert', async () => {
     const { wrapper } = await mountView('/observability/alerts/edit/dq-alert');
     expect(getObservabilityAlertByFQN).toHaveBeenCalledWith('dq-alert');

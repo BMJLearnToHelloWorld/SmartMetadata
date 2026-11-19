@@ -102,10 +102,10 @@ function getEntityName(ref: DebugEntityRef): string {
  * asset view's honest unwired error. The one source type the server
  * emits for inherited permissions is `domain`
  * (PermissionDebugService.processOtherInheritedPermissions), which has
- * no FQN-addressable detail route in this tree (DomainDetailView
- * fetches GET /v1/domains/{id} by UUID), so domain sources stay plain
- * text until a routable FQN domain detail exists. A ref without an
- * FQN has no addressable target and likewise renders as plain text.
+ * its own FQN-addressable detail route (`governance-domain`,
+ * `:fqn`, fetched by name — B-9), so domain sources link there. A ref
+ * without an FQN has no addressable target and likewise renders as
+ * plain text.
  */
 function entityLinkFor(entityType: string, fqn: string): RouteLocationRaw | null {
   if (!fqn) {
@@ -118,6 +118,8 @@ function entityLinkFor(entityType: string, fqn: string): RouteLocationRaw | null
       return roleDetailLocation(fqn);
     case 'team':
       return { name: 'admin-team', params: { id: fqn } };
+    case 'domain':
+      return { name: 'governance-domain', params: { fqn } };
     default:
       return isDetailWired(entityType) ? assetLocation(entityType, fqn) : null;
   }

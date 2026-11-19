@@ -31,7 +31,7 @@ vi.mock('@/api/permissions', async () => {
  * a condition, each marked with a context-unique token so the shared
  * renderRule coverage is provable per context. The inherited section
  * covers all three source shapes the server emits: a domain source
- * (unwired in this tree, plain text), a wired table source (asset
+ * (linked to its FQN detail route, B-9), a wired table source (asset
  * link), and a sourceless ADMIN entry.
  */
 const INFO: PermissionDebugInfo = {
@@ -237,6 +237,11 @@ function mountPanel(props: { username: string; isLoggedInUser: boolean }) {
         name: 'asset',
         component: { template: '<div>asset</div>' },
       },
+      {
+        path: '/governance/domains/:fqn',
+        name: 'governance-domain',
+        component: { template: '<div>domain</div>' },
+      },
     ],
   });
   const wrapper = mount(UserPermissionsPanel, {
@@ -406,15 +411,14 @@ describe('UserPermissionsPanel', () => {
     expect(wrapper.text().match(/→/g)).toHaveLength(2);
   });
 
-  it('renders unwired sources and refs without an FQN as plain text', async () => {
+  it('links an inherited domain source to its FQN detail route (B-9)', async () => {
     mocks.debugMyPermissions.mockResolvedValue(INFO);
     const { wrapper } = mountPanel({ username: 'alice', isLoggedInUser: true });
     await flushPromises();
-    // The domain source has no FQN-addressable detail route: its name
-    // renders, but no link points at it.
+    // The domain source is the one inherited source the server emits;
+    // it links to the FQN-addressable detail route.
     expect(wrapper.text()).toContain('Finance');
-    expect(linkHrefs(wrapper).some((href) => href.includes('Finance'))).toBe(false);
-    expect(linkHrefs(wrapper).some((href) => href.includes('domain'))).toBe(false);
+    expect(linkHrefs(wrapper)).toContain('/governance/domains/Finance');
   });
 
   it('renders a role without an FQN as plain text', async () => {
