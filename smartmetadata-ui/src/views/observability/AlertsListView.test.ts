@@ -58,6 +58,8 @@ async function mountView() {
     routes: [
       { path: '/observability/alerts', name: 'observability-alerts', component: AlertsListView },
       { path: '/observability/alerts/:id', name: 'observability-alert', component: { template: '<div />' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push({ name: 'observability-alerts' });

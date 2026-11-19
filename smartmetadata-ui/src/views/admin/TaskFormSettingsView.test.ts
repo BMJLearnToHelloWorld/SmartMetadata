@@ -48,6 +48,9 @@ async function mountTaskForms() {
         name: 'admin-settings-governance-task-forms',
         component: TaskFormSettingsView,
       },
+      // Breadcrumb links resolve these names; the stubs never render.
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/settings/governance/task-forms');
@@ -104,6 +107,32 @@ describe('TaskFormSettingsView', () => {
     expect(wrapper.find('[data-testid="task-form-list-item-RequestApproval"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Request Approval');
     expect(wrapper.find('[data-testid="task-form-name-input"]').element).toBeTruthy();
+  }, 10000);
+
+  it('renders the pin four-level breadcrumb with the empty-name Hub-linked crumb (CONFLICT-4 ruling (b))', async () => {
+    const { wrapper } = await mountTaskForms();
+    const breadcrumb = wrapper.get('[data-testid="sm-breadcrumb"]');
+    const items = breadcrumb.findAll('.ant-breadcrumb-link');
+    expect(items).toHaveLength(4);
+    // [Settings → /settings, Governance → /settings/governance,
+    // '' → /settings, Task Forms unlinked]: the third crumb is the
+    // `task-forms` catalog miss, still rendered and still a link.
+    const links = breadcrumb.findAll('a');
+    expect(links).toHaveLength(3);
+    expect(links.map((link) => link.text())).toEqual(['Settings', 'Governance', '']);
+    expect(links.map((link) => link.attributes('href'))).toEqual([
+      '/settings',
+      '/settings/governance',
+      '/settings',
+    ]);
+    expect(items[0].find('a').text()).toBe('Settings');
+    expect(items[1].find('a').text()).toBe('Governance');
+    expect(items[2].find('a').exists()).toBe(true);
+    expect(items[2].find('a').text()).toBe('');
+    expect(items[3].find('a').exists()).toBe(false);
+    expect(items[3].find('span').text()).toBe('Task Forms');
+    const html = wrapper.html();
+    expect(html.indexOf('sm-breadcrumb')).toBeLessThan(html.indexOf('task-form-sidebar'));
   }, 10000);
 
   it('creates a new schema from the general fields', async () => {

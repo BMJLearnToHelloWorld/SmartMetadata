@@ -39,12 +39,13 @@ const allowCreateWorkflow = getWorkflowCapabilities().allowCreateWorkflow;
 
 /**
  * Official click-through (WorkflowsPage onWorkflowClick): a card navigates
- * to the detail route with the default tab 'workflow'
- * (WorkflowRouterUtils.getWorkflowDefinitionDetailPath).
+ * to the detail route (WorkflowRouterUtils.getWorkflowDefinitionDetailPath).
+ * D-5: the route no longer carries a :tab segment — the detail view owns
+ * its active tab as a local ref — so only the fqn is passed.
  */
 function goDetail(workflow: WorkflowDefinition): void {
   const fqn = workflow.fullyQualifiedName || workflow.name;
-  void router.push({ name: 'workflow-detail', params: { fqn, tab: 'workflow' } });
+  void router.push({ name: 'workflow-detail', params: { fqn } });
 }
 
 /**
@@ -166,7 +167,7 @@ async function onCreate(): Promise<void> {
     const fqn = created.fullyQualifiedName || created.name;
     void router.push({
       name: 'workflow-detail',
-      params: { fqn, tab: 'workflow' },
+      params: { fqn },
       query: { mode: 'edit' },
     });
   } catch (error) {

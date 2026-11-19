@@ -52,6 +52,17 @@ export interface EntityRef {
   type?: string;
   fullyQualifiedName?: string;
   /**
+   * R13: the remaining optional EntityReference schema subfields
+   * (pin `type/entityReference.json`, generated `entityReference.ts`):
+   * soft-delete flag, optional description, inherited-relationship
+   * flag, and the resource link. No index signature: the schema
+   * forbids additional properties.
+   */
+  deleted?: boolean;
+  description?: string;
+  inherited?: boolean;
+  href?: string;
+  /**
    * Typed relation of a glossary-term relatedTerms entry (official
    * TermRelation.relationType, default 'relatedTo'). Carried only by
    * glossaryTerms.mapRelatedTerms; other EntityRef producers leave it unset.

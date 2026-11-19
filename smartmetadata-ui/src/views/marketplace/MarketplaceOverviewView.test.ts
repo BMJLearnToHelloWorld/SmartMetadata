@@ -348,9 +348,15 @@ describe('MarketplaceOverviewView', () => {
         pages: [
           {
             pageType: 'DataMarketplace',
-            layout: [
-              { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
-              { i: 'KnowledgePanel.MarketplaceDataProducts', y: 1 },
+            tabs: [
+              {
+                id: 'overview',
+                name: 'overview',
+                layout: [
+                  { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
+                  { i: 'KnowledgePanel.MarketplaceDataProducts', y: 1 },
+                ],
+              },
             ],
           },
         ],
@@ -409,10 +415,16 @@ describe('MarketplaceOverviewView', () => {
         pages: [
           {
             pageType: 'DataMarketplace',
-            layout: [
-              { i: 'KnowledgePanel.SomethingElse', y: 0 },
-              { i: 'KnowledgePanel.MarketplaceDomains', y: 1 },
-              { i: 'KnowledgePanel.MarketplaceDataProducts', y: 2 },
+            tabs: [
+              {
+                id: 'overview',
+                name: 'overview',
+                layout: [
+                  { i: 'KnowledgePanel.SomethingElse', y: 0 },
+                  { i: 'KnowledgePanel.MarketplaceDomains', y: 1 },
+                  { i: 'KnowledgePanel.MarketplaceDataProducts', y: 2 },
+                ],
+              },
             ],
           },
         ],
@@ -435,6 +447,134 @@ describe('MarketplaceOverviewView', () => {
     expect(products).toBeGreaterThan(-1);
     expect(domains).toBeGreaterThan(-1);
     expect(domains).toBeLessThan(products);
+  });
+
+  // Ruling c*: the column is full-width, one widget per layout entry,
+  // with no dedup — a repeated kind renders twice, in y order.
+  it('renders one widget per layout entry in a full-width column, repeating kinds included', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const doc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataMarketplace',
+            tabs: [
+              {
+                id: 'overview',
+                name: 'overview',
+                layout: [
+                  { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
+                  { i: 'KnowledgePanel.MarketplaceDomains', y: 1 },
+                  { i: 'KnowledgePanel.MarketplaceDataProducts', y: 2 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    stubFetch(undefined, { personas: [persona], doc });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const column = wrapper.find('.marketplace-widget-column');
+    expect(column.exists()).toBe(true);
+    const columnHtml = column.html();
+    expect(column.findAll('[data-testid="marketplace-domains"]')).toHaveLength(2);
+    expect(column.findAll('[data-testid="marketplace-data-products"]')).toHaveLength(1);
+    const firstDomains = columnHtml.indexOf('data-testid="marketplace-domains"');
+    const secondDomains = columnHtml.indexOf(
+      'data-testid="marketplace-domains"',
+      firstDomains + 1,
+    );
+    const products = columnHtml.indexOf('data-testid="marketplace-data-products"');
+    expect(firstDomains).toBeGreaterThan(-1);
+    expect(secondDomains).toBeGreaterThan(firstDomains);
+    expect(products).toBeGreaterThan(secondDomains);
+  });
+
+  // Ruling c*: with no tabs the page layout branch is unreachable, so
+  // a tab-less page renders the default order whatever its layout says.
+  it('ignores a tab-less page layout and renders the default order', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const doc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataMarketplace',
+            layout: [
+              { i: 'KnowledgePanel.MarketplaceDomains', y: 0 },
+              { i: 'KnowledgePanel.MarketplaceDataProducts', y: 1 },
+            ],
+          },
+        ],
+      },
+    };
+    stubFetch(undefined, { personas: [persona], doc });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const html = wrapper.find('[data-testid="marketplace-overview"]').html();
+    const products = html.indexOf('data-testid="marketplace-data-products"');
+    const domains = html.indexOf('data-testid="marketplace-domains"');
+    expect(products).toBeGreaterThan(-1);
+    expect(domains).toBeGreaterThan(-1);
+    expect(products).toBeLessThan(domains);
+  });
+
+  // C-4 §4.4 D4: a non-empty object layout renders an explicit error
+  // state and no widgets — never the silent default. (The `{}` fallthrough
+  // half of the bifurcation is pinned in marketplaceLayout.test.ts.)
+  it('renders an error state for a non-empty object layout instead of defaulting', { timeout: 15000 }, async () => {
+    const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+    const badDoc = {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'DataMarketplace',
+            tabs: [{ id: 'overview', name: 'overview', layout: { a: 1 } }],
+          },
+        ],
+      },
+    };
+    stubFetch(undefined, { personas: [persona], doc: badDoc });
+    const { pinia, router } = mountPage();
+    localStorage.setItem('sm.persona.v1', 'p1');
+    await router.push('/marketplace');
+    await router.isReady();
+    const wrapper = mount(MarketplaceOverviewView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="marketplace-layout-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="marketplace-data-products"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="marketplace-domains"]').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it('falls back to the default widget order when the persona document fetch fails', { timeout: 15000 }, async () => {

@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import PolicyDetailView from './PolicyDetailView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -73,6 +74,18 @@ describe('PolicyDetailView', () => {
             ],
           });
         }
+        if (url.includes('/api/v1/policies/p2')) {
+          return jsonResponse({
+            id: 'p2',
+            name: 'DataStewardPolicy',
+            description: 'Steward catalog assets',
+            enabled: true,
+            owners: [],
+            roles: [],
+            teams: [],
+            rules: [],
+          });
+        }
         return new Response('not found', { status: 404 });
       }),
     );
@@ -103,5 +116,47 @@ describe('PolicyDetailView', () => {
     const { wrapper } = await mountPolicy();
     expect(wrapper.find('[data-testid="entity-detail-error"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="policy-rules-table"]').exists()).toBe(false);
+  });
+
+  // CONFLICT-3 (a): pin PoliciesDetailPage.tsx:114-126 builds the trail by
+  // hand as [list label -> list path, entity name -> ''], with no Settings
+  // root and no Access Control level. The list page keeps the §9 constructor.
+  it('builds the pin two-item breadcrumb: list link, then the unlinked entity name', async () => {
+    const { wrapper, router } = await mountPolicy();
+    const shell = wrapper.findComponent(EntityDetailShell);
+    expect(shell.exists()).toBe(true);
+    const breadcrumbs = shell.props('breadcrumbs') as Array<{
+      label: string;
+      to?: Record<string, unknown>;
+    }>;
+    expect(breadcrumbs).toHaveLength(2);
+    expect(breadcrumbs[0]).toEqual({ label: 'Policies', to: { name: 'admin-policies' } });
+    expect(breadcrumbs[1].label).toBe('Data Consumer');
+    expect(breadcrumbs[1].to).toBeUndefined();
+
+    const trail = wrapper.find('[data-testid="entity-detail-breadcrumb"]');
+    expect(trail.exists()).toBe(true);
+    expect(trail.text()).toContain('Policies');
+    expect(trail.text()).toContain('Data Consumer');
+    expect(trail.text()).not.toContain('Settings');
+    expect(trail.text()).not.toContain('Access Control');
+    expect(wrapper.find('[data-testid="entity-detail-crumb-1"]').exists()).toBe(false);
+
+    await wrapper.get('[data-testid="entity-detail-crumb-0"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-policies');
+  });
+
+  it('uses the policy name as the second crumb when no displayName is present', async () => {
+    const { wrapper } = await mountPolicy('p2');
+    const shell = wrapper.findComponent(EntityDetailShell);
+    const breadcrumbs = shell.props('breadcrumbs') as Array<{
+      label: string;
+      to?: Record<string, unknown>;
+    }>;
+    expect(breadcrumbs).toHaveLength(2);
+    expect(breadcrumbs[0]).toEqual({ label: 'Policies', to: { name: 'admin-policies' } });
+    expect(breadcrumbs[1].label).toBe('DataStewardPolicy');
+    expect(breadcrumbs[1].to).toBeUndefined();
   });
 });

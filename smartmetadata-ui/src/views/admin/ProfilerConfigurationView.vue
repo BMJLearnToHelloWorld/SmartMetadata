@@ -5,16 +5,43 @@
   Job execution UI is Partial — config CRUD only (BehaviorMatched for fields).
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Form, Input, Select, Space, Switch, message} from 'ant-design-vue';
+import {Alert, Button, Form, Input, Select, Space, Spin, Switch, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { getTypedSetting, settingAsProfiler, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import { PROFILER_DATA_TYPES, PROFILER_METRICS } from '@/quality/profilerConfig';
 import type { MetricConfigurationDefinition, ProfilerConfiguration } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.profiler-configuration');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.profiler-configuration');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'preferences',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -100,68 +127,72 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="profiler-configuration"
-    :title="t('settings.profiler.title')"
-    :lead="t('settings.profiler.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Space style="margin-bottom: 12px">
-      <Button data-testid="profiler-add-row" @click="addRow">{{ t('settings.profiler.add') }}</Button>
-      <Button type="primary" :loading="saving" data-testid="profiler-save" @click="save">
-        {{ t('settings.profiler.save') }}
-      </Button>
-    </Space>
-    <SmTable
-      row-key="__idx"
-      :columns="columns"
-      :data-source="form.metrics.map((row, index) => ({ ...row, __idx: index }))"
-      :pagination="false"
-      test-id="profiler-metrics-table"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'dataType'">
-          <Select
-            v-model:value="form.metrics[(record as { __idx: number }).__idx].dataType"
-            style="width: 100%"
-            :options="DATA_TYPES.map((value) => ({ value, label: value }))"
-            :data-testid="`profiler-datatype-${(record as { __idx: number }).__idx}`"
-          />
+  <div data-testid="profiler-configuration">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      learning-page-id="profilerConfiguration"
+      test-id="profiler-configuration"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Space style="margin-bottom: 12px">
+        <Button data-testid="profiler-add-row" @click="addRow">{{ t('settings.profiler.add') }}</Button>
+        <Button type="primary" :loading="saving" data-testid="profiler-save" @click="save">
+          {{ t('settings.profiler.save') }}
+        </Button>
+      </Space>
+      <SmTable
+        row-key="__idx"
+        :columns="columns"
+        :data-source="form.metrics.map((row, index) => ({ ...row, __idx: index }))"
+        :pagination="false"
+        test-id="profiler-metrics-table"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'dataType'">
+            <Select
+              v-model:value="form.metrics[(record as { __idx: number }).__idx].dataType"
+              style="width: 100%"
+              :options="DATA_TYPES.map((value) => ({ value, label: value }))"
+              :data-testid="`profiler-datatype-${(record as { __idx: number }).__idx}`"
+            />
+          </template>
+          <template v-else-if="column.key === 'metrics'">
+            <Select
+              v-model:value="form.metrics[(record as { __idx: number }).__idx].metrics"
+              mode="multiple"
+              style="width: 100%"
+              :options="METRICS.map((value) => ({ value, label: value }))"
+              :data-testid="`profiler-metrics-${(record as { __idx: number }).__idx}`"
+            />
+          </template>
+          <template v-else-if="column.key === 'disabled'">
+            <Select
+              v-model:value="form.metrics[(record as { __idx: number }).__idx].disabled"
+              style="width: 100%"
+              :options="[
+                { value: false, label: t('settings.profiler.enabled') },
+                { value: true, label: t('settings.profiler.disabledYes') },
+              ]"
+            />
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <Button type="link" danger @click="removeRow((record as { __idx: number }).__idx)">
+              {{ t('settings.profiler.remove') }}
+            </Button>
+          </template>
         </template>
-        <template v-else-if="column.key === 'metrics'">
-          <Select
-            v-model:value="form.metrics[(record as { __idx: number }).__idx].metrics"
-            mode="multiple"
-            style="width: 100%"
-            :options="METRICS.map((value) => ({ value, label: value }))"
-            :data-testid="`profiler-metrics-${(record as { __idx: number }).__idx}`"
-          />
-        </template>
-        <template v-else-if="column.key === 'disabled'">
-          <Select
-            v-model:value="form.metrics[(record as { __idx: number }).__idx].disabled"
-            style="width: 100%"
-            :options="[
-              { value: false, label: t('settings.profiler.enabled') },
-              { value: true, label: t('settings.profiler.disabledYes') },
-            ]"
-          />
-        </template>
-        <template v-else-if="column.key === 'actions'">
-          <Button type="link" danger @click="removeRow((record as { __idx: number }).__idx)">
-            {{ t('settings.profiler.remove') }}
-          </Button>
-        </template>
-      </template>
-    </SmTable>
-    <Form layout="vertical" style="margin-top: 16px">
-      <Form.Item :label="t('settings.profiler.storeSampleData')">
-        <Switch v-model:checked="form.storeSampleData" data-testid="profiler-store-sample-data" @change="onStoreSampleData" />
-      </Form.Item>
-      <Form.Item :label="t('settings.profiler.readSampleData')">
-        <Switch v-model:checked="form.readSampleData" data-testid="profiler-read-sample-data" />
-      </Form.Item>
-    </Form>
-  </PreferencePageShell>
+      </SmTable>
+      <Form layout="vertical" style="margin-top: 16px">
+        <Form.Item :label="t('settings.profiler.storeSampleData')">
+          <Switch v-model:checked="form.storeSampleData" data-testid="profiler-store-sample-data" @change="onStoreSampleData" />
+        </Form.Item>
+        <Form.Item :label="t('settings.profiler.readSampleData')">
+          <Switch v-model:checked="form.readSampleData" data-testid="profiler-read-sample-data" />
+        </Form.Item>
+      </Form>
+    </Spin>
+  </div>
 </template>

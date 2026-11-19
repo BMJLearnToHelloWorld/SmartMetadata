@@ -203,11 +203,58 @@ describe('landing page layout', () => {
     ]);
   });
 
-  it('treats a Record-shaped saved layout as no saved layout', () => {
-    expect(extractSavedLandingLayout(documentWithLayout({ KPI: { x: 0, y: 0 } }))).toBeUndefined();
-    expect(resolveLandingPageLayout(documentWithLayout({ KPI: { x: 0, y: 0 } }))).toEqual(
+  // C-4 §4.4 D4: a present but non-array layout throws at the
+  // function layer, as officially (`(savedLayout ?? []).filter`
+  // with no type guard) — `{}` included. It must never silently
+  // resolve to the default layout. A null layout is absent
+  // (`?? []`), so it still resolves to the default.
+  it('throws on a present non-array saved layout instead of silently defaulting', () => {
+    const recordLayout = { KPI: { x: 0, y: 0 } };
+    expect(() => extractSavedLandingLayout(documentWithLayout(recordLayout))).toThrow(TypeError);
+    expect(() => extractSavedLandingLayout(documentWithLayout({}))).toThrow(TypeError);
+    expect(() => resolveLandingPageLayout(documentWithLayout(recordLayout))).toThrow(TypeError);
+    expect(resolveLandingPageLayout(documentWithLayout(null))).toEqual(
       DEFAULT_LANDING_PAGE_LAYOUT,
     );
+  });
+
+  // M4: `homepage` entries are not consumed by home — only the
+  // LandingPage entry is read. A document with only a homepage entry
+  // resolves to the default, and a homepage entry never shadows a
+  // LandingPage entry.
+  it('ignores homepage entries: only the LandingPage entry feeds home', () => {
+    const homepageOnly: PersonaDocument = {
+      name: 'Analyst-Analyst',
+      fullyQualifiedName: 'persona.Analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'homepage',
+            layout: [item(LANDING_PAGE_WIDGET_KEYS.KPI, 0, 0)],
+          },
+        ],
+      },
+    };
+    expect(resolveLandingPageLayout(homepageOnly)).toEqual(DEFAULT_LANDING_PAGE_LAYOUT);
+    const both: PersonaDocument = {
+      ...homepageOnly,
+      data: {
+        pages: [
+          {
+            pageType: 'homepage',
+            layout: [item(LANDING_PAGE_WIDGET_KEYS.KPI, 0, 0)],
+          },
+          {
+            pageType: 'LandingPage',
+            layout: [item(LANDING_PAGE_WIDGET_KEYS.DOMAINS, 0, 0)],
+          },
+        ],
+      },
+    };
+    expect(resolveLandingPageLayout(both)).toEqual([
+      item(LANDING_PAGE_WIDGET_KEYS.DOMAINS, 0, 0),
+    ]);
   });
 
   it('extracts an array saved layout and resolves it through normalization', () => {

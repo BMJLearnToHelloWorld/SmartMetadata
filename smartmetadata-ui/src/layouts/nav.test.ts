@@ -14,6 +14,7 @@ import {
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
+  isSettingsRouteName,
   navRouteKeys,
   sectionKeyForRoute,
   sectionLanding,
@@ -24,6 +25,115 @@ function sectionItems(key: string): string[] {
   const section = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === key);
   return section?.kind === 'section' ? section.items.map((item) => item.key) : [];
 }
+
+describe('settings-space highlight rule (DESIGN §6.6)', () => {
+  it('attributes every admin-*/settings-* route name to the Hub', () => {
+    const names = [
+      'admin-settings',
+      'admin-apps',
+      'admin-app',
+      'admin-bots',
+      'admin-users',
+      'admin-admins',
+      'admin-teams',
+      'admin-team',
+      'admin-roles',
+      'admin-role',
+      'admin-policies',
+      'admin-policy',
+      'admin-policy-rule-add',
+      'admin-policy-rule-edit',
+      'admin-settings-audit-logs',
+      'admin-settings-permission-debugger',
+      'admin-settings-sso',
+      'admin-settings-persona',
+      'admin-settings-persona-detail',
+      'admin-settings-custom-property-type',
+      'admin-settings-governance-intake-forms',
+      'admin-settings-governance-task-forms',
+      'admin-settings-governance-glossary-term-relations',
+      'settings-category',
+      'settings-services',
+      'settings-preferences-appearance',
+      'settings-preferences-email',
+      'settings-preferences-login',
+      'settings-preferences-health',
+      'settings-preferences-profiler',
+      'settings-preferences-dq-dimensions',
+      'settings-preferences-search',
+      'settings-preferences-search-entity',
+      'settings-preferences-lineage',
+      'settings-preferences-om-url',
+      'settings-preferences-entity-rules',
+      'settings-preferences-learning',
+      'settings-preferences-app-mode',
+      'settings-preferences-glossary',
+      'settings-preferences-time-format',
+    ];
+    for (const name of names) {
+      expect(isSettingsRouteName(name)).toBe(true);
+      expect(selectedNavKey(name)).toBe('admin-settings');
+      expect(sectionKeyForRoute(name)).toBeNull();
+    }
+  });
+
+  it('attributes the staged /admin/ chains to the Hub (M1b/D-8)', () => {
+    for (const name of ['admin-user', 'admin-bot', 'admin-settings-system']) {
+      expect(isSettingsRouteName(name)).toBe(true);
+      expect(selectedNavKey(name)).toBe('admin-settings');
+      expect(sectionKeyForRoute(name)).toBeNull();
+    }
+  });
+
+  it('attributes the retained legacy names whose pages moved under /settings/', () => {
+    const names = [
+      'observability-alerts',
+      'observability-alert',
+      'announcements',
+      'announcement-duplicate',
+      'workflows',
+      'workflow-detail',
+      'insights-online-users',
+    ];
+    for (const name of names) {
+      expect(isSettingsRouteName(name)).toBe(true);
+      expect(selectedNavKey(name)).toBe('admin-settings');
+      expect(sectionKeyForRoute(name)).toBeNull();
+    }
+  });
+
+  it('does not overreach into non-settings routes', () => {
+    // The customize editor and the service wizard are not settings-space.
+    expect(isSettingsRouteName('customize-page')).toBe(false);
+    expect(selectedNavKey('customize-page')).toBe('customize-page');
+    expect(isSettingsRouteName('ingestion-service-add')).toBe(false);
+    expect(selectedNavKey('ingestion-service-add')).toBe('ingestion-service-add');
+    // Incidents live under /observability/, not /settings/: the alerts
+    // rule must not swallow the incident names.
+    expect(isSettingsRouteName('observability-incidents')).toBe(false);
+    expect(selectedNavKey('observability-incidents')).toBe('observability-incidents');
+    expect(sectionKeyForRoute('observability-incidents')).toBe('observability');
+    expect(isSettingsRouteName('observability-incident')).toBe(false);
+    expect(selectedNavKey('observability-incident')).toBe('quality-test-cases');
+    // Retained detail chains still resolve through the table.
+    expect(isSettingsRouteName('ingestion-service')).toBe(false);
+    expect(selectedNavKey('ingestion-service')).toBe('admin-settings');
+    expect(isSettingsRouteName('task')).toBe(false);
+    expect(selectedNavKey('task')).toBe('tasks');
+    // §6.7 row 7, no-origin half: the reserved /create-user routes
+    // are unregistered this batch (§10.6), and the name must never
+    // default to Hub highlight. With-origin evaluation awaits the
+    // breadcrumbData mechanism at registration time.
+    expect(isSettingsRouteName('create-user')).toBe(false);
+    expect(selectedNavKey('create-user')).toBe('create-user');
+    // Empty and missing names are unattributed, never settings.
+    expect(isSettingsRouteName(undefined)).toBe(false);
+    expect(isSettingsRouteName(null)).toBe(false);
+    expect(isSettingsRouteName(Symbol('settings'))).toBe(false);
+    expect(selectedNavKey(undefined)).toBe('home');
+    expect(selectedNavKey(null)).toBe('home');
+  });
+});
 
 describe('nav IA', () => {
   it('follows the reference left-nav group order', () => {
@@ -101,7 +211,10 @@ describe('nav IA', () => {
     expect(selectedNavKey('governance-data-product')).toBe('governance-data-products');
     expect(selectedNavKey('ingestion-services')).toBe('admin-settings');
     expect(selectedNavKey('ingestion-service')).toBe('admin-settings');
-    expect(selectedNavKey('ingestion-pipelines')).toBe('admin-settings');
+    // Deleted route name (DESIGN §6.7 row 2): the aggregate pipelines
+    // list has no route anymore, so the name is unattributed — no
+    // highlight, rather than a false Hub claim.
+    expect(selectedNavKey('ingestion-pipelines')).toBe('ingestion-pipelines');
     expect(selectedNavKey('ingestion-pipeline')).toBe('admin-settings');
     expect(selectedNavKey('announcements')).toBe('admin-settings');
     expect(selectedNavKey('activity')).toBe('activity');
@@ -115,7 +228,9 @@ describe('nav IA', () => {
     expect(selectedNavKey('insights-kpi-detail')).toBe('insights');
     expect(selectedNavKey('insights-kpis-add')).toBe('insights');
     expect(selectedNavKey('insights-kpis-edit')).toBe('insights');
-    expect(selectedNavKey('insights-online-users')).toBe('insights');
+    // Online Users moved into Settings (settings/members/online-users),
+    // so its highlight follows the Hub, not the Insights leaf (§6.6).
+    expect(selectedNavKey('insights-online-users')).toBe('admin-settings');
   });
 
   it('opens the section that owns the current route', () => {

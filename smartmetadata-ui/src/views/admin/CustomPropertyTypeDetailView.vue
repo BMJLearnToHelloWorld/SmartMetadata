@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import { Alert, Button, Descriptions, Empty, Form, Input, Select, Switch, Tag, Tooltip, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
@@ -31,12 +32,16 @@ import {
 } from '@/api/customProperties';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { buildSettingsBreadcrumbCatalog } from '@/settings/breadcrumbs';
+import { customPropertyTypeBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { customPropertyTypeForSegment } from '@/settings/customProperties';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { requiredField } from '@/features/crud/formRules';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { CustomPropertyDef, MetadataType } from '@/types/collaboration';
 
-const props = defineProps<{ entityType: string }>();
 const { t, te } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -120,10 +125,25 @@ const formatOptions = computed(() =>
   typeFlags.value.supportedFormats.map((format) => ({ value: format, label: format })),
 );
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('settings.customProperties.title'), to: { name: 'admin-settings-custom-properties' } },
-  { label: props.entityType },
-]);
+const route = useRoute();
+// §3.5: the fetch key derives from the :tab URL segment through the
+// registry two-way mapping (e.g. 'tables' -> 'table'), never from the
+// raw segment. An unknown segment yields '' and load() shows the
+// not-found error without issuing a request (D-10: no fallback to
+// another entity's definitions).
+const entityType = computed(
+  () => customPropertyTypeForSegment(String(route.params.tab ?? '')) ?? '',
+);
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+// Exception row 3b: the crumb name derives from the :tab URL segment
+// (pin startCase(tab)), never from the registry title or the fetch key.
+const breadcrumbs = computed<EntityBreadcrumb[]>(() =>
+  customPropertyTypeBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    String(route.params.tab ?? ''),
+  ),
+);
 
 const tabs = computed<EntityDetailTab[]>(() => [
   {
@@ -259,8 +279,15 @@ async function loadPropertyTypes(): Promise<void> {
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  if (!entityType.value) {
+    typeMeta.value = null;
+    definitions.value = [];
+    errorMessage.value = t('errors.notFoundLead');
+    loading.value = false;
+    return;
+  }
   try {
-    const meta = await getMetadataTypeByName(props.entityType);
+    const meta = await getMetadataTypeByName(entityType.value);
     typeMeta.value = meta;
     definitions.value = meta.customProperties;
   } catch (error) {
@@ -328,7 +355,7 @@ async function onDelete(def: CustomPropertyDef): Promise<void> {
   try {
     // deleteCustomPropertyByName resolves undefined when the property is
     // already gone; that counts as deleted, so refresh instead of failing.
-    const updated = await deleteCustomPropertyByName(props.entityType, def.name);
+    const updated = await deleteCustomPropertyByName(entityType.value, def.name);
     if (updated) {
       // The PATCH response may not carry `schema`; keep the loaded one.
       typeMeta.value = { ...updated, schema: updated.schema ?? typeMeta.value?.schema };
@@ -383,7 +410,7 @@ async function onSave(): Promise<void> {
       // frozen propertyType. ADR:2026-11-08-custom-properties-s3-config-write-side.
       const changes = getCustomPropertyChanges(editingDef.value, values);
       const updated = await updateCustomPropertyByName(
-        props.entityType,
+        entityType.value,
         editingDef.value.name,
         changes,
       );
@@ -439,11 +466,18 @@ onUnmounted(() => {
 });
 
 onMounted(() => {
-  void loadPropertyTypes().then(() => load());
+  // load() never rejects (it catches internally), so this catch fires
+  // only for a property-types failure: surface it as the page error
+  // state instead of leaving an unhandled rejection and a blank page.
+  void loadPropertyTypes()
+    .then(() => load())
+    .catch((error: unknown) => {
+      errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    });
 });
 
 watch(
-  () => props.entityType,
+  entityType,
   () => {
     searchInput.value = '';
     appliedSearch.value = '';

@@ -7,13 +7,22 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { flushPromises, mount } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import GenericTab from '@/components/customize/GenericTab.vue';
 import PipelineDetailView from './PipelineDetailView.vue';
+
+vi.mock('@/features/crud/confirmDelete', () => ({
+  confirmDelete: vi.fn(async (options: { onOk?: () => Promise<void> }) => {
+    await options.onOk?.();
+    return true;
+  }),
+}));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -21,6 +30,9 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+let serviceTypeOverride: string | null = null;
+let pipelineTypeOverride: string | null = null;
 
 async function mountView() {
   const pinia = createPinia();
@@ -33,6 +45,16 @@ async function mountView() {
         name: 'ingestion-pipeline',
         component: PipelineDetailView,
         props: true,
+      },
+      {
+        path: '/settings/services/:tab',
+        name: 'settings-services',
+        component: { template: '<div>services</div>' },
+      },
+      {
+        path: '/settings/:category',
+        name: 'settings-category',
+        component: { template: '<div>category</div>' },
       },
     ],
   });
@@ -52,13 +74,39 @@ async function mountView() {
   return { wrapper, router };
 }
 
+async function waitForLoaded(wrapper: VueWrapper): Promise<void> {
+  await vi.waitFor(
+    () => {
+      expect(wrapper.find('[data-testid="entity-detail-heading"]').text()).toContain(
+        'warehouse-metadata',
+      );
+    },
+    { timeout: 5000 },
+  );
+}
+
+async function waitForDeleteEnabled(wrapper: VueWrapper): Promise<void> {
+  await waitForLoaded(wrapper);
+  await vi.waitFor(
+    () => {
+      expect(wrapper.find('[data-testid="delete-pipeline"]').attributes('disabled')).toBeUndefined();
+    },
+    { timeout: 5000 },
+  );
+}
+
 describe('PipelineDetailView', () => {
   beforeEach(() => {
     localStorage.clear();
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'airflow' });
         }
@@ -84,14 +132,17 @@ describe('PipelineDetailView', () => {
             id: 'p1',
             name: 'warehouse-metadata',
             fullyQualifiedName: 'warehouse.warehouse-metadata',
-            pipelineType: 'metadata',
-            service: { id: 's1', type: 'databaseService', name: 'warehouse' },
+            pipelineType: pipelineTypeOverride ?? 'metadata',
+            service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
             sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
             airflowConfig: { pausePipeline: true },
             enabled: true,
             deployed: true,
             owners: [{ id: 'u1', type: 'user', name: 'alice', displayName: 'Alice' }],
           });
+        }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
         }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
@@ -119,10 +170,15 @@ describe('PipelineDetailView', () => {
   });
 
   it('shows deploy and trigger actions disabled without a permission grant (P1 fail-closed)', async () => {
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'airflow' });
         }
@@ -152,6 +208,9 @@ describe('PipelineDetailView', () => {
             deployed: true,
           });
         }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
+        }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
             id: 's1',
@@ -172,10 +231,15 @@ describe('PipelineDetailView', () => {
 
   it('pauses an enabled deployed pipeline through the toggle button, then offers Resume', async () => {
     let toggled = false;
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/api/v1/permissions/ingestionPipeline/name/')) {
           return jsonResponse({
             resource: 'ingestionPipeline',
@@ -212,6 +276,9 @@ describe('PipelineDetailView', () => {
             deployed: true,
           });
         }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
+        }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
             id: 's1',
@@ -243,10 +310,15 @@ describe('PipelineDetailView', () => {
     // H-3: the toggle endpoint returns fields=OWNERS only, so its
     // response has no pipelineStatuses. Spread-merging the whole response
     // would wipe the loaded statuses and the Logs modal's runId.
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/api/v1/permissions/ingestionPipeline/name/')) {
           return jsonResponse({
             resource: 'ingestionPipeline',
@@ -285,6 +357,9 @@ describe('PipelineDetailView', () => {
             ],
           });
         }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
+        }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
             id: 's1',
@@ -308,10 +383,15 @@ describe('PipelineDetailView', () => {
   });
 
   it('shows catalog status, CLI YAML, and no trigger call', async () => {
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'disabled', reason: 'Pipeline Client Disabled' });
         }
@@ -325,11 +405,14 @@ describe('PipelineDetailView', () => {
             id: 'p1',
             name: 'warehouse-metadata',
             fullyQualifiedName: 'warehouse.warehouse-metadata',
-            pipelineType: 'metadata',
-            service: { id: 's1', type: 'databaseService', name: 'warehouse' },
+            pipelineType: pipelineTypeOverride ?? 'metadata',
+            service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
             sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
             airflowConfig: { pausePipeline: true },
           });
+        }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
         }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
@@ -383,10 +466,15 @@ describe('PipelineDetailView', () => {
 
   it('shows a status error Alert with retry when the status fetch fails (P-26)', async () => {
     let statusCalls = 0;
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
         if (url.includes('/ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'airflow' });
         }
@@ -417,6 +505,9 @@ describe('PipelineDetailView', () => {
             enabled: true,
             deployed: true,
           });
+        }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
         }
         if (url.includes('/databaseServices/s1')) {
           return jsonResponse({
@@ -473,4 +564,439 @@ describe('PipelineDetailView', () => {
     expect(written).toHaveLength(1);
     expect(written[0]).toContain('type: postgres');
   });
+
+  it('links the parent crumb to the kind Pipelines Tab (deleted ingestion-pipelines route)', async () => {
+    const { wrapper, router } = await mountView();
+    await waitForLoaded(wrapper);
+    await vi.waitFor(
+      () => {
+        expect(wrapper.find('[data-testid="entity-detail-crumb-0"]').exists()).toBe(true);
+      },
+      { timeout: 5000 },
+    );
+    await wrapper.get('[data-testid="entity-detail-crumb-0"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-services');
+    expect(router.currentRoute.value.params).toEqual({ tab: 'databases' });
+    expect(router.currentRoute.value.query).toEqual({ tab: 'pipelines' });
+  });
+
+  it('links the parent crumb to the dataObservability Pipelines Tab for a TestSuite pipeline', async () => {
+    pipelineTypeOverride = 'TestSuite';
+    const { wrapper, router } = await mountView();
+    await waitForLoaded(wrapper);
+    await vi.waitFor(
+      () => {
+        expect(wrapper.find('[data-testid="entity-detail-crumb-0"]').exists()).toBe(true);
+      },
+      { timeout: 5000 },
+    );
+    await wrapper.get('[data-testid="entity-detail-crumb-0"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-services');
+    expect(router.currentRoute.value.params).toEqual({ tab: 'dataObservability' });
+    expect(router.currentRoute.value.query).toEqual({ tab: 'pipelines' });
+  });
+
+  it('leaves the parent crumb unlinked for an llm pipeline (no list tab, C-2)', async () => {
+    serviceTypeOverride = 'llmService';
+    const { wrapper } = await mountView();
+    await waitForLoaded(wrapper);
+    expect(wrapper.find('[data-testid="entity-detail-crumb-0"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="entity-detail-breadcrumb"]').text()).toContain(
+      'Ingestion pipelines',
+    );
+  });
+
+  it('navigates to the kind Pipelines Tab after delete', async () => {
+    const { wrapper, router } = await mountView();
+    await waitForDeleteEnabled(wrapper);
+    await wrapper.get('[data-testid="delete-pipeline"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-services');
+    expect(router.currentRoute.value.params).toEqual({ tab: 'databases' });
+    expect(router.currentRoute.value.query).toEqual({ tab: 'pipelines' });
+  });
+
+  it('navigates to the services overview after deleting an llm pipeline', async () => {
+    serviceTypeOverride = 'llmService';
+    const { wrapper, router } = await mountView();
+    await waitForDeleteEnabled(wrapper);
+    await wrapper.get('[data-testid="delete-pipeline"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'services' });
+  });
+
+
+});
+describe('PipelineDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
+        if (url.includes('/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/pipelineStatus')) {
+          return jsonResponse({
+            data: [{ runId: 'r1', pipelineState: 'success', timestamp: 1710000000000 }],
+          });
+        }
+        if (url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({
+            id: 'p1',
+            name: 'warehouse-metadata',
+            fullyQualifiedName: 'warehouse.warehouse-metadata',
+            pipelineType: pipelineTypeOverride ?? 'metadata',
+            service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
+            sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
+            airflowConfig: { pausePipeline: true },
+            enabled: true,
+            deployed: true,
+            owners: [{ id: 'u1', type: 'user', name: 'alice', displayName: 'Alice' }],
+          });
+        }
+        if (url.includes('/llmServices/s1')) {
+          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'OpenAI' });
+        }
+        if (url.includes('/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'warehouse',
+            serviceType: 'Postgres',
+            connection: { config: { type: 'Postgres', hostPort: 'localhost:5432', database: 'analytics' } },
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  // The ingestion-pipeline surface is overview + runs (status); a
+  // customization may rename the overview tab through the
+  // `documentation` alias, and preserveKeys keeps the runs tab.
+  it('renames the overview tab from the persona Pipeline page and keeps the runs tab', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Pipeline',
+            tabs: [{ id: 'documentation', name: 'documentation', displayName: 'Summary' }],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual(['Summary', 'Status']);
+    wrapper.unmount();
+  });
+
+  it('keeps both tabs when the customization mentions only catalog-Pipeline ids', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Pipeline',
+            tabs: [
+              { id: 'tasks', name: 'tasks' },
+              { id: 'executions', name: 'executions' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual(['Overview', 'Status']);
+    wrapper.unmount();
+  });
+
+  it('renders no tab bar for an explicitly empty Pipeline tab list without throwing', async () => {
+    // F-1/F-2 stacking: the empty list short-circuits before
+    // preservation, so even the two preserved keys render no tabs.
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Pipeline',
+            tabs: [],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.ant-tabs-nav').exists()).toBe(false);
+    expect(wrapper.text()).toContain('warehouse-metadata');
+    wrapper.unmount();
+  });
+});
+
+describe('PipelineDetailView widget layer (B-8)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function docWithPage(pageType: string, tabs: Array<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType, tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    serviceTypeOverride = null;
+    pipelineTypeOverride = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'DELETE' && url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({});
+        }
+        if (url.includes('/ingestionPipelines/status')) {
+          return jsonResponse({ code: 200, platform: 'airflow' });
+        }
+        if (url.includes('/pipelineStatus')) {
+          return jsonResponse({
+            data: [{ runId: 'r1', pipelineState: 'success', timestamp: 1710000000000 }],
+          });
+        }
+        if (url.includes('/ingestionPipelines/p1')) {
+          return jsonResponse({
+            id: 'p1',
+            name: 'warehouse-metadata',
+            fullyQualifiedName: 'warehouse.warehouse-metadata',
+            description: 'Warehouse metadata pipeline',
+            pipelineType: pipelineTypeOverride ?? 'metadata',
+            service: { id: 's1', type: serviceTypeOverride ?? 'databaseService', name: 'warehouse' },
+            sourceConfig: { config: { type: 'DatabaseMetadata', includeViews: true } },
+            airflowConfig: { pausePipeline: true },
+            enabled: true,
+            deployed: true,
+            owners: [{ id: 'u1', type: 'user', name: 'alice', displayName: 'Alice' }],
+          });
+        }
+        if (url.includes('/databaseServices/s1')) {
+          return jsonResponse({
+            id: 's1',
+            name: 'warehouse',
+            serviceType: 'Postgres',
+            connection: { config: { type: 'Postgres', hostPort: 'localhost:5432', database: 'analytics' } },
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function settle(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): Promise<void> {
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('does not mount a grid for a non-mount tab entry and keeps the default overview', async () => {
+    // Corrected activation: the Pipeline mount tab is `tasks`, and
+    // `documentation` is not a Pipeline tab id at all — the alias
+    // that resolves it to the rendered `overview` tab (a
+    // Domain/DataProduct mapping) must not activate a grid here.
+    // The default overview renders in full: CLI YAML plus the
+    // source-config summary.
+    const layout = [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }];
+    stubWithDoc(
+      docWithPage('Pipeline', [{ id: 'documentation', name: 'documentation', layout }]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Warehouse metadata pipeline');
+    expect(wrapper.text()).toContain('DatabaseMetadata');
+    expect(wrapper.find('[data-testid="pipeline-widget-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the default overview for an empty-layout non-mount entry', async () => {
+    stubWithDoc(
+      docWithPage('Pipeline', [{ id: 'documentation', name: 'documentation', layout: [] }]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('does not mount a grid for an overview-id entry: exact match, non-mount tab', async () => {
+    // The mount check runs on the entry id even when it matches the
+    // rendered key exactly: `overview` is not a Pipeline mount tab.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps both default panes when a customization mentions only non-mount entries', async () => {
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    // Neither tab mounts a grid: the status tab has no customized
+    // entry (no official id resolves to it), and the overview entry
+    // is a non-mount id.
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-status-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('r1');
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the default overview with no grid when there is no persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('stays inert for a realistic editor-saved Pipeline page: the mount entry has no tasks surface', async () => {
+    // Decisive inertness test: the editor saves an entry per
+    // Pipeline tab, with a layout only on the mount tab `tasks`.
+    // This ingestion-pipeline surface renders no `tasks` tab
+    // (overview + status only), so the mount entry resolves to no
+    // rendered key and no grid activates; both default panes render.
+    // The missing tasks surface is a residual, not a reason to build
+    // one here; the widget-cell fragments stay wired for a future
+    // surface but are unreachable while inert.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'tasks',
+          name: 'tasks',
+          editable: true,
+          layout: [{ i: DetailWidgetKeys.PIPELINE_TASKS, x: 0, y: 0, w: 8, h: 4 }],
+        },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'executions', name: 'executions', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Warehouse metadata pipeline');
+    expect(wrapper.find('[data-testid="pipeline-status-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('r1');
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the default overview when widget ids mention owners and tasks fragments', async () => {
+    // Same fixture shape as the old fragment-mapping test, now
+    // asserting the corrected behavior: the non-mount entry mounts
+    // no grid, so the owners/tasks fragments never render as cells;
+    // the owners datum still shows in the default overview.
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [
+            { i: DetailWidgetKeys.OWNERS, x: 0, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.PIPELINE_TASKS, x: 4, y: 0, w: 4, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView();
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="pipeline-widget-owners"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipeline-cli-yaml"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Alice');
+    wrapper.unmount();
+  }, 20000);
 });

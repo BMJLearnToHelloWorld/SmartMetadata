@@ -2,16 +2,35 @@
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
   Official CustomizationPageSettings defaultAppMode only (Collate sidebar OUT).
+
+  B-13 (Bai 2026-11-18 21:43, §6.5 R-C4-APPMODE-TENANT close): AI is out of
+  scope, so the tenant `ai` option is DISABLED, not hidden — consistent with
+  the M3 precedent in the persona AppLayoutEditor. Label and testid are kept,
+  a stored `ai` value still renders as the selected (disabled) option, the
+  user cannot newly select `ai`, and leaving `ai` (switch to `classic` or
+  clear via allow-clear) is unrestricted.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Select, message } from 'ant-design-vue';
+import { Alert, Button, Form, Select, Spin, Typography, message } from 'ant-design-vue';
 import { getTypedSetting, settingAsAppConfiguration, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import {
+  findSettingsRegistryItem,
+  registryDescription,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { AppConfiguration } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.appMode');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.appMode');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -52,23 +71,35 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="app-mode-config"
-    :title="t('settings.appMode.title')"
-    :lead="t('settings.appMode.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.appMode.defaultMode')">
-        <Select v-model:value="form.defaultAppMode" allow-clear data-testid="app-mode-select">
-          <Select.Option value="ai">{{ t('settings.appMode.ai') }}</Select.Option>
-          <Select.Option value="classic">{{ t('settings.appMode.classic') }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Button type="primary" :loading="saving" data-testid="app-mode-save" @click="save">
-        {{ t('settings.appMode.save') }}
-      </Button>
-    </Form>
-  </PreferencePageShell>
+  <div data-testid="app-mode-config">
+    <h1 class="app-mode-config__title" data-testid="app-mode-config-heading">{{ header }}</h1>
+    <Typography.Paragraph class="app-mode-config__lead" type="secondary">{{ subHeader }}</Typography.Paragraph>
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Form layout="vertical">
+        <Form.Item :label="t('settings.appMode.defaultMode')">
+          <Select v-model:value="form.defaultAppMode" allow-clear data-testid="app-mode-select">
+            <Select.Option value="ai" :disabled="true">{{ t('settings.appMode.ai') }}</Select.Option>
+            <Select.Option value="classic">{{ t('settings.appMode.classic') }}</Select.Option>
+          </Select>
+        </Form.Item>
+        <Button type="primary" :loading="saving" data-testid="app-mode-save" @click="save">
+          {{ t('settings.appMode.save') }}
+        </Button>
+      </Form>
+    </Spin>
+  </div>
 </template>
+
+<style scoped>
+.app-mode-config__title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.33;
+  color: var(--sm-text-primary);
+}
+.app-mode-config__lead {
+  margin-bottom: 24px;
+}
+</style>

@@ -34,6 +34,7 @@ import {
   resolveMyDataWidget,
   resolveMyDataWidgetBaseKey,
 } from '@/features/home/landingPageWidgets';
+import { getCustomizePagePath } from '@/views/admin/persona/customizePagePath';
 import {
   domainFilters,
   followedAssetsQuery,
@@ -131,21 +132,20 @@ const { showWelcome, closeWelcome } = useFirstLoginWelcome();
  * persona is in play — the editor customizes one persona's page.
  */
 /**
- * The Customise entry shows whenever a persona is selected, as in
- * official — the admin gate lives at the editor route, not here.
+ * The Customise entry shows whenever a persona with an FQN is
+ * selected, as in official (`HomeLandingPage.tsx:219`: the handler
+ * is `undefined` when there is no persona FQN) — the admin gate
+ * lives at the editor route, not here.
  * ADR:2026-11-11-home-style-compaction-and-tokens
  */
-const canCustomize = computed(() => persona.selectedPersona !== null);
+const canCustomize = computed(() => Boolean(persona.selectedPersona?.fullyQualifiedName));
 
 function goCustomize(): void {
-  const selected = persona.selectedPersona;
-  if (!selected) {
+  const fqn = persona.selectedPersona?.fullyQualifiedName;
+  if (!fqn) {
     return;
   }
-  void router.push({
-    name: 'customize-page',
-    params: { fqn: selected.fullyQualifiedName, pageFqn: 'LandingPage' },
-  });
+  void router.push(getCustomizePagePath(fqn, 'LandingPage'));
 }
 
 const domainOptions = computed(() =>

@@ -30,6 +30,10 @@ const assignTeamId = ref<string | undefined>();
 const activeTab = ref('overview');
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
+  // CONFLICT-3 (a): pin builds this trail by hand as two items — the list
+  // crumb linked to the list page, then the entity name unlinked — with no
+  // Settings root and no Access Control level (RolesDetailPage.tsx:105-117).
+  // Do not route it through the §9 constructor: that is the list pages' shape.
   { label: t('admin.roles.title'), to: { name: 'admin-roles' } },
   { label: entityLabel(role.value) || t('admin.roles.title') },
 ]);

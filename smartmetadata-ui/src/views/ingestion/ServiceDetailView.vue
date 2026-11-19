@@ -159,7 +159,15 @@ const kind = computed<ServiceKind>(() =>
 const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.value]));
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('ingestion.services.title'), to: { name: 'ingestion-services' } },
+  // DESIGN §6.7 row 3: the parent chain points at the Services
+  // overview (the services category page), not the staged aggregate
+  // list. The hard-delete navigation below keeps the staged
+  // aggregate list (`ingestion-services`) as its target, per the
+  // coordinator decision; it is a separate, unlisted call site.
+  {
+    label: t('ingestion.services.title'),
+    to: { name: 'settings-category', params: { category: 'services' } },
+  },
   { label: entityLabel(service.value) || t('ingestion.services.title') },
 ]);
 

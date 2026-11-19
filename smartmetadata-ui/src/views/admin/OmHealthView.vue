@@ -6,13 +6,40 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {Button, Tag} from 'ant-design-vue';
+import { Alert, Button, Spin, Tag } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { fetchSystemStatus } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { StepValidation, SystemValidationResponse } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.om-health');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.om-health');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'preferences',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const errorMessage = ref('');
 const status = ref<SystemValidationResponse | null>(null);
@@ -60,27 +87,30 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="om-health"
-    :title="t('settings.health.title')"
-    :lead="t('settings.health.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Button style="margin-bottom: 12px" data-testid="om-health-refresh" @click="load">
-      {{ t('settings.health.refresh') }}
-    </Button>
-    <SmTable row-key="key" :columns="columns" :data-source="rows" :pagination="false" test-id="om-health-table">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'passed'">
-          <Tag :color="(record as Row).step?.passed ? 'success' : 'error'">
-            {{ (record as Row).step?.passed ? t('settings.health.passed') : t('settings.health.failed') }}
-          </Tag>
+  <div data-testid="om-health">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="om-health"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Button style="margin-bottom: 12px" data-testid="om-health-refresh" @click="load">
+        {{ t('settings.health.refresh') }}
+      </Button>
+      <SmTable row-key="key" :columns="columns" :data-source="rows" :pagination="false" test-id="om-health-table">
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'passed'">
+            <Tag :color="(record as Row).step?.passed ? 'success' : 'error'">
+              {{ (record as Row).step?.passed ? t('settings.health.passed') : t('settings.health.failed') }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'detail'">
+            {{ (record as Row).step?.message || (record as Row).step?.description || '—' }}
+          </template>
         </template>
-        <template v-else-if="column.key === 'detail'">
-          {{ (record as Row).step?.message || (record as Row).step?.description || '—' }}
-        </template>
-      </template>
-    </SmTable>
-  </PreferencePageShell>
+      </SmTable>
+    </Spin>
+  </div>
 </template>

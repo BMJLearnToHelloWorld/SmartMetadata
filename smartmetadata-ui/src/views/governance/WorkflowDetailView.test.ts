@@ -126,9 +126,9 @@ describe('WorkflowDetailView', () => {
   });
 
   it('loads execution history on the history tab', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/execution-history',
-    );
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
+    await wrapper.get('[data-testid="workflow-execution-history"]').trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="workflow-status-badge-run-1"]').text()).toBe(
       'Success',
     );
@@ -148,9 +148,11 @@ describe('WorkflowDetailView', () => {
     ).toBe('Start Node Configuration');
   });
 
-  it('falls back to the workflow tab for an unknown tab', { timeout: 15000 }, async () => {
-    const { router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
-    expect(router.currentRoute.value.params.tab).toBe('workflow');
+  it('ignores the tab route param and renders the default workflow tab without navigating', { timeout: 15000 }, async () => {
+    const { wrapper, router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
+    expect(router.currentRoute.value.params.tab).toBe('bogus');
+    expect(wrapper.find('[data-testid="workflow-builder-tab"]').exists()).toBe(true);
+    expect(wrapper.findAll('.vue-flow__node')).toHaveLength(4);
   });
 
   it('renders the forbidden card when the definition load is forbidden', { timeout: 15000 }, async () => {
@@ -168,5 +170,40 @@ describe('WorkflowDetailView', () => {
     );
     expect(wrapper.find('[data-testid="workflow-detail-error"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="workflow-detail-reload"]').exists()).toBe(true);
+  });
+
+  it('renders the single-item Classic breadcrumb above the header', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
+    // Pin Classic (WorkflowBuilder :552-562): one crumb, the list label
+    // linked to the list path — no Settings/category prefix.
+    const crumb = wrapper.find('[data-testid="sm-breadcrumb"]');
+    expect(crumb.exists()).toBe(true);
+    expect(crumb.findAll('li')).toHaveLength(1);
+    const links = crumb.findAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].text()).toBe('Workflows');
+    expect(links[0].attributes('href')).toBe('/govern/workflows');
+    // Above the header: the breadcrumb precedes the workflow title in
+    // document order (pin renderPage renders TitleBreadcrumb first).
+    const title = wrapper.find('[data-testid="workflow-title"]');
+    expect(title.exists()).toBe(true);
+    expect(
+      crumb.element.compareDocumentPosition(title.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('renders the same single-item breadcrumb above the load-error card', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail(
+      '/govern/workflows/approve-glossary-term/workflow',
+      500,
+    );
+    expect(wrapper.find('[data-testid="workflow-detail-error"]').exists()).toBe(true);
+    const crumb = wrapper.find('[data-testid="sm-breadcrumb"]');
+    expect(crumb.findAll('li')).toHaveLength(1);
+    const links = crumb.findAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].text()).toBe('Workflows');
+    expect(links[0].attributes('href')).toBe('/govern/workflows');
   });
 });

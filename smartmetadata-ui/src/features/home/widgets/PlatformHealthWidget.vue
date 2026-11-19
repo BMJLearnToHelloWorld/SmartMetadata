@@ -85,7 +85,10 @@ const status = computed(() =>
 );
 
 function openServices(): void {
-  void router.push({ name: 'ingestion-services' });
+  // DESIGN §6.7 rows 4-5: the no-kind entry points at the Services
+  // overview. The health-bucket entry (goToHealth) deliberately keeps
+  // the staged aggregate list and its ?health= filter.
+  void router.push({ name: 'settings-category', params: { category: 'services' } });
 }
 
 // The three bucket chips. Each filters the rows below in place; an empty

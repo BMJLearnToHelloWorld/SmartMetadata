@@ -6,8 +6,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { savePersonaDocument } from '@/api/docStore';
-import { Button, Form, Radio, Select, message } from 'ant-design-vue';
+import { Button, Form, Radio, Select } from 'ant-design-vue';
 import type { Persona, PersonaDocument, ViewModePage } from '@/types/persona';
 import {
   DEFAULT_LANDING_PAGE,
@@ -15,23 +14,43 @@ import {
   VIEW_MODE_PAGES,
   getPersonaPreferences,
   resolvePersonaLandingPage,
-  updatePersonaAppLayout,
 } from '../personaPage';
+import { deepEqualJson } from './editors/customizeTypes';
+import CustomizeLeaveModal from './editors/CustomizeLeaveModal.vue';
+import { useSaveLeaveGuard } from './editors/useSaveLeaveGuard';
 
 /**
- * App-layout editor, mirroring the official AppLayoutEditor: app mode
- * (classic / AI / no preference), default landing page from the
- * curated sections, and per-page default view modes (add/remove).
- * Saving writes the persona's personaPreferences entry; resetting
- * saves all-undefined, which is the official "fall through to the
- * next default" signal.
+ * App-layout editor, callback-style (C-4 §2.2): the editor never
+ * issues document requests itself. It reports the edited preferences
+ * through onSave; the parent executes the callback-4 equivalent
+ * (updatePersonaAppLayout + save) and reproduces the failure-throw
+ * semantics. A save failure rejects here (never swallowed) so the
+ * NavigationBlocker-equivalent Save-and-leave stays on the page.
+ *
+ * Sentinel mapping mirrors official PersonaAppLayoutPage handleSave:
+ * appMode 'none' (the product sentinel for official 'null') →
+ * undefined, the default landing page → undefined, empty view modes
+ * → undefined. The landing-page fallback is "non-curated value",
+ * not just "unconfigured" (resolvePersonaLandingPage, verified
+ * against official resolvePersonaLandingPage).
+ *
+ * M3: the AI option is DISABLED, not hidden — label and testid are
+ * kept, a stored appMode:'AI' renders selected-disabled, the user
+ * may switch to none/classic, and reset to none is unrestricted.
+ * Reset is local-only (sentinel + default landing page + empty view
+ * modes); it never saves.
  */
+export interface AppLayoutPreferences {
+  appMode?: 'classic' | 'AI';
+  defaultLandingPage?: string;
+  defaultViewModes?: Record<string, string>;
+}
+
 const props = defineProps<{
   persona: Persona;
   document: PersonaDocument;
+  onSave: (preferences: AppLayoutPreferences) => Promise<void>;
 }>();
-
-const emit = defineEmits<{ saved: [document: PersonaDocument] }>();
 
 const { t } = useI18n();
 
@@ -49,12 +68,13 @@ const errorMessage = ref('');
 const configuredPages = computed(() => VIEW_MODE_PAGES.filter(({ page }) => viewModes.value[page]));
 const addablePages = computed(() => VIEW_MODE_PAGES.filter(({ page }) => !viewModes.value[page]));
 
-const canSave = computed(
+const isDirty = computed(
   () =>
     appMode.value !== persistedAppMode.value ||
     landingPage.value !== persistedLandingPage.value ||
-    JSON.stringify(viewModes.value) !== JSON.stringify(persistedViewModes.value),
+    !deepEqualJson(viewModes.value, persistedViewModes.value),
 );
+const canSave = computed(() => isDirty.value);
 
 function setPageViewMode(page: ViewModePage, view: string): void {
   viewModes.value = { ...viewModes.value, [page]: view };
@@ -66,47 +86,49 @@ function removePageViewMode(page: ViewModePage): void {
   viewModes.value = next;
 }
 
-async function save(changes: {
-  appMode: string;
-  landingPage: string;
-  viewModes: Record<string, string>;
-}): Promise<void> {
+function toPreferences(): AppLayoutPreferences {
+  return {
+    appMode: appMode.value === 'none' ? undefined : (appMode.value as 'classic' | 'AI'),
+    defaultLandingPage:
+      landingPage.value === DEFAULT_LANDING_PAGE ? undefined : landingPage.value,
+    defaultViewModes: Object.keys(viewModes.value).length ? { ...viewModes.value } : undefined,
+  };
+}
+
+async function save(): Promise<void> {
   saving.value = true;
   errorMessage.value = '';
   try {
-    const saved = await savePersonaDocument(props.document, (draft) => {
-      draft.data.personaPreferences = updatePersonaAppLayout(
-        draft.data.personaPreferences ?? [],
-        props.persona,
-        {
-          appMode: changes.appMode === 'none' ? undefined : (changes.appMode as 'classic' | 'AI'),
-          defaultLandingPage:
-            changes.landingPage === DEFAULT_LANDING_PAGE ? undefined : changes.landingPage,
-          defaultViewModes: Object.keys(changes.viewModes).length
-            ? (changes.viewModes as Record<'domains' | 'subDomains' | 'dataProducts' | 'learningResources', 'table' | 'card' | 'tree'>)
-            : undefined,
-        },
-      );
-    });
-    emit('saved', saved);
-    message.success(t('persona.saved'));
+    // R-ENTRY-TOAST: no toast here — the parent callback owns all
+    // toasts (official CustomizablePage.tsx handlers), and the
+    // editor stays silent on success.
+    await props.onSave(toPreferences());
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('persona.saveFailed');
+    throw error;
   } finally {
     saving.value = false;
   }
 }
 
-async function onSave(): Promise<void> {
-  await save({ appMode: appMode.value, landingPage: landingPage.value, viewModes: viewModes.value });
+async function onSaveClick(): Promise<void> {
+  // The button path surfaces the failure inline (errorMessage is
+  // already set); the throw contract is for the leave-guard path.
+  await save().catch(() => undefined);
 }
 
-async function onReset(): Promise<void> {
+function onReset(): void {
+  // Local-only reset: no request, no callback. The dirty state
+  // recomputes against the persisted values; saving stays explicit.
   appMode.value = 'none';
   landingPage.value = DEFAULT_LANDING_PAGE;
   viewModes.value = {};
-  await save({ appMode: 'none', landingPage: DEFAULT_LANDING_PAGE, viewModes: {} });
 }
+
+const guard = useSaveLeaveGuard({
+  isDirty: () => isDirty.value,
+  onSaveAndLeave: save,
+});
 </script>
 
 <template>
@@ -114,9 +136,9 @@ async function onReset(): Promise<void> {
     <Form layout="vertical">
       <Form.Item :label="t('persona.appMode')">
         <Radio.Group v-model:value="appMode" data-testid="app-mode-select">
-          <Radio value="none">{{ t('persona.appModeNone') }}</Radio>
-          <Radio value="classic">{{ t('persona.appModeClassic') }}</Radio>
-          <Radio value="AI">{{ t('persona.appModeAi') }}</Radio>
+          <Radio value="none" data-testid="app-mode-none">{{ t('persona.appModeNone') }}</Radio>
+          <Radio value="classic" data-testid="app-mode-classic">{{ t('persona.appModeClassic') }}</Radio>
+          <Radio value="AI" data-testid="app-mode-ai" :disabled="true">{{ t('persona.appModeAi') }}</Radio>
         </Radio.Group>
       </Form.Item>
       <Form.Item :label="t('persona.defaultLandingPage')">
@@ -176,13 +198,20 @@ async function onReset(): Promise<void> {
     </Form>
     <p v-if="errorMessage" class="app-layout-editor__error">{{ errorMessage }}</p>
     <div class="app-layout-editor__actions">
-      <Button type="primary" data-testid="app-layout-save" :loading="saving" :disabled="!canSave" @click="void onSave()">
+      <Button type="primary" data-testid="app-layout-save" :loading="saving" :disabled="!canSave" @click="void onSaveClick()">
         {{ t('persona.save') }}
       </Button>
-      <Button data-testid="app-layout-reset" :loading="saving" @click="void onReset()">
+      <Button data-testid="app-layout-reset" :loading="saving" @click="onReset()">
         {{ t('persona.reset') }}
       </Button>
     </div>
+    <CustomizeLeaveModal
+      :open="guard.showLeaveModal.value"
+      :saving="saving"
+      @save-and-exit="guard.saveAndLeave()"
+      @discard="guard.discardAndLeave()"
+      @cancel="guard.cancelLeave()"
+    />
   </div>
 </template>
 

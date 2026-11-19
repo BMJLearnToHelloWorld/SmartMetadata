@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { describe, expect, it } from 'vitest';
-import { entityDetailTabDefs, entityDetailTabDef, isOfficiallySplit } from './entityDetailTabs';
+import { entityDetailTabDefs, entityDetailTabDef, isOfficiallySplit, preservedTabKeys } from './entityDetailTabs';
 
 describe('entityDetailTabs', () => {
   it('matches the official tab ids for table, topic and dashboard', () => {
@@ -144,5 +144,56 @@ describe('entityDetailTabs', () => {
       'activity_feed',
       'custom_properties',
     ]);
+  });
+});
+
+describe('preservedTabKeys (M-1)', () => {
+  // The split determination is the view's own (`defs !== null`), not a
+  // hand-mirrored table, so a type that gains split definitions
+  // changes branch here exactly as it does in the view.
+  function keysFor(entityType: string): string[] {
+    return preservedTabKeys(entityType, entityDetailTabDefs(entityType) !== null);
+  }
+
+  it('preserves nothing for fully resolvable split sets', () => {
+    for (const entityType of [
+      'table',
+      'topic',
+      'dashboard',
+      'database',
+      'databaseSchema',
+      'container',
+      'dashboardDataModel',
+      'mlmodel',
+      'searchIndex',
+      'storedProcedure',
+      'metric',
+    ]) {
+      expect(keysFor(entityType)).toEqual([]);
+    }
+  });
+
+  it('preserves overview for the split API views, whose TabsIds carry no OVERVIEW', () => {
+    expect(keysFor('apiCollection')).toEqual(['overview']);
+    expect(keysFor('apiEndpoint')).toEqual(['overview']);
+  });
+
+  it('preserves only quality for chart and file fallbacks', () => {
+    // Chart's overview resolves through the `details` alias and
+    // File's matches the official OVERVIEW id, so neither is kept.
+    expect(keysFor('chart')).toEqual(['quality']);
+    expect(keysFor('file')).toEqual(['quality']);
+  });
+
+  it('preserves overview and quality for pipeline and drive fallbacks', () => {
+    expect(keysFor('pipeline')).toEqual(['overview', 'quality']);
+    expect(keysFor('directory')).toEqual(['overview', 'quality']);
+    expect(keysFor('spreadsheet')).toEqual(['overview', 'quality']);
+    expect(keysFor('worksheet')).toEqual(['overview', 'quality']);
+  });
+
+  it('preserves quality for query and unknown fallback types', () => {
+    expect(keysFor('query')).toEqual(['quality']);
+    expect(keysFor('no-such-type')).toEqual(['quality']);
   });
 });

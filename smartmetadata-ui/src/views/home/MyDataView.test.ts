@@ -625,6 +625,33 @@ describe('MyDataView', () => {
     expect(router.currentRoute.value.params).toEqual({ fqn: 'Analyst', pageFqn: 'LandingPage' });
   });
 
+  it('stage D: no customize entry when the selected persona has no FQN', async () => {
+    localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+    listPersonas.mockResolvedValue({
+      data: [{ ...personaRow(), fullyQualifiedName: '' }],
+      paging: { total: 1 },
+    });
+    const { wrapper } = await mountPage();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(false);
+  });
+
+  it('stage D: the customize entry navigates with the encoded persona FQN', async () => {
+    localStorage.setItem(PERSONA_STORAGE_KEY, 'p1');
+    listPersonas.mockResolvedValue({
+      data: [{ ...personaRow(), fullyQualifiedName: 'Data Analyst' }],
+      paging: { total: 1 },
+    });
+    const { wrapper, router } = await mountPage();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="customize-home-page"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="customize-home-page"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('customize-page');
+    expect(router.currentRoute.value.params).toEqual({ fqn: 'Data Analyst', pageFqn: 'LandingPage' });
+    expect(router.currentRoute.value.fullPath).toBe('/customize-page/Data%20Analyst/LandingPage');
+  });
+
   it('stage D: the first-login welcome stays hidden for a returning user', async () => {
     const { wrapper } = await mountPage();
     expect(wrapper.find('[data-testid="welcome-screen"]').exists()).toBe(false);

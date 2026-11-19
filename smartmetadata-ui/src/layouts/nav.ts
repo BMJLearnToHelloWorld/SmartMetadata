@@ -137,19 +137,12 @@ const ACTION_KEYS = new Set(
 const DETAIL_TO_LIST: Record<string, string> = {
   asset: 'search',
   lineage: 'lineage-home',
+  // M1b/D-8 staged: the old user/Bot details and System keep their
+  // original URLs, so their Hub mappings stay until the partition
+  // batch atomically migrates them (DESIGN §6.6).
   'admin-user': 'admin-settings',
-  'admin-users': 'admin-settings',
-  'admin-team': 'admin-settings',
-  'admin-teams': 'admin-settings',
-  'admin-role': 'admin-settings',
-  'admin-roles': 'admin-settings',
   'admin-bot': 'admin-settings',
-  'admin-bots': 'admin-settings',
   'admin-settings-system': 'admin-settings',
-  'admin-policies': 'admin-settings',
-  'admin-policy': 'admin-settings',
-  'admin-settings-custom-properties': 'admin-settings',
-  'admin-settings-custom-property-type': 'admin-settings',
   'governance-glossary': 'governance-glossaries',
   'governance-term': 'governance-glossaries',
   'governance-classification': 'governance-classifications',
@@ -162,34 +155,17 @@ const DETAIL_TO_LIST: Record<string, string> = {
   // The incident record route redirects to the test-case detail page
   // (F-D-2), so its breadcrumb parent follows the landing page.
   'observability-incident': 'quality-test-cases',
-  'observability-alert': 'observability-alerts',
-  'ingestion-service': 'ingestion-services',
-  'ingestion-pipeline': 'ingestion-pipelines',
+  // Retained detail chains resolve straight to the Hub, never via a
+  // deleted parent name (DESIGN §6.7 rows 1-2).
+  'ingestion-service': 'admin-settings',
+  'ingestion-service-connection': 'admin-settings',
+  'ingestion-service-add-ingestion': 'admin-settings',
+  'ingestion-service-version': 'admin-settings',
+  'ingestion-pipeline': 'admin-settings',
+  'ingestion-pipeline-edit': 'admin-settings',
   'ingestion-services': 'admin-settings',
-  'ingestion-pipelines': 'admin-settings',
-  'announcements': 'admin-settings',
-  'settings-preferences-appearance': 'admin-settings',
-  'settings-preferences-email': 'admin-settings',
-  'settings-preferences-login': 'admin-settings',
-  'settings-preferences-health': 'admin-settings',
-  'settings-preferences-profiler': 'admin-settings',
-  'settings-preferences-dq-dimensions': 'admin-settings',
-  'settings-preferences-search': 'admin-settings',
-  'settings-preferences-search-entity': 'admin-settings',
-  'settings-preferences-lineage': 'admin-settings',
-  'settings-preferences-om-url': 'admin-settings',
-  'settings-preferences-entity-rules': 'admin-settings',
-  'settings-preferences-learning': 'admin-settings',
-  'settings-preferences-app-mode': 'admin-settings',
-  'settings-preferences-glossary': 'admin-settings',
-  'settings-preferences-time-format': 'admin-settings',
-  'admin-apps': 'admin-settings',
   'marketplace-app-install': 'marketplace-overview',
-  'admin-settings-governance-intake-forms': 'admin-settings',
-  'admin-settings-governance-task-forms': 'admin-settings',
-  'admin-settings-governance-glossary-term-relations': 'admin-settings',
   'marketplace-app-catalog': 'marketplace-overview',
-  'announcement-duplicate': 'admin-settings',
   // Insights is a top-level-only leaf (same as search / lineage-home).
   // /insights redirects to /insights/data-assets; child routes must keep
   // highlighting `insights`, not a missing menu key.
@@ -199,20 +175,61 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'insights-kpis-add': 'insights',
   'insights-kpi-detail': 'insights',
   'insights-kpis-edit': 'insights',
-  'insights-online-users': 'insights',
   task: 'tasks',
 };
 
 /**
- * Hub attribution, stated once so it is not misread: admin-*, ingestion-*
- * and announcements routes have no top-level nav group by design —
- * they are reached from the Settings hub — so they highlight
- * `admin-settings` as the hub entry, not as a claim that they live on
- * the Settings page itself. Tasks and activity keep no highlight (no
- * nav group, no hub entry); that is the honest state and a Stage 8
- * collaboration-navigation decision, not a silent omission.
+ * Settings-space route names that keep a legacy name (DESIGN §6.6):
+ * their pages moved under `/settings/` without a rename, so the
+ * `admin-`/`settings-` prefix rule below does not catch them. Every
+ * entry here is verified against the route table: alerts and
+ * announcements under `settings/notifications/`, workflows under
+ * `settings/governance/`, online users under `settings/members/`.
+ */
+const SETTINGS_SPACE_NAMES = new Set([
+  'observability-alerts',
+  'observability-alert',
+  'announcements',
+  'announcement-duplicate',
+  'workflows',
+  'workflow-detail',
+  'insights-online-users',
+]);
+
+/**
+ * Whether a route name renders inside Settings (DESIGN §6.6). The
+ * space is carried by the name: the `admin-`/`settings-` prefixes
+ * (including the three staged `/admin/` chains, M1b/D-8) plus the
+ * retained legacy names above. Everything else — including the
+ * customize-page editor and the service wizard, which are not
+ * settings-space pages — is unattributed by this rule.
+ */
+export function isSettingsRouteName(routeName: string | symbol | undefined | null): boolean {
+  if (routeName === undefined || routeName === null) {
+    return false;
+  }
+  const name = String(routeName);
+  return (
+    name.startsWith('admin-') || name.startsWith('settings-') || SETTINGS_SPACE_NAMES.has(name)
+  );
+}
+
+/**
+ * Hub attribution, stated once so it is not misread: settings-space
+ * routes have no top-level nav group by design — they are reached
+ * from the Settings hub — so they highlight `admin-settings` as the
+ * hub entry, not as a claim that they live on the Settings page
+ * itself. This rule subsumes the `admin-*` chains in DETAIL_TO_LIST
+ * above, which are retained as the M1b/D-8 staging record. Detail
+ * routes outside Settings resolve through DETAIL_TO_LIST; routes
+ * with no group and no hub entry (tasks, activity, the customize
+ * editor, the service wizard) keep no highlight — that is the honest
+ * state, not a silent omission.
  */
 export function selectedNavKey(routeName: string | symbol | undefined | null): string {
+  if (isSettingsRouteName(routeName)) {
+    return 'admin-settings';
+  }
   const visited = new Set<string>();
   let current = String(routeName ?? 'home');
   while (DETAIL_TO_LIST[current] && !visited.has(current)) {

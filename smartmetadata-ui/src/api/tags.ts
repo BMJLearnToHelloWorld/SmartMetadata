@@ -43,6 +43,8 @@ function mapTag(raw: Record<string, unknown>): ClassificationTag | null {
     disabled: asBoolean(raw.disabled),
     usageCount: asNumber(raw.usageCount),
     owners: mapEntityRefs(raw.owners),
+    reviewers: mapEntityRefs(raw.reviewers),
+    domains: mapEntityRefs(raw.domains),
   };
 }
 

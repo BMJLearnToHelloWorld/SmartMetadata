@@ -4,14 +4,41 @@
   Official glossarySettings.enableTagPropagation.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Switch, message } from 'ant-design-vue';
+import { Alert, Button, Form, Spin, Switch, message } from 'ant-design-vue';
 import { getTypedSetting, settingAsGlossary, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { GlossarySettings } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.glossary');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.glossary');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'preferences',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const saving = ref(false);
 const errorMessage = ref('');
@@ -50,20 +77,23 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="glossary-settings"
-    :title="t('settings.glossaryPrefs.title')"
-    :lead="t('settings.glossaryPrefs.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.glossaryPrefs.tagPropagation')">
-        <Switch v-model:checked="form.enableTagPropagation" data-testid="glossary-tag-propagation" />
-      </Form.Item>
-      <Button type="primary" :loading="saving" data-testid="glossary-settings-save" @click="save">
-        {{ t('settings.glossaryPrefs.save') }}
-      </Button>
-    </Form>
-  </PreferencePageShell>
+  <div data-testid="glossary-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="glossary-settings"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Form layout="vertical">
+        <Form.Item :label="t('settings.glossaryPrefs.tagPropagation')">
+          <Switch v-model:checked="form.enableTagPropagation" data-testid="glossary-tag-propagation" />
+        </Form.Item>
+        <Button type="primary" :loading="saving" data-testid="glossary-settings-save" @click="save">
+          {{ t('settings.glossaryPrefs.save') }}
+        </Button>
+      </Form>
+    </Spin>
+  </div>
 </template>

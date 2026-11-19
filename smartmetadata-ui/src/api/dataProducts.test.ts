@@ -62,6 +62,35 @@ describe('dataProducts API', () => {
     expect(lastFetch().url).toContain('/api/v1/dataProducts');
   });
 
+  it('maps the requested reviewers instead of dropping them', async () => {
+    // MB-3 (R-2): DATA_PRODUCT_FIELDS requests reviewers, but
+    // mapDataProduct dropped them. No new request is introduced — the
+    // mapping only keeps what the server already returns.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'p1',
+                name: 'churn',
+                reviewers: [{ id: 'u2', name: 'carol', type: 'user', displayName: 'Carol' }],
+              },
+            ],
+            paging: { total: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const page = await listDataProducts({ limit: 50 });
+    expect(page.data[0]?.reviewers).toEqual([
+      { id: 'u2', name: 'carol', displayName: 'Carol', type: 'user' },
+    ]);
+    expect(lastFetch().url).toContain('reviewers');
+  });
+
   it('creates a data product with schema-required name, description, and domains', async () => {
     vi.stubGlobal(
       'fetch',

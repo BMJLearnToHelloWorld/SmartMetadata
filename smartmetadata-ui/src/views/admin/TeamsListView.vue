@@ -11,6 +11,14 @@ import FormModal from '@/components/shared/FormModal.vue';
 import { listRoles } from '@/api/roles';
 import { TEAM_TYPES, createTeam, listTeams } from '@/api/teams';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
@@ -30,6 +38,19 @@ import type { OperationPermissions } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('members.teams');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: members.teams');
+}
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'members',
+    registryTitle(settingsTranslator, registryEntry),
+  ),
+);
 const router = useRouter();
 /**
  * Dual line for team management: isAdminUser (first line) OR a
@@ -158,6 +179,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.teams.title')"
     :lead="t('admin.teams.lead')"
     :loading="loading"

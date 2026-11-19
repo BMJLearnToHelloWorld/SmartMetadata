@@ -9,7 +9,12 @@ import { useRouter } from 'vue-router';
 import {Alert, Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import FormModal from '@/components/shared/FormModal.vue';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
+import GenericTab from '@/components/customize/GenericTab.vue';
+import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
+import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { listEntityActivity } from '@/api/activity';
 import { getDomainDryRunImpacts, type BulkAssetResponse, type BulkAssetResult } from '@/api/bulkAssets';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
@@ -36,11 +41,12 @@ import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { extensionPatch } from '@/governance/assetPatch';
+import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
-import type { EntityRef } from '@/types/api';
+import type { EntityRef, TagRef } from '@/types/api';
 
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
@@ -78,19 +84,81 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: entityLabel(domain.value) || t('governance.domains.title') },
 ]);
 
-const tabs = computed<EntityDetailTab[]>(() => [
-  { key: 'overview', label: t('crud.overview'), testId: 'domain-tab-overview' },
-  { key: 'assets', label: t('governance.domains.assetsTab'), testId: 'domain-tab-assets' },
-  // Official SubDomainsTable: sub-domains live as a flat list on the detail
-  // page, not as nested rows in the domain list.
-  { key: 'subDomains', label: t('governance.domains.subDomainsTab'), testId: 'domain-tab-subdomains' },
-  { key: 'activity', label: t('governance.domains.activityTab'), testId: 'domain-tab-activity' },
-  {
-    key: 'customProperties',
-    label: t('governance.domains.customPropertiesTab'),
-    testId: 'domain-tab-custom-properties',
-  },
-]);
+// C-4 consume side: the selected persona's Domain page replaces these
+// tabs (official `getDetailsTabWithNewLabel` — see `useCustomPages.ts`).
+// No tab is preserved: every rendered key resolves to an official
+// Domain id, exactly (`assets`) or through an alias (`documentation` →
+// `overview`, `subdomains` → `subDomains`, `activity_feed` → `activity`,
+// `custom_properties` → `customProperties`), so a customization can
+// remove any of them.
+const { customizedPage } = useCustomPages('Domain');
+
+const tabs = computed<EntityDetailTab[]>(() =>
+  getDetailsTabWithNewLabel(
+    [
+      { key: 'overview', label: t('crud.overview'), testId: 'domain-tab-overview' },
+      { key: 'assets', label: t('governance.domains.assetsTab'), testId: 'domain-tab-assets' },
+      // Official SubDomainsTable: sub-domains live as a flat list on the detail
+      // page, not as nested rows in the domain list.
+      { key: 'subDomains', label: t('governance.domains.subDomainsTab'), testId: 'domain-tab-subdomains' },
+      { key: 'activity', label: t('governance.domains.activityTab'), testId: 'domain-tab-activity' },
+      {
+        key: 'customProperties',
+        label: t('governance.domains.customPropertiesTab'),
+        testId: 'domain-tab-custom-properties',
+      },
+    ],
+    customizedPage.value?.tabs,
+  ),
+);
+
+// Widget layer (B-8): the widget grid mounts ONLY on this page type's
+// widget-layout tab (Domain: documentation), and only when the
+// customized page has a tab entry resolving to the rendered tab key
+// whose official id is that mount tab (`isWidgetLayoutTab`, reading
+// layoutAppliesTo — the official GenericTab mount set, one tab per
+// page type). The editor saves ALL tabs with layout: [] on the
+// non-mount ones, so entry resolution alone would blank every other
+// tab; non-mount tabs always keep their existing panels. The grid
+// renders the entry's resolved layout, including empty when the entry
+// carries no layout. The entry's own id — never the rendered key —
+// is passed to the layout resolver, because the official lookup
+// matches tab entries by id only (`customizeWidgetLayout.ts`).
+// Dispatch-resolvable keys with no branch in this view's widget chains,
+// absent on purpose, so their cells stay empty (same disclosure format
+// as AssetDetailView): DATA_PRODUCTS / DOMAIN / REVIEWER — the Domain
+// spec (`entity/domains/domain.json`) carries no such fields, so there
+// is no supporting data; KNOWLEDGE_ARTICLE — no knowledge-article data
+// source exists in the product. LEFT_PANEL is structural, not a missing
+// branch: GenericTab renders the panel's children and never offers the
+// panel itself to the slot.
+function customizedEntryFor(tabKey: string) {
+  const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
+  if (!entry?.id || !isWidgetLayoutTab('Domain', entry.id)) {
+    return undefined;
+  }
+  return entry;
+}
+
+function widgetLayoutFor(tabKey: string) {
+  const entry = customizedEntryFor(tabKey);
+  return entry ? resolveWidgetLayout('Domain', entry.id, customizedPage.value) : [];
+}
+
+// Tag labels split the official way: glossary-sourced labels are the
+// glossary-terms widget, the rest are the tags widget.
+const domainTags = computed(() =>
+  (domain.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
+);
+const domainGlossaryTerms = computed(() =>
+  (domain.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
+);
+const domainTierTag = computed(() => getTierTag(domain.value?.tags ?? []));
+const domainCertificationTag = computed(() => getCertificationTag(domain.value?.tags ?? []));
+
+function tagFqnList(tags: readonly TagRef[]): string {
+  return tags.map((tag) => tag.tagFQN).join(', ');
+}
 
 /**
  * P1 both lines for asset writes: the server authorizes EDIT_ALL on the
@@ -384,7 +452,59 @@ onMounted(() => {
       </Button>
     </template>
     <template #overview>
-      <Descriptions v-if="domain" bordered :column="1" size="small">
+      <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Domain">
+        <template #widget="{ contentKey }">
+          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.description')">{{ domain.description || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="domain?.extension || {}"
+              :error="customPropsError"
+              entity-type="domain"
+            />
+          </div>
+        </template>
+      </GenericTab>
+      <Descriptions v-else-if="domain" bordered :column="1" size="small">
         <Descriptions.Item :label="t('crud.name')">{{ domain.name }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.fqn')">{{ domain.fullyQualifiedName }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.type')">{{ domain.domainType }}</Descriptions.Item>
@@ -396,6 +516,59 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #assets>
+      <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Domain">
+        <template #widget="{ contentKey }">
+          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.description')">{{ domain.description || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="domain?.extension || {}"
+              :error="customPropsError"
+              entity-type="domain"
+            />
+          </div>
+        </template>
+      </GenericTab>
+      <template v-else>
       <div style="margin-bottom: 12px">
         <Button
           type="primary"
@@ -465,8 +638,62 @@ onMounted(() => {
         </template>
       </SmTable>
       <p v-if="!assets.length" class="entity-detail__tab-lead">{{ t('governance.domains.noAssets') }}</p>
+      </template>
     </template>
     <template #subDomains>
+      <GenericTab v-if="customizedEntryFor('subDomains')" :layout="widgetLayoutFor('subDomains')" page-type="Domain">
+        <template #widget="{ contentKey }">
+          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.description')">{{ domain.description || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="domain?.extension || {}"
+              :error="customPropsError"
+              entity-type="domain"
+            />
+          </div>
+        </template>
+      </GenericTab>
+      <template v-else>
       <SmTable
         row-key="id"
         test-id="domain-subdomains-table"
@@ -491,9 +718,63 @@ onMounted(() => {
       <p v-if="!(domain?.children?.length ?? 0)" class="entity-detail__tab-lead">
         {{ t('governance.domains.noSubDomains') }}
       </p>
+      </template>
     </template>
     <template #activity>
+      <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="Domain">
+        <template #widget="{ contentKey }">
+          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.description')">{{ domain.description || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="domain?.extension || {}"
+              :error="customPropsError"
+              entity-type="domain"
+            />
+          </div>
+        </template>
+      </GenericTab>
       <AssetActivityPanel
+        v-else
         :activity="activity"
         :conversations="conversations"
         :collaboration-error="collaborationError"
@@ -502,6 +783,59 @@ onMounted(() => {
       />
     </template>
     <template #customProperties>
+      <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="Domain">
+        <template #widget="{ contentKey }">
+          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.description')">{{ domain.description || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && domain" data-testid="widget-owners">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(domain.owners) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.EXPERTS && domain" data-testid="widget-experts">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('crud.experts')">{{ joinRefNames(domain.experts) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(domainTags) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && domain" data-testid="widget-glossary-terms">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(domainGlossaryTerms) || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.TIER && domain" data-testid="widget-tier">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.tier')">{{ domainTierTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && domain" data-testid="widget-certification">
+            <Descriptions bordered :column="1" size="small">
+              <Descriptions.Item :label="t('label.certification')">{{ domainCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
+            </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
+            <AssetCustomPropertiesPanel
+              :defs="customProperties"
+              :values="domain?.extension || {}"
+              :error="customPropsError"
+              entity-type="domain"
+            />
+          </div>
+        </template>
+      </GenericTab>
+      <template v-else>
       <div style="margin-bottom: 12px">
         <Button
           data-testid="edit-domain-custom-properties"
@@ -517,6 +851,7 @@ onMounted(() => {
         :error="customPropsError"
         entity-type="domain"
       />
+      </template>
     </template>
   </EntityDetailShell>
   <AddAssetsModal

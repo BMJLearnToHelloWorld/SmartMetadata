@@ -5,9 +5,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Descriptions } from 'ant-design-vue';
+import { useRouter } from 'vue-router';
+import { Button, Descriptions } from 'ant-design-vue';
+import { LeftOutlined } from '@ant-design/icons-vue';
 import { getApp } from '@/api/apps';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
+import { applicationDetailChrome } from '@/settings/breadcrumbExceptions';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
 import { entityLabel } from '@/features/crud/paging';
 import type { EntityBreadcrumb } from '@/features/crud/types';
 import type { AdminApp } from '@/types/admin';
@@ -18,10 +22,18 @@ const loading = ref(false);
 const errorMessage = ref('');
 const app = ref<AdminApp | null>(null);
 
-const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
-  { label: t('admin.apps.title'), to: { name: 'admin-apps' } },
-  { label: entityLabel(app.value) || t('admin.apps.title') },
-]);
+const router = useRouter();
+const appDetailChrome = computed(() =>
+  applicationDetailChrome({
+    browseAppsLabel: t('apps.detail.browseApps'),
+    appsListLocation: resolveSettingsLocation('apps'),
+  }),
+);
+const breadcrumbs = computed<EntityBreadcrumb[]>(() => appDetailChrome.value.breadcrumbs);
+
+function goBrowseApps(): void {
+  void router.push(appDetailChrome.value.browseAppsButton.to);
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -58,6 +70,12 @@ watch(
     :empty="!app && !loading && !errorMessage"
     :breadcrumbs="breadcrumbs"
   >
+    <template #actions>
+      <Button type="text" data-testid="admin-app-browse-apps" @click="goBrowseApps">
+        <template #icon><LeftOutlined /></template>
+        {{ appDetailChrome.browseAppsButton.label }}
+      </Button>
+    </template>
     <Descriptions v-if="app" bordered :column="1" size="small" data-testid="admin-app-overview">
       <Descriptions.Item :label="t('crud.name')">{{ app.name }}</Descriptions.Item>
       <Descriptions.Item :label="t('crud.displayName')">{{ app.displayName || '—' }}</Descriptions.Item>

@@ -68,7 +68,10 @@ const mounted: VueWrapper[] = [];
 async function mountView(locale: 'en-US' | 'zh-CN' = 'en-US') {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/admin/settings/sso', name: 'admin-settings-sso', component: SsoSettingsView }],
+    routes: [
+      { path: '/admin/settings/sso', name: 'admin-settings-sso', component: SsoSettingsView },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+    ],
   });
   await router.push({ name: 'admin-settings-sso' });
   await router.isReady();

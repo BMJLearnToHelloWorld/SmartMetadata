@@ -27,7 +27,11 @@ async function mountView() {
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView }],
+    routes: [
+      { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
+    ],
   });
   await router.push('/admin/settings/audit-logs');
   await router.isReady();

@@ -10,12 +10,17 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import type { RouteLocationRaw } from 'vue-router';
 import { Button, Form, Input, Select, message } from 'ant-design-vue';
 import { getPolicy, patchPolicy } from '@/api/policies';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import SmState from '@/components/shared/SmState.vue';
 import { entityLabel } from '@/features/crud/paging';
+import type { EntityBreadcrumb } from '@/features/crud/types';
+import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import type { AdminPolicy, CreatePolicyRuleRequest } from '@/types/admin';
 
 /**
@@ -29,11 +34,70 @@ import type { AdminPolicy, CreatePolicyRuleRequest } from '@/types/admin';
 const props = defineProps<{ id: string; ruleName?: string }>();
 const { t } = useI18n();
 const router = useRouter();
+
+/**
+ * CONFLICT-1 (a): pin self-built four-item breadcrumb arrays, with no
+ * Access Control level (pin `AddRulePage.tsx:57-80` and
+ * `EditRulePage.tsx:57-78`). The default §9.1 builder cannot express
+ * this shape — `policies` is an option under Access, not a §9.2 catalog
+ * entry — so the array is composed here under the §9.5 exception
+ * contract: resolved labels and caller-resolved locations arrive as
+ * data, and nothing here reads the registry, the router, or the locale.
+ * Edit's first two pin items are hard-coded English; both variants
+ * resolve them through i18n keys (multilingual exception), never
+ * literals. The last item stays unlinked (pin `url: ''`).
+ */
+function policyRuleBreadcrumbs(input: {
+  /** Resolved `Settings` root label. */
+  settingsLabel: string;
+  /** Location of the Settings Hub (pin `getSettingPath()`). */
+  settingsLocation: RouteLocationRaw;
+  /** Resolved `label.policy-plural` (`Policies`). */
+  policiesLabel: string;
+  /** Location of the policies list (pin `getPath(POLICIES)`). */
+  policiesLocation: RouteLocationRaw;
+  /** Policy display name (pin `getEntityName(policy)`), empty while loading. */
+  policyName: string;
+  /** Location of the policy detail page (pin `getPolicyWithFqnPath(fqn)`). */
+  policyLocation: RouteLocationRaw;
+  /** Last crumb: the add-new-entity template label (Add) or `ruleName` (Edit). */
+  lastLabel: string;
+}): EntityBreadcrumb[] {
+  return [
+    { label: input.settingsLabel, to: input.settingsLocation },
+    { label: input.policiesLabel, to: input.policiesLocation },
+    { label: input.policyName, to: input.policyLocation },
+    { label: input.lastLabel },
+  ];
+}
+
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
 const loading = ref(false);
 const errorMessage = ref('');
 const saving = ref(false);
 const policy = ref<AdminPolicy | null>(null);
 const isEdit = computed(() => props.ruleName !== undefined);
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    policyRuleBreadcrumbs({
+      settingsLabel: buildSettingsBreadcrumbCatalog(
+        'settings.title',
+        SETTINGS_BREADCRUMB_NAMES,
+        settingsTranslator,
+      ).settingsLabel,
+      settingsLocation: resolveSettingsLocation(''),
+      policiesLabel: t('admin.policies.title'),
+      policiesLocation: { name: 'admin-policies' },
+      policyName: entityLabel(policy.value),
+      policyLocation: { name: 'admin-policy', params: { id: props.id } },
+      // Add and Edit share one form; the variant is the existing
+      // `ruleName` prop, the same source `isEdit` derives from: absent
+      // on Add, the rule name itself on Edit (pin EditRulePage).
+      lastLabel:
+        props.ruleName ?? t('label.addNewEntity', { entity: t('label.rule') }),
+    }),
+  ),
+);
 const form = reactive<CreatePolicyRuleRequest>({
   name: '',
   effect: 'allow',
@@ -120,13 +184,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SmBreadcrumb
-    :items="[
-      { label: t('admin.policies.title'), routeName: 'admin-policies' },
-      { label: entityLabel(policy) || t('admin.policies.title'), routeName: 'admin-policy', routeParams: { id: props.id } },
-      { label: isEdit ? t('admin.policies.editRuleTitle') : t('admin.policies.addRuleTitle') },
-    ]"
-  />
+  <SmBreadcrumb :items="breadcrumbItems" />
   <PageHeader
     :header="isEdit ? t('admin.policies.editRuleTitle') : t('admin.policies.addRuleTitle')"
     :sub-header="t('admin.policies.ruleLead')"

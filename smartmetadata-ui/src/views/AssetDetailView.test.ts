@@ -13,6 +13,9 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
+import GenericTab from '@/components/customize/GenericTab.vue';
+import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { useAuthStore } from '@/stores/auth';
 import AssetDetailView from './AssetDetailView.vue';
 
@@ -37,7 +40,7 @@ function lastMatchingFetch(predicate: (url: string, init?: RequestInit) => boole
   return { url: String(match[0]), init: match[1] };
 }
 
-async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders') {
+async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', query: Record<string, string> = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
@@ -54,7 +57,7 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders') {
       },
     ],
   });
-  await router.push(`/assets/${entityType}/${fqn}`);
+  await router.push({ path: `/assets/${entityType}/${fqn}`, query });
   await router.isReady();
   const wrapper = mount(AssetDetailView, {
     props: { entityType, fqn },
@@ -949,6 +952,1198 @@ describe('AssetDetailView usage percentile header (C-F02/C-F03)', () => {
     const { wrapper } = await mountTypedView('topic', 'kafka.events');
     expect(detailUrl(urls, 'topics')).not.toContain('usageSummary');
     expect(urls.some((url) => url.includes('/api/v1/permissions/'))).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+});
+
+describe('AssetDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function tableDoc(tabs: Array<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'Table', tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tables/name/')) {
+          return jsonResponse({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            columns: [{ name: 'id', dataType: 'BIGINT' }],
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        if (
+          url.includes('/api/v1/lineage/') ||
+          url.includes('/api/v1/activity/') ||
+          url.includes('/api/v1/conversations') ||
+          url.includes('/customProperties') ||
+          url.includes('/testCases')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  // Scoped to the shell's own tab nav: the lineage pane renders a
+  // nested Tabs (Diagram/Table/Impact analysis) that a global
+  // `.ant-tabs-tab` selector would also catch.
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('reorders and renames tabs from the persona Table page, dropping unlisted tabs', async () => {
+    stubWithDoc(
+      tableDoc([
+        { id: 'lineage', name: 'lineage', displayName: 'Flow' },
+        { id: 'schema', name: 'schema' },
+        { id: 'activity_feed', name: 'activity_feed', displayName: 'Feed' },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    // F-2: replacement semantics — only the customized tabs render;
+    // the unlisted Table tabs stay removed instead of resurrecting.
+    expect(tabLabels(wrapper)).toEqual(['Flow', 'Schema', 'Feed']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)).toEqual([
+      'Schema',
+      'Activity feed',
+      'Sample data',
+      'Queries',
+      'Profiler',
+      'Lineage',
+      'dbt',
+      'View definition',
+      'Contract',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  }, 20000);
+
+  it('ignores customized pages of other types', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Dashboard',
+            tabs: [{ id: 'lineage', name: 'lineage', displayName: 'Flow' }],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(tabLabels(wrapper)[0]).toBe('Schema');
+    expect(wrapper.text()).not.toContain('Flow');
+    wrapper.unmount();
+  }, 20000);
+});
+
+describe('AssetDetailView widget layer (B-8)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function docWithPage(pageType: string, tabs: Array<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType, tabs }] },
+    };
+  }
+
+  type EntityResponder = (url: string) => Response | null;
+
+  function stubWithDoc(doc: Record<string, unknown> | null, entityResponder: EntityResponder, docGate?: Promise<void>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          // A gate lets one test hold the persona document back until
+          // after the entity load derives `activeTab`, pinning the
+          // late-document race deterministically.
+          if (docGate) {
+            await docGate;
+          }
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        const entity = entityResponder(url);
+        if (entity) {
+          return entity;
+        }
+        if (
+          url.includes('/api/v1/lineage/') ||
+          url.includes('/api/v1/activity/') ||
+          url.includes('/api/v1/conversations') ||
+          url.includes('/customProperties') ||
+          url.includes('/testCases')
+        ) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  function tableResponder(table: Record<string, unknown>): EntityResponder {
+    return (url) => (url.includes('/api/v1/tables/name/') ? jsonResponse(table) : null);
+  }
+
+  const BASE_TABLE = {
+    id: 'tbl-1',
+    name: 'orders',
+    fullyQualifiedName: 'svc.db.schema.orders',
+    description: 'Orders fact',
+    owners: [{ id: 'u1', name: 'alice', type: 'user', displayName: 'Alice' }],
+    tags: [
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Generated' },
+      { tagFQN: 'Glossary.Business', name: 'Business', source: 'Glossary', labelType: 'Manual' },
+    ],
+    domains: [{ id: 'd1', name: 'Marketing', type: 'domain' }],
+    columns: [{ name: 'id', dataType: 'BIGINT' }],
+    extension: { retentionDays: 7 },
+    tableType: 'Regular',
+    serviceType: 'BigQuery',
+    service: { name: 'bq', displayName: 'BigQuery Prod' },
+    database: { name: 'analytics' },
+    databaseSchema: { name: 'marts' },
+    joins: {
+      directTableJoins: [
+        { fullyQualifiedName: 'svc.db.schema.customers', name: 'customers', joinCount: 7 },
+      ],
+    },
+  };
+
+  async function settle(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): Promise<void> {
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  // Scoped to the shell's own tab nav, as in the C-4 describe: the
+  // lineage pane renders a nested Tabs that a global selector would
+  // also catch.
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  function cellFor(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper'], widgetId: string) {
+    return wrapper.find(`[data-testid="${widgetId}"]`);
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('renders the customized schema tab as a grid with the stored geometry and content', async () => {
+    const layout = [
+      { i: DetailWidgetKeys.TABLE_SCHEMA, x: 1, y: 2, w: 3, h: 2 },
+      { i: DetailWidgetKeys.FREQUENTLY_JOINED_TABLES, x: 4, y: 0, w: 4, h: 1 },
+    ];
+    stubWithDoc(
+      docWithPage('Table', [{ id: 'schema', name: 'schema', layout }]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual(layout);
+    expect(grids[0].props('pageType')).toBe('Table');
+    const schemaCell = cellFor(wrapper, DetailWidgetKeys.TABLE_SCHEMA);
+    expect(schemaCell.exists()).toBe(true);
+    expect(schemaCell.attributes('style')).toContain('grid-column: 2 / span 3');
+    expect(schemaCell.attributes('style')).toContain('grid-row: 3 / span 2');
+    expect(schemaCell.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    const joinsCell = cellFor(wrapper, DetailWidgetKeys.FREQUENTLY_JOINED_TABLES);
+    expect(joinsCell.exists()).toBe(true);
+    expect(joinsCell.attributes('style')).toContain('grid-column: 5 / span 4');
+    expect(joinsCell.attributes('style')).toContain('grid-row: 1 / span 1');
+    expect(joinsCell.find('[data-testid="related-tables-data"]').exists()).toBe(true);
+    expect(joinsCell.text()).toContain('customers');
+    // The default pane is replaced, not duplicated: one schema table total.
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps a lone FrequentlyJoinedTables widget without leaking the schema table', async () => {
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'schema',
+          name: 'schema',
+          layout: [{ i: DetailWidgetKeys.FREQUENTLY_JOINED_TABLES, x: 0, y: 0, w: 8, h: 2 }],
+        },
+      ]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(cellFor(wrapper, DetailWidgetKeys.FREQUENTLY_JOINED_TABLES).find('[data-testid="related-tables-data"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps governance widgets to their fragments with the same data as the overview rows', async () => {
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'schema',
+          name: 'schema',
+          layout: [
+            { i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.TAGS, x: 4, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.GLOSSARY_TERMS, x: 0, y: 1, w: 4, h: 1 },
+            { i: DetailWidgetKeys.OWNERS, x: 4, y: 1, w: 2, h: 1 },
+            { i: DetailWidgetKeys.DOMAIN, x: 6, y: 1, w: 2, h: 1 },
+          ],
+        },
+      ]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const description = cellFor(wrapper, DetailWidgetKeys.DESCRIPTION).find(
+      '[data-testid="asset-widget-description"]',
+    );
+    expect(description.exists()).toBe(true);
+    expect(description.text()).toContain('Orders fact');
+    const tags = cellFor(wrapper, DetailWidgetKeys.TAGS).find('[data-testid="asset-widget-tags"]');
+    expect(tags.exists()).toBe(true);
+    expect(tags.text()).toContain('Sensitive');
+    expect(tags.text()).toContain('Business');
+    const glossary = cellFor(wrapper, DetailWidgetKeys.GLOSSARY_TERMS).find(
+      '[data-testid="asset-widget-glossary-terms"]',
+    );
+    expect(glossary.exists()).toBe(true);
+    expect(glossary.text()).toContain('Business');
+    expect(glossary.text()).not.toContain('Sensitive');
+    const owners = cellFor(wrapper, DetailWidgetKeys.OWNERS).find('[data-testid="asset-widget-owners"]');
+    expect(owners.exists()).toBe(true);
+    expect(owners.text()).toContain('Alice');
+    const domains = cellFor(wrapper, DetailWidgetKeys.DOMAIN).find('[data-testid="asset-widget-domains"]');
+    expect(domains.exists()).toBe(true);
+    expect(domains.text()).toContain('Marketing');
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps the custom-properties widget to the custom-properties panel', async () => {
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'schema',
+          name: 'schema',
+          layout: [{ i: DetailWidgetKeys.CUSTOM_PROPERTIES, x: 0, y: 0, w: 8, h: 2 }],
+        },
+      ]),
+      (url) => {
+        if (url.includes('/api/v1/tables/name/')) {
+          return jsonResponse(BASE_TABLE);
+        }
+        if (url.includes('/customProperties')) {
+          return jsonResponse([
+            { name: 'retentionDays', displayName: 'Retention days', propertyType: { name: 'integer' } },
+          ]);
+        }
+        return null;
+      },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.CUSTOM_PROPERTIES)
+        .find('[data-testid="asset-custom-properties-table"]')
+        .exists(),
+    ).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders left-panel children through the slot with their own content keys', async () => {
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'schema',
+          name: 'schema',
+          layout: [
+            {
+              i: DetailWidgetKeys.LEFT_PANEL,
+              x: 0,
+              y: 0,
+              w: 2,
+              h: 4,
+              children: [
+                { i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 2, h: 1 },
+                { i: DetailWidgetKeys.TABLE_SCHEMA, x: 0, y: 1, w: 2, h: 3 },
+              ],
+            },
+          ],
+        },
+      ]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(cellFor(wrapper, DetailWidgetKeys.LEFT_PANEL).exists()).toBe(true);
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.DESCRIPTION)
+        .find('[data-testid="asset-widget-description"]')
+        .exists(),
+    ).toBe(true);
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.TABLE_SCHEMA)
+        .find('[data-testid="asset-schema-table"]')
+        .exists(),
+    ).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders unknown and unmapped widget ids as empty cells that keep their grid space', async () => {
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'schema',
+          name: 'schema',
+          layout: [
+            { i: 'KnowledgePanel.NotARealWidget', x: 0, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.TABLE_CONSTRAINTS, x: 4, y: 0, w: 4, h: 1 },
+          ],
+        },
+      ]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const unknown = cellFor(wrapper, 'KnowledgePanel.NotARealWidget');
+    expect(unknown.exists()).toBe(true);
+    expect(unknown.text()).toBe('');
+    const unmapped = cellFor(wrapper, DetailWidgetKeys.TABLE_CONSTRAINTS);
+    expect(unmapped.exists()).toBe(true);
+    expect(unmapped.text()).toBe('');
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it.each([
+    ['an empty layout array', { id: 'schema', name: 'schema', layout: [] }],
+    ['a missing layout', { id: 'schema', name: 'schema' }],
+    ['a non-array layout', { id: 'schema', name: 'schema', layout: {} }],
+  ])('renders an empty grid with no default-pane leak for %s', async (_label, entry) => {
+    stubWithDoc(docWithPage('Table', [entry]), tableResponder(BASE_TABLE));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual([]);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders default panes for a non-mount tab even when it carries a layout', async () => {
+    // Corrected activation: officially only the Table `schema` tab
+    // mounts the widget grid; `lineage` renders fixed children, so a
+    // stored lineage layout never activates a grid — the entry is
+    // read for tab order/labels only. The schema tab is unlisted, so
+    // replacement semantics remove it (F-2) and its default pane is
+    // gone as well; only the lineage pane renders.
+    stubWithDoc(
+      docWithPage('Table', [
+        {
+          id: 'lineage',
+          name: 'lineage',
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+      ]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-widget-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders default panes for a non-mount tab carrying an empty layout', async () => {
+    // The editor-saved shape for every non-editable tab: an entry
+    // with `layout: []`. On a non-mount tab that entry must not
+    // produce an empty grid — the fixed children render instead.
+    // With a lineage-only list, only the lineage pane renders; the
+    // unlisted schema tab and its pane are removed (F-2).
+    stubWithDoc(
+      docWithPage('Table', [{ id: 'lineage', name: 'lineage', layout: [] }]),
+      tableResponder(BASE_TABLE),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the grid only on the mount tab for a realistic editor-saved Table page', async () => {
+    // Decisive regression test for the activation narrowing: the
+    // editor saves an entry per default tab, with a layout only on
+    // the editable `schema` tab and `layout: []` on the rest. Only
+    // `schema` may render the grid; every other tab keeps its
+    // existing pane.
+    const schemaLayout = [
+      { i: DetailWidgetKeys.TABLE_SCHEMA, x: 0, y: 0, w: 6, h: 4 },
+      { i: DetailWidgetKeys.DESCRIPTION, x: 6, y: 0, w: 2, h: 1 },
+    ];
+    const editorSavedTabs = [
+      { id: 'schema', name: 'schema', editable: true, layout: schemaLayout },
+      { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+      { id: 'sample_data', name: 'sample_data', editable: false, layout: [] },
+      { id: 'table_queries', name: 'table_queries', editable: false, layout: [] },
+      { id: 'profiler', name: 'profiler', editable: false, layout: [] },
+      { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+      { id: 'dbt', name: 'dbt', editable: false, layout: [] },
+      { id: 'view_definition', name: 'view_definition', editable: false, layout: [] },
+      { id: 'contract', name: 'contract', editable: false, layout: [] },
+      { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+    ];
+    stubWithDoc(docWithPage('Table', editorSavedTabs), (url) => {
+      if (url.includes('/api/v1/tables/name/')) {
+        return jsonResponse(BASE_TABLE);
+      }
+      if (url.includes('/sampleData')) {
+        return jsonResponse({ sampleData: { columns: ['id'], rows: [[42]] } });
+      }
+      return null;
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    // Exactly one grid, on the mount tab, with the stored layout.
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual(schemaLayout);
+    expect(grids[0].props('pageType')).toBe('Table');
+    // The schema table renders once, inside its grid cell.
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(1);
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.TABLE_SCHEMA)
+        .find('[data-testid="asset-schema-table"]')
+        .exists(),
+    ).toBe(true);
+    // Non-mount tabs keep their existing panes.
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-sample-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-tests-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-profile-charts"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="lineage-open-full-page"]').exists()).toBe(true);
+    // The queries pane mounts only while its tab is selected: switch
+    // tabs through the shell and confirm the default pane renders
+    // instead of a grid.
+    const shell = wrapper.findComponent(EntityDetailShell);
+    expect(shell.exists()).toBe(true);
+    await shell.vm.$emit('update:activeTab', 'table_queries');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    expect(wrapper.find('[data-testid="queries-container"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders existing panes with no grid when there is no persona document', async () => {
+    stubWithDoc(null, tableResponder(BASE_TABLE));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps the metric-definition widget to the metric expression on the metric overview tab', async () => {
+    stubWithDoc(
+      docWithPage('Metric', [
+        {
+          id: 'overview',
+          name: 'overview',
+          layout: [{ i: DetailWidgetKeys.METRIC_DEFINITION, x: 0, y: 0, w: 8, h: 2 }],
+        },
+      ]),
+      (url) =>
+        url.includes('/api/v1/metrics/name/')
+          ? jsonResponse({
+              id: 'm-1',
+              name: 'mau',
+              fullyQualifiedName: 'kpi.mau',
+              metricType: 'COUNT',
+              metricExpression: { language: 'SQL', code: 'SELECT 1' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('metric', 'kpi.mau');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.METRIC_DEFINITION);
+    expect(cell.find('[data-testid="asset-metric-expression"]').exists()).toBe(true);
+    expect(cell.text()).toContain('SELECT 1');
+    expect(wrapper.findAll('[data-testid="asset-metric-expression"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps the pipeline-tasks widget to the task graph on the catalog pipeline tasks tab', async () => {
+    stubWithDoc(
+      docWithPage('Pipeline', [
+        {
+          id: 'tasks',
+          name: 'tasks',
+          layout: [{ i: DetailWidgetKeys.PIPELINE_TASKS, x: 0, y: 0, w: 8, h: 4 }],
+        },
+      ]),
+      (url) => {
+        if (url.includes('/api/v1/pipelines/name/')) {
+          return jsonResponse({
+            id: 'pipe-1',
+            name: 'daily_etl',
+            fullyQualifiedName: 'airflow.daily_etl',
+            tasks: [
+              { name: 'extract', displayName: 'Extract', downstreamTasks: ['load'] },
+              { name: 'load', downstreamTasks: [] },
+            ],
+            service: { name: 'airflow' },
+          });
+        }
+        if (url.includes('/api/v1/pipelines/') && url.includes('/status')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return null;
+      },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.PIPELINE_TASKS);
+    expect(cell.find('[data-testid="pipeline-task-graph"]').exists()).toBe(true);
+    expect(cell.find('[data-testid="pipeline-task-extract"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('resolves the API-endpoints widget through the apiEndpoint alias to the collection tab', async () => {
+    stubWithDoc(
+      docWithPage('APICollection', [
+        {
+          id: 'apiEndpoint',
+          name: 'apiEndpoint',
+          layout: [{ i: DetailWidgetKeys.API_ENDPOINTS, x: 0, y: 0, w: 8, h: 2 }],
+        },
+      ]),
+      (url) => {
+        if (url.includes('/api/v1/apiCollections/name/')) {
+          return jsonResponse({
+            id: 'ac-1',
+            name: 'petstore',
+            fullyQualifiedName: 'svc.petstore',
+            description: 'Petstore API',
+            owners: [],
+            tags: [],
+            domains: [],
+            service: { name: 'rest', displayName: 'REST' },
+          });
+        }
+        if (url.includes('/api/v1/apiEndpoints')) {
+          return jsonResponse({
+            data: [
+              { name: 'getPet', endpointURL: '/pets/{id}', requestMethod: 'GET', fullyQualifiedName: 'svc.petstore.getPet' },
+            ],
+            paging: { total: 1 },
+          });
+        }
+        return null;
+      },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiCollection', 'svc.petstore');
+    await settle(wrapper);
+    // The entry id is the official `apiEndpoint`; the rendered tab is
+    // `apiEndpoints` — the layout resolves by entry id, not by the
+    // rendered key, so the grid is non-empty.
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toHaveLength(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.API_ENDPOINTS);
+    expect(cell.find('[data-testid="asset-api-endpoints-table"]').exists()).toBe(true);
+    expect(cell.text()).toContain('getPet');
+    wrapper.unmount();
+  }, 20000);
+
+  it('maps the charts-table widget to the charts tables on the dashboard details tab', async () => {
+    stubWithDoc(
+      docWithPage('Dashboard', [
+        {
+          id: 'details',
+          name: 'details',
+          layout: [{ i: DetailWidgetKeys.CHARTS_TABLE, x: 0, y: 0, w: 8, h: 2 }],
+        },
+      ]),
+      (url) =>
+        url.includes('/api/v1/dashboards/name/')
+          ? jsonResponse({
+              id: 'dash-1',
+              name: 'sales',
+              fullyQualifiedName: 'bi.sales',
+              project: 'Finance',
+              charts: [{ name: 'revenue', type: 'chart' }],
+              dataModels: [{ name: 'sales_model', type: 'dashboardDataModel' }],
+              service: { name: 'superset' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('dashboard', 'bi.sales');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.CHARTS_TABLE);
+    expect(cell.find('[data-testid="asset-charts-table"]').exists()).toBe(true);
+    expect(cell.text()).toContain('revenue');
+    expect(cell.find('[data-testid="asset-data-models-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the endpoint grid through the schema alias on the APIEndpoint mount tab', async () => {
+    // Officially the mount tab is `schema` (APIEndpointUtils mounts
+    // GenericTab on SCHEMA); the product endpoint tab set has no
+    // `schema` key, and the tab-layer alias maps `schema` to the
+    // rendered `endpoint` tab carrying the request/response schema
+    // pane. A realistic editor-saved page — `schema` carrying the
+    // APISchema layout, the rest `[]` — mounts exactly one grid on
+    // the endpoint tab; the non-mount entries add no grids.
+    stubWithDoc(
+      docWithPage('APIEndpoint', [
+        {
+          id: 'schema',
+          name: 'schema',
+          editable: true,
+          layout: [{ i: DetailWidgetKeys.API_SCHEMA, x: 0, y: 0, w: 8, h: 2 }],
+        },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+      (url) =>
+        url.includes('/api/v1/apiEndpoints/name/')
+          ? jsonResponse({
+              id: 'ae-1',
+              name: 'getPet',
+              fullyQualifiedName: 'svc.petstore.getPet',
+              endpointURL: '/pets/{id}',
+              requestMethod: 'GET',
+              requestSchema: { type: 'object', properties: { id: { type: 'integer' } } },
+              responseSchema: { type: 'object' },
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiEndpoint', 'svc.petstore.getPet');
+    await settle(wrapper);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.API_SCHEMA);
+    expect(cell.find('[data-testid="asset-api-request-schema"]').exists()).toBe(true);
+    expect(cell.text()).toContain('/pets/{id}');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts the Chart grid on the overview tab through the details alias', async () => {
+    // Chart is not a split view: its fallback tab set has no
+    // `details` key, and the tab-layer alias maps the official mount
+    // id `details` to the rendered `overview` tab. The mount check
+    // runs on the entry id, so the grid activates; the non-mount
+    // entries add no further grids.
+    stubWithDoc(
+      docWithPage('Chart', [
+        {
+          id: 'details',
+          name: 'details',
+          editable: true,
+          layout: [{ i: DetailWidgetKeys.DESCRIPTION, x: 0, y: 0, w: 8, h: 1 }],
+        },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+      (url) =>
+        url.includes('/api/v1/charts/name/')
+          ? jsonResponse({
+              id: 'ch-1',
+              name: 'revenue',
+              fullyQualifiedName: 'bi.sales.revenue',
+              description: 'Revenue chart',
+              chartType: 'Bar',
+              service: { name: 'superset' },
+              dashboards: [{ name: 'sales', type: 'dashboard' }],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('pageType')).toBe('Chart');
+    expect(grids[0].props('layout')).toHaveLength(1);
+    const cell = cellFor(wrapper, DetailWidgetKeys.DESCRIPTION);
+    expect(cell.find('[data-testid="asset-widget-description"]').exists()).toBe(true);
+    expect(cell.text()).toContain('Revenue chart');
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders an empty Chart grid with no default-pane leak for an empty details layout', async () => {
+    // Mount-tab empty semantics through the alias: an empty `details`
+    // layout renders an empty grid on `overview`, not the default
+    // overview fields (the chart type row must not leak in).
+    stubWithDoc(
+      docWithPage('Chart', [{ id: 'details', name: 'details', layout: [] }]),
+      (url) =>
+        url.includes('/api/v1/charts/name/')
+          ? jsonResponse({
+              id: 'ch-1',
+              name: 'revenue',
+              fullyQualifiedName: 'bi.sales.revenue',
+              description: 'Revenue chart',
+              chartType: 'Bar',
+              service: { name: 'superset' },
+              dashboards: [{ name: 'sales', type: 'dashboard' }],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual([]);
+    expect(wrapper.text()).not.toContain('Bar');
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts only the schema grid for a Container with a non-empty data model', async () => {
+    // Container mount mutual exclusion (official
+    // ContainerDetailUtils.tsx:103-152): a non-empty data model mounts
+    // GenericTab ONLY on SCHEMA; CHILDREN renders its fixed children
+    // (the related panel). The previous form of this test asserted
+    // both grids for a non-empty data model, contradicting the
+    // official exclusion; it is redirected here at equal strength
+    // (one grid, its layout, and both panes pinned). Non-mount
+    // entries with `[]` add no grids.
+    const schemaLayout = [{ i: DetailWidgetKeys.CONTAINER_SCHEMA, x: 0, y: 0, w: 8, h: 2 }];
+    const childrenLayout = [{ i: DetailWidgetKeys.CONTAINER_CHILDREN, x: 0, y: 0, w: 8, h: 2 }];
+    stubWithDoc(
+      docWithPage('Container', [
+        { id: 'schema', name: 'schema', editable: true, layout: schemaLayout },
+        { id: 'children', name: 'children', editable: true, layout: childrenLayout },
+        { id: 'sample_data', name: 'sample_data', editable: false, layout: [] },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+      (url) =>
+        url.includes('/api/v1/containers/name/')
+          ? jsonResponse({
+              id: 'ct-1',
+              name: 'landing',
+              fullyQualifiedName: 's3.landing',
+              description: 'Landing bucket',
+              dataModel: { columns: [{ name: 'key', dataType: 'STRING' }] },
+              children: [{ name: 'child1', type: 'container' }],
+              service: { name: 's3' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('container', 's3.landing');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual(schemaLayout);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.CONTAINER_SCHEMA)
+        .find('[data-testid="asset-schema-table"]')
+        .exists(),
+    ).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN).exists()).toBe(false);
+    // The excluded children tab renders its default pane, not a grid:
+    // exactly one related table, outside any widget cell.
+    expect(wrapper.findAll('[data-testid="asset-related-table"]').length).toBe(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('mounts only the children grid for a Container with an empty data model', async () => {
+    // The other half of the exclusion: no data model mounts GenericTab
+    // ONLY on CHILDREN; SCHEMA renders its default pane (the schema
+    // piece, empty here because there are no columns). The children
+    // cell renders the related panel from the embedded `children`
+    // refs — the CONTAINER_CHILDREN branch of the widget chain.
+    const schemaLayout = [{ i: DetailWidgetKeys.CONTAINER_SCHEMA, x: 0, y: 0, w: 8, h: 2 }];
+    const childrenLayout = [{ i: DetailWidgetKeys.CONTAINER_CHILDREN, x: 0, y: 0, w: 8, h: 2 }];
+    stubWithDoc(
+      docWithPage('Container', [
+        { id: 'schema', name: 'schema', editable: true, layout: schemaLayout },
+        { id: 'children', name: 'children', editable: true, layout: childrenLayout },
+        { id: 'sample_data', name: 'sample_data', editable: false, layout: [] },
+        { id: 'activity_feed', name: 'activity_feed', editable: false, layout: [] },
+        { id: 'lineage', name: 'lineage', editable: false, layout: [] },
+        { id: 'contract', name: 'contract', editable: false, layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
+      ]),
+      (url) =>
+        url.includes('/api/v1/containers/name/')
+          ? jsonResponse({
+              id: 'ct-1',
+              name: 'landing',
+              fullyQualifiedName: 's3.landing',
+              description: 'Landing bucket',
+              children: [{ name: 'child1', type: 'container' }],
+              service: { name: 's3' },
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('container', 's3.landing');
+    await settle(wrapper);
+    const grids = wrapper.findAllComponents(GenericTab);
+    expect(grids.length).toBe(1);
+    expect(grids[0].props('layout')).toEqual(childrenLayout);
+    expect(grids[0].props('pageType')).toBe('Container');
+    expect(
+      cellFor(wrapper, DetailWidgetKeys.CONTAINER_CHILDREN)
+        .find('[data-testid="asset-related-table"]')
+        .exists(),
+    ).toBe(true);
+    expect(cellFor(wrapper, DetailWidgetKeys.CONTAINER_SCHEMA).exists()).toBe(false);
+    // The excluded schema tab renders its default pane: the schema
+    // piece with no rows shows the empty state, not a table.
+    expect(wrapper.findAll('[data-testid="asset-schema-empty"]').length).toBe(1);
+    expect(wrapper.findAll('[data-testid="asset-schema-table"]').length).toBe(0);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps only the preserved quality tab on a Chart page listing lineage alone (F-2)', async () => {
+    // Chart is a fallback view: `quality` has no Chart TabsId, so it
+    // is preserved; `overview` resolves through the `details` alias,
+    // so it is removed when `details` is unlisted.
+    stubWithDoc(
+      docWithPage('Chart', [{ id: 'lineage', name: 'lineage' }]),
+      (url) =>
+        url.includes('/api/v1/charts/name/')
+          ? jsonResponse({
+              id: 'ch-1',
+              name: 'revenue',
+              fullyQualifiedName: 'bi.sales.revenue',
+              description: 'Revenue chart',
+              chartType: 'Bar',
+              service: { name: 'superset' },
+              dashboards: [{ name: 'sales', type: 'dashboard' }],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('chart', 'bi.sales.revenue');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Lineage', 'Quality']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps only the preserved overview tab on an APICollection page listing activity alone (F-2)', async () => {
+    // The APICollection tab builders and TabsIds carry no OVERVIEW,
+    // so the product `overview` tab is preserved; the endpoints and
+    // custom-properties tabs are removed when unlisted.
+    stubWithDoc(
+      docWithPage('APICollection', [{ id: 'activity_feed', name: 'activity_feed' }]),
+      (url) => {
+        if (url.includes('/api/v1/apiCollections/name/')) {
+          return jsonResponse({
+            id: 'ac-1',
+            name: 'petstore',
+            fullyQualifiedName: 'svc.petstore',
+            description: 'Petstore API',
+            owners: [],
+            tags: [],
+            domains: [],
+            service: { name: 'rest', displayName: 'REST' },
+          });
+        }
+        if (url.includes('/api/v1/apiEndpoints')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return null;
+      },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiCollection', 'svc.petstore');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Activity feed', 'Overview']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the preserved overview and quality tabs on a catalog Pipeline page listing tasks alone (F-2)', async () => {
+    // The catalog Pipeline fallback set preserves both `overview`
+    // (no Pipeline TabsId resolves to it) and `quality`; executions,
+    // lineage, activity, and custom properties are removed when
+    // unlisted.
+    stubWithDoc(
+      docWithPage('Pipeline', [{ id: 'tasks', name: 'tasks' }]),
+      (url) => {
+        if (url.includes('/api/v1/pipelines/name/')) {
+          return jsonResponse({
+            id: 'pipe-1',
+            name: 'daily_etl',
+            fullyQualifiedName: 'airflow.daily_etl',
+            tasks: [
+              { name: 'extract', displayName: 'Extract', downstreamTasks: ['load'] },
+              { name: 'load', downstreamTasks: [] },
+            ],
+            service: { name: 'airflow' },
+          });
+        }
+        if (url.includes('/api/v1/pipelines/') && url.includes('/status')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return null;
+      },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Tasks', 'Overview', 'Quality']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders no tab bar for an explicitly empty Table tab list without throwing (F-1/F-2)', async () => {
+    stubWithDoc(docWithPage('Table', []), tableResponder(BASE_TABLE));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    expect(wrapper.find('.ant-tabs-nav').exists()).toBe(false);
+    expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
+    expect(wrapper.text()).toContain('orders');
+    wrapper.unmount();
+  }, 20000);
+
+  it('falls back to the first rendered tab when a late persona document removes the deep-linked tab (B-1)', async () => {
+    // Race path: `load()` derives `activeTab` once from `?tab=` while
+    // the persona document is still in flight, so the deep-linked
+    // tab is in the default list at derivation time; when the
+    // document arrives and removes it, the shell clamp must move
+    // the visible selection to the first rendered tab (official
+    // `getRenderedActiveTab`), not leave a blank content area. The
+    // gate holds the document back until after the entity load, so
+    // the interleaving is deterministic rather than timing luck.
+    let releaseDoc!: () => void;
+    const docGate = new Promise<void>((resolve) => {
+      releaseDoc = resolve;
+    });
+    stubWithDoc(
+      docWithPage('Table', [
+        { id: 'schema', name: 'schema' },
+        { id: 'activity_feed', name: 'activity_feed' },
+      ]),
+      tableResponder(BASE_TABLE),
+      docGate,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders', { tab: 'lineage' });
+    await settle(wrapper);
+    // Precondition: with the document still gated, the deep-linked
+    // lineage tab is selected from the default list.
+    expect(tabLabels(wrapper)[0]).toBe('Schema');
+    expect(wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab-active')[0].text()).toContain('Lineage');
+    releaseDoc();
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Schema', 'Activity feed']);
+    const activeNav = wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab-active');
+    expect(activeNav).toHaveLength(1);
+    expect(activeNav[0].text()).toContain('Schema');
+    expect(wrapper.findAll('.ant-tabs-tabpane-active')).toHaveLength(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps the preserved overview tab and resolves schema to the endpoint tab on an APIEndpoint page (M-1)', async () => {
+    // Split API branch: the APIEndpoint TabsIds carry no OVERVIEW, so
+    // `overview` is preserved, and the official `schema` id resolves
+    // to the product `endpoint` tab through the alias.
+    stubWithDoc(
+      docWithPage('APIEndpoint', [
+        { id: 'schema', name: 'schema' },
+        { id: 'activity_feed', name: 'activity_feed' },
+      ]),
+      (url) =>
+        url.includes('/api/v1/apiEndpoints/name/')
+          ? jsonResponse({
+              id: 'ae-1',
+              name: 'getPet',
+              fullyQualifiedName: 'svc.petstore.getPet',
+              endpointURL: '/pets/{id}',
+              requestMethod: 'GET',
+              requestSchema: { type: 'object', properties: { id: { type: 'integer' } } },
+              responseSchema: { type: 'object' },
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiEndpoint', 'svc.petstore.getPet');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Endpoint', 'Activity feed', 'Overview']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('keeps only the preserved overview tab on an APIEndpoint page listing activity alone (M-1)', async () => {
+    stubWithDoc(
+      docWithPage('APIEndpoint', [{ id: 'activity_feed', name: 'activity_feed' }]),
+      (url) =>
+        url.includes('/api/v1/apiEndpoints/name/')
+          ? jsonResponse({
+              id: 'ae-1',
+              name: 'getPet',
+              fullyQualifiedName: 'svc.petstore.getPet',
+              endpointURL: '/pets/{id}',
+              requestMethod: 'GET',
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('apiEndpoint', 'svc.petstore.getPet');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Activity feed', 'Overview']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the SearchIndex settings tab when the customization lists its hyphenated id (M-1)', async () => {
+    // The official id is `search-index-settings` while the product
+    // split key is `search_index_settings`; only the alias resolves
+    // it, so without the alias the settings tab would vanish under
+    // any customization.
+    stubWithDoc(
+      docWithPage('SearchIndex', [
+        { id: 'fields', name: 'fields' },
+        { id: 'search-index-settings', name: 'search-index-settings' },
+      ]),
+      (url) =>
+        url.includes('/api/v1/searchIndexes/name/')
+          ? jsonResponse({
+              id: 'si-1',
+              name: 'table_search_index',
+              fullyQualifiedName: 'elasticsearch_sample.table_search_index',
+              description: 'Table Search Index',
+              fields: [{ name: 'id', dataType: 'KEYWORD' }],
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('searchIndex', 'elasticsearch_sample.table_search_index');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Fields', 'Search index settings']);
+    wrapper.unmount();
+  }, 20000);
+
+  it('removes the SearchIndex settings tab when the customization does not list it (M-1)', async () => {
+    // The settings tab is not preserved: an unlisted settings id
+    // means the tab is removed, as officially.
+    stubWithDoc(
+      docWithPage('SearchIndex', [{ id: 'fields', name: 'fields' }]),
+      (url) =>
+        url.includes('/api/v1/searchIndexes/name/')
+          ? jsonResponse({
+              id: 'si-1',
+              name: 'table_search_index',
+              fullyQualifiedName: 'elasticsearch_sample.table_search_index',
+              description: 'Table Search Index',
+              fields: [{ name: 'id', dataType: 'KEYWORD' }],
+              owners: [],
+              tags: [],
+              domains: [],
+            })
+          : null,
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('searchIndex', 'elasticsearch_sample.table_search_index');
+    await settle(wrapper);
+    expect(tabLabels(wrapper)).toEqual(['Fields']);
     wrapper.unmount();
   }, 20000);
 });

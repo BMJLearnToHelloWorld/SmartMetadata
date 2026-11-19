@@ -49,6 +49,11 @@ export type ViewModePage = 'domains' | 'subDomains' | 'dataProducts' | 'learning
  * the official personaPreferences schema: appMode is classic or AI,
  * defaultLandingPage is a route path (unset means Home), and only
  * Domains offers the tree view mode.
+ *
+ * The index signature is the C-4 (RB-8) passthrough shape: the read
+ * mapping keeps entry fields beyond the known schema verbatim instead
+ * of rebuilding an allowlist, so an unedited entry round-trips through
+ * a PATCH replace unchanged. The same holds for landingPageSettings.
  */
 export interface PersonaPreferences {
   personaId: string;
@@ -59,7 +64,9 @@ export interface PersonaPreferences {
   landingPageSettings?: {
     headerColor?: string;
     headerImage?: string;
+    [key: string]: unknown;
   };
+  [key: string]: unknown;
 }
 
 /** A knowledge panel reference on a customized page. */
@@ -73,6 +80,15 @@ export interface PageTab {
  * Page schema (system/ui/page): pageType selects the page (LandingPage,
  * DataMarketplace, or an entity type), layout carries the widget grid
  * verbatim, knowledgePanels are panel references, tabs are the page tabs.
+ *
+ * The index signature is the C-4 (RB-8) passthrough shape: the read
+ * mapping keeps fields beyond the known schema verbatim instead of
+ * rebuilding an allowlist, so unedited page fields (persona, domains,
+ * reference subfields, any other stored key) survive a PATCH replace
+ * of the pages array. Verification is against schema fields; whether
+ * real storage carries schema-external page fields is unconfirmed
+ * (C-4 spec §3.4, V-9), so the passthrough is a constructive guarantee,
+ * not a claim about stored data.
  */
 export interface PersonaPage {
   pageType: string;
@@ -84,6 +100,7 @@ export interface PersonaPage {
   tabs?: PageTab[];
   persona?: EntityRef;
   domains?: EntityRef[];
+  [key: string]: unknown;
 }
 
 /**
@@ -92,6 +109,14 @@ export interface PersonaPage {
  * payload carries the customized pages and the per-persona preferences;
  * navigation is carried for forward compatibility with the official
  * empty-document template and otherwise untouched.
+ *
+ * `data` is a free object server-side (document.json: data is
+ * `{type: object, additionalProperties: true}`), so the index
+ * signature is the C-4 (RB-8) passthrough shape: the read mapping
+ * keeps every stored data key (including `askCollateSidebar` and any
+ * unknown key) instead of rebuilding a four-key allowlist. The PATCH
+ * diff compares every data key, so a key no callback writes emits no
+ * op and its stored value survives any save.
  */
 export interface PersonaDocument {
   id?: string;
@@ -113,6 +138,7 @@ export interface PersonaDocument {
      */
     personPreferences?: PersonaPreferences[];
     navigation?: unknown;
+    [key: string]: unknown;
   };
   domains?: EntityRef[];
 }

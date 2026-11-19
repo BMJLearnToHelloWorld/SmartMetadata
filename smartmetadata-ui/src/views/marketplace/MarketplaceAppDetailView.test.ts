@@ -254,7 +254,8 @@ describe('MarketplaceAppDetailView', () => {
   it('renders the forbidden page for non-admin users', async () => {
     const { wrapper } = await mountDetail({}, false);
     expect(wrapper.find('[data-testid="marketplace-app-detail-body"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain('Access not allowed');
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Access Denied');
   });
 
   it('shows a load error when the marketplace fetch fails', async () => {

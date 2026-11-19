@@ -8,197 +8,229 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
-import { describe, expect, it } from 'vitest';
-import { createMemoryHistory, createRouter } from 'vue-router';
-import { CUSTOM_PROPERTY_TYPE_ENTRIES } from '@/settings/customProperties';
+import Antd, { Row } from 'ant-design-vue';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import type { OperationPermissions } from '@/api/permissions';
 import { createTestI18n } from '@/test/i18n';
 import SettingsHubView from './SettingsHubView.vue';
 
+const permissionFixture = {
+  isAdminUser: false,
+  authProvider: undefined as string | undefined,
+  opsByResource: {} as Record<string, OperationPermissions>,
+  /** When set, permission lookups wait on this gate until the test releases it. */
+  gate: null as Promise<void> | null,
+  /** Forces the filter to report zero visible categories (see the empty-state test). */
+  forceEmpty: false,
+};
+
+vi.mock('@/stores/permissions', () => ({
+  usePermissionStore: () => ({
+    get isAdminUser() {
+      return permissionFixture.isAdminUser;
+    },
+    getResourcePermission: async (resourceKey: string) => {
+      if (permissionFixture.gate) {
+        await permissionFixture.gate;
+      }
+      return permissionFixture.opsByResource[resourceKey] ?? {};
+    },
+  }),
+}));
+
+vi.mock('@/settings/permissionRules', async (importOriginal) => {
+  const original = (await importOriginal()) as typeof import('@/settings/permissionRules');
+  return {
+    ...original,
+    loadAuthProvider: async () => permissionFixture.authProvider,
+    filterVisibleSettingsItems: async (
+      ...args: Parameters<typeof original.filterVisibleSettingsItems>
+    ) => (permissionFixture.forceEmpty ? [] : original.filterVisibleSettingsItems(...args)),
+  };
+});
+
 const stub = (label: string) => ({ template: `<div>${label}</div>` });
 
-async function mountHub(locale: 'en-US' | 'zh-CN' = 'en-US') {
-  const i18n = createTestI18n(locale);
-  const router = createRouter({
+function testRouter(): Router {
+  return createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/admin/settings', name: 'admin-settings', component: SettingsHubView },
-      { path: '/admin/apps', name: 'admin-apps', component: stub('apps') },
-      { path: '/admin/users', name: 'admin-users', component: stub('users') },
-      { path: '/admin/teams', name: 'admin-teams', component: stub('teams') },
-      { path: '/admin/bots', name: 'admin-bots', component: stub('bots') },
-      { path: '/admin/settings/system', name: 'admin-settings-system', component: stub('system') },
-      {
-        path: '/governance/classifications',
-        name: 'governance-classifications',
-        component: stub('tags'),
-      },
-      { path: '/ingestion/services', name: 'ingestion-services', component: stub('svc') },
-      { path: '/admin/roles', name: 'admin-roles', component: stub('roles') },
-      { path: '/admin/policies', name: 'admin-policies', component: stub('policies') },
-      {
-        path: '/admin/settings/custom-properties',
-        name: 'admin-settings-custom-properties',
-        component: stub('defs'),
-      },
-      {
-        path: '/admin/settings/custom-properties/:entityType',
-        name: 'admin-settings-custom-property-type',
-        component: stub('def'),
-      },
-      { path: '/governance/glossaries', name: 'governance-glossaries', component: stub('glos') },
-      { path: '/governance/domains', name: 'governance-domains', component: stub('dom') },
-      {
-        path: '/governance/data-products',
-        name: 'governance-data-products',
-        component: stub('dp'),
-      },
-      { path: '/ingestion/pipelines', name: 'ingestion-pipelines', component: stub('pipe') },
-      { path: '/observability/alerts', name: 'observability-alerts', component: stub('al') },
-      { path: '/announcements', name: 'announcements', component: stub('ann') },
-      { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: stub('audit') },
-      { path: '/admin/settings/permission-debugger', name: 'admin-settings-permission-debugger', component: stub('permdbg') },
-      { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
-      { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
-      { path: '/admin/settings/governance/glossary-term-relations', name: 'admin-settings-governance-glossary-term-relations', component: stub('termrelations') },
-      { path: '/admin/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
-      { path: '/insights/online-users', name: 'insights-online-users', component: stub('online') },
-      { path: '/admin/settings/sso', name: 'admin-settings-sso', component: stub('sso') },
-      { path: '/admin/users/admins', name: 'admin-admins', component: stub('admins') },
-      { path: '/inbox', name: 'inbox', component: stub('inbox') },
-      // Preferences residual→route (BACKEND_09 / hub pattern)
-      { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
-      { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },
-      { path: '/admin/settings/preferences/login', name: 'settings-preferences-login', component: stub('login') },
-      { path: '/admin/settings/preferences/health', name: 'settings-preferences-health', component: stub('health') },
-      { path: '/admin/settings/preferences/profiler', name: 'settings-preferences-profiler', component: stub('profiler') },
-      { path: '/admin/settings/preferences/dq-dimensions', name: 'settings-preferences-dq-dimensions', component: stub('dq') },
-      { path: '/admin/settings/preferences/search', name: 'settings-preferences-search', component: stub('search') },
-      { path: '/admin/settings/preferences/lineage', name: 'settings-preferences-lineage', component: stub('lineage') },
-      { path: '/admin/settings/preferences/om-url', name: 'settings-preferences-om-url', component: stub('omurl') },
-      { path: '/admin/settings/preferences/entity-rules', name: 'settings-preferences-entity-rules', component: stub('rules') },
-      { path: '/admin/settings/preferences/learning', name: 'settings-preferences-learning', component: stub('learn') },
-      { path: '/admin/settings/preferences/app-mode', name: 'settings-preferences-app-mode', component: stub('mode') },
-      { path: '/admin/settings/preferences/glossary', name: 'settings-preferences-glossary', component: stub('gloss') },
-      { path: '/admin/settings/preferences/time-format', name: 'settings-preferences-time-format', component: stub('time') },
+      { path: '/settings', name: 'admin-settings', component: SettingsHubView },
+      { path: '/settings/:category', name: 'settings-category', component: stub('category') },
+      { path: '/settings/apps', name: 'admin-apps', component: stub('apps') },
+      { path: '/settings/bots', name: 'admin-bots', component: stub('bots') },
+      { path: '/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
+      { path: '/settings/sso', name: 'admin-settings-sso', component: stub('sso') },
     ],
   });
-  await router.push('/admin/settings');
+}
+
+async function mountHub() {
+  const router = testRouter();
+  await router.push('/settings');
   await router.isReady();
   const wrapper = mount(SettingsHubView, {
-    global: {
-      plugins: [router, Antd, i18n],
-    },
+    global: { plugins: [router, Antd, createTestI18n('en-US')] },
   });
   await flushPromises();
   return { wrapper, router };
 }
 
-describe('SettingsHubView', () => {
-  // 20s cap, not the 5s default: the first mount renders every category
-  // card (now 26 icon rows in custom-properties) after the router setup, so
-  // under parallel workers it exceeds 5s — and under peak VM load (load avg
-  // > 5 on 4 CPUs) even 10s. Baseline was already ~4.0s single-run for this
-  // test, so the margin was gone before this batch. Assertions are
-  // unchanged; the cap still fails a genuinely hung mount.
-  it('renders official-like category cards and live links to existing pages', async () => {
+const ALL_VIEW_RESOURCES = [
+  'databaseService',
+  'messagingService',
+  'dashboardService',
+  'pipelineService',
+  'mlmodelService',
+  'metadataService',
+  'storageService',
+  'searchService',
+  'apiService',
+  'driveService',
+  'eventsubscription',
+  'team',
+  'user',
+  'role',
+  'policy',
+];
+
+function allowAllView(): void {
+  permissionFixture.opsByResource = Object.fromEntries(
+    ALL_VIEW_RESOURCES.map((key) => [key, { ViewAll: true }]),
+  );
+}
+
+beforeEach(() => {
+  permissionFixture.isAdminUser = false;
+  permissionFixture.authProvider = undefined;
+  permissionFixture.opsByResource = {};
+  permissionFixture.gate = null;
+  permissionFixture.forceEmpty = false;
+});
+
+describe('SettingsHubView (DESIGN §5)', () => {
+  it('renders all eleven category cards in pin order for an admin with view grants', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
     const { wrapper } = await mountHub();
-    expect(wrapper.find('[data-testid="settings-hub"]').exists()).toBe(true);
+    const cards = wrapper.findAll('[data-testid="settings-hub-grid"] .setting-item-card');
+    expect(cards.map((card) => card.attributes('data-testid'))).toEqual([
+      'services',
+      'apps',
+      'notifications',
+      'members',
+      'access',
+      'preferences',
+      'customProperties',
+      'bots',
+      'persona',
+      'sso',
+      'governance',
+    ]);
+  });
+
+  it('renders the pin header with the learning icon and the brand description', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const { wrapper } = await mountHub();
     expect(wrapper.find('[data-testid="settings-hub-title-heading"]').text()).toBe('Settings');
-    expect(wrapper.find('[data-testid="settings-category-members"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-category-access"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-users"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-teams"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-bots"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-classifications"]').exists()).toBe(true);
-    // Combined Preferences "system" card removed; login/email are separate routes.
-    expect(wrapper.find('[data-testid="settings-link-login"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-email"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-appearance"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-services"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-policies"]').exists()).toBe(true);
-    // G-23 stage 1: the single custom-properties link is replaced by 26
-    // rows, one per official entity type, in rendered label order.
-    expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(false);
-    const card = wrapper.find('[data-testid="settings-category-custom-properties"]');
-    expect(card.exists()).toBe(true);
-    const links = card.findAll('a');
-    expect(links).toHaveLength(26);
-    const labels = links.map((link) => link.find('.settings-hub__link-text > span').text());
-    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
-    for (const entry of CUSTOM_PROPERTY_TYPE_ENTRIES) {
-      const link = wrapper.find(`[data-testid="settings-link-custom-properties-${entry.type}"]`);
-      expect(link.exists(), entry.type).toBe(true);
-      expect(link.text()).toContain('Define the custom properties for');
-    }
-    expect(
-      wrapper.find('[data-testid="settings-link-custom-properties-tableColumn"]').text(),
-    ).toContain('column level on tables and dashboard data models');
-    // Stage 8: audit logs flipped residual → route.
-    expect(wrapper.find('[data-testid="settings-link-audit-logs"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-audit-logs"]').exists()).toBe(false);
-    // P2 B5: persona flipped residual → route.
-    expect(wrapper.find('[data-testid="settings-link-persona"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-persona"]').exists()).toBe(false);
-  }, 20000);
-
-  it('navigates a live card to the existing Users list', async () => {
-    const { wrapper, router } = await mountHub();
-    await wrapper.find('[data-testid="settings-link-users"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-users');
-  });
-
-  it('navigates a custom-properties row to the type detail with the type name', async () => {
-    const { wrapper, router } = await mountHub();
-    await wrapper.find('[data-testid="settings-link-custom-properties-table"]').trigger('click');
-    await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-settings-custom-property-type');
-    expect(router.currentRoute.value.params.entityType).toBe('table');
-  });
-
-  it('shows residual sections as text, not fake forms or dead buttons', async () => {
-    const { wrapper } = await mountHub();
-    expect(wrapper.find('[data-testid="settings-link-apps"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-apps"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
-    // B5-3: inbox flipped residual → route.
-    expect(wrapper.find('[data-testid="settings-link-inbox"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(false);
-    // B5-8: SSO flipped residual → route.
-    expect(wrapper.find('[data-testid="settings-link-sso"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-residual-sso"]').exists()).toBe(false);
-    // Appearance / search / profiler flipped residual → route (Preferences full-chain).
-    expect(wrapper.find('[data-testid="settings-residual-appearance"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="settings-link-appearance"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-search-settings"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="settings-link-profiler"]').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain('Ontology');
-    expect(wrapper.text()).not.toContain('Knowledge');
-  });
-
-  // 20s cap (same load evidence as the first test in this file). R-2: the
-  // custom-properties rows sort by rendered label at render time, so the
-  // zh-CN order differs from the en-US order — the authored en-US order is
-  // not the display order.
-  it('sorts custom-properties rows by rendered label in zh-CN (R-2)', async () => {
-    const { wrapper } = await mountHub('zh-CN');
-    const card = wrapper.find('[data-testid="settings-category-custom-properties"]');
-    expect(card.exists()).toBe(true);
-    const links = card.findAll('a');
-    expect(links).toHaveLength(26);
-    const labels = links.map((link) => link.find('.settings-hub__link-text > span').text());
-    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
-    const types = links.map((link) =>
-      (link.attributes('data-testid') ?? '').replace(
-        'settings-link-custom-properties-',
-        '',
-      ),
+    expect(wrapper.find('[data-testid="settings-hub-title-sub"]').text()).toBe(
+      'Ability to configure the iSmart application to suit your needs.',
     );
-    const enTypes = CUSTOM_PROPERTY_TYPE_ENTRIES.map((entry) => entry.type);
-    expect(types).not.toEqual(enTypes);
-    // The zh-CN first row is the API endpoint, not the API collection.
-    expect(types[0]).toBe('apiEndpoint');
-  }, 20000);
+    expect(wrapper.find('[data-testid="settings-hub-title-learning"]').exists()).toBe(true);
+  });
+
+  it('renders no breadcrumb and no residual UI', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const { wrapper } = await mountHub();
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid^="settings-residual"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid^="settings-link-"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-service-button"]').exists()).toBe(false);
+  });
+
+  it('uses the 1/2/3-column grid with a 20px gutter', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const { wrapper } = await mountHub();
+    expect(wrapper.findComponent(Row).props('gutter')).toEqual([20, 20]);
+    const cols = wrapper.findAll('.ant-col');
+    expect(cols).toHaveLength(11);
+    for (const col of cols) {
+      expect(col.classes()).toContain('ant-col-xs-24');
+      expect(col.classes()).toContain('ant-col-md-12');
+      expect(col.classes()).toContain('ant-col-lg-8');
+    }
+  });
+
+  it('filters categories by the two-stage permission rule', async () => {
+    // Only user/team visibility: members survives (users/admins), services
+    // survives (dataObservability is always visible), everything else drops.
+    permissionFixture.opsByResource = { team: { ViewAll: true }, user: { ViewAll: true } };
+    const { wrapper } = await mountHub();
+    const cards = wrapper.findAll('[data-testid="settings-hub-grid"] .setting-item-card');
+    expect(cards.map((card) => card.attributes('data-testid'))).toEqual(['services', 'members']);
+  });
+
+  it('renders only the shared placeholder when zero categories are visible (§5.4)', async () => {
+    // The real registry always leaves `services` visible (dataObservability
+    // is always protected, pin-identical), so the empty branch is exercised
+    // by forcing the filter result; the filter's own semantics are covered
+    // by permissionRules.test.ts. The assertion target is the view's
+    // branch: placeholder alone, no header, no grid, no redirect.
+    permissionFixture.forceEmpty = true;
+    const { wrapper, router } = await mountHub();
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').text()).toContain(
+      'get the Settings permission.',
+    );
+    expect(wrapper.find('[data-testid="settings-hub-title"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-hub-grid"]').exists()).toBe(false);
+    expect(wrapper.find('button').exists()).toBe(false);
+    expect(router.currentRoute.value.name).toBe('admin-settings');
+  });
+
+  it('shows only a loading state until the permission evaluation resolves (§11.1)', async () => {
+    let release: () => void = () => {};
+    permissionFixture.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const router = testRouter();
+    await router.push('/settings');
+    await router.isReady();
+    const wrapper = mount(SettingsHubView, {
+      global: { plugins: [router, Antd, createTestI18n('en-US')] },
+    });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-hub-loading"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-hub-grid"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(false);
+    release();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="settings-hub-loading"]').exists()).toBe(false);
+    expect(wrapper.findAll('[data-testid="settings-hub-grid"] .setting-item-card')).toHaveLength(11);
+  });
+
+  it('navigates a multi-card category to the category page by name', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const { wrapper, router } = await mountHub();
+    await wrapper.find('[data-testid="members"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'members' });
+  });
+
+  it('navigates a single-card category straight to its discrete route (§6.5)', async () => {
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+    const { wrapper, router } = await mountHub();
+    await wrapper.find('[data-testid="apps"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-apps');
+  });
 });

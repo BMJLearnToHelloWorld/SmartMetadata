@@ -1,10 +1,18 @@
 # Custom Properties stage 4 — per-type permission gate
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-11-10 (initial)
+- **Revisions:** v1 2026-11-10 (initial); v2 2026-11-18 (C-1 errata pointer, see Revision note)
 - **Deciders:** Bai (scope lock + 77 decisions 2026-11-07; G-23 stage 4 review APPROVE + 10 conditions, REVIEW-W3-G-STAGES.md §3)
-- **Guard:** `src/composables/useEntityPermissions.test.ts` (enabled-gating, deleted forcing edit flags false, refresh re-fetch, error → all-false flags), `src/views/admin/CustomPropertyTypeDetailView.test.ts` (stage 4 gate block: buttons absent/present, schema-tab Add rule, loading fail-closed, permission-error toast, form unopenable without EditAll), `src/router/guards.test.ts` (both route names map to `'type'`)
+- **Guard:** `src/composables/useEntityPermissions.test.ts` (enabled-gating, deleted forcing edit flags false, refresh re-fetch, error → all-false flags), `src/views/admin/CustomPropertyTypeDetailView.test.ts` (stage 4 gate block: buttons absent/present, schema-tab Add rule, loading fail-closed, permission-error toast, form unopenable without EditAll), `src/router/guards.test.ts` (the `'type'` route mappings are deleted under C-1; the detail routes are admin-only — see the v2 note)
 - **Related:** `~/workspace/work/milestone-20261107/wave3/REVIEW-W3-G-STAGES.md` (§3, §5.1), `~/workspace/work/milestone-20261107/RULING-custom-properties.md` (G-D5), `docs/decisions/2026-11-08-custom-properties-s3-config-write-side.md` (§9 pre-check, now implemented)
+
+## Revision note (v2, 2026-11-18)
+
+C-1 option A (Bai 2026-11-18) deletes the two `type` route mappings this
+record's guard line cites; the detail routes are admin-only and the in-page
+per-type gate is retained. The route-mapping claim in this record is
+superseded; the `useEntityPermissions` composable decision stands. See
+ADR:2026-11-18-route-denial-renders-in-place-permission-placeholder.
 
 ## Context
 

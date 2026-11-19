@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { customPropertySegmentForType } from '@/settings/customProperties';
 import CustomPropertyTypeDetailView from './CustomPropertyTypeDetailView.vue';
 
 // Stage 4: the permission store is mocked (precedent:
@@ -41,26 +42,24 @@ function jsonResponse(body: unknown, status = 200): Response {
 async function mountDefs(entityType = 'table') {
   const pinia = createPinia();
   setActivePinia(pinia);
+  const segment = customPropertySegmentForType(entityType);
+  if (!segment) {
+    throw new Error(`No custom-property segment for type: ${entityType}`);
+  }
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       {
-        path: '/admin/settings/custom-properties',
-        name: 'admin-settings-custom-properties',
-        component: { template: '<div>types</div>' },
-      },
-      {
-        path: '/admin/settings/custom-properties/:entityType',
+        path: '/settings/customProperties/:tab',
         name: 'admin-settings-custom-property-type',
         component: CustomPropertyTypeDetailView,
         props: true,
       },
     ],
   });
-  await router.push(`/admin/settings/custom-properties/${entityType}`);
+  await router.push(`/settings/customProperties/${segment}`);
   await router.isReady();
   const wrapper = mount(CustomPropertyTypeDetailView, {
-    props: { entityType },
     global: {
       plugins: [pinia, router, Antd, createTestI18n()],
     },
@@ -125,6 +124,26 @@ describe('CustomPropertyTypeDetailView', () => {
     expect(wrapper.text()).toContain('integer');
     expect(wrapper.find('[data-testid="admin-custom-property-defs-table"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="add-custom-property"]').exists()).toBe(true);
+  }, 20000);
+
+  // B-1 product-side fix: a property-types load failure must surface as
+  // the page error state (official fetchTypeDetail try/catch pattern) and
+  // skip load(), not hang as an unhandled rejection.
+  it('surfaces a property-types load failure as the page error state', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/v1/metadata/types?') && url.includes('category=field')) {
+        throw new Error('property types unavailable');
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { wrapper } = await mountDefs();
+    await flushPromises();
+    expect(wrapper.text()).toContain('property types unavailable');
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/metadata/types/name/')),
+    ).toBe(false);
   }, 20000);
 
   it('shows Empty when the type has no definitions but still allows add', async () => {
@@ -859,6 +878,31 @@ describe('CustomPropertyTypeDetailView', () => {
       expect(wrapper.find('[data-testid="custom-property-name"]').exists()).toBe(false);
     }, 20000);
   });
+
+  describe('CustomPropertyTypeDetailView breadcrumb (exception row 3b)', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      getEntityPermissionById.mockResolvedValue({ EditAll: true });
+      getEntityPermissionByFqn.mockResolvedValue({});
+    });
+
+    it('renders Settings > Custom Properties > startCase(tab)', async () => {
+      const { wrapper } = await mountDefs();
+      const text = wrapper.find('[data-testid="entity-detail-breadcrumb"]').text();
+      expect(text).toContain('Settings');
+      expect(text).toContain('Custom Properties');
+      expect(text).toContain('Tables');
+      expect(text.indexOf('Settings')).toBeLessThan(text.indexOf('Custom Properties'));
+      expect(text.indexOf('Custom Properties')).toBeLessThan(text.indexOf('Tables'));
+    });
+
+    it('derives the crumb from the :tab segment, not the fetch type', async () => {
+      const { wrapper } = await mountDefs('tableColumn');
+      const text = wrapper.find('[data-testid="entity-detail-breadcrumb"]').text();
+      expect(text).toContain('Column');
+      expect(text).not.toContain('Table Column');
+    });
+  });
 });
 
 function entityTypeFrom(url: string): string {
@@ -870,3 +914,43 @@ function entityTypeFrom(url: string): string {
   const rest = url.slice(start + marker.length);
   return decodeURIComponent(rest.split(/[/?]/)[0] || 'unknown');
 }
+
+describe('CustomPropertyTypeDetailView unknown segment (§3.5/D-10)', () => {
+  it('shows the not-found error without issuing a metadata-type request', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/v1/metadata/types?') && url.includes('category=field')) {
+        return jsonResponse({
+          data: [{ id: 'f1', name: 'integer', category: 'field', displayName: 'Integer' }],
+          paging: { total: 1 },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        {
+          path: '/settings/customProperties/:tab',
+          name: 'admin-settings-custom-property-type',
+          component: CustomPropertyTypeDetailView,
+        },
+      ],
+    });
+    await router.push('/settings/customProperties/bogus');
+    await router.isReady();
+    const wrapper = mount(CustomPropertyTypeDetailView, {
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/metadata/types/name/')),
+    ).toBe(false);
+    expect(wrapper.text()).toContain('The page you are looking for does not exist.');
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  });
+});

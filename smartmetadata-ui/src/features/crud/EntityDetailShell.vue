@@ -64,7 +64,19 @@ const subtitleText = computed(() => {
   }
   return parts.join(' · ');
 });
-const currentTab = computed(() => props.activeTab || props.tabs[0]?.key || '');
+const currentTab = computed(() => {
+  // B-1 clamp (official `getRenderedActiveTab`): the requested tab
+  // only when it is in the rendered list, else the first rendered
+  // tab. Views keep their initial `activeTab` while a customization
+  // can remove that tab, so passing the request through unclamped
+  // leaves antd with no selected tab and a blank content area. An
+  // empty list keeps the `''` "no tab" value; the `v-if` below keeps
+  // Tabs unmounted in that case.
+  if (props.activeTab && props.tabs.some((tab) => tab.key === props.activeTab)) {
+    return props.activeTab;
+  }
+  return props.tabs[0]?.key || '';
+});
 const emptyDescription = computed(() => t('crud.empty'));
 
 function onBreadcrumb(item: EntityBreadcrumb): void {
@@ -123,6 +135,15 @@ function onBreadcrumb(item: EntityBreadcrumb): void {
           </Space>
         </div>
         <Alert v-if="error" type="error" show-icon :message="error" data-testid="entity-detail-error" />
+        <!-- Additive error-action slot (M-3): rendered only when an error
+             is present and the consumer provides the slot, so consumers
+             without it see no extra DOM. The shell owns error rendering
+             and has no other slot adjacent to the error; a view that
+             lost its retry action in the shell migration restores it
+             here, next to the error it belongs to. -->
+        <div v-if="error && $slots['error-action']" data-testid="entity-detail-error-action">
+          <slot name="error-action" />
+        </div>
         <Empty
           v-if="!loading && !error && empty"
           data-testid="entity-detail-empty"

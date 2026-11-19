@@ -115,6 +115,14 @@ export async function mountWithBuilder(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      // The detail-view breadcrumb and back navigation resolve
+      // { name: 'workflows' }; the route only needs to exist. Path follows
+      // this harness's own '/workflows/…' prefix (cf. the push below).
+      {
+        path: '/workflows',
+        name: 'workflows',
+        component: { template: '<div />' },
+      },
       {
         path: '/workflows/:fqn/:tab',
         component: { template: '<div />' },

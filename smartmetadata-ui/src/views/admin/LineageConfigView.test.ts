@@ -59,10 +59,6 @@ function mountView() {
     global: {
       plugins: [i18n, Antd],
       stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="lineage-config"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
         RouterLink: true,
       },
     },

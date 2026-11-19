@@ -9,6 +9,10 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { createPersona, listPersonas } from '@/api/persona';
 import FormModal from '@/components/shared/FormModal.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import { Button, Card, Col, Empty, Form, Input, Row, message } from 'ant-design-vue';
 import {
   canGoNext,
@@ -31,6 +35,16 @@ import PersonaUserPicker from './PersonaUserPicker.vue';
 const PERSONA_PAGE_SIZE = 12;
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'persona',
+    ),
+  ),
+);
 const router = useRouter();
 const auth = useAuthStore();
 
@@ -113,6 +127,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="persona-list">
+    <SmBreadcrumb :items="breadcrumbItems" />
     <div class="persona-list__header">
       <h2>{{ t('persona.title') }}</h2>
       <Button

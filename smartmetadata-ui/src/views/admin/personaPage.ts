@@ -108,41 +108,70 @@ export function getPersonPreferences(
 }
 
 /**
- * Stage D (G-11): upserts the user's own header-colour choice for a
- * persona into `personPreferences`, mirroring the official
- * `handleBackgroundColorUpdate` (which appends when the persona has
- * no entry and maps the matching entry otherwise). An undefined colour
- * clears the choice — the entry stays, with `headerColor` dropped by
- * JSON serialization, exactly as official stores it.
+ * Options for the header-colour branch condition. The official
+ * `handleBackgroundColorUpdate` branches on `document.id` and the
+ * stored array length — not on whether this persona already has an
+ * entry — so the caller supplies the persisted document id. The
+ * branch lives in this helper (not inlined in the parent callback):
+ * the parent callback passes `{ documentId: doc.id }` and assigns the
+ * returned array.
+ */
+export interface UpdatePersonPreferencesOptions {
+  documentId?: string | null;
+}
+
+/**
+ * Stage D (G-11), C-4 §3.3 callback 3 (RB-7): writes the user's own
+ * header-colour choice for a persona into `personPreferences`,
+ * mirroring the official `handleBackgroundColorUpdate` branch for
+ * branch — quirks included:
+ *
+ * - Persisted document (`documentId` set) with a non-empty array:
+ *   map only. An entry for this persona is updated in place; entries
+ *   for other personas are returned unchanged; when no entry matches,
+ *   nothing is appended and the array is unchanged — the change is
+ *   silently lost and the document is unchanged. That is the official
+ *   behaviour, reproduced exactly and pinned by tests; the save layer
+ *   then sees no change and sends no request.
+ * - Otherwise (no document id, or an empty array): append a fresh
+ *   entry unconditionally, even if an entry for this persona is
+ *   already present. The appended entry carries only
+ *   `landingPageSettings: { headerColor }` — the official code
+ *   spreads the array's own (nonexistent) landingPageSettings, which
+ *   contributes nothing.
+ *
+ * An undefined colour clears the choice in the map branch — the entry
+ * stays, with `headerColor` dropped by JSON serialization, exactly as
+ * official stores it.
  */
 export function updatePersonPreferences(
   preferences: PersonaPreferences[],
   persona: { id: string; name: string },
   headerColor: string | undefined,
+  options: UpdatePersonPreferencesOptions,
 ): PersonaPreferences[] {
-  const hasEntry = preferences.some((entry) => entry.personaId === persona.id);
-  if (!hasEntry) {
-    return [
-      ...preferences,
-      {
-        personaId: persona.id,
-        personaName: persona.name,
-        landingPageSettings: { headerColor },
-      },
-    ];
+  if (options.documentId && preferences.length) {
+    return preferences.map((entry) => {
+      if (entry.personaId !== persona.id) {
+        return entry;
+      }
+      return {
+        ...entry,
+        landingPageSettings: {
+          ...entry.landingPageSettings,
+          headerColor,
+        },
+      };
+    });
   }
-  return preferences.map((entry) => {
-    if (entry.personaId !== persona.id) {
-      return entry;
-    }
-    return {
-      ...entry,
-      landingPageSettings: {
-        ...entry.landingPageSettings,
-        headerColor,
-      },
-    };
-  });
+  return [
+    ...preferences,
+    {
+      personaId: persona.id,
+      personaName: persona.name,
+      landingPageSettings: { headerColor },
+    },
+  ];
 }
 
 const APP_LAYOUT_PREFERENCE_KEYS: Array<keyof PersonaAppLayoutPreferences> = [
@@ -306,22 +335,46 @@ export function resolveLandingRedirect(args: {
 }
 
 /**
- * Customize categories this console ships editors for, mirroring the
- * official PersonaClassBase categories minus navigation and the AI
- * sidebar, whose editors are a separate batch: app-layout, the home
- * page, the data marketplace, and govern entity pages.
+ * C-4 §1.1/§1.2: the official customize-page category and option
+ * tables, built once from the official sources
+ * (`PersonaClassBase.getCustomizePageCategories` /
+ * `getCustomizePageOptions`, `PageType` enum order). The legacy
+ * four-item category table and 25-item entity-page-type table were
+ * deleted with the legacy customize views they served.
  */
-export const PERSONA_CUSTOMIZE_CATEGORIES = [
-  { key: 'app-layout', titleKey: 'persona.customizeAppLayout' },
-  { key: 'LandingPage', titleKey: 'persona.customizeLandingPage' },
-  { key: 'DataMarketplace', titleKey: 'persona.customizeMarketplace' },
-  { key: 'governance', titleKey: 'persona.customizeGovern' },
-] as const;
 
-export type PersonaCustomizeCategory = (typeof PERSONA_CUSTOMIZE_CATEGORIES)[number]['key'];
+/** The 27 PageType values, in official enum order. */
+export type CustomizePageType =
+  | 'APICollection'
+  | 'APIEndpoint'
+  | 'Chart'
+  | 'Classification'
+  | 'Container'
+  | 'Dashboard'
+  | 'DashboardDataModel'
+  | 'DataMarketplace'
+  | 'DataProduct'
+  | 'Database'
+  | 'DatabaseSchema'
+  | 'Directory'
+  | 'Domain'
+  | 'File'
+  | 'Glossary'
+  | 'GlossaryTerm'
+  | 'LandingPage'
+  | 'Metric'
+  | 'MlModel'
+  | 'Pipeline'
+  | 'SearchIndex'
+  | 'Spreadsheet'
+  | 'StoredProcedure'
+  | 'Table'
+  | 'Tag'
+  | 'Topic'
+  | 'Worksheet';
 
-/** Entity page types the entity customize overlay offers (official PageType enum). */
-export const ENTITY_PAGE_TYPES = [
+/** PageType enum order, as iterated by the official option filter. */
+export const CUSTOMIZE_PAGE_TYPE_ORDER: readonly CustomizePageType[] = [
   'APICollection',
   'APIEndpoint',
   'Chart',
@@ -329,6 +382,7 @@ export const ENTITY_PAGE_TYPES = [
   'Container',
   'Dashboard',
   'DashboardDataModel',
+  'DataMarketplace',
   'DataProduct',
   'Database',
   'DatabaseSchema',
@@ -337,6 +391,7 @@ export const ENTITY_PAGE_TYPES = [
   'File',
   'Glossary',
   'GlossaryTerm',
+  'LandingPage',
   'Metric',
   'MlModel',
   'Pipeline',
@@ -347,4 +402,193 @@ export const ENTITY_PAGE_TYPES = [
   'Tag',
   'Topic',
   'Worksheet',
-] as const;
+];
+
+export type CustomizePageCategoryKey =
+  | 'navigation'
+  | 'app-layout'
+  | 'askCollateSidebar'
+  | 'LandingPage'
+  | 'DataMarketplace'
+  | 'governance'
+  | 'data-assets';
+
+/**
+ * Icon keys, mirroring the official `CustomizeIconKeys` union: every
+ * PageType plus the five non-PageType keys. Note the two deliberate
+ * mismatches with category keys — the `governance` category uses icon
+ * key `govern`, and `data-assets` uses `dataAssets`. The icon key is
+ * data; the view layer resolves it to a component.
+ */
+export type CustomizePageIconKey =
+  | CustomizePageType
+  | 'govern'
+  | 'dataAssets'
+  | 'navigation'
+  | 'askCollateSidebar'
+  | 'app-layout';
+
+export interface CustomizePageCategory {
+  key: CustomizePageCategoryKey;
+  /** i18n key for the card label; the en-US value is the pin value. */
+  labelKey: string;
+  /** i18n key for the card description; the en-US value is the pin value. */
+  descriptionKey: string;
+  /**
+   * i18n key whose resolved value fills the `{entity}` slot of
+   * `descriptionKey`. Only `DataMarketplace` sets it (its own label
+   * key): the official description interpolates the marketplace label
+   * into the shared entity-customize template.
+   */
+  descriptionEntityKey?: string;
+  icon: CustomizePageIconKey;
+}
+
+/** Shared entity-customize description template (official `message.entity-customize-description`). */
+export const ENTITY_CUSTOMIZE_DESCRIPTION_KEY = 'persona.entityCustomizeDescription';
+
+/**
+ * The seven customize categories, in official order. Description
+ * provenance follows the official source per item: four descriptions
+ * are pin literal strings (`navigation`, `LandingPage`, `governance`,
+ * `data-assets`) and three come from pin i18n keys (`app-layout`,
+ * `askCollateSidebar`, `DataMarketplace`); in this product every
+ * description is addressed by an i18n key whose en-US value is the
+ * pin value, with the exact values listed in the C-4 implementation
+ * notes. The label/description keys are new — the legacy category
+ * keys carry non-pin English text and must not be reused.
+ */
+export const CUSTOMIZE_PAGE_CATEGORIES: readonly CustomizePageCategory[] = [
+  {
+    key: 'navigation',
+    labelKey: 'persona.customizeCategoryNavigation',
+    descriptionKey: 'persona.customizeCategoryNavigationDescription',
+    icon: 'navigation',
+  },
+  {
+    key: 'app-layout',
+    labelKey: 'persona.customizeCategoryAppLayout',
+    descriptionKey: 'persona.customizeCategoryAppLayoutDescription',
+    icon: 'app-layout',
+  },
+  {
+    key: 'askCollateSidebar',
+    labelKey: 'persona.customizeCategoryAiSidebar',
+    descriptionKey: 'persona.customizeCategoryAiSidebarDescription',
+    icon: 'askCollateSidebar',
+  },
+  {
+    key: 'LandingPage',
+    labelKey: 'persona.customizeCategoryHomePage',
+    descriptionKey: 'persona.customizeCategoryHomePageDescription',
+    icon: 'LandingPage',
+  },
+  {
+    key: 'DataMarketplace',
+    labelKey: 'persona.customizeCategoryMarketplace',
+    descriptionKey: ENTITY_CUSTOMIZE_DESCRIPTION_KEY,
+    descriptionEntityKey: 'persona.customizeCategoryMarketplace',
+    icon: 'DataMarketplace',
+  },
+  {
+    key: 'governance',
+    labelKey: 'persona.customizeCategoryGovernance',
+    descriptionKey: 'persona.customizeCategoryGovernanceDescription',
+    icon: 'govern',
+  },
+  {
+    key: 'data-assets',
+    labelKey: 'persona.customizeCategoryDataAssets',
+    descriptionKey: 'persona.customizeCategoryDataAssetsDescription',
+    icon: 'dataAssets',
+  },
+];
+
+/**
+ * Card-rendering scope, expressed as data (C-4 §1.6): the category
+ * table above carries all seven keys, and this exclusion set is the
+ * single place that keeps `askCollateSidebar` off the card grid
+ * pending the R-C4-SIDEBAR product scope ruling. No hand-written
+ * conditional hides the card. When the ruling lands, this set — not
+ * the category table — changes.
+ */
+export const CUSTOMIZE_PAGE_CARD_EXCLUDED_KEYS: ReadonlySet<CustomizePageCategoryKey> = new Set([
+  'askCollateSidebar',
+]);
+
+/** The categories rendered as cards, in official order. */
+export function getCustomizePageCardCategories(): CustomizePageCategory[] {
+  return CUSTOMIZE_PAGE_CATEGORIES.filter(
+    (category) => !CUSTOMIZE_PAGE_CARD_EXCLUDED_KEYS.has(category.key),
+  );
+}
+
+export interface CustomizePageOption {
+  key: CustomizePageType;
+  /** Display label: startCase of the key, as the official generator computes it. */
+  label: string;
+  /** i18n key for the option description (the shared entity-customize template). */
+  descriptionKey: string;
+  /** Literal entity label filling the `{entity}` slot: the option label itself. */
+  descriptionEntity: string;
+  icon: CustomizePageIconKey;
+}
+
+/** lodash startCase over the PageType vocabulary: splits camel humps and acronym boundaries. */
+function startCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+}
+
+function generateCustomizePageOption(pageType: CustomizePageType): CustomizePageOption {
+  const label = startCase(pageType);
+  return {
+    key: pageType,
+    label,
+    descriptionKey: ENTITY_CUSTOMIZE_DESCRIPTION_KEY,
+    descriptionEntity: label,
+    icon: pageType,
+  };
+}
+
+const GOVERNANCE_PAGE_TYPES: ReadonlySet<CustomizePageType> = new Set([
+  'Glossary',
+  'GlossaryTerm',
+  'Domain',
+  'DataProduct',
+]);
+
+const DATA_ASSETS_EXCLUDED_PAGE_TYPES: ReadonlySet<CustomizePageType> = new Set([
+  'Glossary',
+  'GlossaryTerm',
+  'Domain',
+  'DataProduct',
+  'LandingPage',
+  'Tag',
+  'Classification',
+  'DataMarketplace',
+]);
+
+/**
+ * Sub-options for a parent category, mirroring the official
+ * `getCustomizePageOptions`: iterate the PageType enum order and keep
+ * the whitelist (`governance`, 4 items) or everything outside the
+ * exclusion set (`data-assets`, 19 items). `Tag` and `Classification`
+ * appear under no parent. Anything else — including unknown and empty
+ * categories — returns `[]`.
+ */
+export function getCustomizePageOptions(category: string): CustomizePageOption[] {
+  switch (category) {
+    case 'governance':
+      return CUSTOMIZE_PAGE_TYPE_ORDER.filter((pageType) =>
+        GOVERNANCE_PAGE_TYPES.has(pageType),
+      ).map(generateCustomizePageOption);
+    case 'data-assets':
+      return CUSTOMIZE_PAGE_TYPE_ORDER.filter(
+        (pageType) => !DATA_ASSETS_EXCLUDED_PAGE_TYPES.has(pageType),
+      ).map(generateCustomizePageOption);
+    default:
+      return [];
+  }
+}

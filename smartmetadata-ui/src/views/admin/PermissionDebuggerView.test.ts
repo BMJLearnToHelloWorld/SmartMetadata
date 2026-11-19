@@ -162,7 +162,8 @@ async function mountDebugger(asAdmin = true, fetchOptions: { debugStatus?: numbe
       { path: '/admin/teams/:id', name: 'admin-team', component: { template: '<div>team</div>' } },
       { path: '/admin/roles/:id', name: 'admin-role', component: { template: '<div>role</div>' } },
       { path: '/admin/policies/:id', name: 'admin-policy', component: { template: '<div>policy</div>' } },
-      { path: '/forbidden', name: 'forbidden', component: { template: '<div>forbidden</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/settings/permission-debugger');

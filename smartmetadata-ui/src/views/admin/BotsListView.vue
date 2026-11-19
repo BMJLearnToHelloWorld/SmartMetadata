@@ -10,6 +10,9 @@ import {Button, Form, Input, message} from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createBotWithUser, listBots } from '@/api/bots';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
 import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
@@ -25,6 +28,14 @@ import type { EntityListColumn } from '@/features/crud/types';
 import type { AdminBot } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'bots',
+  ),
+);
 const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
@@ -107,6 +118,7 @@ onMounted(() => {
 
 <template>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.bots.title')"
     :lead="t('admin.bots.lead')"
     :loading="loading"

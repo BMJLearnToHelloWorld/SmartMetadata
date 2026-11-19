@@ -1,7 +1,7 @@
 # Search settings saves preserve every field the form does not own
 
 - **Status:** Accepted
-- **Revisions:** v1 2026-11-18 (initial)
+- **Revisions:** v1 2026-11-18 (initial); v2 2026-11-18 (entity owned key set extended to the official 7 keys; see Revision note)
 - **Deciders:** Bai
 - **Guard:** `system.preferences.test.ts` (parser round-trip including the real seed file,
   payload builders, effective ranking derivation); `SearchSettingsView.test.ts` and
@@ -43,6 +43,37 @@ configuration and overwrites only the keys the form owns.
   persists the derived value, as the official UI does.
 - The pass-through subtrees are replaced by typed mappings when the Ranking and NLQ editing
   surfaces land.
+
+## Revision note (v2, 2026-11-18)
+
+The entity owned key set is extended from
+`Pick<'searchFields' | 'highlightFields' | 'scoreMode' | 'boostMode'> & { ranking? }`
+to the 7 keys the official entity save writes: `searchFields`, `highlightFields`,
+`termBoosts`, `fieldValueBoosts`, `scoreMode`, `boostMode`, `ranking` (pin
+`EntitySearchSettings.tsx:320-336`: `handleSaveChanges` builds `updates` with exactly
+these 7 keys and calls `updateSearchConfig`). The v1 4-key set reflected the form
+controls that existed at the time; it left the Boost editing surfaces (`termBoosts`,
+`fieldValueBoosts`) without a save path through the owned builder. The extension is
+official 1:1, not a new invention; the Decision rules above are unchanged (spread the
+loaded configuration, overwrite owned keys only, `Pick<>` pins the set).
+`EntitySearchDraft` in `smartmetadata-ui/src/api/system.ts` carries the extended set.
+Related: the official `handleSaveChanges` returns early when there is no entity
+configuration (`:321-322`); the sections batch adds the no-configuration guard at the
+entity save call site (the v1 product save had no such guard).
+
+## Clarification (2026-11-18, outside the v2 note above)
+
+The v2 note above is quoted verbatim and is not edited here. Its
+present-tense sentence about `EntitySearchDraft` states the A-group
+design requirement, not the landed code: `EntitySearchDraft` in
+`smartmetadata-ui/src/api/system.ts` is still the 4-key Pick
+(`searchFields`, `highlightFields`, `scoreMode`, `boostMode`, plus
+`ranking`), and the 7-key Pick has not landed. The extended-set claim
+holds only once the 7-key Pick lands. The gap is an A-group gap, not a
+regression of this batch; landing the 7-key Pick and its ownership are
+for the coordinator to assign. Until then, readers must not take the
+v2 note as evidence that the Boost editing surfaces have a save path
+through the owned builder.
 
 ## Consequences
 

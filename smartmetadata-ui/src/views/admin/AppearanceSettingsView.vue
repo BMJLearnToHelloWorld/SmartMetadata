@@ -4,18 +4,45 @@
   Official AppearanceConfigSettingsPage IA: logo URLs + theme colors + save/reset.
 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Form, Input, Space, message } from 'ant-design-vue';
+import { Alert, Button, Form, Input, Space, Spin, message } from 'ant-design-vue';
 import {
   getTypedSetting,
   settingAsUiTheme,
   updateSetting,
 } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  registryDescription,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import type { ThemeConfiguration, UiThemePreference } from '@/types/admin';
 
 const { t } = useI18n();
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const registryEntry = findSettingsRegistryItem('preferences.appearance');
+if (!registryEntry) {
+  throw new Error('Missing settings registry entry: preferences.appearance');
+}
+const header = computed(() => registryTitle(settingsTranslator, registryEntry));
+const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
+const breadcrumbItems = computed(() =>
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'preferences',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
+  ),
+);
 const loading = ref(false);
 const saving = ref(false);
 const resetting = ref(false);
@@ -139,34 +166,37 @@ onMounted(() => {
 </script>
 
 <template>
-  <PreferencePageShell
-    test-id="appearance-settings"
-    :title="t('settings.appearance.title')"
-    :lead="t('settings.appearance.lead')"
-    :loading="loading"
-    :error-message="errorMessage"
-  >
-    <Form layout="vertical">
-      <Form.Item :label="t('settings.appearance.logoUrl')">
-        <Input v-model:value="form.customLogoConfig.customLogoUrlPath" data-testid="appearance-logo" />
-      </Form.Item>
-      <Form.Item :label="t('settings.appearance.monogramUrl')">
-        <Input v-model:value="form.customLogoConfig.customMonogramUrlPath" data-testid="appearance-monogram" />
-      </Form.Item>
-      <Form.Item :label="t('settings.appearance.faviconUrl')">
-        <Input v-model:value="form.customLogoConfig.customFaviconUrlPath" data-testid="appearance-favicon" />
-      </Form.Item>
-      <Form.Item v-for="field in colorFields" :key="field.key" :label="t(field.labelKey)">
-        <Input v-model:value="form.customTheme[field.key]" :data-testid="`appearance-color-${field.key}`" placeholder="#RRGGBB" />
-      </Form.Item>
-      <Space>
-        <Button type="primary" :loading="saving" data-testid="appearance-save" @click="save">
-          {{ t('settings.appearance.save') }}
-        </Button>
-        <Button :loading="resetting" data-testid="appearance-reset" @click="reset">
-          {{ t('settings.appearance.reset') }}
-        </Button>
-      </Space>
-    </Form>
-  </PreferencePageShell>
+  <div data-testid="appearance-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="appearance-settings"
+    />
+    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
+    <Spin :spinning="loading">
+      <Form layout="vertical">
+        <Form.Item :label="t('settings.appearance.logoUrl')">
+          <Input v-model:value="form.customLogoConfig.customLogoUrlPath" data-testid="appearance-logo" />
+        </Form.Item>
+        <Form.Item :label="t('settings.appearance.monogramUrl')">
+          <Input v-model:value="form.customLogoConfig.customMonogramUrlPath" data-testid="appearance-monogram" />
+        </Form.Item>
+        <Form.Item :label="t('settings.appearance.faviconUrl')">
+          <Input v-model:value="form.customLogoConfig.customFaviconUrlPath" data-testid="appearance-favicon" />
+        </Form.Item>
+        <Form.Item v-for="field in colorFields" :key="field.key" :label="t(field.labelKey)">
+          <Input v-model:value="form.customTheme[field.key]" :data-testid="`appearance-color-${field.key}`" placeholder="#RRGGBB" />
+        </Form.Item>
+        <Space>
+          <Button type="primary" :loading="saving" data-testid="appearance-save" @click="save">
+            {{ t('settings.appearance.save') }}
+          </Button>
+          <Button :loading="resetting" data-testid="appearance-reset" @click="reset">
+            {{ t('settings.appearance.reset') }}
+          </Button>
+        </Space>
+      </Form>
+    </Spin>
+  </div>
 </template>

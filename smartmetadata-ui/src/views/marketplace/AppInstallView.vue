@@ -19,7 +19,7 @@ import {
   message,
 } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
-import ForbiddenView from '@/views/shell/ForbiddenView.vue';
+import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import {
   getMarketplaceAppByFqn,
   installApp,
@@ -270,7 +270,7 @@ onMounted(() => {
 
 <template>
   <div data-testid="app-install">
-    <ForbiddenView v-if="!isAdmin" />
+    <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
     <template v-else>
       <PageHeader
         :header="appData ? t('apps.install.titleWithApp', { app: appName }) : t('apps.install.title')"

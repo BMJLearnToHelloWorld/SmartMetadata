@@ -88,7 +88,6 @@ describe('i18n catalogs', () => {
     expect(keys).toContain('chrome.userMenu');
     expect(keys).toContain('chrome.viewProfile');
     expect(keys).toContain('settings.title');
-    expect(keys).toContain('settings.categories.members.title');
     expect(keys).toContain('settings.system.saveLogin');
     expect(keys).toContain('admin.policies.title');
     expect(keys).toContain('settings.customProperties.title');
@@ -242,7 +241,6 @@ describe('i18n catalogs', () => {
     expect(enUS.admin.roles.lead).toBe('Roles are assigned to users. A role is a collection of policies.');
     expect(enUS.governance.glossaries.lead).toBe('Define concepts in plain business language.');
     expect(enUS.observability.alerts.lead).toBe('Stay current with timely alerts using webhooks.');
-    expect(enUS.settings.residual.generic).toBe('Not wired in this console.');
     expect(enUS.sso.lead).toMatch(/single sign-on/i);
     expect(zhCN.login.lead).toBe('使用目录账号登入。');
     expect(zhCN.explore.lead).not.toMatch(/GET \/api/);
@@ -277,7 +275,6 @@ describe('i18n catalogs', () => {
     expect(enUS.admin.users.rolesLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.pipelines.detailLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.services.connectionJsonHelp).toMatch(/JSON/i);
-    expect(enUS.settings.residual.generic).not.toMatch(apiTutorial);
     expect(enUS.sso.lead).not.toMatch(apiTutorial);
     expect(enUS.governance.glossaries.lead).not.toMatch(apiTutorial);
     expect(enUS.admin.users.lead).not.toMatch(apiTutorial);

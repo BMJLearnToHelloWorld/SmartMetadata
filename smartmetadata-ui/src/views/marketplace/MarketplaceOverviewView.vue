@@ -6,7 +6,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Card, Col, Empty, Form, Input, List, Row, Select, Space, Switch, Typography, message } from 'ant-design-vue';
+import { Alert, Button, Card, Empty, Form, Input, List, Select, Space, Switch, Typography, message } from 'ant-design-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import { listAnnouncements, parseAnnouncementEntityLink } from '@/api/announcements';
@@ -25,9 +25,9 @@ import { usePersonaStore } from '@/stores/persona';
 import { getPersonaPage } from '@/views/admin/personaPage';
 import { buildDataProductCreateBody, buildDomainCreateBody } from './marketplaceCreate';
 import {
-  DEFAULT_MARKETPLACE_WIDGET_ORDER,
-  resolveMarketplaceWidgetOrder,
-  type MarketplaceWidgetKey,
+  DEFAULT_MARKETPLACE_WIDGET_ENTRIES,
+  resolveMarketplaceWidgetEntries,
+  type MarketplaceWidgetEntry,
 } from './marketplaceLayout';
 
 const { t } = useI18n();
@@ -36,31 +36,45 @@ const authStore = useAuthStore();
 const personaStore = usePersonaStore();
 
 /**
- * B3-6: the widget column order. The persona document is the store's
- * (loaded on mount below, refreshed by the persona switcher), so the
- * order reacts to persona switches without a watcher here. No selected
- * persona, no document, or a document without a DataMarketplace page
- * all resolve to the default order inside the helper; a layout fetch
- * failure leaves the store document null, which is the same default.
+ * B3-6 / ruling c*: the widget column. The persona document is the
+ * store's (loaded on mount below, refreshed by the persona switcher),
+ * so the column reacts to persona switches without a watcher here.
+ * No selected persona, no document, or a document without a
+ * DataMarketplace page all resolve to the default entries inside the
+ * helper; a layout fetch failure leaves the store document null,
+ * which is the same default. Entries render one widget each, in
+ * order, with no dedup — a repeated kind renders twice, as
+ * officially. A non-empty object layout throws from the resolver
+ * (C-4 §4.4 D4) instead of silently defaulting; the column then
+ * renders the explicit error state and no widgets.
  */
-const widgetOrder = computed<MarketplaceWidgetKey[]>(() =>
-  personaStore.selectedPersona
-    ? resolveMarketplaceWidgetOrder(
-        getPersonaPage(personaStore.document, 'DataMarketplace'),
-      )
-    : [...DEFAULT_MARKETPLACE_WIDGET_ORDER],
-);
+const widgetColumn = computed<{ entries: MarketplaceWidgetEntry[]; error: boolean }>(() => {
+  try {
+    return {
+      entries: personaStore.selectedPersona
+        ? resolveMarketplaceWidgetEntries(
+            getPersonaPage(personaStore.document, 'DataMarketplace'),
+          )
+        : [...DEFAULT_MARKETPLACE_WIDGET_ENTRIES],
+      error: false,
+    };
+  } catch {
+    return { entries: [], error: true };
+  }
+});
 
 /**
  * Official page shape (pages/DataMarketplacePage + DataMarketplaceClassBase):
  * a greeting + search hero, an announcements widget, then the widget
  * column — data products first, domains second by default. The official
  * widgets search the search index (dataProduct / domain, updatedAt desc,
- * 3 cards). B3-6 reader: when a persona is selected, the column order
- * follows that persona's DataMarketplace page layout (overview-tab
- * layout first, then page layout, else the default order); unknown
- * layout entries are skipped. The hero and announcements stay fixed
- * above the column — official renders them outside the layout too.
+ * 3 cards). B3-6 reader: when a persona is selected, the column follows
+ * that persona's DataMarketplace page layout (overview-tab layout first,
+ * then page layout, else the default entries); unknown layout entries
+ * are skipped, repeated kinds render per entry, and the column is
+ * full-width with content-driven height (ruling c*). The hero and
+ * announcements stay fixed above the column — official renders them
+ * outside the layout too.
  */
 const DISPLAY_COUNT = 3;
 
@@ -333,7 +347,7 @@ async function onCreateDomain(): Promise<void> {
 
 onMounted(() => {
   void loadWidgets();
-  // The persona document drives widgetOrder above; loading it here (and
+  // The persona document drives widgetColumn above; loading it here (and
   // skipping when the switcher already loaded it) is what makes a
   // stored or default persona's layout apply on first render.
   void personaStore.ensureLoaded().then(() => {
@@ -435,10 +449,17 @@ onUnmounted(() => {
         </template>
       </List>
     </Card>
-    <Row :gutter="16">
-      <Col v-for="widget in widgetOrder" :key="widget" :span="12">
+    <Alert
+      v-if="widgetColumn.error"
+      type="error"
+      show-icon
+      :message="t('shared.loadFailed')"
+      data-testid="marketplace-layout-error"
+    />
+    <div v-else class="marketplace-widget-column">
+      <div v-for="(entry, index) in widgetColumn.entries" :key="`${entry.layoutKey}:${index}`">
         <Card
-          v-if="widget === 'data-products'"
+          v-if="entry.key === 'data-products'"
           :title="`${t('marketplace.dataProducts')} (${dataProductsTotal})`"
           :loading="loading"
           data-testid="marketplace-data-products"
@@ -505,9 +526,9 @@ onUnmounted(() => {
             </template>
           </List>
         </Card>
-      </Col>
-    </Row>
-    <Empty v-if="!loading && dataProducts.length === 0 && domains.length === 0 && !errorMessage" :description="t('marketplace.empty')" style="margin-top: 16px" />
+      </div>
+    </div>
+    <Empty v-if="!loading && dataProducts.length === 0 && domains.length === 0 && !errorMessage && !widgetColumn.error" :description="t('marketplace.empty')" style="margin-top: 16px" />
     <FormModal
       :get-container="false"
       :open="showDataProductModal"
@@ -615,3 +636,13 @@ onUnmounted(() => {
     </FormModal>
   </div>
 </template>
+
+<style scoped>
+/* Ruling c*: the widget column is a full-width vertical stack, one
+   widget per layout entry, each sized by its content. */
+.marketplace-widget-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+</style>

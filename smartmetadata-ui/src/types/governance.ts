@@ -33,6 +33,16 @@ export interface CreateGlossaryRequest {
   mutuallyExclusive?: boolean;
 }
 
+/**
+ * A link to a reference from an external glossary (spec
+ * `entity/data/glossaryTerm.json#/definitions/termReference`): the
+ * source name plus its endpoint URI, both optional.
+ */
+export interface TermReference {
+  name?: string;
+  endpoint?: string;
+}
+
 export interface GlossaryTerm {
   id: string;
   name: string;
@@ -44,6 +54,16 @@ export interface GlossaryTerm {
   mutuallyExclusive?: boolean;
   relatedTerms: EntityRef[];
   owners: EntityRef[];
+  /** Reviewers (spec `reviewers`, entityReferenceList); requested via
+      GLOSSARY_TERM_FIELDS and mapped by `mapTerm`. */
+  reviewers: EntityRef[];
+  /** Domains the term belongs to (spec `domains`); requested via
+      GLOSSARY_TERM_FIELDS and mapped by `mapTerm`. */
+  domains: EntityRef[];
+  /** Alternate names (spec `synonyms`, string array). */
+  synonyms: string[];
+  /** Links to external-glossary sources (spec `references`). */
+  references: TermReference[];
   tags: TagRef[];
   /** Absent when the term has no children: Ant Table renders an expand icon
       for any truthy children value, so an empty array would be a dead icon. */
@@ -101,6 +121,13 @@ export interface ClassificationTag {
   disabled?: boolean;
   usageCount?: number;
   owners: EntityRef[];
+  /** Reviewers (spec `tag.json#/reviewers`); requested via TAG_FIELDS
+      and mapped by `mapTag`. Officially reachable on Tag pages through
+      the shared CommonWidgets REVIEWER registry entry. */
+  reviewers: EntityRef[];
+  /** Domains the tag belongs to (spec `tag.json#/domains`); requested
+      via TAG_FIELDS and mapped by `mapTag`. */
+  domains: EntityRef[];
 }
 
 export interface CreateTagRequest {
@@ -165,6 +192,11 @@ export interface DataProduct {
   fullyQualifiedName?: string;
   domains: EntityRef[];
   owners: EntityRef[];
+  /** Reviewers (spec `dataProduct.json#/reviewers`); requested via
+      DATA_PRODUCT_FIELDS and mapped by `mapDataProduct`. Officially
+      reachable on DataProduct pages through the shared CommonWidgets
+      REVIEWER registry entry. */
+  reviewers: EntityRef[];
   experts: EntityRef[];
   tags: TagRef[];
   /** Custom-property values, keyed by property name. */

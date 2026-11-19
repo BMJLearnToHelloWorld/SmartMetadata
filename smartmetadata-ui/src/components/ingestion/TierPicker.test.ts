@@ -26,6 +26,8 @@ function tier(overrides: Partial<TierTag> = {}): TierTag {
     description: 'Critical data.',
     fullyQualifiedName: 'Tier.Tier1',
     owners: [],
+    reviewers: [],
+    domains: [],
     ...overrides,
   };
 }

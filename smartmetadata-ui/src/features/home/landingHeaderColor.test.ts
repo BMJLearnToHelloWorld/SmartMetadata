@@ -56,6 +56,16 @@ describe('resolveLandingPageHeaderColor', () => {
     expect(resolveLandingPageHeaderColor('p1', undefined, undefined)).toBeUndefined();
     expect(resolveLandingPageHeaderColor('p1', prefs('p2', '#099250'), prefs('p2', '#1570EF'))).toBeUndefined();
   });
+
+  it('reads the editor colour from personPreferences alone when the admin array is not passed (C-4 §3.3)', () => {
+    // The official CustomizablePage inline read consults only the
+    // personPreferences array; the editor call site passes undefined
+    // for the admin array to this same helper, so an admin-set colour
+    // never stands in for the user's own choice there.
+    expect(resolveLandingPageHeaderColor('p1', prefs('p2', '#099250'), undefined)).toBeUndefined();
+    expect(resolveLandingPageHeaderColor('p1', undefined, undefined)).toBeUndefined();
+    expect(resolveLandingPageHeaderColor('p1', prefs('p1', '#099250'), undefined)).toBe('#099250');
+  });
 });
 
 describe('getLandingPageHeaderTintStyle', () => {

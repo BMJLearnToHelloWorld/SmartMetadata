@@ -6,47 +6,70 @@
 import type { PersonaPage } from '@/types/persona';
 
 /**
- * B3-6 reader ruling — official DataMarketplacePage.component.tsx
- * (openmetadata-ui, snapshot 888654d2):
+ * Marketplace read side, ruling c* (C-4 spec §6.3, adjudication item
+ * 7): the official read side is a full-width column, sorted by `y`,
+ * with content-driven height — the stored `x`/`w`/`h` carry no grid
+ * semantics on read. Official
+ * `DataMarketplacePage.component.tsx:61-68,117-140`:
  *
- * - Fixed chrome outside the layout: the greeting banner + search hero,
- *   and AnnouncementsWidgetV2 above the widget column. Announcements is
- *   NOT a layout widget, so it never moves.
- * - The layout column holds exactly two widget kinds, resolved by
- *   getDataMarketplaceWidgetsFromKey (DataMarketplaceUtils): a key
- *   starting with 'KnowledgePanel.MarketplaceDataProducts' renders the
- *   data-products widget, one starting with
- *   'KnowledgePanel.MarketplaceDomains' renders the domains widget, and
- *   anything else resolves to null — it is skipped, never rendered.
- * - Layout resolution, in order: no persona or no document -> default;
- *   the OVERVIEW tab's layout (tabs.find(id === 'overview').layout) when
- *   non-empty -> normalized; else the page-level layout when non-empty
- *   -> normalized; else default. (Official's getLayoutFromCustomizedPage
- *   also returns a default widget set when a page has no tabs; that set
- *   orders the same as the default layout, so it collapses into the
- *   default branch here instead of being replicated.)
- * - normalizeLayout forces full width and sorts by y ascending. A
- *   missing or non-numeric y compares as NaN, which Array.sort treats
- *   as 0, so such entries keep their input order — mirrored below.
- * - Default layout: data-products (y 0), then domains (y 1).
+ * - `normalizeLayout` forces `w:8, x:0` (full width) and sorts by `y`
+ *   ascending. A missing or non-numeric `y` compares as NaN, which
+ *   `Array.sort` treats as 0, so such entries keep their input order
+ *   — mirrored below.
+ * - The layout chain is `isEmpty`-gated: the overview tab's layout
+ *   when non-empty, else the page-level layout when non-empty, else
+ *   the default layout. `getLayoutFromCustomizedPage`
+ *   (`CustomizePageWidgetUtils.ts:145-161`) returns the default
+ *   widget set when a page has no tabs, so with no tabs the page
+ *   layout branch is unreachable and the default order applies.
+ *   When tabs exist but no overview tab is found, the tab layout is
+ *   `undefined`, which is empty, so the chain falls through to the
+ *   page layout.
+ * - Widgets render per layout entry with no dedup: the same kind
+ *   appearing twice renders twice. Keys resolve by prefix
+ *   (`getDataMarketplaceWidgetsFromKey`, `DataMarketplaceUtils`):
+ *   a key starting with `KnowledgePanel.MarketplaceDataProducts`
+ *   renders the data-products widget, one starting with
+ *   `KnowledgePanel.MarketplaceDomains` renders the domains widget,
+ *   and anything else resolves to null — it is skipped, never
+ *   rendered. A non-empty layout of only unknown keys therefore
+ *   yields no widgets, distinct from an empty layout, which falls
+ *   back to the default.
  *
- * Product mapping: the hero and announcements stay fixed above, and
- * only the data-products / domains column order follows the layout.
- * The product keeps its side-by-side Row (two half-width columns);
- * stacking them full-width would change product visuals, which the
- * product's own design language owns — order is what this feature
- * governs, not the column geometry.
+ * Object-shaped layouts (C-4 §4.4 D4): the official chain guards
+ * only with lodash `isEmpty`, which is true for `{}` and false for a
+ * non-empty object. `{}` therefore falls through to the next branch
+ * (and to the default at the page level), while a non-empty object
+ * reaches `normalizeLayout` and throws on `.map`. This resolver
+ * reproduces that bifurcation: empty values fall through, non-empty
+ * non-array values throw a `TypeError` instead of silently
+ * presenting the default layout. The view renders an explicit error
+ * state for the throw; the `{}`-vs-object behavior awaits live
+ * confirmation (U-02, live step L1).
+ *
+ * Fixed chrome outside the layout (greeting banner, search hero,
+ * announcements) is not a layout widget and never moves; only the
+ * data-products / domains column follows the layout.
  */
 export type MarketplaceWidgetKey = 'data-products' | 'domains';
 
-export const DEFAULT_MARKETPLACE_WIDGET_ORDER: MarketplaceWidgetKey[] = [
-  'data-products',
-  'domains',
+/** One rendered widget: its kind plus the layout key that produced it. */
+export interface MarketplaceWidgetEntry {
+  key: MarketplaceWidgetKey;
+  layoutKey: string;
+}
+
+const DATA_PRODUCTS_LAYOUT_KEY = 'KnowledgePanel.MarketplaceDataProducts';
+const DOMAINS_LAYOUT_KEY = 'KnowledgePanel.MarketplaceDomains';
+
+export const DEFAULT_MARKETPLACE_WIDGET_ENTRIES: MarketplaceWidgetEntry[] = [
+  { key: 'data-products', layoutKey: DATA_PRODUCTS_LAYOUT_KEY },
+  { key: 'domains', layoutKey: DOMAINS_LAYOUT_KEY },
 ];
 
 const WIDGET_KEY_PREFIXES: Array<{ prefix: string; key: MarketplaceWidgetKey }> = [
-  { prefix: 'KnowledgePanel.MarketplaceDataProducts', key: 'data-products' },
-  { prefix: 'KnowledgePanel.MarketplaceDomains', key: 'domains' },
+  { prefix: DATA_PRODUCTS_LAYOUT_KEY, key: 'data-products' },
+  { prefix: DOMAINS_LAYOUT_KEY, key: 'domains' },
 ];
 
 const OVERVIEW_TAB_ID = 'overview';
@@ -56,36 +79,55 @@ interface LayoutEntry {
   y?: unknown;
 }
 
-function asLayoutEntries(value: unknown): LayoutEntry[] | undefined {
-  return Array.isArray(value) ? (value as LayoutEntry[]) : undefined;
+/**
+ * Lodash `isEmpty` over the JSON shapes a stored layout can take
+ * (the official chain's only guard): nullish, empty arrays/strings,
+ * and objects with no keys are empty; numbers and booleans are
+ * empty too, as lodash defines them. Anything else is non-empty.
+ */
+function isEmptyLayoutValue(value: unknown): boolean {
+  if (value == null) {
+    return true;
+  }
+  if (Array.isArray(value) || typeof value === 'string') {
+    return value.length === 0;
+  }
+  if (typeof value === 'object') {
+    return Object.keys(value).length === 0;
+  }
+  return true;
 }
 
-function overviewTabLayout(page: PersonaPage): LayoutEntry[] | undefined {
+/**
+ * One chain step: an empty value falls through to the next branch
+ * (undefined), a non-empty array supplies its entries, and a
+ * non-empty non-array value throws (D4) instead of silently
+ * defaulting.
+ */
+function checkedLayoutEntries(value: unknown): LayoutEntry[] | undefined {
+  if (isEmptyLayoutValue(value)) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw new TypeError(`Marketplace layout must be an array, received ${typeof value}`);
+  }
+  return value as LayoutEntry[];
+}
+
+function overviewTabLayout(page: PersonaPage): unknown {
   if (!Array.isArray(page.tabs)) {
     return undefined;
   }
   const tab = page.tabs.find(
     (entry): entry is { id?: unknown; layout?: unknown } =>
-      typeof entry === 'object' && entry !== null && (entry as { id?: unknown }).id === OVERVIEW_TAB_ID,
+      typeof entry === 'object' &&
+      entry !== null &&
+      (entry as { id?: unknown }).id === OVERVIEW_TAB_ID,
   );
-  return tab ? asLayoutEntries(tab.layout) : undefined;
+  return tab?.layout;
 }
 
-export function resolveMarketplaceWidgetOrder(
-  page: PersonaPage | undefined,
-): MarketplaceWidgetKey[] {
-  if (!page) {
-    return [...DEFAULT_MARKETPLACE_WIDGET_ORDER];
-  }
-  const tabEntries = overviewTabLayout(page);
-  const pageEntries = asLayoutEntries(page.layout);
-  const entries = tabEntries?.length ? tabEntries : pageEntries?.length ? pageEntries : undefined;
-  if (!entries) {
-    return [...DEFAULT_MARKETPLACE_WIDGET_ORDER];
-  }
-  // Unknown keys resolve to null officially, so they are dropped here;
-  // a non-empty layout of only unknown keys therefore yields no widgets
-  // (distinct from an empty layout, which falls back to the default).
+function toWidgetEntries(entries: LayoutEntry[]): MarketplaceWidgetEntry[] {
   const known = entries.flatMap((entry) => {
     if (typeof entry?.i !== 'string') {
       return [];
@@ -94,14 +136,37 @@ export function resolveMarketplaceWidgetOrder(
     if (!match) {
       return [];
     }
-    return [{ key: match.key, y: typeof entry.y === 'number' ? entry.y : Number.NaN }];
+    return [
+      {
+        key: match.key,
+        layoutKey: entry.i,
+        y: typeof entry.y === 'number' ? entry.y : Number.NaN,
+      },
+    ];
   });
   known.sort((a, b) => a.y - b.y);
-  const order: MarketplaceWidgetKey[] = [];
-  for (const item of known) {
-    if (!order.includes(item.key)) {
-      order.push(item.key);
-    }
+  // No dedup: every entry renders, including repeated kinds.
+  return known.map(({ key, layoutKey }) => ({ key, layoutKey }));
+}
+
+export function resolveMarketplaceWidgetEntries(
+  page: PersonaPage | undefined,
+): MarketplaceWidgetEntry[] {
+  if (!page) {
+    return [...DEFAULT_MARKETPLACE_WIDGET_ENTRIES];
   }
-  return order;
+  // No tabs: official `getLayoutFromCustomizedPage` returns the
+  // default widget set, so the page layout branch is unreachable.
+  if (!Array.isArray(page.tabs) || page.tabs.length === 0) {
+    return [...DEFAULT_MARKETPLACE_WIDGET_ENTRIES];
+  }
+  const tabEntries = checkedLayoutEntries(overviewTabLayout(page));
+  if (tabEntries !== undefined) {
+    return toWidgetEntries(tabEntries);
+  }
+  const pageEntries = checkedLayoutEntries(page.layout);
+  if (pageEntries !== undefined) {
+    return toWidgetEntries(pageEntries);
+  }
+  return [...DEFAULT_MARKETPLACE_WIDGET_ENTRIES];
 }

@@ -214,3 +214,354 @@ describe('DomainDetailView dryRun', () => {
     wrapper.unmount();
   });
 });
+
+describe('DomainDetailView persona tab customization (C-4)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/d1')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'Finance',
+            displayName: 'Finance Domain',
+            description: 'Finance assets',
+            domainType: 'Consumer-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [],
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function mountDomain() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/d1');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { id: 'd1' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountDomain>>): string[] {
+    return wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab').map((tab) => tab.text().trim());
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('reorders and renames tabs from the persona Domain page, dropping unlisted tabs', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Domain',
+            tabs: [
+              { id: 'activity_feed', name: 'activity_feed', displayName: 'Feed' },
+              { id: 'subdomains', name: 'subdomains' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    // F-2: replacement semantics — only the customized tabs render.
+    expect(tabLabels(wrapper)).toEqual(['Feed', 'Sub-domains']);
+    wrapper.unmount();
+  });
+
+  it('renders the default tab order without a persona document', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(tabLabels(wrapper)).toEqual([
+      'Overview',
+      'Assets',
+      'Sub-domains',
+      'Activity',
+      'Custom Properties',
+    ]);
+    wrapper.unmount();
+  });
+
+  it('shows the first remaining tab pane when the customization removes the initial overview tab (B-1)', async () => {
+    // The view's `activeTab` starts at 'overview'; with overview
+    // removed, the shell must clamp to the first rendered tab (the
+    // renamed activity tab) so its pane — not a blank area — is
+    // visible on first paint.
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [
+          {
+            pageType: 'Domain',
+            tabs: [
+              { id: 'activity_feed', name: 'activity_feed', displayName: 'Feed' },
+              { id: 'subdomains', name: 'subdomains' },
+            ],
+          },
+        ],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(tabLabels(wrapper)).toEqual(['Feed', 'Sub-domains']);
+    const activeNav = wrapper.findAll('.ant-tabs-tab-active');
+    expect(activeNav).toHaveLength(1);
+    expect(activeNav[0].text()).toContain('Feed');
+    const activePanes = wrapper.findAll('.ant-tabs-tabpane-active');
+    expect(activePanes).toHaveLength(1);
+    expect(activePanes[0].find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders no tab bar for an explicitly empty Domain tab list without throwing (m-2)', async () => {
+    stubWithDoc({
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: {
+        pages: [{ pageType: 'Domain', tabs: [] }],
+      },
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(wrapper.find('.ant-tabs-nav').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Finance Domain');
+    wrapper.unmount();
+  });
+});
+
+describe('DomainDetailView widget grid (B-8)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function domainDoc(tabs: unknown[]) {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'Domain', tabs }] },
+    };
+  }
+
+  function stubWithDoc(doc: Record<string, unknown> | null) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/d1')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'finance',
+            displayName: 'Finance Domain',
+            fullyQualifiedName: 'finance.fqn',
+            description: 'Finance assets',
+            domainType: 'Source-aligned',
+            owners: [{ id: 'u1', name: 'alice', displayName: 'Alice' }],
+            experts: [{ id: 'u2', name: 'bob', displayName: 'Bob' }],
+            tags: [
+              { tagFQN: 'Tier.Tier1', name: 'Tier1', source: 'Classification' },
+              { tagFQN: 'Certification.Certified', name: 'Certified', source: 'Classification' },
+              { tagFQN: 'Business.term', name: 'term', source: 'Glossary' },
+              { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification' },
+            ],
+            children: [],
+          });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+  }
+
+  async function mountDomain() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:id', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/d1');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { id: 'd1' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  function widgetTestIds(wrapper: Awaited<ReturnType<typeof mountDomain>>): string[] {
+    return wrapper
+      .findAll('[data-testid^="widget-"]')
+      .map((node) => node.attributes('data-testid') as string);
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the widget grid on overview when a documentation entry resolves (alias)', async () => {
+    stubWithDoc(
+      domainDoc([
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [
+            {
+              i: 'KnowledgePanel.LeftPanel',
+              x: 0,
+              y: 0,
+              w: 6,
+              h: 2,
+              children: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 1, h: 1 }],
+            },
+            { i: 'KnowledgePanel.Owners', x: 6, y: 0, w: 2, h: 1 },
+            { i: 'KnowledgePanel.Tags', x: 6, y: 1, w: 2, h: 1 },
+            { i: 'KnowledgePanel.Tier', x: 6, y: 2, w: 2, h: 1 },
+          ],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(wrapper.find('[data-testid="widget-description"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Finance assets');
+    expect(wrapper.find('[data-testid="widget-owners"]').text()).toContain('Alice');
+    const tags = wrapper.find('[data-testid="widget-tags"]');
+    expect(tags.text()).toContain('PII.Sensitive');
+    expect(tags.text()).not.toContain('Business.term');
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier.Tier1');
+    // The default overview pane (which shows the domain type row) is replaced.
+    expect(wrapper.text()).not.toContain('Source-aligned');
+    wrapper.unmount();
+  });
+
+  it('renders an empty grid when the mount-tab entry carries no layout', async () => {
+    stubWithDoc(domainDoc([{ id: 'documentation', name: 'documentation' }]));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.text()).not.toContain('Source-aligned');
+    wrapper.unmount();
+  });
+
+  it('renders an empty grid for a non-array stored layout on the mount tab', async () => {
+    stubWithDoc(domainDoc([{ id: 'documentation', name: 'documentation', layout: 'bogus' }]));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    expect(wrapper.text()).not.toContain('Source-aligned');
+    wrapper.unmount();
+  });
+
+  it('renders existing panes unchanged without a customized entry', async () => {
+    stubWithDoc(null);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    expect(wrapper.text()).toContain('Source-aligned');
+    expect(wrapper.find('[data-testid="add-domain-assets"]').exists()).toBe(true);
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('keeps the existing assets pane when a non-mount tab entry resolves, even with a layout', async () => {
+    stubWithDoc(
+      domainDoc([
+        {
+          id: 'assets',
+          name: 'assets',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    // Assets is not the widget-layout tab: the entry never mounts a grid.
+    // With an assets-only list, only the assets pane renders; the
+    // unlisted overview tab (and its domain-type row) is removed (F-2).
+    expect(wrapper.find('[data-testid="add-domain-assets"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('Source-aligned');
+    expect(widgetTestIds(wrapper)).toEqual([]);
+    wrapper.unmount();
+  });
+
+  it('keeps every non-mount tab intact for an editor-saved page (all tabs, layout on documentation only)', async () => {
+    stubWithDoc(
+      domainDoc([
+        {
+          id: 'documentation',
+          name: 'documentation',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+        { id: 'subdomains', name: 'subdomains', layout: [] },
+        { id: 'data_products', name: 'data_products', layout: [] },
+        { id: 'activity_feed', name: 'activity_feed', layout: [] },
+        { id: 'assets', name: 'assets', layout: [] },
+        { id: 'custom_properties', name: 'custom_properties', layout: [] },
+        { id: 'data_observability', name: 'data_observability', layout: [] },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountDomain();
+    // Mount tab: the grid replaces the overview pane.
+    expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Finance assets');
+    expect(wrapper.text()).not.toContain('Source-aligned');
+    expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
+    // Every other tab keeps its existing panel.
+    expect(wrapper.find('[data-testid="add-domain-assets"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+});

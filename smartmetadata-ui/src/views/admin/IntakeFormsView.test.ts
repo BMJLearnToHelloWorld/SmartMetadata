@@ -45,6 +45,8 @@ async function mountIntake(forms: unknown[] = [FORM]) {
         name: 'admin-settings-governance-intake-forms',
         component: IntakeFormsView,
       },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/settings/governance/intake-forms');

@@ -12,6 +12,14 @@ import { listRoles } from '@/api/roles';
 import { listTeams } from '@/api/teams';
 import { buildAdminUserQueryFilter, createUser, listUsers, searchUsers } from '@/api/users';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { resolveSettingsLocation } from '@/settings/locationResolver';
+import {
+  SETTINGS_BREADCRUMB_NAMES,
+  findSettingsRegistryItem,
+  registryTitle,
+  type SettingsTranslator,
+} from '@/settings/registry';
 import { requiredField } from '@/features/crud/formRules';
 import {
   DEFAULT_PAGE_SIZE,
@@ -69,6 +77,23 @@ const query = ref('');
  */
 const isAdminTab = computed(() => route.name === 'admin-admins');
 const isAdminOnly = computed(() => isAdminTab.value);
+const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
+const usersRegistryEntry = findSettingsRegistryItem('members.users');
+if (!usersRegistryEntry) {
+  throw new Error('Missing settings registry entry: members.users');
+}
+const adminsRegistryEntry = findSettingsRegistryItem('members.admins');
+if (!adminsRegistryEntry) {
+  throw new Error('Missing settings registry entry: members.admins');
+}
+const breadcrumbs = computed(() =>
+  getSettingPageBreadcrumbs(
+    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+    resolveSettingsLocation,
+    'members',
+    registryTitle(settingsTranslator, isAdminTab.value ? adminsRegistryEntry : usersRegistryEntry),
+  ),
+);
 const isBotOnly = ref(false);
 const include = ref<IncludeFilter>('non-deleted');
 const createOpen = ref(false);
@@ -245,6 +270,7 @@ onMounted(() => {
     <Tabs.TabPane key="admins" :tab="t('admin.users.admins')" />
   </Tabs>
   <EntityListShell
+    :breadcrumbs="breadcrumbs"
     :title="t('admin.users.title')"
     :lead="t('admin.users.lead')"
     :loading="loading"

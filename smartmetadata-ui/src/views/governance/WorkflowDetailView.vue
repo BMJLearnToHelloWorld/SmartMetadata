@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, h, onMounted } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Button, Card, Empty, Modal, Spin, Tabs, Typography } from 'ant-design-vue';
@@ -14,6 +14,7 @@ import WorkflowCanvas from '@/components/governance/workflowBuilder/WorkflowCanv
 import WorkflowExecutionHistory from '@/components/governance/workflowBuilder/WorkflowExecutionHistory.vue';
 import WorkflowHeader from '@/components/governance/workflowBuilder/WorkflowHeader.vue';
 import WorkflowSidebar from '@/components/governance/workflowBuilder/WorkflowSidebar.vue';
+import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import { useWorkflowBuilder } from '@/composables/useWorkflowBuilder';
 import { WORKFLOW_BUILDER_TAB_TEST_IDS } from '@/constants/workflowBuilder';
 
@@ -22,12 +23,12 @@ const route = useRoute();
 const router = useRouter();
 
 /**
- * Official WorkflowBuilder page (pin a3012259ca), ported to the product's
- * route contract: /workflows/:fqn/:tab, default tab 'workflow'
- * (WORKFLOWS_WITH_FQN_TAB). The builder's own tabs are the canvas
- * ('workflow-builder' in official, 'workflow' as the route param) and
- * the execution history; the tabs are route params here, not internal
- * state (R-2). The header is the page variant — the product has no
+ * Official WorkflowBuilder page (pin a3012259ca): the builder route
+ * carries only :fqn, and the active tab is component-local state
+ * defaulting to the first tab, matching official's useState
+ * (WorkflowBuilder.tsx:252-253,720-721). The builder's own tabs are the
+ * canvas ('workflow-builder' in official, 'workflow' here) and the
+ * execution history. The header is the page variant — the product has no
  * embedded host. No-fqn redirects to the list: creating a workflow is
  * gated off in OSS.
  */
@@ -46,11 +47,7 @@ const fqn = computed(() => {
 
 const fqnRef = computed<string | undefined>(() => fqn.value || undefined);
 
-const activeTab = computed<DetailTab>(() => {
-  const raw = route.params.tab;
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return DETAIL_TABS.includes(value as DetailTab) ? (value as DetailTab) : 'workflow';
-});
+const activeTab = ref<DetailTab>(DETAIL_TABS[0]);
 
 const isCanvasTabActive = computed(() => activeTab.value === 'workflow');
 
@@ -64,6 +61,17 @@ const workflowDisplayName = computed(
 );
 const workflowName = computed(() => state.state.workflowMetadata?.name);
 
+/**
+ * Pin Classic breadcrumb (WorkflowBuilder.tsx:552-562): the builder builds
+ * its own single-item TitleBreadcrumb — {name: workflow-plural, url: list
+ * path} — instead of the settings helper, whose subCategory no pin caller
+ * ever passes WORKFLOW_DEFINITIONS to. The label is the list page's own
+ * i18n key; the link is the list route the back button already uses.
+ */
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
+  { label: t('workflows.title'), routeName: 'workflows' },
+]);
+
 const isForbidden = computed(
   () =>
     logic.loadError.value instanceof ApiError &&
@@ -71,10 +79,7 @@ const isForbidden = computed(
 );
 
 function onTabChange(tab: string | number): void {
-  void router.replace({
-    name: 'workflow-detail',
-    params: { fqn: fqn.value, tab: String(tab) },
-  });
+  activeTab.value = tab as DetailTab;
 }
 
 // The palette overlay only renders on the canvas tab when the sidebar is
@@ -96,13 +101,6 @@ onMounted(() => {
     void router.replace({ name: 'workflows' });
     return;
   }
-  // Unknown :tab values fall back to the official default tab.
-  if (!DETAIL_TABS.includes(route.params.tab as DetailTab)) {
-    void router.replace({
-      name: 'workflow-detail',
-      params: { fqn: fqn.value, tab: 'workflow' },
-    });
-  }
 });
 </script>
 
@@ -116,6 +114,11 @@ onMounted(() => {
     >
       {{ t('workflows.detail.back') }}
     </Button>
+
+    <!-- Pin Classic renders TitleBreadcrumb above the header (renderPage)
+         and above the load-error placeholder, but not while loading (bare
+         Loader): one render point, hidden while loading, covers both. -->
+    <SmBreadcrumb v-if="!state.state.loading" :items="breadcrumbItems" />
 
     <div v-if="state.state.loading" style="display: flex; justify-content: center; padding: 48px 0">
       <Spin data-testid="workflow-detail-loading" :tip="t('shared.loading')" />

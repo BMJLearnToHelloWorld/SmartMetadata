@@ -30,6 +30,8 @@ async function mountRoles() {
     routes: [
       { path: '/admin/roles', name: 'admin-roles', component: RolesListView },
       { path: '/admin/roles/:id', name: 'admin-role', component: { template: '<div>role</div>' } },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/roles');

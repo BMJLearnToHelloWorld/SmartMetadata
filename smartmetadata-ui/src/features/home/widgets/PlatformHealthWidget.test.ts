@@ -56,6 +56,7 @@ async function mountWidget() {
     routes: [
       { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
       { path: '/ingestion/services', name: 'ingestion-services', component: { template: '<div>services</div>' } },
+      { path: '/settings/:category', name: 'settings-category', component: { template: '<div>category</div>' } },
       {
         path: '/ingestion/services/:kind/:id',
         name: 'ingestion-service',
@@ -243,5 +244,35 @@ describe('PlatformHealthWidget', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'h1' });
+  });
+
+  it('opens the Services overview from the header link (DESIGN §6.7 row 4)', async () => {
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('a', 'failed')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 2, notRun: 0 } },
+        3,
+      ),
+    );
+    const { wrapper, router } = await mountWidget();
+    await wrapper.get('[data-testid="platform-health-open-ingestion"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'services' });
+  });
+
+  it('keeps the health-bucket entry on the staged aggregate list with ?health= (§6.7 row 5)', async () => {
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        ['a', 'b', 'c', 'd'].map((id) => serviceSummary(id, 'failed')),
+        { databaseService: { failed: 4, partialSuccess: 0, success: 0, notRun: 0 } },
+        4,
+      ),
+    );
+    const { wrapper, router } = await mountWidget();
+    await wrapper.get('[data-testid="view-all-failing-services"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-services');
+    expect(router.currentRoute.value.query).toEqual({ health: 'failing' });
   });
 });

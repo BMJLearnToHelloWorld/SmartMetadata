@@ -235,4 +235,44 @@ describe('glossaryTerms API', () => {
     ]);
     await expect(getGlossaryTermsByIds([])).resolves.toEqual([]);
   });
+
+  it('maps the requested reviewers/domains and the synonyms/references already in the response', async () => {
+    // B-2: GLOSSARY_TERM_FIELDS requests reviewers/domains, but mapTerm
+    // dropped them; synonyms/references arrive in the same response and
+    // were dropped too. No new request is introduced — the mapping only
+    // keeps what the server already returns.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: 't1',
+            name: 'Customer',
+            reviewers: [{ id: 'u2', name: 'carol', type: 'user', displayName: 'Carol' }],
+            domains: [{ id: 'd1', name: 'marketing', type: 'domain' }],
+            synonyms: ['client', '', 7, 'buyer'],
+            references: [
+              { name: 'HealthCare.gov', endpoint: 'https://example.com/glossary' },
+              { name: 'Name only' },
+              {},
+              'not-an-object',
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const term = await getGlossaryTerm('t1');
+    expect(term.reviewers).toEqual([
+      { id: 'u2', name: 'carol', displayName: 'Carol', type: 'user' },
+    ]);
+    expect(term.domains).toEqual([{ id: 'd1', name: 'marketing', type: 'domain' }]);
+    expect(term.synonyms).toEqual(['client', 'buyer']);
+    expect(term.references).toEqual([
+      { name: 'HealthCare.gov', endpoint: 'https://example.com/glossary' },
+      { name: 'Name only', endpoint: undefined },
+    ]);
+    expect(lastFetch().url).toContain('reviewers');
+    expect(lastFetch().url).toContain('domains');
+  });
 });

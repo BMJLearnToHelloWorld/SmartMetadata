@@ -38,6 +38,7 @@ async function mountList(asAdmin = true, paged = false) {
         name: 'admin-settings-persona-detail',
         component: { template: '<div>detail</div>' },
       },
+      { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
     ],
   });
   await router.push('/admin/settings/persona');

@@ -23,13 +23,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountView() {
+async function mountView(kindFilter: 'database' | 'messaging' | 'testSuites' = 'database') {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/ingestion/pipelines', name: 'ingestion-pipelines', component: PipelinesListView },
+      {
+        path: '/settings/services/:tab',
+        name: 'settings-services',
+        component: PipelinesListView,
+      },
       {
         path: '/ingestion/pipelines/:id',
         name: 'ingestion-pipeline',
@@ -37,10 +41,11 @@ async function mountView() {
       },
     ],
   });
-  await router.push('/ingestion/pipelines');
+  await router.push('/settings/services/databases?tab=pipelines');
   await router.isReady();
   const wrapper = mount(PipelinesListView, {
     attachTo: document.body,
+    props: { kindFilter },
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
@@ -1061,5 +1066,34 @@ describe('PipelinesListView', () => {
     const summary = document.body.querySelector('[data-testid="bulk-deploy-summary"]');
     expect(summary).not.toBeNull();
     expect(summary!.textContent).toContain('1');
+  });
+
+  it('fetches with serviceType for the scoped kind', async () => {
+    await mountView('database');
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(
+      urls.some((url) => url.includes('/api/v1/services/ingestionPipelines?') && url.includes('serviceType=databaseService')),
+    ).toBe(true);
+  });
+
+  it('reloads with the new kind serviceType when the scope changes', async () => {
+    const { wrapper } = await mountView('database');
+    vi.mocked(fetch).mockClear();
+    await wrapper.setProps({ kindFilter: 'messaging' });
+    await flushPromises();
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(
+      urls.some((url) => url.includes('/api/v1/services/ingestionPipelines?') && url.includes('serviceType=messagingService')),
+    ).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('fetches nothing and shows the empty state in the testSuites scope', async () => {
+    const { wrapper } = await mountView('testSuites');
+    const urls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(urls.some((url) => url.includes('ingestionPipelines'))).toBe(false);
+    expect(wrapper.text()).toContain('No pipelines set up yet');
+    expect(wrapper.text()).toContain('Ingestion pipelines');
+    wrapper.unmount();
   });
 });
