@@ -319,9 +319,9 @@ class SourceConfig(CamelModel):
     # flag is a typed messaging-scoped block, never a shared boolean.
     messaging_metadata: MessagingMetadataPipelineConfig | None = None
     include_schemas: list[str] = Field(default_factory=list)
-    exclude_schemas: list[str] = Field(
-        default_factory=lambda: ["information_schema", "pg_catalog", "pg_toast"]
-    )
+    # No default exclusion: pin has no exclude_schemas default and its
+    # collection path filters only on the user's schemaFilterPattern.
+    exclude_schemas: list[str] = Field(default_factory=list)
     include_databases: list[str] = Field(default_factory=list)
     exclude_databases: list[str] = Field(default_factory=list)
     include_topics: list[str] = Field(default_factory=list)

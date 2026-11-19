@@ -64,8 +64,6 @@ from smartmetadata_ingestion.records import (
     life_cycle_from_ms,
 )
 
-_SYSTEM_SCHEMAS = frozenset({"information_schema", "mysql", "performance_schema", "sys", "innodb"})
-
 
 @dataclass(frozen=True, slots=True)
 class SchemaRow:
@@ -461,7 +459,7 @@ class MysqlSource:
     ) -> list[SchemaRow]:
         connection = self._config.connection
         database_schema = connection.get("databaseSchema") or connection.get("database_schema")
-        exclude = list(self._config.exclude_schemas) + list(_SYSTEM_SCHEMAS)
+        exclude = list(self._config.exclude_schemas)
         return [
             schema
             for schema in reader.list_schemas()

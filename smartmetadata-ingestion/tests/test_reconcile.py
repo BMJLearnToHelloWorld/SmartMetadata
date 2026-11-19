@@ -208,16 +208,22 @@ def test_enabled_kinds_skip_narrowed_listings() -> None:
     )
 
 
-def test_enabled_kinds_allow_default_schema_excludes() -> None:
-    # The default system-schema excludes are not a narrowing: schemas
-    # reconcile when only they are excluded.
+def test_enabled_kinds_empty_default_excludes_do_not_narrow() -> None:
+    # P-1: SourceConfig.exclude_schemas defaults to an empty list — the
+    # old default system-schema excludes are gone, so the default run
+    # lists every schema and schemas reconcile under it.
     source = _source(mark_deleted_schemas=True)
-    assert source.exclude_schemas == [
-        "information_schema",
-        "pg_catalog",
-        "pg_toast",
-    ]
+    assert source.exclude_schemas == []
     assert "schema" in enabled_reconcile_kinds(source)
+    # An explicit exclude of exactly the old default names IS a
+    # narrowing now: the run never listed those schemas, so reconciling
+    # them service-wide would delete live entities it never saw.
+    assert "schema" not in enabled_reconcile_kinds(
+        _source(
+            mark_deleted_schemas=True,
+            exclude_schemas=["information_schema", "pg_catalog", "pg_toast"],
+        )
+    )
     assert "schema" not in enabled_reconcile_kinds(
         _source(
             mark_deleted_schemas=True,
@@ -292,18 +298,20 @@ def test_enabled_kinds_narrowing_does_not_flow_downward() -> None:
     assert "storedProcedure" in kinds
 
 
-def test_enabled_kinds_default_schema_excludes_do_not_narrow_descendants() -> None:
-    # The default system-schema excludes are not a narrowing at any
-    # level: tables and procedures reconcile under them.
+def test_enabled_kinds_empty_default_excludes_do_not_narrow_descendants() -> None:
+    # P-1: with the empty default, tables and procedures reconcile; an
+    # explicit exclude of the old default names narrows the schema
+    # level and therefore its descendant kinds.
     source = _source()
-    assert source.exclude_schemas == [
-        "information_schema",
-        "pg_catalog",
-        "pg_toast",
-    ]
+    assert source.exclude_schemas == []
     kinds = enabled_reconcile_kinds(source)
     assert "table" in kinds
     assert "storedProcedure" in kinds
+    narrowed_kinds = enabled_reconcile_kinds(
+        _source(exclude_schemas=["information_schema", "pg_catalog", "pg_toast"])
+    )
+    assert "table" not in narrowed_kinds
+    assert "storedProcedure" not in narrowed_kinds
 
 
 @pytest.mark.parametrize(
