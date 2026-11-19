@@ -19,10 +19,15 @@
  *
  * One product-side deviation, recorded not hidden: official builders
  * take the domain / classification / test-case FQN and the glossary /
- * term id, while the product detail routes are all :id routes, so
- * these builders take the same :id the detail page already carries.
- * The :version segment and the snapshot semantics are the official
- * ones; the identifier is the product detail route's own.
+ * term id, while the product version routes (and the version APIs
+ * behind them) are :id routes, so the version-path builders take the
+ * same :id the version page already carries. The :version segment and
+ * the snapshot semantics are the official ones; the identifier is the
+ * product version route's own. The one exception is the back link:
+ * getGovernanceDetailPath's domain branch takes the FQN (B-9 (a1);
+ * the caller, GovernanceVersionView, resolves it once via getDomain),
+ * because the domain detail route is :fqn-addressed; the other kinds
+ * still take the detail :id.
  *
  * Route names are listed for the parent merge (router/index.ts is
  * merged by hand, not edited by this group):

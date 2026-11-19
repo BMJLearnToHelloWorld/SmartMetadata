@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions } from 'ant-design-vue';
 import type { ChangeField, EntityVersion } from '@/api/entities';
+import { getDomain } from '@/api/domains';
 import { getGovernanceVersion, listGovernanceVersions } from '@/api/governanceVersions';
 import { getGovernanceDetailPath, getGovernanceVersionPath, type GovernanceVersionKind } from '@/catalog/versionPaths';
 import PageHeader from '@/components/shared/PageHeader.vue';
@@ -30,6 +31,12 @@ const loading = ref(true);
 const errorMessage = ref('');
 const versions = ref<EntityVersion[]>([]);
 const snapshot = ref<Record<string, unknown> | null>(null);
+// B-9 #3: the domain detail route is :fqn-addressed, but the version
+// route only carries the UUID, so the FQN is resolved once here and
+// used only for the back link. Null until resolved (or when the lookup
+// fails); the back link falls back to the domains list instead of
+// pushing a UUID into the :fqn segment, which would 404.
+const domainFqn = ref<string | null>(null);
 
 function renderValue(value: unknown): string {
   if (value === undefined || value === null) {
@@ -92,13 +99,21 @@ const descriptionDiff = computed(() => diffRows.value.find((row) => row.field ==
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  // Reset first: a kind/id switch (watch below) must not leave a stale
+  // FQN from the previous domain in flight for the back link.
+  domainFqn.value = null;
   try {
-    const [list, snap] = await Promise.all([
+    const [list, snap, domain] = await Promise.all([
       listGovernanceVersions(props.kind, props.id),
       getGovernanceVersion(props.kind, props.id, props.version),
+      // The domain lookup serves the back link only. Its failure must
+      // not fail the version page itself, so it resolves to null here
+      // and onBack() falls back to the domains list.
+      props.kind === 'domain' ? getDomain(props.id).catch(() => null) : Promise.resolve(null),
     ]);
     versions.value = list;
     snapshot.value = snap;
+    domainFqn.value = domain?.fullyQualifiedName || null;
   } catch (error) {
     versions.value = [];
     snapshot.value = null;
@@ -113,6 +128,12 @@ function onSelectVersion(version: string): void {
 }
 
 function onBack(): void {
+  if (props.kind === 'domain') {
+    void router.push(
+      domainFqn.value ? getGovernanceDetailPath('domain', domainFqn.value) : '/governance/domains',
+    );
+    return;
+  }
   void router.push(getGovernanceDetailPath(props.kind, props.id));
 }
 
