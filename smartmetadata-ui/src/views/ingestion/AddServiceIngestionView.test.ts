@@ -77,6 +77,7 @@ describe('AddServiceIngestionView', () => {
   async function mountView(
     ingestionType = 'metadata',
     readyTestId = 'schema-field-threads',
+    locale: 'en-US' | 'zh-CN' = 'en-US',
   ) {
     const pinia = createPinia();
     setActivePinia(pinia);
@@ -107,7 +108,7 @@ describe('AddServiceIngestionView', () => {
     await router.isReady();
     const wrapper = mount(AddServiceIngestionView, {
       props: { kind: 'database', id: 's1', ingestionType },
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
     });
     // The schema import is an extra async hop after the service fetch;
     // wait for the form (and its schema-driven fields) to appear.
@@ -320,5 +321,12 @@ describe('AddServiceIngestionView', () => {
     expect(
       shown.wrapper.find('[data-testid="schema-field-enableAutoPartitionDetection-switch"]').exists(),
     ).toBe(true);
+  });
+
+  it('renders the add-ingestion configure step in Chinese with no Option placeholders', async () => {
+    const { wrapper } = await mountView('metadata', 'schema-field-threads', 'zh-CN');
+    expect(wrapper.text()).toContain('配置提取');
+    expect(wrapper.text()).toContain('线程数');
+    expect(wrapper.text()).not.toContain('Option');
   });
 });

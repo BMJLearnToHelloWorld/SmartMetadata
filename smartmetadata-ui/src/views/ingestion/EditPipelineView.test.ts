@@ -126,8 +126,10 @@ describe('EditPipelineView', () => {
     vi.unstubAllGlobals();
   });
 
-  async function mountView(options: { wait?: boolean; anonymous?: boolean } = {}) {
-    const { wait = true, anonymous = false } = options;
+  async function mountView(
+    options: { wait?: boolean; anonymous?: boolean; locale?: 'en-US' | 'zh-CN' } = {},
+  ) {
+    const { wait = true, anonymous = false, locale = 'en-US' } = options;
     const pinia = createPinia();
     setActivePinia(pinia);
     if (!anonymous) {
@@ -171,7 +173,7 @@ describe('EditPipelineView', () => {
     const wrapper = mount(EditPipelineView, {
       props: { id: 'p1' },
       attachTo: document.body,
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      global: { plugins: [pinia, router, Antd, createTestI18n(locale)] },
     });
     mountedWrappers.push(wrapper);
     if (!wait) {
@@ -559,5 +561,12 @@ describe('EditPipelineView', () => {
     expect(wrapper.find('[data-testid="edit-pipeline-step-schedule"]').text()).not.toContain(
       'Schedule interval',
     );
+  });
+
+  it('renders the configure step in Chinese with no Option placeholders', async () => {
+    const { wrapper } = await mountView({ locale: 'zh-CN' });
+    expect(wrapper.text()).toContain('配置提取');
+    expect(wrapper.text()).toContain('线程数');
+    expect(wrapper.text()).not.toContain('Option');
   });
 });

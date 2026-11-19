@@ -10,9 +10,20 @@ import {
   applySchemaDefaults,
   deref,
   selectBranch,
-  startCase,
   type RjsfSchema,
 } from '@/ingestion/ingestionSchemas';
+import {
+  branchChildPrefix,
+  branchFocusKeyPrefix,
+  childLabelPrefix,
+  resolveBranchDescription,
+  resolveBranchFocusMeta,
+  resolveBranchTitle,
+  resolveEnumOptionLabel,
+  resolveFieldDescription,
+  resolveFieldFocusMeta,
+  resolveFieldLabel,
+} from '@/ingestion/schemaFieldLabels';
 import { splitCsv } from '@/ingestion/sourceConfig';
 import type { FieldFocusMeta } from '@/ingestion/fieldFocus';
 import FilterPatternCard from './FilterPatternCard.vue';
@@ -66,9 +77,18 @@ const props = defineProps<{
    * system excludes, no existing data). Never forwarded to nested
    * fields — the options belong to this field only. */
   filterPatternOptions?: FilterPatternFieldOptions;
+  /** i18n key prefix for this field (`forms.schemaFields.<slug>.<path>`);
+   * absent, labels/descriptions render the schema text as before. */
+  labelKeyPrefix?: string;
+  /** Branch-key prefix for branch content only (`P.branches.b<i>`), so
+   * focus meta resolves against the branch's keys, not the field's. */
+  branchFocusPrefix?: string;
+  /** Suppress the inline boolean description: the branch description
+   * row above already shows it (official description stripping). */
+  suppressInlineDescription?: boolean;
 }>();
 const emit = defineEmits<{ (event: 'update:value', value: unknown): void }>();
-const { t } = useI18n();
+const { t, te } = useI18n();
 
 const key = computed(() => props.path[props.path.length - 1] ?? '');
 const pathKey = computed(() => props.path.join('.'));
@@ -76,15 +96,50 @@ const testId = computed(() => `${props.testIdPrefix}-${props.path.join('-')}`);
 const resolved = computed(() => deref(props.schema, props.rootSchema));
 const error = computed(() => (props.showErrors ? props.errors.get(pathKey.value) : undefined));
 
-const label = computed(() => resolved.value.title ?? startCase(key.value));
+const label = computed(() =>
+  resolveFieldLabel({
+    labelKeyPrefix: props.labelKeyPrefix,
+    path: props.path,
+    title: resolved.value.title,
+    key: key.value,
+    t,
+    te,
+  }),
+);
 const shownLabel = computed(() => (props.hideLabel ? undefined : label.value));
+
+/** Translated description for the inline boolean rendering. */
+const displayDescription = computed(() =>
+  resolveFieldDescription({
+    labelKeyPrefix: props.labelKeyPrefix,
+    path: props.path,
+    description: resolved.value.description,
+    t,
+    te,
+  }),
+);
 
 /** RJSF-style field id (`root/<path>`), the doc panel's focus key. */
 const fieldId = computed(() => `root/${props.path.join('/')}`);
-const focusMeta = computed<FieldFocusMeta>(() => ({
-  title: resolved.value.title,
-  description: resolved.value.description,
-}));
+const focusMeta = computed<FieldFocusMeta>(() => {
+  if (props.branchFocusPrefix !== undefined) {
+    return resolveBranchFocusMeta({
+      branchFocusPrefix: props.branchFocusPrefix,
+      title: resolved.value.title,
+      description: resolved.value.description,
+      t,
+      te,
+    });
+  }
+  return resolveFieldFocusMeta({
+    labelKeyPrefix: props.labelKeyPrefix,
+    path: props.path,
+    title: resolved.value.title,
+    description: resolved.value.description,
+    t,
+    te,
+  });
+});
 
 function onFocus(): void {
   props.onFieldFocus?.(fieldId.value, focusMeta.value);
@@ -180,7 +235,13 @@ const branches = computed(() => resolved.value.oneOf ?? resolved.value.anyOf ?? 
 const branchTitles = computed(() =>
   branches.value.map((branch, index) => {
     const resolvedBranch = deref(branch, props.rootSchema);
-    return resolvedBranch.title ?? `Option ${index + 1}`;
+    return resolveBranchTitle({
+      labelKeyPrefix: props.labelKeyPrefix,
+      branchIndex: index,
+      branch: resolvedBranch,
+      t,
+      te,
+    });
   }),
 );
 const selectedBranchIndex = computed(() => {
@@ -192,6 +253,17 @@ const selectedBranchIndex = computed(() => {
 });
 const selectedBranch = computed(
   () => deref(branches.value[selectedBranchIndex.value] ?? {}, props.rootSchema),
+);
+/** Description row under the branch selector; undefined hides the row. */
+const selectedBranchDescription = computed(() =>
+  resolveBranchDescription({
+    labelKeyPrefix: props.labelKeyPrefix,
+    branchIndex: selectedBranchIndex.value,
+    branchCount: branches.value.length,
+    branch: selectedBranch.value,
+    t,
+    te,
+  }),
 );
 
 function onBranchChange(index: number): void {
@@ -233,9 +305,15 @@ const enumItems = computed(() => {
   return (items?.enum ?? []) as string[];
 });
 const enumLabels = computed(() =>
-  key.value === 'classificationLanguage'
-    ? enumItems.value.map((item) => item.charAt(0).toUpperCase() + item.slice(1))
-    : enumItems.value,
+  enumItems.value.map((item) =>
+    resolveEnumOptionLabel({
+      labelKeyPrefix: props.labelKeyPrefix,
+      value: item,
+      key: key.value,
+      t,
+      te,
+    }),
+  ),
 );
 
 // --- object arrays -------------------------------------------------------
@@ -367,7 +445,7 @@ function onManifestChange(text: string): void {
     emit('update:value', JSON.parse(text) as unknown);
     manifestError.value = '';
   } catch {
-    manifestError.value = 'Invalid JSON';
+    manifestError.value = t('forms.schemaFields.invalidJson');
   }
 }
 
@@ -397,6 +475,13 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         </Select.Option>
       </Select>
     </Form.Item>
+    <div
+      v-if="selectedBranchDescription !== undefined"
+      :data-testid="`${testId}-branch-description`"
+      class="schema-field-branch-description"
+    >
+      {{ selectedBranchDescription }}
+    </div>
     <SchemaField
       v-if="!isScalarBranch(selectedBranch)"
       :schema="selectedBranch"
@@ -407,6 +492,9 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
       :show-errors="showErrors"
       hide-label
       :test-id-prefix="testIdPrefix"
+      :label-key-prefix="branchChildPrefix(labelKeyPrefix, selectedBranchIndex)"
+      :branch-focus-prefix="branchFocusKeyPrefix(labelKeyPrefix, selectedBranchIndex)"
+      :suppress-inline-description="selectedBranchDescription !== undefined"
       :on-field-focus="onFieldFocus"
       :on-field-blur="onFieldBlur"
       @update:value="updateValue"
@@ -421,6 +509,9 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
       :show-errors="showErrors"
       hide-label
       :test-id-prefix="testIdPrefix"
+      :label-key-prefix="branchChildPrefix(labelKeyPrefix, selectedBranchIndex)"
+      :branch-focus-prefix="branchFocusKeyPrefix(labelKeyPrefix, selectedBranchIndex)"
+      :suppress-inline-description="selectedBranchDescription !== undefined"
       :on-field-focus="onFieldFocus"
       :on-field-blur="onFieldBlur"
       @update:value="updateValue"
@@ -457,6 +548,7 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
         :show-errors="showErrors"
         :required="(resolved.required ?? []).includes(fieldKey)"
         :test-id-prefix="testIdPrefix"
+        :label-key-prefix="childLabelPrefix(labelKeyPrefix, fieldKey)"
         :on-field-focus="onFieldFocus"
         :on-field-blur="onFieldBlur"
         @update:value="(next) => updateField(fieldKey, next)"
@@ -542,6 +634,7 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
           :errors="errors"
           :show-errors="showErrors"
           :test-id-prefix="testIdPrefix"
+          :label-key-prefix="labelKeyPrefix"
           :on-field-focus="onFieldFocus"
           :on-field-blur="onFieldBlur"
           @update:value="(next) => updateObjectArrayRow(index, next as Record<string, unknown>)"
@@ -593,11 +686,7 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
           :key="String(item)"
           :value="item"
         >
-          {{
-            key === 'classificationLanguage'
-              ? String(item).charAt(0).toUpperCase() + String(item).slice(1)
-              : item
-          }}
+          {{ resolveEnumOptionLabel({ labelKeyPrefix, value: String(item), key, t, te }) }}
         </Select.Option>
       </Select>
     </Form.Item>
@@ -608,7 +697,7 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
       <ToggleField
         :model-value="value === true"
         :label="label"
-        :description="resolved.description"
+        :description="suppressInlineDescription ? undefined : displayDescription"
         :field-id="fieldId"
         :test-id="testId"
         @update:model-value="updateValue"
@@ -680,3 +769,12 @@ const objectFields = computed(() => Object.keys(resolved.value.properties ?? {})
     </Form.Item>
   </template>
 </template>
+
+<style scoped>
+.schema-field-branch-description {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sm-text-tertiary);
+}
+</style>
