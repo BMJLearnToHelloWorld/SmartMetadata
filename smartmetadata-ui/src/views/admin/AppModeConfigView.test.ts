@@ -1,234 +1,321 @@
 /**
  * Copyright 2026 SmartMetadata authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License. You may obtain
- * a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
-import { createTestI18n } from '@/test/i18n';
+import { flushPromises, mount } from '@vue/test-utils';
+import { message } from 'ant-design-vue';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createI18n } from 'vue-i18n';
 import AppModeConfigView from './AppModeConfigView.vue';
+
+vi.mock('@/api/system', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/system')>();
+  return {
+    ...actual,
+    getSettingsSource: vi.fn(),
+    getTypedSetting: vi.fn(),
+    patchAppConfiguration: vi.fn(),
+  };
+});
+
+import { getSettingsSource, getTypedSetting, patchAppConfiguration } from '@/api/system';
+
+const getMock = getTypedSetting as unknown as ReturnType<typeof vi.fn>;
+const sourcesMock = getSettingsSource as unknown as ReturnType<typeof vi.fn>;
+const patchMock = patchAppConfiguration as unknown as ReturnType<typeof vi.fn>;
+
+function mountView() {
+  const i18n = createI18n({
+    legacy: false,
+    locale: 'en-US',
+    messages: {
+      'en-US': {
+        settings: {
+          appMode: {
+            title: 'Default App Mode',
+            lead: 'Lead',
+            loadFailed: 'load fail',
+            saveFailed: 'save fail',
+            saved: 'Saved',
+            noDefault: 'No default',
+            classic: 'Classic',
+            ai: 'AI',
+            deprecated: 'Deprecated',
+            classicRetiring: 'Classic is retiring.',
+            readReleaseNotes: 'Read the release notes',
+            save: 'Save',
+          },
+          registry: {
+            preferences: {
+              appMode: { title: 'Default App Mode', description: 'Lead' },
+            },
+          },
+        },
+        label: {
+          managedByDeploymentConfiguration: 'Managed',
+          deploymentValuesOverridden: 'Overridden',
+          useDeploymentValue: 'Use deployment value',
+          settingsNotApplied: 'Not applied',
+        },
+        message: {
+          settingsManagedByDeployment: 'managed {variable}',
+          settingsManagedByDeploymentWithoutVariable: 'managed',
+          settingsDeploymentValuesOverridden: 'overridden',
+          overriddenFieldEnvVariable: 'field {field} {variable}',
+          settingsReloadError: 'reload error',
+          useDeploymentValueConfirmation: 'confirm?',
+          deploymentValuesAdopted: 'adopted',
+        },
+      },
+    },
+  });
+  return mount(AppModeConfigView, {
+    global: {
+      plugins: [i18n],
+    },
+  });
+}
+
+describe('AppModeConfigView', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    getMock.mockReset();
+    sourcesMock.mockReset();
+    patchMock.mockReset();
+    getMock.mockImplementation((_name: string, mapper: (value: unknown) => unknown) =>
+      Promise.resolve(mapper({ defaultAppMode: 'classic' })),
+    );
+    sourcesMock.mockResolvedValue([]);
+    patchMock.mockResolvedValue(undefined);
+    vi.spyOn(message, 'success');
+    vi.spyOn(message, 'error');
+  });
+
+  it('initializes from the stored mode and disables save until dirty', async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-classic"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    expect(
+      (wrapper.find('[data-testid="save-app-mode-settings"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('selects the no-default sentinel when no mode is stored', async () => {
+    getMock.mockImplementation((_name: string, mapper: (value: unknown) => unknown) =>
+      Promise.resolve(mapper({})),
+    );
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-null"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+  });
+
+  it('renders options in official order with the classic deprecation hint', async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    const order = wrapper
+      .findAll('[data-testid^="app-mode-option-"]')
+      .map((node) => node.attributes('data-testid'));
+    expect(order).toEqual(['app-mode-option-null', 'app-mode-option-classic', 'app-mode-option-ai']);
+    expect(wrapper.find('[data-testid="classic-deprecated-badge"]').text()).toBe('Deprecated');
+    expect(wrapper.find('[data-testid="classic-deprecation-hint"]').text()).toContain(
+      'Classic is retiring.',
+    );
+    const link = wrapper.find('[data-testid="classic-deprecation-release-notes"]');
+    expect(link.attributes('href')).toBe('https://docs.open-metadata.org/latest/releases/all-releases');
+    expect(link.attributes('target')).toBe('_blank');
+  });
+
+  it('patches the chosen mode and re-bases dirty state on success', async () => {
+    // B-13: the ai option is disabled, so the chosen mode under test is
+    // classic (from a stored no-default), not ai.
+    getMock.mockImplementation((_name: string, mapper: (value: unknown) => unknown) =>
+      Promise.resolve(mapper({})),
+    );
+    const wrapper = mountView();
+    await flushPromises();
+    const radioInput = wrapper.find('[data-testid="app-mode-option-classic"] input');
+    (radioInput.element as HTMLInputElement).checked = true;
+    await radioInput.trigger('change');
+    await wrapper.find('[data-testid="save-app-mode-settings"]').trigger('click');
+    await flushPromises();
+    expect(patchMock).toHaveBeenCalledWith({ defaultAppMode: 'classic' });
+    expect(message.success).toHaveBeenCalled();
+    expect(
+      (wrapper.find('[data-testid="save-app-mode-settings"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('patches JSON null for the no-default sentinel', async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    const radioInput = wrapper.find('[data-testid="app-mode-option-null"] input');
+    (radioInput.element as HTMLInputElement).checked = true;
+    await radioInput.trigger('change');
+    await wrapper.find('[data-testid="save-app-mode-settings"]').trigger('click');
+    await flushPromises();
+    expect(patchMock).toHaveBeenCalledWith({ defaultAppMode: null });
+  });
+
+  it('disables the radios and hides save when the path is deployment-managed', async () => {
+    sourcesMock.mockResolvedValue([
+      {
+        configType: 'appConfiguration',
+        editable: true,
+        source: 'ENV',
+        sourceVariable: 'APP_CONFIGURATION',
+        managedPaths: ['/defaultAppMode'],
+      },
+    ]);
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"] input').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('[data-testid="save-app-mode-settings"]').exists()).toBe(false);
+  });
+
+  it('renders as DB-only when the sources request fails', async () => {
+    sourcesMock.mockRejectedValue(new Error('boom'));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="save-app-mode-settings"]').exists()).toBe(true);
+    // B-13: ai is disabled by design even in DB-only mode; classic is the
+    // option that proves the radios are enabled.
+    expect(wrapper.find('[data-testid="app-mode-option-classic"] input').attributes('disabled')).toBeUndefined();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"] input').attributes('disabled')).toBeDefined();
+  });
+
+  it('toasts on load failure and keeps the no-default sentinel', async () => {
+    getMock.mockRejectedValue(new Error('boom'));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(message.error).toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="app-mode-option-null"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+  });
+});
 
 /**
  * B-13 (Bai 2026-11-18 21:43, C-4 §6.5 R-C4-APPMODE-TENANT close): the tenant
  * `ai` option is DISABLED, not hidden — the M3 precedent from the persona
  * AppLayoutEditor. A stored `ai` value still renders selected, the user
- * cannot newly select `ai`, and leaving `ai` (switch to `classic`, or clear
- * via the pre-existing allow-clear) is unrestricted and saves the new value.
+ * cannot newly select `ai`, and leaving `ai` (switch to `classic`, or the
+ * no-default option) is unrestricted and saves the new value.
+ *
+ * Ported from the shell batch: the shell tests drove the old Select UI
+ * (dropdown options + whole-config PUT); the sections rewrite is a radio
+ * group with a single-key PATCH, so the cases are re-expressed on the
+ * radio UI with the same assertions — the allow-clear case becomes the
+ * no-default radio, and save-without-change becomes "no PATCH is issued"
+ * (the radio UI disables save until dirty, a stronger guard).
  */
-
-interface FetchCall {
-  url: string;
-  method: string;
-  body: unknown;
-}
-
-let storedMode: 'ai' | 'classic' | null;
-let fetchCalls: FetchCall[];
-
-function jsonResponse(payload: unknown): Response {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-function installFetchStub(): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-      fetchCalls.push({ url, method, body });
-      if (url.endsWith('/api/v1/system/settings/appConfiguration') && method === 'GET') {
-        return jsonResponse({
-          config_type: 'appConfiguration',
-          config_value: { defaultAppMode: storedMode },
-        });
-      }
-      if (url.endsWith('/api/v1/system/settings') && method === 'PUT') {
-        const value = (body as { config_value?: { defaultAppMode?: 'ai' | 'classic' | null } })
-          .config_value;
-        storedMode = value?.defaultAppMode ?? null;
-        return jsonResponse({
-          config_type: 'appConfiguration',
-          config_value: { defaultAppMode: storedMode },
-        });
-      }
-      return jsonResponse({});
-    }),
-  );
-}
-
-async function mountView(): Promise<VueWrapper> {
-  const wrapper = mount(AppModeConfigView, {
-    attachTo: document.body,
-    global: { plugins: [Antd, createTestI18n()] },
-  });
-  await flushPromises();
-  await wrapper.vm.$nextTick();
-  return wrapper;
-}
-
-async function openDropdown(wrapper: VueWrapper): Promise<void> {
-  const selector = wrapper
-    .find('[data-testid="app-mode-select"]')
-    .element.querySelector('.ant-select-selector') as HTMLElement;
-  selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-  selector.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await flushPromises();
-  await wrapper.vm.$nextTick();
-}
-
-function dropdownOption(label: string): HTMLElement {
-  const option = Array.from(document.body.querySelectorAll('.ant-select-item-option')).find(
-    (el) => el.textContent?.trim() === label,
-  ) as HTMLElement | undefined;
-  if (!option) {
-    throw new Error(`Expected a dropdown option labelled "${label}"`);
-  }
-  return option;
-}
-
-function clickOption(option: HTMLElement): void {
-  option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-  option.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-}
-
-function selectionText(wrapper: VueWrapper): string {
-  return (
-    wrapper.find('[data-testid="app-mode-select"] .ant-select-selection-item').text() ?? ''
-  ).trim();
-}
-
-function putBodies(): unknown[] {
-  return fetchCalls
-    .filter((call) => call.method === 'PUT')
-    .map((call) => call.body);
-}
-
 describe('AppModeConfigView B-13 tenant ai disable', () => {
   beforeEach(() => {
-    storedMode = 'classic';
-    fetchCalls = [];
-    installFetchStub();
+    vi.restoreAllMocks();
+    getMock.mockReset();
+    sourcesMock.mockReset();
+    patchMock.mockReset();
+    getMock.mockImplementation((_name: string, mapper: (value: unknown) => unknown) =>
+      Promise.resolve(mapper({ defaultAppMode: 'classic' })),
+    );
+    sourcesMock.mockResolvedValue([]);
+    patchMock.mockResolvedValue(undefined);
+    vi.spyOn(message, 'success');
+    vi.spyOn(message, 'error');
   });
 
-  afterEach(() => {
-    document.body.innerHTML = '';
-    vi.unstubAllGlobals();
-    vi.clearAllMocks();
-  });
+  function mountStoredAi() {
+    getMock.mockImplementation((_name: string, mapper: (value: unknown) => unknown) =>
+      Promise.resolve(mapper({ defaultAppMode: 'ai' })),
+    );
+    return mountView();
+  }
+
+  async function selectRadio(
+    wrapper: ReturnType<typeof mountView>,
+    testId: string,
+  ): Promise<void> {
+    const radioInput = wrapper.find(`[data-testid="${testId}"] input`);
+    (radioInput.element as HTMLInputElement).checked = true;
+    await radioInput.trigger('change');
+    await flushPromises();
+  }
 
   it('renders the ai option disabled while keeping its label; classic stays enabled', async () => {
-    const wrapper = await mountView();
-    await openDropdown(wrapper);
-    const ai = dropdownOption('AI');
-    const classic = dropdownOption('Classic');
-    expect(ai.classList.contains('ant-select-item-option-disabled')).toBe(true);
-    expect(classic.classList.contains('ant-select-item-option-disabled')).toBe(false);
-    wrapper.unmount();
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').text()).toContain('AI');
+    expect(wrapper.find('[data-testid="app-mode-option-ai"] input').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('[data-testid="app-mode-option-classic"] input').attributes('disabled')).toBeUndefined();
   });
 
   it('renders a stored ai value as the selected (disabled) option', async () => {
-    storedMode = 'ai';
-    const wrapper = await mountView();
-    expect(selectionText(wrapper)).toBe('AI');
-    await openDropdown(wrapper);
-    const ai = dropdownOption('AI');
-    expect(ai.classList.contains('ant-select-item-option-disabled')).toBe(true);
-    expect(ai.classList.contains('ant-select-item-option-selected')).toBe(true);
-    wrapper.unmount();
+    const wrapper = mountStoredAi();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    expect(wrapper.find('[data-testid="app-mode-option-ai"] input').attributes('disabled')).toBeDefined();
   });
 
   it('does not select ai when the disabled option is clicked', async () => {
-    const wrapper = await mountView();
-    expect(selectionText(wrapper)).toBe('Classic');
-    await openDropdown(wrapper);
-    clickOption(dropdownOption('AI'));
+    const wrapper = mountView();
     await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(selectionText(wrapper)).toBe('Classic');
-    wrapper.unmount();
+    expect(wrapper.find('[data-testid="app-mode-option-classic"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    await selectRadio(wrapper, 'app-mode-option-ai');
+    expect(wrapper.find('[data-testid="app-mode-option-classic"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').classes()).not.toContain(
+      'ant-radio-wrapper-checked',
+    );
   });
 
   it('switches from a stored ai value to classic and saves the new value', async () => {
-    storedMode = 'ai';
-    const wrapper = await mountView();
-    expect(selectionText(wrapper)).toBe('AI');
-    await openDropdown(wrapper);
-    clickOption(dropdownOption('Classic'));
+    const wrapper = mountStoredAi();
     await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(selectionText(wrapper)).toBe('Classic');
-    await wrapper.find('[data-testid="app-mode-save"]').trigger('click');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(putBodies()).toContainEqual({
-      config_type: 'appConfiguration',
-      config_value: {
-        defaultAppMode: 'classic',
-        defaultColumnOrder: null,
-        defaultTimeFormat: undefined,
-      },
-    });
-    // Save reloads; the stored value echoes back as the selection.
-    expect(selectionText(wrapper)).toBe('Classic');
-    wrapper.unmount();
-  });
-
-  it('writes the stored ai value back unchanged when saving without changing the selection', async () => {
-    // m-3: saving without touching the select must not drop or rewrite
-    // the stored ai value (the option is disabled, not absent).
-    storedMode = 'ai';
-    const wrapper = await mountView();
-    expect(selectionText(wrapper)).toBe('AI');
-    await wrapper.find('[data-testid="app-mode-save"]').trigger('click');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(putBodies()).toContainEqual({
-      config_type: 'appConfiguration',
-      config_value: {
-        defaultAppMode: 'ai',
-        defaultColumnOrder: null,
-        defaultTimeFormat: undefined,
-      },
-    });
-    expect(selectionText(wrapper)).toBe('AI');
-    wrapper.unmount();
-  });
-
-  it('clears a stored ai value via allow-clear and saves null', async () => {
-    storedMode = 'ai';
-    const wrapper = await mountView();
-    expect(selectionText(wrapper)).toBe('AI');
-    const clear = wrapper
-      .find('[data-testid="app-mode-select"]')
-      .element.querySelector('.ant-select-clear') as HTMLElement | null;
-    expect(clear).not.toBeNull();
-    clear?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    clear?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(wrapper.find('[data-testid="app-mode-select"] .ant-select-selection-item').exists()).toBe(
-      false,
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
     );
-    await wrapper.find('[data-testid="app-mode-save"]').trigger('click');
+    await selectRadio(wrapper, 'app-mode-option-classic');
+    await wrapper.find('[data-testid="save-app-mode-settings"]').trigger('click');
     await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(putBodies()).toContainEqual({
-      config_type: 'appConfiguration',
-      config_value: {
-        defaultAppMode: null,
-        defaultColumnOrder: null,
-        defaultTimeFormat: undefined,
-      },
-    });
-    wrapper.unmount();
+    expect(patchMock).toHaveBeenCalledWith({ defaultAppMode: 'classic' });
+    expect(message.success).toHaveBeenCalled();
+  });
+
+  it('does not rewrite the stored ai value when saving without changing the selection', async () => {
+    // m-3: the option is disabled, not absent — a stored ai value must not
+    // be dropped or rewritten. The radio UI disables save until dirty, so
+    // the equivalent assertion is that mounting with stored ai issues no
+    // PATCH at all.
+    const wrapper = mountStoredAi();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it('clears a stored ai value via the no-default option and saves null', async () => {
+    const wrapper = mountStoredAi();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="app-mode-option-ai"]').classes()).toContain(
+      'ant-radio-wrapper-checked',
+    );
+    await selectRadio(wrapper, 'app-mode-option-null');
+    await wrapper.find('[data-testid="save-app-mode-settings"]').trigger('click');
+    await flushPromises();
+    expect(patchMock).toHaveBeenCalledWith({ defaultAppMode: null });
   });
 });

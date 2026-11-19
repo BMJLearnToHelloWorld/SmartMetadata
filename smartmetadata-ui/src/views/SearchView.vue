@@ -58,17 +58,18 @@ import {
 import DetailTabs from '@/components/shared/DetailTabs.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
-import { useShellPreferencesStore } from '@/stores/shellPreferences';
+import { useAuthStore } from '@/stores/auth';
 import ExploreEstateTree from '@/features/explore/ExploreEstateTree.vue';
 import ExploreFilterChips from '@/features/explore/ExploreFilterChips.vue';
 import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import { useFacetOptions } from '@/features/explore/useFacetOptions';
 import type { SearchHit } from '@/types/api';
+import { readGlobalPageSize, writeGlobalPageSize } from '@/utils/userPageSizePreference';
 
 const route = useRoute();
 const router = useRouter();
 const { t, te } = useI18n();
-const shellPreferences = useShellPreferencesStore();
+const authStore = useAuthStore();
 
 const loading = ref(false);
 const errorMessage = ref('');
@@ -100,7 +101,7 @@ const queryFilter = computed(() =>
 );
 const page = computed(() => pageFromQuery(route.query.page));
 const showDeleted = computed(() => route.query.showDeleted === 'true');
-const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, shellPreferences.explorePageSize));
+const pageSize = computed(() => pageSizeFromQuery(route.query.pageSize, readGlobalPageSize(window.localStorage, authStore.user?.name)));
 const estateId = computed(() => estateFromQuery(route.query) || selectedEstateFromFilters(filters.value));
 const residual = computed(() => isResidualEstate(estateId.value));
 const activeTab = computed<ExploreTab | null>(() => exploreTabFromQuery(route.query));
@@ -340,8 +341,8 @@ function onShowDeletedChange(value: boolean): void {
 }
 
 function onPageSizeChange(_current: number, size: number): void {
-  const nextSize = pageSizeFromQuery(size, shellPreferences.explorePageSize);
-  shellPreferences.setExplorePageSize(nextSize);
+  const nextSize = pageSizeFromQuery(size, readGlobalPageSize(window.localStorage, authStore.user?.name));
+  writeGlobalPageSize(window.localStorage, authStore.user?.name, nextSize);
   pushSearch(query.value, filters.value, 0, currentSort.value, estateFromQuery(route.query), activeTab.value, {
     pageSize: nextSize,
   });

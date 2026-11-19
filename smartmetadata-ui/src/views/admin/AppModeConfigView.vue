@@ -1,27 +1,55 @@
 <!--
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
-  Official CustomizationPageSettings defaultAppMode only (Collate sidebar OUT).
+  Official DefaultAppModePage: no-default/classic/AI radio options,
+  deployment-managed gating, single-key PATCH with a null sentinel.
+  De-shelled by the shell batch: registry-driven bare-h1 page shape,
+  no PreferencePageShell.
 
   B-13 (Bai 2026-11-18 21:43, §6.5 R-C4-APPMODE-TENANT close): AI is out of
   scope, so the tenant `ai` option is DISABLED, not hidden — consistent with
   the M3 precedent in the persona AppLayoutEditor. Label and testid are kept,
   a stored `ai` value still renders as the selected (disabled) option, the
   user cannot newly select `ai`, and leaving `ai` (switch to `classic` or
-  clear via allow-clear) is unrestricted.
+  the no-default option) is unrestricted.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Button, Form, Select, Spin, Typography, message } from 'ant-design-vue';
-import { getTypedSetting, settingAsAppConfiguration, updateSetting } from '@/api/system';
+import { ArrowRightOutlined } from '@ant-design/icons-vue';
+import { Button, Radio, Space, Spin, Tag, Typography, message } from 'ant-design-vue';
+import {
+  getSettingsSource,
+  getTypedSetting,
+  patchAppConfiguration,
+  settingAsAppConfiguration,
+} from '@/api/system';
+import type { SsoSettingSource } from '@/admin/ssoSettingsSource';
+import SettingsSourceBanner from '@/components/shared/SettingsSourceBanner.vue';
 import {
   findSettingsRegistryItem,
   registryDescription,
   registryTitle,
   type SettingsTranslator,
 } from '@/settings/registry';
-import type { AppConfiguration } from '@/types/admin';
+import { findSettingSource, isPathManaged } from '@/utils/settingsSource';
+
+// Sentinel value for the "no tenant default" radio option — the wire value
+// for that choice is `null`, but form controls can't carry `null`, so the
+// translation happens at the option/handler boundary only.
+const NO_DEFAULT_VALUE = 'null';
+
+// Official appMode.constants.CLASSIC_MODE_RELEASE_NOTES_URL.
+const CLASSIC_MODE_RELEASE_NOTES_URL =
+  'https://docs.open-metadata.org/latest/releases/all-releases';
+
+type AppModeValue = 'null' | 'classic' | 'ai';
+
+const OPTIONS: Array<{ value: AppModeValue; labelKey: string }> = [
+  { value: NO_DEFAULT_VALUE, labelKey: 'settings.appMode.noDefault' },
+  { value: 'classic', labelKey: 'settings.appMode.classic' },
+  { value: 'ai', labelKey: 'settings.appMode.ai' },
+];
 
 const { t } = useI18n();
 const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
@@ -31,42 +59,57 @@ if (!registryEntry) {
 }
 const header = computed(() => registryTitle(settingsTranslator, registryEntry));
 const subHeader = computed(() => registryDescription(settingsTranslator, registryEntry));
-const loading = ref(false);
-const saving = ref(false);
-const errorMessage = ref('');
-const form = reactive<AppConfiguration>({ defaultAppMode: null });
+const initialValue = ref<AppModeValue>(NO_DEFAULT_VALUE);
+const currentValue = ref<AppModeValue>(NO_DEFAULT_VALUE);
+const isLoading = ref(true);
+const isSaving = ref(false);
+const sources = ref<SsoSettingSource[]>([]);
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
+const isManagedByDeployment = computed(() =>
+  isPathManaged(findSettingSource(sources.value, 'appConfiguration'), '/defaultAppMode'),
+);
+const isDirty = computed(() => currentValue.value !== initialValue.value);
+
+async function loadConfig(): Promise<void> {
   try {
-    Object.assign(form, await getTypedSetting('appConfiguration', settingAsAppConfiguration));
+    const config = await getTypedSetting('appConfiguration', settingAsAppConfiguration);
+    const initial = (config.defaultAppMode ?? NO_DEFAULT_VALUE) as AppModeValue;
+    initialValue.value = initial;
+    currentValue.value = initial;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('settings.appMode.loadFailed');
+    message.error(error instanceof Error ? error.message : t('settings.appMode.loadFailed'));
   } finally {
-    loading.value = false;
+    isLoading.value = false;
+  }
+}
+
+async function loadSources(): Promise<void> {
+  try {
+    sources.value = await getSettingsSource();
+  } catch {
+    // A failed source request renders as DB-only (pin useSettingsSource).
+    sources.value = [];
   }
 }
 
 async function save(): Promise<void> {
-  saving.value = true;
+  isSaving.value = true;
   try {
-    await updateSetting('appConfiguration', {
-      defaultAppMode: form.defaultAppMode ?? null,
-      defaultColumnOrder: form.defaultColumnOrder ?? null,
-      defaultTimeFormat: form.defaultTimeFormat,
+    await patchAppConfiguration({
+      defaultAppMode: currentValue.value === NO_DEFAULT_VALUE ? null : currentValue.value,
     });
+    initialValue.value = currentValue.value;
     message.success(t('settings.appMode.saved'));
-    await load();
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('settings.appMode.saveFailed'));
   } finally {
-    saving.value = false;
+    isSaving.value = false;
   }
 }
 
 onMounted(() => {
-  void load();
+  void loadConfig();
+  void loadSources();
 });
 </script>
 
@@ -74,19 +117,65 @@ onMounted(() => {
   <div data-testid="app-mode-config">
     <h1 class="app-mode-config__title" data-testid="app-mode-config-heading">{{ header }}</h1>
     <Typography.Paragraph class="app-mode-config__lead" type="secondary">{{ subHeader }}</Typography.Paragraph>
-    <Alert v-if="errorMessage" type="error" show-icon :message="errorMessage" style="margin-bottom: 12px" />
-    <Spin :spinning="loading">
-      <Form layout="vertical">
-        <Form.Item :label="t('settings.appMode.defaultMode')">
-          <Select v-model:value="form.defaultAppMode" allow-clear data-testid="app-mode-select">
-            <Select.Option value="ai" :disabled="true">{{ t('settings.appMode.ai') }}</Select.Option>
-            <Select.Option value="classic">{{ t('settings.appMode.classic') }}</Select.Option>
-          </Select>
-        </Form.Item>
-        <Button type="primary" :loading="saving" data-testid="app-mode-save" @click="save">
+    <Spin :spinning="isLoading">
+      <div data-testid="default-app-mode-page">
+      <SettingsSourceBanner
+        :sources="sources"
+        :on-refetch="loadSources"
+        :on-adopted="loadConfig"
+      />
+      <Radio.Group
+        v-model:value="currentValue"
+        :disabled="isManagedByDeployment"
+        :aria-label="t('settings.appMode.title')"
+        data-testid="app-mode-radio-group"
+      >
+        <Space direction="vertical">
+          <div v-for="option in OPTIONS" :key="option.value">
+            <Radio
+              :value="option.value"
+              :disabled="option.value === 'ai'"
+              :data-testid="`app-mode-option-${option.value}`"
+            >
+              <span v-if="option.value === 'classic'" class="app-mode-classic-label">
+                {{ t(option.labelKey) }}
+                <Tag color="warning" data-testid="classic-deprecated-badge">
+                  {{ t('settings.appMode.deprecated') }}
+                </Tag>
+              </span>
+              <span v-else>{{ t(option.labelKey) }}</span>
+            </Radio>
+            <span
+              v-if="option.value === 'classic'"
+              class="app-mode-classic-hint"
+              data-testid="classic-deprecation-hint"
+            >
+              {{ t('settings.appMode.classicRetiring') }}
+              <a
+                :href="CLASSIC_MODE_RELEASE_NOTES_URL"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="classic-deprecation-release-notes"
+              >
+                {{ t('settings.appMode.readReleaseNotes') }}
+                <ArrowRightOutlined />
+              </a>
+            </span>
+          </div>
+        </Space>
+      </Radio.Group>
+      <div v-if="!isManagedByDeployment" class="app-mode-actions">
+        <Button
+          type="primary"
+          :disabled="!isDirty || isLoading || isSaving"
+          :loading="isSaving"
+          data-testid="save-app-mode-settings"
+          @click="save"
+        >
           {{ t('settings.appMode.save') }}
         </Button>
-      </Form>
+      </div>
+      </div>
     </Spin>
   </div>
 </template>
@@ -101,5 +190,20 @@ onMounted(() => {
 }
 .app-mode-config__lead {
   margin-bottom: 24px;
+}
+.app-mode-classic-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-mode-classic-hint {
+  display: block;
+  padding-left: 24px;
+  font-size: 12px;
+}
+
+.app-mode-actions {
+  margin-top: 24px;
 }
 </style>

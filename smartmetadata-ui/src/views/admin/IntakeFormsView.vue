@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Dropdown, Empty, Menu, Space, Tooltip, Typography, message } from 'ant-design-vue';
+import { Button, Dropdown, Empty, Menu, Tooltip, Typography, message } from 'ant-design-vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
@@ -65,9 +65,7 @@ const ENTITY_TYPES: TargetEntityType[] = [
 
 const forms = ref<IntakeForm[]>([]);
 const loading = ref(false);
-const errorMessage = ref('');
 const saving = ref(false);
-const deleting = ref(false);
 
 const modalState = ref<{
   open: boolean;
@@ -81,14 +79,26 @@ const allEntityTypesCovered = computed(
   () => existingEntityTypes.value.size === ENTITY_TYPES.length,
 );
 
+// Official failure handling (IntakeFormsPage.tsx:80-82, 133-135,
+// 148-150, 171-173): a bare showErrorToast(err) with the server
+// message, never a fabricated fallback. The product toast contract
+// (api/client.ts: readErrorMessage always returns a non-empty
+// message; every API failure is an ApiError) means the guard below
+// only skips the unreachable degenerate case of a message-less,
+// non-Error throw — it never invents loadFailed text.
+function toastFailure(error: unknown): void {
+  if (error instanceof Error && error.message) {
+    message.error(error.message);
+  }
+}
+
 async function fetchForms(): Promise<void> {
   loading.value = true;
-  errorMessage.value = '';
   try {
     const page = await listIntakeForms({ fields: 'owners,formFields,requiredFields' });
     forms.value = page.data;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    toastFailure(error);
   } finally {
     loading.value = false;
   }
@@ -119,7 +129,7 @@ async function handleSubmit(payload: CreateIntakeForm): Promise<void> {
     closeModal();
     await fetchForms();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    toastFailure(error);
   } finally {
     saving.value = false;
   }
@@ -131,7 +141,7 @@ async function handleToggleEnabled(form: IntakeForm, enabled: boolean): Promise<
     message.success(t('intakeForms.updated'));
     await fetchForms();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    toastFailure(error);
   }
 }
 
@@ -140,16 +150,16 @@ async function handleDeleteConfirm(): Promise<void> {
   if (!form) {
     return;
   }
-  deleting.value = true;
+  // Official delete confirm (IntakeFormsPage.tsx:123-136): the
+  // target is cleared before the delete runs, so the dialog closes
+  // immediately; the delete button carries no loading state.
+  deleteTarget.value = null;
   try {
     await deleteIntakeForm(form.id);
     message.success(t('intakeForms.deleted'));
-    deleteTarget.value = null;
     await fetchForms();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
-  } finally {
-    deleting.value = false;
+    toastFailure(error);
   }
 }
 
@@ -161,41 +171,40 @@ onMounted(() => {
 <template>
   <div data-testid="intake-forms">
     <SmBreadcrumb :items="breadcrumbItems" />
-    <PageHeader :header="t('intakeForms.title')" :sub-header="t('intakeForms.lead')" />
-    <Typography.Text v-if="errorMessage" type="danger" data-testid="intake-forms-error">
-      {{ errorMessage }}
-    </Typography.Text>
-    <Space style="width: 100%; justify-content: flex-end; margin-bottom: 16px">
-      <Tooltip v-if="allEntityTypesCovered" :title="t('intakeForms.allTypesCovered')">
-        <Button type="primary" disabled data-testid="add-intake-form">
-          {{ t('intakeForms.add') }}
-        </Button>
-      </Tooltip>
-      <Dropdown v-else>
-        <Button type="primary" data-testid="add-intake-form">
-          {{ t('intakeForms.add') }}
-        </Button>
-        <template #overlay>
-          <Menu>
-            <Menu.Item
-              v-for="entityType in ENTITY_TYPES"
-              :key="entityType"
-              :disabled="existingEntityTypes.has(entityType)"
-              :data-testid="`add-${entityType}`"
-              @click="handleCreate(entityType)"
-            >
-              {{
-                existingEntityTypes.has(entityType)
-                  ? `${t(ENTITY_TYPE_LABEL_KEYS[entityType])} (${t('intakeForms.alreadyConfigured')})`
-                  : t(ENTITY_TYPE_LABEL_KEYS[entityType])
-              }}
-            </Menu.Item>
-          </Menu>
-        </template>
-      </Dropdown>
-    </Space>
+    <div class="intake-forms-header">
+      <PageHeader :header="t('intakeForms.title')" :sub-header="t('intakeForms.lead')" />
+      <div>
+        <Tooltip v-if="allEntityTypesCovered" :title="t('intakeForms.allTypesCovered')">
+          <Button type="primary" disabled data-testid="add-intake-form">
+            {{ t('intakeForms.add') }}
+          </Button>
+        </Tooltip>
+        <Dropdown v-else>
+          <Button type="primary" data-testid="add-intake-form">
+            {{ t('intakeForms.add') }}
+          </Button>
+          <template #overlay>
+            <Menu>
+              <Menu.Item
+                v-for="entityType in ENTITY_TYPES"
+                :key="entityType"
+                :disabled="existingEntityTypes.has(entityType)"
+                :data-testid="`add-${entityType}`"
+                @click="handleCreate(entityType)"
+              >
+                {{
+                  existingEntityTypes.has(entityType)
+                    ? `${t(ENTITY_TYPE_LABEL_KEYS[entityType])} (${t('intakeForms.alreadyConfigured')})`
+                    : t(ENTITY_TYPE_LABEL_KEYS[entityType])
+                }}
+              </Menu.Item>
+            </Menu>
+          </template>
+        </Dropdown>
+      </div>
+    </div>
     <Empty
-      v-if="!loading && forms.length === 0 && !errorMessage"
+      v-if="!loading && forms.length === 0"
       data-testid="intake-forms-empty"
     >
       <template #description>
@@ -214,10 +223,10 @@ onMounted(() => {
     <FormModal
       :get-container="false"
       :open="deleteTarget !== null"
+      size="deleteDialog"
       :title="t('intakeForms.deleteTitle', { entity: deleteTarget ? t(ENTITY_TYPE_LABEL_KEYS[deleteTarget.entityType]) : '' })"
       :ok-text="t('crud.delete')"
       :cancel-text="t('crud.cancel')"
-      :confirm-loading="deleting"
       @ok="handleDeleteConfirm"
       @cancel="deleteTarget = null"
     >
@@ -233,3 +242,13 @@ onMounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.intake-forms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+</style>

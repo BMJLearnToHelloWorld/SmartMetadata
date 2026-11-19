@@ -1,67 +1,68 @@
 <!--
   Copyright 2026 SmartMetadata authors.
+
   Licensed under the Apache License, Version 2.0.
 -->
+<!--
+  Vue port of pin PersonaDetailsPage.tsx: hash-derived tabs
+  (customize-ui / users), a page-local breadcrumb (list + entity
+  name + optional category segment, no Settings prefix), entity
+  permissions without the `deleted` option, a Manage menu (Rename +
+  set/remove-default + Delete), a description preview with a
+  field-gated edit affordance, and a users table. The customize-ui
+  tab keeps the existing category-card entry behavior only: the
+  editors, category table rebuild, and nested-route exit all belong
+  to the C-4 batch (DEL-2/DEL-10/DEL-11 held). Description clears
+  send a `remove` op (draft PER-D6/DEL-12), implemented by dropping
+  undefined-valued keys from the merged record before diffing.
+-->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
-import { getPersonaByName, personaUsersPatch, updatePersona } from '@/api/persona';
-import type { JsonPatchOp } from '@/admin/jsonPatch';
-import FormModal from '@/components/shared/FormModal.vue';
-import { Breadcrumb, Button, Form, Input, Tabs, message } from 'ant-design-vue';
-import { personaDetailBreadcrumbs } from '@/settings/breadcrumbExceptions';
-import { settingsLocationResolver } from '@/settings/locationResolver';
+import { Breadcrumb, Button, Modal, Spin, Tabs, message } from 'ant-design-vue';
+import { EditOutlined, UserOutlined } from '@ant-design/icons-vue';
+import { diffJsonPatch } from '@/admin/jsonPatch';
+import { getPersonaByName, updatePersona } from '@/api/persona';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
+import SmMarkdown from '@/components/shared/SmMarkdown.vue';
+import { useAuthStore } from '@/stores/auth';
 import type { EntityRef } from '@/types/api';
 import type { Persona } from '@/types/persona';
 import { CUSTOMIZE_PAGE_CATEGORIES } from './personaPage';
+import { personaDetailBreadcrumbs } from '@/settings/breadcrumbExceptions';
+import { settingsLocationResolver } from '@/settings/locationResolver';
 import PersonaCustomizeGrid from './persona/PersonaCustomizeGrid.vue';
-import PersonaUserPicker from './PersonaUserPicker.vue';
+import { fetchCurrentUserForPersonaDetail } from './persona/currentUserRefresh';
+import PersonaDescriptionModal from './persona/PersonaDescriptionModal.vue';
+import PersonaManageMenu from './persona/PersonaManageMenu.vue';
+import PersonaUsersTab from './persona/PersonaUsersTab.vue';
+import UserSelectableList from './persona/UserSelectableList.vue';
 
-/**
- * Persona detail, mirroring the official S1 PersonaDetailsPage: header
- * with edit + set-as-default, two tabs only (`customize-ui`, driven by
- * the customize grid, and `users`), and the §9.5 row-1 breadcrumb
- * trail (no Settings root; the detail crumb links with the
- * `#customize-ui` hash). Personas are not deletable through this
- * page, as official notes.
- *
- * Tab state lives in the URL hash, exactly as official derives it:
- * `activeKey` is the hash segment before the first `.` (default
- * `customize-ui`), `activeCategory` the segment after it. With no
- * hash the page writes `#customize-ui` once on mount (replace, so no
- * extra history entry). Switching tabs pushes the new hash; drilling
- * into a customize category only changes the hash, which swaps the
- * grid list without leaving the tab.
- */
+const CUSTOMIZE_UI_KEY = 'customize-ui';
+
 const props = defineProps<{ fqn: string }>();
 
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 
-const loading = ref(false);
-const errorMessage = ref('');
-const persona = ref<Persona | null>(null);
-const editOpen = ref(false);
-const editing = ref(false);
-const editForm = reactive({ displayName: '', description: '' });
-const defaultOpen = ref(false);
-const defaulting = ref(false);
-const addUsersOpen = ref(false);
-const addingUsers = ref(false);
-const addUserIds = ref<string[]>([]);
+const isLoading = ref(false);
+const personaDetails = ref<Persona | null>(null);
+const isDescriptionEditing = ref(false);
+const isConfirmModalVisible = ref(false);
+const isConfirmModalLoading = ref(false);
 
-const hashSegments = computed(() =>
-  (route.hash ? route.hash.replace(/^#/, '') : '').split('.'),
-);
-const activeKey = computed(() => hashSegments.value[0] || 'customize-ui');
-const activeCategory = computed(() => hashSegments.value[1] || undefined);
-
+const hashParts = computed(() => (route.hash ? route.hash.replace('#', '') : '').split('.'));
+const activeKey = computed(() => hashParts.value[0] || CUSTOMIZE_UI_KEY);
+const activeCategory = computed(() => hashParts.value[1]);
+const fullHash = computed(() => route.hash.replace('#', ''));
 const breadcrumbs = computed(() =>
   personaDetailBreadcrumbs({
     personasLabel: t('settings.registry.persona.title'),
-    entityName: persona.value ? persona.value.displayName || persona.value.name : '',
+    entityName: personaDetails.value ? getEntityName(personaDetails.value) : '',
     personaListLocation: settingsLocationResolver('persona'),
     personaDetailLocation: {
       name: 'admin-settings-persona-detail',
@@ -76,231 +77,302 @@ const breadcrumbs = computed(() =>
   }),
 );
 
-const memberRefs = computed(() => persona.value?.users ?? []);
+// Personas aren't soft-deletable through this page (the Manage menu is
+// passed a hardcoded non-deleted state), so this call is deliberately
+// ungated — no `deleted` option. (Pin PersonaDetailsPage.tsx:90-91.)
+const { canEditAll, canEditDescription, canDelete: hasDeletePermission, error: permissionsError } =
+  useEntityPermissions('persona', () => props.fqn);
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
+watch(permissionsError, (error) => {
+  if (error) {
+    message.error(error instanceof Error ? error.message : String(error));
+  }
+});
+
+function getEntityName(persona?: Persona | EntityRef | null): string {
+  return persona?.displayName || persona?.name || '';
+}
+
+
+async function fetchPersonaDetails(): Promise<void> {
   try {
-    persona.value = await getPersonaByName(props.fqn);
-    editForm.displayName = persona.value.displayName ?? '';
-    editForm.description = persona.value.description ?? '';
+    isLoading.value = true;
+    personaDetails.value = await getPersonaByName(props.fqn);
   } catch (error) {
-    persona.value = null;
-    errorMessage.value = error instanceof Error ? error.message : t('persona.loadFailed');
+    message.error(error instanceof Error ? error.message : String(error));
   } finally {
-    loading.value = false;
+    isLoading.value = false;
   }
-}
-
-async function patchAndReload(patch: JsonPatchOp[]): Promise<boolean> {
-  if (!persona.value) {
-    return false;
-  }
-  try {
-    persona.value = await updatePersona(persona.value.id, patch);
-    return true;
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('persona.saveFailed'));
-    return false;
-  }
-}
-
-async function onEdit(): Promise<void> {
-  if (!persona.value) {
-    return;
-  }
-  const patch: JsonPatchOp[] = [];
-  const displayName = editForm.displayName.trim() || undefined;
-  const description = editForm.description.trim() || undefined;
-  if (displayName !== (persona.value.displayName ?? undefined)) {
-    patch.push({ op: 'replace', path: '/displayName', value: displayName ?? null });
-  }
-  if (description !== (persona.value.description ?? undefined)) {
-    patch.push({ op: 'replace', path: '/description', value: description ?? null });
-  }
-  if (!patch.length) {
-    editOpen.value = false;
-    return;
-  }
-  editing.value = true;
-  try {
-    if (await patchAndReload(patch)) {
-      editOpen.value = false;
-      message.success(t('persona.saved'));
-    }
-  } finally {
-    editing.value = false;
-  }
-}
-
-async function onToggleDefault(): Promise<void> {
-  if (!persona.value) {
-    return;
-  }
-  defaulting.value = true;
-  try {
-    if (await patchAndReload([{ op: 'replace', path: '/default', value: !persona.value.default }])) {
-      defaultOpen.value = false;
-      message.success(t('persona.saved'));
-    }
-  } finally {
-    defaulting.value = false;
-  }
-}
-
-async function onRemoveUser(user: EntityRef): Promise<void> {
-  if (!persona.value) {
-    return;
-  }
-  const remaining = memberRefs.value.filter((member) => member.id !== user.id);
-  await patchAndReload(personaUsersPatch(remaining));
-}
-
-async function onAddUsers(): Promise<void> {
-  if (!persona.value || !addUserIds.value.length) {
-    return;
-  }
-  addingUsers.value = true;
-  try {
-    const merged: EntityRef[] = [
-      ...memberRefs.value,
-      ...addUserIds.value.map((id) => ({ id, name: id, type: 'user' })),
-    ];
-    if (await patchAndReload(personaUsersPatch(merged))) {
-      addUsersOpen.value = false;
-      addUserIds.value = [];
-      message.success(t('persona.saved'));
-    }
-  } finally {
-    addingUsers.value = false;
-  }
-}
-
-function onTabChange(key: string | number): void {
-  void router.push({ hash: `#${key}` });
-}
-
-function backToList(): void {
-  void router.push({ name: 'admin-settings-persona' });
 }
 
 watch(
   () => props.fqn,
   () => {
-    void load();
+    if (props.fqn) {
+      void fetchPersonaDetails();
+    }
   },
 );
 
 onMounted(() => {
+  if (props.fqn) {
+    void fetchPersonaDetails();
+  }
+  // Add #customize-ui to the URL when there is no hash (replace).
   if (!route.hash) {
     void router.replace({ hash: '#customize-ui' });
   }
-  void load();
 });
+
+function fetchCurrentUser(): Promise<void> {
+  return fetchCurrentUserForPersonaDetail(authStore);
+}
+
+function stripUndefined(record: Record<string, unknown>): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value !== undefined) {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
+async function handlePersonaUpdate(
+  data: Partial<Persona>,
+  shouldRefetch = false,
+): Promise<boolean> {
+  if (!personaDetails.value) {
+    return false;
+  }
+  const merged: Record<string, unknown> = { ...personaDetails.value, ...data };
+  for (const key of Object.keys(data)) {
+    if (data[key as keyof Persona] === undefined) {
+      delete merged[key];
+    }
+  }
+  // mapPersona materializes absent fields as present-but-undefined keys;
+  // stripping them from both sides makes the diff match pin's
+  // fast-json-patch compare on the raw JSON (absent -> present yields
+  // `add`, not `replace` on a path the server does not have).
+  const diff = diffJsonPatch(
+    stripUndefined(personaDetails.value as unknown as Record<string, unknown>),
+    stripUndefined(merged),
+  );
+  try {
+    const response = await updatePersona(personaDetails.value.id, diff);
+    personaDetails.value = response;
+    if (shouldRefetch) {
+      await fetchCurrentUser();
+    }
+    return true;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function handleRemoveUser(userId: string): void {
+  const updatedUsers = personaDetails.value?.users?.filter((user) => user.id !== userId);
+  void handlePersonaUpdate({ users: updatedUsers }, true);
+}
+
+async function handleAfterDeleteAction(): Promise<void> {
+  await fetchCurrentUser();
+  await router.push({ name: 'admin-settings-persona' });
+}
+
+function handleDefaultActionClick(): void {
+  isConfirmModalVisible.value = true;
+}
+
+async function handleConfirmDefaultAction(): Promise<void> {
+  if (!personaDetails.value) {
+    return;
+  }
+  try {
+    isConfirmModalLoading.value = true;
+    const isCurrentlyDefault = personaDetails.value.default === true;
+    const updatedPersona = { ...personaDetails.value, default: !isCurrentlyDefault };
+    const jsonPatch = diffJsonPatch(
+      stripUndefined(personaDetails.value as unknown as Record<string, unknown>),
+      stripUndefined(updatedPersona as unknown as Record<string, unknown>),
+    );
+    const response = await updatePersona(personaDetails.value.id, jsonPatch);
+    const successMessage = isCurrentlyDefault
+      ? t('message.default-persona-removed-successfully')
+      : t('message.default-persona-set-successfully');
+    personaDetails.value = response;
+    message.success(successMessage);
+    isConfirmModalVisible.value = false;
+    await fetchCurrentUser();
+  } catch {
+    message.error(t('message.default-persona-update-error'));
+  } finally {
+    isConfirmModalLoading.value = false;
+  }
+}
+
+function handleTabClick(key: string): void {
+  if (fullHash.value === key) {
+    return;
+  }
+  void router.push({ hash: `#${key}` });
+}
+
+function handleActiveTabLabelClick(key: string): void {
+  // Clicking the active tab emits no Tabs change event, but pin still
+  // navigates when the hash carries a category segment (dropping it).
+  if (key === activeKey.value && fullHash.value !== key) {
+    handleTabClick(key);
+  }
+}
+
+
+async function handleDescriptionSave(content: string): Promise<void> {
+  const ok = await handlePersonaUpdate({
+    description: content ? content : undefined,
+  });
+  if (ok) {
+    isDescriptionEditing.value = false;
+  }
+}
 </script>
 
 <template>
   <div data-testid="persona-detail">
-    <Breadcrumb v-if="persona" data-testid="persona-breadcrumb">
-      <Breadcrumb.Item v-for="(crumb, index) in breadcrumbs" :key="`${crumb.label}-${index}`">
-        <RouterLink v-if="crumb.to" :to="crumb.to">{{ crumb.label }}</RouterLink>
-        <span v-else>{{ crumb.label }}</span>
-      </Breadcrumb.Item>
-    </Breadcrumb>
-    <Button data-testid="persona-back" @click="backToList">{{ t('persona.backToPersona') }}</Button>
-    <p v-if="errorMessage" class="persona-detail__error">{{ errorMessage }}</p>
-    <div v-if="persona" class="persona-detail__header">
-      <h2 data-testid="persona-detail-name">{{ persona.displayName || persona.name }}</h2>
-      <p>{{ persona.description }}</p>
-      <span v-if="persona.default">{{ t('persona.defaultBadge') }}</span>
-      <div class="persona-detail__actions">
-        <Button data-testid="persona-edit-button" @click="editOpen = true">{{ t('persona.edit') }}</Button>
-        <Button data-testid="persona-default-button" @click="defaultOpen = true">
-          {{ persona.default ? t('persona.removeDefault') : t('persona.setDefault') }}
-        </Button>
-      </div>
+    <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
+      <Spin size="large" />
     </div>
-    <Tabs v-if="persona" :active-key="activeKey" @change="onTabChange">
-      <Tabs.TabPane key="customize-ui" :tab="t('persona.customizeUi')">
-        <div data-testid="persona-tab-customize">
-          <PersonaCustomizeGrid :persona-fqn="props.fqn" :active-category="activeCategory" />
+    <div
+      v-else-if="!personaDetails"
+      style="position: relative; height: 100%; width: 100%; min-height: 240px"
+    >
+      <NoDataPlaceholder test-id="no-data-placeholder" />
+    </div>
+    <template v-else>
+      <div style="display: flex; align-items: flex-start; justify-content: space-between">
+        <div>
+          <Breadcrumb data-testid="persona-breadcrumb">
+            <Breadcrumb.Item v-for="(crumb, index) in breadcrumbs" :key="`${crumb.label}-${index}`">
+              <RouterLink v-if="crumb.to" :to="crumb.to">{{ crumb.label }}</RouterLink>
+              <span v-else>{{ crumb.label }}</span>
+            </Breadcrumb.Item>
+          </Breadcrumb>
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px">
+            <span
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background: var(--sm-primary, #005587);
+                color: #fff;
+              "
+            >
+              <UserOutlined style="font-size: 20px" />
+            </span>
+            <h2 style="margin: 0" data-testid="persona-detail-name">{{ getEntityName(personaDetails) }}</h2>
+          </div>
         </div>
-      </Tabs.TabPane>
-      <Tabs.TabPane key="users" :tab="t('persona.users')">
-        <div data-testid="persona-tab-users">
-          <Button data-testid="persona-add-users-button" type="primary" @click="addUsersOpen = true">
-            {{ t('persona.addUsers') }}
+        <PersonaManageMenu
+          :persona="personaDetails"
+          :can-edit-description="canEditDescription"
+          :can-delete="canEditAll || hasDeletePermission"
+          :on-edit-display-name="(data) => handlePersonaUpdate(data, true)"
+          :on-default-action-click="handleDefaultActionClick"
+          :after-delete-action="handleAfterDeleteAction"
+        />
+      </div>
+      <div style="margin: 16px 0">
+        <div style="display: flex; align-items: flex-start; gap: 8px">
+          <div style="flex: 1; min-width: 0">
+            <SmMarkdown :markdown="personaDetails.description ?? ''" />
+          </div>
+          <Button
+            v-if="canEditDescription"
+            type="text"
+            size="small"
+            data-testid="edit-description"
+            :title="t('label.edit-entity', { entity: t('label.description') })"
+            @click="isDescriptionEditing = true"
+          >
+            <EditOutlined />
           </Button>
-          <p v-if="memberRefs.length === 0">{{ t('persona.noUsers') }}</p>
-          <ul>
-            <li v-for="user in memberRefs" :key="user.id" :data-testid="`persona-user-${user.id}`">
-              {{ user.displayName || user.name }}
-              <Button
-                size="small"
-                :data-testid="`persona-user-remove-${user.id}`"
-                @click="void onRemoveUser(user)"
-              >
-                {{ t('persona.remove') }}
-              </Button>
-            </li>
-          </ul>
         </div>
-      </Tabs.TabPane>
-    </Tabs>
-    <FormModal
-      :get-container="false"
-      :open="editOpen"
-      :title="t('persona.edit')"
-      :confirm-loading="editing"
-      test-id="persona-edit-modal"
-      @ok="void onEdit()"
-      @cancel="editOpen = false"
-    >
-      <Form layout="vertical">
-        <Form.Item :label="t('persona.displayName')">
-          <Input v-model:value="editForm.displayName" data-testid="persona-edit-display-name" />
-        </Form.Item>
-        <Form.Item :label="t('persona.description')">
-          <Input.TextArea v-model:value="editForm.description" data-testid="persona-edit-description" />
-        </Form.Item>
-      </Form>
-    </FormModal>
-    <FormModal
-      :get-container="false"
-      :open="defaultOpen"
-      :title="persona?.default ? t('persona.removeDefault') : t('persona.setDefault')"
-      :confirm-loading="defaulting"
-      test-id="persona-default-modal"
-      @ok="void onToggleDefault()"
-      @cancel="defaultOpen = false"
-    >
-      <p>{{ persona?.default ? t('persona.removeDefault') : t('persona.setDefault') }}</p>
-    </FormModal>
-    <FormModal
-      :get-container="false"
-      :open="addUsersOpen"
-      :title="t('persona.addUsers')"
-      :confirm-loading="addingUsers"
-      test-id="persona-add-users-modal"
-      @ok="void onAddUsers()"
-      @cancel="addUsersOpen = false"
-    >
-      <PersonaUserPicker v-model="addUserIds" :excluded-ids="memberRefs.map((m) => m.id ?? '')" />
-    </FormModal>
+      </div>
+      <div style="position: relative">
+        <Tabs :active-key="activeKey" @change="(key) => handleTabClick(String(key))">
+          <Tabs.TabPane :key="CUSTOMIZE_UI_KEY">
+            <template #tab>
+              <span :data-testid="CUSTOMIZE_UI_KEY" @click="handleActiveTabLabelClick(CUSTOMIZE_UI_KEY)">{{ t('label.customize-ui') }}</span>
+            </template>
+            <div v-if="activeKey === CUSTOMIZE_UI_KEY" data-testid="persona-tab-customize">
+              <PersonaCustomizeGrid :persona-fqn="props.fqn" :active-category="activeCategory" />
+
+            </div>
+          </Tabs.TabPane>
+          <Tabs.TabPane key="users">
+            <template #tab>
+              <span data-testid="users" @click="handleActiveTabLabelClick('users')">{{ t('label.user-plural') }}</span>
+            </template>
+            <div v-if="activeKey === 'users'" data-testid="persona-tab-users">
+              <PersonaUsersTab
+                :users="personaDetails.users ?? []"
+                :on-remove-user="handleRemoveUser"
+              />
+            </div>
+          </Tabs.TabPane>
+        </Tabs>
+        <div
+          v-if="activeKey === 'users'"
+          style="position: absolute; top: 0; right: 0"
+        >
+          <UserSelectableList
+            :has-permission="true"
+            :multi-select="true"
+            :selected-users="personaDetails.users ?? []"
+            :on-update="
+              (users) => handlePersonaUpdate({ users: Array.isArray(users) ? users : [users] }, true).then(() => undefined)
+            "
+          >
+            <Button type="primary" size="small" data-testid="add-persona-button">
+              {{ t('label.add-entity', { entity: t('label.user') }) }}
+            </Button>
+          </UserSelectableList>
+        </div>
+      </div>
+      <PersonaDescriptionModal
+        :open="isDescriptionEditing"
+        :header="t('label.edit-description-for', { entityName: personaDetails.name })"
+        :placeholder="t('label.enter-entity', { entity: t('label.description') })"
+        :value="personaDetails.description"
+        :on-cancel="() => { isDescriptionEditing = false; }"
+        :on-save="handleDescriptionSave"
+      />
+      <Modal
+        :open="isConfirmModalVisible"
+        :title="personaDetails.default ? t('label.remove-default') : t('label.set-as-default')"
+        :ok-text="t('label.yes')"
+        :cancel-text="t('label.cancel')"
+        :confirm-loading="isConfirmModalLoading"
+        @ok="void handleConfirmDefaultAction()"
+        @cancel="isConfirmModalVisible = false"
+      >
+        <div data-testid="default-persona-confirmation-modal">
+          {{
+            personaDetails.default
+              ? t('message.remove-default-persona-confirmation', {
+                  persona: getEntityName(personaDetails),
+                })
+              : t('message.set-default-persona-confirmation', {
+                  persona: getEntityName(personaDetails),
+                })
+          }}
+        </div>
+      </Modal>
+    </template>
   </div>
 </template>
-
-<style scoped>
-.persona-detail__header {
-  margin: 16px 0;
-}
-.persona-detail__actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-.persona-detail__error {
-  color: var(--sm-color-error-text);
-}
-</style>

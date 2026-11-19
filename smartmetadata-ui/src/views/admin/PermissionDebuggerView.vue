@@ -19,9 +19,8 @@ import {
   Spin,
   Tag,
   Typography,
+  message,
 } from 'ant-design-vue';
-import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
@@ -38,11 +37,8 @@ import {
   PERMISSION_DEBUG_OPERATIONS,
   PERMISSION_DEBUG_RESOURCES,
   debugEvaluatePermission,
-  debugUserPermissions,
-  type PermissionDebugInfo,
   type PermissionEvaluationDebugInfo,
 } from '@/api/permissions';
-import { useAuthStore } from '@/stores/auth';
 
 const { t } = useI18n();
 const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
@@ -60,7 +56,6 @@ const breadcrumbItems = computed(() =>
     ),
   ),
 );
-const authStore = useAuthStore();
 
 /**
  * Official AdminPermissionDebugger + AccessControlDebuggerPanel +
@@ -75,18 +70,17 @@ const authStore = useAuthStore();
  * permissions with hierarchy, inherited permissions), each policy as
  * an expandable panel of its rules.
  *
- * Gate: the route lives under /admin, so the router guard already
- * denies non-admins; the view repeats the admin line itself (the
- * R-4 marketplace-detail precedent) so a direct mount still forbids.
- * The server additionally enforces admin for other-user debug info
- * (403), which surfaces as an error, never as empty data.
+ * Gate: the route is admin-only at the router level (the pin's bare
+ * AdminProtectedRoute); the view carries no self-check and no page
+ * header (03 §10.8, #14). The server additionally enforces admin for
+ * other-user debug info (403), which surfaces as an error, never as
+ * empty data.
  *
  * One presentational adaptation, recorded not silent: official picks
  * the user from a combobox dropdown; this page renders the same
  * debounced user-index search as an input plus a clickable results
  * list, which keeps the flow testable without dropdown internals.
  */
-const isAdmin = computed(() => authStore.user?.isAdmin === true);
 
 interface UserOption {
   value: string;
@@ -119,7 +113,9 @@ async function runUserSearch(query: string): Promise<void> {
     const page = await searchAssets(query, 0, 10, { index: 'user' });
     userOptions.value = page.hits.map((hit) => ({
       value: hit.name,
-      label: hit.displayName ? `${hit.displayName} (${hit.name})` : hit.name,
+      // Pin label template, including the "name (name)" form when there
+      // is no display name (AccessControlDebuggerPanel).
+      label: `${hit.displayName || hit.name} (${hit.name})`,
     }));
   } catch {
     userOptions.value = [];
@@ -131,36 +127,10 @@ async function runUserSearch(query: string): Promise<void> {
 function onSelectUser(username: string): void {
   selectedUsername.value = username;
   evaluationInfo.value = null;
-  evaluationError.value = '';
-  void loadUserPermissions(username);
 }
 
-// --- Card 4: user permissions -------------------------------------------
-
-const userInfo = ref<PermissionDebugInfo | null>(null);
-const loadingUserInfo = ref(false);
-const userInfoError = ref('');
-
-async function loadUserPermissions(username: string): Promise<void> {
-  loadingUserInfo.value = true;
-  userInfoError.value = '';
-  try {
-    const info = await debugUserPermissions(username);
-    if (selectedUsername.value === username) {
-      userInfo.value = info;
-    }
-  } catch (error) {
-    if (selectedUsername.value === username) {
-      userInfoError.value =
-        error instanceof Error ? error.message : t('permissionDebugger.loadFailed');
-      userInfo.value = null;
-    }
-  } finally {
-    if (selectedUsername.value === username) {
-      loadingUserInfo.value = false;
-    }
-  }
-}
+// --- Card 4: user permissions (UserPermissionsPanel fetches its own
+// debug info for the selected user, isLoggedInUser=false per 03 §10.7) ---
 
 // --- Cards 2-3: evaluation ----------------------------------------------
 
@@ -170,7 +140,6 @@ const formResourceId = ref('');
 const formErrors = ref<{ resource?: string; operation?: string }>({});
 const evaluating = ref(false);
 const evaluationInfo = ref<PermissionEvaluationDebugInfo | null>(null);
-const evaluationError = ref('');
 let evaluationRequestId = 0;
 
 const resourceOptions = PERMISSION_DEBUG_RESOURCES.map((value) => ({
@@ -184,6 +153,8 @@ const operationOptions = PERMISSION_DEBUG_OPERATIONS.map((value) => ({
 
 async function handleEvaluate(): Promise<void> {
   if (!selectedUsername.value) {
+    // Defensive: the button only renders once a user is selected.
+    message.error(t('permissionDebugger.selectUserFirst'));
     return;
   }
   const errors: { resource?: string; operation?: string } = {};
@@ -203,7 +174,6 @@ async function handleEvaluate(): Promise<void> {
   }
   const requestId = ++evaluationRequestId;
   evaluating.value = true;
-  evaluationError.value = '';
   try {
     const info = await debugEvaluatePermission({
       user: selectedUsername.value,
@@ -216,9 +186,10 @@ async function handleEvaluate(): Promise<void> {
     }
   } catch (error) {
     if (requestId === evaluationRequestId) {
-      evaluationError.value =
-        error instanceof Error ? error.message : t('permissionDebugger.evaluateFailed');
-      evaluationInfo.value = null;
+      // Pin behaviour: an error toast, and the previous result stays.
+      message.error(
+        error instanceof Error ? error.message : t('permissionDebugger.evaluateFailed'),
+      );
     }
   } finally {
     if (requestId === evaluationRequestId) {
@@ -230,16 +201,10 @@ async function handleEvaluate(): Promise<void> {
 </script>
 
 <template>
-  <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
-  <PageLayout v-else test-id="permission-debugger">
+  <PageLayout test-id="permission-debugger">
     <SmBreadcrumb :items="breadcrumbItems" />
-    <PageHeader
-      :header="t('permissionDebugger.title')"
-      :sub-header="t('permissionDebugger.lead')"
-      test-id="permission-debugger-title"
-    />
 
-    <Card data-testid="permission-debugger-user-card">
+    <Card data-testid="permission-debugger-user-card" style="margin-top: 16px">
       <Typography.Title :level="5">{{ t('permissionDebugger.selectUser') }}</Typography.Title>
       <Input
         v-model:value="searchText"
@@ -314,20 +279,12 @@ async function handleEvaluate(): Promise<void> {
         v-if="selectedUsername"
         type="primary"
         :loading="evaluating"
-        :disabled="!formResource || !formOperation"
         data-testid="permission-debugger-evaluate"
         style="margin-top: 16px"
         @click="handleEvaluate"
       >
         {{ t('permissionDebugger.evaluate') }}
       </Button>
-      <Alert
-        v-if="evaluationError"
-        type="error"
-        :message="evaluationError"
-        data-testid="permission-debugger-evaluate-error"
-        style="margin-top: 16px"
-      />
     </Card>
 
     <Card
@@ -337,7 +294,7 @@ async function handleEvaluate(): Promise<void> {
     >
       <Alert
         :type="evaluationInfo.allowed ? 'success' : 'error'"
-        :message="t('permissionDebugger.decision')"
+        :message="`${t('permissionDebugger.decision')}: ${evaluationInfo.finalDecision}`"
         :description="`${t('permissionDebugger.user')} ${evaluationInfo.user.name} ${t('permissionDebugger.is')} ${evaluationInfo.allowed ? t('permissionDebugger.allowed') : t('permissionDebugger.denied')} ${t('permissionDebugger.toPerform')} ${evaluationInfo.operation} ${t('permissionDebugger.on')} ${evaluationInfo.resource}${evaluationInfo.resourceId ? ` (${evaluationInfo.resourceId})` : ''}`"
       />
       <Typography.Paragraph type="secondary" style="margin-top: 12px">
@@ -403,14 +360,7 @@ async function handleEvaluate(): Promise<void> {
       <Typography.Title :level="5">
         {{ t('permissionDebugger.permissionsFor') }} {{ selectedUsername }}
       </Typography.Title>
-      <Spin v-if="loadingUserInfo" data-testid="permission-debugger-user-loading" />
-      <Alert
-        v-else-if="userInfoError"
-        type="error"
-        :message="userInfoError"
-        data-testid="permission-debugger-user-error"
-      />
-      <UserPermissionsPanel v-else-if="userInfo" :info="userInfo" />
+      <UserPermissionsPanel :username="selectedUsername" :is-logged-in-user="false" />
     </Card>
   </PageLayout>
 </template>

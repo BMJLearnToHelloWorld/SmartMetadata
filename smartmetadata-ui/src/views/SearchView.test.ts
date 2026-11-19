@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
+import { useAuthStore } from '@/stores/auth';
 import SearchView from './SearchView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -329,12 +330,16 @@ describe('SearchView Explore result area (R3)', () => {
 
   it('writes a pagination page-size change to the URL and the local preference', async () => {
     const { wrapper, router } = await mountView();
+    useAuthStore().user = { id: 'u-1', name: 'alice', displayName: 'Alice' };
     const pagination = wrapper.findComponent('[data-testid="search-pagination"]');
     expect(pagination.exists()).toBe(true);
     pagination.vm.$emit('show-size-change', 1, 25);
     await flushPromises();
     expect(router.currentRoute.value.query.pageSize).toBe('25');
-    expect(window.localStorage.getItem('sm.explore.pageSize.v1')).toBe('25');
+    expect(window.localStorage.getItem('sm.userPreferences.v1')).toBe(
+      JSON.stringify({ version: 1, preferences: { alice: { globalPageSize: 25 } } }),
+    );
+    expect(window.localStorage.getItem('sm.explore.pageSize.v1')).toBeNull();
   });
 
   it('applies advanced-search rows as Lucene clauses in q', async () => {

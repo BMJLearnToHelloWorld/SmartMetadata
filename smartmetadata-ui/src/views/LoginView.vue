@@ -13,12 +13,15 @@ import { requiredField } from '@/features/crud/formRules';
 import { fetchAuthConfig } from '@/api/system';
 import { setAppLocale } from '@/i18n';
 import { useAuthStore } from '@/stores/auth';
+import { useShellConfigStore } from '@/stores/shellConfig';
+import { resolveBrandImageSrc } from '@/theme/customTheme';
 import type { AuthConfiguration } from '@/types/admin';
 import logoUrl from '@/assets/iqvia-logo.svg';
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
+const shellConfig = useShellConfigStore();
 const { t, locale } = useI18n();
 
 const form = reactive({
@@ -31,6 +34,30 @@ const authConfig = ref<AuthConfiguration | null>(null);
 const authConfigError = ref('');
 
 const passwordLogin = computed(() => supportsPasswordLogin(authConfig.value?.provider));
+
+/**
+ * Brand image (pin BrandImage.tsx:40-51): a non-empty custom logo URL
+ * wins, otherwise the bundled asset. The error fallback mirrors
+ * BrandImage.tsx:64-66.
+ */
+const loginLogoSrc = computed(() =>
+  resolveBrandImageSrc(
+    shellConfig.uiThemePreference?.customLogoConfig.customLogoUrlPath,
+    logoUrl,
+  ),
+);
+
+function onLoginLogoError(event: Event): void {
+  const target = event.currentTarget as HTMLImageElement | null;
+  // One-shot fallback guard (same fallbackApplied dataset-guard form as
+  // the AppearanceSettingsView preview handler): if the bundled asset
+  // also fails, the second error must not re-apply the fallback and loop.
+  if (!target || target.dataset.fallbackApplied) {
+    return;
+  }
+  target.dataset.fallbackApplied = 'true';
+  target.src = logoUrl;
+}
 const ssoOnly = computed(() => isSsoOnlyProvider(authConfig.value?.provider));
 const ssoBrand = computed(() =>
   ssoBrandName(authConfig.value?.provider, authConfig.value?.providerName),
@@ -99,7 +126,7 @@ onMounted(() => {
 <template>
   <div class="login-screen">
     <header class="login__bar">
-      <img class="login__logo" :src="logoUrl" alt="iSmart" />
+      <img class="login__logo" :src="loginLogoSrc" alt="iSmart" @error="onLoginLogoError" />
       <button
         type="button"
         data-testid="locale-switcher"

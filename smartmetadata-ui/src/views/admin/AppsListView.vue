@@ -2,137 +2,166 @@
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
 -->
+<!--
+  Vue port of pin pages/Application/ApplicationPage.tsx (282 lines).
+  Card grid, Disabled toggle, LimitWrapper Add button, cursor paging.
+  Navigation uses the current router record (`admin-app`, `:id` param)
+  with the FQN as the param value; the `:id` -> `:fqn` rename is a
+  router-line request (see the batch report). The Add button navigates
+  to the app-marketplace catalog route, the product's current
+  equivalent of pin ROUTES.MARKETPLACE under the AP-D3 no-switch rule.
+-->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { listApps } from '@/api/apps';
-import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
-import { resolveSettingsLocation } from '@/settings/locationResolver';
-import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
-import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  entityLabel,
-  goNext,
-  goPrev,
-  resetCursor,
-  type CursorPager,
-} from '@/features/crud/paging';
-import type { EntityListColumn } from '@/features/crud/types';
+import { Button, Card, Col, Row, Skeleton, Switch } from 'ant-design-vue';
+import { DatabaseOutlined } from '@ant-design/icons-vue';
+import { getApplicationList } from '@/api/apps';
+import LimitWrapper from '@/components/shared/LimitWrapper.vue';
+import NextPrevious from '@/components/shared/NextPrevious.vue';
+import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
+import { useCursorPagedList } from '@/composables/useCursorPagedList';
+import { useAuthStore } from '@/stores/auth';
 import type { AdminApp } from '@/types/admin';
+import ApplicationCard from '@/views/marketplace/ApplicationCard.vue';
+import { getEntityName, isCacheWarmupApplication } from '@/views/marketplace/appUtils';
 
 const { t } = useI18n();
-const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
-const breadcrumbs = computed(() =>
-  getSettingPageBreadcrumbs(
-    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
-    resolveSettingsLocation,
-    'apps',
-  ),
-);
 const router = useRouter();
-const loading = ref(false);
-const errorMessage = ref('');
-const apps = ref<AdminApp[]>([]);
-const total = ref<number | undefined>();
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
+const authStore = useAuthStore();
+const showDisabled = ref(false);
 
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('crud.description'), dataIndex: 'description', key: 'description' },
-  { title: t('admin.apps.appType'), key: 'appType', width: 140 },
-  { title: t('admin.apps.scheduleType'), key: 'scheduleType', width: 140 },
+const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
+  { label: t('label.setting-plural'), routeName: 'admin-settings' },
+  { label: t('label.application-plural') },
 ]);
 
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
+const { items, paging, isLoading, page, pageSize, showPagination, onPageChange, onPageSizeChange } =
+  useCursorPagedList<AdminApp>(
+    async ({ after, before, limit }) => {
+      const page = await getApplicationList({
+        after,
+        before,
+        limit,
+        include: showDisabled.value ? 'deleted' : 'non-deleted',
+      });
+      return {
+        data: page.data,
+        paging: { after: page.after, before: page.before, total: page.total ?? 0 },
+      };
+    },
+    {
+      persistence: { storage: window.localStorage, userName: () => authStore.user?.name },
+      resetKey: () => showDisabled.value,
+    },
+  );
 
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    const page = await listApps({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
-    apps.value = page.data;
-    total.value = page.total;
-    pageAfter.value = page.after;
-  } catch (error) {
-    apps.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
+function disabledReasonFor(app: AdminApp): string | undefined {
+  return app.enabled === false && isCacheWarmupApplication(app.name)
+    ? t('message.cache-service-not-configured-message')
+    : undefined;
 }
 
-function onNext(): void {
-  if (!pageAfter.value) {
-    return;
-  }
-  cursor.value = goNext(cursor.value, pageAfter.value);
-  void load();
+function viewAppDetails(app: AdminApp): void {
+  void router.push({ name: 'admin-app', params: { fqn: app.fullyQualifiedName ?? '' } });
 }
 
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
+function handleAddApplication(): void {
+  void router.push({ name: 'marketplace-app-catalog' });
 }
-
-function onRefresh(): void {
-  cursor.value = resetCursor();
-  void load();
-}
-
-function openDetail(app: AdminApp): void {
-  void router.push({ name: 'admin-app', params: { id: app.id } });
-}
-
-onMounted(() => {
-  void load();
-});
 </script>
 
 <template>
-  <EntityListShell
-    :breadcrumbs="breadcrumbs"
-    :title="t('admin.apps.title')"
-    :lead="t('admin.apps.lead')"
-    :loading="loading"
-    :error="errorMessage"
-    :columns="columns"
-    :data-source="apps"
-    table-test-id="admin-apps-table"
-    show-row-actions
-    :total="total"
-    :has-next="hasNext"
-    :has-prev="hasPrev"
-    @refresh="onRefresh"
-    @next="onNext"
-    @prev="onPrev"
-    @view="(record) => openDetail(record as AdminApp)"
-  >
-    <template #bodyCell="{ column, record }">
-      <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`app-row-${(record as AdminApp).id}`"
-          @click.prevent="openDetail(record as AdminApp)"
-        >
-          {{ entityLabel(record as AdminApp) }}
-        </a>
+  <div>
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <Row :gutter="[0, 16]" align="middle">
+      <Col :span="16">
+        <PageHeader
+          :header="t('label.extend-open-meta-data')"
+          :sub-header="t('message.application-to-improve-data')"
+          learning-page-id="automations"
+        />
+      </Col>
+      <Col :span="8" style="display: flex; justify-content: flex-end; align-items: center; gap: 16px">
+        <label style="display: flex; align-items: center; gap: 8px">
+          <Switch
+            data-testid="show-disabled"
+            :checked="showDisabled"
+            @change="(checked) => (showDisabled = Boolean(checked))"
+          />
+          <span>{{ t('label.disabled') }}</span>
+        </label>
+        <LimitWrapper resource="app">
+          <template #default="{ limitReached }">
+            <Button
+              type="primary"
+              :disabled="limitReached"
+              data-testid="add-application"
+              @click="handleAddApplication"
+            >
+              {{ t('label.add-entity', { entity: t('label.app-plural') }) }}
+            </Button>
+          </template>
+        </LimitWrapper>
+      </Col>
+    </Row>
+    <Row :gutter="[20, 20]" style="margin-top: 20px">
+      <template v-if="isLoading">
+        <Col v-for="key in [1, 2, 3, 4]" :key="key" :xs="24" :sm="24" :md="12" :lg="8" :xl="6">
+          <Card><Skeleton active :paragraph="{ rows: 3 }" /></Card>
+        </Col>
       </template>
-      <template v-else-if="column.key === 'appType'">
-        {{ (record as AdminApp).appType || '—' }}
+      <Col v-if="items.length === 0 && !isLoading" :span="24" style="text-align: center">
+        <div style="position: relative; min-height: 240px">
+          <NoDataPlaceholder v-if="showDisabled" test-id="no-data-placeholder" />
+          <NoDataPlaceholder
+            v-else
+            test-id="no-data-placeholder"
+            :description="t('message.no-installed-applications-found')"
+            :icon="DatabaseOutlined"
+          />
+        </div>
+      </Col>
+      <template v-if="!isLoading">
+        <Col :span="24">
+          <Row :gutter="[20, 20]">
+            <Col
+              v-for="item in items"
+              :key="item.fullyQualifiedName"
+              :xs="24"
+              :sm="24"
+              :md="12"
+              :lg="8"
+              :xl="6"
+            >
+              <ApplicationCard
+                :app-name="item.fullyQualifiedName ?? ''"
+                :deleted="item.deleted"
+                :description="item.description ?? ''"
+                :disabled="item.enabled === false"
+                :disabled-reason="disabledReasonFor(item)"
+                :link-title="t('label.configure')"
+                :show-description="false"
+                :title="getEntityName(item)"
+                :on-click="() => viewAppDetails(item)"
+              />
+            </Col>
+          </Row>
+        </Col>
+        <Col v-if="showPagination" :span="24">
+          <NextPrevious
+            :paging="paging"
+            :paging-handler="({ currentPage }) => onPageChange(currentPage)"
+            :page-size="pageSize"
+            :current-page="page"
+            :is-loading="isLoading"
+            :on-show-size-change="onPageSizeChange"
+          />
+        </Col>
       </template>
-      <template v-else-if="column.key === 'scheduleType'">
-        {{ (record as AdminApp).scheduleType || '—' }}
-      </template>
-      <template v-else-if="column.key === 'description'">
-        {{ (record as AdminApp).description || '—' }}
-      </template>
-    </template>
-  </EntityListShell>
+    </Row>
+  </div>
 </template>

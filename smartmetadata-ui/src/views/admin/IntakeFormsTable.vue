@@ -4,7 +4,8 @@
 -->
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { Button, Space, Switch, Table, Tag, Typography } from 'ant-design-vue';
+import { Button, Space, Switch, Table, Tag, Tooltip, Typography } from 'ant-design-vue';
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons-vue';
 import type { IntakeForm } from '@/api/intakeForms';
 import { getIntakeFormFields } from '@/views/admin/intakeFormDesigner';
 import { ENTITY_TYPE_LABEL_KEYS } from '@/views/admin/intakeFormDesigner';
@@ -57,7 +58,8 @@ const emit = defineEmits<{
           </Tag>
         </Space>
         <Typography.Text v-else type="secondary">
-          {{ t('intakeForms.noFields') }}
+          <!-- Official NO_DATA_PLACEHOLDER (constants.ts:96). -->
+          --
         </Typography.Text>
       </template>
       <template v-if="column.key === 'enabled'">
@@ -70,21 +72,27 @@ const emit = defineEmits<{
       </template>
       <template v-if="column.key === 'actions'">
         <Space>
-          <Button
-            type="link"
-            :data-testid="`edit-${(record as IntakeForm).entityType}`"
-            @click="emit('edit', record as IntakeForm)"
-          >
-            {{ t('crud.edit') }}
-          </Button>
-          <Button
-            type="link"
-            danger
-            :data-testid="`delete-${(record as IntakeForm).entityType}`"
-            @click="emit('delete', record as IntakeForm)"
-          >
-            {{ t('crud.delete') }}
-          </Button>
+          <Tooltip :title="t('crud.edit')">
+            <Button
+              type="text"
+              size="small"
+              :data-testid="`edit-${(record as IntakeForm).entityType}`"
+              @click="emit('edit', record as IntakeForm)"
+            >
+              <template #icon><EditOutlined /></template>
+            </Button>
+          </Tooltip>
+          <Tooltip :title="t('crud.delete')">
+            <Button
+              type="text"
+              size="small"
+              danger
+              :data-testid="`delete-${(record as IntakeForm).entityType}`"
+              @click="emit('delete', record as IntakeForm)"
+            >
+              <template #icon><DeleteOutlined /></template>
+            </Button>
+          </Tooltip>
         </Space>
       </template>
     </template>
