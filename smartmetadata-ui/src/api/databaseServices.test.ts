@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createDatabaseService, listDatabaseServices, updateDatabaseService } from './databaseServices';
+import { createDatabaseService, listDatabaseServices } from './databaseServices';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -75,20 +75,5 @@ describe('databaseServices API', () => {
     });
     expect(created.id).toBe('s1');
     expect(lastFetch().init?.method).toBe('POST');
-  });
-
-  it('updates through PUT /v1/services/databaseServices', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ id: 's1', name: 'warehouse', serviceType: 'Postgres' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
-    await updateDatabaseService({ name: 'warehouse', serviceType: 'Postgres', description: 'Updated' });
-    expect(lastFetch().init?.method).toBe('PUT');
-    expect(lastFetch().url).toContain('/api/v1/services/databaseServices');
   });
 });

@@ -98,18 +98,6 @@ export async function createMessagingService(body: CreateMessagingServiceRequest
   return mapped;
 }
 
-export async function updateMessagingService(body: CreateMessagingServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/messagingServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapMessagingService(raw);
-  if (!mapped) {
-    throw new Error('Update messaging service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

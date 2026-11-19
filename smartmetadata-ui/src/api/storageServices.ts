@@ -98,18 +98,6 @@ export async function createStorageService(body: CreateStorageServiceRequest): P
   return mapped;
 }
 
-export async function updateStorageService(body: CreateStorageServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/storageServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapStorageService(raw);
-  if (!mapped) {
-    throw new Error('Update storage service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

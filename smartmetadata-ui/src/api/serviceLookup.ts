@@ -54,6 +54,19 @@ export async function getServiceByFqn(
  * the `compare()` op array — the wire shape is the patch array, and this
  * function types it honestly. `patchAsset` does not cover services (its
  * endpoint table has no service entries), so the edit page patches here.
+ *
+ * Relationship to the other `patchService` in `api/servicePatch.ts`: same
+ * endpoint and content type, different contract, deliberately not merged.
+ * This one serves the connection-edit page (`EditServiceConnectionView`),
+ * whose caller guarantees a non-empty patch (an empty patch leaves without
+ * a request) and passes UUID ids unencoded; a missing service rejects with
+ * 'Service response was missing id and name'. The `servicePatch.ts`
+ * variant serves single-field detail edits (`ServiceDetailView`,
+ * `ServiceHeaderFacets`), refuses an empty op list before any request,
+ * encodes the id, and reports a missing service as 'Service patch response
+ * was missing id and name'. Keep the two in sync on endpoint and
+ * content type; do not merge them without reconciling those four
+ * differences and the tests that lock them in.
  */
 export async function patchService(
   kind: ServiceKind,

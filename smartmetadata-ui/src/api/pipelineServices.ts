@@ -98,18 +98,6 @@ export async function createPipelineService(body: CreatePipelineServiceRequest):
   return mapped;
 }
 
-export async function updatePipelineService(body: CreatePipelineServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/pipelineServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapPipelineService(raw);
-  if (!mapped) {
-    throw new Error('Update pipeline service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin

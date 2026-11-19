@@ -19,7 +19,7 @@ import { SERVICE_COLLECTION_BY_KIND } from './serviceVersions';
  * updated service. This is the single write outlet for every
  * service-detail field edit (facets, description, display name,
  * service attributes): callers echo the mapped response directly,
- * never re-fetch, and never reuse the PUT whitelist rebuild, which
+ * never re-fetch, and never fall back to a full-body PUT update, which
  * drops connection keys.
  *
  * The generic patchAsset cannot serve services: resolvePatchPath

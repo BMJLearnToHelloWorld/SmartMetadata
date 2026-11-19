@@ -98,18 +98,6 @@ export async function createMcpService(body: CreateDatabaseServiceRequest): Prom
   return mapped;
 }
 
-export async function updateMcpService(body: CreateDatabaseServiceRequest): Promise<CatalogService> {
-  const raw = await apiRequest<Record<string, unknown>>('/v1/services/mcpServices', {
-    method: 'PUT',
-    json: body,
-  });
-  const mapped = mapMcpService(raw);
-  if (!mapped) {
-    throw new Error('Update mcp service succeeded but the response had no service');
-  }
-  return mapped;
-}
-
 /**
  * Official deleteAsyncEntity (rest/miscAPI.ts): services delete
  * through the async endpoint with hardDelete + recursive; the pin
