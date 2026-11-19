@@ -7,14 +7,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Button, Card, Radio, message } from 'ant-design-vue';
+import { Button, Card, Radio, Spin, message } from 'ant-design-vue';
 import {
   getTypedSetting,
   patchAppConfiguration,
   settingAsAppConfiguration,
 } from '@/api/system';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
 import {
@@ -86,13 +86,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <SmBreadcrumb :items="breadcrumbItems" />
-  <PreferencePageShell
-    test-id="time-format-settings"
-    :title="header"
-    :lead="subHeader"
-  >
-    <Card data-testid="default-time-format-page">
+  <div data-testid="time-format-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="time-format-settings"
+    />
+    <Spin :spinning="isLoading">
+      <Card data-testid="default-time-format-page">
       <Radio.Group
         v-model:value="currentValue"
         :aria-label="t('settings.timeFormat.title')"
@@ -117,6 +119,6 @@ onMounted(() => {
         </Button>
       </template>
     </Card>
-  </PreferencePageShell>
-
+    </Spin>
+  </div>
 </template>

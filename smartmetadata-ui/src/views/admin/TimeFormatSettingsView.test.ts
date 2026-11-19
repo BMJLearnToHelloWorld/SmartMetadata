@@ -39,6 +39,14 @@ async function mountView() {
     messages: {
       'en-US': {
         settings: {
+          registry: {
+            preferences: {
+              timeFormat: {
+                title: 'Time Format Settings',
+                description: 'Time format lead',
+              },
+            },
+          },
           timeFormat: {
             title: 'Default Time Format',
             lead: 'Lead',
@@ -80,12 +88,6 @@ async function mountView() {
   return mount(TimeFormatSettingsView, {
     global: {
       plugins: [router, i18n, pinia],
-      stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="time-format-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
-      },
     },
   });
 }
@@ -101,6 +103,17 @@ describe('TimeFormatSettingsView', () => {
     patchMock.mockResolvedValue(undefined);
     vi.spyOn(message, 'success');
     vi.spyOn(message, 'error');
+  });
+
+  it('renders the registry title and lead in the PageHeader', async () => {
+    const wrapper = await mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="time-format-settings-heading"]').text()).toBe(
+      'Time Format Settings',
+    );
+    expect(wrapper.find('[data-testid="time-format-settings-sub"]').text()).toBe(
+      'Time format lead',
+    );
   });
 
   it('initializes from the stored format and disables save until dirty', async () => {

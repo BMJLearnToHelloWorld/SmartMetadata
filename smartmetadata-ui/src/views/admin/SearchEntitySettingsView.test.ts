@@ -232,10 +232,6 @@ function mountView(router: Router, piniaOrStub: Pinia | boolean = true) {
       plugins: [i18n, router, ...(activePinia ? [activePinia] : [])],
       stubs: {
         SmTable: { template: '<div />' },
-        PreferencePageShell: {
-          template: '<div data-testid="search-entity-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
         ...(stubRouterLink ? { RouterLink: true } : {}),
       },
     },

@@ -82,7 +82,7 @@ describe('settings-space highlight rule (DESIGN §6.6)', () => {
   });
 
   it('attributes the staged /admin/ chains to the Hub (M1b/D-8)', () => {
-    for (const name of ['admin-user', 'admin-bot', 'admin-settings-system']) {
+    for (const name of ['admin-user', 'admin-bot']) {
       expect(isSettingsRouteName(name)).toBe(true);
       expect(selectedNavKey(name)).toBe('admin-settings');
       expect(sectionKeyForRoute(name)).toBeNull();
@@ -207,7 +207,6 @@ describe('nav IA', () => {
     expect(selectedNavKey('quality-test-suite')).toBe('quality-test-cases');
     expect(selectedNavKey('search')).toBe('search');
     expect(selectedNavKey('home')).toBe('home');
-    expect(selectedNavKey('admin-settings-system')).toBe('admin-settings');
     expect(selectedNavKey('admin-policy')).toBe('admin-settings');
     expect(selectedNavKey('admin-user')).toBe('admin-settings');
     expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');

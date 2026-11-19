@@ -10,7 +10,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Card, Col, Collapse, Modal, Row, Switch, Typography, message } from 'ant-design-vue';
+import { Button, Card, Col, Collapse, Modal, Row, Spin, Switch, Typography, message } from 'ant-design-vue';
 import {
   buildSearchSettingsPayload,
   getTypedSetting,
@@ -18,7 +18,7 @@ import {
   settingAsSearch,
   updateSetting,
 } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
@@ -233,13 +233,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <SmBreadcrumb :items="breadcrumbItems" />
-  <PreferencePageShell
-    test-id="search-settings"
-    :title="t('settings.searchPrefs.title')"
-    :lead="t('settings.searchPrefs.lead')"
-    :loading="isLoading"
-  >
+  <div data-testid="search-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="t('settings.searchPrefs.title')"
+      :sub-header="t('settings.searchPrefs.lead')"
+      test-id="search-settings"
+    />
+    <Spin :spinning="isLoading">
     <div class="search-settings">
       <div class="search-settings__toggles">
         <Card size="small" class="search-settings__toggle-card">
@@ -427,7 +428,8 @@ onMounted(() => {
       @save="handleSaveFieldValueBoost"
       @close="showFieldValueBoostModal = false"
     />
-  </PreferencePageShell>
+    </Spin>
+  </div>
 </template>
 
 <style scoped>

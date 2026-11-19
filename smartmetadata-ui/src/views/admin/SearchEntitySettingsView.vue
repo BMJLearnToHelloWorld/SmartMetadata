@@ -40,6 +40,7 @@ import {
   type EntitySearchDraft,
 } from '@/api/system';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { searchEntitySettingBreadcrumbs } from '@/settings/breadcrumbExceptions';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
@@ -50,7 +51,6 @@ import {
   registryTitle,
   type SettingsTranslator,
 } from '@/settings/registry';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import type {
   AllowedSearchField,
   AssetTypeConfiguration,
@@ -486,12 +486,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <SmBreadcrumb :items="breadcrumbItems" />
-  <PreferencePageShell
-    test-id="search-entity-settings"
-    :title="header"
-    :lead="subHeader"
-  >
+  <div data-testid="search-entity-settings">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="search-entity-settings"
+    />
     <Alert
       v-if="!entityType"
       type="error"
@@ -780,8 +781,7 @@ onMounted(() => {
       @save="handleSaveFieldValueBoost"
       @close="showFieldValueBoostModal = false"
     />
-  </PreferencePageShell>
-
+  </div>
 </template>
 
 <style scoped>

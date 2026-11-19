@@ -197,7 +197,6 @@ describe('settings route-pattern manifest (§4.5)', () => {
   });
 
   it('resolves staged-retained records at their original URLs', () => {
-    expect(router.resolve('/admin/settings/system').name).toBe('admin-settings-system');
     expect(router.resolve('/admin/users/u1').name).toBe('admin-user');
     expect(router.resolve('/admin/users/u1').params).toMatchObject({ id: 'u1' });
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
@@ -391,7 +390,6 @@ describe('guard declaration table (§10.2)', () => {
       'customize-page',
       'ingestion-pipeline',
       'ingestion-pipeline-edit',
-      'admin-settings-system',
       'admin-bot',
     ]) {
       expect(declarationOf(name)).toBe('admin-only');

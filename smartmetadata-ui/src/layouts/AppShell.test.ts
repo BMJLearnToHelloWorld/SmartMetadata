@@ -60,6 +60,8 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
           { path: 'governance/domains', name: 'governance-domains', component: { template: '<div>dom</div>' } },
           { path: 'governance/metrics', name: 'governance-metrics', component: { template: '<div>met</div>' } },
           { path: 'context-center', name: 'context-center-overview', component: { template: '<div>cc</div>' } },
+          { path: 'tour', name: 'tour', component: { template: '<div>tour</div>' } },
+          { path: 'docs', name: 'docs', component: { template: '<div>docs</div>' } },
           { path: 'login', name: 'login', component: { template: '<div>login</div>' } },
           { path: 'admin/settings', name: 'admin-settings', component: { template: '<div>settings</div>' } },
           { path: 'inbox', name: 'inbox', component: { template: '<div>inbox</div>' } },
@@ -160,10 +162,11 @@ describe('AppShell', () => {
     );
     expect(wrapper.find('[data-testid="user-menu-trigger"]').exists()).toBe(true);
     // dev_ui shell composition: the old header widgets (real notifications,
-    // help menu, domain scope, version tag, AppMode marker) are not rendered
-    // by the redesigned shell; the bell is the inbox button (B5-3).
+    // domain scope, version tag, AppMode marker) are not rendered by the
+    // redesigned shell; the bell is the inbox button (B5-3). The help
+    // menu is rendered (B-8, pin HELP_ITEMS).
     expect(wrapper.find('[data-testid="notification-box-button"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="help-menu-trigger"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="domain-select"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="app-version"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="app-mode-residual"]').exists()).toBe(false);
@@ -317,6 +320,122 @@ describe('AppShell', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('inbox');
     expect(router.currentRoute.value.query.tab).toBe('tasks');
+  });
+});
+
+describe('AppShell help menu (B-8, pin HELP_ITEMS)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    getInboxCounts.mockReset();
+    getInboxCounts.mockResolvedValue({ openTaskCount: 0, unreadActivityCount: 0, pendingCount: 0 });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  async function openHelpMenu(version?: string) {
+    const { wrapper, router } = await mountShell();
+    if (version !== undefined) {
+      useShellConfigStore().serverVersion = version;
+      await wrapper.vm.$nextTick();
+    }
+    await wrapper.find('[data-testid="help-menu-trigger"]').trigger('click');
+    await flushPromises();
+    return { wrapper, router };
+  }
+
+  it('renders all five pin HELP_ITEMS with the right labels, links and targets', async () => {
+    const { wrapper } = await openHelpMenu('1.13.202609250930');
+    expect(wrapper.find('[data-testid="help-menu"]').exists()).toBe(true);
+    const tour = wrapper.find('[data-testid="help-menu-tour"] a');
+    expect(tour.text()).toBe('Tour');
+    expect(tour.attributes('href')).toBe('/tour');
+    const docs = wrapper.find('[data-testid="help-menu-docs"] a');
+    expect(docs.text()).toBe('Docs');
+    expect(docs.attributes('href')).toBe('https://docs.open-metadata.org/');
+    expect(docs.attributes('target')).toBe('_blank');
+    const api = wrapper.find('[data-testid="help-menu-api"] a');
+    expect(api.text()).toBe('API');
+    expect(api.attributes('href')).toBe('/docs');
+    const slack = wrapper.find('[data-testid="help-menu-slack"] a');
+    expect(slack.text()).toBe('Slack Support');
+    expect(slack.attributes('href')).toBe('https://slack.open-metadata.org');
+    expect(slack.attributes('target')).toBe('_blank');
+    const version = wrapper.find('[data-testid="help-menu-version"] a');
+    expect(version.text()).toContain('Version 1.13');
+    expect(version.text()).toContain('Released Sep 25, 2026');
+    expect(version.attributes('href')).toBe(
+      'https://open-metadata.org/product-updates#1.13.202609250930',
+    );
+    expect(version.attributes('target')).toBe('_blank');
+  });
+
+  it('navigates to the tour page from Tour and to swagger from API', async () => {
+    const { wrapper, router } = await openHelpMenu();
+    await wrapper.find('[data-testid="help-menu-tour"] a').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('tour');
+    await wrapper.find('[data-testid="help-menu-trigger"]').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="help-menu-api"] a').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('docs');
+  });
+
+  it('still renders the Version item with no release date when no version is loaded', async () => {
+    const { wrapper } = await openHelpMenu();
+    const version = wrapper.find('[data-testid="help-menu-version"] a');
+    expect(version.text()).toContain('Version');
+    expect(version.text()).not.toContain('Released');
+    expect(version.attributes('href')).toBe('https://open-metadata.org/product-updates#');
+  });
+
+  it('shows no release date for a clean release without a build segment', async () => {
+    const { wrapper } = await openHelpMenu('1.5.0');
+    const version = wrapper.find('[data-testid="help-menu-version"] a');
+    expect(version.text()).toContain('Version 1.5.0');
+    expect(version.text()).not.toContain('Released');
+  });
+
+  it('renders the new-version alert with a Refresh button that reloads the page', async () => {
+    const { wrapper, router } = await mountShell();
+    expect(wrapper.find('[data-testid="version-mismatch-alert"]').exists()).toBe(false);
+    const goSpy = vi.spyOn(router, 'go');
+    useShellConfigStore().versionMismatch = true;
+    await wrapper.vm.$nextTick();
+    const alert = wrapper.find('[data-testid="version-mismatch-alert"]');
+    expect(alert.exists()).toBe(true);
+    expect(alert.text()).toContain('A new version is available');
+    expect(alert.text()).toContain('For a seamless experience, we recommend refreshing the page.');
+    await wrapper.find('[data-testid="version-mismatch-refresh"]').trigger('click');
+    await flushPromises();
+    expect(goSpy).toHaveBeenCalledWith(0);
+    goSpy.mockRestore();
+  });
+
+  it('re-checks the version on window focus and shows the alert when it changed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/system/version')) {
+          return new Response(JSON.stringify({ version: '1.6.0' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper } = await mountShell();
+    useShellConfigStore().serverVersion = '1.5.0';
+    await wrapper.vm.$nextTick();
+    window.dispatchEvent(new FocusEvent('focus'));
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="version-mismatch-alert"]').exists()).toBe(true);
   });
 });
 

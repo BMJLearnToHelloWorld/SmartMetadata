@@ -252,28 +252,6 @@ describe('guard matrix: three identities × final state (C-4 matrix 2)', () => {
   });
 
   describe('staged rows', () => {
-    it('admits an admin to System, denies a non-admin in place, redirects the unlogged', async () => {
-      await loginAsAdmin();
-      await router.push('/admin/settings/system');
-      expect(router.currentRoute.value.name).toBe('admin-settings-system');
-      expect(useGuardDecisionStore().isDeniedFor('/admin/settings/system', 'ada')).toBe(false);
-
-      setActivePinia(createPinia());
-      useAuthStore().hydrate();
-      await router.push('/');
-      stubBackend({ isAdmin: false }, requestedUrls);
-      await router.push('/admin/settings/system');
-      expect(router.currentRoute.value.name).toBe('admin-settings-system');
-      expect(router.currentRoute.value.fullPath).toBe('/admin/settings/system');
-      expect(useGuardDecisionStore().isDeniedFor('/admin/settings/system', 'ada')).toBe(true);
-
-      localStorage.clear();
-      setActivePinia(createPinia());
-      await router.push('/');
-      await router.push('/admin/settings/system');
-      expect(router.currentRoute.value.name).toBe('login');
-    });
-
     it('admits the old user detail on any entry grant, denies on Create alone', async () => {
       await loginAsNonAdmin({ user: ['ViewBasic'] });
       await router.push('/admin/users/u1');

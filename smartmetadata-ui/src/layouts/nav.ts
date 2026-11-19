@@ -137,7 +137,7 @@ const ACTION_KEYS = new Set(
 const DETAIL_TO_LIST: Record<string, string> = {
   asset: 'search',
   lineage: 'lineage-home',
-  // M1b/D-8 staged: the old user/Bot details and System keep their
+  // M1b/D-8 staged: the old user/Bot details keep their
   // original URLs, so their Hub mappings stay until the partition
   // batch atomically migrates them (DESIGN §6.6).
   'admin-user': 'admin-settings',
@@ -146,7 +146,6 @@ const DETAIL_TO_LIST: Record<string, string> = {
   'admin-role': 'admin-settings',
   'admin-roles': 'admin-settings',
   'admin-bot': 'admin-settings',
-  'admin-settings-system': 'admin-settings',
   'admin-policies': 'admin-settings',
   'admin-policy': 'admin-settings',
   'admin-settings-custom-property-type': 'admin-settings',

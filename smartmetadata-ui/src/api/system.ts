@@ -15,7 +15,6 @@ import type {
   AppConfiguration,
   AssetTypeConfiguration,
   AuthConfiguration,
-  EmailConfiguration,
   EntityRulesSettings,
   GlossarySettings,
   GraphPerformanceConfig,
@@ -74,22 +73,6 @@ function mapLogin(raw: unknown): LoginConfiguration {
     maxLoginFailAttempts: asNumber(rec.maxLoginFailAttempts),
     accessBlockTime: asNumber(rec.accessBlockTime),
     jwtTokenExpiryTime: asNumber(rec.jwtTokenExpiryTime),
-  };
-}
-
-function mapEmail(raw: unknown): EmailConfiguration {
-  const rec = asRecord(raw) ?? {};
-  return {
-    emailingEntity: asString(rec.emailingEntity) || undefined,
-    supportUrl: asString(rec.supportUrl) || undefined,
-    enableSmtpServer: asBoolean(rec.enableSmtpServer),
-    senderMail: asString(rec.senderMail) || undefined,
-    serverEndpoint: asString(rec.serverEndpoint) || undefined,
-    serverPort: asNumber(rec.serverPort),
-    username: asString(rec.username) || undefined,
-    password: asString(rec.password) || undefined,
-    transportationStrategy: asString(rec.transportationStrategy) || undefined,
-    templates: asString(rec.templates) || undefined,
   };
 }
 
@@ -670,14 +653,6 @@ export async function adoptDeploymentConfig(
     throw new Error('Adopt deployment config succeeded but the response had no setting source');
   }
   return mapped;
-}
-
-export function settingAsLoginConfig(value: unknown): LoginConfiguration {
-  return mapLogin(value);
-}
-
-export function settingAsEmailConfig(value: unknown): EmailConfiguration {
-  return mapEmail(value);
 }
 
 export function settingAsUiTheme(value: unknown): UiThemePreference {

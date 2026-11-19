@@ -32,7 +32,6 @@ vi.mock('@/api/search', async (importOriginal) => ({
 
 import { searchAssets } from '@/api/search';
 import { getTypedSetting, restoreSettingsConfig, settingAsSearch, updateSetting } from '@/api/system';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
 import { useAuthStore } from '@/stores/auth';
 import type { LoginUser } from '@/types/api';
 
@@ -188,12 +187,6 @@ function mountView(router: Router, pinia: Pinia) {
     attachTo: document.body,
     global: {
       plugins: [i18n, router, pinia],
-      stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="search-settings"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
-      },
     },
   });
 }
@@ -495,13 +488,13 @@ describe('SearchSettingsView breadcrumb and header', () => {
     expect(text.indexOf('Preferences')).toBeLessThan(text.indexOf('Search'));
   });
 
-  it('passes the registry-backed title and lead to the PreferencePageShell', async () => {
+  it('renders the search title and lead in the PageHeader', async () => {
     const router = await makeRouter();
     const wrapper = mountView(router, pinia);
     await flushPromises();
-    const shell = wrapper.findComponent(PreferencePageShell);
-    expect(shell.exists()).toBe(true);
-    expect(shell.props('title')).toBe('Search settings');
-    expect(shell.props('lead')).toBe('Lead');
+    expect(wrapper.find('[data-testid="search-settings-heading"]').text()).toBe(
+      'Search settings',
+    );
+    expect(wrapper.find('[data-testid="search-settings-sub"]').text()).toBe('Lead');
   });
 });
