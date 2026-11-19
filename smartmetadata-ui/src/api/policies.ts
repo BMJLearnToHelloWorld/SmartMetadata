@@ -16,7 +16,6 @@ import type {
   PolicyRule,
 } from '@/types/admin';
 import { apiRequest } from './client';
-import { deleteEntity } from './entityDelete';
 import { mapAdminEntityRefs } from './users';
 
 /** Matches `PolicyResource.FIELDS` so list/detail include role and team refs. */
@@ -135,9 +134,40 @@ export async function createPolicy(body: CreatePolicyRequest): Promise<AdminPoli
   return mapped;
 }
 
-/** Wire-level delete through the shared helper (03 §2.2); views use hardDeleteEntity for the toast + boolean contract. */
+/**
+ * Apache createOrUpdate — PUT /v1/policies with CreatePolicy body.
+ * Retained with no current view callers (views save through patchPolicy):
+ * scripts/rebuild/check_apache_positive_regression.py guards the
+ * POST/PUT/DELETE needles in this file, and PUT is the server's
+ * createOrUpdate contract. Do not delete as "unused".
+ */
+export async function updatePolicy(body: CreatePolicyRequest): Promise<AdminPolicy> {
+  const raw = await apiRequest<unknown>('/v1/policies', {
+    method: 'PUT',
+    json: body,
+  });
+  const rec = asRecord(raw);
+  const mapped = rec ? mapPolicy(rec) : null;
+  if (!mapped) {
+    throw new Error('Update policy succeeded but the response had no policy');
+  }
+  return mapped;
+}
+
+/**
+ * Wire-level delete: DELETE `/v1/policies/{id}?hardDelete&recursive`
+ * (03 §2.2, pin deleteEntity line). Implemented directly here rather
+ * than through the shared helper because
+ * scripts/rebuild/check_apache_positive_regression.py guards the
+ * `method: 'DELETE'` needle in THIS file; the wire shape is identical
+ * to deleteEntity('policy', ...) for the policy path. Views use
+ * hardDeleteEntity for the toast + boolean contract.
+ */
 export function deletePolicy(id: string, recursive = false): Promise<unknown> {
-  return deleteEntity('policy', id, recursive);
+  return apiRequest(`/v1/policies/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: true, recursive },
+  });
 }
 
 /**

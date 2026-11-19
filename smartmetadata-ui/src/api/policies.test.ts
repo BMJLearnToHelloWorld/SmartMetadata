@@ -19,6 +19,7 @@ import {
   listPolicies,
   mapPolicy,
   POLICY_FIELDS,
+  updatePolicy,
   validateRuleCondition,
 } from './policies';
 
@@ -144,6 +145,24 @@ describe('policies API', () => {
     const [, init] = fetchMock.mock.calls[0]!;
     expect(String(fetchMock.mock.calls[0]![0])).toContain('/api/v1/policies');
     expect(init?.method).toBe('POST');
+  });
+
+  it('updates a policy with PUT /v1/policies', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify(samplePolicy), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await updatePolicy({
+      name: 'DataConsumerPolicy',
+      enabled: false,
+      rules: [{ name: 'r1', effect: 'deny', operations: ['Delete'], resources: ['table'] }],
+    });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(init?.method).toBe('PUT');
   });
 
   it('deletes a policy with the hardDelete/recursive wire', async () => {
