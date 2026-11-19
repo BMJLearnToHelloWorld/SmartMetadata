@@ -53,10 +53,12 @@ _MYSQL_DATABASE_CHAIN: tuple[Step, ...] = (
 )
 _DATABASE_CHAIN: tuple[Step, ...] = ((_FIELD, "database"),)
 _CATALOG_CHAIN: tuple[Step, ...] = ((_FIELD, "catalog"),)
-# The schema chain is the same for every engine: the declared scan
-# field first, then the bare-dict/YAML compatibility key, which stays
-# (it is a separately decided breaking change to remove it).
-_SCHEMA_CHAIN: tuple[Step, ...] = ((_FIELD, "databaseSchema"), (_FIELD, "schema"))
+# The schema chain is the same for every engine: only the declared
+# scan field. The bare-dict/YAML compatibility key ``schema`` was
+# removed (D-L2c B; see ADR 2026-11-17-dl2c-binding-context.md): a
+# connection carrying ``schema`` no longer contributes a default
+# schema — move its value to ``databaseSchema``.
+_SCHEMA_CHAIN: tuple[Step, ...] = ((_FIELD, "databaseSchema"),)
 
 # Normalized engine key -> (database chain, schema chain). Keys are
 # the normalized spellings the shared engine-key rule produces; an

@@ -29,6 +29,7 @@ from smartmetadata_ingestion.lineage.resolution import (
     candidate_fqns,
     view_parent_schema_tables,
 )
+from smartmetadata_ingestion.naming import resolve_connection_defaults
 from smartmetadata_ingestion.records import BindingContext, FieldSource
 from smartmetadata_ingestion.usage.stage import RestTableBindingResolver
 
@@ -299,6 +300,47 @@ def test_scan_range_default_binds_and_counts_default_segment() -> None:
     counts = resolver.binding_counts
     assert counts["default_bound_schema"] == 1
     assert counts["default_bound_database"] == 0
+
+
+# --- D-L2c B: schema-only connection (design §6.2) ------------------------
+
+
+def test_schema_only_connection_binds_qualified_names_but_not_bare_name() -> None:
+    """End-to-end lock for the D-L2c B removal: a connection carrying
+    only the removed ``schema`` key contributes no default schema —
+    ``resolve_connection_defaults`` yields ``(None, None)`` for
+    Postgres — so the binding layer built from those defaults still
+    binds a 2-segment name (schema from the qualifier, database from
+    the row) and a 3-segment name (both segments qualified), while a
+    bare name misses: ``missing_schema`` when the row supplies the
+    database, ``missing_both`` when it supplies neither (the two keys
+    are mutually exclusive per ``missing_count_key``). No segment of
+    either successful binding is default-bound."""
+    defaults = resolve_connection_defaults({"schema": "sales"}, "postgres")
+    assert defaults == (None, None)
+    client = _FakeClient(
+        {"svc.warehouse.sales.orders": _table("svc.warehouse.sales.orders")}
+    )
+    resolver = _usage_resolver(
+        client, default_database=defaults[0], default_schema=defaults[1]
+    )
+    assert (
+        resolver.resolve(_ident("warehouse", "sales", "orders"), context=_ctx())
+        == "svc.warehouse.sales.orders"
+    )
+    assert (
+        resolver.resolve(_ident("sales", "orders"), context=_ctx("warehouse", None))
+        == "svc.warehouse.sales.orders"
+    )
+    assert resolver.resolve(_ident("orders"), context=_ctx("warehouse", None)) is None
+    assert resolver.resolve(_ident("orders"), context=_ctx()) is None
+    counts = resolver.binding_counts
+    assert counts["missing_schema"] == 1
+    assert counts["missing_both"] == 1
+    assert counts["missing_database"] == 0
+    assert counts["unresolved_404"] == 0
+    assert counts["default_bound_database"] == 0
+    assert counts["default_bound_schema"] == 0
 
 
 # --- §6 test 11: cross-service limits (behavior record) ------------------

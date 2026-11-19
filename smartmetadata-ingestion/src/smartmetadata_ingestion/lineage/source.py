@@ -299,6 +299,18 @@ class LineageSource:
     ) -> tuple[LineageBindingResolver, QueryLineageProcessor]:
         config = self._config
         connection = config.connection or {}
+        if connection.get("schema"):
+            # D-L2c B: the bare ``schema`` connection key is no longer
+            # read — only ``databaseSchema`` supplies the default schema.
+            # Warn once per run (``run()`` is the only production caller
+            # of ``_build_processing``) so bare-dict/YAML users learn
+            # their default schema was dropped instead of silently
+            # losing it. This is a configuration-level warning: it
+            # changes no binding behaviour and is not counted.
+            logger.warning(
+                'connection key "schema" is no longer read; '
+                'move its value to "databaseSchema"'
+            )
         # The binding defaults come from the shared naming rule —
         # the same function the usage workflow calls — and the same
         # engine key drives both the naming rule and the resolver's

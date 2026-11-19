@@ -824,6 +824,125 @@ def test_both_call_points_invoke_same_naming_function(
     assert calls == [(connection, "postgres"), (connection, "postgres")]
 
 
+def _lineage_source_with_connection(connection: dict[str, Any]) -> LineageSource:
+    lineage_config = SourceConfig.model_validate(
+        {
+            "type": "postgres-lineage",
+            "service_name": SERVICE,
+            "connection": dict(connection),
+        }
+    )
+    return LineageSource(
+        lineage_config,
+        engine_key="postgres",
+        dialect=Dialect.POSTGRES,
+        client=_FakeClient(),  # type: ignore[arg-type]
+    )
+
+
+_SCHEMA_WARNING = 'connection key "schema" is no longer read'
+_SCHEMA_WARNING_TARGET = 'move its value to "databaseSchema"'
+
+
+def test_usage_workflow_warns_when_connection_has_schema_key(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    # D-L2c B: the removed ``schema`` key is only detected, never used.
+    # The warning names the key and its declared replacement, and the
+    # resolver still gets the post-removal default (``None`` here — the
+    # ``schema`` value contributes nothing).
+    connection = {"database": "shop", "schema": "compat"}
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.usage.workflow"
+    ):
+        workflow = UsageWorkflow(
+            _workflow_config(tmp_path, connection=connection),
+            client=object(),  # type: ignore[arg-type]
+            source=_StubSource([]),  # type: ignore[arg-type]
+        )
+    assert _SCHEMA_WARNING in caplog.text
+    assert _SCHEMA_WARNING_TARGET in caplog.text
+    resolver = workflow._stage._binding_resolver  # type: ignore[union-attr]
+    assert resolver._default_database == "shop"
+    assert resolver._default_schema is None
+
+
+def test_lineage_source_warns_when_connection_has_schema_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lineage_source = _lineage_source_with_connection(
+        {"database": "shop", "schema": "compat"}
+    )
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.source"
+    ):
+        resolver, _ = lineage_source._build_processing(_FakeClient())  # type: ignore[arg-type]
+    assert _SCHEMA_WARNING in caplog.text
+    assert _SCHEMA_WARNING_TARGET in caplog.text
+    assert resolver._default_database == "shop"
+    assert resolver._default_schema is None
+
+
+@pytest.mark.parametrize(
+    "connection",
+    [
+        {"database": "shop", "databaseSchema": "public"},
+        {"database": "shop", "schema": ""},
+        {"database": "shop", "schema": None},
+    ],
+)
+def test_usage_workflow_does_not_warn_without_truthy_schema_key(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, connection: dict[str, Any]
+) -> None:
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.usage.workflow"
+    ):
+        UsageWorkflow(
+            _workflow_config(tmp_path, connection=connection),
+            client=object(),  # type: ignore[arg-type]
+            source=_StubSource([]),  # type: ignore[arg-type]
+        )
+    assert _SCHEMA_WARNING not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "connection",
+    [
+        {"database": "shop", "databaseSchema": "public"},
+        {"database": "shop", "schema": ""},
+        {"database": "shop", "schema": None},
+    ],
+)
+def test_lineage_source_does_not_warn_without_truthy_schema_key(
+    caplog: pytest.LogCaptureFixture, connection: dict[str, Any]
+) -> None:
+    lineage_source = _lineage_source_with_connection(connection)
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.source"
+    ):
+        lineage_source._build_processing(_FakeClient())  # type: ignore[arg-type]
+    assert _SCHEMA_WARNING not in caplog.text
+
+
+def test_usage_workflow_warns_at_most_once_per_run(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    # ``prepare`` runs once per workflow construction; a second call is
+    # short-circuited by the ``_prepared`` guard, so the warning is
+    # emitted at most once per run with no throttling state.
+    connection = {"database": "shop", "schema": "compat"}
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.usage.workflow"
+    ):
+        workflow = UsageWorkflow(
+            _workflow_config(tmp_path, connection=connection),
+            client=object(),  # type: ignore[arg-type]
+            source=_StubSource([]),  # type: ignore[arg-type]
+        )
+        workflow.prepare()
+    assert caplog.text.count(_SCHEMA_WARNING) == 1
+
+
 def test_usage_engine_key_comes_from_query_log_spec(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
