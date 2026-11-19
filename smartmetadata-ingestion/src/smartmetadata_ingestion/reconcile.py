@@ -204,18 +204,16 @@ def _level_narrowing(
 ) -> str | None:
     """Why ``level``'s listing is partial, or ``None`` when complete.
 
-    An include pattern, a (non-default) exclude pattern, or a
-    connection-implied scope each narrows the level. The default schema
-    excludes name system schemas no catalog listing should contain, so
-    they do not narrow — at the schema level, for the schema kind and
-    for every descendant kind alike.
+    An include pattern, an exclude pattern, or a
+    connection-implied scope each narrows the level. There is no
+    default exclusion to carve out: ``SourceConfig.exclude_schemas``
+    defaults to an empty list, so any exclude entry — a system-schema
+    name included — narrows.
     """
     include_attr, exclude_attr = _LEVEL_PATTERNS[level]
     if getattr(source, include_attr, None):
         return "include pattern"
     excludes = list(getattr(source, exclude_attr, None) or [])
-    if level == "schema":
-        excludes = [entry for entry in excludes if entry not in _DEFAULT_SCHEMA_EXCLUDES]
     if excludes:
         return "exclude pattern"
     if scope is not None and _connection_narrows_level(scope, connection, level):
@@ -234,21 +232,20 @@ def enabled_reconcile_kinds(source: Any, *, skipped: list[str] | None = None) ->
     connection-implied scope (a database/schema fallback, or an
     entry-database reader) makes the seen set partial, and the
     service-scoped ``deleteStale`` would delete live entities the run
-    never listed. The default schema excludes
-    (``information_schema``, ``pg_catalog``, ``pg_toast`` — the
-    ``SourceConfig`` default) do not narrow: they name system schemas
-    no catalog listing should contain. Flag-on kinds excluded by the
+    never listed. There is no default exclusion:
+    ``SourceConfig.exclude_schemas`` defaults to an empty list, so an
+    explicit exclude of a system-schema name narrows exactly like any
+    other exclude. Flag-on kinds excluded by the
     gate are appended to ``skipped`` when provided (one entry per
     kind) so the workflow can count them as sink-step warnings
     (C-11/B-4); kinds whose flag is off are never reported — reconcile
     was never requested for them.
 
     Remainder, documented rather than fixed here: connectors also
-    hardcode system exclusions beyond that default (MySQL-family
+    hardcode system exclusions (MySQL-family
     schemas, Doris/MSSQL system schemas, system databases/catalogs on
     Snowflake, MSSQL, the Postgres family, and Databricks). Those names
-    are treated as non-catalogable on the same rationale as the
-    default excludes, but an entity under such a name cataloged by
+    are treated as non-catalogable, but an entity under such a name cataloged by
     other means would still be deleted by a service-scoped reconcile
     of its kind, because the gate cannot see catalog state. Likewise,
     single-database connectors reconcile schema/table/procedure kinds
@@ -324,12 +321,6 @@ def enabled_reconcile_kinds(source: Any, *, skipped: list[str] | None = None) ->
         enabled.add(kind)
     return frozenset(enabled)
 
-
-# The SourceConfig default for exclude_schemas (config.py): system
-# schemas excluded from every listing, not a user narrowing.
-_DEFAULT_SCHEMA_EXCLUDES: frozenset[str] = frozenset(
-    {"information_schema", "pg_catalog", "pg_toast"}
-)
 
 # child entity path -> (kind, scope entity type for service-level reconcile)
 _RECONCILE_TARGETS: list[tuple[str, str, str]] = [

@@ -161,6 +161,94 @@ def test_mysql_database_schema_and_pattern_agreeing_selects_schema() -> None:
     assert names == ["app"]
 
 
+# -- mysql.py 去硬排除（Bai 2026-11-19 裁“按照官方”）----------------------
+# Pin 采集路径无硬排除：schema 枚举直取 inspector，过滤只按用户配置的
+# schemaFilterPattern；pin 唯一的 SYSTEM_SCHEMAS（4 名、无 innodb）只用于
+# 连接测试探查（connection.py:131,148,152）。产品原先的 _SYSTEM_SCHEMAS
+#（5 名、含 innodb）在 _selected_schemas 里无条件并入排除，现已删除——
+# 系统库是否采，只由用户配置决定。
+
+
+def _system_schema_reader() -> SequenceCatalogReader:
+    return SequenceCatalogReader(
+        schemas=[
+            SchemaRow("information_schema"),
+            SchemaRow("mysql"),
+            SchemaRow("performance_schema"),
+            SchemaRow("sys"),
+            SchemaRow("app"),
+        ],
+    )
+
+
+def _produced_schema_names(source: MysqlSource) -> list[str]:
+    return [record.name for record in source.produce() if isinstance(record, SchemaRecord)]
+
+
+def test_mysql_system_schemas_returned_when_no_exclude_configured() -> None:
+    # P-1: SourceConfig.exclude_schemas defaults to an empty list (pin
+    # has no such default), so omitting the field returns every schema
+    # including the system ones — no explicit exclude_schemas=[] needed.
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+        ),
+        reader=_system_schema_reader(),
+    )
+    assert _produced_schema_names(source) == [
+        "information_schema",
+        "mysql",
+        "performance_schema",
+        "sys",
+        "app",
+    ]
+
+
+def test_mysql_exclude_schemas_is_the_only_exclusion_for_system_schemas() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            exclude_schemas=["sys"],
+        ),
+        reader=_system_schema_reader(),
+    )
+    assert _produced_schema_names(source) == [
+        "information_schema",
+        "mysql",
+        "performance_schema",
+        "app",
+    ]
+
+
+def test_mysql_include_schemas_can_select_a_system_schema() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseName": "shop"},
+            include_schemas=["sys"],
+        ),
+        reader=_system_schema_reader(),
+    )
+    assert _produced_schema_names(source) == ["sys"]
+
+
+def test_mysql_database_schema_can_target_a_system_schema() -> None:
+    source = MysqlSource(
+        SourceConfig(
+            type="mysql",
+            service_name="oltp",
+            connection={"databaseSchema": "sys"},
+        ),
+        reader=_system_schema_reader(),
+    )
+    assert _produced_schema_names(source) == ["sys"]
+
+
 def test_mysql_data_length_gated_by_mapped_type() -> None:
     # LONGTEXT/LONGBLOB report character_maximum_length 4294967295,
     # which overflows the server's Java Integer; only lengthed types
