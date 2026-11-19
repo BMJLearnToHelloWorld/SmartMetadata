@@ -20,7 +20,7 @@ import {
   createIngestionPipeline,
   deployIngestionPipeline,
   getIngestionPipelineByFqn,
-  isPipelineClientDisabled,
+  isPipelineDeployed,
 } from '@/api/ingestionPipelines';
 import { ApiError } from '@/api/client';
 import { SERVICE_GET_API } from '@/ingestion/serviceApis';
@@ -227,16 +227,13 @@ async function handleDeploy(): Promise<boolean> {
   deploying.value = true;
   try {
     const result = await deployIngestionPipeline(createdId.value);
-    // Only the specific "Pipeline Client Disabled" reason (or a
-    // non-200 code) means the deploy did nothing: on success the
-    // server fills `reason` with the plugin's raw response body, so a
-    // bare truthiness check would report every successful deploy as a
+    // T-1: the shared strict predicate decides — a missing code
+    // cannot prove a real 200 deploy. On success the server fills
+    // `reason` with the plugin's raw response body, so a bare
+    // truthiness check would report every successful deploy as a
     // failure. A throw is a deploy failure too, not an unhandled
     // rejection — the pipeline is already created.
-    if (
-      isPipelineClientDisabled(result) ||
-      (result.code !== undefined && result.code !== 200)
-    ) {
+    if (!isPipelineDeployed(result)) {
       message.error(t('ingestion.pipelines.deployEntityError'));
       deployFailed.value = true;
       return false;

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { Tabs } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -67,7 +67,7 @@ async function mountDetail(path: string, definitionStatus = 200) {
     routes: [
       { path: '/govern/workflows', name: 'workflows', component: { template: '<div>list</div>' } },
       {
-        path: '/govern/workflows/:fqn/:tab',
+        path: '/govern/workflows/:fqn',
         name: 'workflow-detail',
         component: WorkflowDetailView,
       },
@@ -99,7 +99,7 @@ describe('WorkflowDetailView', () => {
   });
 
   it('renders the builder header, tabs and canvas nodes', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term');
     expect(wrapper.find('[data-testid="workflow-detail"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="workflow-title"]').text()).toBe(
       'Approve Glossary Term',
@@ -117,7 +117,7 @@ describe('WorkflowDetailView', () => {
 
   it('shows the edit controls in edit mode', { timeout: 15000 }, async () => {
     const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/workflow?mode=edit',
+      '/govern/workflows/approve-glossary-term?mode=edit',
     );
     expect(wrapper.find('[data-testid="edit-workflow-button"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="cancel-workflow-button"]').exists()).toBe(true);
@@ -125,18 +125,26 @@ describe('WorkflowDetailView', () => {
     expect(wrapper.find('[data-testid="save-workflow-button"]').exists()).toBe(true);
   });
 
-  it('loads execution history on the history tab', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
-    await wrapper.get('[data-testid="workflow-execution-history"]').trigger('click');
+  it('loads execution history on the history tab without changing the URL', { timeout: 15000 }, async () => {
+    const { wrapper, router } = await mountDetail(
+      '/govern/workflows/approve-glossary-term',
+    );
+    const before = router.currentRoute.value.fullPath;
+    await wrapper.find('[data-testid="workflow-execution-history"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="workflow-status-badge-run-1"]').text()).toBe(
       'Success',
     );
     expect(wrapper.find('[data-testid="related-entity-link"]').text()).toBe('orders');
+    expect(router.currentRoute.value.fullPath).toBe(before);
+    await wrapper.find('[data-testid="workflow-builder-tab"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('.vue-flow__node')).toHaveLength(4);
+    expect(router.currentRoute.value.fullPath).toBe(before);
   });
 
   it('opens the start-node configuration when a canvas node is clicked', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow?mode=edit');
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term?mode=edit');
     const nodes = wrapper.findAll('.vue-flow__node');
     expect(nodes.length).toBe(4);
     await nodes[0].trigger('click');
@@ -148,16 +156,40 @@ describe('WorkflowDetailView', () => {
     ).toBe('Start Node Configuration');
   });
 
-  it('ignores the tab route param and renders the default workflow tab without navigating', { timeout: 15000 }, async () => {
-    const { wrapper, router } = await mountDetail('/govern/workflows/approve-glossary-term/bogus');
-    expect(router.currentRoute.value.params.tab).toBe('bogus');
-    expect(wrapper.find('[data-testid="workflow-builder-tab"]').exists()).toBe(true);
+  it('renders at the tab-less canonical route: no tab param, builder tab by default', { timeout: 15000 }, async () => {
+    const { wrapper, router } = await mountDetail('/govern/workflows/approve-glossary-term');
+    expect(router.currentRoute.value.params.tab).toBeUndefined();
+    expect(router.currentRoute.value.params.fqn).toBe('approve-glossary-term');
     expect(wrapper.findAll('.vue-flow__node')).toHaveLength(4);
+    expect(wrapper.find('[data-testid="workflow-builder-tab"]').exists()).toBe(true);
+  });
+
+  it('renders no back link: the shell breadcrumb replaces it', { timeout: 15000 }, async () => {
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term');
+    expect(wrapper.find('[data-testid="workflow-detail-back"]').exists()).toBe(false);
+  });
+
+  it('keeps the tabs as internal state with the official values and no configuration tab', { timeout: 15000 }, async () => {
+    // Vitest transforms import.meta.url away from a file: URL, so
+    // resolve from the working directory (referencedKeys.test.ts).
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const source = readFileSync(
+      join(process.cwd(), 'src/views/governance/WorkflowDetailView.vue'),
+      'utf8',
+    );
+    expect(source).not.toContain('params.tab');
+    expect(source).not.toContain("'configuration'");
+    expect(source).toContain("key=\"workflow-builder\"");
+    expect(source).toContain("key=\"execution-history\"");
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term');
+    const tabs = wrapper.findComponent(Tabs);
+    expect(tabs.props('activeKey')).toBe('workflow-builder');
   });
 
   it('renders the forbidden card when the definition load is forbidden', { timeout: 15000 }, async () => {
     const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/workflow',
+      '/govern/workflows/approve-glossary-term',
       403,
     );
     expect(wrapper.find('[data-testid="workflow-detail-forbidden"]').exists()).toBe(true);
@@ -165,7 +197,7 @@ describe('WorkflowDetailView', () => {
 
   it('renders an error card with a retry when the definition load fails', { timeout: 15000 }, async () => {
     const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/workflow',
+      '/govern/workflows/approve-glossary-term',
       500,
     );
     expect(wrapper.find('[data-testid="workflow-detail-error"]').exists()).toBe(true);
@@ -173,7 +205,7 @@ describe('WorkflowDetailView', () => {
   });
 
   it('renders the single-item Classic breadcrumb above the header', { timeout: 15000 }, async () => {
-    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term/workflow');
+    const { wrapper } = await mountDetail('/govern/workflows/approve-glossary-term');
     // Pin Classic (WorkflowBuilder :552-562): one crumb, the list label
     // linked to the list path — no Settings/category prefix.
     const crumb = wrapper.find('[data-testid="sm-breadcrumb"]');
@@ -195,7 +227,7 @@ describe('WorkflowDetailView', () => {
 
   it('renders the same single-item breadcrumb above the load-error card', { timeout: 15000 }, async () => {
     const { wrapper } = await mountDetail(
-      '/govern/workflows/approve-glossary-term/workflow',
+      '/govern/workflows/approve-glossary-term',
       500,
     );
     expect(wrapper.find('[data-testid="workflow-detail-error"]').exists()).toBe(true);

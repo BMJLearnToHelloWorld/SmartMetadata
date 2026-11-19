@@ -3,95 +3,356 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { Alert, Button, Form, Input, Select, Steps, message } from 'ant-design-vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Button, message } from 'ant-design-vue';
 import { getOrchestratorStatus } from '@/api/ingestionPipelines';
-import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
-import { isServiceListKind } from '@/router/serviceTabSegments';
-import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
-import TestConnectionCard from '@/components/ingestion/TestConnectionCard.vue';
-import SchemaField, { type FilterPatternFieldOptions } from '@/components/ingestion/SchemaField.vue';
-import {
-  serviceFilterFieldsForType,
-  type ServiceFilterFieldDef,
-  type ServiceFilterValues,
-} from '@/ingestion/serviceFilterFields';
-import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
-import { addSnowflakeSystemExcludes } from '@/ingestion/filterPatterns';
-import type { RjsfSchema } from '@/ingestion/ingestionSchemas';
+import { triggerOnDemandApp } from '@/api/apps';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
-import { triggerOnDemandApp } from '@/api/apps';
+import ConnectionConfigForm from '@/components/ingestion/ConnectionConfigForm.vue';
+import FiltersConfigForm from '@/components/ingestion/FiltersConfigForm.vue';
+import NavigationGuardModal from '@/components/ingestion/NavigationGuardModal.vue';
+import SelectServiceType from '@/components/ingestion/SelectServiceType.vue';
+import ServiceDocPanel from '@/components/ingestion/ServiceDocPanel.vue';
+import ServiceFlowStepper from '@/components/ingestion/ServiceFlowStepper.vue';
+import ServiceLogo from '@/components/ingestion/ServiceLogo.vue';
+import ServiceNameCard from '@/components/ingestion/ServiceNameCard.vue';
+import { useNavigationGuard } from '@/composables/useNavigationGuard';
+import { AUTO_PILOT_APP_NAME, isExcludedAutoPilotServiceType } from '@/ingestion/autoPilot';
+import { createEmptyServiceForm, entityTypeForKind } from '@/ingestion/connections';
+import { connectionDisplayHost } from '@/ingestion/connectionFields';
+import { useFieldFocus } from '@/ingestion/fieldFocus';
 import {
-  AUTO_PILOT_APP_NAME,
-  isExcludedAutoPilotServiceType,
-} from '@/ingestion/autoPilot';
-import {
-  SERVICE_KIND_DEFAULT_TYPE,
-  SERVICE_TYPES_BY_KIND,
-  buildServiceConnection,
-  createEmptyServiceForm,
-  entityTypeForKind,
-} from '@/ingestion/connections';
-import { getEntityFeedLink } from '@/utils/entityLink';
-import {
-  connectionDisplayHost,
-  filterPatternDefaultExcludes,
-  hasConnectionForm,
-  mergeAuthBranchIntoConfig,
-  missingRequiredConnectionFields,
-} from '@/ingestion/connectionFields';
-import { shouldTestConnection } from '@/ingestion/connectionTest';
+  resolveServiceCategoryParam,
+  serviceCategoryByKind,
+  type ServiceCategoryKind,
+  type ServiceCategoryRow,
+} from '@/ingestion/serviceCategories';
+import { getValidatedServiceType } from '@/ingestion/wizardServiceTypes';
+import { useServiceNameValidation } from '@/ingestion/serviceNameValidation';
 import { SERVICE_CREATE_API } from '@/ingestion/serviceApis';
-import type { OrchestratorStatus, ServiceFormValues, ServiceKind } from '@/types/ingestion';
+import { useAuthStore } from '@/stores/auth';
+import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
+import type {
+  OrchestratorStatus,
+  ServiceConnectionConfig,
+  ServiceFormValues,
+} from '@/types/ingestion';
+import { getEntityFeedLink } from '@/utils/entityLink';
 
+/**
+ * Port of official AddServicePage (pin a3012259ca,
+ * pages/AddServicePage/AddServicePage.component.tsx): the
+ * three-step create-service wizard. Step 1 picks the connector
+ * (SelectServiceType grid); step 2 names the service and configures
+ * the connection (ServiceNameCard + the shared ConnectionConfigForm
+ * with the four additional props); step 3 scopes ingestion
+ * (FiltersConfigForm). Category switches and cross-category card
+ * clicks navigate; a deep-linked serviceType is validated and
+ * preselects step 2.
+ *
+ * Interim routing (R-10): the route still carries no category path
+ * parameter, so the category resolves from the `serviceCategory`
+ * path param when present, else the `?category=` query the services
+ * list passes, else `all`. An unresolvable value falls back to
+ * `all` here; rejecting llm/mcp/invalid segments with NOT_FOUND is
+ * the router line's D-18 work, requested in the batch report.
+ */
 const { t } = useI18n();
+const route = useRoute();
 const router = useRouter();
-const step = ref(0);
-const creating = ref(false);
+const auth = useAuthStore();
+
 const form = reactive<ServiceFormValues>(createEmptyServiceForm());
-const filterForm = reactive<ServiceFilterValues>({});
-const filterFields = computed(() => serviceFilterFieldsForType(form.kind, form.serviceType));
-const filterErrors = new Map<string, string>();
-const testConnectionPassed = ref(false);
+const step = ref(1);
+const saving = ref(false);
+const leaving = ref(false);
+const isConnectionVerified = ref(false);
+const step2Config = ref<ServiceConnectionConfig | undefined>(undefined);
+const showResetConfirm = ref(false);
+const showBackStepConfirm = ref(false);
 const orchestrator = ref<OrchestratorStatus | null>(null);
 const orchestratorChecked = ref(false);
 
-const airflowAvailable = computed(
-  () =>
-    orchestratorChecked.value &&
-    orchestrator.value?.code === 200 &&
-    orchestrator.value?.platform !== 'disabled',
+const connectionFormRef = ref<InstanceType<typeof ConnectionConfigForm> | null>(null);
+const filtersFormRef = ref<InstanceType<typeof FiltersConfigForm> | null>(null);
+
+const { activeField, activeFieldMeta, handleFieldBlur, handleFieldFocus, resetActiveField } =
+  useFieldFocus();
+
+const rawCategoryParam = computed(
+  () => (route.params.serviceCategory ?? route.query.category) as string | undefined,
 );
 
-const missingRequiredCount = computed(() =>
-  missingRequiredConnectionFields(form.serviceType, form),
+const resolvedCategory = computed<ServiceCategoryRow | 'all' | undefined>(() =>
+  resolveServiceCategoryParam(rawCategoryParam.value),
 );
 
-function validateRequiredFields(): boolean {
-  return missingRequiredCount.value === 0;
+/** The effective wizard category: unresolved values fall back to `all` (interim, see above). */
+const wizardCategory = computed<ServiceCategoryRow | 'all'>(() => resolvedCategory.value ?? 'all');
+const wizardKind = computed<ServiceCategoryKind | undefined>(() =>
+  wizardCategory.value === 'all' ? undefined : wizardCategory.value.kind,
+);
+
+const {
+  isServiceNameChecking,
+  nameError,
+  resetNameValidation,
+  setNameError,
+  validateServiceName,
+} = useServiceNameValidation({
+  enabled: () => step.value === 2 && form.serviceType !== '',
+  serviceCategory: () => form.kind,
+  serviceName: () => form.name,
+});
+
+const isStep2NextDisabled = computed(
+  () => !form.name.trim() || Boolean(nameError.value) || isServiceNameChecking.value,
+);
+
+const isConnectionSubmitBlocked = computed(
+  () => connectionFormRef.value?.connectionSubmitBlocked === true,
+);
+
+const connectedHost = computed(() =>
+  connectionDisplayHost(step2Config.value ?? {}, form.serviceType),
+);
+
+const steps = computed(() => [
+  {
+    name: t('settings.services.wizard.selectField', {
+      field: t('settings.services.wizard.serviceType'),
+    }),
+    step: 1,
+  },
+  { name: t('settings.services.wizard.stepConnect'), step: 2 },
+  { name: t('settings.services.wizard.stepWhatToIngest'), step: 3 },
+]);
+
+const breadcrumbItems = computed(() => {
+  const addNewService = t('settings.services.wizard.addNewService');
+  if (form.serviceType) {
+    return [{ label: addNewService }, { label: form.serviceType }];
+  }
+  const categoryLabel =
+    wizardCategory.value === 'all'
+      ? t('settings.services.wizard.allServices')
+      : t(wizardCategory.value.titleKey);
+  return [{ label: categoryLabel, routeName: 'ingestion-services' }, { label: addNewService }];
+});
+
+const headerText = computed(() =>
+  form.serviceType
+    ? `${form.serviceType} ${t('settings.services.service')}`
+    : t('settings.services.wizard.addNewService'),
+);
+
+const hideSecondPanel = computed(() => !(form.serviceType && (step.value === 2 || step.value === 3)));
+
+const { showModal, confirmLeave, cancelLeave } = useNavigationGuard({
+  enabled: () => step.value > 1 && !saving.value && !leaving.value,
+});
+
+function resetWizardState(): void {
+  const fresh = createEmptyServiceForm();
+  for (const key of Object.keys(form) as Array<keyof ServiceFormValues>) {
+    delete form[key];
+  }
+  Object.assign(form, fresh);
+  form.kind = wizardKind.value ?? 'database';
+  // The empty form carries the legacy default connector; the pin
+  // starts with no type selected.
+  form.serviceType = '';
+  step2Config.value = undefined;
+  isConnectionVerified.value = false;
+  resetNameValidation();
+  resetActiveField();
+  step.value = 1;
 }
 
-function testConnectionGetter(): Record<string, unknown> | undefined {
-  try {
-    const connection = buildServiceConnection(form);
-    if (!connection?.config) {
-      return undefined;
-    }
-    mergeAuthBranchIntoConfig(form.serviceType, form, connection.config, undefined);
-    return connection as unknown as Record<string, unknown>;
-  } catch {
-    return undefined;
+/**
+ * Pin deep-link rule: a state serviceType is admitted only when the
+ * URL category supports it; a preselected type starts the wizard at
+ * step 2. Runs on mount and on every category navigation (the
+ * interim query-based navigation reuses this component, so the
+ * sync is a watcher, not a mount-only effect).
+ */
+function syncFromRoute(): void {
+  resetWizardState();
+  if (!wizardKind.value) {
+    return;
+  }
+  const preselected = getValidatedServiceType(
+    router.options.history.state,
+    wizardKind.value,
+  );
+  if (preselected) {
+    form.serviceType = preselected;
+    step.value = 2;
   }
 }
 
-const connectedHost = computed(() => {
-  const tested = testConnectionGetter();
-  const config = tested?.config as Record<string, unknown> | undefined;
-  return connectionDisplayHost(config ?? {}, form.serviceType);
-});
+watch(rawCategoryParam, syncFromRoute, { immediate: true });
+
+function navigateToCategory(category: ServiceCategoryRow | 'all', serviceType?: string): void {
+  const query =
+    category === 'all' ? { category: 'all' } : { category: category.segment };
+  void router.push({
+    name: 'ingestion-service-add',
+    query,
+    state: serviceType ? { serviceType } : undefined,
+  });
+}
+
+function handleCategoryChange(category: ServiceCategoryKind | 'all'): void {
+  if (category === 'all') {
+    navigateToCategory('all');
+    return;
+  }
+  const row = serviceCategoryByKind(category);
+  if (row) {
+    navigateToCategory(row);
+  }
+}
+
+function handleServiceTypeClick(payload: { category: ServiceCategoryKind; type: string }): void {
+  // Cross-category (including every click from the `all` grid):
+  // continue in that category's own wizard with the connector
+  // deep-linked, as the pin does.
+  if (wizardCategory.value === 'all' || payload.category !== wizardKind.value) {
+    const row = serviceCategoryByKind(payload.category);
+    if (row) {
+      navigateToCategory(row, payload.type);
+    }
+    return;
+  }
+  resetNameValidation();
+  isConnectionVerified.value = false;
+  const fresh = createEmptyServiceForm();
+  for (const key of Object.keys(form) as Array<keyof ServiceFormValues>) {
+    delete form[key];
+  }
+  Object.assign(form, fresh);
+  form.kind = payload.category;
+  form.serviceType = payload.type;
+  step.value = 2;
+}
+
+function handleConnectorChangeClick(): void {
+  resetWizardState();
+}
+
+function handleNameCardFocus(field: 'serviceName' | 'serviceDescription'): void {
+  handleFieldFocus(field);
+}
+
+function validateAdditionalRequiredFields(): boolean {
+  if (!form.name.trim()) {
+    setNameError(
+      t('settings.services.fieldTextRequired', {
+        fieldText: t('settings.services.wizard.serviceName'),
+      }),
+    );
+    document.getElementById('service-name')?.focus();
+    return false;
+  }
+  if (nameError.value || isServiceNameChecking.value) {
+    document.getElementById('service-name')?.focus();
+    return false;
+  }
+  return true;
+}
+
+async function handleConfigUpdate(config: ServiceConnectionConfig): Promise<void> {
+  form.name = form.name.trim();
+  const valid = await validateServiceName();
+  if (!valid) {
+    return;
+  }
+  step2Config.value = config;
+  step.value = 3;
+}
+
+function handleResetConfirmLeave(): void {
+  showResetConfirm.value = false;
+  handleConnectorChangeClick();
+}
+
+function handleFooterBack(): void {
+  showBackStepConfirm.value = true;
+}
+
+function handleConfirmedStepBack(): void {
+  showBackStepConfirm.value = false;
+  if (step.value === 2) {
+    handleConnectorChangeClick();
+  } else {
+    step.value = 2;
+  }
+}
+
+function handleFooterNext(): void {
+  if (step.value === 2) {
+    connectionFormRef.value?.submit();
+  } else {
+    filtersFormRef.value?.submit();
+  }
+}
+
+/**
+ * Official AddServicePage.triggerTheAutoPilotApplication: the
+ * trigger failure is caught here and toasted, so the caller still
+ * shows the triggered message and navigates — the pin's own quirk.
+ */
+async function triggerAutoPilotApplication(entityType: string, fqn?: string): Promise<void> {
+  try {
+    await triggerOnDemandApp(AUTO_PILOT_APP_NAME, {
+      entityLink: getEntityFeedLink(entityType, fqn),
+    });
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  }
+}
+
+async function handleFiltersSave(filterValues: Record<string, FilterPatternConfig>): Promise<void> {
+  saving.value = true;
+  let createdId: string | undefined;
+  try {
+    const userId = auth.user?.id;
+    const created = await SERVICE_CREATE_API[form.kind]({
+      name: form.name.trim(),
+      serviceType: form.serviceType,
+      description: form.description?.trim() || undefined,
+      owners: userId ? [{ id: userId, type: 'user' }] : undefined,
+      connection: {
+        config: { ...(step2Config.value ?? {}), ...filterValues },
+      },
+    });
+    createdId = created.id;
+    const entityType = entityTypeForKind(form.kind);
+    if (!isExcludedAutoPilotServiceType(entityType)) {
+      await triggerAutoPilotApplication(entityType, created.fullyQualifiedName);
+      message.success(t('ingestion.agents.autoPilotTriggeredMessage'), 5);
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
+  } finally {
+    saving.value = false;
+    // The pin always navigates to the service detail, even on
+    // failure (the detail may not exist). The id-based interim
+    // route takes the created id on success and the service name
+    // on failure, landing on the detail's missing state; the FQN
+    // migration (§8.2) replaces this with the FQN path.
+    leaving.value = true;
+    await router.push({
+      name: 'ingestion-service',
+      params: { kind: form.kind, id: createdId ?? form.name.trim() },
+    });
+  }
+}
 
 onMounted(() => {
   getOrchestratorStatus()
@@ -105,344 +366,139 @@ onMounted(() => {
       orchestratorChecked.value = true;
     });
 });
-
-/**
- * One minimal filter-pattern schema per declared field, rendered by
- * SchemaField as a FilterPatternCard composer (pin's step 3 renders
- * `FilterPatternField`, the same composer, via `FiltersConfigForm`).
- * The control keys off the object shape (exactly `includes` +
- * `excludes` string arrays), so no connection schema is needed to
- * render it; the label is the field's translated name. The composer
- * itself is the Issue-4 (D-L6) shared component — the wizard renders
- * it here because pin's step 3 does, which crosses the D-L3
- * payload-only boundary in effect; the wizard built no composer of
- * its own.
- *
- * Card options are pin's `FiltersConfigForm` uiSchema: the first two
- * cards start open, `hasExistingData` is false on a fresh create, and
- * the system excludes are the schema defaults (plus the Snowflake
- * sample-database rule) — the card seeds them into a fresh field's
- * state, and they reach the stored config on the first user edit.
- */
-const filterSchemas = computed(() =>
-  filterFields.value.map((field, index) => ({
-    field,
-    schema: {
-      type: 'object',
-      title: t(field.labelKey),
-      properties: {
-        includes: { type: 'array', items: { type: 'string' } },
-        excludes: { type: 'array', items: { type: 'string' } },
-      },
-    } satisfies RjsfSchema,
-    options: {
-      defaultOpen: index < 2,
-      hasExistingData: false,
-      systemExcludes: addSnowflakeSystemExcludes(
-        form.serviceType,
-        field.key,
-        [...filterPatternDefaultExcludes(form.serviceType, field.key)],
-      ),
-    } satisfies FilterPatternFieldOptions,
-  })),
-);
-
-// C-2: the wizard offers only kinds with a §4.3 list segment. llm/mcp
-// creation is removed (no list tab, no wizard choice); the shared
-// SERVICE_CATEGORIES table is untouched — the staged services list
-// keeps its kind Tabs — and existing llm/mcp services remain
-// editable through their detail pages.
-const supportedCategories = computed(() =>
-  SERVICE_CATEGORIES.filter((row) => row.supported && isServiceListKind(row.key)),
-);
-const typeOptions = computed(() => SERVICE_TYPES_BY_KIND[form.kind]);
-/**
- * A9 tightening: a service type with no connection form must not be
- * created with an undefined connection. The wizard still lists the type
- * (the service entity exists server-side), but the connection step shows
- * an explicit "no connection form" note and blocks Next/Create until a
- * formed type is chosen. Only the eight kinds' default types have forms
- * in this branch; their other types stay blocked, not invented.
- */
-const connectionFormMissing = computed(() => !hasConnectionForm(form.serviceType));
-const steps = computed(() => [
-  { title: t('ingestion.services.wizard.stepType') },
-  { title: t('ingestion.services.wizard.stepConnection') },
-  { title: t('ingestion.services.wizard.stepFilter') },
-]);
-
-/**
- * Filter scope belongs to the selected (kind, type): a pattern entered
- * for one type may be undeclared on another's connection schema, so a
- * kind or type change drops everything entered rather than carrying it
- * into a config that cannot legally hold it. Pin remounts the filter
- * form when the field set changes (its form key is the field list);
- * this is the same reset, stated directly.
- */
-function resetFilterForm(): void {
-  for (const key of Object.keys(filterForm) as Array<keyof ServiceFilterValues>) {
-    delete filterForm[key];
-  }
-}
-
-function onKindChange(kind: ServiceKind): void {
-  form.kind = kind;
-  form.serviceType = SERVICE_KIND_DEFAULT_TYPE[kind];
-  resetFilterForm();
-}
-
-function onServiceTypeChange(serviceType: string): void {
-  form.serviceType = serviceType;
-  resetFilterForm();
-}
-
-function setFilterValue(field: ServiceFilterFieldDef, value: unknown): void {
-  if (value === undefined) {
-    delete filterForm[field.key];
-  } else {
-    filterForm[field.key] = value as FilterPatternConfig;
-  }
-}
-
-function onNext(): void {
-  if (step.value < 2) {
-    step.value += 1;
-  }
-}
-
-function onBack(): void {
-  if (step.value > 0) {
-    step.value -= 1;
-  }
-}
-
-/**
- * P-12: the wizard no longer creates a metadata pipeline with the
- * service — a pipeline the user did not ask for. The filter step is
- * still meaningful: entered scope is carried into the service create
- * request's `connection.config`, and the add-ingestion form prefills
- * its filter defaults from there (P-08(c),
- * `getDefaultFilterPropertyValues`). Only entered scope is carried —
- * a field whose includes and excludes are both empty stores nothing —
- * so a plain service create stores no filter keys at all.
- *
- * D-L3: the carried scope is exactly the declared `*FilterPattern`
- * objects, as in pin's `FiltersConfigForm` — each entered field merges
- * as `{includes, excludes}`, the shape pin's `buildPatternFromState`
- * emits. The merge iterates the selected type's declared fields only,
- * so no key outside that set can reach `connection.config`: the flat
- * keys the old wizard wrote (`includeSchemas`, `includeViews`,
- * `generateSampleData`) are undeclared on every connection schema and
- * the server rejects them on encrypt. `includeViews` belongs on the
- * pipeline form only, where the schema-driven form renders it.
- *
- * D-11 reconciliation (ADR:2026-11-14-autopilot-agents-ui-parity):
- * official parity overrides P-12's rationale FOR THE WIZARD PATH
- * ONLY, and only via the AutoPilot trigger below — the wizard still
- * makes no direct createIngestionPipeline call. Official's wizard
- * triggers AutoPilot after a successful create, and AutoPilot (not
- * the wizard) decides which agents to generate from the connection
- * flags. The filter-scope carrying above is unaffected.
- */
-function enteredFilterValues(): Record<string, unknown> {
-  const values: Record<string, unknown> = {};
-  for (const field of filterFields.value) {
-    const pattern = filterForm[field.key];
-    const includes = pattern?.includes ?? [];
-    const excludes = pattern?.excludes ?? [];
-    if (includes.length > 0 || excludes.length > 0) {
-      values[field.key] = { includes, excludes };
-    }
-  }
-  return values;
-}
-
-/**
- * Official AddServicePage.triggerTheAutoPilotApplication (pin
- * a3012259ca): the trigger failure is caught here and toasted, so
- * the caller still shows the triggered message and navigates — the
- * pin's own quirk, ported exactly (both toasts appear when the
- * trigger fails).
- */
-async function triggerAutoPilotApplication(entityType: string, fqn?: string): Promise<void> {
-  try {
-    await triggerOnDemandApp(AUTO_PILOT_APP_NAME, {
-      entityLink: getEntityFeedLink(entityType, fqn),
-    });
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
-  }
-}
-
-async function onCreate(): Promise<void> {
-  if (connectionFormMissing.value) {
-    message.error(t('ingestion.services.wizard.noConnectionForm'));
-    return;
-  }
-  creating.value = true;
-  try {
-    const connection = buildServiceConnection(form);
-    if (connection?.config) {
-      mergeAuthBranchIntoConfig(form.serviceType, form, connection.config, undefined);
-    }
-    const filterValues = enteredFilterValues();
-    const created = await SERVICE_CREATE_API[form.kind]({
-      name: form.name.trim(),
-      serviceType: form.serviceType,
-      displayName: form.displayName?.trim() || undefined,
-      description: form.description?.trim() || undefined,
-      connection: connection
-        ? {
-            ...connection,
-            config: { ...connection.config, ...filterValues },
-          }
-        : undefined,
-    });
-    // Official AddServicePage: after a successful create, every
-    // service type except security triggers AutoPilot, then shows
-    // the triggered message (5s — antd takes seconds, the pin's
-    // 5000 is milliseconds) and navigates. Security services get no
-    // trigger and no toast; the navigation is the confirmation.
-    const entityType = entityTypeForKind(form.kind);
-    if (!isExcludedAutoPilotServiceType(entityType)) {
-      await triggerAutoPilotApplication(entityType, created.fullyQualifiedName);
-      message.success(t('ingestion.agents.autoPilotTriggeredMessage'), 5);
-    }
-    await router.push({ name: 'ingestion-service', params: { kind: form.kind, id: created.id } });
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
 </script>
 
 <template>
   <PageLayout>
-    <PageHeader :header="t('ingestion.services.wizard.title')" :sub-header="t('ingestion.services.wizard.lead')" />
-    <Steps :current="step" data-testid="add-service-steps" style="margin-bottom: 24px">
-      <Steps.Step v-for="item in steps" :key="item.title" :title="item.title" />
-    </Steps>
-
-    <div v-if="step === 0" data-testid="wizard-step-type">
-      <Form layout="vertical">
-        <Form.Item :label="t('ingestion.services.kind')" required>
-          <Select :value="form.kind" data-testid="wizard-service-kind" @update:value="(value) => onKindChange(value as ServiceKind)">
-            <Select.Option v-for="row in supportedCategories" :key="row.key" :value="row.key">
-              {{ t(row.labelKey) }}
-            </Select.Option>
-          </Select>
-        </Form.Item>
-        <Form.Item :label="t('crud.type')" required>
-          <Select :value="form.serviceType" data-testid="wizard-service-type" @update:value="(value) => onServiceTypeChange(value as string)">
-            <Select.Option v-for="type in typeOptions" :key="type" :value="type">{{ type }}</Select.Option>
-          </Select>
-        </Form.Item>
-      </Form>
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <div data-testid="add-new-service-container" style="display: flex; align-items: center; gap: 12px">
+      <ServiceLogo v-if="form.serviceType" :source="{ serviceType: form.serviceType }" :size="40" />
+      <PageHeader :header="headerText" test-id="header" />
     </div>
+    <ServiceFlowStepper :steps="steps" :active-step="step" />
 
-    <div v-if="step === 1" data-testid="wizard-step-connection">
-      <Form layout="vertical">
-        <Form.Item :label="t('crud.name')" required>
-          <Input v-model:value="form.name" data-testid="wizard-service-name" />
-        </Form.Item>
-        <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-          <Input v-model:value="form.displayName" data-testid="wizard-service-display-name" />
-        </Form.Item>
-        <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-          <Input.TextArea v-model:value="form.description" :rows="3" data-testid="wizard-service-description" />
-        </Form.Item>
-        <ServiceConnectionFields :form="form" />
-        <Alert
-          v-if="connectionFormMissing"
-          type="warning"
-          show-icon
-          data-testid="wizard-no-connection-form"
-          :message="t('ingestion.services.wizard.noConnectionForm')"
-          style="margin-top: 16px"
+    <div class="add-service-layout">
+      <div class="add-service-main">
+        <div v-if="step === 1" data-testid="wizard-step-type">
+          <SelectServiceType
+            :category="wizardKind ?? 'all'"
+            :show-error="false"
+            @category-change="handleCategoryChange"
+            @select="handleServiceTypeClick"
+          />
+        </div>
+
+        <div v-if="step === 2" data-testid="wizard-step-connection">
+          <ServiceNameCard
+            :service-type="form.serviceType"
+            :name="form.name"
+            :description="form.description ?? ''"
+            :name-error="nameError"
+            @update:name="form.name = $event"
+            @update:description="form.description = $event"
+            @focus="handleNameCardFocus"
+            @blur="handleFieldBlur"
+          />
+          <ConnectionConfigForm
+            ref="connectionFormRef"
+            :kind="form.kind"
+            :service-type="form.serviceType"
+            :form="form"
+            :service-name="form.name"
+            :additional-missing-fields-count="isStep2NextDisabled ? 1 : 0"
+            :is-submit-disabled="isStep2NextDisabled"
+            :is-additional-validation-pending="isServiceNameChecking"
+            :on-validate-additional-required-fields="validateAdditionalRequiredFields"
+            :airflow-status="orchestrator"
+            :airflow-checked="orchestratorChecked"
+            @save="handleConfigUpdate"
+            @test-connection-status-change="isConnectionVerified = $event"
+            @focus="(fieldId, meta) => handleFieldFocus(fieldId, meta)"
+            @blur="handleFieldBlur"
+          />
+        </div>
+
+        <div v-if="step === 3" data-testid="wizard-step-filter">
+          <FiltersConfigForm
+            ref="filtersFormRef"
+            :kind="form.kind"
+            :service-type="form.serviceType"
+            :initial-config="step2Config"
+            :show-connected-message="isConnectionVerified"
+            :connected-host="connectedHost"
+            @save="handleFiltersSave"
+          />
+        </div>
+
+        <div v-if="step === 2 || step === 3" style="margin-top: 24px; display: flex; gap: 8px">
+          <Button data-testid="wizard-back" @click="handleFooterBack">
+            {{ t('crud.previous') }}
+          </Button>
+          <Button
+            type="primary"
+            data-testid="wizard-next"
+            :disabled="
+              step === 2
+                ? isStep2NextDisabled || isConnectionSubmitBlocked
+                : saving
+            "
+            :loading="step === 3 && saving"
+            @click="handleFooterNext"
+          >
+            {{
+              step === 3
+                ? t('settings.services.wizard.createAndDeploy')
+                : t('settings.services.wizard.nextWhatToIngest')
+            }}
+          </Button>
+        </div>
+      </div>
+
+      <div v-if="!hideSecondPanel" class="add-service-doc-panel">
+        <ServiceDocPanel
+          :service-name="form.serviceType"
+          :service-type="entityTypeForKind(form.kind)"
+          :active-field="activeField"
+          :active-field-meta="activeFieldMeta"
         />
-      </Form>
-      <TestConnectionCard
-        v-if="!connectionFormMissing && shouldTestConnection(form.serviceType)"
-        :connection-type="form.serviceType"
-        :kind="form.kind"
-        :service-name="form.name"
-        :get-connection="testConnectionGetter"
-        :airflow-available="airflowAvailable"
-        :missing-required-fields-count="missingRequiredCount"
-        :on-validate-form-required-fields="validateRequiredFields"
-        @status-change="testConnectionPassed = $event"
-      />
+      </div>
     </div>
 
-    <div v-if="step === 2" data-testid="wizard-step-filter">
-      <!-- Pin threads the test status into the filters step's connected
-           message (AddServicePage); the message keys are shared with the
-           edit page, as pin uses one message pair for both pages. -->
-      <Alert
-        v-if="testConnectionPassed"
-        type="success"
-        show-icon
-        :message="
-          t('ingestion.services.editConnectionPage.connectedToHost', {
-            host: connectedHost,
-          })
-        "
-        :description="
-          t('ingestion.services.editConnectionPage.connectionVerifiedScope')
-        "
-        data-testid="wizard-connected"
-        style="margin-bottom: 16px"
-      />
-      <Form layout="vertical">
-        <SchemaField
-          v-for="entry in filterSchemas"
-          :key="entry.field.key"
-          :schema="entry.schema"
-          :value="filterForm[entry.field.key]"
-          :path="[entry.field.key]"
-          :root-schema="entry.schema"
-          :errors="filterErrors"
-          :show-errors="false"
-          test-id-prefix="wizard-filter"
-          :filter-pattern-options="entry.options"
-          @update:value="(value) => setFilterValue(entry.field, value)"
-        />
-        <p v-if="!filterFields.length" data-testid="wizard-no-filter-patterns">
-          {{ t('ingestion.pipelines.noFilterPatterns') }}
-        </p>
-      </Form>
-      <Alert
-        type="info"
-        show-icon
-        data-testid="wizard-filter-residual"
-        :message="t('ingestion.services.wizard.filterResidual')"
-        style="margin-top: 16px"
-      />
-    </div>
-
-    <div style="margin-top: 24px; display: flex; gap: 8px">
-      <Button v-if="step > 0" data-testid="wizard-back" @click="onBack">
-        {{ t('crud.previous') }}
-      </Button>
-      <Button
-        v-if="step < 2"
-        type="primary"
-        data-testid="wizard-next"
-        :disabled="(step === 1 && !form.name.trim()) || (step === 1 && connectionFormMissing)"
-        @click="onNext"
-      >
-        {{ step === 1 ? t('ingestion.services.wizard.nextFilter') : t('crud.next') }}
-      </Button>
-      <Button
-        v-if="step === 2"
-        type="primary"
-        data-testid="wizard-create"
-        :loading="creating"
-        @click="onCreate"
-      >
-        {{ t('ingestion.services.wizard.createAndDeploy') }}
-      </Button>
-    </div>
+    <NavigationGuardModal :open="showModal" @leave="confirmLeave" @stay="cancelLeave" />
+    <!-- The reset confirm opens from the breadcrumb's add-service
+         action once the shell §9 constructor lands (SmBreadcrumb
+         cannot express click actions); the modal and its handler are
+         wired and ready. -->
+    <NavigationGuardModal
+      :open="showResetConfirm"
+      test-id="navigation-guard-reset"
+      @leave="handleResetConfirmLeave"
+      @stay="showResetConfirm = false"
+    />
+    <NavigationGuardModal
+      :open="showBackStepConfirm"
+      test-id="navigation-guard-back-step"
+      @leave="handleConfirmedStepBack"
+      @stay="showBackStepConfirm = false"
+    />
   </PageLayout>
 </template>
+
+<style scoped>
+.add-service-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.add-service-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.add-service-doc-panel {
+  flex: 0.3;
+  min-width: 400px;
+}
+</style>

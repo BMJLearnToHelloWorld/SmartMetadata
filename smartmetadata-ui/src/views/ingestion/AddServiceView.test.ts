@@ -7,15 +7,18 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { flushPromises, mount } from '@vue/test-utils';
-import type { DOMWrapper } from '@vue/test-utils';
-import Antd, { Select, message } from 'ant-design-vue';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import Antd, { message, Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMemoryHistory, createRouter } from 'vue-router';
+import { defineComponent } from 'vue';
+import { createMemoryHistory, createRouter, type HistoryState, type Router } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
-import FilterPatternCard from '@/components/ingestion/FilterPatternCard.vue';
+import SchemaField from '@/components/ingestion/SchemaField.vue';
+import SelectServiceType from '@/components/ingestion/SelectServiceType.vue';
 import TestConnectionCard from '@/components/ingestion/TestConnectionCard.vue';
+import { clearConnectionSchemaCache } from '@/ingestion/connectionSchemaLoader';
+import { useAuthStore } from '@/stores/auth';
 import AddServiceView from './AddServiceView.vue';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -25,16 +28,349 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function filterProperty(title: string) {
+  return {
+    type: 'object',
+    title,
+    properties: {
+      includes: { type: 'array', items: { type: 'string' } },
+      excludes: { type: 'array', items: { type: 'string' } },
+    },
+  };
+}
+
+const POSTGRES_SCHEMA = {
+  type: 'object',
+  properties: {
+    hostPort: { type: 'string', title: 'Host and Port' },
+    databaseFilterPattern: filterProperty('Database Filter Pattern'),
+    schemaFilterPattern: filterProperty('Schema Filter Pattern'),
+    tableFilterPattern: filterProperty('Table Filter Pattern'),
+    storedProcedureFilterPattern: filterProperty('Stored Procedure Filter Pattern'),
+  },
+};
+
+interface StubOptions {
+  nameLookup?: 'absent' | 'duplicate';
+  createStatus?: number;
+  triggerStatus?: number;
+  schema?: Record<string, unknown>;
+}
+
+interface Harness {
+  wrapper: VueWrapper;
+  router: Router;
+  calls: Array<{ url: string; method?: string; body?: unknown }>;
+}
+
+async function mountWizard(
+  initialUrl: string,
+  options: StubOptions = {},
+  historyState?: HistoryState,
+): Promise<Harness> {
+  const calls: Harness['calls'] = [];
+  const schema = options.schema ?? POSTGRES_SCHEMA;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      let body: unknown;
+      try {
+        body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      } catch {
+        body = undefined;
+      }
+      calls.push({ url, method: init?.method, body });
+      if (url.includes('/jsons/connectionSchemas/')) {
+        return jsonResponse(schema);
+      }
+      if (url.includes('/api/v1/services/ingestionPipelines/status')) {
+        return jsonResponse({ code: 200, platform: 'Airflow' });
+      }
+      if (url.includes('/api/v1/services/ingestionPipelines/ip')) {
+        return jsonResponse({ ip: '10.0.0.9' });
+      }
+      if (url.includes('/name/') && init?.method !== 'POST') {
+        if (options.nameLookup === 'duplicate') {
+          return jsonResponse({ id: 'existing', name: 'warehouse', serviceType: 'Postgres' });
+        }
+        return new Response('not found', { status: 404 });
+      }
+      if (url.includes('/api/v1/services/') && init?.method === 'POST') {
+        if (options.createStatus === 500) {
+          return new Response('create failed', { status: 500 });
+        }
+        return jsonResponse({
+          id: 's9',
+          name: 'warehouse',
+          fullyQualifiedName: 'warehouse',
+          serviceType: 'Postgres',
+        });
+      }
+      if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
+        if (options.triggerStatus === 500) {
+          return new Response('trigger failed', { status: 500 });
+        }
+        return new Response('', { status: 200 });
+      }
+      return new Response('not found', { status: 404 });
+    }),
+  );
+
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  useAuthStore().user = { id: 'u1', name: 'admin' };
+
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+      {
+        path: '/ingestion/services/:kind/:id',
+        name: 'ingestion-service',
+        component: { template: '<div>svc</div>' },
+        props: true,
+      },
+      {
+        path: '/ingestion/services',
+        name: 'ingestion-services',
+        component: { template: '<div>list</div>' },
+      },
+      { path: '/other', name: 'other', component: { template: '<div>other</div>' } },
+    ],
+  });
+  // A location object with an embedded `?query` string drops the
+  // query (vue-router parses it only for string locations), so split
+  // the initial URL and pass path/query/state explicitly.
+  const [initialPath, initialQueryString] = initialUrl.split('?');
+  const initialQuery = Object.fromEntries(new URLSearchParams(initialQueryString ?? ''));
+  await router.push({ path: initialPath, query: initialQuery, state: historyState });
+  await router.isReady();
+
+  const i18n = createTestI18n();
+  i18n.global.mergeLocaleMessage('en-US', {
+    settings: {
+      services: {
+        service: 'Service',
+        categoryTitle: {
+          database: 'Databases',
+          messaging: 'Messaging',
+          dashboard: 'Dashboards',
+          pipeline: 'Pipelines',
+          mlmodel: 'ML Models',
+          metadata: 'Metadata',
+          storage: 'Storages',
+          search: 'Search',
+          api: 'APIs',
+          security: 'Security',
+          drive: 'Drives',
+        },
+        wizard: {
+          addNewService: 'Add New Service',
+          allServices: 'All Services',
+          selectField: 'Select {field}',
+          serviceType: 'Service Type',
+          stepConnect: 'Connect',
+          stepWhatToIngest: 'What to Ingest',
+          createAndDeploy: 'Create & Deploy',
+          nextWhatToIngest: 'Next: What to Ingest',
+          nameThisService: 'Name this service',
+          nameThisServiceDescription: 'A unique name for this {serviceType} connection.',
+          serviceNameRule: 'Must be unique within this service category.',
+          addDescriptionPlaceholder: 'Add a description for this service',
+          addDescription: 'Add a description',
+          searchConnector: 'Search for a connector',
+          noConnectorsAvailable: 'No connectors available for the selected service type.',
+          serviceName: 'Service Name',
+        },
+        fieldTextRequired: '{fieldText} is required.',
+        beta: 'Beta',
+        nameAlreadyExistsWithSuggestion:
+          'A {serviceCategory} named {serviceName} already exists. Try {suggestedServiceName}.',
+        serviceLowercase: 'service',
+        categoryLabel: {
+          database: 'Database Service',
+          messaging: 'Messaging Service',
+          dashboard: 'Dashboard Service',
+          pipeline: 'Pipeline Service',
+          mlmodel: 'Ml Model Service',
+          metadata: 'Metadata Service',
+          storage: 'Storage Service',
+          search: 'Search Service',
+          api: 'API Service',
+          security: 'Security Service',
+          drive: 'Drive',
+        },
+        connectionGuard: {
+          loadFailed: 'Failed to load the connection schema.',
+          noConfigAvailable: 'No Connection Configs available.',
+          blockedReasonA: 'This connector has no guided connection form yet.',
+          blockedReasonB: 'This connector has no connection configuration.',
+          blockedReasonC: 'This connector cannot be configured yet.',
+        },
+        connectionForm: {
+          pipelineServerIpAddress: 'Pipeline Server IP Address',
+          airflowHostIpAddress: 'The platform will connect from the IP {hostIp}.',
+        },
+        filters: {
+          whatShouldWeIngest: 'What should we ingest?',
+          whatToIngestDescription: 'Define the ingestion scope.',
+          connectedToHost: 'Connected to {host}',
+          connectionVerifiedScope: 'Connection verified.',
+          noFilterPatternsAvailable: 'No filter patterns are available for this connector.',
+        },
+        pipeline: {
+          disabledFallback: 'Pipeline server is disabled.',
+          unreachableFallback: 'Pipeline server is unreachable.',
+        },
+      },
+    },
+  });
+
+  // Mount through <router-view/> so the wizard instance is the
+  // routed instance and onBeforeRouteLeave fires for the guard test.
+  const host = defineComponent({ template: '<router-view />' });
+  const wrapper = mount(host, {
+    global: { plugins: [pinia, router, Antd, i18n] },
+  });
+  await flushPromises();
+  return { wrapper, router, calls };
+}
+
+/** Poll until `check` passes or the timeout expires (real timers: the name check debounces 400ms). */
+async function waitFor(check: () => boolean, label: string, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await flushPromises();
+    if (check()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for: ${label}`);
+}
+
+/** Fill the name card plus all three required Postgres static fields. */
+async function fillPostgresConnection(wrapper: VueWrapper): Promise<void> {
+  await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+  await wrapper.find('[data-testid="service-username"]').setValue('postgres');
+  await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
+  await wrapper.find('[data-testid="service-database"]').setValue('postgres');
+}
+
+/** Fill the name card plus the Ranger static fields (hostPort, username, password). */
+async function fillRangerConnection(wrapper: VueWrapper): Promise<void> {
+  await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+  await wrapper.find('[data-testid="service-username"]').setValue('ranger-user');
+  await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:6080');
+  await wrapper.find('[data-testid="service-password"]').setValue('secret');
+}
+
+/** Fill the name card plus the Mysql required fields (username, hostPort) and password. */
+async function fillMysqlConnection(wrapper: VueWrapper): Promise<void> {
+  await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+  await wrapper.find('[data-testid="service-username"]').setValue('mysql-user');
+  await wrapper.find('[data-testid="service-password"]').setValue('secret');
+  await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:3306');
+}
+
+/** Fill the name card plus the Kafka bootstrap servers (its only required field). */
+async function fillKafkaConnection(wrapper: VueWrapper): Promise<void> {
+  await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+  await wrapper.find('[data-testid="service-bootstrap-servers"]').setValue('localhost:9092');
+}
+
+/** Walk from the step-2 connection form to the step-3 filter form. */
+async function walkToFilterStep(
+  wrapper: VueWrapper,
+  fill: (wrapper: VueWrapper) => Promise<void> = fillPostgresConnection,
+  readyTestId = 'service-host-port',
+): Promise<void> {
+  await waitFor(
+    () => wrapper.find(`[data-testid="${readyTestId}"]`).exists(),
+    'connection form fields',
+  );
+  await fill(wrapper);
+  await clickWizardNext(wrapper);
+  await waitFor(
+    () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+    'filter step',
+  );
+}
+
+/** Enter a single regex include on the schema filter pattern composer. */
+async function enterSchemaInclude(wrapper: VueWrapper): Promise<void> {
+  const schemaField = wrapper
+    .findAllComponents(SchemaField)
+    .find((field) => (field.props('path') as string[]).includes('schemaFilterPattern'));
+  expect(schemaField?.exists()).toBe(true);
+  await (schemaField as VueWrapper)
+    .find('[data-testid="schemaFilterPattern-only-specific-button"]')
+    .trigger('click');
+  await addComposerCondition(schemaField as VueWrapper, 'include', '^public$');
+}
+
 /**
- * Drive one filter-pattern composer card (the wizard's filter step renders
- * FilterPatternCard composers via SchemaField since the Issue-4 parity
- * batch). The operator select is driven to `regex` so the entered value
- * round-trips verbatim into the FilterPattern object; the composer's
- * default-operator conversions are covered by the FilterPatternCard /
- * filterPatterns tests, not here.
+ * Walk Back from the filter step to the type grid: step 3 Back returns
+ * to step 2, step 2 Back discards the wizard (resetWizardState) to
+ * step 1. The antd Modal teleports to document.body; its discard
+ * button is asserted the same way the Back-confirm test does.
  */
+async function backToTypeStep(wrapper: VueWrapper): Promise<void> {
+  await wrapper.find('[data-testid="wizard-back"]').trigger('click');
+  await flushPromises();
+  (document.querySelector('[data-testid="navigation-guard-discard"]') as HTMLElement).click();
+  await flushPromises();
+  expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
+  await wrapper.find('[data-testid="wizard-back"]').trigger('click');
+  await flushPromises();
+  (document.querySelector('[data-testid="navigation-guard-discard"]') as HTMLElement).click();
+  await flushPromises();
+  expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+}
+
+/** The created service's request body from the recorded calls. */
+function createdBody(
+  calls: Harness['calls'],
+  servicePath: string,
+): Record<string, unknown> {
+  const create = calls.find(
+    (call) => call.url.includes(servicePath) && call.method === 'POST',
+  );
+  expect(create).toBeDefined();
+  return create?.body as Record<string, unknown>;
+}
+
+function createdConfig(
+  calls: Harness['calls'],
+  servicePath: string,
+): Record<string, unknown> {
+  return (
+    createdBody(calls, servicePath).connection as Record<string, Record<string, unknown>>
+  ).config;
+}
+
+/**
+ * Click the wizard footer Next once it is enabled. The name check
+ * debounces 400ms and disables the button while the lookup is in
+ * flight; a click inside that window is swallowed by the disabled
+ * button (the pin's own transient), so the test waits it out
+ * instead of racing it. A permanently disabled button still fails
+ * loudly via the waitFor timeout.
+ */
+async function clickWizardNext(wrapper: VueWrapper): Promise<void> {
+  await waitFor(
+    () =>
+      wrapper.find('[data-testid="wizard-next"]').exists() &&
+      !(wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled,
+    'wizard Next enabled',
+  );
+  await wrapper.find('[data-testid="wizard-next"]').trigger('click');
+}
+
+/** Drive one filter-pattern composer card to a single regex include. */
 async function addComposerCondition(
-  card: DOMWrapper<Element>,
+  card: VueWrapper,
   tone: 'include' | 'exclude',
   value: string,
 ): Promise<void> {
@@ -50,545 +386,410 @@ async function addComposerCondition(
   await card.find(`[data-testid="${tone}-add-button"]`).trigger('click');
 }
 
+// The 30s ceiling covers the full-wizard mounts (antd + Tiptap +
+// router) and the real-timer 400ms name-check debounce on this
+// loaded VM; assertions still fail fast, the timeout only bounds
+// the waits. The same walk completes in ~5s unloaded (probe).
 describe('AddServiceView', () => {
-  const calls: Array<{ url: string; method?: string }> = [];
   beforeEach(() => {
-    calls.length = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        calls.push({ url, method: init?.method });
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
-          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
+    clearConnectionSchemaCache();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    message.destroy();
+    document.body.innerHTML = '';
+    clearConnectionSchemaCache();
   });
 
-  it('walks type, connection, and filter steps and creates the service', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
+  it('renders the connector grid on step 1 with no footer and no doc panel', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
     expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
-    // S-03: the residual alert is replaced by the shared test-connection card.
-    expect(wrapper.find('[data-testid="wizard-test-connection-residual"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="test-connection"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="select-service"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="Postgres"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="wizard-next"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="wizard-back"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="service-requirements"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-new-service-container"]').text()).toContain(
+      'Add New Service',
+    );
+    // No displayName field and no filter-residual prompt anywhere in the wizard.
+    expect(wrapper.html()).not.toContain('display-name');
+    expect(wrapper.find('[data-testid="wizard-filter-residual"]').exists()).toBe(false);
+  });
 
-    const nameInput = wrapper.find('[data-testid="wizard-service-name"]');
-    await nameInput.setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="filter-section-schemaFilterPattern"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="filter-section-storedProcedureFilterPattern"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="wizard-filter-residual"]').exists()).toBe(true);
-
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
+  it('advances to step 2 on a same-category card click with the type header and doc panel', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await flushPromises();
-    expect(calls.some((call) => call.url.includes('/api/v1/services/databaseServices') && call.method === 'POST')).toBe(true);
+    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="add-new-service-container"]').text()).toContain(
+      'Postgres Service',
+    );
+    expect(wrapper.find('[data-testid="service-name-input"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="wizard-next"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="service-requirements"]').exists()).toBe(true);
+    expect(wrapper.findComponent(TestConnectionCard).exists()).toBe(true);
+    // The breadcrumb morphs to [Add New Service, Postgres] once a type is picked.
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Postgres');
+  });
+
+  it('navigates on category change and refreshes the grid', async () => {
+    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases');
+    const selects = wrapper.findAllComponents(Select);
+    expect(selects.length).toBeGreaterThan(0);
+    await selects[0]?.vm.$emit('update:value', 'messaging');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ category: 'messaging' });
+    expect(wrapper.find('[data-testid="Kafka"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="Postgres"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+  });
+
+  it('navigates with state on a cross-category click from the all grid', async () => {
+    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=all');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-connection"]').exists(),
+      'step 2 after cross-category navigation',
+    );
+    expect(router.currentRoute.value.query).toEqual({ category: 'databases' });
+    expect(wrapper.find('[data-testid="add-new-service-container"]').text()).toContain(
+      'Postgres Service',
+    );
+  });
+
+  it('preselects step 2 for a valid deep-linked serviceType and ignores invalid ones', async () => {
+    const valid = await mountWizard('/ingestion/services/add?category=databases', {}, {
+      serviceType: 'Postgres',
+    });
+    expect(valid.wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
+    valid.wrapper.unmount();
+
+    const invalid = await mountWizard('/ingestion/services/add?category=databases', {}, {
+      serviceType: 'Nope',
+    });
+    expect(invalid.wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+    invalid.wrapper.unmount();
+
+    const unsupported = await mountWizard('/ingestion/services/add?category=metadata', {}, {
+      serviceType: 'Alation',
+    });
+    expect(unsupported.wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+    unsupported.wrapper.unmount();
+  });
+
+  it('walks all three steps and creates the service with owners and no displayName', async () => {
+    const successSpy = vi.spyOn(message, 'success');
+    const { wrapper, router, calls } = await mountWizard(
+      '/ingestion/services/add?category=databases',
+    );
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await fillPostgresConnection(wrapper);
+    await clickWizardNext(wrapper);
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+      'filter step',
+    );
+    expect(wrapper.find('[data-testid="filters-config-form"]').exists()).toBe(true);
+
+    const schemaField = wrapper
+      .findAllComponents(SchemaField)
+      .find((field) => (field.props('path') as string[]).includes('schemaFilterPattern'));
+    expect(schemaField?.exists()).toBe(true);
+    // The include composer renders only in only-specific mode.
+    await (schemaField as VueWrapper)
+      .find('[data-testid="schemaFilterPattern-only-specific-button"]')
+      .trigger('click');
+    await addComposerCondition(schemaField as VueWrapper, 'include', '^public$');
+
+    await clickWizardNext(wrapper);
+    await flushPromises();
+
+    const create = calls.find(
+      (call) => call.url.includes('/api/v1/services/databaseServices') && call.method === 'POST',
+    );
+    expect(create).toBeDefined();
+    const body = create?.body as Record<string, unknown>;
+    expect(body.name).toBe('warehouse');
+    expect(body.serviceType).toBe('Postgres');
+    expect(body).not.toHaveProperty('displayName');
+    expect(body.owners).toEqual([{ id: 'u1', type: 'user' }]);
+    const config = (body.connection as Record<string, Record<string, unknown>>).config;
+    expect(config.type).toBe('Postgres');
+    expect(config.hostPort).toBe('localhost:5432');
+    expect(config.schemaFilterPattern).toEqual({ includes: ['^public$'], excludes: [] });
+    expect(
+      calls.some((call) => call.url.includes('/api/v1/apps/trigger/') && call.method === 'POST'),
+    ).toBe(true);
+    expect(successSpy).toHaveBeenCalledWith(expect.any(String), 5);
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 's9' });
   });
 
-  it('carries entered filter patterns into the service connection.config as FilterPattern objects (P-12, D-L3)', async () => {
-    const serviceBodies: Array<{ url: string; body: unknown }> = [];
-    const triggerBodies: unknown[] = [];
-    let pipelinePosts = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
-          serviceBodies.push({ url, body: JSON.parse(String(init?.body)) });
-          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          triggerBodies.push(JSON.parse(String(init?.body)));
-          return new Response('', { status: 200 });
-        }
-        if (url.includes('/api/v1/services/ingestionPipelines') && init?.method === 'POST') {
-          pipelinePosts += 1;
-          return jsonResponse({
-            id: 'p1',
-            name: 'warehouse-metadata',
-            pipelineType: 'metadata',
-            service: { id: 's9', type: 'databaseService' },
-          });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    const schemaCard = wrapper.find('[data-testid="filter-section-schemaFilterPattern"]');
-    expect(schemaCard.exists()).toBe(true);
-    // The include composer renders only in only-specific mode.
-    await schemaCard.find('[data-testid="schemaFilterPattern-only-specific-button"]').trigger('click');
-    await addComposerCondition(schemaCard, 'include', 'public');
-    await addComposerCondition(schemaCard, 'exclude', '^tmp_.*$');
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    // P-12: the wizard creates only the service. The entered scope is
-    // merged into the service create request's connection.config (so the
-    // add-ingestion form can prefill from it later, P-08(c)); no
-    // pipeline is created here. D-L3: the merged scope is the declared
-    // *FilterPattern object — the flat includeSchemas string the old
-    // wizard wrote is undeclared on the connection schema and the
-    // server rejects it on encrypt.
-    expect(serviceBodies).toHaveLength(1);
-    const serviceBody = serviceBodies[0].body as {
-      connection?: { config?: Record<string, unknown> };
-    };
-    const config = serviceBody.connection?.config ?? {};
-    expect(config.schemaFilterPattern).toEqual({
-      includes: ['public'],
-      // F5: the schema card seeds pin's schema-default exclude
-      // (^information_schema$) into the fresh card; the first user
-      // edit carries it into the payload alongside the entered rule.
-      excludes: ['^information_schema$', '^tmp_.*$'],
-    });
-    expect(Object.keys(config).filter((key) => key.endsWith('FilterPattern'))).toEqual([
-      'schemaFilterPattern',
-    ]);
-    expect(config.includeSchemas).toBeUndefined();
-    expect(config.includeViews).toBeUndefined();
-    expect(config.includeTopics).toBeUndefined();
-    expect(config.includeDashboards).toBeUndefined();
-    expect(config.includeCharts).toBeUndefined();
-    expect(config.includeContainers).toBeUndefined();
-    expect(config.generateSampleData).toBeUndefined();
-    expect(pipelinePosts).toBe(0);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    // D-11: P-12's removal of direct pipeline creation stands — the
-    // wizard triggers AutoPilot instead, with the service entity
-    // link (the create response carries no FQN, so the mapper falls
-    // back to the service name).
-    expect(triggerBodies).toEqual([{ entityLink: '<#E::databaseService::warehouse>' }]);
-  });
-
-  it('resets entered filter scope on kind change instead of merging it into the new kind (D-L3)', async () => {
-    const serviceBodies: Array<{ body: unknown }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/messagingServices') && init?.method === 'POST') {
-          serviceBodies.push({ body: JSON.parse(String(init?.body)) });
-          return jsonResponse({ id: 'm1', name: 'warehouse', serviceType: 'Kafka' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          return new Response('', { status: 200 });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    const schemaCard = wrapper.find('[data-testid="filter-section-schemaFilterPattern"]');
-    expect(schemaCard.exists()).toBe(true);
-    await schemaCard.find('[data-testid="schemaFilterPattern-only-specific-button"]').trigger('click');
-    await addComposerCondition(schemaCard, 'include', 'public');
-    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
-    const selects = wrapper.findAllComponents(Select);
-    await selects[0]?.vm.$emit('update:value', 'messaging');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="filter-section-schemaFilterPattern"]').exists()).toBe(false);
-    const topicCard = wrapper.find('[data-testid="filter-section-topicFilterPattern"]');
-    expect(topicCard.exists()).toBe(true);
-    // No entered scope survived the kind change: no include chips.
-    // The exclude chips are exactly pin's seeded Kafka topic system
-    // excludes (F5) — seeded state, not entered scope.
-    expect(topicCard.findAll('[data-testid^="include-chip-"]').length).toBe(0);
-    const excludeChips = topicCard.findAll('[data-testid^="exclude-chip-"]');
-    expect(excludeChips.length).toBe(3);
-    const chipText = excludeChips.map((chip) => chip.text()).join(' ');
-    expect(chipText).toContain('__');
-    expect(chipText).toContain('_schemas');
-    expect(chipText).toContain('_confluent');
-    await topicCard.find('[data-testid="topicFilterPattern-only-specific-button"]').trigger('click');
-    await addComposerCondition(topicCard, 'include', 'orders');
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    expect(serviceBodies).toHaveLength(1);
-    const config = (
-      serviceBodies[0].body as { connection?: { config?: Record<string, unknown> } }
-    ).connection?.config ?? {};
-    expect(config.topicFilterPattern).toEqual({
-      includes: ['orders'],
-      // F5: the first edit carries the seeded system excludes.
-      excludes: ['^__.*', '^_schemas$', '^_confluent.*'],
-    });
-    expect(config.schemaFilterPattern).toBeUndefined();
-  });
-
-  it('resets entered filter scope on service-type change within a kind (D-L3)', async () => {
-    const serviceBodies: Array<{ body: unknown }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
-          serviceBodies.push({ body: JSON.parse(String(init?.body)) });
-          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Databricks' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          return new Response('', { status: 200 });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    const procedureCard = wrapper.find('[data-testid="filter-section-storedProcedureFilterPattern"]');
-    expect(procedureCard.exists()).toBe(true);
-    await procedureCard.find('[data-testid="storedProcedureFilterPattern-only-specific-button"]').trigger('click');
-    await addComposerCondition(procedureCard, 'include', 'sp_%');
-    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
-    const selects = wrapper.findAllComponents(Select);
-    await selects[1]?.vm.$emit('update:value', 'Databricks');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    // Databricks declares no storedProcedureFilterPattern: the field is
-    // gone and the entered value must not survive into the create.
-    expect(wrapper.find('[data-testid="filter-section-storedProcedureFilterPattern"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="filter-section-schemaFilterPattern"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    expect(serviceBodies).toHaveLength(1);
-    const config = (
-      serviceBodies[0].body as { connection?: { config?: Record<string, unknown> } }
-    ).connection?.config ?? {};
-    expect(config.storedProcedureFilterPattern).toBeUndefined();
-    expect(Object.keys(config).filter((key) => key.endsWith('FilterPattern'))).toEqual([]);
-  });
-
-  it('still navigates when the AutoPilot trigger fails (D-1, pin trigger-failure path)', async () => {
-    let pipelinePosts = 0;
-    let triggerPosts = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
-          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          triggerPosts += 1;
-          return new Response('trigger failed', { status: 500 });
-        }
-        if (url.includes('/api/v1/services/ingestionPipelines') && init?.method === 'POST') {
-          pipelinePosts += 1;
-          return jsonResponse({ id: 'p1', name: 'warehouse-metadata', pipelineType: 'metadata' });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    // The trigger failure is swallowed inside the helper (the pin's
-    // own quirk): no pipeline is created directly, the wizard still
-    // navigates to the new service, and the trigger was attempted.
-    expect(triggerPosts).toBe(1);
-    expect(pipelinePosts).toBe(0);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-  });
-
-  it('creates a security service without triggering AutoPilot and without the toast (D-1 exclusion)', async () => {
-    let triggerPosts = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/securityServices') && init?.method === 'POST') {
-          return jsonResponse({ id: 's7', name: 'ranger', serviceType: 'Ranger' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          triggerPosts += 1;
-          return new Response('', { status: 200 });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
+  it('creates a security service with no AutoPilot trigger and no AutoPilot toast', async () => {
+    // Ranger is the only security type and pin-unsupported, so the
+    // connector grid never offers it; the wizard's own select event is
+    // driven directly for the security kind. The exclusion guard under
+    // test lives in the save path (EXCLUDE_AUTO_PILOT_SERVICE_TYPES),
+    // not in the grid.
     const successSpy = vi.spyOn(message, 'success');
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
+    const { wrapper, router, calls } = await mountWizard(
+      '/ingestion/services/add?category=security',
+    );
+    expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+    await wrapper
+      .findComponent(SelectServiceType)
+      .vm.$emit('select', { category: 'security', type: 'Ranger' });
+    await walkToFilterStep(wrapper, fillRangerConnection);
+    await clickWizardNext(wrapper);
     await flushPromises();
 
-    const selects = wrapper.findAllComponents(Select);
-    await selects[0]?.vm.$emit('update:value', 'security');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('ranger');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('http://localhost:6080');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    // L-4: Ranger declares no filter patterns — the wizard-level
-    // empty state renders instead of cards.
-    expect(wrapper.find('[data-testid="wizard-no-filter-patterns"]').exists()).toBe(true);
-    expect(wrapper.findAllComponents(FilterPatternCard).length).toBe(0);
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    // Security services get no trigger and no toast; the navigation
-    // is the confirmation.
-    expect(triggerPosts).toBe(0);
+    const create = calls.find(
+      (call) =>
+        call.url.includes('/api/v1/services/securityServices') && call.method === 'POST',
+    );
+    expect(create).toBeDefined();
+    expect((create?.body as Record<string, unknown>).serviceType).toBe('Ranger');
+    expect(
+      calls.some((call) => call.url.includes('/api/v1/apps/trigger/')),
+    ).toBe(false);
     expect(successSpy).not.toHaveBeenCalled();
     expect(router.currentRoute.value.name).toBe('ingestion-service');
-    expect(router.currentRoute.value.params).toMatchObject({ kind: 'security', id: 's7' });
+    expect(router.currentRoute.value.params).toMatchObject({ kind: 'security', id: 's9' });
     successSpy.mockRestore();
   });
 
-  it('shows the AutoPilot triggered toast for 5 seconds after a successful create (D-1)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'POST') {
-          return jsonResponse({ id: 's9', name: 'warehouse', serviceType: 'Postgres' });
-        }
-        if (url.includes('/api/v1/apps/trigger/') && init?.method === 'POST') {
-          return new Response('', { status: 200 });
-        }
-        return new Response('not found', { status: 404 });
-      }),
-    );
-    const successSpy = vi.spyOn(message, 'success');
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
+  it('drops the entered filter scope when the kind changes (D-L3)', async () => {
+    const { wrapper, calls } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await walkToFilterStep(wrapper);
+    await enterSchemaInclude(wrapper);
+    expect(wrapper.text()).toContain('^public$');
+    await backToTypeStep(wrapper);
 
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-create"]').trigger('click');
-    await flushPromises();
-
-    // The pin's 5000ms becomes 5s: antd durations are seconds.
-    expect(successSpy).toHaveBeenCalledTimes(1);
-    expect(successSpy).toHaveBeenCalledWith(
-      'AutoPilot application is triggered, agents will be auto generated and run.',
-      5,
-    );
-    successSpy.mockRestore();
-  });
-
-  it('blocks a form-less type at the connection step instead of creating it with undefined connection (A9)', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
+    // Change kind through the category select, then pick a connector
+    // of the new kind.
     const selects = wrapper.findAllComponents(Select);
-    // Kind select first, type select second: switch to api, then to a
-    // form-less api type (WEBHOOK has no connection form in this branch).
-    await selects[0]?.vm.$emit('update:value', 'api');
-    await selects[1]?.vm.$emit('update:value', 'WEBHOOK');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="wizard-no-connection-form"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('hook');
-    expect((wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled).toBe(true);
-    // S-03 gating: no connection form means no test card either.
-    expect(wrapper.find('[data-testid="test-connection"]').exists()).toBe(false);
-    expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0);
+    await selects[0]?.vm.$emit('update:value', 'messaging');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="Kafka"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="Kafka"]').trigger('click');
+    await walkToFilterStep(wrapper, fillKafkaConnection, 'service-bootstrap-servers');
+    // The remounted filter form starts fresh: the entered scope is gone.
+    expect(wrapper.text()).not.toContain('^public$');
+    await clickWizardNext(wrapper);
+    await flushPromises();
+
+    const config = createdConfig(calls, '/api/v1/services/messagingServices');
+    const includes = (
+      config.schemaFilterPattern as { includes?: string[] } | undefined
+    )?.includes;
+    expect(includes ?? []).not.toContain('^public$');
+  }, 60000);
+
+  it('drops the entered filter scope when the service type changes within a kind (D-L3)', async () => {
+    const { wrapper, calls } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await walkToFilterStep(wrapper);
+    await enterSchemaInclude(wrapper);
+    expect(wrapper.text()).toContain('^public$');
+    await backToTypeStep(wrapper);
+
+    // Same kind, different connector: the type click resets the wizard
+    // to a fresh form instead of navigating.
+    await wrapper.find('[data-testid="Mysql"]').trigger('click');
+    await walkToFilterStep(wrapper, fillMysqlConnection);
+    expect(wrapper.text()).not.toContain('^public$');
+    await clickWizardNext(wrapper);
+    await flushPromises();
+
+    const config = createdConfig(calls, '/api/v1/services/databaseServices');
+    expect(createdBody(calls, '/api/v1/services/databaseServices').serviceType).toBe('Mysql');
+    const includes = (
+      config.schemaFilterPattern as { includes?: string[] } | undefined
+    )?.includes;
+    expect(includes ?? []).not.toContain('^public$');
+  }, 60000);
+
+  it('blocks the Next button on a duplicate name with the suggested name', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases', {
+      nameLookup: 'duplicate',
+    });
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+    await waitFor(
+      () => wrapper.text().includes('Try warehouse_2'),
+      'duplicate name error with suggestion',
+    );
+    expect(
+      (wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
-  it('offers only the eleven listable kinds in the wizard, never llm/mcp (C-2)', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-      ],
+  it('shows the read-only prompt and blocks Next for a blocked connector type', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=mlmodels', {}, {
+      serviceType: 'CustomMlModel',
     });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
+    await waitFor(
+      () => wrapper.find('[data-testid="no-config-available"]').exists(),
+      'blocked read-only prompt',
+    );
+    expect(wrapper.find('[data-testid="service-host-port"]').exists()).toBe(false);
+    expect(
+      (wrapper.find('[data-testid="wizard-next"]').element as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('confirms Back: step 2 resets the wizard, step 3 returns to step 2', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await wrapper.find('[data-testid="service-name-input"]').setValue('warehouse');
+    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
     await flushPromises();
-    const kindSelect = wrapper
+    // The antd Modal teleports to document.body; assert on its
+    // discard button, which always lands in the document.
+    expect(document.querySelector('[data-testid="navigation-guard-discard"]')).not.toBeNull();
+    (document.querySelector('[data-testid="navigation-guard-discard"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="Postgres"]').exists()).toBe(true);
+
+    // Re-enter, walk to step 3, then Back returns to step 2.
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields again',
+    );
+    await fillPostgresConnection(wrapper);
+    await clickWizardNext(wrapper);
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+      'filter step',
+    );
+    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
+    await flushPromises();
+    expect(document.querySelector('[data-testid="navigation-guard-discard"]')).not.toBeNull();
+    (document.querySelector('[data-testid="navigation-guard-discard"]') as HTMLElement).click();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
+  });
+
+  it('still navigates to the detail on create failure, using the service name', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases', {
+      createStatus: 500,
+    });
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await fillPostgresConnection(wrapper);
+    await clickWizardNext(wrapper);
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+      'filter step',
+    );
+    await clickWizardNext(wrapper);
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalled();
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    expect(router.currentRoute.value.params).toMatchObject({ kind: 'database', id: 'warehouse' });
+  });
+
+  it('still navigates when the AutoPilot trigger fails, with both toasts', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    const successSpy = vi.spyOn(message, 'success');
+    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases', {
+      triggerStatus: 500,
+    });
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await fillPostgresConnection(wrapper);
+    await clickWizardNext(wrapper);
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+      'filter step',
+    );
+    await clickWizardNext(wrapper);
+    await flushPromises();
+    expect(errorSpy).toHaveBeenCalled();
+    expect(successSpy).toHaveBeenCalledWith(expect.any(String), 5);
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+  });
+
+  it('shows the connected message on the filter step only after a passed test connection', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    await fillPostgresConnection(wrapper);
+    await wrapper
+      .findComponent(TestConnectionCard)
+      .vm.$emit('status-change', true);
+    await clickWizardNext(wrapper);
+    await waitFor(
+      () => wrapper.find('[data-testid="wizard-step-filter"]').exists(),
+      'filter step',
+    );
+    expect(wrapper.find('[data-testid="filters-connected-message"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Connected to localhost:5432');
+  });
+
+  it('guards navigation away from step 2 and lets the user stay or leave', async () => {
+    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases');
+    await wrapper.find('[data-testid="Postgres"]').trigger('click');
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+    // Do not await the push: the leave guard holds the navigation
+    // open until the modal is answered, so awaiting it deadlocks.
+    const navigation = router.push('/other');
+    await flushPromises();
+    const discard = document.querySelector(
+      '[data-testid="navigation-guard-discard"]',
+    ) as HTMLElement | null;
+    expect(discard).not.toBeNull();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+    // Stay: the modal closes and the route is unchanged.
+    (
+      discard?.parentElement?.querySelector('.ant-btn-primary') as HTMLElement
+    ).click();
+    await navigation;
+    await flushPromises();
+    expect(document.querySelector('[data-testid="navigation-guard-discard"]')).toBeNull();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+  });
+
+  it('offers only the eleven listable kinds in the step-1 category select, never llm/mcp (C-2)', async () => {
+    const { wrapper } = await mountWizard('/ingestion/services/add');
+    const categorySelect = wrapper
       .findAllComponents(Select)
-      .find((candidate) => candidate.attributes('data-testid') === 'wizard-service-kind');
-    expect(kindSelect?.exists()).toBe(true);
+      .find((candidate) => candidate.attributes('data-testid') === 'service-category');
+    expect(categorySelect?.exists()).toBe(true);
     // The Select consumes its Option children as data (they never mount
     // as components), so the offered set is read from the slot VNodes
-    // the wizard passes in — exactly the options a user can pick.
+    // the picker passes in — exactly the options a user can pick.
     const optionValues: unknown[] = [];
     const collect = (nodes: unknown[]): void => {
       for (const node of nodes) {
@@ -600,171 +801,22 @@ describe('AddServiceView', () => {
         }
       }
     };
-    collect((kindSelect?.vm.$slots.default?.() ?? []) as unknown[]);
+    collect((categorySelect?.vm.$slots.default?.() ?? []) as unknown[]);
     expect(optionValues).toEqual([
+      'all',
       'database',
-      'messaging',
       'dashboard',
-      'storage',
+      'messaging',
       'pipeline',
-      'metadata',
-      'security',
-      'mlmodel',
-      'search',
+      'storage',
       'api',
+      'mlmodel',
+      'metadata',
+      'search',
       'drive',
+      'security',
     ]);
     expect(optionValues).not.toContain('llm');
     expect(optionValues).not.toContain('mcp');
   });
-
-  it('renders the test-connection card on the connection step with live form wiring (S-03)', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-        {
-          path: '/ingestion/services/:kind/:id',
-          name: 'ingestion-service',
-          component: { template: '<div>svc</div>' },
-          props: true,
-        },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-test-connection-residual"]').exists()).toBe(false);
-    const card = wrapper.findComponent(TestConnectionCard);
-    expect(card.exists()).toBe(true);
-    expect(card.props('connectionType')).toBe('Postgres');
-    expect(card.props('kind')).toBe('database');
-    expect(card.props('serviceName')).toBe('');
-    // The orchestrator probe 404s under this mock, so Airflow is unavailable.
-    expect(card.props('airflowAvailable')).toBe(false);
-    expect(card.props('missingRequiredFieldsCount')).toBe(3);
-    const validate = card.props('onValidateFormRequiredFields');
-    if (!validate) throw new Error('expected the card validator prop');
-    expect(validate()).toBe(false);
-
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    expect(card.props('serviceName')).toBe('warehouse');
-    expect(card.props('missingRequiredFieldsCount')).toBe(2);
-    const connection = card.props('getConnection')() as Record<string, unknown>;
-    expect(connection['config']).toMatchObject({ hostPort: 'localhost:5432' });
-  });
-
-  it('passes pin filter-card options and seeds system excludes on the fresh wizard (F5, M-F3/M-W2)', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-
-    const cards = wrapper.findAllComponents(FilterPatternCard);
-    const byField = new Map(cards.map((card) => [card.props('fieldName'), card]));
-    expect([...byField.keys()].sort()).toEqual([
-      'databaseFilterPattern',
-      'schemaFilterPattern',
-      'storedProcedureFilterPattern',
-      'tableFilterPattern',
-    ]);
-    // Pin FiltersConfigForm: first two open, fresh create has no
-    // existing data, schema defaults feed systemExcludes.
-    expect(byField.get('databaseFilterPattern')?.props('defaultOpen')).toBe(true);
-    expect(byField.get('schemaFilterPattern')?.props('defaultOpen')).toBe(true);
-    expect(byField.get('tableFilterPattern')?.props('defaultOpen')).toBe(false);
-    expect(byField.get('storedProcedureFilterPattern')?.props('defaultOpen')).toBe(false);
-    for (const card of cards) {
-      expect(card.props('hasExistingData')).toBe(false);
-    }
-    expect(byField.get('databaseFilterPattern')?.props('systemExcludes')).toEqual([
-      '^template1$',
-      '^template0$',
-    ]);
-    expect(byField.get('schemaFilterPattern')?.props('systemExcludes')).toEqual([
-      '^information_schema$',
-    ]);
-    expect(byField.get('tableFilterPattern')?.props('systemExcludes')).toEqual([]);
-    // The seeded excludes render as chips on the fresh cards, with
-    // the system-excludes toggle only where defaults exist.
-    const databaseSection = wrapper.find('[data-testid="filter-section-databaseFilterPattern"]');
-    const databaseChips = databaseSection.findAll('[data-testid^="exclude-chip-"]');
-    expect(databaseChips.length).toBe(2);
-    expect(databaseChips.map((chip) => chip.text()).join(' ')).toContain('template1');
-    expect(
-      databaseSection.find('[data-testid="databaseFilterPattern-exclude-system-filters"]').exists(),
-    ).toBe(true);
-    const schemaChips = wrapper
-      .find('[data-testid="filter-section-schemaFilterPattern"]')
-      .findAll('[data-testid^="exclude-chip-"]');
-    expect(schemaChips.length).toBe(1);
-    expect(schemaChips[0]?.text()).toContain('information_schema');
-    expect(
-      wrapper
-        .find('[data-testid="filter-section-tableFilterPattern"]')
-        .find('[data-testid="tableFilterPattern-exclude-system-filters"]')
-        .exists(),
-    ).toBe(false);
-  });
-
-  it('shows the connected message on the filter step only after a passed test connection (L-5) and states the P-12/D-L3 truth (F11 L-1)', async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
-      ],
-    });
-    await router.push('/ingestion/services/add');
-    await router.isReady();
-    const wrapper = mount(AddServiceView, {
-      global: { plugins: [pinia, router, Antd, createTestI18n()] },
-    });
-    await flushPromises();
-
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    await wrapper.find('[data-testid="wizard-service-name"]').setValue('warehouse');
-    await wrapper.find('[data-testid="service-host-port"]').setValue('localhost:5432');
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-step-filter"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="wizard-connected"]').exists()).toBe(false);
-
-    await wrapper.find('[data-testid="wizard-back"]').trigger('click');
-    await wrapper.findComponent(TestConnectionCard).vm.$emit('status-change', true);
-    await wrapper.find('[data-testid="wizard-next"]').trigger('click');
-    expect(wrapper.find('[data-testid="wizard-connected"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="wizard-connected"]').text()).toContain(
-      'Connected to localhost:5432',
-    );
-    const residual = wrapper.find('[data-testid="wizard-filter-residual"]');
-    expect(residual.exists()).toBe(true);
-    expect(residual.text()).toContain('stored in the service connection configuration');
-    expect(residual.text()).toContain('AutoPilot creates the ingestion agents');
-    expect(residual.text()).toContain('no pipeline is created with the service');
-  });
-});
+}, 30000);
