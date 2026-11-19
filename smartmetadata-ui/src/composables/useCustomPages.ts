@@ -96,6 +96,24 @@ export function pageTypeForEntityType(entityType: string): string | undefined {
   return ENTITY_TYPE_PAGE_TYPE_MAP[entityType];
 }
 
+/**
+ * Official `getEntityTypeFromPageType`
+ * (`CustomizeDetailPage.interface.ts`, PageTypeToEntityTypeMap): the
+ * inverse of ENTITY_TYPE_PAGE_TYPE_MAP. Undefined for page types with
+ * no entity counterpart (e.g. LandingPage, which official maps to
+ * EntityType.ALL and the product has no entity type for).
+ */
+const PAGE_TYPE_ENTITY_TYPE_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(ENTITY_TYPE_PAGE_TYPE_MAP).map(([entityType, pageType]) => [
+    pageType,
+    entityType,
+  ]),
+);
+
+export function entityTypeForPageType(pageType: string): string | undefined {
+  return PAGE_TYPE_ENTITY_TYPE_MAP[pageType];
+}
+
 export function useCustomPages(pageType: MaybeRefOrGetter<string | null | undefined>) {
   const store = usePersonaStore();
 
@@ -302,22 +320,25 @@ export function findCustomizedTabEntry(
  * editor's tab model cannot name; it must not override a customization
  * that names none, or the emptied state would be unreachable and
  * every removed tab would silently return. A present-but-non-array
- * list also yields the defaults here: a conditional deviation under B-12(a),
- * not the official behavior — officially a truthy non-array value
- * throws a TypeError, because `?.` does not short-circuit it and
- * `??` does not catch a throw. The throw semantics are aligned once
- * the B-9 error boundary lands; until then the read-mapping discard
- * layer (S-C4CONSUME §4.3) bounds exposure. That is not a §4.4 D4
- * violation: D4 governs
- * `layout` fields, and the detail `tabs` list is not one. The
- * `layout` fields themselves (page and per-tab widget layouts) are
- * consumed by the widget-layout renderer
+ * list throws a TypeError here, as officially: `?.` does not
+ * short-circuit a truthy non-array value and `??` does not catch a
+ * throw, so `customizedTabs?.map(...)` throws. The throw surfaces
+ * through the top-level error boundary (B-9, `SmErrorBoundary`) as a
+ * visible error state instead of silently defaulting. That is not a
+ * §4.4 D4 violation: D4 governs `layout` fields, and the detail
+ * `tabs` list is not one. The `layout` fields themselves (page and
+ * per-tab widget layouts) are consumed by the widget-layout renderer
  * (`customizeWidgetLayout.ts` + `GenericTab.vue`): `resolveWidgetLayout`
  * coerces a non-array resolution to an empty grid and never writes a
  * default back (D4), and this function never touches those fields —
- * it only reorders and renames tabs. A
- * version view always renders defaults (official `isVersionView`
- * branch); product detail views are never version views.
+ * it only reorders and renames tabs. A version view always renders
+ * defaults (official `isVersionView` branch); product detail views
+ * are never version views. The read-mapping discard layer that used
+ * to drop a non-array `tabs` value (`api/docStore.ts`) is removed,
+ * so the stored value reaches this throw instead of being silently
+ * defaulted; the stored value itself is never rewritten — a save
+ * diffs the verbatim read value against the draft, so no PATCH op
+ * touches it (t363 appendix 3: no silent discard, no default overwrite).
  */
 export function getDetailsTabWithNewLabel<T extends { key: string; label: string }>(
   defaultTabs: readonly T[],
@@ -330,6 +351,14 @@ export function getDetailsTabWithNewLabel<T extends { key: string; label: string
 ): T[] {
   if (options.isVersionView) {
     return [...defaultTabs];
+  }
+  if (customizedTabs !== undefined && customizedTabs !== null && !Array.isArray(customizedTabs)) {
+    // Official `customizedTabs?.map(...)` throws TypeError for a
+    // truthy non-array value (B-12, aligned now that the B-9 error
+    // boundary exists to surface it).
+    throw new TypeError(
+      'getDetailsTabWithNewLabel: customizedTabs must be an array when present',
+    );
   }
   const ids = readCustomizedTabIds(customizedTabs);
   if (ids === undefined) {

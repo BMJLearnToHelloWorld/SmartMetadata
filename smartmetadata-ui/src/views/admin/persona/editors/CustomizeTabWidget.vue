@@ -8,6 +8,8 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Card, Dropdown, Input, Menu, Modal } from 'ant-design-vue';
 import type { PersonaPage } from '@/types/persona';
+import { entityTypeForPageType } from '@/composables/useCustomPages';
+import AssetDetailPiece from '@/views/AssetDetailPiece.vue';
 import AddWidgetModal from './AddWidgetModal.vue';
 import CustomPropertiesTabSection from './CustomPropertiesTabSection.vue';
 import DetailGridEditor from './DetailGridEditor.vue';
@@ -18,9 +20,14 @@ import {
   getCustomizableWidgetByPage,
   getDefaultTabs,
   getDefaultWidgetForTab,
+  getDummyDataByPage,
 } from './customizePageData';
 import { parsePropertyLayout } from './customPropertiesLayout';
 import type { CustomPropertyLayoutItem } from './customPropertiesLayout';
+import {
+  buildEditorPieceContext,
+  pieceForEditorContentKey,
+} from './editorWidgetContent';
 import {
   getAddWidgetHandler,
   getLayoutWithEmptyWidgetPlaceholder,
@@ -152,6 +159,24 @@ const customPropertiesTabLayout = computed<CustomPropertyLayoutItem[]>(() => {
   return parsePropertyLayout(config?.propertyLayout);
 });
 
+// R-EDIT-2: the Custom Properties section fetches the entity's
+// definitions, so it needs the entity type for the page being edited
+// (official getEntityTypeFromPageType).
+const customPropertiesEntityType = computed(() =>
+  entityTypeForPageType(props.currentPageType),
+);
+
+// R-EDIT-1: live widget content from the page's dummy data (official
+// GenericWidget renders its matched component with
+// getDummyDataByPage data, read-only). The dummy context carries no
+// network calls: every piece is prop-driven.
+const editorPieceContext = computed(() =>
+  buildEditorPieceContext(
+    getDummyDataByPage(props.currentPageType),
+    customPropertiesEntityType.value ?? '',
+  ),
+);
+
 const widgetsList = computed(() => getCustomizableWidgetByPage(props.currentPageType));
 
 function updatePage(tabs: CustomizeTab[]): void {
@@ -269,16 +294,56 @@ function handleWidgetConfigChange(
   config: WidgetConfig['config'],
   width?: number,
 ): void {
+  // J-1: a widget nested in the left panel writes through the same
+  // path (the grid renders the #widget slot for panel children too,
+  // so a Custom Properties widget there must persist its layout).
   updateActiveTabLayout(
-    persistedTabLayouts.value.map((widget) =>
-      widget.i === widgetKey ? { ...widget, config, w: width ?? widget.w } : widget,
-    ),
+    persistedTabLayouts.value.map((widget) => {
+      if (widget.i === widgetKey) {
+        return { ...widget, config, w: width ?? widget.w };
+      }
+      if (widget.i.startsWith(DetailPageWidgetKeys.LEFT_PANEL)) {
+        return {
+          ...widget,
+          children: (widget.children ?? []).map((child) =>
+            child.i === widgetKey ? { ...child, config, w: width ?? child.w } : child,
+          ),
+        };
+      }
+      return widget;
+    }),
   );
 }
 
 function handleWidgetWidth(widgetKey: string, width: number): void {
   const widget = persistedTabLayouts.value.find((candidate) => candidate.i === widgetKey);
   handleWidgetConfigChange(widgetKey, widget?.config, width);
+}
+
+// J-1 (pin GenericWidget.tsx:139-213): the Custom Properties widget
+// renders the interactive layout editor in any tab's grid cell —
+// never the read-only piece — with the page's entity type and the
+// widget's own config.propertyLayout, as in the custom_properties tab.
+function isCustomPropertiesWidget(widget: WidgetConfig): boolean {
+  return (
+    widget.i === DetailPageWidgetKeys.CUSTOM_PROPERTIES ||
+    widget.i.startsWith(`${DetailPageWidgetKeys.CUSTOM_PROPERTIES}-`)
+  );
+}
+
+function customPropertiesWidgetLayout(widget: WidgetConfig): CustomPropertyLayoutItem[] {
+  const config = widget.config as Record<string, unknown> | undefined;
+  return parsePropertyLayout(config?.propertyLayout);
+}
+
+function handleGridCustomPropertiesLayoutChange(
+  widget: WidgetConfig,
+  propertyLayout: CustomPropertyLayoutItem[],
+): void {
+  handleWidgetConfigChange(widget.i, {
+    ...(widget.config ?? {}),
+    propertyLayout,
+  });
 }
 
 function handleMainPanelAddWidget(
@@ -471,6 +536,7 @@ function openAddWidgetModal(placeholderKey?: string): void {
       </template>
       <CustomPropertiesTabSection
         v-if="isCustomPropertiesTab"
+        :entity-type="customPropertiesEntityType"
         :property-layout="customPropertiesTabLayout"
         @change="handleCustomPropertiesTabLayoutChange"
       />
@@ -483,13 +549,40 @@ function openAddWidgetModal(placeholderKey?: string): void {
         v-else
         :layout="tabLayouts"
         :cols="TAB_GRID_MAX_COLUMNS"
+        :page-type="currentPageType"
         :widget-title="widgetTitle"
         @layout-change="handleLayoutUpdate"
         @remove="handleRemoveWidget"
         @widget-width="handleWidgetWidth"
         @placeholder-click="openAddWidgetModal"
         @last-panel-widget-kept="emit('last-panel-widget-kept')"
-      />
+      >
+        <!-- R-EDIT-1: live content from dummy data, read-only inside
+             the cell (the grid's pointer-events-none live area);
+             widgets with no piece keep their title chrome.
+             J-1 (pin GenericWidget): a Custom Properties widget in
+             any tab's cell renders the interactive layout editor
+             instead — the wrapper re-enables pointer events inside
+             the live area, since pin renders the editor outside the
+             read-only container. -->
+        <template #widget="{ widget, contentKey }">
+          <div
+            v-if="isCustomPropertiesWidget(widget)"
+            class="customize-tab-widget__cell-editor"
+          >
+            <CustomPropertiesTabSection
+              :entity-type="customPropertiesEntityType"
+              :property-layout="customPropertiesWidgetLayout(widget)"
+              @change="(layout) => handleGridCustomPropertiesLayoutChange(widget, layout)"
+            />
+          </div>
+          <AssetDetailPiece
+            v-else-if="pieceForEditorContentKey(contentKey)"
+            :piece="pieceForEditorContentKey(contentKey)"
+            :context="editorPieceContext"
+          />
+        </template>
+      </DetailGridEditor>
     </Card>
 
     <AddWidgetModal
@@ -550,5 +643,11 @@ function openAddWidgetModal(placeholderKey?: string): void {
 }
 .customize-tab-widget__grid-card {
   margin-top: 0;
+}
+/* J-1: the Custom Properties cell editor is interactive inside the
+   grid's pointer-events-none live area (pin GenericWidget renders
+   the editor outside the read-only container). */
+.customize-tab-widget__cell-editor {
+  pointer-events: auto;
 }
 </style>

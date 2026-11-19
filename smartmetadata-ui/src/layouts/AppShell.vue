@@ -17,10 +17,12 @@ import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
 import {
+  breadcrumbOriginUrl,
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
-  sectionKeyForRoute,
+  navKeyForOrigin,
+  sectionKeyForNavKey,
   sectionLanding,
   selectedNavKey,
 } from '@/layouts/nav';
@@ -53,7 +55,34 @@ const guardDenied = computed(() =>
 const collapsed = ref(false);
 const openKeys = ref<string[]>(defaultOpenNavKeys());
 
-const selectedKeys = computed(() => [selectedNavKey(route.name)]);
+// With-origin highlight (DESIGN §6.7 row 7 / §10.6(4)): a create-user
+// visit highlights by its navigation origin, carried in router state
+// as breadcrumbData[0].url (official `getSidebarPathname`), not by its
+// own route name. No origin, or an origin that resolves to no route,
+// keeps 'create-user' — the Hub is never forced. The computed reads
+// route.fullPath so it re-evaluates on every navigation; a same-URL
+// back/forward between two create-user entries with different origins
+// is the one case it cannot see (history.state is not reactive), and
+// is recorded as a known limitation.
+function resolveRouteName(path: string): string | null {
+  const resolved = router.resolve(path);
+  return resolved.matched.length > 0 && typeof resolved.name === 'string'
+    ? resolved.name
+    : null;
+}
+
+const createUserOriginKey = computed<string | null>(() => {
+  // Depend on the route so the origin is re-read on navigation.
+  void route.fullPath;
+  if (route.name !== 'create-user' && route.name !== 'create-user-bot') {
+    return null;
+  }
+  return navKeyForOrigin(breadcrumbOriginUrl(window.history.state), resolveRouteName);
+});
+
+const selectedKeys = computed(() => [
+  createUserOriginKey.value ?? selectedNavKey(route.name),
+]);
 
 // C-4 consume side: the sidebar renders the selected persona's saved
 // navigation (order + visibility) over the default item set, falling
@@ -170,11 +199,11 @@ onUnmounted(() => {
 
 watch(
   () => route.name,
-  (name) => {
+  () => {
     if (collapsed.value) {
       return;
     }
-    const section = sectionKeyForRoute(name);
+    const section = sectionKeyForNavKey(selectedKeys.value[0] ?? '');
     if (section && !openKeys.value.includes(section)) {
       openKeys.value = [...openKeys.value, section];
     }
@@ -187,7 +216,7 @@ watch(collapsed, (isCollapsed) => {
     openKeys.value = [];
     return;
   }
-  const section = sectionKeyForRoute(route.name);
+  const section = sectionKeyForNavKey(selectedKeys.value[0] ?? '');
   const next = defaultOpenNavKeys();
   openKeys.value = section && !next.includes(section) ? [...next, section] : next;
 });

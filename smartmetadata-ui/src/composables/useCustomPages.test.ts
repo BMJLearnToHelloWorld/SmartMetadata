@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { usePersonaStore } from '@/stores/persona';
 import type { PersonaDocument } from '@/types/persona';
 import {
+  entityTypeForPageType,
   findCustomizedTabEntry,
   getDetailsTabWithNewLabel,
   getRenderedActiveTab,
@@ -69,6 +70,21 @@ describe('pageTypeForEntityType', () => {
   });
 });
 
+describe('entityTypeForPageType (R-EDIT-2)', () => {
+  it('inverts the entity-type map, so the Custom Properties section can fetch by page', () => {
+    expect(entityTypeForPageType('Table')).toBe('table');
+    expect(entityTypeForPageType('Topic')).toBe('topic');
+    expect(entityTypeForPageType('MlModel')).toBe('mlmodel');
+    expect(entityTypeForPageType('DashboardDataModel')).toBe('dashboardDataModel');
+    expect(entityTypeForPageType('Directory')).toBe('directory');
+  });
+
+  it('has no mapping for page types with no entity counterpart', () => {
+    expect(entityTypeForPageType('LandingPage')).toBeUndefined();
+    expect(entityTypeForPageType('Nope')).toBeUndefined();
+  });
+});
+
 describe('getTabLabelMapFromTabs', () => {
   it('maps tab ids to displayNames only when both are present', () => {
     expect(
@@ -97,14 +113,19 @@ describe('getDetailsTabWithNewLabel', () => {
   it('leaves the defaults untouched without a customized tab list', () => {
     expect(getDetailsTabWithNewLabel(defaults, undefined)).toEqual(defaults);
     expect(getDetailsTabWithNewLabel(defaults, null)).toEqual(defaults);
-    // A present but non-array tab list also yields defaults, as
-    // officially (`customizedTabs?.map(...) ?? defaultTabs`): the tabs
-    // list is not a `layout` field, so §4.4 D4 does not apply to it.
-    expect(getDetailsTabWithNewLabel(defaults, {})).toEqual(defaults);
-    expect(getDetailsTabWithNewLabel(defaults, 'schema')).toEqual(defaults);
     expect(getDetailsTabWithNewLabel(defaults, [{ id: 'lineage' }], { isVersionView: true })).toEqual(
       defaults,
     );
+  });
+
+  it('throws for a present-but-non-array tab list, as officially (B-12)', () => {
+    // Official `customizedTabs?.map(...)`: `?.` does not short-circuit
+    // a truthy non-array value and `??` does not catch the throw, so
+    // the call throws TypeError instead of silently defaulting.
+    // The throw surfaces through the top-level error boundary (B-9).
+    expect(() => getDetailsTabWithNewLabel(defaults, {})).toThrow(TypeError);
+    expect(() => getDetailsTabWithNewLabel(defaults, 'schema')).toThrow(TypeError);
+    expect(() => getDetailsTabWithNewLabel(defaults, 3)).toThrow(TypeError);
   });
 
   it('reorders and relabels by the customized list, dropping unknown ids (official replacement)', () => {
@@ -169,12 +190,13 @@ describe('getDetailsTabWithNewLabel', () => {
     expect(
       getDetailsTabWithNewLabel(defaults, [{ name: 'schema' }, null, 'schema'], preserveAll),
     ).toEqual([]);
-    // Absence still means "no customization": missing and non-array
-    // lists keep the defaults even with preservation on.
+    // Absence still means "no customization": missing lists keep the
+    // defaults even with preservation on. A present-but-non-array list
+    // throws instead (B-12, official `?.map` semantics).
     expect(getDetailsTabWithNewLabel(defaults, undefined, preserveAll)).toEqual(defaults);
     expect(getDetailsTabWithNewLabel(defaults, null, preserveAll)).toEqual(defaults);
-    expect(getDetailsTabWithNewLabel(defaults, {}, preserveAll)).toEqual(defaults);
-    expect(getDetailsTabWithNewLabel(defaults, 'schema', preserveAll)).toEqual(defaults);
+    expect(() => getDetailsTabWithNewLabel(defaults, {}, preserveAll)).toThrow(TypeError);
+    expect(() => getDetailsTabWithNewLabel(defaults, 'schema', preserveAll)).toThrow(TypeError);
   });
 
   it('resolves official ids to product keys through aliases, exact matches first', () => {

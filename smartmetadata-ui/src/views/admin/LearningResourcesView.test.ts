@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { nextTick } from 'vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { message } from 'ant-design-vue';
 import {
   deleteLearningResource,
@@ -10,6 +11,8 @@ import {
   listLearningResources,
   type LearningResourceDetail,
 } from '@/api/learningResources';
+import { usePersonaStore } from '@/stores/persona';
+import type { PersonaDocument } from '@/types/persona';
 import LearningResourcesView from './LearningResourcesView.vue';
 
 vi.mock('@/api/learningResources', () => ({
@@ -99,7 +102,23 @@ describe('LearningResourcesView', () => {
     vi.clearAllMocks();
   });
 
-  async function mountView() {
+  async function mountView(personaViewMode?: 'table' | 'card') {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    if (personaViewMode) {
+      const store = usePersonaStore();
+      store.selectedPersonaId = 'p1';
+      store.document = {
+        name: 'persona.doc',
+        fullyQualifiedName: 'persona.Analyst',
+        entityType: 'document',
+        data: {
+          personaPreferences: [
+            { personaId: 'p1', defaultViewModes: { learningResources: personaViewMode } },
+          ],
+        },
+      } as unknown as PersonaDocument;
+    }
     // The view renders a real SmBreadcrumb (RouterLink), so the mount needs
     // a real router — same pattern as TimeFormatSettingsView.test.ts: the
     // view route, the breadcrumb targets it links to by name
@@ -126,7 +145,7 @@ describe('LearningResourcesView', () => {
     await router.isReady();
     const wrapper = mount(LearningResourcesView, {
       global: {
-        plugins: [router, i18n],
+        plugins: [router, i18n, pinia],
         stubs: {
           PreferencePageShell: {
             template: '<div data-testid="learning-resources-shell"><slot /></div>',
@@ -236,6 +255,20 @@ describe('LearningResourcesView', () => {
     expect(
       wrapper.find('[data-testid="learning-resource-card-getting-started"]').exists(),
     ).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('opens in the persona stored card view, and the toggle still overrides it (L8)', async () => {
+    const wrapper = await mountView('card');
+    expect(
+      wrapper.find('[data-testid="learning-resource-card-getting-started"]').exists(),
+    ).toBe(true);
+    const segments = wrapper.findAll('.ant-segmented-item');
+    await segments[0]?.trigger('click');
+    await nextTick();
+    expect(
+      wrapper.find('[data-testid="learning-resource-card-getting-started"]').exists(),
+    ).toBe(false);
     wrapper.unmount();
   });
 

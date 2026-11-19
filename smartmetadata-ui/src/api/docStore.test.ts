@@ -343,6 +343,24 @@ describe('docStore API', () => {
     }
   });
 
+  it('keeps a non-array tabs value verbatim through mapping (B-12)', async () => {
+    // The read side must not discard a truthy non-array tabs value:
+    // it has to reach the tab layer, where the official
+    // `customizedTabs?.map(...)` semantics throw. Dropping it here
+    // would silently default the page and hide the stored shape.
+    for (const tabs of [{ id: 'overview' }, 'overview', 3]) {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+        id: 'doc1',
+        name: 'Analyst-Analyst',
+        fullyQualifiedName: 'persona.Analyst',
+        entityType: 'Page',
+        data: { pages: [{ pageType: 'Table', tabs }] },
+      })));
+      const doc = await getDocumentByFqn('persona.Analyst');
+      expect(doc.data.pages?.[0]?.tabs).toEqual(tabs);
+    }
+  });
+
   it('creates a document with POST /v1/docStore', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...storedDoc, id: 'doc9' })));
     const saved = await createDocument({

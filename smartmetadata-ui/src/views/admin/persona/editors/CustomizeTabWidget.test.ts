@@ -14,6 +14,14 @@ import CustomizeTabWidget from './CustomizeTabWidget.vue';
 import { getDefaultTabs, getDefaultWidgetForTab } from './customizePageData';
 import { cleanupBody, mountTabWidget } from './testHarness';
 
+// R-EDIT-2: the Custom Properties section fetches the entity's
+// definitions; the widget tests supply them here.
+const mockedListCustomProperties = vi.fn();
+vi.mock('@/api/customProperties', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/customProperties')>()),
+  listCustomProperties: (...args: unknown[]) => mockedListCustomProperties(...args),
+}));
+
 function tablePage(): PersonaPage {
   return {
     pageType: 'Table',
@@ -24,6 +32,10 @@ function tablePage(): PersonaPage {
 describe('CustomizeTabWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedListCustomProperties.mockResolvedValue([
+      { name: 'propA', propertyType: 'string' },
+      { name: 'propB', propertyType: 'string' },
+    ]);
   });
 
   afterEach(() => {
@@ -160,6 +172,147 @@ describe('CustomizeTabWidget', () => {
     });
     expect(wrapper.find('[data-testid="object-layout-notice"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="detail-grid-editor"]').exists()).toBe(false);
+  });
+
+  it('renders live widget content from dummy data in the grid cells (R-EDIT-1)', async () => {
+    const { wrapper } = await mountTabWidget(CustomizeTabWidget, {
+      currentPage: tablePage(),
+      currentPageType: 'Table',
+    });
+    // The schema tab is active by default; its TableSchema widget
+    // renders the shared schema piece from the page's dummy data
+    // (no schema rows in the dummy, so the piece's empty state).
+    expect(wrapper.find('[data-testid="asset-schema-empty"]').exists()).toBe(true);
+    // The cell keeps its title chrome above the live content.
+    expect(wrapper.find('[data-testid="detail-widget-cell-KnowledgePanel.TableSchema"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it('renders the Custom Properties editor for its widget in a non-custom_properties tab cell (J-1)', async () => {
+    const page = tablePage();
+    (page.tabs?.[0] as unknown as Record<string, unknown>).layout = [
+      {
+        i: 'KnowledgePanel.CustomProperties',
+        x: 0,
+        y: 0,
+        w: 8,
+        h: 1,
+        config: {
+          propertyLayout: [
+            { name: 'propA', width: 'half' },
+            { name: 'propB', width: 'full' },
+          ],
+        },
+      },
+    ];
+    const { wrapper, currentPage } = await mountTabWidget(CustomizeTabWidget, {
+      currentPage: page,
+      currentPageType: 'Table',
+    });
+    await flushPromises();
+    // Pin GenericWidget renders the interactive layout editor for a
+    // Custom Properties widget in any tab's cell — not the read-only
+    // (empty) customProperties piece.
+    expect(wrapper.find('[data-testid="custom-properties-tab-layout"]').exists()).toBe(true);
+    expect(
+      wrapper.find('[data-testid="custom-property-layout-item-propA"]').exists(),
+    ).toBe(true);
+    // The editor writes back into this widget's own config (not the
+    // custom_properties tab's single-widget layout).
+    await wrapper
+      .get('[data-testid="custom-property-layout-remove-propA"]')
+      .trigger('click');
+    await flushPromises();
+    const layout = (
+      (currentPage.value?.tabs?.[0] as unknown as Record<string, unknown>).layout as Array<
+        Record<string, unknown>
+      >
+    );
+    expect(layout).toHaveLength(1);
+    expect(layout[0]).toMatchObject({ i: 'KnowledgePanel.CustomProperties', w: 8, h: 1 });
+    expect(
+      (layout[0].config as Record<string, unknown>).propertyLayout,
+    ).toEqual([{ name: 'propB', width: 'full' }]);
+  });
+
+  it('writes a left-panel Custom Properties child layout back into the child widget config (MI-D1)', async () => {
+    const page = tablePage();
+    (page.tabs?.[0] as unknown as Record<string, unknown>).layout = [
+      {
+        i: 'KnowledgePanel.LeftPanel',
+        x: 0,
+        y: 0,
+        w: 6,
+        h: 11,
+        static: true,
+        children: [
+          {
+            i: 'KnowledgePanel.CustomProperties',
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 2,
+            config: {
+              propertyLayout: [
+                { name: 'propA', width: 'half' },
+                { name: 'propB', width: 'full' },
+              ],
+            },
+          },
+          {
+            i: 'KnowledgePanel.Description',
+            x: 0,
+            y: 1,
+            w: 1,
+            h: 2,
+            static: false,
+          },
+        ],
+      },
+    ];
+    const { wrapper, currentPage } = await mountTabWidget(CustomizeTabWidget, {
+      currentPage: page,
+      currentPageType: 'Table',
+    });
+    await flushPromises();
+    // The panel child renders the same interactive editor as a
+    // top-level Custom Properties widget (MI-D1: DetailGridEditor
+    // renders the #widget slot for left-panel children too).
+    expect(wrapper.find('[data-testid="custom-properties-tab-layout"]').exists()).toBe(true);
+    expect(
+      wrapper.find('[data-testid="custom-property-layout-item-propA"]').exists(),
+    ).toBe(true);
+    // The editor writes back into the panel child's own config —
+    // not a top-level widget and not the custom_properties tab's
+    // single-widget layout.
+    await wrapper
+      .get('[data-testid="custom-property-layout-remove-propA"]')
+      .trigger('click');
+    await flushPromises();
+    const layout = (
+      (currentPage.value?.tabs?.[0] as unknown as Record<string, unknown>).layout as Array<
+        Record<string, unknown>
+      >
+    );
+    expect(layout).toHaveLength(1);
+    expect(layout[0]).toMatchObject({ i: 'KnowledgePanel.LeftPanel', w: 6, h: 11 });
+    expect(layout.some((item) => item.i === 'KnowledgePanel.CustomProperties')).toBe(false);
+    const children = layout[0].children as Array<Record<string, unknown>>;
+    expect(children).toHaveLength(2);
+    const cpChild = children.find((child) => child.i === 'KnowledgePanel.CustomProperties')!;
+    expect(cpChild).toMatchObject({ i: 'KnowledgePanel.CustomProperties', w: 1, h: 2 });
+    expect(
+      (cpChild.config as Record<string, unknown>).propertyLayout,
+    ).toEqual([{ name: 'propB', width: 'full' }]);
+    // The sibling child is untouched.
+    const sibling = children.find((child) => child.i === 'KnowledgePanel.Description')!;
+    expect(sibling.config).toBeUndefined();
+    // The custom_properties tab's own layout is untouched.
+    const cpTab = (
+      currentPage.value?.tabs as Array<Record<string, unknown>>
+    ).find((tab) => tab.id === 'custom_properties')!;
+    expect(cpTab.layout).toEqual([]);
   });
 
   it('renders the Custom Properties section for the custom_properties tab', async () => {

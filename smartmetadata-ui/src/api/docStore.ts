@@ -111,13 +111,18 @@ function mapPageEntityRef(value: unknown): EntityRef | undefined {
  * One page entry, kept verbatim apart from the retained gates: a
  * non-record or an entry without a string pageType is dropped (the
  * official normalizer filters exactly those), a non-string entityType
- * and a non-array tabs value are dropped, and reference fields pass
- * through the verbatim reference mapper. `persona` and `domains` keep
- * their stored values when present and stay absent when absent — the
- * previous mapping forced both to undefined, which the pages replace
- * then wrote back over unedited pages. `layout` is never touched: an
- * array, an object (including `{}`), or any other stored shape is
- * carried as-is; no read-side defaulting happens here (C-4 §4.4).
+ * and a non-array knowledgePanels/domains value are dropped, and reference
+ * fields pass through the verbatim reference mapper. `tabs` is never
+ * touched: an array, a non-array value, or an absent list is carried
+ * as-is, so a truthy non-array list reaches the tab layer, where the
+ * official `customizedTabs?.map(...)` semantics throw (B-12, aligned;
+ * the former read-side discard of a non-array `tabs` value is removed).
+ * `persona` and `domains` keep their stored values when present and stay
+ * absent when absent — the previous mapping forced both to undefined,
+ * which the pages replace then wrote back over unedited pages. `layout`
+ * is never touched: an array, an object (including `{}`), or any other
+ * stored shape is carried as-is; no read-side defaulting happens here
+ * (C-4 §4.4).
  */
 function mapPageEntry(page: unknown): PersonaPage | null {
   const rec = asRecord(page);
@@ -150,9 +155,9 @@ function mapPageEntry(page: unknown): PersonaPage | null {
       delete entry.domains;
     }
   }
-  if ('tabs' in entry && !Array.isArray(entry.tabs)) {
-    delete entry.tabs;
-  }
+  // `tabs` is carried verbatim (B-12): a truthy non-array value must
+  // reach the tab layer, where the official `customizedTabs?.map(...)`
+  // semantics throw, instead of being silently defaulted on read.
   return entry as PersonaPage;
 }
 

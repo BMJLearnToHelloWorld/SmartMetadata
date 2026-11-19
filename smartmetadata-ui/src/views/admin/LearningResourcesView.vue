@@ -39,6 +39,7 @@ import {
 import NextPrevious from '@/components/shared/NextPrevious.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import { useCursorPagedList } from '@/composables/useCursorPagedList';
+import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import { buildSettingsBreadcrumbCatalog, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
@@ -98,7 +99,12 @@ type FilterState = Partial<Record<FilterKey, string[]>>;
 const searchInputValue = ref('');
 const searchText = ref('');
 const filterState = ref<FilterState>({});
-const view = ref<'table' | 'card'>('table');
+// L8: the persona's stored default view opens the page; the toggle
+// overrides it locally, exactly as the official page does
+// (`view = selectedView ?? personaView`).
+const personaView = usePersonaViewMode('learningResources');
+const selectedView = ref<'table' | 'card'>();
+const view = computed(() => selectedView.value ?? personaView.value);
 
 const isFormOpen = ref(false);
 const isPlayerOpen = ref(false);
@@ -368,7 +374,7 @@ function handlePlayerClose(): void {
         <Segmented
           :value="view"
           :options="viewOptions"
-          @update:value="view = $event as 'table' | 'card'"
+          @update:value="selectedView = $event as 'table' | 'card'"
         />
       </div>
 

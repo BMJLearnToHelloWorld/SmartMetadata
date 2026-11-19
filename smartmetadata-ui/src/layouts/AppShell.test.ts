@@ -65,6 +65,9 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
           { path: 'inbox', name: 'inbox', component: { template: '<div>inbox</div>' } },
           { path: 'admin/users/:id', name: 'admin-user', component: { template: '<div>profile</div>' } },
           { path: 'users/:fqn', name: 'user-detail', component: { template: '<div>user</div>' } },
+          { path: 'settings/members/users', name: 'settings-members-users', component: { template: '<div>users</div>' } },
+          { path: 'create-user', name: 'create-user', component: { template: '<div>create user</div>' } },
+          { path: 'create-user/bot', name: 'create-user-bot', component: { template: '<div>create bot</div>' } },
         ],
       },
     ],
@@ -251,6 +254,35 @@ describe('AppShell', () => {
     const selected = wrapper.find('.ant-menu-item-selected');
     expect(selected.exists()).toBe(true);
     expect(selected.text()).toContain('Data Quality');
+  });
+
+  it('highlights create-user by its navigation origin, never forcing the Hub (DESIGN §6.6 / §10.6(4))', async () => {
+    const { wrapper, router } = await mountShell();
+    try {
+      // Origin carried in router state: the Data Quality list. A
+      // settings-space origin resolves to 'admin-settings' at the nav-key
+      // level (unit-covered in nav.test.ts); the shell renders no
+      // Settings footer entry, so no visible target exists for it yet —
+      // that is a pre-existing shell gap, not this mechanism.
+      window.history.pushState(
+        { breadcrumbData: [{ url: '/quality/test-cases' }] },
+        '',
+      );
+      await router.push({ name: 'create-user' });
+      await flushPromises();
+      const selected = wrapper.find('.ant-menu-item-selected');
+      expect(selected.exists()).toBe(true);
+      expect(selected.text()).toContain('Data Quality');
+    } finally {
+      window.history.pushState(null, '');
+    }
+  });
+
+  it('highlights nothing on a direct create-user visit (no origin state)', async () => {
+    const { wrapper, router } = await mountShell();
+    await router.push({ name: 'create-user' });
+    await flushPromises();
+    expect(wrapper.find('.ant-menu-item-selected').exists()).toBe(false);
   });
 
   it('logs out from the header user menu', async () => {

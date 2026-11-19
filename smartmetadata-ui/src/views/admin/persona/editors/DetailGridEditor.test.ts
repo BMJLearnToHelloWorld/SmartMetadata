@@ -101,6 +101,34 @@ describe('DetailGridEditor', () => {
     expect(grid.element.lastElementChild?.querySelector('[data-testid="detail-placeholder-cell"]')).toBeTruthy();
   });
 
+  it('renders live widget content through the #widget slot, title chrome without it (R-EDIT-1)', async () => {
+    const layout = [{ i: 'KnowledgePanel.TableSchema', x: 0, y: 0, w: 8, h: 2 }];
+    const withSlot = mount(DetailGridEditor, {
+      attachTo: document.body,
+      props: { layout, widgetTitle, pageType: 'Table' },
+      slots: {
+        widget: `<template #widget="{ contentKey }"><span data-testid="live-content">{{ contentKey }}</span></template>`,
+      },
+      global: { plugins: [Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    const live = withSlot.find('[data-testid="live-content"]');
+    expect(live.exists()).toBe(true);
+    expect(live.text()).toBe('KnowledgePanel.TableSchema');
+    // The slot content sits inside the read-only live area, whose
+    // CSS turns pointer events off so edit gestures stay with the grid.
+    expect(live.element.closest('.detail-grid-editor__live')).not.toBeNull();
+    withSlot.unmount();
+
+    const withoutSlot = mountGrid(layout, { pageType: 'Table' });
+    await flushPromises();
+    expect(withoutSlot.find('[data-testid="live-content"]').exists()).toBe(false);
+    expect(
+      withoutSlot.find('[data-testid="detail-widget-cell-KnowledgePanel.TableSchema"]').exists(),
+    ).toBe(true);
+    withoutSlot.unmount();
+  });
+
   it('renders left-panel children in the nested grid', async () => {
     const wrapper = mountGrid([
       {
