@@ -3,16 +3,19 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { Button, Card, message } from 'ant-design-vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { Button, Form, Input, InputNumber, Menu, Select, Switch, message } from 'ant-design-vue';
-import FormModal from '@/components/shared/FormModal.vue';
-import { createEventSubscription, deleteEventSubscription, listEventSubscriptions } from '@/api/eventSubscriptions';
+import { useRoute, useRouter } from 'vue-router';
+import { ApiError } from '@/api/client';
+import { getAllAlerts, getAlertsFromName } from '@/api/eventSubscriptions';
 import { getLimitByResource } from '@/api/limits';
-import { confirmDelete } from '@/features/crud/confirmDelete';
-import EntityListShell from '@/features/crud/EntityListShell.vue';
-import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs } from '@/settings/breadcrumbs';
+import { getDerivedPermissionFlags, type OperationPermissions } from '@/api/permissions';
+import LimitWrapper from '@/components/shared/LimitWrapper.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
+import PageLayout from '@/components/shared/PageLayout.vue';
+import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
+import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
 import {
   SETTINGS_BREADCRUMB_NAMES,
@@ -20,320 +23,341 @@ import {
   registryTitle,
   type SettingsTranslator,
 } from '@/settings/registry';
-import { requiredField } from '@/features/crud/formRules';
-import {
-  DEFAULT_PAGE_SIZE,
-  canGoNext,
-  canGoPrev,
-  createCursorPager,
-  entityLabel,
-  goNext,
-  goPrev,
-  type CursorPager,
-} from '@/features/crud/paging';
-import type { EntityListColumn } from '@/features/crud/types';
-import type { OperationPermissions } from '@/api/permissions';
+import { useCursorPagedList } from '@/composables/useCursorPagedList';
+import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import { ALERT_TYPES, type EventSubscription } from '@/types/quality';
+import type { EventSubscription } from '@/types/quality';
+import type { PagingHandlerParams } from '@/utils/pagination';
+import AlertDeleteModal from '@/components/notifications/AlertDeleteModal.vue';
+import AlertListTable, { type AlertRowPermission } from '@/components/notifications/AlertListTable.vue';
+import { ACTIVITY_FEED_ALERT_NAME } from '@/utils/notifications/alertConstants';
+import { hardDeleteAlert } from '@/utils/notifications/alertDelete';
+import { getAlertAddPath, resolveAlertFace } from '@/utils/notifications/alertPaths';
+import { reportErrorToast, type AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
+import { getEntityName, type TranslateFn } from '@/utils/notifications/alertUtils';
 
+
+/**
+ * Alert lists, both faces (D-N1): the settings face
+ * (/settings/notifications/alerts, NotificationListPage) and the
+ * observability face (/observability/alerts,
+ * ObservabilityAlertsPage) share the table and differ in the fetch
+ * chain, the permission sets, the empty-state mode, and the CTA
+ * gates. The face comes from the route path; the router maps both
+ * paths to this view.
+ *
+ * A chain (settings): getAllAlerts first, then — only when the
+ * request carries no `after` cursor — the system ActivityFeedAlert
+ * is fetched SERIALLY and prepended, in the same try/catch: any
+ * failure sets the error, toasts one string message, and leaves the
+ * previous rows in place (the table hides them behind the error).
+ * Row permissions cover the page data WITHOUT the prepended row.
+ *
+ * C chain (observability): list fetching is cursor-driven
+ * (useCursorPagedList), matching pin's getAllAlerts paging; the
+ * page-NUMBER check (isFirstPage) and Promise.all in pin's
+ * useObservabilityAlerts gate ONLY the system-alert fetch, which
+ * is disabled by default (includeSystemAlerts=false, call site
+ * passes no args), so no system fetch runs and provider-System
+ * rows are filtered out. A list failure clears the visible rows
+ * with NO toast. Row permissions cover the whole displayed list.
+ */
 const { t } = useI18n();
+const translate = t as unknown as TranslateFn;
+const route = useRoute();
+const router = useRouter();
+const permissionStore = usePermissionStore();
+const authStore = useAuthStore();
+
+const hooks: AlertSearchHooks = {
+  t: translate,
+  notifyError: (text: string) => message.error(text),
+  notifyWarning: (text: string) => message.warning(text),
+};
+
+const face = computed(() => resolveAlertFace(route.path));
+const isNotificationFace = computed(() => face.value === 'Notification');
+const alertType = computed(() => face.value);
+
+const alertsError = ref<ApiError | undefined>(undefined);
+const hasResourcePermissionError = ref(false);
+const alertResourcePermission = ref<OperationPermissions | undefined>(undefined);
+const alertPermissions = ref<AlertRowPermission[] | undefined>(undefined);
+const permissionLoadingCount = ref(0);
+const selectedAlert = ref<EventSubscription | undefined>(undefined);
+const isDeleting = ref(false);
+const resetKey = ref(0);
+// The rows the next row-permission fetch covers, stashed by the page
+// fetch: the A chain fetches permissions for the page data without
+// the prepended system row; the C chain for the displayed list.
+const permissionFetchInput = ref<EventSubscription[]>([]);
+
+async function fetchAlertResourcePermission(): Promise<void> {
+  permissionLoadingCount.value += 1;
+  try {
+    hasResourcePermissionError.value = false;
+    alertResourcePermission.value = await permissionStore.getResourcePermission(
+      'eventsubscription',
+    );
+  } catch (error) {
+    if (!isNotificationFace.value) {
+      // A GET, so showErrorToast suppresses its 401/403 responses.
+      // The failure is tracked explicitly so the empty state can show
+      // an error + retry cue instead of a silent create-less page.
+      hasResourcePermissionError.value = true;
+      reportErrorToast(error, hooks);
+    }
+    // The settings face swallows the failure silently.
+  } finally {
+    permissionLoadingCount.value -= 1;
+  }
+}
+
+async function fetchAlertPermissionByFqn(
+  alert: EventSubscription,
+): Promise<AlertRowPermission> {
+  const permission = await permissionStore.getEntityPermissionByFqn(
+    'eventsubscription',
+    alert.fullyQualifiedName ?? '',
+  );
+  return {
+    id: alert.id,
+    edit: getDerivedPermissionFlags(permission).canEditAll,
+    delete: permission.Delete,
+  };
+}
+
+async function fetchAllAlertsPermission(alerts: EventSubscription[]): Promise<void> {
+  permissionLoadingCount.value += 1;
+  try {
+    alertPermissions.value = await Promise.all(alerts.map(fetchAlertPermissionByFqn));
+  } catch {
+    // Any single failure leaves the previous permissions in place;
+    // the rows render `--` once settled instead of per-row denials.
+  } finally {
+    permissionLoadingCount.value -= 1;
+  }
+}
+
+const { items, paging, isLoading, page, pageSize, onPageChange, onPageSizeChange } =
+  useCursorPagedList<EventSubscription>(
+    async ({ after, before, limit }) => {
+      alertsError.value = undefined;
+      const paged = await getAllAlerts({
+        after,
+        before,
+        limit,
+        alertType: alertType.value,
+      });
+      let list = paged.data;
+      if (isNotificationFace.value) {
+        permissionFetchInput.value = paged.data;
+        if (after === undefined) {
+          const systemAlert = await getAlertsFromName(ACTIVITY_FEED_ALERT_NAME);
+          list = [systemAlert, ...paged.data];
+        }
+      } else {
+        list = paged.data.filter((alert) => alert.provider !== 'system');
+        permissionFetchInput.value = list;
+      }
+      return {
+        data: list,
+        paging: { after: paged.after, before: paged.before, total: paged.total ?? 0 },
+      };
+    },
+    {
+      onError: (error) => {
+        alertsError.value =
+          error instanceof ApiError ? error : new ApiError(0, '', String(error));
+        if (isNotificationFace.value) {
+          message.error(
+            t('server.entity-fetch-error', { entity: t('label.alert-plural') }),
+          );
+        }
+      },
+      persistence: { storage: localStorage, userName: () => authStore.user?.name },
+      resetKey: () => resetKey.value,
+    },
+  );
+
+watch(items, () => {
+  void fetchAllAlertsPermission(permissionFetchInput.value);
+});
+
+onMounted(() => {
+  void fetchAlertResourcePermission();
+});
+
+const combinedLoading = computed(() => isLoading.value || permissionLoadingCount.value > 0);
+// usePaging's showPagination: a cursor, a total beyond the page, or a
+// non-default page size. The composable's own formula lacks the last
+// clause, so the view computes it.
+const showPagination = computed(
+  () =>
+    Boolean(paging.value.after || paging.value.before) ||
+    paging.value.total > pageSize.value ||
+    pageSize.value !== 15,
+);
+
+const canCreateHeaderCta = computed(() =>
+  Boolean(alertResourcePermission.value?.Create || alertResourcePermission.value?.All),
+);
+const canCreateEmptyCta = computed(() =>
+  isNotificationFace.value
+    ? alertResourcePermission.value
+      ? getDerivedPermissionFlags(alertResourcePermission.value).canCreate
+      : false
+    : canCreateHeaderCta.value,
+);
+
+const replaceWithPlaceholder = computed(
+  () =>
+    !isNotificationFace.value &&
+    !isLoading.value &&
+    permissionLoadingCount.value === 0 &&
+    (alertsError.value !== undefined || items.value.length === 0),
+);
+
+function handleAddAlert(): void {
+  void router.push(getAlertAddPath(face.value));
+}
+
+function fetchCurrentPage(): void {
+  onPageChange(page.value);
+}
+
+function pagingHandler(params: PagingHandlerParams): void {
+  onPageChange(params.currentPage);
+}
+
+async function handleAlertDelete(): Promise<void> {
+  selectedAlert.value = undefined;
+  try {
+    await getLimitByResource('eventsubscription');
+    if (isNotificationFace.value) {
+      // Pin fetches page 1 while leaving the pager state untouched;
+      // the restart keeps the data and the pager coherent.
+      resetKey.value += 1;
+    } else {
+      fetchCurrentPage();
+    }
+  } catch (error) {
+    reportErrorToast(error, hooks);
+  }
+}
+
+async function handleAlertHardDelete(): Promise<void> {
+  isDeleting.value = true;
+  const isSuccess = await hardDeleteAlert(
+    getEntityName(selectedAlert.value),
+    selectedAlert.value?.id ?? '',
+    { ...hooks, notifySuccess: (text: string) => message.success(text) },
+  );
+  if (isSuccess) {
+    await handleAlertDelete();
+  } else {
+    selectedAlert.value = undefined;
+  }
+  isDeleting.value = false;
+}
+
 const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
 const registryEntry = findSettingsRegistryItem('notifications.alerts');
 if (!registryEntry) {
   throw new Error('Missing settings registry entry: notifications.alerts');
 }
 const breadcrumbs = computed(() =>
-  getSettingPageBreadcrumbs(
-    buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
-    resolveSettingsLocation,
-    'notifications',
-    registryTitle(settingsTranslator, registryEntry),
+  toSmBreadcrumbItems(
+    getSettingPageBreadcrumbs(
+      buildSettingsBreadcrumbCatalog('settings.title', SETTINGS_BREADCRUMB_NAMES, settingsTranslator),
+      resolveSettingsLocation,
+      'notifications',
+      registryTitle(settingsTranslator, registryEntry),
+    ),
   ),
 );
-const router = useRouter();
-/**
- * Official NotificationListPage gating: create from the
- * eventsubscription resource permission, row edit/delete from the
- * per-alert entity permission by FQN. Missing or failed fetches deny.
- */
-const permissionStore = usePermissionStore();
-const alertPermissions = ref(new Map<string, OperationPermissions>());
-const alertCreateAllowed = ref(false);
-const loading = ref(false);
-const errorMessage = ref('');
-const alerts = ref<EventSubscription[]>([]);
-const total = ref<number | undefined>();
-const pageAfter = ref<string | undefined>();
-const cursor = ref<CursorPager>(createCursorPager());
-const createOpen = ref(false);
-const creating = ref(false);
-/** URL-based destination types only; Email (address list) and internal flows are separate (Fix4 doc §3). */
-const DESTINATION_TYPES = ['Webhook', 'Slack', 'MsTeams', 'GChat'] as const;
-/** Official DESTINATION_TYPE_BASED_PLACEHOLDERS for the URL-based destination types. */
-const DESTINATION_PLACEHOLDERS: Record<(typeof DESTINATION_TYPES)[number], string> = {
-  Webhook: 'https://example.com',
-  Slack: 'https://hooks.slack.com/services/XXXXX/XXXXX/XXXXX',
-  MsTeams: 'https://outlook.office.com/webhook/XXXXX/XXXXX/XXXXX',
-  GChat: 'https://chat.googleapis.com/v1/spaces/XXXXX/messages?key=XXXXX',
-};
-/** Official DEFAULT_READ_TIMEOUT (Alerts.constants). */
-const DEFAULT_READ_TIMEOUT = 12;
-
-const form = reactive({
-  name: '',
-  displayName: '',
-  description: '',
-  alertType: 'Observability',
-  webhookUrl: '',
-  destinationType: 'Webhook' as (typeof DESTINATION_TYPES)[number],
-  readTimeout: DEFAULT_READ_TIMEOUT,
-  enabled: true,
-  resources: [] as string[],
-});
-
-const columns = computed<EntityListColumn[]>(() => [
-  { title: t('crud.name'), dataIndex: 'name', key: 'name' },
-  { title: t('observability.alerts.type'), dataIndex: 'alertType', key: 'alertType', width: 160 },
-  { title: t('crud.enabled'), key: 'enabled', width: 100 },
-  { title: t('observability.alerts.destinations'), key: 'destinations' },
-]);
-
-const hasNext = computed(() => canGoNext(pageAfter.value));
-const hasPrev = computed(() => canGoPrev(cursor.value));
-
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    const page = await listEventSubscriptions({ limit: DEFAULT_PAGE_SIZE, after: cursor.value.after });
-    alerts.value = page.data;
-    total.value = page.total;
-    pageAfter.value = page.after;
-    void loadAlertPermissions();
-  } catch (error) {
-    alerts.value = [];
-    errorMessage.value = error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function loadAlertPermissions(): Promise<void> {
-  try {
-    const resourceOps = await permissionStore.getResourcePermission('eventsubscription');
-    alertCreateAllowed.value = resourceOps.Create === true;
-  } catch {
-    alertCreateAllowed.value = false;
-  }
-  const results = await Promise.allSettled(
-    alerts.value
-      .filter((alert) => Boolean(alert.fullyQualifiedName))
-      .map(async (alert) => ({
-        id: alert.id,
-        ops: await permissionStore.getEntityPermissionByFqn(
-          'eventsubscription',
-          alert.fullyQualifiedName as string,
-        ),
-      })),
-  );
-  const next = new Map<string, OperationPermissions>();
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      next.set(result.value.id, result.value.ops);
-    }
-  }
-  alertPermissions.value = next;
-}
-
-function canDeleteAlert(alert: EventSubscription): boolean {
-  return alertPermissions.value.get(alert.id)?.Delete === true;
-}
-
-function onNext(): void {
-  if (pageAfter.value) {
-    cursor.value = goNext(cursor.value, pageAfter.value);
-  }
-  void load();
-}
-
-function onPrev(): void {
-  cursor.value = goPrev(cursor.value);
-  void load();
-}
-
-async function onCreate(): Promise<void> {
-  creating.value = true;
-  try {
-    const created = await createEventSubscription({
-      name: form.name.trim(),
-      alertType: form.alertType,
-      description: form.description.trim() || undefined,
-      displayName: form.displayName.trim() || undefined,
-      enabled: form.enabled,
-      // Top-level resources: the create schema has no filteringRules
-      // field, so the old filteringRules payload failed server-side.
-      resources: form.resources,
-      destinations: [
-        {
-          category: 'External',
-          type: form.destinationType,
-          config: { endpoint: form.webhookUrl.trim() },
-          readTimeout: form.readTimeout,
-        },
-      ],
-    });
-    createOpen.value = false;
-    message.success(t('observability.alerts.created', { name: created.name }));
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.createFailed'));
-  } finally {
-    creating.value = false;
-  }
-}
-
-async function onDelete(record: EventSubscription): Promise<void> {
-  if (!canDeleteAlert(record)) {
-    message.error(t('errors.forbidden'));
-    return;
-  }
-  const name = entityLabel(record);
-  const confirmed = await confirmDelete({
-    title: t('observability.alerts.deleteTitle', { name }),
-    content: t('observability.alerts.deleteConfirm', { name: name.toLowerCase() }),
-    okText: t('crud.delete'),
-    cancelText: t('crud.cancel'),
-  });
-  if (!confirmed) {
-    return;
-  }
-  try {
-    await deleteEventSubscription(record.id);
-    message.success(t('observability.alerts.deleted', { name }));
-    // Pin's ordering (NotificationListPage / useObservabilityAlerts):
-    // the limit refresh is awaited before the reload, in the same try,
-    // so a limit failure surfaces an error and leaves the list — and
-    // its cursor — untouched instead of reloading a stale page.
-    // ADR:2026-11-18-event-subscription-delete-wire-matches-pin
-    await getLimitByResource('eventsubscription');
-    cursor.value = createCursorPager();
-    await load();
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('crud.deleteFailed'));
-  }
-}
-
-onMounted(() => {
-  void load();
-});
 </script>
 
 <template>
-  <EntityListShell
-    :breadcrumbs="breadcrumbs"
-    :title="t('observability.alerts.title')"
-    :lead="t('observability.alerts.lead')"
-    :loading="loading"
-    :error="errorMessage"
-    :columns="columns"
-    :data-source="alerts"
-    table-test-id="alerts-table"
-    show-row-actions
-    :total="total"
-    :has-next="hasNext"
-    :has-prev="hasPrev"
-    @refresh="load"
-    @next="onNext"
-    @prev="onPrev"
-    @view="(record) => router.push({ name: 'observability-alert', params: { id: (record as EventSubscription).id } })"
-    @delete="(record) => onDelete(record as EventSubscription)"
+  <PageLayout
+    :document-title="
+      isNotificationFace ? t('label.alert-plural') : t('label.observability-alert')
+    "
   >
-    <template #rowActions="{ record }">
-      <Menu.Item
-        key="delete"
-        danger
-        data-testid="row-overflow-delete"
-        :disabled="!canDeleteAlert(record as EventSubscription)"
-        @click="onDelete(record as EventSubscription)"
-      >
-        {{ t('crud.delete') }}
-      </Menu.Item>
-    </template>
-    <template #actions>
-      <Button type="primary" data-testid="create-alert" :disabled="!alertCreateAllowed" @click="createOpen = true">
-        {{ t('observability.alerts.create') }}
-      </Button>
-    </template>
-    <template #bodyCell="{ column, record }">
-      <template v-if="column.key === 'name'">
-        <a
-          href="#"
-          :data-testid="`alert-row-${(record as EventSubscription).id}`"
-          @click.prevent="
-            router.push({ name: 'observability-alert', params: { id: (record as EventSubscription).id } })
-          "
-        >
-          {{ entityLabel(record as EventSubscription) }}
-        </a>
-      </template>
-      <template v-else-if="column.key === 'enabled'">
-        {{ (record as EventSubscription).enabled === false ? t('crud.no') : t('crud.yes') }}
-      </template>
-      <template v-else-if="column.key === 'destinations'">
-        {{
-          (record as EventSubscription).destinations
-            .map((destination) => destination.type || destination.category)
-            .filter(Boolean)
-            .join(', ') || '—'
-        }}
-      </template>
-    </template>
-  </EntityListShell>
-  <FormModal
-    :open="createOpen"
-    :title="t('observability.alerts.createTitle')"
-    :ok-text="t('crud.create')"
-    :cancel-text="t('crud.cancel')"
-    :confirm-loading="creating"
-    @ok="onCreate"
-    @cancel="createOpen = false"
   >
-    <Form layout="vertical">
-      <Form.Item :label="t('crud.name')" :rules="requiredField(t, t('crud.name'))">
-        <Input v-model:value="form.name" data-testid="create-alert-name" />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.type')" required>
-        <Select v-model:value="form.alertType">
-          <Select.Option v-for="type in ALERT_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.destinationType')" required>
-        <Select v-model:value="form.destinationType">
-          <Select.Option v-for="type in DESTINATION_TYPES" :key="type" :value="type">{{ type }}</Select.Option>
-        </Select>
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.endpoint')" required>
-        <Input
-          v-model:value="form.webhookUrl"
-          :placeholder="DESTINATION_PLACEHOLDERS[form.destinationType]"
-          data-testid="create-alert-webhook"
+    <div v-if="isNotificationFace">
+      <SmBreadcrumb :items="breadcrumbs" />
+      <div class="alerts-list-view__header">
+        <PageHeader
+          :header="t('label.notification-plural')"
+          :sub-header="t('message.alerts-description')"
+          learning-page-id="alerts"
         />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.readTimeout')" :extra="t('observability.alerts.readTimeoutHelp')">
-        <InputNumber v-model:value="form.readTimeout" :min="0" data-testid="create-alert-read-timeout" />
-      </Form.Item>
-      <Form.Item :label="t('observability.alerts.resources')" :extra="t('observability.alerts.resourcesHelp')">
-        <Select v-model:value="form.resources" mode="tags" data-testid="create-alert-resources" />
-      </Form.Item>
-      <Form.Item :label="t('crud.enabled')">
-        <Switch v-model:checked="form.enabled" data-testid="create-alert-enabled" />
-      </Form.Item>
-      <Form.Item :label="t('crud.description')" :extra="t('crud.descriptionHelp')">
-        <Input.TextArea v-model:value="form.description" :rows="3" />
-      </Form.Item>
-      <Form.Item :label="t('crud.displayName')" :extra="t('crud.displayNameHelp')">
-        <Input v-model:value="form.displayName" />
-      </Form.Item>
-    </Form>
-  </FormModal>
+        <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
+          <Button type="primary" data-testid="create-notification" @click="handleAddAlert">
+            {{ t('label.add-entity', { entity: t('label.alert') }) }}
+          </Button>
+        </LimitWrapper>
+      </div>
+    </div>
+    <Card v-else>
+      <div class="alerts-list-view__header">
+        <PageHeader
+          :header="t('label.observability-alert')"
+          :sub-header="t('message.alerts-description')"
+          learning-page-id="dataObservability"
+        />
+        <LimitWrapper v-if="canCreateHeaderCta" resource="eventsubscription">
+          <Button type="primary" data-testid="create-observability" @click="handleAddAlert">
+            {{ t('label.add-entity', { entity: t('label.alert') }) }}
+          </Button>
+        </LimitWrapper>
+      </div>
+    </Card>
+
+    <AlertListTable
+      :face="face"
+      :alerts="items"
+      :alerts-error="alertsError"
+      :has-resource-permission-error="hasResourcePermissionError"
+      :alert-permissions="alertPermissions"
+      :actions-loading="isNotificationFace ? combinedLoading : permissionLoadingCount > 0"
+      :table-loading="isNotificationFace ? combinedLoading : false"
+      :blank-while-loading="!isNotificationFace"
+      :replace-with-placeholder="replaceWithPlaceholder"
+      :can-create-empty-cta="canCreateEmptyCta"
+      :show-pagination="showPagination"
+      :paging="paging"
+      :page-size="pageSize"
+      :current-page="page"
+      :pager-loading="isNotificationFace ? combinedLoading : isLoading"
+      :paging-handler="pagingHandler"
+      :on-show-size-change="onPageSizeChange"
+      @select-alert="(alert) => (selectedAlert = alert)"
+      @add-alert="handleAddAlert"
+      @retry="fetchCurrentPage"
+      @retry-permission="fetchAlertResourcePermission"
+    />
+
+    <AlertDeleteModal
+      :open="Boolean(selectedAlert)"
+      :entity-title="getEntityName(selectedAlert)"
+      :message="
+        t('message.permanently-delete-common-message', {
+          entity: getEntityName(selectedAlert)?.toLowerCase?.() ?? '',
+        })
+      "
+      :deleting="isDeleting"
+      @cancel="selectedAlert = undefined"
+      @confirm="handleAlertHardDelete"
+    />
+  </PageLayout>
 </template>
+
+<style scoped>
+.alerts-list-view__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+</style>
