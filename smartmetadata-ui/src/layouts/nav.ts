@@ -286,6 +286,52 @@ export function selectedNavKey(routeName: string | symbol | undefined | null): s
 }
 
 /**
+ * Origin URL carried in router state by a navigation: the first link of
+ * `breadcrumbData` (official `getSidebarPathname`,
+ * `utils/LeftSidebarUtils.ts:30-75`, reads
+ * `locationState?.breadcrumbData?.[0]?.url`). Returns null when the
+ * state carries no breadcrumb link with a URL.
+ */
+export function breadcrumbOriginUrl(state: unknown): string | null {
+  const links = (state as { breadcrumbData?: unknown } | null)?.breadcrumbData;
+  if (!Array.isArray(links) || links.length === 0) {
+    return null;
+  }
+  const url = (links[0] as { url?: unknown } | null)?.url;
+  return typeof url === 'string' && url.length > 0 ? url : null;
+}
+
+/**
+ * Sidebar key for a create-user visit, evaluated by its navigation
+ * origin (DESIGN §6.6 / §10.6(4), official `getSidebarPathname` +
+ * `getSidebarActiveKeys`). No origin → 'create-user' (never the Hub);
+ * an origin that resolves to a route name is evaluated through the
+ * same `selectedNavKey` rules as a direct visit; an unresolvable
+ * origin also falls back to 'create-user'.
+ *
+ * Equivalence boundary (MI-3): the product evaluates by route name
+ * (`router.resolve(origin)` → route name → `selectedNavKey`), while
+ * official evaluates by path alias (`getSidebarPathname` returns the
+ * raw origin path, then the nested/alias tables land on a shallow
+ * path). So an origin that resolves to a route whose name is neither
+ * a nav key nor in `DETAIL_TO_LIST` yields no highlight here, where
+ * official would land on the shallow path.
+ */
+export function navKeyForOrigin(
+  originUrl: string | null | undefined,
+  resolveRouteName: (path: string) => string | null,
+): string {
+  if (!originUrl) {
+    return 'create-user';
+  }
+  const name = resolveRouteName(originUrl);
+  if (!name) {
+    return 'create-user';
+  }
+  return selectedNavKey(name);
+}
+
+/**
  * Permission-based nav filtering placeholder. The official shell
  * greys or hides entries by role, but no product role/permission
  * endpoint is wired to the shell, so no restriction is faked here:
@@ -297,7 +343,11 @@ export function filterNavByPermission<T>(entries: readonly T[]): readonly T[] {
 }
 
 export function sectionKeyForRoute(routeName: string | symbol | undefined | null): string | null {
-  const selected = selectedNavKey(routeName);
+  return sectionKeyForNavKey(selectedNavKey(routeName));
+}
+
+/** Section owning a resolved nav key (the origin-aware counterpart of sectionKeyForRoute). */
+export function sectionKeyForNavKey(selected: string): string | null {
   for (const entry of NAV_ENTRIES) {
     if (entry.kind === 'section' && entry.items.some((item) => item.key === selected)) {
       return entry.key;

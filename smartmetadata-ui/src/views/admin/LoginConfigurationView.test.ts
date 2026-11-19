@@ -8,17 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd, { InputNumber, message } from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import LoginConfigurationView from './LoginConfigurationView.vue';
-
-vi.mock('@/api/system', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/system')>();
-  return { ...actual, updateSetting: vi.fn() };
-});
 
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>();
@@ -26,10 +21,8 @@ vi.mock('@/api/client', async (importOriginal) => {
 });
 
 import { apiRequest } from '@/api/client';
-import { updateSetting } from '@/api/system';
 
 const apiRequestMock = apiRequest as unknown as ReturnType<typeof vi.fn>;
-const updateMock = updateSetting as unknown as ReturnType<typeof vi.fn>;
 
 function mountView() {
   const router = createRouter({
@@ -38,6 +31,11 @@ function mountView() {
       { path: '/', component: { template: '<div />' } },
       { path: '/settings', name: 'admin-settings', component: { template: '<div />' } },
       { path: '/settings/:category', name: 'settings-category', component: { template: '<div />' } },
+      {
+        path: '/settings/preferences/loginConfiguration/edit',
+        name: 'settings-preferences-login-edit',
+        component: { template: '<div />' },
+      },
     ],
   });
   const i18n = createI18n({
@@ -70,7 +68,7 @@ function mountView() {
       },
     },
   });
-  return mount(LoginConfigurationView, {
+  const wrapper = mount(LoginConfigurationView, {
     global: {
       plugins: [router, i18n],
       stubs: {
@@ -78,6 +76,7 @@ function mountView() {
       },
     },
   });
+  return { wrapper, router };
 }
 
 beforeEach(() => {
@@ -87,12 +86,11 @@ beforeEach(() => {
     accessBlockTime: 600,
     jwtTokenExpiryTime: 3600,
   });
-  updateMock.mockResolvedValue(undefined);
 });
 
 describe('LoginConfigurationView detail', () => {
   it('loads from the dedicated login-config endpoint and renders all three values', async () => {
-    const wrapper = mountView();
+    const { wrapper } = mountView();
     await flushPromises();
     expect(apiRequestMock).toHaveBeenCalledWith('/v1/system/config/loginConfig');
     expect(wrapper.find('[data-testid="max-login-fail-attempts"]').text()).toBe('5');
@@ -102,7 +100,7 @@ describe('LoginConfigurationView detail', () => {
 
   it('renders -- for missing values and still appends seconds to the JWT row', async () => {
     apiRequestMock.mockResolvedValue({});
-    const wrapper = mountView();
+    const { wrapper } = mountView();
     await flushPromises();
     expect(wrapper.find('[data-testid="max-login-fail-attempts"]').text()).toBe('--');
     expect(wrapper.find('[data-testid="access-block-time"]').text()).toBe('--');
@@ -117,73 +115,21 @@ describe('LoginConfigurationView detail', () => {
     expect(errorSpy).toHaveBeenCalledWith('down');
     errorSpy.mockRestore();
   });
-});
 
-describe('LoginConfigurationView edit', () => {
-  it('saves through the settings endpoint, dropping emptied fields', async () => {
-    const wrapper = mountView();
+  it('is read-only: no form inputs and no save button', async () => {
+    const { wrapper } = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="edit-button"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    const inputs = wrapper.findAllComponents(InputNumber);
-    expect(inputs).toHaveLength(3);
-    await inputs[0].vm.$emit('update:value', undefined);
-    await wrapper.find('[data-testid="save-login-config"]').trigger('click');
-    await flushPromises();
-    expect(updateMock).toHaveBeenCalledTimes(1);
-    const [configType, payload] = updateMock.mock.calls[0] as [string, Record<string, unknown>];
-    expect(configType).toBe('loginConfiguration');
-    expect(payload).toEqual({
-      maxLoginFailAttempts: undefined,
-      accessBlockTime: 600,
-      jwtTokenExpiryTime: 3600,
-    });
-    expect(wrapper.find('[data-testid="edit-button"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="save-login-config"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="login-cancel"]').exists()).toBe(false);
+    expect(wrapper.find('input').exists()).toBe(false);
   });
 
-  it('rejects negative values under the min-zero rule', async () => {
-    const wrapper = mountView();
+  it('navigates to the standalone edit route on Edit', async () => {
+    const { wrapper, router } = mountView();
     await flushPromises();
     await wrapper.find('[data-testid="edit-button"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    const inputs = wrapper.findAllComponents(InputNumber);
-    await inputs[1].vm.$emit('update:value', -5);
-    await wrapper.find('[data-testid="save-login-config"]').trigger('click');
     await flushPromises();
-    expect(updateMock).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('Access Block Time must be 0 or more');
-  });
-
-  it('carries no lower bound on max attempts or JWT expiry', async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    await wrapper.find('[data-testid="edit-button"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    const inputs = wrapper.findAllComponents(InputNumber);
-    expect(inputs[0].props('min')).toBeUndefined();
-    expect(inputs[2].props('min')).toBeUndefined();
-    expect(inputs[1].props('min')).toBe(0);
-  });
-
-  it('returns to the detail view on cancel without saving', async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    await wrapper.find('[data-testid="edit-button"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    await wrapper.find('[data-testid="login-cancel"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    expect(updateMock).not.toHaveBeenCalled();
-    expect(wrapper.find('[data-testid="edit-button"]').exists()).toBe(true);
-  });
-
-  it('uses root/<name> field ids for the doc-panel drop-in', async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    await wrapper.find('[data-testid="edit-button"]').trigger('click');
-    await wrapper.vm.$nextTick();
-    expect(wrapper.find('#root\\/maxLoginFailAttempts').exists()).toBe(true);
-    expect(wrapper.find('#root\\/accessBlockTime').exists()).toBe(true);
-    expect(wrapper.find('#root\\/jwtTokenExpiryTime').exists()).toBe(true);
+    expect(router.currentRoute.value.name).toBe('settings-preferences-login-edit');
   });
 });
 

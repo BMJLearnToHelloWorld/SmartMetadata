@@ -660,6 +660,8 @@ const enUS = {
     'custom-property-name-help': 'The name must start with a lowercase letter, as preferred in the camelCase format. Uppercase letters and numbers can be included in the field name; but spaces, underscores, and dots are not supported.',
     'custom-property-name-validation': 'Name must start with a letter or number. Invalid characters: " * : ^ $ \\ < > & ~ /',
     'custom-property-type-help': 'Select the preferred property Type from among the options provided.',
+    'custom-property-layout-hint':
+      'Drag a card to move it. Small cards take half a row, large cards the full row.',
     'default-persona-removed-successfully': 'Default persona has been removed successfully.',
     'default-persona-set-successfully': 'Default persona has been set successfully.',
     'default-persona-update-error': 'Failed to update default persona. Please try again.',
@@ -704,6 +706,8 @@ const enUS = {
     'marketplace-verify-msg': '{brandName} has verified that the publisher controls the domain and meets other requirements.',
     'maximum-count-allowed': 'Maximum {count} {label} are allowed',
     'no-access-placeholder': "You don't have necessary permissions. Please check with the admin to get the <0>{entity}</0> permission.",
+    'no-custom-properties-defined':
+      'No custom properties defined for this entity type yet. Add one in Settings → Custom Properties.',
     'no-admin-available-with-filters': 'No admin users available with the selected filters. Please try changing the filters. or check the <0>Users page</0> for non-admin users.',
     'no-admin-available-with-name': "No admin users found with name \"{searchText}\". If you're looking for non-admin users, please check the <0>Users page</0>.",
     'no-audit-logs-description': 'Metadata change events will appear here as entities are created and modified.',
@@ -1432,6 +1436,7 @@ const enUS = {
       agents: 'Agents',
       connection: 'Connection',
       sql: 'SQL',
+      charts: 'Charts',
       apiCollection: 'API Collection',
       schemaDefinition: 'Schema Definition',
       expression: 'Expression',

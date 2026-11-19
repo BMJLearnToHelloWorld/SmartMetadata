@@ -261,6 +261,26 @@ describe('PlatformHealthWidget', () => {
     expect(router.currentRoute.value.params).toEqual({ category: 'services' });
   });
 
+  it('falls back to the Services overview from a row without a service kind (no-kind)', async () => {
+    // DESIGN §6.7 row 4: a no-kind entry must land on the Services
+    // overview, never silently default to a kind. An unknown entity
+    // type has no KIND_BY_ENTITY_TYPE entry, so the row carries no
+    // serviceKind and openService() falls back to openServices().
+    getServicesOverview.mockResolvedValueOnce(
+      overviewResponse(
+        [serviceSummary('a', 'failed', 'unknownService')],
+        { databaseService: { failed: 1, partialSuccess: 0, success: 0, notRun: 0 } },
+        1,
+      ),
+    );
+    const { wrapper, router } = await mountWidget();
+    await wrapper.get('[data-testid="failing-service-a"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'services' });
+    expect(router.currentRoute.value.query).toEqual({});
+  });
+
   it('keeps the health-bucket entry on the staged aggregate list with ?health= (§6.7 row 5)', async () => {
     getServicesOverview.mockResolvedValueOnce(
       overviewResponse(

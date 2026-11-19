@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Select } from 'ant-design-vue';
+import { resolveWidgetContentKey } from '@/catalog/detailWidgetDispatch';
 import {
   EMPTY_WIDGET_PLACEHOLDER_KEY,
   FULL_PANEL_WIDTH,
@@ -56,6 +57,13 @@ const props = withDefaults(
     resizable?: boolean;
     removable?: boolean;
     forceFullWidth?: boolean;
+    /**
+     * Page type the grid edits. The `#widget` slot reports the
+     * content key for each widget (official GenericWidget dispatch);
+     * without it every content key is null and cells keep title
+     * chrome only.
+     */
+    pageType?: string;
     widgetTitle: (widget: WidgetConfig) => string;
   }>(),
   { cols: 8, rowHeight: 100, gap: 16, rowGap: undefined, resizable: true, removable: true, forceFullWidth: false },
@@ -86,6 +94,15 @@ const WIDTH_OPTIONS = [1, 2, 3, 8];
 
 function isPlaceholder(widget: WidgetConfig): boolean {
   return widget.i === EMPTY_WIDGET_PLACEHOLDER_KEY;
+}
+
+/**
+ * Read-side dispatch, shared with GenericTab: the content key for a
+ * widget id on this page, or null when the page has no content for it
+ * (the cell then keeps its title chrome).
+ */
+function contentKeyFor(widget: WidgetConfig): string | null {
+  return resolveWidgetContentKey(props.pageType ?? '', widget.i);
 }
 
 const panelWidget = computed(() => props.layout.find(isLeftPanelWidget));
@@ -496,22 +513,27 @@ function onWidthChange(widget: WidgetConfig, width: number): void {
             :style="childCellStyle(child)"
           >
             <div class="detail-grid-editor__card">
-              <span
-                class="drag-widget-icon detail-grid-editor__handle"
-                draggable="true"
-                @dragstart="onDragStart($event, child.i)"
-              >⠿</span>
-              <span class="detail-grid-editor__title">{{ widgetTitle(child) }}</span>
-              <Button
-                v-if="removable"
-                type="text"
-                size="small"
-                :data-testid="`widget-remove-${child.i}`"
-                :aria-label="t('home.remove')"
-                @click="emit('remove', child.i)"
-              >
-                ×
-              </Button>
+              <div class="detail-grid-editor__header">
+                <span
+                  class="drag-widget-icon detail-grid-editor__handle"
+                  draggable="true"
+                  @dragstart="onDragStart($event, child.i)"
+                >⠿</span>
+                <span class="detail-grid-editor__title">{{ widgetTitle(child) }}</span>
+                <Button
+                  v-if="removable"
+                  type="text"
+                  size="small"
+                  :data-testid="`widget-remove-${child.i}`"
+                  :aria-label="t('home.remove')"
+                  @click="emit('remove', child.i)"
+                >
+                  ×
+                </Button>
+              </div>
+              <div class="detail-grid-editor__live">
+                <slot name="widget" :widget="child" :content-key="contentKeyFor(child)" />
+              </div>
             </div>
           </div>
         </div>
@@ -526,44 +548,49 @@ function onWidthChange(widget: WidgetConfig, width: number): void {
         :style="cellStyle(widget)"
       >
         <div class="detail-grid-editor__card">
-          <span
-            class="drag-widget-icon detail-grid-editor__handle"
-            draggable="true"
-            @dragstart="onDragStart($event, widget.i)"
-          >⠿</span>
-          <span class="detail-grid-editor__title">{{ widgetTitle(widget) }}</span>
-          <Select
-            v-if="resizable && !widget.static"
-            :value="widget.w"
-            size="small"
-            class="detail-grid-editor__width"
-            :data-testid="`widget-width-${widget.i}`"
-            @change="(width) => onWidthChange(widget, width as number)"
-          >
-            <Select.Option
-              v-for="option in WIDTH_OPTIONS.filter((w) => w <= cols)"
-              :key="option"
-              :value="option"
+          <div class="detail-grid-editor__header">
+            <span
+              class="drag-widget-icon detail-grid-editor__handle"
+              draggable="true"
+              @dragstart="onDragStart($event, widget.i)"
+            >⠿</span>
+            <span class="detail-grid-editor__title">{{ widgetTitle(widget) }}</span>
+            <Select
+              v-if="resizable && !widget.static"
+              :value="widget.w"
+              size="small"
+              class="detail-grid-editor__width"
+              :data-testid="`widget-width-${widget.i}`"
+              @change="(width) => onWidthChange(widget, width as number)"
             >
-              {{ option }}
-            </Select.Option>
-          </Select>
-          <Button
-            v-if="removable"
-            type="text"
-            size="small"
-            :data-testid="`widget-remove-${widget.i}`"
-            :aria-label="t('home.remove')"
-            @click="emit('remove', widget.i)"
-          >
-            ×
-          </Button>
-          <span
-            v-if="resizable && !widget.static"
+              <Select.Option
+                v-for="option in WIDTH_OPTIONS.filter((w) => w <= cols)"
+                :key="option"
+                :value="option"
+              >
+                {{ option }}
+              </Select.Option>
+            </Select>
+            <Button
+              v-if="removable"
+              type="text"
+              size="small"
+              :data-testid="`widget-remove-${widget.i}`"
+              :aria-label="t('home.remove')"
+              @click="emit('remove', widget.i)"
+            >
+              ×
+            </Button>
+            <span
+              v-if="resizable && !widget.static"
             class="detail-grid-editor__resize"
             :data-testid="`widget-resize-${widget.i}`"
             @pointerdown="onResizeStart($event, widget)"
           />
+          </div>
+          <div class="detail-grid-editor__live">
+            <slot name="widget" :widget="widget" :content-key="contentKeyFor(widget)" />
+          </div>
         </div>
       </div>
     </template>
@@ -619,7 +646,8 @@ function onWidthChange(widget: WidgetConfig, width: number): void {
 .detail-grid-editor__card {
   display: flex;
   flex: 1 1 auto;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   min-width: 0;
   min-height: 0;
@@ -627,6 +655,31 @@ function onWidthChange(widget: WidgetConfig, width: number): void {
   border: 1px solid var(--sm-border-secondary);
   border-radius: var(--sm-radius-card);
   background: var(--sm-bg-container);
+}
+.detail-grid-editor__header {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+/**
+ * Live widget content (official GenericWidget card body): read-only
+ * preview of the widget's real content. Pointer events are off so
+ * the preview can never steal the edit gestures; the area scrolls
+ * internally when the content is taller than the cell. Empty when
+ * the parent renders nothing for the widget — the title chrome in
+ * the header stays the fallback. The one exception is the Custom
+ * Properties cell editor, which re-enables pointer events on its
+ * own wrapper (official renders that editor outside the read-only
+ * container).
+ */
+.detail-grid-editor__live {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  pointer-events: none;
 }
 .detail-grid-editor__handle {
   flex: none;

@@ -69,6 +69,7 @@ const GlossarySettingsView = () => import('@/views/admin/GlossarySettingsView.vu
 const LearningResourcesView = () => import('@/views/admin/LearningResourcesView.vue');
 const LineageConfigView = () => import('@/views/admin/LineageConfigView.vue');
 const LoginConfigurationView = () => import('@/views/admin/LoginConfigurationView.vue');
+const EditLoginConfigurationView = () => import('@/views/admin/EditLoginConfigurationView.vue');
 const OmHealthView = () => import('@/views/admin/OmHealthView.vue');
 const OmUrlConfigView = () => import('@/views/admin/OmUrlConfigView.vue');
 const ProfilerConfigurationView = () => import('@/views/admin/ProfilerConfigurationView.vue');
@@ -361,6 +362,10 @@ export const router = createRouter({
         { path: 'settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView, meta: { guard: 'admin-only' } },
         { path: 'settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView, meta: { guard: 'admin-only' } },
         { path: 'settings/preferences/loginConfiguration', name: 'settings-preferences-login', component: LoginConfigurationView, meta: { guard: 'admin-only', loginConfigGate: true } },
+        // R-FIXUP2-1 (A4 §14 项 7): pin mounts the edit face on its own
+        // route (SettingsRouter.tsx:496); same guard + provider gate as
+        // the detail route above.
+        { path: 'settings/preferences/loginConfiguration/edit', name: 'settings-preferences-login-edit', component: EditLoginConfigurationView, meta: { guard: 'admin-only', loginConfigGate: true } },
         { path: 'settings/preferences/om-health', name: 'settings-preferences-health', component: OmHealthView, meta: { guard: 'admin-only' } },
         { path: 'settings/preferences/profiler-configuration', name: 'settings-preferences-profiler', component: ProfilerConfigurationView, meta: { guard: 'admin-only' } },
         { path: 'settings/preferences/data-quality', name: 'settings-preferences-dq-dimensions', component: DataQualityDimensionsView, meta: { guard: 'admin-only' } },

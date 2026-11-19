@@ -11,10 +11,12 @@ import { describe, expect, it } from 'vitest';
 import {
   NAV_ENTRIES,
   NAV_FOOTER_ENTRIES,
+  breadcrumbOriginUrl,
   defaultOpenNavKeys,
   isNavActionKey,
   isNavSectionKey,
   isSettingsRouteName,
+  navKeyForOrigin,
   navRouteKeys,
   sectionKeyForRoute,
   sectionLanding,
@@ -122,10 +124,10 @@ describe('settings-space highlight rule (DESIGN §6.6)', () => {
     expect(selectedNavKey('ingestion-service')).toBe('admin-settings');
     expect(isSettingsRouteName('task')).toBe(false);
     expect(selectedNavKey('task')).toBe('tasks');
-    // §6.7 row 7, no-origin half: the reserved /create-user routes
-    // are unregistered this batch (§10.6), and the name must never
-    // default to Hub highlight. With-origin evaluation awaits the
-    // breadcrumbData mechanism at registration time.
+    // §6.7 row 7, no-origin half: the /create-user routes are
+    // registered (router/index.ts), and the name must never default
+    // to Hub highlight. With-origin evaluation lives in
+    // navKeyForOrigin (below) and AppShell.
     expect(isSettingsRouteName('create-user')).toBe(false);
     expect(selectedNavKey('create-user')).toBe('create-user');
     // Empty and missing names are unattributed, never settings.
@@ -290,4 +292,44 @@ describe('nav IA', () => {
     }
   });
 
+});
+
+describe('create-user with-origin highlight (DESIGN §6.6 / §10.6(4))', () => {
+  it('reads the origin URL from breadcrumbData[0].url only', () => {
+    expect(breadcrumbOriginUrl(null)).toBeNull();
+    expect(breadcrumbOriginUrl(undefined)).toBeNull();
+    expect(breadcrumbOriginUrl({})).toBeNull();
+    expect(breadcrumbOriginUrl({ breadcrumbData: [] })).toBeNull();
+    expect(breadcrumbOriginUrl({ breadcrumbData: [{ url: '' }] })).toBeNull();
+    expect(breadcrumbOriginUrl({ breadcrumbData: [{ url: 42 }] })).toBeNull();
+    expect(
+      breadcrumbOriginUrl({ breadcrumbData: [{ url: '/settings/members/users' }] }),
+    ).toBe('/settings/members/users');
+    // Only the first link is the origin; later links never are.
+    expect(
+      breadcrumbOriginUrl({
+        breadcrumbData: [{ name: 'Users' }, { url: '/settings/members/users' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('evaluates the highlight by the origin, never forcing the Hub', () => {
+    const resolve = (path: string): string | null =>
+      path === '/settings/members/users'
+        ? 'settings-members-users'
+        : path === '/users/alice'
+          ? 'user-detail'
+          : null;
+    // No origin → the create-user key itself.
+    expect(navKeyForOrigin(null, resolve)).toBe('create-user');
+    expect(navKeyForOrigin(undefined, resolve)).toBe('create-user');
+    expect(navKeyForOrigin('', resolve)).toBe('create-user');
+    // A settings-space origin highlights the Hub.
+    expect(navKeyForOrigin('/settings/members/users', resolve)).toBe('admin-settings');
+    // A non-settings origin evaluates through the same rules as a
+    // direct visit (user-detail follows DETAIL_TO_LIST).
+    expect(navKeyForOrigin('/users/alice', resolve)).toBe(selectedNavKey('user-detail'));
+    // An unresolvable origin falls back to the create-user key.
+    expect(navKeyForOrigin('/nowhere/at-all', resolve)).toBe('create-user');
+  });
 });

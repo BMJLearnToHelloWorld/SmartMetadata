@@ -121,6 +121,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     ['/settings/preferences/appearance', 'settings-preferences-appearance'],
     ['/settings/preferences/email', 'settings-preferences-email'],
     ['/settings/preferences/loginConfiguration', 'settings-preferences-login'],
+    ['/settings/preferences/loginConfiguration/edit', 'settings-preferences-login-edit'],
     ['/settings/preferences/om-health', 'settings-preferences-health'],
     ['/settings/preferences/profiler-configuration', 'settings-preferences-profiler'],
     ['/settings/preferences/data-quality', 'settings-preferences-dq-dimensions'],
@@ -373,6 +374,7 @@ describe('guard declaration table (§10.2)', () => {
       'settings-preferences-appearance',
       'settings-preferences-email',
       'settings-preferences-login',
+      'settings-preferences-login-edit',
       'settings-preferences-health',
       'settings-preferences-profiler',
       'settings-preferences-dq-dimensions',
@@ -390,14 +392,18 @@ describe('guard declaration table (§10.2)', () => {
     }
   });
 
-  it('marks the login-configuration route with the provider gate', () => {
-    const record = router.getRoutes().find((route) => route.name === 'settings-preferences-login');
-    expect(record?.meta.loginConfigGate).toBe(true);
+  it('marks the login-configuration routes with the provider gate', () => {
+    for (const name of ['settings-preferences-login', 'settings-preferences-login-edit']) {
+      const record = router.getRoutes().find((route) => route.name === name);
+      expect(record?.meta.loginConfigGate).toBe(true);
+    }
     const others = router
       .getRoutes()
       .filter((route) => route.meta.loginConfigGate === true)
       .map((route) => route.name);
-    expect(others).toEqual(['settings-preferences-login']);
+    // getRoutes() orders by matcher score, not registration order, so
+    // compare as a set.
+    expect([...others].sort()).toEqual(['settings-preferences-login', 'settings-preferences-login-edit']);
   });
 
   it('declares the staged entry equivalence for the old user detail (M1b)', () => {
