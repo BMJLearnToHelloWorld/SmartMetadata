@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import { membersTabGuard } from './guards';
 import { router } from './index';
 import type { GuardDeclaration } from './guards';
 
@@ -93,7 +94,10 @@ describe('settings route-pattern manifest (§4.5)', () => {
     ['/settings', 'admin-settings'],
     ['/settings/members/users', 'admin-users'],
     ['/settings/members/admins', 'admin-admins'],
-    ['/settings/members/teams', 'admin-teams'],
+    // 'admin-teams' is deleted (sections batch): the bare teams path is
+    // the settings-members-teams redirect record, whose target is the
+    // Organization team detail (settings-members-team, fqn=Organization).
+    ['/settings/members/teams', 'settings-members-teams'],
     ['/settings/members/teams/t1', 'admin-team'],
     ['/settings/members/online-users', 'insights-online-users'],
     ['/settings/access/roles', 'admin-roles'],
@@ -158,7 +162,9 @@ describe('settings route-pattern manifest (§4.5)', () => {
     for (const name of [
       'admin-users',
       'admin-admins',
-      'admin-teams',
+      // 'admin-teams' is deleted; the replacement redirect record keeps
+      // the teams-list name in the router (target: settings-members-team).
+      'settings-members-teams',
       'admin-roles',
       'admin-policies',
       'admin-settings-persona',
@@ -268,17 +274,18 @@ describe('settings route-pattern manifest (§4.5)', () => {
   });
 
   it('treats reserved literal URLs by dynamic matching, not as 404s (§4.4)', () => {
-    // No dedicated create records are registered this stage; the
-    // literal URLs match the unconstrained detail patterns and are
-    // handled as detail unknown-ids under the detail guard.
+    // The create-user records are registered this stage (sections
+    // faces), so the literal URLs resolve to them, not to the catch-all;
+    // the role/policy literals still match the unconstrained detail
+    // patterns and are handled as detail unknown-ids under the detail guard.
     const roleResolved = router.resolve('/settings/access/roles/add-role');
     expect(roleResolved.name).toBe('admin-role');
     expect(roleResolved.params).toMatchObject({ id: 'add-role' });
     const policyResolved = router.resolve('/settings/access/policies/add-policy');
     expect(policyResolved.name).toBe('admin-policy');
     expect(policyResolved.params).toMatchObject({ id: 'add-policy' });
-    expect(router.resolve('/create-user').name).toBe('not-found');
-    expect(router.resolve('/create-user/bot').name).toBe('not-found');
+    expect(router.resolve('/create-user').name).toBe('create-user');
+    expect(router.resolve('/create-user/bot').name).toBe('create-user-bot');
   });
 });
 
@@ -287,10 +294,15 @@ describe('guard declaration table (§10.2)', () => {
     return router.getRoutes().find((route) => route.name === name)?.meta.guard;
   }
 
-  it('declares none for the Hub, the category page, SSO and online users', () => {
+  it('declares none for the Hub, the category page and online users; SSO is undeclared', () => {
     expect(declarationOf('admin-settings')).toBe('none');
     expect(declarationOf('settings-category')).toBe('none');
-    expect(declarationOf('admin-settings-sso')).toBe('none');
+    // admin-settings-sso carries no guard meta (sections verbatim,
+    // binding rule). resolveGuard treats an undeclared route identically
+    // to 'none' (both -> { kind: 'allow' }, session-only; guards.ts
+    // resolveGuard), so the absence of a declaration IS the 'none'
+    // behaviour here, asserted as undefined rather than 'none'.
+    expect(declarationOf('admin-settings-sso')).toBeUndefined();
     expect(declarationOf('insights-online-users')).toBe('none');
   });
 
@@ -298,7 +310,10 @@ describe('guard declaration table (§10.2)', () => {
     const expected: Record<string, GuardDeclaration> = {
       'admin-users': { resource: 'USER', operation: 'view' },
       'admin-admins': { resource: 'USER', operation: 'view' },
-      'admin-teams': { resource: 'TEAM', operation: 'view' },
+      // 'admin-teams' is deleted; the teams detail record that carries
+      // the TEAM view declaration is settings-members-team (the redirect
+      // target for the bare teams path).
+      'settings-members-team': { resource: 'TEAM', operation: 'view' },
       'admin-team': { resource: 'TEAM', operation: 'view' },
       'admin-roles': { resource: 'ROLE', operation: 'view' },
       'admin-role': { resource: 'ROLE', operation: 'view' },
@@ -403,5 +418,181 @@ describe('guard declaration table (§10.2)', () => {
     ]) {
       expect(declarationOf(name)).toBeUndefined();
     }
+  });
+});
+
+// Settings sections batch: the integration-wired faces. resolve()
+// returns the matched record, not the redirect target, so redirect
+// shapes assert through resolveRedirect below, which evaluates the
+// record's own redirect declaration and resolves the result.
+// resolve() does not run beforeEnter, so the members :tab rule is
+// asserted by wiring identity here and by behaviour in guards.test.ts
+// (membersTabGuard).
+describe('settings sections faces', () => {
+  function resolveRedirect(path: string) {
+    const matched = router.resolve(path);
+    const record = matched.matched[matched.matched.length - 1];
+    expect(record?.redirect, `${path} must declare a redirect`).toBeDefined();
+    const redirect = record?.redirect as
+      | { name?: string; params?: Record<string, string> }
+      | ((to: typeof matched) => { name?: string; params?: Record<string, string> })
+      | undefined;
+    const target = typeof redirect === 'function' ? redirect(matched) : redirect;
+    return router.resolve(target as { name: string; params: Record<string, string> });
+  }
+
+  const redirectCases: Array<[path: string, name: string, params: Record<string, string>]> = [
+    ['/settings/members/teams', 'settings-members-team', { fqn: 'Organization' }],
+    // The plural alerts detail redirects to the canonical detail record,
+    // which takes :id (not :fqn/:tab).
+    ['/observability/alerts/a1', 'observability-alert', { id: 'a1' }],
+  ];
+  it.each(redirectCases)('redirects %s to %s', (path, name, params) => {
+    const resolved = resolveRedirect(path);
+    expect(resolved.name).toBe(name);
+    expect(resolved.params).toMatchObject(params);
+  });
+
+  it('sends the deleted redirect shapes to the catch-all', () => {
+    // The govern/workflows/:fqn/:tab and workflows/:fqn/:tab redirect
+    // records were deleted deliberately in the merge, and the bare
+    // /announcements shapes never gained redirect records (their
+    // canonical records live under /settings/notifications/...): all
+    // four paths must 404 via the catch-all, not redirect.
+    for (const path of [
+      '/govern/workflows/w1/whatever',
+      '/workflows/w1/whatever',
+      '/announcements',
+      '/announcements/duplicate/42',
+    ]) {
+      expect(router.resolve(path).name).toBe('not-found');
+    }
+  });
+
+  const cases: Array<[path: string, name: string, params?: Record<string, string>]> = [
+    // 02 members faces (pin SettingsRouter.tsx:672-714, 903-918).
+    // The path resolves to the first-registered record, admin-team
+    // (canonical manifest); settings-members-team is reached by name via
+    // the /settings/members/teams redirect, asserted in redirectCases.
+    ['/settings/members/teams/Eng', 'admin-team', { id: 'Eng' }],
+    ['/settings/members/teams/Eng/import', 'settings-members-team-import', { fqn: 'Eng' }],
+    // The static admin-users record wins over the :tab route for this path.
+    ['/settings/members/users', 'admin-users', {}],
+    // The static admin-admins record wins over the :tab route for this path.
+    ['/settings/members/admins', 'admin-admins', {}],
+    // The path is registered twice deliberately; the first record,
+    // insights-online-users, wins path resolution.
+    ['/settings/members/online-users', 'insights-online-users', {}],
+    // The settings-bots record was dropped as a duplicate path of admin-bots.
+    ['/settings/bots', 'admin-bots', {}],
+    // 02/10 top-level faces (staged contract: old admin-* routes stay).
+    ['/users/alice', 'user-detail', { fqn: 'alice' }],
+    ['/users/alice/activity', 'user-detail', { fqn: 'alice', tab: 'activity' }],
+    ['/users/alice/activity/all', 'user-detail', { fqn: 'alice', tab: 'activity', subTab: 'all' }],
+    ['/users/registrationConfirmation', 'registration-confirmation', {}],
+    ['/bots/b1', 'bot-detail', { fqn: 'b1' }],
+    ['/create-user', 'create-user', {}],
+    ['/create-user/bot', 'create-user-bot', {}],
+    // 03 access faces: add routes + :fqn segments.
+    ['/admin/roles/add', 'admin-role-add', {}],
+    ['/settings/access/roles/r1', 'admin-role', { id: 'r1' }],
+    ['/admin/policies/add', 'admin-policy-add', {}],
+    ['/settings/access/policies/p1', 'admin-policy', { id: 'p1' }],
+    ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { id: 'p1' }],
+    ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { id: 'p1', ruleName: 'r1' }],
+    // 08 admin-app :fqn.
+    ['/settings/apps/a1', 'admin-app', { id: 'a1' }],
+    // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
+    ['/settings/governance/workflow-definitions/w1', 'workflow-detail', { fqn: 'w1' }],
+    // Same canonical record, distinct fqn so the case title stays unique.
+    ['/settings/governance/workflow-definitions/w2', 'workflow-detail', { fqn: 'w2' }],
+    // 07 notifications table (pin constants.ts:318-334).
+    // The settings-notification-alert(s) records were dropped; HEAD's
+    // canonical observability-alerts / observability-alert records win.
+    ['/settings/notifications/alerts', 'observability-alerts', {}],
+    ['/settings/notifications/alerts/a1', 'observability-alert', { id: 'a1' }],
+    ['/settings/notifications/add-notification', 'settings-notification-alert-add', {}],
+    ['/settings/notifications/edit-notification/a1', 'settings-notification-alert-edit', { fqn: 'a1' }],
+    // (The legacy /observability/alert(s) list/detail shapes are
+    // asserted as 404s in the catch-all test below.)
+    ['/observability/alerts/add', 'observability-alert-add', {}],
+    ['/observability/alerts/edit/a1', 'observability-alert-edit', { fqn: 'a1' }],
+    // The settings-notification-announcements record was dropped; HEAD's
+    // canonical announcements record wins the path.
+    ['/settings/notifications/announcements', 'announcements', {}],
+    ['/settings/notifications/announcements/add', 'settings-notification-announcement-add', {}],
+    ['/settings/notifications/announcements/edit/42', 'settings-notification-announcement-edit', { id: '42' }],
+    // The settings-notification-announcement-duplicate record was dropped;
+    // HEAD's canonical announcement-duplicate record wins the path.
+    [
+      '/settings/notifications/announcements/duplicate/42',
+      'announcement-duplicate',
+      { id: '42' },
+    ],
+  ];
+  it.each(cases)('resolves %s to %s', (path, name, params) => {
+    const resolved = router.resolve(path);
+    expect(resolved.name).toBe(name);
+    if (params) {
+      expect(resolved.params).toMatchObject(params);
+    }
+  });
+
+  it('sends the dropped legacy observability and :tab detail shapes to the catch-all', () => {
+    // No /observability/alerts list record and no singular
+    // /observability/alert/:fqn record survive the merge (the canonical
+    // list/detail live under /settings/notifications/alerts, and only the
+    // plural /observability/alerts/:id redirect exists), and the
+    // :tab-suffixed alert detail shape was dropped with the sections
+    // :tab record — all four paths must 404.
+    for (const path of [
+      '/observability/alerts',
+      '/observability/alert/a1',
+      '/observability/alert/a1/recentEvents',
+      '/settings/notifications/alerts/a1/diagnostic-info',
+    ]) {
+      expect(router.resolve(path).name).toBe('not-found');
+    }
+  });
+
+  it('registers each new path exactly once', () => {
+    const paths = router.getRoutes().map((route) => route.path);
+    for (const path of [
+      '/settings/members/teams',
+      '/settings/members/teams/:fqn',
+      '/settings/members/teams/:fqn/import',
+      // '/settings/members/online-users' is intentionally registered
+      // twice (insights-online-users + settings-members-online-users share
+      // the path; first registration wins), so it is excluded here.
+      '/settings/members/:tab',
+      '/settings/bots',
+      '/users/:fqn/:tab?/:subTab?',
+      '/bots/:fqn',
+      '/create-user',
+      '/create-user/bot',
+      '/admin/roles/add',
+      '/admin/policies/add',
+      '/settings/notifications/alerts',
+      '/settings/notifications/add-notification',
+      '/settings/notifications/edit-notification/:fqn',
+      '/settings/notifications/alerts/:id',
+      '/settings/notifications/announcements',
+      '/settings/notifications/announcements/add',
+      '/settings/notifications/announcements/edit/:id',
+      '/settings/notifications/announcements/duplicate/:id',
+      // The sections :tab detail record was dropped; the surviving
+      // redirect record for the legacy plural detail shape:
+      '/observability/alerts/:id',
+      '/observability/alerts/add',
+      '/observability/alerts/edit/:fqn',
+    ]) {
+      expect(paths.filter((candidate) => candidate === path).length, path).toBe(1);
+    }
+  });
+
+  it('wires the members :tab guard onto the :tab route', () => {
+    const record = router.getRoutes().find((route) => route.name === 'settings-members');
+    const guards = Array.isArray(record?.beforeEnter) ? record.beforeEnter : [record?.beforeEnter];
+    expect(guards).toContain(membersTabGuard);
   });
 });

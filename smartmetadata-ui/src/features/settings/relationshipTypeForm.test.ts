@@ -174,10 +174,49 @@ describe('relationshipTypeForm', () => {
   it('rejects a duplicate predicate from another type, but not its own', () => {
     expect(
       validateRelationshipTypeForm(form(), undefined, [EXISTING], t).rdfPredicate,
-    ).toBeDefined();
+    ).toBe('settings.glossaryTermRelations.rdfPredicateAlreadyUsed:{"name":"Is A"}');
     expect(
       validateRelationshipTypeForm(form(), EXISTING, [EXISTING], t).rdfPredicate,
     ).toBeUndefined();
+  });
+
+  it('tests the IRI pattern against the untrimmed predicate', () => {
+    // A predicate that only passes once trimmed fails official's
+    // pattern, which runs on the raw value.
+    expect(
+      validateRelationshipTypeForm(
+        form({ rdfPredicate: ' http://example.test/isA ' }),
+        undefined,
+        [],
+        t,
+      ).rdfPredicate,
+    ).toBe('settings.glossaryTermRelations.invalidUrl');
+  });
+
+  it('lets the duplicate check overwrite the pattern error', () => {
+    // Raw value fails the pattern AND its trimmed form duplicates a
+    // stored predicate: the duplicate message wins, per official's
+    // independent second check.
+    expect(
+      validateRelationshipTypeForm(
+        form({ rdfPredicate: ' http://example.test/isA ' }),
+        undefined,
+        [EXISTING],
+        t,
+      ).rdfPredicate,
+    ).toBe('settings.glossaryTermRelations.rdfPredicateAlreadyUsed:{"name":"Is A"}');
+  });
+
+  it('carries the stored displayName with no name fallback in the duplicate message', () => {
+    const unnamed: RelationshipType = {
+      id: 'r9',
+      name: 'nameless',
+      rdfPredicate: 'http://example.test/isA',
+      characteristics: [],
+    };
+    expect(
+      validateRelationshipTypeForm(form(), undefined, [unnamed], t).rdfPredicate,
+    ).toBe('settings.glossaryTermRelations.rdfPredicateAlreadyUsed:{}');
   });
 
   it('rejects opposing symmetry and functional cardinality violations', () => {

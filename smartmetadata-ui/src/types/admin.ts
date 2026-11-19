@@ -18,6 +18,36 @@ export interface Paged<T> {
 
 export type IncludeFilter = 'non-deleted' | 'deleted' | 'all';
 
+/**
+ * An entity reference that also carries the two fields the pin reads on
+ * reference arrays in the Members surfaces: `deleted` (teams display
+ * filters deleted teams; roles/policies lists) and `description`
+ * (RolesAndPoliciesList description column). The base EntityRef drops
+ * both, so Members maps its reference arrays through
+ * `mapAdminEntityRefs` (api/users.ts) instead of `mapEntityRefs`.
+ * Pin: openmetadata-ui/.../generated/entity/teams/{team,user}.ts —
+ * EntityReference carries deleted + description.
+ */
+export interface AdminEntityRef extends EntityRef {
+  deleted?: boolean;
+  description?: string;
+}
+
+/** Profile shape carried by teams and users (images + subscription). */
+export interface AdminProfile {
+  images?: {
+    image?: string;
+    image24?: string;
+    image32?: string;
+    image48?: string;
+    image72?: string;
+    image192?: string;
+    image512?: string;
+  };
+  /** Single-key object keyed by messaging provider (msTeams/slack/gChat/generic). */
+  subscription?: Record<string, { endpoint?: string } | undefined>;
+}
+
 export interface AdminUser {
   id: string;
   name: string;
@@ -27,13 +57,34 @@ export interface AdminUser {
   isAdmin?: boolean;
   isBot?: boolean;
   deleted?: boolean;
+  fullyQualifiedName?: string;
+  /** Pin User.allowImpersonation; the bot detail page reads it from the bot user. */
+  allowImpersonation?: boolean;
+  profile?: AdminProfile;
+  /** Only read with fields=personas. */
+  personas?: AdminEntityRef[];
+  /** Only read with fields=roles (inherited roles, separate from direct roles). */
+  inheritedRoles?: AdminEntityRef[];
+  inheritedPersonas?: AdminEntityRef[];
+  /** Only read with fields=domains. */
+  domains?: AdminEntityRef[];
+  /** Only read with fields=defaultPersona. */
+  defaultPersona?: AdminEntityRef;
+  /** Custom properties extension, only read with fields=extension. */
+  extension?: Record<string, unknown>;
   /** Official OnlineUsers fields; absent for users from other endpoints. */
   lastLoginTime?: number;
   lastActivityTime?: number;
   /** Pages the user follows (only read with fields=follows). */
-  follows?: EntityRef[];
-  teams: EntityRef[];
-  roles: EntityRef[];
+  follows?: AdminEntityRef[];
+  teams: AdminEntityRef[];
+  roles: AdminEntityRef[];
+}
+
+/** Minimal entity-reference input for create payloads (pin EntityReference). */
+export interface EntityReferenceInput {
+  id: string;
+  type: string;
 }
 
 export interface CreateUserRequest {
@@ -48,6 +99,19 @@ export interface CreateUserRequest {
   createPasswordType?: 'ADMIN_CREATE' | 'USER_CREATE';
   teams?: string[];
   roles?: string[];
+  /** Persona references (pin CreateUser.personas: EntityReference[]). */
+  personas?: EntityReferenceInput[];
+  /** Domain fully-qualified names (pin sends FQN strings, not ids). */
+  domains?: string[];
+  /** Bot branch only: the bot this user belongs to (pin CreateUser.botName). */
+  botName?: string;
+  /** Bot branch only: JWT mechanism config (pin CreateUser.authenticationMechanism). */
+  authenticationMechanism?: {
+    authType: string;
+    config: { JWTTokenExpiry?: JwtTokenExpiry };
+  };
+  /** Bot branch only: admin-gated impersonation flag (top-level body field). */
+  allowImpersonation?: boolean;
 }
 
 export interface AdminTeam {
@@ -58,22 +122,47 @@ export interface AdminTeam {
   teamType: string;
   isJoinable?: boolean;
   deleted?: boolean;
+  fullyQualifiedName?: string;
+  email?: string;
   userCount?: number;
-  users: EntityRef[];
-  defaultRoles: EntityRef[];
-  parents: EntityRef[];
-  policies: EntityRef[];
+  /** Only read with fields=childrenCount. */
+  childrenCount?: number;
+  profile?: AdminProfile;
+  /** Only read with fields=owners. */
+  owners?: AdminEntityRef[];
+  /** Only read with fields=domains. */
+  domains?: AdminEntityRef[];
+  /** Only read with fields=defaultPersona. */
+  defaultPersona?: AdminEntityRef;
+  /** Only read with fields=descendantTeams. */
+  descendantTeams?: AdminEntityRef[];
+  /** Custom properties extension, only read with fields=extension. */
+  extension?: Record<string, unknown>;
+  /** Hierarchy children, grafted locally by the hierarchy list (pin TeamHierarchy). */
+  children?: AdminTeam[];
+  users: AdminEntityRef[];
+  defaultRoles: AdminEntityRef[];
+  parents: AdminEntityRef[];
+  policies: AdminEntityRef[];
 }
 
+/**
+ * Form-supplied create-team fields only (7). The pin create payload has
+ * exactly 8 fields (TeamsPage.tsx:369-399): these 7 plus `parents`,
+ * which is NOT a form field — it is constructed by `createTeam` from
+ * the parent team id as `[selectedTeam.id]` when a parent is selected.
+ * P3 deletes the former form fields `defaultRoles`, multi-`parents`
+ * selection and `users`: the form never sends them.
+ */
 export interface CreateTeamRequest {
   name: string;
   teamType: string;
   displayName?: string;
   description?: string;
+  email?: string;
+  /** Domain fully-qualified names (pin sends FQN strings, not ids). */
+  domains?: string[];
   isJoinable?: boolean;
-  parents?: string[];
-  defaultRoles?: string[];
-  users?: string[];
 }
 
 export interface AdminRole {
@@ -82,9 +171,11 @@ export interface AdminRole {
   displayName?: string;
   description?: string;
   deleted?: boolean;
-  policies: EntityRef[];
-  users: EntityRef[];
-  teams: EntityRef[];
+  /** Entity FQN, carried verbatim from the response (03 §2.1); never derived from name. */
+  fullyQualifiedName?: string;
+  policies: AdminEntityRef[];
+  users: AdminEntityRef[];
+  teams: AdminEntityRef[];
 }
 
 export interface PolicyRule {
@@ -104,9 +195,11 @@ export interface AdminPolicy {
   description?: string;
   enabled?: boolean;
   deleted?: boolean;
-  owners: EntityRef[];
-  teams: EntityRef[];
-  roles: EntityRef[];
+  /** Entity FQN, carried verbatim from the response (03 §2.1); never derived from name. */
+  fullyQualifiedName?: string;
+  owners: AdminEntityRef[];
+  teams: AdminEntityRef[];
+  roles: AdminEntityRef[];
   rules: PolicyRule[];
 }
 
@@ -117,6 +210,19 @@ export interface AdminBot {
   description?: string;
   deleted?: boolean;
   botUser?: EntityRef;
+  /** Generated-Bot fields (B30 fold of the bots.ts BotRecord extension). */
+  fullyQualifiedName?: string;
+  provider?: string;
+  domains?: EntityRef[];
+  updatedAt?: number;
+  updatedBy?: string;
+  version?: number;
+  /**
+   * Carried from the response when present (official `CreateBot`
+   * carries it; the detail page reads the impersonation flag from the
+   * bot user, not from here).
+   */
+  allowImpersonation?: boolean;
 }
 
 export interface CreateBotRequest {
@@ -155,6 +261,13 @@ export interface CreatePolicyRequest {
 }
 
 /** Apache App list/detail (GET /v1/apps). No marketplace invent. */
+/**
+ * Official generated/entity/applications/app.ts (pin a3012259ca). AppType
+ * values are lowercase ('external' / 'internal'); ScheduleType values are
+ * the capitalized enum names. Fields beyond the original shell subset were
+ * added by the settings-sections Applications batch; all are optional
+ * except id/name so existing producers keep compiling unchanged.
+ */
 export interface AdminApp {
   id: string;
   name: string;
@@ -164,6 +277,31 @@ export interface AdminApp {
   appType?: string;
   scheduleType?: string;
   fullyQualifiedName?: string;
+  href?: string;
+  version?: number;
+  enabled?: boolean;
+  developer?: string;
+  developerUrl?: string;
+  appSchedule?: AppSchedule;
+  appConfiguration?: Record<string, unknown>;
+  supportsInterrupt?: boolean;
+  supportsIngestionRunner?: boolean;
+  system?: boolean;
+  allowConfiguration?: boolean;
+  updatedAt?: number;
+  updatedBy?: string;
+  pipelines?: EntityRef[];
+  owners?: EntityRef[];
+  ingestionRunner?: EntityRef;
+  appScreenshots?: string[];
+  bot?: EntityRef;
+  domains?: EntityRef[];
+}
+
+/** Official generated/entity/applications/appSchedule.ts. */
+export interface AppSchedule {
+  cronExpression?: string;
+  scheduleTimeline?: string;
 }
 
 export interface AuthConfiguration {
@@ -441,6 +579,9 @@ export interface SystemValidationResponse {
   jwks?: StepValidation;
   migrations?: StepValidation;
   logStorage?: StepValidation;
+  // Official ValidationResponse carries `[property: string]: any` and
+  // OmHealthPage maps over every key; unknown checks must survive.
+  [key: string]: StepValidation | undefined;
 }
 
 export interface DataQualityDimension {

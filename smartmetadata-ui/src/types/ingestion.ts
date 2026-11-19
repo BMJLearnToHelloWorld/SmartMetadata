@@ -456,6 +456,12 @@ export interface CatalogService {
   testConnectionResult?: TestConnectionResult;
   /** Soft-deleted flag; the detail shell renders its deleted Tag from this. */
   deleted?: boolean;
+  /**
+   * Display style (pin ServicesType.style); the logo resolver reads
+   * `style.iconURL` first (01-services.md §2.2). Mappers pass it through
+   * verbatim; it is never written by the service pages.
+   */
+  style?: EntityStyle;
 }
 
 /** One step of a stored TestConnectionResult. */
@@ -726,6 +732,8 @@ export interface CreateDatabaseServiceRequest {
   serviceType: string;
   displayName?: string;
   description?: string;
+  /** Pin getServiceConfigData owners: [{id: userId, type: 'user'}] (wizard create only). */
+  owners?: Array<{ id: string; type: string }>;
   connection?: ServiceConnection;
 }
 

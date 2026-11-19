@@ -9,8 +9,14 @@
  */
 
 import { getLimitConfig, type LimitConfig } from '@/api/limits';
-import { fetchServerVersion, getTypedSetting, settingAsLineage } from '@/api/system';
-import type { LineageSettings } from '@/types/admin';
+import {
+  fetchServerVersion,
+  getCustomUiThemePreference,
+  getTypedSetting,
+  settingAsLineage,
+  settingAsUiTheme,
+} from '@/api/system';
+import type { LineageSettings, UiThemePreference } from '@/types/admin';
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
@@ -21,9 +27,13 @@ import { computed, ref } from 'vue';
  *
  * Wired: GET /v1/system/version (the `-SNAPSHOT` suffix is stripped,
  * matching the official getVersion handling) with a 1-hour cache, GET
- * /v1/system/settings/lineageSettings for lineage configuration, and
- * GET /v1/limits/config for the limit configuration that LimitWrapper
- * gates creation entries on (LimitsResource @Path /v1/limits).
+ * /v1/system/settings/lineageSettings for lineage configuration, GET
+ * /v1/system/config/customUiThemePreference for the custom UI theme
+ * preference (P-THEME startup read through the public config endpoint,
+ * so the theme applies to every user; a failed read leaves the slice null
+ * and the iSmart defaults apply), and GET /v1/limits/config for the
+ * limit configuration that LimitWrapper gates creation entries on
+ * (LimitsResource @Path /v1/limits).
  * Residual: the official version-mismatch alert is not wired — this
  * console has no client version constant to compare the server version
  * against. A failed limit fetch leaves `limit` null, which LimitWrapper
@@ -44,6 +54,33 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
   const lineageSettings = ref<LineageSettings | null>(null);
   const lineageLoading = ref(false);
   const lineageError = ref('');
+  /**
+   * Custom UI theme preference (P-THEME slice). Null until loaded or
+   * when the fetch fails; App.vue treats null as "no customization"
+   * and the iSmart defaults apply. The stored value is the whitelist
+   * display form (settingAsUiTheme); the Appearance page keeps the
+   * raw snapshot for its R-THEME overlay save, and hands the saved
+   * payload to setUiThemePreference on success (Q-TH-5: direct
+   * update with this payload, no reload; on failure the slice is
+   * untouched).
+   */
+  const uiThemePreference = ref<UiThemePreference | null>(null);
+  const uiThemeLoading = ref(false);
+  const uiThemeError = ref('');
+
+  /**
+   * P-TIME (bounded): the tenant default time format, updated only by the
+   * Time Format page after its PATCH succeeds — mirroring official's
+   * `setTimeFormat` call point in DefaultTimeFormatPage. No startup load
+   * and no consumers yet: global date-rendering consumption is a
+   * recorded residual, never claimed closed. `undefined` means the
+   * official 12h default.
+   */
+  const timeFormat = ref<'12h' | '24h' | undefined>(undefined);
+
+  function setTimeFormat(next: '12h' | '24h'): void {
+    timeFormat.value = next;
+  }
   /** Limit configuration from GET /v1/limits/config; null until loaded or when the fetch fails. */
   const limit = ref<LimitConfig | null>(null);
   const limitLoading = ref(false);
@@ -108,8 +145,56 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     }
   }
 
+  /**
+   * Direct slice update from a save response (Lineage 8.9 seam): the
+   * Lineage canvas watches this slice, so a successful save refreshes
+   * the canvas defaults without a refetch. Mirrors the official
+   * setAppPreferences({ lineageConfig }) update on save.
+   */
+  function setLineageSettings(next: LineageSettings): void {
+    lineageSettings.value = next;
+  }
+
+  async function loadUiThemePreference(): Promise<void> {
+    uiThemeLoading.value = true;
+    uiThemeError.value = '';
+    try {
+      // The public-endpoint semantics live with getCustomUiThemePreference.
+      uiThemePreference.value = await getCustomUiThemePreference();
+    } catch (error) {
+      // Fail-open by design: a failed theme read must not break shell
+      // startup; null keeps the iSmart defaults in effect.
+      uiThemeError.value = error instanceof Error ? error.message : 'Failed to load UI theme preference';
+    } finally {
+      uiThemeLoading.value = false;
+    }
+  }
+
+  /**
+   * Q-TH-5: on a successful Appearance save/reset, update this slice
+   * directly with the saved payload (parsed through the same display
+   * whitelist as the startup read). Never called on failure.
+   */
+  function setUiThemePreference(payload: unknown): void {
+    uiThemePreference.value = settingAsUiTheme(payload);
+  }
+
   async function loadLimitConfig(): Promise<void> {
     if (limitLoading.value || limit.value) {
+      return;
+    }
+    await refreshLimitConfig();
+  }
+
+  /**
+   * Force-refresh the limit configuration, bypassing the load-once guard.
+   * Pin calls `getResourceLimit('app', true, true)` after app install /
+   * uninstall so the creation gate re-evaluates against fresh counts
+   * (Applications §1.5); the load-once entry cannot express that.
+   * Fail-open semantics are identical to loadLimitConfig.
+   */
+  async function refreshLimitConfig(): Promise<void> {
+    if (limitLoading.value) {
       return;
     }
     limitLoading.value = true;
@@ -117,9 +202,6 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     try {
       limit.value = await getLimitConfig();
     } catch (error) {
-      // Fail-open by design: LimitWrapper renders its children when
-      // `limit` is null, so a failed config fetch must not break shell
-      // startup or any gated entry.
       limitError.value = error instanceof Error ? error.message : 'Failed to load limit config';
     } finally {
       limitLoading.value = false;
@@ -128,7 +210,7 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
 
   async function loadShellConfig(): Promise<void> {
     hydrateVersionCache();
-    await Promise.all([loadVersion(), loadLineageSettings(), loadLimitConfig()]);
+    await Promise.all([loadVersion(), loadLineageSettings(), loadUiThemePreference(), loadLimitConfig()]);
   }
 
   return {
@@ -139,13 +221,22 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     lineageSettings,
     lineageLoading,
     lineageError,
+    uiThemePreference,
+    uiThemeLoading,
+    uiThemeError,
+    timeFormat,
     limit,
     limitLoading,
     limitError,
     hydrateVersionCache,
     loadVersion,
     loadLineageSettings,
+    setLineageSettings,
+    loadUiThemePreference,
+    setUiThemePreference,
+    setTimeFormat,
     loadLimitConfig,
+    refreshLimitConfig,
     loadShellConfig,
   };
 });

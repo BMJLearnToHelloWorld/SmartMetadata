@@ -30,7 +30,9 @@ export interface Persona {
 /**
  * Official CreatePersona (api/teams/createPersona.json): only name is
  * required. Users travel as user ids, exactly as the official
- * AddEditPersona submit maps selected users to their ids.
+ * AddEditPersona submit maps selected users to their ids. `domains`
+ * and `contextDefinition` are type-level only (PER-A4): no persona
+ * surface in this partition sends them (PER-D12).
  */
 export interface CreatePersonaRequest {
   name: string;
@@ -38,7 +40,70 @@ export interface CreatePersonaRequest {
   description?: string;
   users?: string[];
   default?: boolean;
+  domains?: string[];
+  contextDefinition?: PersonaContextDefinition;
 }
+
+/**
+ * Official PersonaContextDefinition (generated/api/teams/createPersona.ts):
+ * rules and settings used to materialize the shared AI context for a
+ * persona. This is the generated shape, not the Context Center editor's
+ * `PersonaAiContext` form shape; no same-name definition exists in the
+ * product, so this is the single definition.
+ */
+export interface PersonaContextDefinition {
+  cacheState?: CacheState;
+  cacheTtlMinutes?: number;
+  characterBudget?: number;
+  enabled?: boolean;
+  lastError?: string;
+  lastGeneratedAt?: number;
+  prompt?: string;
+  rules?: ContextRule[];
+}
+
+/** Official CacheState (generated/api/teams/createPersona.ts). */
+export type CacheState = 'FAILED' | 'FRESH' | 'GENERATING' | 'STALE';
+
+/** Official ContextRule (generated/api/teams/createPersona.ts). */
+export interface ContextRule {
+  alwaysInContext?: boolean;
+  description?: string;
+  enabled?: boolean;
+  entityType: string;
+  filteredInSearch?: boolean;
+  filterJsonTree?: string;
+  fullyRendered?: boolean;
+  id?: string;
+  matchedCount?: number;
+  maxAssets?: number;
+  name: string;
+  queryFilter?: string;
+  sections?: ContextSection[];
+}
+
+/** Official ContextSection (generated/api/teams/createPersona.ts). */
+export type ContextSection =
+  | 'articles'
+  | 'constraints'
+  | 'dataQuality'
+  | 'definition'
+  | 'description'
+  | 'formulaExpression'
+  | 'fullBody'
+  | 'glossaryTerms'
+  | 'joins'
+  | 'lineage'
+  | 'metrics'
+  | 'owner'
+  | 'profile'
+  | 'relatedAssets'
+  | 'relatedTerms'
+  | 'schema'
+  | 'synonyms'
+  | 'tags'
+  | 'titleSummary'
+  | 'unitGrain';
 
 export type PageViewMode = 'table' | 'card' | 'tree';
 

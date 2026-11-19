@@ -2181,8 +2181,8 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   // (mcp/mcpConnection: all optional) and Ranger
   // (security/rangerConnection: hostPort + authType required).
   // Non-default types in these kinds still have no group: the wizard
-  // must not offer them a silent undefined connection (see
-  // hasConnectionForm, used by AddServiceView to block creation).
+  // must not offer them a silent undefined connection
+  // (connectionFieldsForType returns no fields for them).
   {
     types: ['Rest'],
     // Pin restConnection.json: openAPISchemaConnection, token, docURL,
@@ -2714,11 +2714,6 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     ],
   },
 ];
-
-/** True when the type has a connection form; false means the wizard must not create with it. */
-export function hasConnectionForm(serviceType: string): boolean {
-  return connectionFieldsForType(serviceType).length > 0;
-}
 
 export function connectionFieldsForType(serviceType: string): readonly ConnectionFieldDef[] {
   return CONNECTION_FIELD_GROUPS.find((group) => group.types.includes(serviceType))?.fields ?? [];

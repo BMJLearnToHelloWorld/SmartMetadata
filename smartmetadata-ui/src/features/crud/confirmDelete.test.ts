@@ -38,6 +38,30 @@ describe('confirmDelete', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
+  it('passes a caller width through to Modal.confirm and omits it otherwise', async () => {
+    const widths: Array<number | undefined> = [];
+    vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
+      widths.push(config.width as number | undefined);
+      void Promise.resolve(config.onCancel?.());
+      return { destroy: vi.fn(), update: vi.fn() } as never;
+    });
+
+    await confirmDelete({
+      title: 'Delete',
+      content: 'Are you sure?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      width: 480,
+    });
+    await confirmDelete({
+      title: 'Delete',
+      content: 'Are you sure?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
+    });
+    expect(widths).toEqual([480, undefined]);
+  });
+
   it('resolves false when the confirm is cancelled', async () => {
     vi.spyOn(Modal, 'confirm').mockImplementation((config) => {
       void Promise.resolve(config.onCancel?.());

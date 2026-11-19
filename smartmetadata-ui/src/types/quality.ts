@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { EntityRef } from './api';
+import type { EntityReferenceInput } from './admin';
 
 export const TEST_DEFINITION_ENTITY_TYPES = ['TABLE', 'COLUMN'] as const;
 export type TestDefinitionEntityType = (typeof TEST_DEFINITION_ENTITY_TYPES)[number];
@@ -28,7 +29,19 @@ export type TestCaseStatus = (typeof TEST_CASE_STATUSES)[number];
 export const INCIDENT_STATUSES = ['New', 'Ack', 'Assigned', 'Resolved'] as const;
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 
-export const ALERT_TYPES = ['Notification', 'Observability'] as const;
+/**
+ * All five pin alert types (generated/events/eventSubscription.ts:128-134).
+ * The two settings/observability faces only ever use Notification and
+ * Observability; the other three exist on stored alerts and in list
+ * parameters, so the wire union keeps them.
+ */
+export const ALERT_TYPES = [
+  'ActivityFeed',
+  'Custom',
+  'GovernanceWorkflowChangeEvent',
+  'Notification',
+  'Observability',
+] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 
 export interface TestParameterDefinition {
@@ -202,59 +215,238 @@ export interface CreateTestIncidentRequest {
   };
 }
 
-export interface EventSubscriptionDestination {
-  category?: string;
-  type?: string;
-  enabled?: boolean;
+/**
+ * Wire schema for EventSubscription, ported from the pin generated types
+ * (generated/events/eventSubscription.ts). Fields stay optional per the
+ * product mapper convention: the mapper reads unknown JSON and must not
+ * assert presence the server does not guarantee. Pin marks category/type
+ * on Destination and condition/effect on EventFilterRule required; the
+ * form validation (not the type) guarantees them at save time.
+ */
+
+/** SubscriptionCategory (eventSubscription.ts:249-258). */
+export const SUBSCRIPTION_CATEGORIES = [
+  'Admins',
+  'Assignees',
+  'External',
+  'Followers',
+  'Mentions',
+  'Owners',
+  'Teams',
+  'Users',
+] as const;
+export type SubscriptionCategory = (typeof SUBSCRIPTION_CATEGORIES)[number];
+
+/**
+ * SubscriptionType (eventSubscription.ts:470-478). The wire value for Teams
+ * is `MsTeams` (pin enum member MSTeams) — never `MSTeams` on the wire.
+ */
+export const SUBSCRIPTION_TYPES = [
+  'ActivityFeed',
+  'Email',
+  'GChat',
+  'GovernanceWorkflowChangeEvent',
+  'MsTeams',
+  'Slack',
+  'Webhook',
+] as const;
+export type SubscriptionType = (typeof SUBSCRIPTION_TYPES)[number];
+
+/** ProviderType wire values are lowercase (eventSubscription.ts:674-678). */
+export type ProviderType = 'automation' | 'system' | 'user';
+
+/** Effect (eventSubscription.ts:598-601). */
+export type Effect = 'exclude' | 'include';
+
+/** InputType (eventSubscription.ts:603-607). */
+export type InputType = 'none' | 'runtime' | 'static';
+
+/** PrefixCondition (eventSubscription.ts:614-617). */
+export type PrefixCondition = 'AND' | 'OR';
+
+/** SourceKind (alertCapabilities.ts:167-171). */
+export type SourceKind = 'activity' | 'all' | 'entity';
+
+/** HTTPMethod (eventSubscription.ts:364-367). */
+export type HttpMethod = 'POST' | 'PUT';
+
+/** Webhook auth discriminator (eventSubscription.ts:355-359). */
+export type WebhookAuthType = 'bearer' | 'none' | 'oauth2';
+
+/** Destination status values (eventSubscription.ts:457-465). */
+export type DestinationStatusValue =
+  | 'active'
+  | 'awaitingRetry'
+  | 'disabled'
+  | 'failed'
+  | 'retryLimitReached'
+  | 'Failed'
+  | 'Success';
+
+/** AuthenticationConfigurationType (eventSubscription.ts:324-350). */
+export interface WebhookAuthConfig {
+  /** Pin requires the discriminator; the mapper leaves it unset when absent. */
+  type?: WebhookAuthType;
+  secretKey?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  tokenUrl?: string;
+}
+
+/**
+ * Webhook config (eventSubscription.ts:267-312). The index signature is
+ * pin's: a generic map deserialized later, so unknown keys survive.
+ */
+export interface WebhookDestinationConfig {
+  authType?: WebhookAuthConfig;
   endpoint?: string;
-  /** Seconds the destination waits for a response; official DEFAULT_READ_TIMEOUT = 12. */
+  headers?: Record<string, unknown>;
+  httpMethod?: HttpMethod;
+  queryParams?: Record<string, unknown>;
+  receivers?: string[];
+  sendToAdmins?: boolean;
+  sendToFollowers?: boolean;
+  sendToOwners?: boolean;
+  [key: string]: unknown;
+}
+
+/** Destination status (pin TionStatus, eventSubscription.ts:376-444). */
+export interface DestinationStatus {
+  lastFailedAt?: number;
+  lastFailedReason?: string;
+  lastFailedStatusCode?: number;
+  lastSuccessfulAt?: number;
+  nextAttempt?: number;
+  status?: DestinationStatusValue;
+  timestamp?: number;
+  entity?: string;
+  headers?: unknown;
+  location?: string;
+  mediaType?: string;
+  reason?: string;
+  statusCode?: number;
+  statusInfo?: string;
+}
+
+/** Destination (eventSubscription.ts:206-244). */
+export interface EventSubscriptionDestination {
+  category?: SubscriptionCategory;
+  channel?: string;
+  config?: WebhookDestinationConfig;
+  downstreamDepth?: number | null;
+  enabled?: boolean;
+  id?: string;
+  notifyDownstream?: boolean;
   readTimeout?: number;
+  statusDetails?: DestinationStatus;
+  timeout?: number;
+  type?: SubscriptionType;
 }
 
+/** EventFilterRule (eventSubscription.ts:564-596). `condition` is a string. */
 export interface EventSubscriptionFilterRule {
+  arguments?: string[];
+  condition?: string;
+  description?: string;
+  displayName?: string;
+  effect?: Effect;
+  fullyQualifiedName?: string;
+  inputType?: InputType;
   name?: string;
-  effect?: string;
-  condition?: string | string[];
+  prefixCondition?: PrefixCondition;
 }
 
+/** FilteringRules (eventSubscription.ts:546-559). */
 export interface EventSubscriptionFilteringRules {
+  actions?: EventSubscriptionFilterRule[];
   resources?: string[];
   rules?: EventSubscriptionFilterRule[];
 }
 
+/** AlertFilteringInput (eventSubscription.ts:624-633). */
+export interface AlertFilteringInput {
+  actions?: ArgumentsInput[];
+  filters?: ArgumentsInput[];
+}
+
+/** ArgumentsInput (eventSubscription.ts:638-652). */
+export interface ArgumentsInput {
+  arguments?: Argument[];
+  effect?: Effect;
+  name?: string;
+  prefixCondition?: PrefixCondition;
+}
+
+/** Argument (eventSubscription.ts:657-666). */
+export interface Argument {
+  input?: string[];
+  name?: string;
+}
+
+/** Trigger (eventSubscription.ts:685-695) with ScheduleInfo/TriggerType. */
+export type TriggerType = 'RealTime' | 'Scheduled';
+export type ScheduleInfo = 'Custom' | 'Daily' | 'Monthly' | 'Weekly';
+export interface EventSubscriptionTrigger {
+  cronExpression?: string;
+  scheduleInfo?: ScheduleInfo;
+  triggerType?: TriggerType;
+}
+
+/** EventSubscription (eventSubscription.ts:17-121). */
 export interface EventSubscription {
   id: string;
   name: string;
-  displayName?: string;
+  alertType?: AlertType;
+  batchSize?: number;
+  className?: string;
+  config?: Record<string, unknown>;
   description?: string;
-  fullyQualifiedName?: string;
-  alertType?: string;
-  enabled?: boolean;
+  displayName?: string;
   destinations: EventSubscriptionDestination[];
+  domains?: EntityRef[];
+  enabled?: boolean;
   filteringRules?: EventSubscriptionFilteringRules;
+  fullyQualifiedName?: string;
+  href?: string;
+  input?: AlertFilteringInput;
+  notificationTemplate?: EntityRef;
   owners?: EntityRef[];
+  pollInterval?: number;
+  provider?: ProviderType;
+  retries?: number;
+  trigger?: EventSubscriptionTrigger;
+  updatedAt?: number;
+  updatedBy?: string;
+  version?: number;
 }
 
+/**
+ * CreateEventSubscription (generated/events/api/createEventSubscription.ts:16-85).
+ * No `filteringRules` field: the create schema rejects unknown fields, so
+ * sending filteringRules fails the create with a Jackson error; the server
+ * builds the stored filtering rules from the top-level `resources` list.
+ * `domains` are FQN strings here, unlike the EntityRef list on the entity.
+ */
 export interface CreateEventSubscriptionRequest {
   name: string;
-  alertType: AlertType | string;
+  alertType: AlertType;
+  batchSize?: number;
+  className?: string;
+  config?: Record<string, unknown>;
   description?: string;
+  destinations?: EventSubscriptionDestination[];
   displayName?: string;
+  domains?: string[];
   enabled?: boolean;
-  /**
-   * Top-level resources only. The create schema has no filteringRules
-   * field and rejects unknown fields, so sending filteringRules fails
-   * the create with a Jackson error; the server builds the stored
-   * filtering rules from this list instead.
-   */
+  input?: AlertFilteringInput;
+  notificationTemplate?: EntityRef;
+  owners?: EntityReferenceInput[];
+  pollInterval?: number;
+  provider?: ProviderType;
   resources?: string[];
-  destinations: Array<{
-    category: string;
-    type: string;
-    config?: { endpoint?: string };
-    /** Destination-level, beside config — not inside it (see mapper note). */
-    readTimeout?: number;
-  }>;
+  retries?: number;
+  trigger?: EventSubscriptionTrigger;
 }
 
 export interface TableSampleData {

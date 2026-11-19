@@ -47,7 +47,12 @@ const AppsListView = () => import('@/views/admin/AppsListView.vue');
 const CustomPropertyTypeDetailView = () => import('@/views/admin/CustomPropertyTypeDetailView.vue');
 const PoliciesListView = () => import('@/views/admin/PoliciesListView.vue');
 const PolicyDetailView = () => import('@/views/admin/PolicyDetailView.vue');
-const PolicyRuleFormView = () => import('@/views/admin/PolicyRuleFormView.vue');
+const AddPolicyRuleView = () => import('@/views/admin/AddPolicyRuleView.vue');
+const EditPolicyRuleView = () => import('@/views/admin/EditPolicyRuleView.vue');
+const AddRoleView = () => import('@/views/admin/AddRoleView.vue');
+const AddPolicyView = () => import('@/views/admin/AddPolicyView.vue');
+const ImportTeamsPage = () => import('@/views/admin/ImportTeamsPage.vue');
+const CreateUserPage = () => import('@/views/admin/CreateUserPage.vue');
 const PermissionDebuggerView = () => import('@/views/admin/PermissionDebuggerView.vue');
 const AuditLogsView = () => import('@/views/admin/AuditLogsView.vue');
 const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
@@ -72,7 +77,6 @@ const SearchSettingsView = () => import('@/views/admin/SearchSettingsView.vue');
 const TimeFormatSettingsView = () => import('@/views/admin/TimeFormatSettingsView.vue');
 
 const TeamDetailView = () => import('@/views/admin/TeamDetailView.vue');
-const TeamsListView = () => import('@/views/admin/TeamsListView.vue');
 const UserDetailView = () => import('@/views/admin/UserDetailView.vue');
 const UsersListView = () => import('@/views/admin/UsersListView.vue');
 const ClassificationDetailView = () => import('@/views/governance/ClassificationDetailView.vue');
@@ -89,6 +93,7 @@ const GlossaryTermDetailView = () => import('@/views/governance/GlossaryTermDeta
 const TagDetailView = () => import('@/views/governance/TagDetailView.vue');
 const AlertDetailView = () => import('@/views/observability/AlertDetailView.vue');
 const AlertsListView = () => import('@/views/observability/AlertsListView.vue');
+const AlertFormView = () => import('@/views/observability/AlertFormView.vue');
 const IncidentDetailView = () => import('@/views/observability/IncidentDetailView.vue');
 const IncidentsListView = () => import('@/views/observability/IncidentsListView.vue');
 const DataQualityLandingView = () => import('@/views/quality/DataQualityLandingView.vue');
@@ -108,6 +113,7 @@ const AddQueryView = () => import('@/views/AddQueryView.vue');
 const ServicesListView = () => import('@/views/ingestion/ServicesListView.vue');
 const ActivityFeedView = () => import('@/views/collaboration/ActivityFeedView.vue');
 const AnnouncementsListView = () => import('@/views/collaboration/AnnouncementsListView.vue');
+const AnnouncementFormView = () => import('@/views/collaboration/AnnouncementFormView.vue');
 const TaskDetailView = () => import('@/views/collaboration/TaskDetailView.vue');
 const DataAccessRequestsView = () => import('@/views/collaboration/DataAccessRequestsView.vue');
 const DataAccessRequestCreateView = () => import('@/views/collaboration/DataAccessRequestCreateView.vue');
@@ -161,6 +167,7 @@ import {
   evaluateGuardDeclaration,
   guardDeclarationOf,
   guardDeclarationResources,
+  membersTabGuard,
   resolveGuard,
 } from '@/router/guards';
 import { createRouter, createWebHistory } from 'vue-router';
@@ -285,14 +292,37 @@ export const router = createRouter({
         // the partition batch atomically migrates it (DESIGN §4.5);
         // the entry declaration is the pre-migration entry rule.
         { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
-        { path: 'settings/members/teams', name: 'admin-teams', component: TeamsListView, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
+        // 'admin-teams' is deleted (sections batch): the teams list is
+        // reached via the settings-members-teams redirect below.
         { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
         { path: 'settings/access/roles', name: 'admin-roles', component: RolesListView, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
         { path: 'settings/access/roles/:id', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        // 03 §12: the add-role route (sections batch). Unmapped under
+        // the old table, i.e. admin-only by default; the new-system
+        // equivalent is the explicit 'admin-only' declaration — the
+        // view carries no in-view Create gate.
+        { path: 'admin/roles/add', name: 'admin-role-add', component: AddRoleView, meta: { guard: 'admin-only' } },
         { path: 'settings/bots', name: 'admin-bots', component: BotsListView, meta: { guard: { resource: 'BOT', operation: 'view' } } },
         // M1b staged: the old Bot detail keeps its original URL until
         // the partition batch atomically migrates it (DESIGN §4.5).
         { path: 'admin/bots/:id', name: 'admin-bot', component: BotDetailView, props: true, meta: { guard: 'admin-only' } },
+        // Sections batch (02/10, staged contract t363): the final
+        // top-level user/bot/create-user faces. The old admin-* detail
+        // routes above stay this phase with equivalent guards; these
+        // routes close the fqnPaths 404s. Pin: USER_PROFILE* /
+        // BOTS_PROFILE / CREATE_USER* (AuthenticatedAppRouter.tsx:
+        // 505-530). No guard mapping applies: these paths are not
+        // admin paths, so ADMIN_ROUTE_RESOURCE is never consulted
+        // for them (see guards.ts); the create-user Create/ conjunction
+        // gap is recorded in the integration report.
+        {
+          path: 'users/:fqn/:tab?/:subTab?',
+          name: 'user-detail',
+          component: UserDetailView,
+        },
+        { path: 'bots/:fqn', name: 'bot-detail', component: BotDetailView, props: true },
+        { path: 'create-user', name: 'create-user', component: CreateUserPage },
+        { path: 'create-user/bot', name: 'create-user-bot', component: CreateUserPage },
         // G-09 (visual comparison): official SETTINGS '/settings'
         // (SettingsRouter at '/settings/*'). The old admin/settings
         // path and the alias are gone (D-1, product compatibility
@@ -326,7 +356,7 @@ export const router = createRouter({
           path: 'settings/sso',
           name: 'admin-settings-sso',
           component: SsoSettingsView,
-          meta: { titleKey: 'sso.title', guard: 'none' },
+          meta: { titleKey: 'settings.registry.sso.title' },
         },
         { path: 'settings/preferences/appearance', name: 'settings-preferences-appearance', component: AppearanceSettingsView, meta: { guard: 'admin-only' } },
         { path: 'settings/preferences/email', name: 'settings-preferences-email', component: EmailConfigurationView, meta: { guard: 'admin-only' } },
@@ -354,14 +384,19 @@ export const router = createRouter({
 
         { path: 'settings/access/policies', name: 'admin-policies', component: PoliciesListView, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
         { path: 'settings/access/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        // 03 §12: the add-policy route (sections batch). Unmapped under
+        // the old table, i.e. admin-only by default; the new-system
+        // equivalent is the explicit 'admin-only' declaration — the
+        // view carries no in-view Create gate.
+        { path: 'admin/policies/add', name: 'admin-policy-add', component: AddPolicyView, meta: { guard: 'admin-only' } },
         // M1a: the two policy-rule action routes are canonical this
         // stage; :id/:fqn spell the same single-segment pattern and
         // must never be registered twice.
-        { path: 'settings/access/policies/:id/add-rule', name: 'admin-policy-rule-add', component: PolicyRuleFormView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
+        { path: 'settings/access/policies/:id/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
         {
           path: 'settings/access/policies/:id/edit-rule/:ruleName',
           name: 'admin-policy-rule-edit',
-          component: PolicyRuleFormView,
+          component: EditPolicyRuleView,
           props: true,
           meta: { guard: { resource: 'POLICY', operation: 'EditAll' } },
         },
@@ -388,6 +423,83 @@ export const router = createRouter({
           path: 'settings/customProperties/:tab',
           name: 'admin-settings-custom-property-type',
           component: CustomPropertyTypeDetailView,
+          meta: { guard: 'admin-only' },
+        },
+        // Sections batch settings faces (02 members, 07 notifications).
+        // Members (pin SettingsRouter.tsx:672-714, 903-918): the bare
+        // teams path redirects to the Organization detail — the only
+        // redirect exception in the staged contract — and users/admins
+        // share one :tab route whose illegal segments resolve to /404
+        // (membersTabGuard; pin NOT_FOUND '/404', constants.ts:139).
+        // The :tab route is declared last among the members routes so
+        // the static `teams` / `online-users` segments win.
+        // Rebase note: the sections batch mapped these routes in
+        // ADMIN_ROUTE_RESOURCE; the declarations below are the
+        // new-system equivalent — the live beforeEach never consults
+        // the table (see guards.ts). The online-users record carries
+        // no declaration, matching the shell batch's twin record.
+        {
+          path: 'settings/members/teams',
+          name: 'settings-members-teams',
+          redirect: { name: 'settings-members-team', params: { fqn: 'Organization' } },
+        },
+        {
+          path: 'settings/members/teams/:fqn',
+          name: 'settings-members-team',
+          component: TeamDetailView,
+          meta: { guard: { resource: 'TEAM', operation: 'view' } },
+        },
+        {
+          path: 'settings/members/teams/:fqn/import',
+          name: 'settings-members-team-import',
+          component: ImportTeamsPage,
+          meta: { guard: { resource: 'TEAM', operation: 'view' } },
+        },
+        {
+          path: 'settings/members/online-users',
+          name: 'settings-members-online-users',
+          component: OnlineUsersView,
+        },
+        {
+          path: 'settings/members/:tab',
+          name: 'settings-members',
+          component: UsersListView,
+          beforeEnter: membersTabGuard,
+          meta: { guard: { resource: 'USER', operation: 'view' } },
+        },
+        // Notifications (07 §12, pin SettingsRouter.tsx:515-607 +
+        // constants.ts:318-334). Detail :tab is optional: the table
+        // requires a missing/illegal tab to default to `configuration`
+        // in the view, which a required segment could never reach.
+        // The add/edit faces keep pin's literal shapes
+        // (add-notification / edit-notification / alerts/add /
+        // alerts/edit/:fqn) — they are NOT nested under `alerts/`.
+        // The list/detail faces are the shell batch's canonical
+        // records (observability-alerts / announcements); only the
+        // add/edit faces land here, declared 'admin-only' — under the
+        // old table they were admin-only by the /settings prefix.
+        {
+          path: 'settings/notifications/add-notification',
+          name: 'settings-notification-alert-add',
+          component: AlertFormView,
+          meta: { guard: 'admin-only' },
+        },
+        {
+          path: 'settings/notifications/edit-notification/:fqn',
+          name: 'settings-notification-alert-edit',
+          component: AlertFormView,
+          meta: { guard: 'admin-only' },
+        },
+        {
+          path: 'settings/notifications/announcements/add',
+          name: 'settings-notification-announcement-add',
+          component: AnnouncementFormView,
+          meta: { guard: 'admin-only' },
+        },
+        {
+          path: 'settings/notifications/announcements/edit/:id',
+          name: 'settings-notification-announcement-edit',
+          component: AnnouncementFormView,
           meta: { guard: 'admin-only' },
         },
         // G-07 (visual comparison): official GLOSSARY '/glossary'
@@ -641,7 +753,7 @@ export const router = createRouter({
           path: 'marketplace/apps',
           name: 'marketplace-app-catalog',
           component: MarketplaceAppCatalogView,
-          meta: { titleKey: 'apps.catalog.title' },
+          meta: { titleKey: 'label.market-place' },
         },
         // P2 R-4: marketplace app detail (official
         // /marketplace/apps/:fqn). The install route below keeps its own
@@ -853,6 +965,29 @@ export const router = createRouter({
           component: AlertDetailView,
           props: true,
           meta: { guard: { resource: 'EVENT_SUBSCRIPTION', operation: 'view' } },
+        },
+        // 07 §12 #6-8 (pin constants.ts:320-324): the add/edit faces
+        // keep the plural `alerts/` prefix. They carry no declaration:
+        // under the old table /observability was not an admin prefix,
+        // so they were session-only there.
+        {
+          path: 'observability/alerts/add',
+          name: 'observability-alert-add',
+          component: AlertFormView,
+        },
+        {
+          path: 'observability/alerts/edit/:fqn',
+          name: 'observability-alert-edit',
+          component: AlertFormView,
+        },
+        // The old plural detail shape redirects to the canonical
+        // detail record above (which takes :id).
+        {
+          path: 'observability/alerts/:id',
+          redirect: (to) => ({
+            name: 'observability-alert',
+            params: { id: to.params.id },
+          }),
         },
         // B3 staged unit: the aggregate services list keeps its path,
         // name and current behaviour (all/kind Tabs/?health= buckets)

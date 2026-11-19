@@ -321,6 +321,12 @@ export interface CreateAnnouncementRequest {
   displayName?: string;
   type?: AnnouncementType;
   entityLink?: string;
+  /**
+   * Custom-type fields (pin SystemAnnouncementForm save request). Only
+   * meaningful when type is Custom; the form discards them otherwise.
+   */
+  color?: string;
+  customTypeName?: string;
 }
 
 /**
@@ -357,7 +363,7 @@ export interface MetadataType {
 export interface CreateCustomPropertyRequest {
   name: string;
   description: string;
-  propertyType: { id: string; type: string; name: string };
+  propertyType: { id: string; type: string; name?: string };
   displayName?: string;
   /** Stage 3 (Wave 2 G-23): the four official config forms, built by buildCustomPropertyConfig. */
   customPropertyConfig?: CustomPropertyConfig;

@@ -15,7 +15,7 @@ import type { OperationPermissions } from '@/api/permissions';
 import {
   deleteIngestionPipeline,
   deployIngestionPipeline,
-  isPipelineClientDisabled,
+  isPipelineDeployed,
   toggleIngestionPipeline,
   triggerIngestionPipeline,
 } from '@/api/ingestionPipelines';
@@ -64,16 +64,12 @@ export function usePipelineRowActions(options: {
     );
   }
 
-  /** C-01: report a client response as success or as the disabled-client error. Returns true on success. */
+  /** T-1: report a client response through the shared strict predicate. Returns true on success. */
   function reportClientResult(
     result: { code?: number; reason?: string },
     actionKey: 'actionDeployed' | 'actionTriggered',
   ): boolean {
-    if (isPipelineClientDisabled(result)) {
-      message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
-      return false;
-    }
-    if (result.code !== undefined && result.code !== 200) {
+    if (!isPipelineDeployed(result)) {
       message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
       return false;
     }

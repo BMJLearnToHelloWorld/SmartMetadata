@@ -4,7 +4,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ENTITY_NAME_REGEX,
   METRIC_FORM_DEFAULTS,
   METRIC_GRANULARITY_VALUES,
   METRIC_LANGUAGE_VALUES,
@@ -15,6 +14,7 @@ import {
   validateMetricForm,
   type MetricFormValues,
 } from './metricForm';
+import { ENTITY_NAME_REGEX } from '@/utils/entityName';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef } from '@/types/api';
 

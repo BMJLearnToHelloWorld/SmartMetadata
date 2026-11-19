@@ -12,12 +12,20 @@
  * Route guard resolution, driven by per-route meta declarations
  * (DESIGN §10, settings shell batch). A route declares its guard in
  * `meta.guard`; an undeclared route is session-only. The declaration
- * vocabulary is data, never path prefixes: the old
- * ADMIN_ROUTE_PREFIXES / ADMIN_ROUTE_RESOURCE / hasAdminEntryGrant
- * machinery was retired with this change (DESIGN §10.5) because a
- * URL prefix cannot tell a migrated route from a staged one, and a
- * deleted route record is not proof that the literal URL is
- * unreachable (M1c).
+ * vocabulary is data, never path prefixes: path-based judging inside
+ * `resolveGuard` and the router's beforeEach was retired with this
+ * change (DESIGN §10.5) because a URL prefix cannot tell a migrated
+ * route from a staged one, and a deleted route record is not proof
+ * that the literal URL is unreachable (M1c).
+ *
+ * Rebase note (sections batch): the route→resource table
+ * (ADMIN_ROUTE_RESOURCE), the path classifier (isAdminPath) and the
+ * entry helper (hasAdminEntryGrant) below are retained as the
+ * sections-batch contract surface — the role/policy mappings, C-1,
+ * the members :tab segments and the B-7/P-17 path classification —
+ * asserted by guards.test.ts, domains.test.ts and routes.test.ts.
+ * The live beforeEach does not consult them: their mappings are
+ * mirrored by the meta.guard declarations in router/index.ts.
  *
  * Official precedent: AdminProtectedRoute (openmetadata-ui
  * components/AppRouter/AdminProtectedRoute.tsx) renders its
@@ -102,6 +110,131 @@ export function guardDeclarationResources(declaration: GuardDeclaration): string
 }
 
 /**
+ * Sections-batch contract surface (retained, see the header note).
+ * The prefix list below classifies admin paths for the route/domain
+ * tests (B-7, P-17); it is not consulted by resolveGuard or the
+ * router's beforeEach, which are declaration-driven.
+ */
+// The guard judges admin-ness from the URL path, but official's
+// AdminProtectedRoute wraps the route component, so any URL that
+// renders an admin page must be recognised here — including the
+// official-path aliases of admin routes. '/settings' is the alias
+// of admin/settings (G-09); without this entry a non-admin opening
+// /settings would bypass the admin entry check, because the path
+// does not start with /admin/. The same entry also covers the three
+// pre-existing /settings/governance/* aliases (intake-forms,
+// task-forms, glossary-term-relations), which resolve to admin
+// routes as well. Every /settings/* URL in the product currently
+// resolves to an admin route, so no non-admin route is affected.
+// '/announcements' is the announcements management list (B-7,
+// Wave 2 G-11 stage C): official puts system announcements under
+// Settings with a bare <AdminProtectedRoute> — "System announcements
+// are admin-only: the server lets no one else write them"
+// (SettingsRouter.tsx) — i.e. admin-only with no hasPermission line.
+// The product equivalent is this prefix with no ADMIN_ROUTE_RESOURCE
+// entry, so non-admins are forbidden and only admins enter; the
+// duplicate sub-route shares the prefix. The read-only home
+// announcement rail is unaffected: it is not an admin route.
+// ADR:2026-11-08-my-data-announcements-admin-gate
+// Stage D (G-11): the persona landing-page editor is admin-only too —
+// a non-admin must never reach the customize route, and the home page
+// only offers the entry to admins with a persona in play.
+// ADR:2026-11-10-my-data-customize-page-drag
+// '/ingestion/pipelines' is the ingestion pipeline workspace (P-17):
+// official keeps only the Pipelines tab admin-only
+// (ServicesPage.tsx:147-165) — the Services page itself admits users
+// with category view permission, and the service-detail Ingestion tab
+// admits owner/owner-team/admin (ServiceDetailsPage.tsx:1896). So only
+// the pipeline list/detail/edit routes are admin-gated here; the
+// service routes (/ingestion/services*) keep their existing
+// view-permission behaviour, and the per-action permission bits still
+// gate the buttons inside. No ADMIN_ROUTE_RESOURCE entry: without a
+// determined resource mapping the routes stay admin-only by design.
+export const ADMIN_ROUTE_PREFIXES = ['/admin', '/settings', '/announcements', '/customize-page', '/ingestion/pipelines'] as const;
+
+/**
+ * Admin route name -> permission resource for the guard's second
+ * line. Only routes with a determined mapping are listed: users and
+ * teams are entity resources served by GET /v1/permissions/{resource}
+ * (the same client the debugger and the governance views use).
+ * Roles and policies joined with the sections batch (03 §12:
+ * hasViewPermissions(ROLE/POLICY) entry, operations gated in-view);
+ * the add-rule/add-role/add-policy routes stay unmapped because
+ * their §12 declarations are Create/EditAll operations, which this
+ * view-or-better entry vocabulary cannot express, and their views
+ * carry no in-view Create gate — mapping them would admit
+ * view-only users to ungated create forms. Bots, other settings
+ * routes, personas, intake/task forms and the permission debugger
+ * stay admin-only until their mappings are determined — the
+ * debugger in particular is admin-only by design (its
+ * debug/user/{username} endpoint is admin-only server-side).
+ * Audit logs stay unmapped: no `auditLog` resource vocabulary
+ * exists and the view carries no permission gate, so the §12
+ * checkPermission line for it is unimplemented at both levels.
+ * C-1 erratum (Bai 2026-11-18): the two 'type' mappings for the
+ * custom-properties routes (G-23 stage 4) are deleted; the per-type
+ * gate lives in the detail page, not at route level. The ADR pointer
+ * below named no file present in this repo, so the erratum is
+ * recorded here and in the integration report.
+ * ADR:2026-11-10-custom-properties-stage-4-per-type-gate (superseded by C-1)
+ * Rebase note: the live entry rule is the meta.guard declaration in
+ * router/index.ts (`view` = ViewAll/ViewBasic, matching official
+ * hasViewPermissions); this table records the sections-batch entry
+ * rule, which additionally admitted EditAll-only holders. The table
+ * is not consulted by the live beforeEach.
+ */
+export const ADMIN_ROUTE_RESOURCE: Record<string, string> = {
+  'admin-users': 'user',
+  'admin-user': 'user',
+  'admin-admins': 'user',
+  'admin-team': 'team',
+  'settings-members': 'user',
+  'settings-members-team': 'team',
+  'settings-members-team-import': 'team',
+  'admin-roles': 'role',
+  'admin-role': 'role',
+  'admin-policies': 'policy',
+  'admin-policy': 'policy',
+};
+
+/**
+ * Members :tab segment guard (02 §8.3). Pin renders one
+ * UserListPageV1 for the members category and derives isAdminPage
+ * from the tab (`tab === GlobalSettingOptions.ADMINS`,
+ * UserListPageV1.tsx:82); a segment outside {users, admins} is not
+ * a page, so the guard resolves to pin's NOT_FOUND path ('/404',
+ * constants.ts:139), which the catch-all renders as NotFoundView.
+ * Kept as a named export so the route wiring is assertable by
+ * identity and the segment rule is unit-testable without mounting
+ * the router.
+ */
+export function membersTabGuard(to: { params: { tab?: string | string[] } }): boolean | string {
+  const tab = to.params.tab;
+  return tab === 'users' || tab === 'admins' ? true : '/404';
+}
+
+/**
+ * Entry grant for a mapped admin route: any view-or-better grant
+ * admits entry. Action buttons inside the view enforce their own
+ * operations (Create/EditAll/...), so entry alone grants nothing.
+ */
+export function hasAdminEntryGrant(
+  ops: OperationPermissions | null | undefined,
+): boolean {
+  return ops?.ViewAll === true || ops?.ViewBasic === true || ops?.EditAll === true;
+}
+
+/**
+ * Path classifier for the retained prefix list above (B-7, P-17).
+ * Not consulted by resolveGuard or the router's beforeEach.
+ */
+export function isAdminPath(path: string): boolean {
+  return ADMIN_ROUTE_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+/**
  * Pure second-line evaluation: `opsByResource` is keyed by the
  * §11.3 resource key (see guardDeclarationResources). A missing or
  * failed fetch is not a grant (fail closed). 'admin-only' has no
@@ -171,7 +304,10 @@ export function guardDeclarationOf(metaValue: unknown): GuardDeclaration | undef
 /**
  * Reserved create-user declarations (DESIGN §10.6). Contract only:
  * no route or page is registered for these paths in this batch.
- * The bot branch is the conjunction Create(user) AND Create(bot)
+ * Rebase note: the sections batch registers the user-detail, bot-detail
+ * and create-user routes without declarations (session-only); these
+ * declarations remain the contract for when the Create/ conjunction
+ * gap is closed. The bot branch is the conjunction Create(user) AND Create(bot)
  * (official AuthenticatedAppRouter.tsx: createBotPermission).
  */
 export const CREATE_USER_GUARD_DECLARATIONS = {
