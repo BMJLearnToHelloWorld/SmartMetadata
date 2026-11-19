@@ -13,6 +13,7 @@ import ToggleField from '@/components/shared/ToggleField.vue';
 import { requiredField } from '@/features/crud/formRules';
 import {
   buildConnectionSections,
+  clearInactiveAlationDbAuthBranchFields,
   clearInactiveAuthBranchFields,
   clearInactiveBranchFields,
   connectionFieldGroupName,
@@ -89,15 +90,19 @@ function setField(field: ConnectionFieldDef, value: unknown): void {
 /**
  * Branch sanitize on selector change (pin AuthSelectField/oneOf): the
  * authTypeBranch selector clears every other auth branch's keys
- * (including nested GCP variant fields); any other selector clears
- * the branch-tagged fields gated on it. Selectors without gated
- * branch fields are unaffected.
+ * (including nested GCP variant fields); the Alation nested auth selector
+ * (`alationDbAuthBranch`) gets the same key-set wipe plus the generic
+ * clear for its gated leaves; any other selector clears the branch-tagged
+ * fields gated on it. Selectors without gated branch fields are unaffected.
  */
 function onSelectorChange(field: ConnectionFieldDef, value: string | undefined): void {
   setField(field, value ?? '');
   const next = value ?? '';
   if (field.key === 'authTypeBranch') {
     clearInactiveAuthBranchFields(type.value, props.form, next || 'basic');
+  } else if (field.key === 'alationDbAuthBranch') {
+    clearInactiveAlationDbAuthBranchFields(props.form, next || 'basic');
+    clearInactiveBranchFields(allFields.value, props.form, String(field.key), next);
   } else {
     clearInactiveBranchFields(allFields.value, props.form, String(field.key), next);
   }
@@ -329,7 +334,7 @@ function fieldKey(field: ConnectionFieldDef, group: ConnectionFormGroup, index: 
             <FileOrInputField
               v-else-if="field.control === 'fileOrInput'"
               :model-value="stringValue(field) || undefined"
-              :has-stored-value="hasStoredFileFieldValue(storedConfig, String(field.key))"
+              :has-stored-value="hasStoredFileFieldValue(storedConfig, String(field.key), type)"
               :accepted-file-types="field.acceptedFileTypes ? [...field.acceptedFileTypes] : undefined"
               :label="fieldLabel(field)"
               :hint="field.hintKey === 'connection.secretHint' ? t(field.hintKey) : undefined"

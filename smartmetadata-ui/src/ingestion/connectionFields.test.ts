@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONNECTION_FIELD_GROUPS,
   buildConnectionSections,
+  clearInactiveAlationDbAuthBranchFields,
   clearInactiveAuthBranchFields,
   clearInactiveBranchFields,
   connectionDisplayHost,
@@ -298,8 +299,9 @@ describe('connectionFields', () => {
 
   it('covers every supported service type with at least one field', () => {
     const types = new Set(CONNECTION_FIELD_GROUPS.flatMap((group) => group.types));
-    // 18 pre-existing types + the eight kinds' default types (A9).
-    expect(types.size).toBe(26);
+    // 18 pre-existing types + the eight kinds' default types (A9) + the
+    // five A-class types (A2, 2026-11-19).
+    expect(types.size).toBe(31);
     for (const type of types) {
       expect(connectionFieldsForType(type).length).toBeGreaterThan(0);
     }
@@ -1327,6 +1329,98 @@ describe('hydrateAuthBranchForm (S-12)', () => {
     expect(form.authGcpCredentialSource).toBe('{"url":"https://example.com/token"}');
   });
 
+  it('refills the Alation nested IAM branch into the shared keys', () => {
+    const form = hydrateAuthBranchForm(
+      'Alation',
+      {
+        connection: {
+          authType: {
+            awsConfig: {
+              enabled: true,
+              awsAccessKeyId: 'AK',
+              awsSecretAccessKey: '*****',
+              awsRegion: 'r',
+              assumeRoleArn: 'arn',
+            },
+          },
+        },
+      } as ServiceConnectionConfig,
+      formWith({}),
+    );
+    expect(form.alationDbAuthBranch).toBe('iam');
+    expect(form.authAwsEnabled).toBe(true);
+    expect(form.authAwsAccessKeyId).toBe('AK');
+    expect(form.authAwsRegion).toBe('r');
+    expect(form.authAssumeRoleArn).toBe('arn');
+    expect(form.authAwsSecretAccessKey).toBeUndefined();
+  });
+
+  it('refills the Alation nested GCP branch and its impersonate block', () => {
+    const form = hydrateAuthBranchForm(
+      'Alation',
+      {
+        connection: {
+          authType: {
+            password: '*****',
+            enableIamAuth: true,
+            gcpConfig: {
+              gcpConfig: {
+                type: 'service_account',
+                projectId: 'p1',
+                clientEmail: 'svc@example.com',
+              },
+              gcpImpersonateServiceAccount: {
+                impersonateServiceAccount: 'sa@example.com',
+                lifetime: 3600,
+              },
+            },
+          },
+        },
+      } as ServiceConnectionConfig,
+      formWith({}),
+    );
+    expect(form.alationDbAuthBranch).toBe('gcp');
+    expect(form.authGcpConfigBranch).toBe('gcpValues');
+    expect(form.authGcpProjectId).toBe('p1');
+    expect(form.authGcpClientEmail).toBe('svc@example.com');
+    expect(form.authGcpEnableIamAuth).toBe(true);
+    expect(form.authGcpImpersonateEmail).toBe('sa@example.com');
+    expect(form.authGcpImpersonateLifetime).toBe(3600);
+    expect(form.authGcpPrivateKey).toBeUndefined();
+  });
+
+  it('defaults the Alation nested branch to basic when no nested auth is stored', () => {
+    const form = hydrateAuthBranchForm(
+      'Alation',
+      { connection: { authType: { password: '*****' } } } as ServiceConnectionConfig,
+      formWith({}),
+    );
+    expect(form.alationDbAuthBranch).toBe('basic');
+  });
+
+  it('refills the VertexAI GCP variant from credentials', () => {
+    const form = hydrateAuthBranchForm(
+      'VertexAI',
+      {
+        credentials: {
+          gcpConfig: {
+            type: 'gcp_credential_path',
+            path: '/tmp/sa.json',
+            projectId: 'p9',
+          },
+          gcpImpersonateServiceAccount: {
+            impersonateServiceAccount: 'sa@example.com',
+          },
+        },
+      } as ServiceConnectionConfig,
+      formWith({}),
+    );
+    expect(form.authGcpConfigBranch).toBe('gcpCredentialsPath');
+    expect(form.authGcpPath).toBe('/tmp/sa.json');
+    expect(form.authGcpProjectId).toBe('p9');
+    expect(form.authGcpImpersonateEmail).toBe('sa@example.com');
+  });
+
   it('defaults to basic when no branch config is stored', () => {
     const form = hydrateAuthBranchForm(
       'Mysql',
@@ -1414,6 +1508,33 @@ describe('branch sanitize helpers (S-12)', () => {
     expect((form as unknown as Record<string, unknown>)['password']).toBe('o');
     expect((form as unknown as Record<string, unknown>)['databaseName']).toBe('u');
   });
+
+  it('clearInactiveAlationDbAuthBranchFields wipes the other nested branches, including GCP variants', () => {
+    const form: ServiceFormValues = {
+      ...createEmptyServiceForm(),
+      alationDbPassword: 'dbpw',
+      authAwsRegion: 'r',
+      authAzureClientId: 'cid',
+      authGcpProjectId: 'p',
+      authGcpPrivateKey: 'pk',
+      authGcpImpersonateEmail: 'sa@example.com',
+    };
+    clearInactiveAlationDbAuthBranchFields(form, 'iam');
+    expect(form.alationDbPassword).toBeUndefined();
+    expect(form.authAwsRegion).toBe('r');
+    expect(form.authAzureClientId).toBeUndefined();
+    expect(form.authGcpProjectId).toBeUndefined();
+    expect(form.authGcpPrivateKey).toBeUndefined();
+    expect(form.authGcpImpersonateEmail).toBeUndefined();
+    const basic: ServiceFormValues = {
+      ...createEmptyServiceForm(),
+      alationDbPassword: 'dbpw',
+      authAwsRegion: 'r',
+    };
+    clearInactiveAlationDbAuthBranchFields(basic, 'basic');
+    expect(basic.alationDbPassword).toBe('dbpw');
+    expect(basic.authAwsRegion).toBeUndefined();
+  });
 });
 
 describe('hasStoredFileFieldValue (S-13)', () => {
@@ -1445,6 +1566,43 @@ describe('hasStoredFileFieldValue (S-13)', () => {
         'authGcpPrivateKey',
       ),
     ).toBe(true);
+    expect(
+      hasStoredFileFieldValue(
+        { connection: { sslConfig: { caCertificate: '---CERT---' } } } as ServiceConnectionConfig,
+        'alationDbSslCaCertificate',
+      ),
+    ).toBe(true);
+    expect(
+      hasStoredFileFieldValue(
+        { connection: { sslConfig: {} } } as ServiceConnectionConfig,
+        'alationDbSslCaCertificate',
+      ),
+    ).toBe(false);
+    expect(
+      hasStoredFileFieldValue(
+        { credentials: { gcpConfig: { privateKey: 'pk' } } } as ServiceConnectionConfig,
+        'authGcpPrivateKey',
+        'VertexAI',
+      ),
+    ).toBe(true);
+    expect(
+      hasStoredFileFieldValue(
+        {
+          connection: {
+            authType: { gcpConfig: { gcpConfig: { privateKey: 'pk' } } },
+          },
+        } as ServiceConnectionConfig,
+        'authGcpPrivateKey',
+        'Alation',
+      ),
+    ).toBe(true);
+    expect(
+      hasStoredFileFieldValue(
+        { credentials: { gcpConfig: { privateKey: 'pk' } } } as ServiceConnectionConfig,
+        'authGcpPrivateKey',
+        'Mysql',
+      ),
+    ).toBe(false);
     expect(hasStoredFileFieldValue({ privateKey: 'pk' }, 'privateKey')).toBe(true);
     expect(hasStoredFileFieldValue({ privateKey: '   ' }, 'privateKey')).toBe(false);
     expect(hasStoredFileFieldValue(undefined, 'sslCaCertificate')).toBe(false);
@@ -1476,5 +1634,313 @@ describe('missingRequiredConnectionFields (S-03)', () => {
       }),
     ).toBe(0);
     expect(missingRequiredConnectionFields('Snowflake', empty)).toBe(3);
+  });
+});
+
+describe('A2 A-class field sets (T-2)', () => {
+  const ALATION_NESTED_SSL_KEYS = [
+    'alationDbSslCaCertificate',
+    'alationDbSslCertificate',
+    'alationDbSslKey',
+  ];
+  const ALATION_KEYS = [
+    'hostPort',
+    'alationAuthBranch',
+    'username',
+    'password',
+    'alationAccessToken',
+    'alationConnectionBranch',
+    // Nested PostgresConnection leaves (pin order).
+    'alationDbScheme',
+    'alationDbUsername',
+    'alationDbAuthBranch',
+    'alationDbPassword',
+    ...IAM_KEYS,
+    ...AZURE_KEYS,
+    'alationDbHostPort',
+    'alationDbDatabase',
+    'alationDbIngestAllDatabases',
+    'alationDbSslMode',
+    ...ALATION_NESTED_SSL_KEYS,
+    'alationDbClassificationName',
+    'alationDbQueryStatementSource',
+    'alationDbConnectionOptions',
+    'alationDbConnectionArguments',
+    // Nested MysqlConnection leaves (pin order).
+    'alationDbScheme',
+    'alationDbUsername',
+    'alationDbAuthBranch',
+    ...GCP_KEYS,
+    'alationDbHostPort',
+    'alationDbDatabaseName',
+    'alationDbDatabaseSchema',
+    ...ALATION_NESTED_SSL_KEYS,
+    'alationDbConnectionOptions',
+    'alationDbConnectionArguments',
+    'alationDbUseSlowLogs',
+    'alationDbQueryHistoryTable',
+    // Top-level Alation API settings (pin order after `connection`).
+    'projectName',
+    'paginationLimit',
+    'includeUndeployedDatasources',
+    'includeHiddenDatasources',
+    'ingestDatasources',
+    'ingestUsersAndGroups',
+    'ingestDomains',
+    'ingestKnowledgeArticles',
+    'ingestDashboards',
+    'alationTagClassificationName',
+    'connectionOptions',
+    'connectionArguments',
+  ];
+
+  it('returns the VertexAI field set in pin schema order', () => {
+    // Pin vertexaiConnection.json: credentials (gcpConfig oneOf, 4 variants
+    // + impersonate) then location. The Mysql GCP head fields (password /
+    // enableIamAuth) are NOT part of this schema.
+    expect(connectionFieldsForType('VertexAI').map((field) => field.key)).toEqual([
+      'authGcpConfigBranch',
+      ...GCP_KEYS.slice(3),
+      'location',
+    ]);
+    const location = connectionFieldsForType('VertexAI').find(
+      (field) => field.key === 'location',
+    );
+    expect(location?.required).toBe(true);
+    expect(location?.title).toBe('Project location');
+    expect(location?.description).toBe('location/region of google cloud project');
+  });
+
+  it('returns the Alation field set in pin schema order', () => {
+    expect(connectionFieldsForType('Alation').map((field) => field.key)).toEqual(ALATION_KEYS);
+  });
+
+  it('returns the Collibra field set in pin schema order (connection form: 6 leaves)', () => {
+    // Pin collibraConnection.json order minus the glossary/domain filter
+    // leaves, which live in the filter step (D-A2-3), not in this form.
+    expect(connectionFieldsForType('Collibra').map((field) => field.key)).toEqual([
+      'username',
+      'password',
+      'hostPort',
+      'enableEnrichment',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    const enrichment = connectionFieldsForType('Collibra').find(
+      (field) => field.key === 'enableEnrichment',
+    );
+    expect(enrichment?.title).toBe('Enable Asset Enrichment');
+    expect(enrichment?.description).toBe(
+      'Enable enrichment of existing OpenMetadata assets with Collibra metadata (descriptions, tags, owners). When enabled, the connector will match Collibra assets to OpenMetadata entities and apply metadata without creating new assets.',
+    );
+  });
+
+  it('returns the MetadataES field set in pin schema order', () => {
+    expect(connectionFieldsForType('MetadataES').map((field) => field.key)).toEqual([
+      'metadataESEntities',
+      'recreateIndex',
+      'runMode',
+      'searchIndexMappingLanguage',
+      'batchSize',
+    ]);
+    const fields = connectionFieldsForType('MetadataES');
+    expect(fields.find((field) => field.key === 'metadataESEntities')?.description).toBe(
+      'List of entities that you need to reindex',
+    );
+    expect(fields.find((field) => field.key === 'recreateIndex')?.title).toBe(
+      'Recreate Indexes',
+    );
+    expect(fields.find((field) => field.key === 'runMode')?.description).toBe(
+      'This schema publisher run modes.',
+    );
+    expect(fields.find((field) => field.key === 'batchSize')?.description).toBe(
+      'Maximum number of events sent in a batch (Default 100).',
+    );
+  });
+
+  it('returns the SharePoint field set in pin schema order', () => {
+    expect(connectionFieldsForType('SharePoint').map((field) => field.key)).toEqual([
+      'clientId',
+      'clientSecret',
+      'tenantId',
+      'siteUrl',
+      'siteName',
+      'driveId',
+      'connectionOptions',
+      'connectionArguments',
+    ]);
+    const fields = connectionFieldsForType('SharePoint');
+    expect(fields.find((field) => field.key === 'siteUrl')?.title).toBe('Site URL');
+    expect(fields.find((field) => field.key === 'siteUrl')?.defaultValue).toBeUndefined();
+  });
+
+  it('carries the A2 selector options (pin enums)', () => {
+    const alation = connectionFieldsForType('Alation');
+    expect(
+      alation
+        .find((field) => field.key === 'alationAuthBranch')
+        ?.options?.map((option) => option.value),
+    ).toEqual(['basicAuth', 'apiToken']);
+    expect(
+      alation
+        .find((field) => field.key === 'alationConnectionBranch')
+        ?.options?.map((option) => option.value),
+    ).toEqual(['postgres', 'mysql', 'none']);
+    const dbAuth = alation.filter((field) => field.key === 'alationDbAuthBranch');
+    expect(dbAuth).toHaveLength(2);
+    expect(dbAuth[0].options?.map((option) => option.value)).toEqual([
+      'basic',
+      'iam',
+      'azure',
+    ]);
+    expect(dbAuth[1].options?.map((option) => option.value)).toEqual([
+      'basic',
+      'iam',
+      'azure',
+      'gcp',
+    ]);
+    const schemes = alation.filter((field) => field.key === 'alationDbScheme');
+    expect(schemes).toHaveLength(2);
+    expect(schemes[0].options?.map((option) => option.value)).toEqual([
+      'postgresql+psycopg2',
+      'pgspider+psycopg2',
+    ]);
+    expect(schemes[1].options?.map((option) => option.value)).toEqual(['mysql+pymysql']);
+    const metadataES = connectionFieldsForType('MetadataES');
+    expect(
+      metadataES
+        .find((field) => field.key === 'runMode')
+        ?.options?.map((option) => option.value),
+    ).toEqual(['stream', 'batch']);
+    expect(
+      metadataES
+        .find((field) => field.key === 'searchIndexMappingLanguage')
+        ?.options?.map((option) => option.value),
+    ).toEqual(['EN', 'JP', 'ZH', 'RU', 'KO']);
+    const vertexAI = connectionFieldsForType('VertexAI');
+    expect(
+      vertexAI
+        .find((field) => field.key === 'authGcpConfigBranch')
+        ?.options?.map((option) => option.value),
+    ).toEqual(['gcpValues', 'gcpCredentialsPath', 'gcpExternalAccount', 'gcpADC']);
+  });
+
+  it('marks non-secret leaves required and leaves secret leaves unmarked (secret-required gap)', () => {
+    // Deduplicated: the two-copy nested defs (Postgres/Mysql username and
+    // hostPort) carry the same required flag on both copies.
+    const required = (type: string): string[] => [
+      ...new Set(
+        connectionFieldsForType(type)
+          .filter((field) => field.required)
+          .map((field) => field.key as string),
+      ),
+    ];
+    expect(required('VertexAI')).toEqual(['location']);
+    // Alation: hostPort + username (top) + alationDbUsername/hostPort/
+    // database (nested Postgres) + authAwsRegion (the shared IAM defs
+    // mark the region required, as for Mysql/Postgres). The three secret
+    // leaves (password, alationAccessToken, alationDbPassword) stay
+    // unmarked — the known secret-required gap, pending Bai's ruling
+    // (A2-BENCHMARK §6 ③).
+    expect(required('Alation')).toEqual([
+      'hostPort',
+      'username',
+      'alationDbUsername',
+      'authAwsRegion',
+      'alationDbHostPort',
+      'alationDbDatabase',
+    ]);
+    expect(required('Collibra')).toEqual(['username', 'hostPort']);
+    expect(required('MetadataES')).toEqual([]);
+    expect(required('SharePoint')).toEqual(['clientId', 'tenantId', 'siteUrl']);
+  });
+
+  it('gates the Alation nested leaves on the connection + nested auth selectors', () => {
+    const fields = connectionFieldsForType('Alation');
+    const visibleKeys = (form: Partial<ServiceFormValues>): string[] =>
+      fields.filter((field) => isConnectionFieldVisible(field, form)).map((field) => field.key as string);
+    const defaults = visibleKeys({});
+    // Postgres is the default connection branch; basic is the default auth.
+    expect(defaults).toContain('alationDbScheme');
+    expect(defaults).toContain('alationDbUsername');
+    expect(defaults).toContain('alationDbPassword');
+    expect(defaults).toContain('alationDbDatabase');
+    expect(defaults).not.toContain('alationDbDatabaseName');
+    expect(defaults).not.toContain('authGcpProjectId');
+    const mysqlGcp = visibleKeys({
+      alationConnectionBranch: 'mysql',
+      alationDbAuthBranch: 'gcp',
+    });
+    expect(mysqlGcp).toContain('alationDbDatabaseName');
+    expect(mysqlGcp).toContain('authGcpProjectId');
+    expect(mysqlGcp).not.toContain('alationDbDatabase');
+    expect(mysqlGcp).not.toContain('alationDbPassword');
+    const none = visibleKeys({ alationConnectionBranch: 'none' });
+    expect(none).not.toContain('alationDbScheme');
+    expect(none).not.toContain('alationDbUsername');
+    expect(none).toContain('hostPort');
+    expect(none).toContain('projectName');
+    const apiToken = visibleKeys({ alationAuthBranch: 'apiToken' });
+    expect(apiToken).toContain('alationAccessToken');
+    expect(apiToken).not.toContain('username');
+  });
+
+  it('gates the VertexAI GCP variant leaves on the credentials selector', () => {
+    const fields = connectionFieldsForType('VertexAI');
+    const visibleKeys = (form: Partial<ServiceFormValues>): string[] =>
+      fields.filter((field) => isConnectionFieldVisible(field, form)).map((field) => field.key as string);
+    expect(visibleKeys({})).toContain('authGcpProjectId');
+    expect(visibleKeys({})).not.toContain('authGcpPath');
+    expect(visibleKeys({ authGcpConfigBranch: 'gcpCredentialsPath' })).toContain('authGcpPath');
+    expect(visibleKeys({ authGcpConfigBranch: 'gcpCredentialsPath' })).not.toContain(
+      'authGcpPrivateKey',
+    );
+    expect(visibleKeys({ authGcpConfigBranch: 'gcpADC' })).toContain('authGcpProjectId');
+  });
+
+  it('counts visible required blanks per A2 row, branch-aware', () => {
+    const empty = createEmptyServiceForm();
+    expect(missingRequiredConnectionFields('VertexAI', empty)).toBe(1);
+    expect(missingRequiredConnectionFields('VertexAI', { ...empty, location: 'us-central1' })).toBe(0);
+    expect(missingRequiredConnectionFields('Alation', empty)).toBe(5);
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        alationDbAuthBranch: 'iam',
+      }),
+    ).toBe(6);
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        alationConnectionBranch: 'mysql',
+      }),
+    ).toBe(4);
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        alationConnectionBranch: 'none',
+      }),
+    ).toBe(2);
+    expect(
+      missingRequiredConnectionFields('Alation', {
+        ...empty,
+        hostPort: 'alation:443',
+        username: 'api-user',
+        alationDbUsername: 'db-user',
+        alationDbHostPort: 'db:5432',
+        alationDbDatabase: 'alation',
+      }),
+    ).toBe(0);
+    expect(missingRequiredConnectionFields('Collibra', empty)).toBe(2);
+    expect(missingRequiredConnectionFields('MetadataES', empty)).toBe(0);
+    expect(missingRequiredConnectionFields('SharePoint', empty)).toBe(3);
+    expect(
+      missingRequiredConnectionFields('SharePoint', {
+        ...empty,
+        clientId: 'cid',
+        tenantId: 'tid',
+        siteUrl: 'https://org.sharepoint.com/sites/x',
+      }),
+    ).toBe(0);
   });
 });

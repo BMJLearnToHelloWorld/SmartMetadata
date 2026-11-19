@@ -216,6 +216,8 @@ export interface ServiceConnectionConfig {
   authType?: {
     password?: string;
     token?: string;
+    /** Alation ApiAccessTokenAuth (alationConnection.json): the API access token. */
+    accessToken?: string;
     clientId?: string;
     clientSecret?: string;
     azureClientId?: string;
@@ -253,6 +255,28 @@ export interface ServiceConnectionConfig {
     verifySSL?: string;
     /** Superset API connection sslConfig (validateSSLClientConfig). */
     sslConfig?: SslClientConfig;
+    /**
+     * Alation nested database connection (alationConnection.json `connection`
+     * oneOf: PostgresConnection / MysqlConnection). The nested authType is
+     * the same shape as the top-level one (Basic {password} / IAM
+     * {awsConfig} / Azure {azureConfig} / GCP {password, enableIamAuth,
+     * gcpConfig}); nested sslConfig is a validateSSLClientConfig triplet.
+     */
+    type?: string;
+    scheme?: string;
+    authType?: ServiceConnectionConfig['authType'];
+    hostPort?: string;
+    database?: string;
+    databaseName?: string;
+    databaseSchema?: string;
+    ingestAllDatabases?: boolean;
+    sslMode?: string;
+    classificationName?: string;
+    queryStatementSource?: string;
+    connectionOptions?: Record<string, string>;
+    connectionArguments?: Record<string, string>;
+    useSlowLogs?: boolean;
+    queryHistoryTable?: string;
   };
   awsConfig?: AwsCredentialsConfig;
   bucketNames?: string[];
@@ -294,6 +318,31 @@ export interface ServiceConnectionConfig {
   servers?: Array<Record<string, unknown>>;
   /** ElasticSearch (elasticSearchConnection.json): timeout in seconds. */
   connectionTimeoutSecs?: number;
+  /** SharePoint (sharePointConnection.json): Entra app + site. `clientSecret` is a secret leaf. */
+  clientId?: string;
+  clientSecret?: string;
+  tenantId?: string;
+  siteUrl?: string;
+  siteName?: string;
+  /** MetadataES (metadataESConnection.json): reindex selection + run shape. */
+  entities?: string[];
+  recreateIndex?: boolean;
+  runMode?: string;
+  searchIndexMappingLanguage?: string;
+  batchSize?: number;
+  /** Alation (alationConnection.json): top-level Alation API settings. */
+  projectName?: string;
+  paginationLimit?: number;
+  includeUndeployedDatasources?: boolean;
+  includeHiddenDatasources?: boolean;
+  ingestDatasources?: boolean;
+  ingestUsersAndGroups?: boolean;
+  ingestDomains?: boolean;
+  ingestKnowledgeArticles?: boolean;
+  ingestDashboards?: boolean;
+  alationTagClassificationName?: string;
+  /** Collibra (collibraConnection.json): asset-enrichment toggle. */
+  enableEnrichment?: boolean;
   /** OpenAI (openAIConnection.json): max retries for failed requests. */
   maxRetries?: number;
   /** Kafka/Redpanda (kafkaConnection.json / redpandaConnection.json). */
@@ -725,6 +774,58 @@ export interface ServiceFormValues {
   authGcpCredentialSource?: string;
   authGcpImpersonateEmail?: string;
   authGcpImpersonateLifetime?: number;
+  /** A2 (2026-11-19): the five A-class types brought into T-2. */
+  /** VertexAI (mlmodel/vertexaiConnection.json): GCP project location. */
+  location?: string;
+  /** Alation (metadata/alationConnection.json): top-level authType oneOf. */
+  alationAuthBranch?: 'basicAuth' | 'apiToken';
+  alationAccessToken?: string;
+  /** Alation: `connection` oneOf (Postgres / Mysql / None). */
+  alationConnectionBranch?: 'postgres' | 'mysql' | 'none';
+  /** Alation: nested database-connection leaves (shared by the Postgres and
+   * Mysql branches — only one branch is active at a time). */
+  alationDbUsername?: string;
+  alationDbPassword?: string;
+  alationDbHostPort?: string;
+  alationDbDatabase?: string;
+  alationDbDatabaseName?: string;
+  alationDbDatabaseSchema?: string;
+  alationDbScheme?: string;
+  alationDbAuthBranch?: 'basic' | 'iam' | 'azure' | 'gcp';
+  alationDbIngestAllDatabases?: boolean;
+  alationDbSslMode?: string;
+  alationDbSslCaCertificate?: string;
+  alationDbSslCertificate?: string;
+  alationDbSslKey?: string;
+  alationDbClassificationName?: string;
+  alationDbQueryStatementSource?: string;
+  alationDbUseSlowLogs?: boolean;
+  alationDbQueryHistoryTable?: string;
+  alationDbConnectionOptions?: string;
+  alationDbConnectionArguments?: string;
+  /** Alation: top-level Alation API settings. */
+  projectName?: string;
+  paginationLimit?: number;
+  includeUndeployedDatasources?: boolean;
+  includeHiddenDatasources?: boolean;
+  ingestDatasources?: boolean;
+  ingestUsersAndGroups?: boolean;
+  ingestDomains?: boolean;
+  ingestKnowledgeArticles?: boolean;
+  ingestDashboards?: boolean;
+  alationTagClassificationName?: string;
+  /** Collibra (metadata/collibraConnection.json): asset-enrichment toggle. */
+  enableEnrichment?: boolean;
+  /** MetadataES (metadata/metadataESConnection.json): reindex selection. */
+  metadataESEntities?: string;
+  recreateIndex?: boolean;
+  runMode?: string;
+  searchIndexMappingLanguage?: string;
+  batchSize?: number;
+  /** SharePoint (drive/sharePointConnection.json): Entra app + site. */
+  tenantId?: string;
+  siteUrl?: string;
+  siteName?: string;
 }
 
 export interface CreateDatabaseServiceRequest {

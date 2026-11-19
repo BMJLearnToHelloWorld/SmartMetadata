@@ -111,9 +111,9 @@ const showStaticForm = computed(
     decision.value?.formArea === 'static-form' ||
     decision.value?.formArea === 'schema-form',
 );
-// No ledger row is covered yet, so `schema-form` is unreachable this
-// batch; it renders the static form like `static-form` until the
-// schema-driven renderer lands under U-1.
+// Five A-class rows are covered since the 2026-11-19 A2 ruling, so
+// `schema-form` is reachable for them; it renders the static form like
+// `static-form` until the schema-driven renderer lands under U-1.
 
 const schemaPresent = computed(() => schemaState.value === 'present' || isPassThrough.value);
 

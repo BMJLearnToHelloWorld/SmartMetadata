@@ -11,7 +11,7 @@ import type { ServiceKind } from '@/types/ingestion';
 
 /**
  * T-2 stage matrix as code (preconditions/03-t2-stage-matrix.md §2,
- * t364 Q0–Q8): the 40-row ledger for the 11 non-AI categories, keyed
+ * t364 Q0–Q8): the 39-row ledger for the 11 non-AI categories, keyed
  * by (kind, type) — never by bare type name (VertexAI exists in both
  * the mlmodel and llm kinds with different schemas; §5.2).
  *
@@ -21,12 +21,33 @@ import type { ServiceKind } from '@/types/ingestion';
  * covered at this baseline, and "has a schema file" never counts as
  * covered.
  *
+ * A2 (2026-11-19, Bai ruling: A-class 5 rows in, WEBHOOK out): the
+ * five A-class rows (VertexAI, Alation, Collibra, MetadataES,
+ * SharePoint) are `covered` — their six cells are filled via the
+ * product-side loader equivalent (`schemaPath` + a byte-identical public
+ * copy of the official JSON; the product loader is ledger-driven and
+ * fetches on `schemaPath`). `hasLoader` stays false for them: the
+ * official loader tables have no entry, and that fact must not be
+ * falsified. The t364 Q1 ban on inventing a loader equivalent for
+ * loader-less types is superseded by this ruling for these five rows
+ * only. Counts after A2: covered 5 / pending-static 24 / blocked 10
+ * (all class C); 5 types have no official loader entry; 8 types are
+ * excluded from the official wizard — the wizard exposes 31 of the 39.
+ *
+ * WEBHOOK has no row: the official UI bundle and the spec carry no
+ * WEBHOOK connection file, loader entry, or schema to compare — the
+ * type exists only in the API service enum, with no connection form —
+ * so the row was a fork invention and was removed (2026-11-19 A2
+ * ruling), not merely blocked. The `WEBHOOK: []` entry in
+ * serviceFilterFields.ts stays: the empty mapping is still needed for
+ * the wizard empty state.
+ *
  * The ledger also carries the official loader/file facts and the
- * wizard-exposure sets: 6 types have no official loader entry (A/B
- * classes, Q1 option (a): wizard does not expose them, edit keeps the
- * existing connection), and 9 types are excluded from the official
- * wizard (6 unSupportedServices + 3 excludedService, Q8) — the wizard
- * exposes 31 of the 40.
+ * wizard-exposure sets: 5 types have no official loader entry (A
+ * class, Q1 option (a): wizard does not expose them, edit keeps the
+ * existing connection), and 8 types are excluded from the official
+ * wizard (5 unSupportedServices + 3 excludedService, Q8) — the wizard
+ * exposes 31 of the 39.
  *
  * Out-of-universe pairs (llm/mcp kinds, unknown types) are NOT rows:
  * `coverageFor` returns undefined and the guard passes through, so
@@ -51,9 +72,16 @@ export interface ConnectionCoverageRow {
   hasStaticGroup: boolean;
   /** Uncovered class, for blocked rows only. */
   uncoveredClass?: UncoveredClass;
-  /** The official wizard exposes this type (31 of 40). */
+  /** The official wizard exposes this type (31 of 39). */
   wizardExposed: boolean;
-  /** Relative schema path under jsons/connectionSchemas/, when a loader entry exists. */
+  /**
+   * Relative schema path under jsons/connectionSchemas/: set when an
+   * official loader entry exists, or — for the five A-class rows covered
+   * by the 2026-11-19 A2 ruling only — when the product-side loader
+   * equivalent (byte-identical public copy) exists. `hasLoader` stays
+   * false for the A-class rows: the path is the product equivalent,
+   * never a claim that official has a loader entry.
+   */
   schemaPath?: string;
 }
 
@@ -150,13 +178,6 @@ export const CONNECTION_COVERAGE_ROWS: readonly ConnectionCoverageRow[] = [
     wizardExposed: true,
     schemaPath: 'connections/api/restConnection.json',
   }),
-  row('api', 'WEBHOOK', 'blocked', {
-    hasLoader: false,
-    hasJsonFile: false,
-    hasStaticGroup: false,
-    uncoveredClass: 'B',
-    wizardExposed: false,
-  }),
   row('mlmodel', 'CustomMlModel', 'blocked', {
     hasLoader: true,
     hasJsonFile: true,
@@ -188,19 +209,22 @@ export const CONNECTION_COVERAGE_ROWS: readonly ConnectionCoverageRow[] = [
     wizardExposed: false,
     schemaPath: 'connections/mlmodel/sklearnConnection.json',
   }),
-  row('mlmodel', 'VertexAI', 'blocked', {
+  // A2 (2026-11-19): covered via the product-side loader equivalent
+  // (schemaPath + byte-identical public copy). hasLoader stays false:
+  // the official loader tables have no entry for these types.
+  row('mlmodel', 'VertexAI', 'covered', {
     hasLoader: false,
     hasJsonFile: true,
-    hasStaticGroup: false,
-    uncoveredClass: 'A',
+    hasStaticGroup: true,
     wizardExposed: false,
+    schemaPath: 'connections/mlmodel/vertexaiConnection.json',
   }),
-  row('metadata', 'Alation', 'blocked', {
+  row('metadata', 'Alation', 'covered', {
     hasLoader: false,
     hasJsonFile: true,
-    hasStaticGroup: false,
-    uncoveredClass: 'A',
+    hasStaticGroup: true,
     wizardExposed: false,
+    schemaPath: 'connections/metadata/alationConnection.json',
   }),
   row('metadata', 'AlationSink', 'blocked', {
     hasLoader: true,
@@ -226,19 +250,19 @@ export const CONNECTION_COVERAGE_ROWS: readonly ConnectionCoverageRow[] = [
     wizardExposed: true,
     schemaPath: 'connections/metadata/atlasConnection.json',
   }),
-  row('metadata', 'Collibra', 'blocked', {
+  row('metadata', 'Collibra', 'covered', {
     hasLoader: false,
     hasJsonFile: true,
-    hasStaticGroup: false,
-    uncoveredClass: 'A',
+    hasStaticGroup: true,
     wizardExposed: false,
+    schemaPath: 'connections/metadata/collibraConnection.json',
   }),
-  row('metadata', 'MetadataES', 'blocked', {
+  row('metadata', 'MetadataES', 'covered', {
     hasLoader: false,
     hasJsonFile: true,
-    hasStaticGroup: false,
-    uncoveredClass: 'A',
+    hasStaticGroup: true,
     wizardExposed: false,
+    schemaPath: 'connections/metadata/metadataESConnection.json',
   }),
   row('metadata', 'OpenMetadata', 'pending-static', {
     hasLoader: true,
@@ -270,12 +294,12 @@ export const CONNECTION_COVERAGE_ROWS: readonly ConnectionCoverageRow[] = [
     wizardExposed: true,
     schemaPath: 'connections/drive/sftpConnection.json',
   }),
-  row('drive', 'SharePoint', 'blocked', {
+  row('drive', 'SharePoint', 'covered', {
     hasLoader: false,
     hasJsonFile: true,
-    hasStaticGroup: false,
-    uncoveredClass: 'A',
+    hasStaticGroup: true,
     wizardExposed: false,
+    schemaPath: 'connections/drive/sharePointConnection.json',
   }),
   row('search', 'CustomSearch', 'blocked', {
     hasLoader: true,
@@ -381,7 +405,10 @@ export interface ConnectionGuardDecision {
  * - present + blocked: read-only prompt, submit blocked;
  * - present + pending-static: the existing static form, whose own
  *   required/secret rules decide submittability;
- * - present + covered: the schema-driven form (no row is covered yet).
+ * - present + covered: the schema-driven form (five A-class rows are
+ *   covered since the 2026-11-19 A2 ruling; the schema-form area
+ *   renders the static form until the schema-driven renderer lands
+ *   under U-1 — see ConnectionConfigForm).
  *
  * This deliberately differs from official ConnectionConfigForm, where
  * an empty schema leaves submit enabled (§4.1): the safety deviation

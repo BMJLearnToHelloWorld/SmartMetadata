@@ -2321,3 +2321,625 @@ describe('lean-forms tier 3A (W3-3A)', () => {
     ).toThrow('valid JSON');
   });
 });
+
+describe('A2 A-class builders (T-2)', () => {
+  const METADATA_ES_ENTITIES = [
+    'table',
+    'topic',
+    'dashboard',
+    'pipeline',
+    'mlmodel',
+    'user',
+    'team',
+    'glossaryTerm',
+    'tag',
+    'entityReportData',
+    'webAnalyticEntityViewReportData',
+    'webAnalyticUserActivityReportData',
+    'container',
+    'query',
+  ];
+
+  function vertexAIForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'vertex',
+      kind: 'mlmodel',
+      serviceType: 'VertexAI',
+      location: 'us-central1',
+      authGcpConfigBranch: 'gcpValues',
+      authGcpProjectId: 'proj-1',
+      authGcpPrivateKeyId: 'kid-1',
+      authGcpPrivateKey: 'private-key-material',
+      authGcpClientEmail: 'svc@proj.iam.gserviceaccount.com',
+      authGcpClientId: '123456789',
+      ...overrides,
+    };
+  }
+
+  function alationForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
+    return {
+      ...createEmptyServiceForm(),
+      name: 'alation',
+      kind: 'metadata',
+      serviceType: 'Alation',
+      hostPort: 'alation.example.com:443',
+      username: 'api-user',
+      password: 'api-secret',
+      alationAuthBranch: 'basicAuth',
+      alationConnectionBranch: 'postgres',
+      alationDbUsername: 'db-user',
+      alationDbPassword: 'db-secret',
+      alationDbHostPort: 'db:5432',
+      alationDbDatabase: 'alation',
+      ...overrides,
+    };
+  }
+
+  it('builds the VertexAI values variant without the Mysql GCP head fields', () => {
+    expect(buildServiceConnection(vertexAIForm())?.config).toEqual({
+      type: 'VertexAI',
+      credentials: {
+        gcpConfig: {
+          type: 'service_account',
+          projectId: 'proj-1',
+          privateKeyId: 'kid-1',
+          privateKey: 'private-key-material',
+          clientEmail: 'svc@proj.iam.gserviceaccount.com',
+          clientId: '123456789',
+        },
+      },
+      location: 'us-central1',
+    });
+  });
+
+  it('builds the VertexAI impersonate block under credentials', () => {
+    const connection = buildServiceConnection(
+      vertexAIForm({
+        authGcpImpersonateEmail: 'sa@example.com',
+        authGcpImpersonateLifetime: 1800,
+      }),
+    );
+    expect(
+      (connection?.config?.credentials as { gcpImpersonateServiceAccount?: unknown })
+        ?.gcpImpersonateServiceAccount,
+    ).toEqual({ impersonateServiceAccount: 'sa@example.com', lifetime: 1800 });
+  });
+
+  it('builds the VertexAI credentials-path variant', () => {
+    const connection = buildServiceConnection(
+      vertexAIForm({
+        authGcpConfigBranch: 'gcpCredentialsPath',
+        authGcpPath: '/tmp/sa.json',
+        authGcpPrivateKey: '',
+      }),
+    );
+    expect(connection?.config?.credentials).toEqual({
+      gcpConfig: { type: 'gcp_credential_path', path: '/tmp/sa.json', projectId: 'proj-1' },
+    });
+  });
+
+  it('keeps a masked VertexAI private key on edit and replaces it when retyped', () => {
+    const existing = {
+      config: {
+        type: 'VertexAI',
+        credentials: {
+          gcpConfig: {
+            type: 'service_account',
+            projectId: 'proj-1',
+            privateKey: '********',
+          },
+        },
+        location: 'us-central1',
+      },
+    };
+    const kept = buildServiceConnection(vertexAIForm({ authGcpPrivateKey: '' }), existing);
+    expect(
+      (kept?.config?.credentials as { gcpConfig?: Record<string, unknown> })?.gcpConfig
+        ?.privateKey,
+    ).toBe('********');
+    const retyped = buildServiceConnection(
+      vertexAIForm({ authGcpPrivateKey: 'new-key-material' }),
+      existing,
+    );
+    expect(
+      (retyped?.config?.credentials as { gcpConfig?: Record<string, unknown> })?.gcpConfig
+        ?.privateKey,
+    ).toBe('new-key-material');
+  });
+
+  it('builds the Alation Postgres basic connection with the spec defaults', () => {
+    expect(buildServiceConnection(alationForm())?.config).toEqual({
+      type: 'Alation',
+      hostPort: 'alation.example.com:443',
+      authType: { username: 'api-user', password: 'api-secret' },
+      connection: {
+        type: 'Postgres',
+        scheme: 'postgresql+psycopg2',
+        username: 'db-user',
+        authType: { password: 'db-secret' },
+        hostPort: 'db:5432',
+        database: 'alation',
+        ingestAllDatabases: false,
+        sslMode: 'disable',
+        classificationName: 'PostgresPolicyTags',
+        queryStatementSource: 'pg_stat_statements',
+      },
+      projectName: 'AlationAPI',
+      paginationLimit: 10,
+      includeUndeployedDatasources: false,
+      includeHiddenDatasources: false,
+      ingestDatasources: true,
+      ingestUsersAndGroups: true,
+      ingestDomains: true,
+      ingestKnowledgeArticles: true,
+      ingestDashboards: true,
+      alationTagClassificationName: 'alationTags',
+    });
+  });
+
+  it('builds the Alation Mysql GCP connection with the nested authType', () => {
+    const connection = buildServiceConnection(
+      alationForm({
+        alationConnectionBranch: 'mysql',
+        alationDbAuthBranch: 'gcp',
+        alationDbHostPort: 'db:3306',
+        alationDbDatabaseName: 'alation',
+        alationDbDatabase: '',
+        authGcpPassword: 'db-pw',
+        authGcpEnableIamAuth: false,
+        authGcpProjectId: 'proj-1',
+        authGcpPrivateKey: 'private-key-material',
+        authGcpClientEmail: 'svc@proj.iam.gserviceaccount.com',
+        alationDbUseSlowLogs: true,
+        alationDbQueryHistoryTable: 'custom_log',
+      }),
+    );
+    expect(connection?.config?.connection).toEqual({
+      type: 'Mysql',
+      scheme: 'mysql+pymysql',
+      username: 'db-user',
+      authType: {
+        password: 'db-pw',
+        enableIamAuth: false,
+        gcpConfig: {
+          gcpConfig: {
+            type: 'service_account',
+            projectId: 'proj-1',
+            privateKey: 'private-key-material',
+            clientEmail: 'svc@proj.iam.gserviceaccount.com',
+          },
+        },
+      },
+      hostPort: 'db:3306',
+      databaseName: 'alation',
+      useSlowLogs: true,
+      queryHistoryTable: 'custom_log',
+    });
+  });
+
+  it('builds the Alation ApiAccessTokenAuth top level and no connection for None', () => {
+    const connection = buildServiceConnection(
+      alationForm({
+        alationAuthBranch: 'apiToken',
+        alationAccessToken: 'token-123',
+        alationConnectionBranch: 'none',
+      }),
+    );
+    expect(connection?.config?.authType).toEqual({ accessToken: 'token-123' });
+    expect(connection?.config?.connection).toBeUndefined();
+  });
+
+  it('emits no nested auth leaves for Postgres + GCP (schema-valid combination)', () => {
+    const connection = buildServiceConnection(
+      alationForm({ alationDbAuthBranch: 'gcp', authGcpProjectId: 'proj-1' }),
+    );
+    expect(connection?.config?.connection?.authType).toBeUndefined();
+  });
+
+  it('does not leak stale Postgres-only leaves into a Mysql connection', () => {
+    const connection = buildServiceConnection(
+      alationForm({
+        alationConnectionBranch: 'mysql',
+        alationDbDatabase: 'stale-pg-db',
+        alationDbClassificationName: 'stale',
+        alationDbDatabaseName: 'alation',
+      }),
+    );
+    const nested = connection?.config?.connection as unknown as Record<string, unknown>;
+    expect(nested['database']).toBeUndefined();
+    expect(nested['classificationName']).toBeUndefined();
+    expect(nested['databaseName']).toBe('alation');
+  });
+
+  it('keeps masked Alation secrets on edit and replaces them when retyped', () => {
+    const existing = {
+      config: {
+        type: 'Alation',
+        hostPort: 'alation.example.com:443',
+        authType: { username: 'api-user', password: '********' },
+        connection: {
+          type: 'Postgres',
+          scheme: 'postgresql+psycopg2',
+          username: 'db-user',
+          authType: { password: '********' },
+          hostPort: 'db:5432',
+          database: 'alation',
+          sslConfig: {
+            caCertificate: '********',
+            sslCertificate: '********',
+            sslKey: '********',
+          },
+        },
+      },
+    };
+    const kept = buildServiceConnection(
+      alationForm({ password: '', alationDbPassword: '' }),
+      existing,
+    );
+    expect(kept?.config?.authType).toEqual({ username: 'api-user', password: '********' });
+    expect(kept?.config?.connection?.authType).toEqual({ password: '********' });
+    expect(kept?.config?.connection?.sslConfig).toEqual({
+      caCertificate: '********',
+      sslCertificate: '********',
+      sslKey: '********',
+    });
+    const retyped = buildServiceConnection(
+      alationForm({ password: 'new-api-secret', alationDbPassword: 'new-db-secret' }),
+      existing,
+    );
+    expect(retyped?.config?.authType).toEqual({ username: 'api-user', password: 'new-api-secret' });
+    expect(retyped?.config?.connection?.authType).toEqual({ password: 'new-db-secret' });
+  });
+
+  it('returns undefined for a bare Alation form with connection None (empty-body defense)', () => {
+    expect(
+      buildServiceConnection({
+        name: 'a',
+        kind: 'metadata',
+        serviceType: 'Alation',
+        alationConnectionBranch: 'none',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('builds the Collibra flat connection', () => {
+    const connection = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+    });
+    expect(connection?.config).toEqual({
+      type: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+      enableEnrichment: false,
+    });
+  });
+
+  it('keeps a masked Collibra password on edit and replaces it when retyped', () => {
+    const existing = {
+      config: {
+        type: 'Collibra',
+        username: 'col-user',
+        password: '********',
+        hostPort: 'collibra.example.com:443',
+      },
+    };
+    const form: ServiceFormValues = {
+      ...createEmptyServiceForm(),
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      username: 'col-user',
+      password: '',
+      hostPort: 'collibra.example.com:443',
+    };
+    expect(buildServiceConnection(form, existing)?.config?.password).toBe('********');
+    expect(
+      buildServiceConnection({ ...form, password: 'new-secret' }, existing)?.config?.password,
+    ).toBe('new-secret');
+  });
+
+  it('returns undefined for a bare Collibra form (empty-body defense)', () => {
+    expect(
+      buildServiceConnection({ name: 'c', kind: 'metadata', serviceType: 'Collibra' }),
+    ).toBeUndefined();
+  });
+
+  it('builds the MetadataES reindex selection', () => {
+    const connection = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'metadata-es',
+      kind: 'metadata',
+      serviceType: 'MetadataES',
+      runMode: 'stream',
+    });
+    expect(connection?.config).toEqual({
+      type: 'MetadataES',
+      entities: METADATA_ES_ENTITIES,
+      recreateIndex: true,
+      runMode: 'stream',
+      searchIndexMappingLanguage: 'EN',
+      batchSize: 100,
+    });
+  });
+
+  it('rejects invalid MetadataES entities JSON instead of sending a schema-invalid config', () => {
+    expect(() =>
+      buildServiceConnection({
+        ...createEmptyServiceForm(),
+        name: 'metadata-es',
+        kind: 'metadata',
+        serviceType: 'MetadataES',
+        metadataESEntities: 'not-json',
+      }),
+    ).toThrow('valid JSON array');
+    expect(() =>
+      buildServiceConnection({
+        ...createEmptyServiceForm(),
+        name: 'metadata-es',
+        kind: 'metadata',
+        serviceType: 'MetadataES',
+        metadataESEntities: '{"a": 1}',
+      }),
+    ).toThrow('JSON array');
+  });
+
+  it('returns undefined for a bare MetadataES form (empty-body defense)', () => {
+    expect(
+      buildServiceConnection({ name: 'm', kind: 'metadata', serviceType: 'MetadataES' }),
+    ).toBeUndefined();
+  });
+
+  it('builds the SharePoint connection', () => {
+    const connection = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'sp',
+      kind: 'drive',
+      serviceType: 'SharePoint',
+      clientId: 'cid',
+      clientSecret: 'csec',
+      tenantId: 'tid',
+      siteUrl: 'https://org.sharepoint.com/sites/x',
+      siteName: 'X',
+      driveId: 'drv-1',
+    });
+    expect(connection?.config).toEqual({
+      type: 'SharePoint',
+      clientId: 'cid',
+      clientSecret: 'csec',
+      tenantId: 'tid',
+      siteUrl: 'https://org.sharepoint.com/sites/x',
+      siteName: 'X',
+      driveId: 'drv-1',
+    });
+  });
+
+  it('keeps a masked SharePoint client secret on edit and replaces it when retyped', () => {
+    const existing = {
+      config: {
+        type: 'SharePoint',
+        clientId: 'cid',
+        clientSecret: '********',
+        tenantId: 'tid',
+        siteUrl: 'https://org.sharepoint.com/sites/x',
+      },
+    };
+    const form: ServiceFormValues = {
+      ...createEmptyServiceForm(),
+      name: 'sp',
+      kind: 'drive',
+      serviceType: 'SharePoint',
+      clientId: 'cid',
+      clientSecret: '',
+      tenantId: 'tid',
+      siteUrl: 'https://org.sharepoint.com/sites/x',
+    };
+    expect(buildServiceConnection(form, existing)?.config?.clientSecret).toBe('********');
+    expect(
+      buildServiceConnection({ ...form, clientSecret: 'new-secret' }, existing)?.config
+        ?.clientSecret,
+    ).toBe('new-secret');
+  });
+
+  it('returns undefined for a bare SharePoint form (empty-body defense)', () => {
+    expect(
+      buildServiceConnection({ name: 's', kind: 'drive', serviceType: 'SharePoint' }),
+    ).toBeUndefined();
+  });
+
+  it('refills an Alation service, keeping the top-level and nested usernames apart', () => {
+    const service: CatalogService = {
+      id: 's1',
+      name: 'alation',
+      kind: 'metadata',
+      serviceType: 'Alation',
+      connection: {
+        config: {
+          type: 'Alation',
+          hostPort: 'alation:443',
+          authType: { username: 'api-user', password: '********' },
+          connection: {
+            type: 'Postgres',
+            scheme: 'postgresql+psycopg2',
+            username: 'db-user',
+            authType: { password: '********' },
+            hostPort: 'db:5432',
+            database: 'alation',
+            sslMode: 'require',
+            classificationName: 'Custom',
+            queryStatementSource: 'custom_view',
+          },
+          projectName: 'MyProject',
+          paginationLimit: 25,
+        },
+      },
+    };
+    const form = formValuesFromService(service);
+    expect(form.hostPort).toBe('alation:443');
+    expect(form.username).toBe('api-user');
+    expect(form.password).toBe('');
+    expect(form.alationAuthBranch).toBe('basicAuth');
+    expect(form.alationAccessToken).toBe('');
+    expect(form.alationConnectionBranch).toBe('postgres');
+    expect(form.alationDbUsername).toBe('db-user');
+    expect(form.alationDbPassword).toBe('');
+    expect(form.alationDbHostPort).toBe('db:5432');
+    expect(form.alationDbDatabase).toBe('alation');
+    expect(form.alationDbSslMode).toBe('require');
+    expect(form.alationDbClassificationName).toBe('Custom');
+    expect(form.alationDbQueryStatementSource).toBe('custom_view');
+    expect(form.projectName).toBe('MyProject');
+    expect(form.paginationLimit).toBe(25);
+    expect(form.ingestDatasources).toBe(true);
+  });
+
+  it('refills an Alation ApiAccessTokenAuth service as the apiToken branch', () => {
+    const service: CatalogService = {
+      id: 's1',
+      name: 'alation',
+      kind: 'metadata',
+      serviceType: 'Alation',
+      connection: {
+        config: {
+          type: 'Alation',
+          hostPort: 'alation:443',
+          authType: { accessToken: '********' },
+        },
+      },
+    };
+    const form = formValuesFromService(service);
+    expect(form.alationAuthBranch).toBe('apiToken');
+    expect(form.alationAccessToken).toBe('');
+    expect(form.alationConnectionBranch).toBe('none');
+  });
+
+  it('refills VertexAI location, MetadataES entities, and SharePoint site fields', () => {
+    const vertex: CatalogService = {
+      id: 's1',
+      name: 'vertex',
+      kind: 'mlmodel',
+      serviceType: 'VertexAI',
+      connection: {
+        config: { type: 'VertexAI', location: 'us-central1', credentials: { gcpConfig: {} } },
+      },
+    };
+    expect(formValuesFromService(vertex).location).toBe('us-central1');
+    const metadataES: CatalogService = {
+      id: 's1',
+      name: 'metadata-es',
+      kind: 'metadata',
+      serviceType: 'MetadataES',
+      connection: {
+        config: { type: 'MetadataES', entities: ['table', 'topic'], batchSize: 50 },
+      },
+    };
+    const esForm = formValuesFromService(metadataES);
+    expect(esForm.metadataESEntities).toBe('["table","topic"]');
+    expect(esForm.recreateIndex).toBe(true);
+    expect(esForm.searchIndexMappingLanguage).toBe('EN');
+    expect(esForm.batchSize).toBe(50);
+    const bareES: CatalogService = {
+      id: 's1',
+      name: 'metadata-es',
+      kind: 'metadata',
+      serviceType: 'MetadataES',
+      connection: { config: { type: 'MetadataES' } },
+    };
+    expect(formValuesFromService(bareES).metadataESEntities).toBe(
+      JSON.stringify(METADATA_ES_ENTITIES),
+    );
+    const sharePoint: CatalogService = {
+      id: 's1',
+      name: 'sp',
+      kind: 'drive',
+      serviceType: 'SharePoint',
+      connection: {
+        config: {
+          type: 'SharePoint',
+          clientId: 'cid',
+          clientSecret: '********',
+          tenantId: 'tid',
+          siteUrl: 'https://org.sharepoint.com/sites/x',
+          siteName: 'X',
+        },
+      },
+    };
+    const spForm = formValuesFromService(sharePoint);
+    expect(spForm.clientId).toBe('cid');
+    expect(spForm.clientSecret).toBe('');
+    expect(spForm.tenantId).toBe('tid');
+    expect(spForm.siteUrl).toBe('https://org.sharepoint.com/sites/x');
+    expect(spForm.siteName).toBe('X');
+  });
+
+  it('redacts the A2 secret leaves for display', () => {
+    const alation = redactConnectionForDisplay({
+      config: {
+        type: 'Alation',
+        authType: { username: 'api-user', password: 'p', accessToken: 't' },
+        connection: {
+          type: 'Postgres',
+          username: 'db-user',
+          authType: {
+            password: 'p',
+            awsConfig: { awsSecretAccessKey: 's', awsSessionToken: 't', awsRegion: 'r' },
+            azureConfig: { clientSecret: 'c', clientId: 'id' },
+            gcpConfig: { gcpConfig: { privateKey: 'k', projectId: 'p' } },
+          },
+        },
+      },
+    });
+    expect(alation?.config?.authType).toEqual({
+      username: 'api-user',
+      password: '********',
+      accessToken: '********',
+    });
+    const nestedAuth = alation?.config?.connection?.authType as Record<string, unknown>;
+    expect(nestedAuth['password']).toBe('********');
+    expect((nestedAuth['awsConfig'] as Record<string, unknown>)['awsSecretAccessKey']).toBe(
+      '********',
+    );
+    expect((nestedAuth['awsConfig'] as Record<string, unknown>)['awsRegion']).toBe('r');
+    expect((nestedAuth['azureConfig'] as Record<string, unknown>)['clientSecret']).toBe(
+      '********',
+    );
+    expect((nestedAuth['azureConfig'] as Record<string, unknown>)['clientId']).toBe('id');
+    expect(
+      (
+        (nestedAuth['gcpConfig'] as Record<string, unknown>)['gcpConfig'] as Record<
+          string,
+          unknown
+        >
+      )['privateKey'],
+    ).toBe('********');
+    expect(
+      (
+        (nestedAuth['gcpConfig'] as Record<string, unknown>)['gcpConfig'] as Record<
+          string,
+          unknown
+        >
+      )['projectId'],
+    ).toBe('p');
+    const sharePoint = redactConnectionForDisplay({
+      config: { type: 'SharePoint', clientId: 'cid', clientSecret: 'csec' },
+    });
+    expect(sharePoint?.config?.clientId).toBe('cid');
+    expect(sharePoint?.config?.clientSecret).toBe('********');
+    const vertexAI = redactConnectionForDisplay({
+      config: { type: 'VertexAI', credentials: { gcpConfig: { privateKey: 'k' } } },
+    });
+    expect(vertexAI?.config?.credentials).toBe('********');
+    const collibra = redactConnectionForDisplay({
+      config: { type: 'Collibra', username: 'u', password: 'p' },
+    });
+    expect(collibra?.config?.username).toBe('u');
+    expect(collibra?.config?.password).toBe('********');
+  });
+});
