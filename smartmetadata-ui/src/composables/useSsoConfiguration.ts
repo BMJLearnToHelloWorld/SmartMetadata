@@ -9,6 +9,10 @@
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
 import {
+  isOidcSecretSaveBlocked,
+  restoreEmptyOidcSecret,
+} from '@/admin/ssoConfiguration';
+import {
   applySsoSamlConfiguration,
   cleanupSsoProviderFields,
   comparableSsoFormData,
@@ -628,7 +632,19 @@ export function useSsoConfiguration(options: SsoConfigurationOptions = {}) {
       authorizerManagedPaths.value,
       'authorizerConfiguration',
     );
-    const allPatches = toSsoJsonPatchOps(compare(savedData.value, candidate));
+    // Q1(a): an emptied secret keeps the stored value — sending '' would
+    // clear it server-side — and a typed secret the stored document cannot
+    // accept must refuse visibly instead of sending a patch the server
+    // would silently drop (filterInvalidPatchOperations). The guard reads
+    // the cleaned form data, as DESIGN Q1(a)(d) defines it on the form
+    // secret; the empty-restore reads the pinned candidate.
+    // ADR:2026-11-18-sso-candidate-secret-mapping.
+    const candidateWithSecret = restoreEmptyOidcSecret(candidate, savedData.value);
+    if (isOidcSecretSaveBlocked(cleanedFormData, savedData.value)) {
+      showSsoErrorToast(t('sso.secretSaveBlocked'), t('sso.unexpectedError'));
+      return false;
+    }
+    const allPatches = toSsoJsonPatchOps(compare(savedData.value, candidateWithSecret));
     if (allPatches.length > 0) {
       await patchSecurityConfiguration(allPatches);
     }
