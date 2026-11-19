@@ -174,7 +174,13 @@ describe('ConnectionConfigForm', () => {
     expect(exposed.submit()).toBe(false);
   });
 
-  it('shows the no-config prompt for a type with no loader', async () => {
+  it('passes through for WEBHOOK now that it has no ledger row (A2)', async () => {
+    // A2 (2026-11-19): WEBHOOK has no ledger row — the type exists only
+    // in the API service enum, with no connection form — so it is
+    // out-of-universe like mcp/Mcp, not a no-loader row: no fetch, no
+    // no-config prompt, test connection renders, the guard does not
+    // block submit. The no-config area itself is still covered at the
+    // unit level (loader L1 'empty' + decideConnectionGuard 'empty').
     let fetchCalled = false;
     const { wrapper } = await mountForm({
       kind: 'api',
@@ -185,11 +191,14 @@ describe('ConnectionConfigForm', () => {
       },
     });
     expect(fetchCalled).toBe(false);
-    expect(wrapper.find('[data-testid="no-config-available"]').text()).toBe(
-      'No Connection Configs available.',
-    );
-    const exposed = wrapper.vm as unknown as { submit: () => boolean };
-    expect(exposed.submit()).toBe(false);
+    expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(false);
+    expect(wrapper.findComponent(TestConnectionCard).exists()).toBe(true);
+    const exposed = wrapper.vm as unknown as {
+      connectionSubmitBlocked: boolean;
+      guardDecision: { formArea: string } | null;
+    };
+    expect(exposed.connectionSubmitBlocked).toBe(false);
+    expect(exposed.guardDecision).toBeNull();
   });
 
   it('shows the load-failed prompt when the schema fetch rejects', async () => {

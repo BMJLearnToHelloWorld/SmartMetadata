@@ -8,6 +8,13 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { isMaskedSecret, shouldPersistSecret } from '@/ingestion/secrets';
+import {
+  buildAzureAuthType,
+  buildGcpAuthType,
+  buildGcpImpersonateServiceAccount,
+  buildGcpVariant,
+  buildIamAuthType,
+} from '@/ingestion/connectionFields';
 import type {
   CatalogService,
   ElasticSearchSslConfig,
@@ -35,8 +42,7 @@ import {
   STORAGE_SERVICE_TYPES,
 } from '@/types/ingestion';
 
-/** Service-kind tables: views look kinds up here instead of if-else chains. */
-export const SERVICE_TYPES_BY_KIND: Record<ServiceKind, readonly string[]> = {
+/** Service-kind tables: views look kinds up here instead of if-else chains. */export const SERVICE_TYPES_BY_KIND: Record<ServiceKind, readonly string[]> = {
   database: DATABASE_SERVICE_TYPES,
   messaging: MESSAGING_SERVICE_TYPES,
   dashboard: DASHBOARD_SERVICE_TYPES,
@@ -143,6 +149,27 @@ export function entityTypeForKind(kind: ServiceKind): string {
 }
 
 /** Blank service form with the same defaults the create modal historically used. */
+/** MetadataES (metadataESConnection.json): the pin default `entities` list
+ * (14 items). Prefilled into new forms and used as the edit refill when the
+ * stored config omits the field — the same spec-default discipline as the
+ * database defaults below. */
+const METADATA_ES_DEFAULT_ENTITIES: readonly string[] = [
+  'table',
+  'topic',
+  'dashboard',
+  'pipeline',
+  'mlmodel',
+  'user',
+  'team',
+  'glossaryTerm',
+  'tag',
+  'entityReportData',
+  'webAnalyticEntityViewReportData',
+  'webAnalyticUserActivityReportData',
+  'container',
+  'query',
+];
+
 export function createEmptyServiceForm(): ServiceFormValues {
   return {
     name: '',
@@ -303,6 +330,53 @@ export function createEmptyServiceForm(): ServiceFormValues {
     policyAgentSupportsColumnAccess: false,
     policyAgentSupportsFullAccess: true,
     policyAgentSupportsMaskedAccess: true,
+    // A2 (2026-11-19): spec defaults for the five A-class types brought
+    // into T-2 (Bai ruling: A-class 5 rows in). Branch selectors start on
+    // their field defaults (Alation basicAuth / postgres / basic); the
+    // Alation-only keys, Collibra enableEnrichment and the MetadataES
+    // leaves prefill their pin defaults. SharePoint siteUrl is deliberately
+    // NOT prefilled — the pin default is a placeholder URL, never a value.
+    location: '',
+    alationAuthBranch: 'basicAuth',
+    alationAccessToken: '',
+    alationConnectionBranch: 'postgres',
+    alationDbAuthBranch: 'basic',
+    alationDbUsername: '',
+    alationDbPassword: '',
+    alationDbHostPort: '',
+    alationDbDatabase: '',
+    alationDbDatabaseName: '',
+    alationDbDatabaseSchema: '',
+    alationDbScheme: '',
+    alationDbIngestAllDatabases: false,
+    alationDbSslMode: 'disable',
+    alationDbSslCaCertificate: '',
+    alationDbSslCertificate: '',
+    alationDbSslKey: '',
+    alationDbClassificationName: 'PostgresPolicyTags',
+    alationDbQueryStatementSource: 'pg_stat_statements',
+    alationDbUseSlowLogs: false,
+    alationDbQueryHistoryTable: '',
+    alationDbConnectionOptions: '',
+    alationDbConnectionArguments: '',
+    projectName: 'AlationAPI',
+    paginationLimit: 10,
+    includeUndeployedDatasources: false,
+    includeHiddenDatasources: false,
+    ingestDatasources: true,
+    ingestUsersAndGroups: true,
+    ingestDomains: true,
+    ingestKnowledgeArticles: true,
+    ingestDashboards: true,
+    alationTagClassificationName: 'alationTags',
+    enableEnrichment: false,
+    metadataESEntities: JSON.stringify(METADATA_ES_DEFAULT_ENTITIES),
+    recreateIndex: true,
+    searchIndexMappingLanguage: 'EN',
+    batchSize: 100,
+    tenantId: '',
+    siteUrl: '',
+    siteName: '',
   };
 }
 
@@ -350,13 +424,20 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
       (typeof config.hostPort === 'string' ? config.hostPort : '') ||
       '',
     username:
-      typeof config.username === 'string'
-        ? config.username
-        : typeof config.connection?.username === 'string'
-          ? config.connection.username
-          : typeof config.authType?.username === 'string'
-            ? config.authType.username
-            : '',
+      // A2: Alation's top-level `username` is the API auth username
+      // (config.authType.username); the nested database username lives at
+      // config.connection.username and refills the separate
+      // alationDbUsername key below — the generic chain would read the
+      // nested username into the top-level field.
+      service.serviceType === 'Alation'
+        ? (typeof config.authType?.username === 'string' ? config.authType.username : '')
+        : typeof config.username === 'string'
+          ? config.username
+          : typeof config.connection?.username === 'string'
+            ? config.connection.username
+            : typeof config.authType?.username === 'string'
+              ? config.authType.username
+              : '',
     database: typeof config.database === 'string' ? config.database : '',
     databaseName: typeof config.databaseName === 'string' ? config.databaseName : '',
     databaseSchema: typeof config.databaseSchema === 'string' ? config.databaseSchema : '',
@@ -396,7 +477,15 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     ingestAllDatabases: typeof config.ingestAllDatabases === 'boolean' ? config.ingestAllDatabases : false,
     includeSynonyms: typeof config.includeSynonyms === 'boolean' ? config.includeSynonyms : false,
     authMode: authModeFromConfig(config),
-    clientId: typeof config.authType?.clientId === 'string' ? config.authType.clientId : '',
+    // A2: SharePoint stores clientId at the top level (config.clientId);
+    // Databricks OAuth stores it under authType. Top level wins — no
+    // existing type stores a different clientId at the top level.
+    clientId:
+      typeof config.clientId === 'string'
+        ? config.clientId
+        : typeof config.authType?.clientId === 'string'
+          ? config.authType.clientId
+          : '',
     clientSecret: '',
     azureClientId: typeof config.authType?.azureClientId === 'string' ? config.authType.azureClientId : '',
     azureClientSecret: '',
@@ -617,6 +706,108 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
         ?.supportsMaskedAccess === 'boolean'
         ? (config.policyAgentConfig as { supportsMaskedAccess: boolean }).supportsMaskedAccess
         : true,
+    // A2 (2026-11-19): round-trip the five A-class types. Secrets are
+    // never prefilled (blank; masked previous values are preserved at
+    // build time). Spec defaults apply when the stored config omits the
+    // field. The nested Alation auth branch + shared auth keys refill in
+    // hydrateAuthBranchForm (paired call in EditServiceConnectionView),
+    // not here — the Mysql/Postgres precedent.
+    // VertexAI (vertexaiConnection.json): location is top level; the GCP
+    // credentials refill in hydrateAuthBranchForm.
+    location: typeof config.location === 'string' ? config.location : '',
+    // Alation (alationConnection.json): top-level API auth + settings.
+    alationAuthBranch:
+      typeof config.authType?.accessToken === 'string' ? 'apiToken' : 'basicAuth',
+    alationAccessToken: '',
+    alationConnectionBranch:
+      config.connection?.type === 'Postgres'
+        ? 'postgres'
+        : config.connection?.type === 'Mysql'
+          ? 'mysql'
+          : 'none',
+    projectName: typeof config.projectName === 'string' ? config.projectName : 'AlationAPI',
+    paginationLimit: typeof config.paginationLimit === 'number' ? config.paginationLimit : 10,
+    includeUndeployedDatasources:
+      typeof config.includeUndeployedDatasources === 'boolean'
+        ? config.includeUndeployedDatasources
+        : false,
+    includeHiddenDatasources:
+      typeof config.includeHiddenDatasources === 'boolean'
+        ? config.includeHiddenDatasources
+        : false,
+    ingestDatasources:
+      typeof config.ingestDatasources === 'boolean' ? config.ingestDatasources : true,
+    ingestUsersAndGroups:
+      typeof config.ingestUsersAndGroups === 'boolean' ? config.ingestUsersAndGroups : true,
+    ingestDomains: typeof config.ingestDomains === 'boolean' ? config.ingestDomains : true,
+    ingestKnowledgeArticles:
+      typeof config.ingestKnowledgeArticles === 'boolean'
+        ? config.ingestKnowledgeArticles
+        : true,
+    ingestDashboards:
+      typeof config.ingestDashboards === 'boolean' ? config.ingestDashboards : true,
+    alationTagClassificationName:
+      typeof config.alationTagClassificationName === 'string'
+        ? config.alationTagClassificationName
+        : 'alationTags',
+    // Alation nested database connection (config.connection).
+    alationDbUsername:
+      typeof config.connection?.username === 'string' ? config.connection.username : '',
+    alationDbPassword: '',
+    alationDbHostPort:
+      typeof config.connection?.hostPort === 'string' ? config.connection.hostPort : '',
+    alationDbDatabase:
+      typeof config.connection?.database === 'string' ? config.connection.database : '',
+    alationDbDatabaseName:
+      typeof config.connection?.databaseName === 'string' ? config.connection.databaseName : '',
+    alationDbDatabaseSchema:
+      typeof config.connection?.databaseSchema === 'string' ? config.connection.databaseSchema : '',
+    alationDbScheme:
+      typeof config.connection?.scheme === 'string' ? config.connection.scheme : '',
+    alationDbIngestAllDatabases:
+      typeof config.connection?.ingestAllDatabases === 'boolean'
+        ? config.connection.ingestAllDatabases
+        : false,
+    alationDbSslMode:
+      typeof config.connection?.sslMode === 'string' ? config.connection.sslMode : 'disable',
+    alationDbSslCaCertificate: '',
+    alationDbSslCertificate: '',
+    alationDbSslKey: '',
+    alationDbClassificationName:
+      typeof config.connection?.classificationName === 'string'
+        ? config.connection.classificationName
+        : 'PostgresPolicyTags',
+    alationDbQueryStatementSource:
+      typeof config.connection?.queryStatementSource === 'string'
+        ? config.connection.queryStatementSource
+        : 'pg_stat_statements',
+    alationDbUseSlowLogs:
+      typeof config.connection?.useSlowLogs === 'boolean' ? config.connection.useSlowLogs : false,
+    alationDbQueryHistoryTable:
+      typeof config.connection?.queryHistoryTable === 'string'
+        ? config.connection.queryHistoryTable
+        : '',
+    alationDbConnectionOptions: stringifyJsonMap(config.connection?.connectionOptions),
+    alationDbConnectionArguments: stringifyJsonMap(config.connection?.connectionArguments),
+    // Collibra (collibraConnection.json).
+    enableEnrichment:
+      typeof config.enableEnrichment === 'boolean' ? config.enableEnrichment : false,
+    // MetadataES (metadataESConnection.json).
+    metadataESEntities: Array.isArray(config.entities)
+      ? JSON.stringify(config.entities)
+      : JSON.stringify(METADATA_ES_DEFAULT_ENTITIES),
+    recreateIndex: typeof config.recreateIndex === 'boolean' ? config.recreateIndex : true,
+    runMode: typeof config.runMode === 'string' ? config.runMode : '',
+    searchIndexMappingLanguage:
+      typeof config.searchIndexMappingLanguage === 'string'
+        ? config.searchIndexMappingLanguage
+        : 'EN',
+    batchSize: typeof config.batchSize === 'number' ? config.batchSize : 100,
+    // SharePoint (sharePointConnection.json): clientId refills above
+    // (top-level-first); clientSecret never refills; driveId refills above.
+    tenantId: typeof config.tenantId === 'string' ? config.tenantId : '',
+    siteUrl: typeof config.siteUrl === 'string' ? config.siteUrl : '',
+    siteName: typeof config.siteName === 'string' ? config.siteName : '',
   };
 }
 
@@ -1028,21 +1219,24 @@ interface SslLeafFormKeys {
     | 'schemaRegistrySSLCaCertificate'
     | 'supersetSSLCaCertificate'
     | 'restSSLCaCertificate'
-    | 'openMetadataSSLCaCertificate';
+    | 'openMetadataSSLCaCertificate'
+    | 'alationDbSslCaCertificate';
   sslCertificate:
     | 'sslCertificate'
     | 'consumerConfigSSLCertificate'
     | 'schemaRegistrySSLCertificate'
     | 'supersetSSLCertificate'
     | 'restSSLCertificate'
-    | 'openMetadataSSLCertificate';
+    | 'openMetadataSSLCertificate'
+    | 'alationDbSslCertificate';
   sslKey:
     | 'sslKey'
     | 'consumerConfigSSLKey'
     | 'schemaRegistrySSLKey'
     | 'supersetSSLKey'
     | 'restSSLKey'
-    | 'openMetadataSSLKey';
+    | 'openMetadataSSLKey'
+    | 'alationDbSslKey';
 }
 
 function sslConfigFromFormKeys(
@@ -1198,6 +1392,131 @@ function policyAgentConfigFromForm(form: ServiceFormValues): Record<string, bool
   };
 }
 
+/**
+ * A2 (2026-11-19): the Alation nested database connection
+ * (alationConnection.json `connection` oneOf: PostgresConnection /
+ * MysqlConnection). The nested leaves use the `alationDb*` form keys; the
+ * IAM/Azure/GCP branches reuse the shared builders with a synthetic
+ * `{ authType: nestedPrev }` existing object, so their prev-secret lookups
+ * resolve to the nested path. A Postgres+gcp combination emits no auth
+ * leaves — the pin Postgres branch has no GCP option, and the combination
+ * is schema-valid (no required on the nested authType).
+ */
+function buildAlationDbConnection(
+  form: ServiceFormValues,
+  prev: ServiceConnectionConfig['connection'],
+  branch: 'postgres' | 'mysql',
+): NonNullable<ServiceConnectionConfig['connection']> {
+  const nested: NonNullable<ServiceConnectionConfig['connection']> = {
+    type: branch === 'postgres' ? 'Postgres' : 'Mysql',
+  };
+  nested.scheme =
+    branch === 'postgres'
+      ? form.alationDbScheme?.trim() || 'postgresql+psycopg2'
+      : 'mysql+pymysql';
+  if (form.alationDbUsername?.trim()) {
+    nested.username = form.alationDbUsername.trim();
+  }
+  const authBranch = form.alationDbAuthBranch ?? 'basic';
+  const prevAuth = prev?.authType;
+  const prevExisting = prevAuth ? { authType: prevAuth } : undefined;
+  if (authBranch === 'iam') {
+    const auth = buildIamAuthType(form, prevExisting);
+    if (auth) {
+      nested.authType = auth;
+    }
+  } else if (authBranch === 'azure') {
+    const auth = buildAzureAuthType(form, prevExisting);
+    if (auth) {
+      nested.authType = auth;
+    }
+  } else if (authBranch === 'gcp') {
+    if (branch === 'mysql') {
+      nested.authType = buildGcpAuthType(form, prevExisting);
+    }
+  } else {
+    const password = secretFieldValue(
+      form.alationDbPassword,
+      typeof prevAuth?.password === 'string' ? prevAuth.password : undefined,
+    );
+    if (password) {
+      nested.authType = { password };
+    }
+  }
+  if (form.alationDbHostPort?.trim()) {
+    nested.hostPort = form.alationDbHostPort.trim();
+  }
+  if (branch === 'postgres') {
+    if (form.alationDbDatabase?.trim()) {
+      nested.database = form.alationDbDatabase.trim();
+    }
+    if (typeof form.alationDbIngestAllDatabases === 'boolean') {
+      nested.ingestAllDatabases = form.alationDbIngestAllDatabases;
+    }
+    if (form.alationDbSslMode?.trim()) {
+      nested.sslMode = form.alationDbSslMode.trim();
+    }
+    const sslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'alationDbSslCaCertificate',
+        sslCertificate: 'alationDbSslCertificate',
+        sslKey: 'alationDbSslKey',
+      },
+      asSslClientConfig(prev?.sslConfig),
+    );
+    if (sslConfig) {
+      nested.sslConfig = sslConfig;
+    }
+    if (form.alationDbClassificationName?.trim()) {
+      nested.classificationName = form.alationDbClassificationName.trim();
+    }
+    if (form.alationDbQueryStatementSource?.trim()) {
+      nested.queryStatementSource = form.alationDbQueryStatementSource.trim();
+    }
+  } else {
+    if (form.alationDbDatabaseName?.trim()) {
+      nested.databaseName = form.alationDbDatabaseName.trim();
+    }
+    if (form.alationDbDatabaseSchema?.trim()) {
+      nested.databaseSchema = form.alationDbDatabaseSchema.trim();
+    }
+    const sslConfig = sslConfigFromFormKeys(
+      form,
+      {
+        caCertificate: 'alationDbSslCaCertificate',
+        sslCertificate: 'alationDbSslCertificate',
+        sslKey: 'alationDbSslKey',
+      },
+      asSslClientConfig(prev?.sslConfig),
+    );
+    if (sslConfig) {
+      nested.sslConfig = sslConfig;
+    }
+    if (typeof form.alationDbUseSlowLogs === 'boolean') {
+      nested.useSlowLogs = form.alationDbUseSlowLogs;
+    }
+    if (form.alationDbQueryHistoryTable?.trim()) {
+      nested.queryHistoryTable = form.alationDbQueryHistoryTable.trim();
+    }
+  }
+  const connectionOptions = parseJsonMap(
+    form.alationDbConnectionOptions,
+    'Connection options',
+  );
+  if (connectionOptions) {
+    nested.connectionOptions = connectionOptions;
+  }
+  const connectionArguments = parseJsonMap(
+    form.alationDbConnectionArguments,
+    'Connection arguments',
+  );
+  if (connectionArguments) {
+    nested.connectionArguments = connectionArguments;
+  }
+  return nested;
+}
+
 export function buildServiceConnection(
   form: ServiceFormValues,
   existing?: ServiceConnection,
@@ -1276,6 +1595,202 @@ export function buildServiceConnection(
     const connectionArguments = parseJsonMap(form.connectionArguments, 'Connection arguments');
     if (connectionArguments) {
       config.connectionArguments = connectionArguments;
+    }
+  } else if (type === 'VertexAI') {
+    // A2 (2026-11-19): pin vertexaiConnection.json — credentials
+    // { gcpConfig oneOf, gcpImpersonateServiceAccount? } + location
+    // (required). The Mysql GCP password/enableIamAuth head fields are NOT
+    // part of this schema, so buildGcpVariant (not buildGcpAuthType) builds
+    // the variant; the impersonate block nests under `credentials` beside
+    // gcpConfig, not inside a gcpConfig wrapper.
+    const prevCredentials = existing?.config?.credentials;
+    const prevGcp =
+      prevCredentials && typeof prevCredentials === 'object'
+        ? prevCredentials.gcpConfig
+        : undefined;
+    const credentials: NonNullable<ServiceConnectionConfig['credentials']> = {
+      gcpConfig: buildGcpVariant(form, prevGcp),
+    };
+    const impersonate = buildGcpImpersonateServiceAccount(form);
+    if (impersonate) {
+      credentials.gcpImpersonateServiceAccount = impersonate;
+    }
+    config.credentials = credentials;
+    if (form.location?.trim()) {
+      config.location = form.location.trim();
+    }
+  } else if (type === 'Alation') {
+    // A2 (2026-11-19): pin alationConnection.json — top-level hostPort +
+    // authType oneOf (BasicAuth {username, password} / ApiAccessTokenAuth
+    // {accessToken}) + connection oneOf (Postgres / Mysql / None) + the
+    // Alation API settings. The nested connection is built by
+    // buildAlationDbConnection below.
+    const prev = existing?.config;
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if ((form.alationAuthBranch ?? 'basicAuth') === 'apiToken') {
+      const token = secretFieldValue(
+        form.alationAccessToken,
+        typeof prev?.authType?.accessToken === 'string' ? prev.authType.accessToken : undefined,
+      );
+      if (token) {
+        config.authType = { accessToken: token };
+      }
+    } else {
+      const auth: NonNullable<ServiceConnectionConfig['authType']> = {};
+      if (form.username?.trim()) {
+        auth.username = form.username.trim();
+      }
+      const password = secretFieldValue(
+        form.password,
+        typeof prev?.authType?.password === 'string' ? prev.authType.password : undefined,
+      );
+      if (password) {
+        auth.password = password;
+      }
+      if (Object.keys(auth).length) {
+        config.authType = auth;
+      }
+    }
+    const connBranch = form.alationConnectionBranch ?? 'postgres';
+    if (connBranch !== 'none') {
+      config.connection = buildAlationDbConnection(form, prev?.connection, connBranch);
+    }
+    if (form.projectName?.trim()) {
+      config.projectName = form.projectName.trim();
+    }
+    if (typeof form.paginationLimit === 'number') {
+      config.paginationLimit = form.paginationLimit;
+    }
+    if (typeof form.includeUndeployedDatasources === 'boolean') {
+      config.includeUndeployedDatasources = form.includeUndeployedDatasources;
+    }
+    if (typeof form.includeHiddenDatasources === 'boolean') {
+      config.includeHiddenDatasources = form.includeHiddenDatasources;
+    }
+    if (typeof form.ingestDatasources === 'boolean') {
+      config.ingestDatasources = form.ingestDatasources;
+    }
+    if (typeof form.ingestUsersAndGroups === 'boolean') {
+      config.ingestUsersAndGroups = form.ingestUsersAndGroups;
+    }
+    if (typeof form.ingestDomains === 'boolean') {
+      config.ingestDomains = form.ingestDomains;
+    }
+    if (typeof form.ingestKnowledgeArticles === 'boolean') {
+      config.ingestKnowledgeArticles = form.ingestKnowledgeArticles;
+    }
+    if (typeof form.ingestDashboards === 'boolean') {
+      config.ingestDashboards = form.ingestDashboards;
+    }
+    if (form.alationTagClassificationName?.trim()) {
+      config.alationTagClassificationName = form.alationTagClassificationName.trim();
+    }
+    const alationConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (alationConnectionOptions) {
+      config.connectionOptions = alationConnectionOptions;
+    }
+    const alationConnectionArguments = parseJsonMap(
+      form.connectionArguments,
+      'Connection arguments',
+    );
+    if (alationConnectionArguments) {
+      config.connectionArguments = alationConnectionArguments;
+    }
+  } else if (type === 'Collibra') {
+    // A2 (2026-11-19): pin collibraConnection.json — flat username /
+    // password / hostPort + enableEnrichment + connectionOptions /
+    // connectionArguments. The glossary/domain filter leaves live in the
+    // filter step, not in this form (D-A2-3).
+    const prev = existing?.config;
+    if (form.username?.trim()) {
+      config.username = form.username.trim();
+    }
+    const password = secretFieldValue(
+      form.password,
+      typeof prev?.password === 'string' ? prev.password : undefined,
+    );
+    if (password) {
+      config.password = password;
+    }
+    if (form.hostPort?.trim()) {
+      config.hostPort = form.hostPort.trim();
+    }
+    if (typeof form.enableEnrichment === 'boolean') {
+      config.enableEnrichment = form.enableEnrichment;
+    }
+    const collibraConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (collibraConnectionOptions) {
+      config.connectionOptions = collibraConnectionOptions;
+    }
+    const collibraConnectionArguments = parseJsonMap(
+      form.connectionArguments,
+      'Connection arguments',
+    );
+    if (collibraConnectionArguments) {
+      config.connectionArguments = collibraConnectionArguments;
+    }
+  } else if (type === 'MetadataES') {
+    // A2 (2026-11-19): pin metadataESConnection.json — entities (string
+    // array, JSON textarea) + recreateIndex + runMode +
+    // searchIndexMappingLanguage + batchSize. No required array, no secret
+    // leaves.
+    const entities = parseJsonArray(form.metadataESEntities, 'Entities', isJsonString, 'strings');
+    if (entities) {
+      config.entities = entities;
+    }
+    if (typeof form.recreateIndex === 'boolean') {
+      config.recreateIndex = form.recreateIndex;
+    }
+    if (form.runMode?.trim()) {
+      config.runMode = form.runMode.trim();
+    }
+    if (form.searchIndexMappingLanguage?.trim()) {
+      config.searchIndexMappingLanguage = form.searchIndexMappingLanguage.trim();
+    }
+    if (typeof form.batchSize === 'number') {
+      config.batchSize = form.batchSize;
+    }
+  } else if (type === 'SharePoint') {
+    // A2 (2026-11-19): pin sharePointConnection.json — clientId /
+    // clientSecret / tenantId / siteUrl (required) + siteName / driveId +
+    // connectionOptions / connectionArguments. clientSecret follows the
+    // secret discipline; siteUrl is emitted exactly as typed (the pin
+    // default is a placeholder, never prefilled).
+    const prev = existing?.config;
+    if (form.clientId?.trim()) {
+      config.clientId = form.clientId.trim();
+    }
+    const clientSecret = secretFieldValue(
+      form.clientSecret,
+      typeof prev?.clientSecret === 'string' ? prev.clientSecret : undefined,
+    );
+    if (clientSecret) {
+      config.clientSecret = clientSecret;
+    }
+    if (form.tenantId?.trim()) {
+      config.tenantId = form.tenantId.trim();
+    }
+    if (form.siteUrl?.trim()) {
+      config.siteUrl = form.siteUrl.trim();
+    }
+    if (form.siteName?.trim()) {
+      config.siteName = form.siteName.trim();
+    }
+    if (form.driveId?.trim()) {
+      config.driveId = form.driveId.trim();
+    }
+    const sharePointConnectionOptions = parseJsonMap(form.connectionOptions, 'Connection options');
+    if (sharePointConnectionOptions) {
+      config.connectionOptions = sharePointConnectionOptions;
+    }
+    const sharePointConnectionArguments = parseJsonMap(
+      form.connectionArguments,
+      'Connection arguments',
+    );
+    if (sharePointConnectionArguments) {
+      config.connectionArguments = sharePointConnectionArguments;
     }
   } else if (type === 'Snowflake') {
     if (form.username?.trim()) {
@@ -2133,6 +2648,16 @@ export function buildServiceConnection(
     'ElasticSearch',
     'Ranger',
     'OpenAI',
+    // A2 (2026-11-19): the five A-class types build their own auth shapes
+    // (Alation {username,password}/{accessToken} + nested authType,
+    // Collibra flat config.password, VertexAI credentials,
+    // MetadataES/SharePoint password-less) — applyPassword would overwrite
+    // them with config.authType = {password}.
+    'VertexAI',
+    'Alation',
+    'Collibra',
+    'MetadataES',
+    'SharePoint',
   ];
   if (!NO_GENERIC_PASSWORD.includes(type)) {
     applyPassword(config, form, existing?.config);
@@ -2172,7 +2697,16 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   const config = { ...connection.config };
   if (config.authType && typeof config.authType === 'object') {
     const auth = { ...config.authType };
-    for (const key of ['password', 'token', 'clientSecret', 'azureClientSecret', 'apiKey', 'authString'] as const) {
+    for (const key of [
+      'password',
+      'token',
+      'clientSecret',
+      'azureClientSecret',
+      'apiKey',
+      'authString',
+      // A2: Alation ApiAccessTokenAuth.
+      'accessToken',
+    ] as const) {
       if (typeof auth[key] === 'string') {
         auth[key] = '********';
       }
@@ -2181,6 +2715,10 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
   }
   if (typeof config.password === 'string') {
     config.password = '********';
+  }
+  // A2: SharePoint top-level clientSecret.
+  if (typeof config.clientSecret === 'string') {
+    config.clientSecret = '********';
   }
   if (typeof config.apiKey === 'string') {
     config.apiKey = '********';
@@ -2277,6 +2815,60 @@ export function redactConnectionForDisplay(connection?: ServiceConnection): Serv
         }
       }
       nested.sslConfig = sslConfig;
+    }
+    // A2: Alation's nested authType mirrors the top-level one — mask its
+    // password, the nested AWS session secrets, the Azure client secret,
+    // and the nested GCP private key. (The top-level authType.awsConfig /
+    // azureConfig / gcpConfig objects are a pre-existing display gap for
+    // the Mysql/Postgres types, out of this lane's scope; the nested shape
+    // is new surface introduced here, so it is masked as built.)
+    if (nested.authType && typeof nested.authType === 'object') {
+      const nestedAuth = { ...nested.authType };
+      for (const key of [
+        'password',
+        'token',
+        'clientSecret',
+        'azureClientSecret',
+        'apiKey',
+        'authString',
+        'accessToken',
+      ] as const) {
+        if (typeof nestedAuth[key] === 'string') {
+          nestedAuth[key] = '********';
+        }
+      }
+      if (nestedAuth.awsConfig && typeof nestedAuth.awsConfig === 'object') {
+        const aws = { ...nestedAuth.awsConfig };
+        for (const key of ['awsSecretAccessKey', 'awsSessionToken'] as const) {
+          if (typeof aws[key] === 'string') {
+            aws[key] = '********';
+          }
+        }
+        nestedAuth.awsConfig = aws;
+      }
+      if (nestedAuth.azureConfig && typeof nestedAuth.azureConfig === 'object') {
+        const azure = { ...nestedAuth.azureConfig };
+        if (typeof azure.clientSecret === 'string') {
+          azure.clientSecret = '********';
+        }
+        nestedAuth.azureConfig = azure;
+      }
+      if (nestedAuth.gcpConfig && typeof nestedAuth.gcpConfig === 'object') {
+        const gcp = { ...nestedAuth.gcpConfig };
+        const inner = gcp.gcpConfig;
+        if (
+          inner &&
+          typeof inner === 'object' &&
+          typeof (inner as Record<string, unknown>)['privateKey'] === 'string'
+        ) {
+          gcp.gcpConfig = {
+            ...(inner as Record<string, unknown>),
+            privateKey: '********',
+          };
+        }
+        nestedAuth.gcpConfig = gcp;
+      }
+      nested.authType = nestedAuth;
     }
     config.connection = nested;
   }

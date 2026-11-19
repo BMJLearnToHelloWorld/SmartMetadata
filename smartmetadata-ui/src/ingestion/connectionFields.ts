@@ -1178,6 +1178,227 @@ const databricksAuthFields: readonly Field[] = [
   },
 ];
 
+// A2 (2026-11-19): the five A-class types brought into T-2 (Bai ruling:
+// A-class 5 rows in, WEBHOOK out). Their pin schemas nest the same oneOf
+// shapes the database groups already model — Alation nests the Postgres /
+// Mysql authType oneOf under `connection`, VertexAI nests the Mysql GCP
+// oneOf under `credentials` — so these groups re-gate copies of the shared
+// leaf arrays instead of duplicating twenty leaves each. A mapped copy keeps
+// key / control / title / description / branch / testId and only replaces
+// the gate + group; the builder (connections.ts) reads the same form keys.
+// The Mysql / Postgres / Greenplum / Redshift / Timescale groups are
+// untouched by this: their const arrays below are never rewritten.
+const alationConnectionGateNotNone: ConnectionFieldShowWhen = {
+  field: 'alationConnectionBranch',
+  notEquals: 'none',
+  defaultValue: 'postgres',
+};
+const alationConnectionGatePostgres: ConnectionFieldShowWhen = {
+  field: 'alationConnectionBranch',
+  equals: 'postgres',
+  defaultValue: 'postgres',
+};
+const alationConnectionGateMysql: ConnectionFieldShowWhen = {
+  field: 'alationConnectionBranch',
+  equals: 'mysql',
+  defaultValue: 'postgres',
+};
+const alationDbAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'alationDbAuthBranch',
+  equals: branch,
+  defaultValue: 'basic',
+});
+const alationAuthGate = (branch: string): ConnectionFieldShowWhen => ({
+  field: 'alationAuthBranch',
+  equals: branch,
+  defaultValue: 'basicAuth',
+});
+
+/**
+ * Re-gate shared branch leaves under another selector: the gate becomes
+ * `gate` (or is dropped when undefined), `extraGates` become `showWhenAll`
+ * (or it is dropped when empty), and the group + testId prefix move to the
+ * nesting type. The leaf's own `branch` tag is kept, so selector switches
+ * still clear the other branches' values (ServiceConnectionFields).
+ */
+const reGateBranchFields = (
+  fields: readonly Field[],
+  gate: ConnectionFieldShowWhen | undefined,
+  extraGates: readonly ConnectionFieldShowWhen[],
+  group: string,
+  testIdPrefix?: string,
+  testIdFrom?: string,
+): Field[] =>
+  fields.map((field) => {
+    const next: Field = { ...field, group };
+    if (gate) {
+      next.showWhen = gate;
+    } else {
+      delete next.showWhen;
+    }
+    if (extraGates.length) {
+      next.showWhenAll = extraGates;
+    } else {
+      delete next.showWhenAll;
+    }
+    if (testIdPrefix && testIdFrom && next.testId) {
+      next.testId = next.testId.replace(testIdFrom, testIdPrefix);
+    }
+    return next;
+  });
+
+/** Re-gate GCP variant leaves: their own `showWhen` (the variant gate) is
+ * kept, `showWhenAll` is replaced by `gates` (or dropped when empty). */
+const reGateGcpVariantFields = (
+  fields: readonly Field[],
+  gates: readonly ConnectionFieldShowWhen[],
+  group: string,
+  testIdPrefix?: string,
+): Field[] =>
+  fields.map((field) => {
+    const next: Field = { ...field, group };
+    if (gates.length) {
+      next.showWhenAll = gates;
+    } else {
+      delete next.showWhenAll;
+    }
+    if (testIdPrefix && next.testId) {
+      next.testId = next.testId.replace('service-auth-gcp', testIdPrefix);
+    }
+    return next;
+  });
+
+const GCP_VARIANT_BRANCHES: readonly string[] = [
+  'gcpValues',
+  'gcpCredentialsPath',
+  'gcpExternalAccount',
+  'gcpADC',
+];
+const gcpVariantLeafFields: readonly Field[] = gcpBranchFields.filter((field) =>
+  GCP_VARIANT_BRANCHES.includes(field.branch ?? ''),
+);
+const gcpImpersonateLeafFields: readonly Field[] = gcpBranchFields.filter(
+  (field) =>
+    field.key === 'authGcpImpersonateEmail' || field.key === 'authGcpImpersonateLifetime',
+);
+const gcpAuthHeadFields: readonly Field[] = gcpBranchFields.filter(
+  (field) =>
+    field.key === 'authGcpPassword' ||
+    field.key === 'authGcpEnableIamAuth' ||
+    field.key === 'authGcpConfigBranch',
+);
+const gcpConfigBranchSelectorField: readonly Field[] = gcpBranchFields.filter(
+  (field) => field.key === 'authGcpConfigBranch',
+);
+
+/** Alation nested branches: the same IAM / Azure / GCP leaves, re-gated on
+ * the nested selectors (`alationDbAuthBranch` + `alationConnectionBranch`).
+ * IAM / Azure exist under both Postgres and Mysql; GCP only under Mysql. */
+const alationIamBranchFields: readonly Field[] = reGateBranchFields(
+  iamBranchFields,
+  alationDbAuthGate('iam'),
+  [alationConnectionGateNotNone],
+  'connection',
+  'service-alation-aws',
+  'service-auth-aws',
+);
+const alationAzureBranchFields: readonly Field[] = reGateBranchFields(
+  azureBranchFields,
+  alationDbAuthGate('azure'),
+  [alationConnectionGateNotNone],
+  'connection',
+  'service-alation-azure',
+  'service-auth-azure',
+);
+const alationGcpHeadFields: readonly Field[] = reGateBranchFields(
+  gcpAuthHeadFields,
+  alationDbAuthGate('gcp'),
+  [alationConnectionGateNotNone, alationConnectionGateMysql],
+  'connection',
+  'service-alation-gcp',
+  'service-auth-gcp',
+);
+const alationGcpVariantFields: readonly Field[] = reGateGcpVariantFields(
+  gcpVariantLeafFields,
+  [alationDbAuthGate('gcp'), alationConnectionGateNotNone, alationConnectionGateMysql],
+  'connection',
+  'service-alation-gcp',
+);
+const alationGcpImpersonateFields: readonly Field[] = reGateBranchFields(
+  gcpImpersonateLeafFields,
+  alationDbAuthGate('gcp'),
+  [alationConnectionGateNotNone, alationConnectionGateMysql],
+  'connection',
+  'service-alation-gcp',
+  'service-auth-gcp',
+);
+
+/** Alation nested sslConfig triplet: independent `alationDbSsl*` keys (the
+ * nested sslConfig lives under `connection.sslConfig`, never the top-level
+ * keys — the same per-triplet-key rule as the Kafka/Superset groups).
+ * Postgres gates on the nested `alationDbSslMode` (not top-level
+ * `sslMode`); Mysql has no sslMode, so its copy is always visible. */
+const ALATION_DB_SSL_TRIPLET: readonly [key: Field['key'], labelKey: string, testId: string][] = [
+  ['alationDbSslCaCertificate', 'connection.sslCaCertificate', 'service-alation-ssl-ca-certificate'],
+  ['alationDbSslCertificate', 'connection.sslCertificate', 'service-alation-ssl-certificate'],
+  ['alationDbSslKey', 'connection.sslKey', 'service-alation-ssl-key'],
+];
+const alationDbSslLeavesPostgres: readonly Field[] = sslConfigLeavesFor(
+  ALATION_DB_SSL_TRIPLET,
+  false,
+  'connection',
+  'SSL Config',
+).map((field) => ({
+  ...field,
+  showWhen: {
+    field: 'alationDbSslMode',
+    notEquals: 'disable',
+    defaultValue: 'disable',
+  },
+  showWhenAll: [alationConnectionGateNotNone, alationConnectionGatePostgres],
+}));
+const alationDbSslLeavesMysql: readonly Field[] = sslConfigLeavesFor(
+  ALATION_DB_SSL_TRIPLET,
+  false,
+  'connection',
+  'SSL Config',
+).map((field) => ({
+  ...field,
+  showWhenAll: [alationConnectionGateNotNone, alationConnectionGateMysql],
+}));
+
+/** VertexAI credentials: the same GCP variant + impersonate leaves, with no
+ * outer auth gate (VertexAI has no `authTypeBranch`) and group `credentials`. */
+const vertexAIGcpSelectorField: readonly Field[] = reGateBranchFields(
+  gcpConfigBranchSelectorField,
+  undefined,
+  [],
+  'credentials',
+  'service-vertexai-gcp',
+  'service-auth-gcp',
+).map((field) => ({
+  // First field of the `credentials` group: the section label + schema are
+  // the pin `credentials` object's title ('GCP Credentials') and object
+  // shape (gcpConfigTypeField precedent).
+  ...field,
+  groupLabel: 'GCP Credentials',
+  groupSchema: { type: 'object' },
+}));
+const vertexAIGcpVariantFields: readonly Field[] = reGateGcpVariantFields(
+  gcpVariantLeafFields,
+  [],
+  'credentials',
+  'service-vertexai-gcp',
+);
+const vertexAIGcpImpersonateFields: readonly Field[] = reGateBranchFields(
+  gcpImpersonateLeafFields,
+  undefined,
+  [],
+  'credentials',
+  'service-vertexai-gcp',
+  'service-auth-gcp',
+);
+
 export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
   {
     types: ['Postgres'],
@@ -2247,6 +2468,25 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     ],
   },
   {
+    types: ['VertexAI'],
+    // Pin vertexaiConnection.json property order: credentials (gcpConfig
+    // oneOf, 4 variants + impersonate), location. The GCP leaves reuse the
+    // Mysql GCP branch form keys (authGcp*) with the outer auth gate
+    // removed — VertexAI has no authTypeBranch. projectId is a pin oneOf
+    // (single string / string array); the lean form renders the
+    // single-value form only (Mysql precedent).
+    fields: [
+      ...vertexAIGcpSelectorField,
+      ...vertexAIGcpVariantFields,
+      ...vertexAIGcpImpersonateFields,
+      requiredText('location', 'connection.location', {
+        testId: 'service-vertexai-location',
+        title: 'Project location',
+        description: 'location/region of google cloud project',
+      }),
+    ],
+  },
+  {
     types: ['OpenMetadata'],
     fields: [
       // W3-3A: A group (openMetadataConnection.json), spec order. The B
@@ -2362,6 +2602,465 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
     ],
   },
   {
+    types: ['Alation'],
+    // Pin alationConnection.json property order: hostPort, authType
+    // (BasicAuth / ApiAccessTokenAuth), connection (PostgresConnection /
+    // MysqlConnection / None, each with its own authType oneOf), projectName,
+    // paginationLimit, include*/ingest*, alationTagClassificationName,
+    // connectionOptions, connectionArguments. Nested `*FilterPattern` and
+    // `supports*` leaves are excluded by the T-2 field-set rules (filter
+    // step / server defaults). Nested leaves use `alationDb*` form keys —
+    // the top level already owns username/password/hostPort/scheme/
+    // connectionOptions — and share the IAM/Azure/GCP form keys across the
+    // two engines (only one connection branch is active at a time).
+    // Two-copy defs (scheme, username, hostPort, auth selector) carry the
+    // engine gate as `showWhen` with NO `branch`, so the value persists
+    // across an engine switch; the scheme + auth selector DO carry a branch
+    // (their values are engine-specific: scheme enums differ, GCP is
+    // Mysql-only), so switching engines clears them back to the default.
+    fields: [
+      hostPort('Host and port of the Alation service.'),
+      {
+        key: 'alationAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Authentication type for Alation',
+        description: 'Types of methods used to authenticate to the alation instance',
+        group: 'authType',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basicAuth',
+        authNote: true,
+        testId: 'service-alation-auth-type',
+        options: [
+          { value: 'basicAuth', title: 'BasicAuth' },
+          { value: 'apiToken', title: 'ApiAccessTokenAuth' },
+        ],
+      },
+      {
+        ...usernameRequired,
+        description: 'Username to access the service.',
+        group: 'authType',
+        branch: 'basicAuth',
+        showWhen: alationAuthGate('basicAuth'),
+      },
+      {
+        ...basicAuthPasswordField,
+        description: 'Password to access the service.',
+        branch: 'basicAuth',
+        testId: 'service-alation-password',
+        showWhen: alationAuthGate('basicAuth'),
+      },
+      {
+        key: 'alationAccessToken',
+        control: 'password',
+        labelKey: 'connection.accessToken',
+        title: 'Access Token',
+        description: 'Access Token for the API',
+        group: 'authType',
+        branch: 'apiToken',
+        testId: 'service-alation-access-token',
+        hintKey: 'connection.secretHint',
+        showWhen: alationAuthGate('apiToken'),
+      },
+      {
+        key: 'alationConnectionBranch',
+        control: 'select',
+        labelKey: 'connection.alationConnection',
+        title: 'Alation Database Connection',
+        description: 'Choose between mysql and postgres connection for alation database',
+        group: 'connection',
+        groupLabel: 'Alation Database Connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'postgres',
+        testId: 'service-alation-connection-type',
+        options: [
+          { value: 'postgres', title: 'PostgresConnection' },
+          { value: 'mysql', title: 'MysqlConnection' },
+          { value: 'none', title: 'None' },
+        ],
+      },
+      // --- Nested PostgresConnection leaves ---
+      {
+        ...schemeField(['postgresql+psycopg2', 'pgspider+psycopg2']),
+        key: 'alationDbScheme',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      },
+      {
+        ...usernameRequired,
+        key: 'alationDbUsername',
+        description:
+          'Username to connect to Postgres. This user should have privileges to read all the metadata in Postgres.',
+        group: 'connection',
+        testId: 'service-alation-db-username',
+        showWhen: alationConnectionGatePostgres,
+      },
+      {
+        key: 'alationDbAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Auth Configuration Type',
+        description: 'Choose Auth Config Type.',
+        group: 'connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basic',
+        authNote: true,
+        branch: 'postgres',
+        testId: 'service-alation-db-auth-type',
+        showWhen: alationConnectionGatePostgres,
+        options: [
+          { value: 'basic', title: 'Basic Auth' },
+          { value: 'iam', title: 'IAM Auth Configuration Source' },
+          { value: 'azure', title: 'Azure Configuration Source' },
+        ],
+      },
+      {
+        ...basicAuthPasswordField,
+        key: 'alationDbPassword',
+        group: 'connection',
+        testId: 'service-alation-db-password',
+        showWhen: alationDbAuthGate('basic'),
+        showWhenAll: [alationConnectionGateNotNone],
+      },
+      ...alationIamBranchFields,
+      ...alationAzureBranchFields,
+      {
+        ...hostPort('Host and port of the source service.'),
+        key: 'alationDbHostPort',
+        group: 'connection',
+        testId: 'service-alation-db-host-port',
+        showWhen: alationConnectionGatePostgres,
+      },
+      requiredText('alationDbDatabase', 'connection.database', {
+        testId: 'service-alation-db-database',
+        title: 'Database',
+        description:
+          'Initial database to connect to. Metadata reading is restricted to this database unless Ingest All Databases is enabled, in which case this database is used as the entry point to discover and scan all databases.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      }),
+      {
+        ...ingestAllDatabases,
+        key: 'alationDbIngestAllDatabases',
+        description:
+          'Ingest data from all databases in Postgres. You can use databaseFilterPattern on top of this.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      },
+      {
+        ...sslModeField,
+        key: 'alationDbSslMode',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      },
+      ...alationDbSslLeavesPostgres,
+      text('alationDbClassificationName', 'connection.classificationName', {
+        testId: 'service-alation-db-classification-name',
+        title: 'Classification Name',
+        description: 'Custom OpenMetadata Classification name for Postgres policy tags.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      }),
+      text('alationDbQueryStatementSource', 'connection.queryStatementSource', {
+        testId: 'service-alation-db-query-statement-source',
+        title: 'Query Statement Source',
+        description:
+          'Fully qualified name of the view or table to use for query logs. If not provided, defaults to pg_stat_statements. Use this to configure a custom view (e.g., my_schema.custom_pg_stat_statements) when direct access to pg_stat_statements is restricted.',
+        group: 'connection',
+        branch: 'postgres',
+        showWhen: alationConnectionGatePostgres,
+      }),
+      {
+        ...connectionOptionsField,
+        key: 'alationDbConnectionOptions',
+        group: 'connection',
+        branch: 'postgres',
+        testId: 'service-alation-db-connection-options',
+        showWhen: alationConnectionGatePostgres,
+      },
+      {
+        ...connectionArgumentsField,
+        key: 'alationDbConnectionArguments',
+        group: 'connection',
+        branch: 'postgres',
+        testId: 'service-alation-db-connection-arguments',
+        showWhen: alationConnectionGatePostgres,
+      },
+      // --- Nested MysqlConnection leaves ---
+      {
+        ...schemeField(['mysql+pymysql']),
+        key: 'alationDbScheme',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        ...usernameRequired,
+        key: 'alationDbUsername',
+        description:
+          'Username to connect to MySQL. This user should have privileges to read all the metadata in Mysql.',
+        group: 'connection',
+        testId: 'service-alation-db-username',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        key: 'alationDbAuthBranch',
+        control: 'authSelect',
+        labelKey: 'connection.authMode',
+        title: 'Auth Configuration Type',
+        description: 'Choose Auth Config Type.',
+        group: 'connection',
+        groupSchema: { oneOf: [{ type: 'object' }] },
+        defaultValue: 'basic',
+        authNote: true,
+        branch: 'mysql',
+        testId: 'service-alation-db-auth-type',
+        showWhen: alationConnectionGateMysql,
+        options: [
+          { value: 'basic', title: 'Basic Auth' },
+          { value: 'iam', title: 'IAM Auth Configuration Source' },
+          { value: 'azure', title: 'Azure Configuration Source' },
+          { value: 'gcp', title: 'GCP CloudSQL Configuration Source' },
+        ],
+      },
+      ...alationGcpHeadFields,
+      ...alationGcpVariantFields,
+      ...alationGcpImpersonateFields,
+      {
+        ...hostPort(
+          "Host and port of the MySQL service. For GCP CloudSQL, use the instance connection name in the format 'project_id:region:instance_name'.",
+        ),
+        key: 'alationDbHostPort',
+        group: 'connection',
+        testId: 'service-alation-db-host-port',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        ...databaseNameDefault,
+        key: 'alationDbDatabaseName',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        ...databaseSchema,
+        key: 'alationDbDatabaseSchema',
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: alationConnectionGateMysql,
+      },
+      ...alationDbSslLeavesMysql,
+      {
+        ...connectionOptionsField,
+        key: 'alationDbConnectionOptions',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-alation-db-connection-options',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        ...connectionArgumentsField,
+        key: 'alationDbConnectionArguments',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-alation-db-connection-arguments',
+        showWhen: alationConnectionGateMysql,
+      },
+      {
+        key: 'alationDbUseSlowLogs',
+        control: 'toggle',
+        labelKey: 'connection.useSlowLogs',
+        title: 'Use Slow Logs for Lineage',
+        description: 'Use slow logs to extract lineage.',
+        group: 'connection',
+        branch: 'mysql',
+        testId: 'service-alation-db-use-slow-logs',
+        showWhen: alationConnectionGateMysql,
+      },
+      text('alationDbQueryHistoryTable', 'connection.queryHistoryTable', {
+        testId: 'service-alation-db-query-history',
+        title: 'Query History Table',
+        description:
+          "Table name to fetch the query history. When set, this overrides the default 'mysql.general_log' (or 'mysql.slow_log' when 'useSlowLogs' is enabled). The custom table must expose columns compatible with the selected log path.",
+        group: 'connection',
+        branch: 'mysql',
+        showWhen: alationConnectionGateMysql,
+      }),
+      // --- Top-level Alation API settings (pin order after `connection`) ---
+      text('projectName', 'connection.projectName', {
+        testId: 'service-alation-project-name',
+        title: 'Project Name',
+        description: 'Project name to create the refreshToken. Can be anything',
+      }),
+      {
+        key: 'paginationLimit',
+        control: 'number',
+        labelKey: 'connection.paginationLimit',
+        title: 'Pagination Limit',
+        description: 'Pagination limit used for Alation APIs pagination',
+        testId: 'service-alation-pagination-limit',
+      },
+      {
+        key: 'includeUndeployedDatasources',
+        control: 'toggle',
+        labelKey: 'connection.includeUndeployedDatasources',
+        title: 'Include Undeployed Datasources',
+        description: 'Specifies if undeployed datasources should be included while ingesting.',
+        testId: 'service-alation-include-undeployed',
+      },
+      {
+        key: 'includeHiddenDatasources',
+        control: 'toggle',
+        labelKey: 'connection.includeHiddenDatasources',
+        title: 'Include Hidden Datasources',
+        description: 'Specifies if hidden datasources should be included while ingesting.',
+        testId: 'service-alation-include-hidden',
+      },
+      {
+        key: 'ingestDatasources',
+        control: 'toggle',
+        labelKey: 'connection.ingestDatasources',
+        title: 'Ingest Datasources',
+        description: 'Specifies if Datasources are to be ingested while running the ingestion job.',
+        testId: 'service-alation-ingest-datasources',
+      },
+      {
+        key: 'ingestUsersAndGroups',
+        control: 'toggle',
+        labelKey: 'connection.ingestUsersAndGroups',
+        title: 'Ingest Users and Groups',
+        description: 'Specifies if Users and Groups are to be ingested while running the ingestion job.',
+        testId: 'service-alation-ingest-users-groups',
+      },
+      {
+        key: 'ingestDomains',
+        control: 'toggle',
+        labelKey: 'connection.ingestDomains',
+        title: 'Ingest Domains',
+        description: 'Specifies if Domains are to be ingested while running the ingestion job.',
+        testId: 'service-alation-ingest-domains',
+      },
+      {
+        key: 'ingestKnowledgeArticles',
+        control: 'toggle',
+        labelKey: 'connection.ingestKnowledgeArticles',
+        title: 'Ingest Knowledge Articles',
+        description: 'Specifies if Knowledge Articles are to be ingested while running the ingestion job.',
+        testId: 'service-alation-ingest-knowledge',
+      },
+      {
+        key: 'ingestDashboards',
+        control: 'toggle',
+        labelKey: 'connection.ingestDashboards',
+        title: 'Ingest Dashboards',
+        description: 'Specifies if Dashboards are to be ingested while running the ingestion job.',
+        testId: 'service-alation-ingest-dashboards',
+      },
+      text('alationTagClassificationName', 'connection.alationTagClassificationName', {
+        testId: 'service-alation-tag-classification-name',
+        title: 'Alation Tags Classification Name',
+        description: 'Custom OpenMetadata Classification name for alation tags.',
+      }),
+      connectionOptionsField,
+      connectionArgumentsField,
+    ],
+  },
+  {
+    types: ['Collibra'],
+    // Pin collibraConnection.json property order: username, password,
+    // hostPort, enableEnrichment, connectionOptions, connectionArguments.
+    // The glossary/domain filter leaves are NOT modeled here (D-A2-3): the
+    // product has a separate filter step that already maps Collibra to
+    // them (serviceFilterFields.ts), and two editors for the same keys
+    // would be two sources of truth.
+    fields: [
+      {
+        ...usernameRequired,
+        description:
+          'Username to connect to the Collibra. This user should have privileges to read all the metadata in Collibra.',
+      },
+      {
+        ...basicAuthPasswordField,
+        description: 'Password to access the Collibra.',
+      },
+      hostPort('Host and port of the Collibra service.'),
+      {
+        key: 'enableEnrichment',
+        control: 'toggle',
+        labelKey: 'connection.enableEnrichment',
+        title: 'Enable Asset Enrichment',
+        description:
+          'Enable enrichment of existing OpenMetadata assets with Collibra metadata (descriptions, tags, owners). When enabled, the connector will match Collibra assets to OpenMetadata entities and apply metadata without creating new assets.',
+        testId: 'service-collibra-enable-enrichment',
+      },
+      connectionOptionsField,
+      connectionArgumentsField,
+    ],
+  },
+  {
+    types: ['MetadataES'],
+    // Pin metadataESConnection.json property order: entities, recreateIndex,
+    // runMode, searchIndexMappingLanguage, batchSize. No required array, no
+    // secret leaves. `entities` is a string array rendered as a JSON
+    // textarea (Mcp configFilePaths precedent, parseJsonArray in the
+    // builder); the 14-item default is prefilled by createEmptyServiceForm.
+    fields: [
+      {
+        key: 'metadataESEntities',
+        control: 'textarea',
+        labelKey: 'connection.entities',
+        title: 'Entities',
+        description: 'List of entities that you need to reindex',
+        schemaType: 'array',
+        testId: 'service-metadata-es-entities',
+      },
+      {
+        key: 'recreateIndex',
+        control: 'toggle',
+        labelKey: 'connection.recreateIndex',
+        title: 'Recreate Indexes',
+        testId: 'service-metadata-es-recreate-index',
+      },
+      {
+        key: 'runMode',
+        control: 'select',
+        labelKey: 'connection.runMode',
+        title: 'Run Mode',
+        description: 'This schema publisher run modes.',
+        testId: 'service-metadata-es-run-mode',
+        options: [{ value: 'stream' }, { value: 'batch' }],
+      },
+      {
+        key: 'searchIndexMappingLanguage',
+        control: 'select',
+        labelKey: 'connection.searchIndexMappingLanguage',
+        title: 'Search Index Mapping Language',
+        description: 'Recreate Indexes with updated Language',
+        testId: 'service-metadata-es-search-language',
+        options: [
+          { value: 'EN' },
+          { value: 'JP' },
+          { value: 'ZH' },
+          { value: 'RU' },
+          { value: 'KO' },
+        ],
+      },
+      {
+        key: 'batchSize',
+        control: 'number',
+        labelKey: 'connection.batchSize',
+        title: 'Batch Size',
+        description: 'Maximum number of events sent in a batch (Default 100).',
+        testId: 'service-metadata-es-batch-size',
+      },
+    ],
+  },
+  {
     types: ['GoogleDrive'],
     // Pin googleDriveConnection.json: credentials (gcpConfig oneOf +
     // impersonation), delegatedEmail, driveId, includeTeamDrives,
@@ -2441,6 +3140,54 @@ export const CONNECTION_FIELD_GROUPS: readonly ConnectionFieldGroup[] = [
         description: 'Extract metadata only for Google Sheets files',
         testId: 'service-include-google-sheets',
       },
+      connectionOptionsField,
+      connectionArgumentsField,
+    ],
+  },
+  {
+    types: ['SharePoint'],
+    // Pin sharePointConnection.json property order: clientId, clientSecret,
+    // tenantId, siteUrl, siteName, driveId, connectionOptions,
+    // connectionArguments. The `siteUrl` pin default is a placeholder URL
+    // (https://yourorg.sharepoint.com/sites/yoursite) and is deliberately
+    // NOT prefilled: a placeholder must never be submitted as a value.
+    // The directory/file/spreadsheet/worksheet filter leaves are excluded
+    // by the T-2 field-set rules (filter step already maps SharePoint).
+    fields: [
+      requiredText('clientId', 'connection.clientId', {
+        testId: 'service-sharepoint-client-id',
+        title: 'Client ID',
+        description: 'Application (client) ID from Azure Active Directory',
+      }),
+      {
+        key: 'clientSecret',
+        control: 'password',
+        labelKey: 'connection.clientSecret',
+        title: 'Client Secret',
+        description: 'Application (client) secret from Azure Active Directory',
+        testId: 'service-sharepoint-client-secret',
+        hintKey: 'connection.secretHint',
+      },
+      requiredText('tenantId', 'connection.tenantId', {
+        testId: 'service-sharepoint-tenant-id',
+        title: 'Tenant ID',
+        description: 'Directory (tenant) ID from Azure Active Directory',
+      }),
+      requiredText('siteUrl', 'connection.siteUrl', {
+        testId: 'service-sharepoint-site-url',
+        title: 'Site URL',
+        description: 'SharePoint site URL',
+      }),
+      text('siteName', 'connection.siteName', {
+        testId: 'service-sharepoint-site-name',
+        title: 'Site Name',
+        description: 'SharePoint site name',
+      }),
+      text('driveId', 'connection.driveId', {
+        testId: 'service-sharepoint-drive-id',
+        title: 'Drive ID',
+        description: 'SharePoint drive ID. If not provided, default document library will be used',
+      }),
       connectionOptionsField,
       connectionArgumentsField,
     ],
@@ -3131,7 +3878,7 @@ function assignIfPresent<T extends object>(target: T, key: keyof T, value: unkno
   }
 }
 
-function buildIamAuthType(
+export function buildIamAuthType(
   form: ServiceFormValues,
   existing: ServiceConnectionConfig | undefined,
 ): { awsConfig: AwsCredentialsConfig } | undefined {
@@ -3168,7 +3915,7 @@ function buildIamAuthType(
   return Object.keys(awsConfig).length > 0 ? { awsConfig } : undefined;
 }
 
-function buildAzureAuthType(
+export function buildAzureAuthType(
   form: ServiceFormValues,
   existing: ServiceConnectionConfig | undefined,
 ): { azureConfig: AzureCredentialsConfig } | undefined {
@@ -3194,15 +3941,20 @@ const GCP_VARIANT_TYPES = {
   gcpADC: 'gcp_adc',
 } as const;
 
-function buildGcpVariant(
+export function buildGcpVariant(
   form: ServiceFormValues,
-  existing: ServiceConnectionConfig | undefined,
+  // Previous `gcpConfig.gcpConfig` variant object (the value, not the
+  // whole service config): the privateKey carry only applies when the
+  // previous variant is the same `type`. Callers with a nested previous
+  // config (Alation `connection.authType`, VertexAI `credentials`) pass
+  // their nested variant object directly.
+  prevGcpConfig?: unknown,
 ): Record<string, unknown> {
   const variant = form.authGcpConfigBranch ?? 'gcpValues';
-  const prev = existing?.authType?.gcpConfig?.gcpConfig;
   const prevVariant =
-    prev && typeof prev === 'object' && prev['type'] === GCP_VARIANT_TYPES[variant]
-      ? (prev as Record<string, unknown>)
+    prevGcpConfig && typeof prevGcpConfig === 'object' &&
+    (prevGcpConfig as Record<string, unknown>)['type'] === GCP_VARIANT_TYPES[variant]
+      ? (prevGcpConfig as Record<string, unknown>)
       : undefined;
   const projectId = trimmed(form.authGcpProjectId) || undefined;
   if (variant === 'gcpCredentialsPath') {
@@ -3267,7 +4019,25 @@ function buildGcpVariant(
   return values;
 }
 
-function buildGcpAuthType(
+/** GCP impersonate-service-account block, shared by the Mysql GCP branch
+ * (where it nests under `gcpConfig`) and VertexAI (where it nests under
+ * `credentials` beside `gcpConfig`). */
+export function buildGcpImpersonateServiceAccount(
+  form: ServiceFormValues,
+): { impersonateServiceAccount?: string; lifetime?: number } | undefined {
+  const email = trimmed(form.authGcpImpersonateEmail);
+  if (!email && typeof form.authGcpImpersonateLifetime !== 'number') {
+    return undefined;
+  }
+  return {
+    ...(email ? { impersonateServiceAccount: email } : {}),
+    ...(typeof form.authGcpImpersonateLifetime === 'number'
+      ? { lifetime: form.authGcpImpersonateLifetime }
+      : {}),
+  };
+}
+
+export function buildGcpAuthType(
   form: ServiceFormValues,
   existing: ServiceConnectionConfig | undefined,
 ): ServiceConnectionConfig['authType'] {
@@ -3281,16 +4051,11 @@ function buildGcpAuthType(
     auth.enableIamAuth = form.authGcpEnableIamAuth;
   }
   const gcpConfig: GcpCloudSqlCredentialsConfig = {
-    gcpConfig: buildGcpVariant(form, existing),
+    gcpConfig: buildGcpVariant(form, existing?.authType?.gcpConfig?.gcpConfig),
   };
-  const email = trimmed(form.authGcpImpersonateEmail);
-  if (email || typeof form.authGcpImpersonateLifetime === 'number') {
-    gcpConfig.gcpImpersonateServiceAccount = {
-      ...(email ? { impersonateServiceAccount: email } : {}),
-      ...(typeof form.authGcpImpersonateLifetime === 'number'
-        ? { lifetime: form.authGcpImpersonateLifetime }
-        : {}),
-    };
+  const impersonate = buildGcpImpersonateServiceAccount(form);
+  if (impersonate) {
+    gcpConfig.gcpImpersonateServiceAccount = impersonate;
   }
   auth.gcpConfig = gcpConfig;
   return auth;
@@ -3357,6 +4122,83 @@ function storedText(value: unknown): string | undefined {
  * (pin getFlatAuthTypeData: the private key wins over the password).
  * Mutates and returns `form`.
  */
+/** Shared IAM branch refill (Mysql/Postgres/... + the Alation nested authType). */
+function hydrateAwsAuthForm(form: ServiceFormValues, aws: AwsCredentialsConfig): void {
+  if (typeof aws.enabled === 'boolean') {
+    form.authAwsEnabled = aws.enabled;
+  }
+  form.authAwsAccessKeyId = storedText(aws.awsAccessKeyId);
+  form.authAwsRegion = storedText(aws.awsRegion);
+  form.authAwsEndPointURL = storedText(aws.endPointURL);
+  form.authAwsProfileName = storedText(aws.profileName);
+  form.authAssumeRoleArn = storedText(aws.assumeRoleArn);
+  form.authAssumeRoleSessionName = storedText(aws.assumeRoleSessionName);
+  form.authAssumeRoleSourceIdentity = storedText(aws.assumeRoleSourceIdentity);
+}
+
+/** Shared Azure branch refill (Mysql/Postgres/... + the Alation nested authType). */
+function hydrateAzureAuthForm(form: ServiceFormValues, azure: AzureCredentialsConfig): void {
+  form.authAzureClientId = storedText(azure.clientId);
+  form.authAzureTenantId = storedText(azure.tenantId);
+  form.authAzureAccountName = storedText(azure.accountName);
+  form.authAzureVaultName = storedText(azure.vaultName);
+  form.authAzureScopes = storedText(azure.scopes);
+}
+
+/**
+ * Shared GCP variant + impersonate refill. `variant` is the variant object
+ * itself: the Mysql/Alation `gcpConfig.gcpConfig` value, or the VertexAI
+ * `credentials.gcpConfig` value. Secrets stay blank (blank-means-keep is
+ * enforced at build time).
+ */
+function hydrateGcpVariantForm(
+  form: ServiceFormValues,
+  variant: unknown,
+  impersonate: { impersonateServiceAccount?: string; lifetime?: number } | undefined,
+  enableIamAuth?: boolean,
+): void {
+  if (typeof enableIamAuth === 'boolean') {
+    form.authGcpEnableIamAuth = enableIamAuth;
+  }
+  const typeValue =
+    variant && typeof variant === 'object'
+      ? (variant as Record<string, unknown>)['type']
+      : undefined;
+  const branch =
+    (Object.entries(GCP_VARIANT_TYPES).find(([, type]) => type === typeValue)?.[0] as
+      | ServiceFormValues['authGcpConfigBranch']
+      | undefined) ?? 'gcpValues';
+  form.authGcpConfigBranch = branch;
+  if (variant && typeof variant === 'object') {
+    const record = variant as Record<string, unknown>;
+    const projectId = record['projectId'];
+    form.authGcpProjectId =
+      typeof projectId === 'string'
+        ? projectId
+        : Array.isArray(projectId) && typeof projectId[0] === 'string'
+          ? projectId[0]
+          : undefined;
+    form.authGcpPrivateKeyId = storedText(record['privateKeyId']);
+    form.authGcpClientEmail = storedText(record['clientEmail']);
+    form.authGcpClientId = storedText(record['clientId']);
+    form.authGcpAuthUri = storedText(record['authUri']);
+    form.authGcpTokenUri = storedText(record['tokenUri']);
+    form.authGcpAuthProviderX509CertUrl = storedText(record['authProviderX509CertUrl']);
+    form.authGcpClientX509CertUrl = storedText(record['clientX509CertUrl']);
+    form.authGcpUniverseDomain = storedText(record['universeDomain']);
+    form.authGcpPath = storedText(record['path']);
+    form.authGcpAudience = storedText(record['audience']);
+    form.authGcpSubjectTokenType = storedText(record['subjectTokenType']);
+    form.authGcpTokenUrl = storedText(record['tokenURL']);
+    const source = record['credentialSource'];
+    form.authGcpCredentialSource =
+      source && typeof source === 'object' ? JSON.stringify(source) : undefined;
+  }
+  form.authGcpImpersonateEmail = storedText(impersonate?.impersonateServiceAccount);
+  form.authGcpImpersonateLifetime =
+    typeof impersonate?.lifetime === 'number' ? impersonate.lifetime : undefined;
+}
+
 export function hydrateAuthBranchForm(
   serviceType: string,
   storedConfig: ServiceConnectionConfig,
@@ -3366,67 +4208,18 @@ export function hydrateAuthBranchForm(
     const auth = storedConfig.authType;
     if (auth?.gcpConfig) {
       form.authTypeBranch = 'gcp';
-      if (typeof auth.enableIamAuth === 'boolean') {
-        form.authGcpEnableIamAuth = auth.enableIamAuth;
-      }
-      const inner = auth.gcpConfig.gcpConfig;
-      const typeValue =
-        inner && typeof inner === 'object' ? (inner as Record<string, unknown>)['type'] : undefined;
-      const variant =
-        (Object.entries(GCP_VARIANT_TYPES).find(([, type]) => type === typeValue)?.[0] as
-          | ServiceFormValues['authGcpConfigBranch']
-          | undefined) ?? 'gcpValues';
-      form.authGcpConfigBranch = variant;
-      if (inner && typeof inner === 'object') {
-        const record = inner as Record<string, unknown>;
-        const projectId = record['projectId'];
-        form.authGcpProjectId =
-          typeof projectId === 'string'
-            ? projectId
-            : Array.isArray(projectId) && typeof projectId[0] === 'string'
-              ? projectId[0]
-              : undefined;
-        form.authGcpPrivateKeyId = storedText(record['privateKeyId']);
-        form.authGcpClientEmail = storedText(record['clientEmail']);
-        form.authGcpClientId = storedText(record['clientId']);
-        form.authGcpAuthUri = storedText(record['authUri']);
-        form.authGcpTokenUri = storedText(record['tokenUri']);
-        form.authGcpAuthProviderX509CertUrl = storedText(record['authProviderX509CertUrl']);
-        form.authGcpClientX509CertUrl = storedText(record['clientX509CertUrl']);
-        form.authGcpUniverseDomain = storedText(record['universeDomain']);
-        form.authGcpPath = storedText(record['path']);
-        form.authGcpAudience = storedText(record['audience']);
-        form.authGcpSubjectTokenType = storedText(record['subjectTokenType']);
-        form.authGcpTokenUrl = storedText(record['tokenURL']);
-        const source = record['credentialSource'];
-        form.authGcpCredentialSource =
-          source && typeof source === 'object' ? JSON.stringify(source) : undefined;
-      }
-      const impersonate = auth.gcpConfig.gcpImpersonateServiceAccount;
-      form.authGcpImpersonateEmail = storedText(impersonate?.impersonateServiceAccount);
-      form.authGcpImpersonateLifetime =
-        typeof impersonate?.lifetime === 'number' ? impersonate.lifetime : undefined;
+      hydrateGcpVariantForm(
+        form,
+        auth.gcpConfig.gcpConfig,
+        auth.gcpConfig.gcpImpersonateServiceAccount,
+        auth.enableIamAuth,
+      );
     } else if (auth?.awsConfig) {
       form.authTypeBranch = 'iam';
-      const aws = auth.awsConfig;
-      if (typeof aws.enabled === 'boolean') {
-        form.authAwsEnabled = aws.enabled;
-      }
-      form.authAwsAccessKeyId = storedText(aws.awsAccessKeyId);
-      form.authAwsRegion = storedText(aws.awsRegion);
-      form.authAwsEndPointURL = storedText(aws.endPointURL);
-      form.authAwsProfileName = storedText(aws.profileName);
-      form.authAssumeRoleArn = storedText(aws.assumeRoleArn);
-      form.authAssumeRoleSessionName = storedText(aws.assumeRoleSessionName);
-      form.authAssumeRoleSourceIdentity = storedText(aws.assumeRoleSourceIdentity);
+      hydrateAwsAuthForm(form, auth.awsConfig);
     } else if (auth?.azureConfig) {
       form.authTypeBranch = 'azure';
-      const azure = auth.azureConfig;
-      form.authAzureClientId = storedText(azure.clientId);
-      form.authAzureTenantId = storedText(azure.tenantId);
-      form.authAzureAccountName = storedText(azure.accountName);
-      form.authAzureVaultName = storedText(azure.vaultName);
-      form.authAzureScopes = storedText(azure.scopes);
+      hydrateAzureAuthForm(form, auth.azureConfig);
     } else {
       form.authTypeBranch = 'basic';
     }
@@ -3438,6 +4231,42 @@ export function hydrateAuthBranchForm(
     )
       ? 'keyPair'
       : 'password';
+    return form;
+  }
+  // A2: Alation nests the same authType oneOf under `connection.authType`;
+  // VertexAI nests the GCP oneOf under `credentials.gcpConfig`. The shared
+  // auth keys refill the same form keys (only one connection branch is
+  // active at a time), and the nested selector is set alongside.
+  if (serviceType === 'Alation') {
+    const nested = storedConfig.connection?.authType;
+    if (nested?.gcpConfig) {
+      form.alationDbAuthBranch = 'gcp';
+      hydrateGcpVariantForm(
+        form,
+        nested.gcpConfig.gcpConfig,
+        nested.gcpConfig.gcpImpersonateServiceAccount,
+        nested.enableIamAuth,
+      );
+    } else if (nested?.awsConfig) {
+      form.alationDbAuthBranch = 'iam';
+      hydrateAwsAuthForm(form, nested.awsConfig);
+    } else if (nested?.azureConfig) {
+      form.alationDbAuthBranch = 'azure';
+      hydrateAzureAuthForm(form, nested.azureConfig);
+    } else {
+      form.alationDbAuthBranch = 'basic';
+    }
+    return form;
+  }
+  if (serviceType === 'VertexAI') {
+    const credentials = storedConfig.credentials;
+    if (credentials && typeof credentials === 'object' && credentials.gcpConfig) {
+      hydrateGcpVariantForm(
+        form,
+        credentials.gcpConfig,
+        credentials.gcpImpersonateServiceAccount,
+      );
+    }
     return form;
   }
   return form;
@@ -3460,6 +4289,35 @@ export function clearInactiveAuthBranchFields(
         : [];
   const record = form as unknown as Record<string, unknown>;
   for (const branch of branches) {
+    if (branch === activeBranch) {
+      continue;
+    }
+    for (const key of AUTH_BRANCH_KEY_SETS[branch] ?? []) {
+      record[key as string] = undefined;
+    }
+  }
+}
+
+/**
+ * Alation nested auth selector (`alationDbAuthBranch`): the same key-set
+ * wipe as the top-level auth selector, because the nested branches share
+ * the `authAws*` / `authAzure*` / `authGcp*` form keys. The generic
+ * clearer (called alongside this one) covers the leaves gated on this
+ * selector; the key-set wipe additionally covers the GCP variant leaves,
+ * which are gated on `authGcpConfigBranch` instead and would otherwise
+ * survive an auth-branch switch. The nested basic password has its own
+ * key (`alationDbPassword` — top-level `password` is the Alation API
+ * auth, not the nested database auth).
+ */
+export function clearInactiveAlationDbAuthBranchFields(
+  form: ServiceFormValues,
+  activeBranch: string,
+): void {
+  const record = form as unknown as Record<string, unknown>;
+  if (activeBranch !== 'basic') {
+    record['alationDbPassword'] = undefined;
+  }
+  for (const branch of ['iam', 'azure', 'gcp'] as const) {
     if (branch === activeBranch) {
       continue;
     }
@@ -3510,6 +4368,9 @@ const STORED_FILE_FIELD_PATHS: Readonly<Record<string, readonly string[]>> = {
   supersetSSLCaCertificate: ['connection', 'sslConfig', 'caCertificate'],
   supersetSSLCertificate: ['connection', 'sslConfig', 'sslCertificate'],
   supersetSSLKey: ['connection', 'sslConfig', 'sslKey'],
+  alationDbSslCaCertificate: ['connection', 'sslConfig', 'caCertificate'],
+  alationDbSslCertificate: ['connection', 'sslConfig', 'sslCertificate'],
+  alationDbSslKey: ['connection', 'sslConfig', 'sslKey'],
   restSSLCaCertificate: ['sslConfig', 'caCertificate'],
   restSSLCertificate: ['sslConfig', 'sslCertificate'],
   restSSLKey: ['sslConfig', 'sslKey'],
@@ -3527,8 +4388,17 @@ const STORED_FILE_FIELD_PATHS: Readonly<Record<string, readonly string[]>> = {
 export function hasStoredFileFieldValue(
   storedConfig: ServiceConnectionConfig | undefined,
   formKey: string,
+  // `authGcpPrivateKey` lives under a different parent per type: the Mysql
+  // top-level authType (default path), the Alation nested
+  // `connection.authType`, and the VertexAI `credentials` object.
+  serviceType?: string,
 ): boolean {
-  const path = STORED_FILE_FIELD_PATHS[formKey];
+  const path =
+    formKey === 'authGcpPrivateKey' && serviceType === 'VertexAI'
+      ? ['credentials', 'gcpConfig', 'privateKey']
+      : formKey === 'authGcpPrivateKey' && serviceType === 'Alation'
+        ? ['connection', 'authType', 'gcpConfig', 'gcpConfig', 'privateKey']
+        : STORED_FILE_FIELD_PATHS[formKey];
   if (!path || !storedConfig) {
     return false;
   }

@@ -44,12 +44,23 @@ describe('loadConnectionSchemaJson', () => {
     );
   });
 
-  it('returns empty without fetching for no-loader types (L2)', async () => {
+  it('fetches the A-class product-equivalent path for a no-loader type (A2)', async () => {
+    clearConnectionSchemaCache();
+    const fetchFn = vi.fn(async () => okResponse({ type: 'object', properties: {} }));
+    const result = await loadConnectionSchemaJson('metadata', 'Alation', fetchFn);
+    expect(result.state).toBe('present');
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/jsons/connectionSchemas/connections/metadata/alationConnection.json',
+      { headers: { Accept: 'application/json' } },
+    );
+  });
+
+  it('returns empty without fetching for no-row types (L2)', async () => {
     clearConnectionSchemaCache();
     const fetchFn = vi.fn(async () => okResponse({}));
-    expect(await loadConnectionSchemaJson('mlmodel', 'VertexAI', fetchFn)).toEqual({
-      state: 'empty',
-    });
+    // WEBHOOK has no ledger row (2026-11-19 A2 ruling: the type exists
+    // only in the enum, with no connection form), so there is no path.
     expect(await loadConnectionSchemaJson('api', 'WEBHOOK', fetchFn)).toEqual({ state: 'empty' });
     expect(fetchFn).not.toHaveBeenCalled();
   });

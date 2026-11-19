@@ -81,12 +81,12 @@ const POSTGRES_SERVICE = {
   },
 };
 
-const WEBHOOK_SERVICE = {
-  id: 'w1',
-  name: 'hook',
-  fullyQualifiedName: 'hook',
-  serviceType: 'WEBHOOK',
-  connection: { config: { type: 'WEBHOOK' } },
+const CUSTOM_MLMODEL_SERVICE = {
+  id: 'c1',
+  name: 'custom-ml',
+  fullyQualifiedName: 'custom-ml',
+  serviceType: 'CustomMlModel',
+  connection: { config: { type: 'CustomMlModel' } },
 };
 
 const OPEN_METADATA_SERVICE = {
@@ -171,8 +171,8 @@ describe('EditServiceConnectionView', () => {
         if (url.includes('/api/v1/services/databaseServices/s9')) {
           return jsonResponse(OPEN_METADATA_SERVICE);
         }
-        if (url.includes('/api/v1/services/apiServices/w1')) {
-          return jsonResponse(WEBHOOK_SERVICE);
+        if (url.includes('/api/v1/services/mlmodelServices/c1')) {
+          return jsonResponse(CUSTOM_MLMODEL_SERVICE);
         }
         if (url.includes('ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'airflow' });
@@ -421,7 +421,11 @@ describe('EditServiceConnectionView', () => {
   });
 
   it('advances a prompt-area type with the stored connection kept, then leaves patchless', async () => {
-    const { wrapper, router } = await mountAt('/ingestion/services/api/w1/connection');
+    // A2 (2026-11-19): the fixture was WEBHOOK, which no longer has a
+    // ledger row (out-of-universe, pass-through — no prompt). CustomMlModel
+    // is still a blocked prompt-area row (class C, schema present), so the
+    // read-only prompt flow is unchanged.
+    const { wrapper, router } = await mountAt('/ingestion/services/mlmodel/c1/connection');
     await waitFor(
       () => wrapper.find('[data-testid="no-config-available"]').exists(),
       'connection prompt',

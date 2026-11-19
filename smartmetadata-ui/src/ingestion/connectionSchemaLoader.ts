@@ -14,15 +14,19 @@ import { coverageFor } from '@/ingestion/connectionCoverage';
  * public JSON schema at runtime, version fixed with the build
  * artifact. Port of pin `loadConnectionSchema`
  * (utils/loadConnectionSchema.ts) + the per-category loader tables
- * (`*ServiceUtils.ts`): the relative path comes from the T-2 ledger,
- * which mirrors the official loader tables exactly — the six types
- * with no loader entry never fetch and resolve to `empty` (L2), and
- * categories outside the 11 resolve to `empty` without fetching (L1).
+ * (`*ServiceUtils.ts`): the relative path comes from the T-2 ledger.
+ * A row without a `schemaPath` never fetches and resolves to `empty`
+ * (L2), and categories outside the 11 resolve to `empty` without
+ * fetching (L1).
  *
- * Only the 34 loader-registered schemas are bundled under
- * `public/jsons/connectionSchemas/`; the five unregistered-but-present
- * JSON files are deliberately not copied (the loader never fetches
- * them, and Q1 forbids inventing loader-equivalent fetching for them).
+ * The 34 loader-registered schemas are bundled under
+ * `public/jsons/connectionSchemas/`; since the 2026-11-19 A2 ruling,
+ * the five A-class schemas (VertexAI, Alation, Collibra, MetadataES,
+ * SharePoint) are bundled there too as the product-side loader
+ * equivalent — the ledger carries their `schemaPath` although the
+ * official loader tables have no entry (`hasLoader` stays false).
+ * The t364 Q1 ban on inventing loader-equivalent fetching is
+ * superseded by that ruling for these five rows only.
  * A non-2xx response or network failure throws, and the caller maps
  * the throw to the `failed` guard state (L3) — it must never be
  * silently treated as `empty`.
@@ -98,7 +102,7 @@ export type ConnectionSchemaLoadResult =
 
 /**
  * Load the connection schema for a (kind, type) pair. Returns `empty`
- * without fetching when the ledger has no loader entry (L1/L2).
+ * without fetching when the ledger has no `schemaPath` for the pair (L1/L2).
  * Throws on fetch failure (L3) — the caller maps it to `failed`.
  */
 export async function loadConnectionSchemaJson(

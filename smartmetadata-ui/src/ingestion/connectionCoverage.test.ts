@@ -17,57 +17,64 @@ import {
 } from './connectionCoverage';
 
 describe('connectionCoverage ledger', () => {
-  it('holds the 40-row universe with the t364 baseline counts', () => {
-    expect(CONNECTION_COVERAGE_ROWS).toHaveLength(40);
+  it('holds the 39-row universe with the A2 counts (5 covered, WEBHOOK removed)', () => {
+    expect(CONNECTION_COVERAGE_ROWS).toHaveLength(39);
     expect(coverageCounts()).toEqual({
-      covered: 0,
+      covered: 5,
       pending: 24,
-      blocked: 16,
-      total: 40,
+      blocked: 10,
+      total: 39,
       wizardExposed: 31,
-      wizardExcluded: 9,
-      noLoader: 6,
+      wizardExcluded: 8,
+      noLoader: 5,
     });
   });
 
-  it('keys rows by (kind, type): mlmodel VertexAI is a row, llm VertexAI is not', () => {
+  it('keys rows by (kind, type): mlmodel VertexAI is a covered row, llm VertexAI is not', () => {
     expect(coverageFor('mlmodel', 'VertexAI')).toMatchObject({
-      status: 'blocked',
-      uncoveredClass: 'A',
+      status: 'covered',
       hasLoader: false,
       hasJsonFile: true,
+      hasStaticGroup: true,
       wizardExposed: false,
+      schemaPath: 'connections/mlmodel/vertexaiConnection.json',
     });
+    expect(coverageFor('mlmodel', 'VertexAI')?.uncoveredClass).toBeUndefined();
     expect(coverageFor('llm', 'VertexAI')).toBeUndefined();
     expect(coverageFor('llm', 'OpenAI')).toBeUndefined();
     expect(coverageFor('mcp', 'Mcp')).toBeUndefined();
     expect(coverageFor('database', 'Nope')).toBeUndefined();
   });
 
-  it('marks the six no-loader types (A/B classes)', () => {
+  it('has no WEBHOOK row: the type exists only in the enum, with no connection form', () => {
+    expect(coverageFor('api', 'WEBHOOK')).toBeUndefined();
+    expect(
+      CONNECTION_COVERAGE_ROWS.some((row) => row.type === 'WEBHOOK'),
+    ).toBe(false);
+  });
+
+  it('marks the five no-loader types (A class, all covered by the A2 ruling)', () => {
     const noLoader = CONNECTION_COVERAGE_ROWS.filter((row) => !row.hasLoader).map(
       (row) => `${row.kind}:${row.type}`,
     );
     expect(noLoader.sort()).toEqual([
-      'api:WEBHOOK',
       'drive:SharePoint',
       'metadata:Alation',
       'metadata:Collibra',
       'metadata:MetadataES',
       'mlmodel:VertexAI',
     ]);
-    expect(coverageFor('api', 'WEBHOOK')).toMatchObject({
-      uncoveredClass: 'B',
-      hasJsonFile: false,
-    });
+    for (const row of CONNECTION_COVERAGE_ROWS.filter((entry) => !entry.hasLoader)) {
+      expect(row.status).toBe('covered');
+      expect(row.hasStaticGroup).toBe(true);
+    }
   });
 
-  it('marks the nine wizard-excluded types (Q8 convergence)', () => {
+  it('marks the eight wizard-excluded types (Q8 convergence)', () => {
     const excluded = CONNECTION_COVERAGE_ROWS.filter((row) => !row.wizardExposed).map(
       (row) => `${row.kind}:${row.type}`,
     );
     expect(excluded.sort()).toEqual([
-      'api:WEBHOOK',
       'drive:SharePoint',
       'metadata:Alation',
       'metadata:Collibra',
@@ -79,27 +86,29 @@ describe('connectionCoverage ledger', () => {
     ]);
   });
 
-  it('gives every loader row a schema path and no-loader rows none', () => {
+  it('gives every row a well-formed schema path; no-loader rows carry the A-class product equivalent', () => {
     for (const row of CONNECTION_COVERAGE_ROWS) {
-      if (row.hasLoader) {
-        expect(row.schemaPath).toMatch(/^connections\/[a-z]+\/[a-zA-Z0-9]+Connection\.json$/);
-      } else {
-        expect(row.schemaPath).toBeUndefined();
-      }
+      expect(row.schemaPath).toMatch(/^connections\/[a-z]+\/[a-zA-Z0-9]+Connection\.json$/);
     }
     expect(coverageFor('database', 'Postgres')?.schemaPath).toBe(
       'connections/database/postgresConnection.json',
     );
     expect(coverageFor('drive', 'Sftp')?.schemaPath).toBe('connections/drive/sftpConnection.json');
+    expect(coverageFor('metadata', 'Alation')?.schemaPath).toBe(
+      'connections/metadata/alationConnection.json',
+    );
+    expect(coverageFor('metadata', 'MetadataES')?.schemaPath).toBe(
+      'connections/metadata/metadataESConnection.json',
+    );
   });
 
-  it('classifies the 16 blocked rows as 5 A + 1 B + 10 C', () => {
+  it('classifies the 10 blocked rows as all C', () => {
     const blocked = CONNECTION_COVERAGE_ROWS.filter((row) => row.status === 'blocked');
     const byClass = { A: 0, B: 0, C: 0 };
     for (const row of blocked) {
       if (row.uncoveredClass) byClass[row.uncoveredClass]++;
     }
-    expect(byClass).toEqual({ A: 5, B: 1, C: 10 });
+    expect(byClass).toEqual({ A: 0, B: 0, C: 10 });
   });
 });
 
