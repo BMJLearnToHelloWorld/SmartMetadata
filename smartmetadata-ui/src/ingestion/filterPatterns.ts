@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { SERVICE_FILTER_PATTERN_FIELDS } from '@/ingestion/ingestionSchemas';
-import { startCase } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 
 /**
  * Port of official's filter-pattern composer engine

@@ -15,6 +15,7 @@ import type {
   PersonaPreferences,
   ViewModePage,
 } from '@/types/persona';
+import { startCase } from '@/utils/text';
 
 /**
  * Pure persona-document helpers, mirroring the official
@@ -582,13 +583,6 @@ export interface CustomizePageOption {
   /** Literal entity label filling the `{entity}` slot: the option label itself. */
   descriptionEntity: string;
   icon: CustomizePageIconKey;
-}
-
-/** lodash startCase over the PageType vocabulary: splits camel humps and acronym boundaries. */
-function startCase(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
 }
 
 function generateCustomizePageOption(pageType: CustomizePageType): CustomizePageOption {

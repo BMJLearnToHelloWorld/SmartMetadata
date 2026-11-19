@@ -34,7 +34,8 @@ import {
 } from '@/api/policies';
 import { getErrorText } from './accessApiErrors';
 import { INITIAL_RULE, buildConditionOptions, type RuleFormValue } from './accessRuleForm';
-import { capitalize, startCase } from './accessText';
+import { capitalize } from './accessText';
+import { startCase } from '@/utils/text';
 
 const props = withDefaults(
   defineProps<{

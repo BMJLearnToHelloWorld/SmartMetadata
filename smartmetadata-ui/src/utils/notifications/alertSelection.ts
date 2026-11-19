@@ -20,7 +20,8 @@ import type {
   EventSubscriptionFilterRule,
   SourceKind,
 } from '@/types/quality';
-import { startCase, type TranslateFn } from './alertUtils';
+import { type TranslateFn } from './alertUtils';
+import { startCase } from '@/utils/text';
 
 /**
  * Selection support logic, ported from pin utils/Alerts/AlertSelectionUtil.ts

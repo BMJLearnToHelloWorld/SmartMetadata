@@ -128,21 +128,3 @@ const SERVICE_NAME_BY_TAB: ReadonlyMap<string, string> = (() => {
 export function getServiceNameForTab(tab: string): string {
   return SERVICE_NAME_BY_TAB.get(tab) ?? DATABASE_SERVICES;
 }
-
-/**
- * Lodash `startCase` for camelCase service names, as pin applies it to
- * `serviceName` for the gate's permissionValue (`ServicesPage.tsx:15`
- * import, `:207-209` use). The product has no lodash dependency, so —
- * like `capitalizeSegment` in `./breadcrumbs.ts` — the lodash behaviour
- * is reimplemented locally for identifier inputs: split on camelCase
- * boundaries and `_`/`-` separators, capitalise each word.
- */
-export function startCase(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}

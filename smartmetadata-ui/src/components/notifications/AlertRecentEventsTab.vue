@@ -47,10 +47,10 @@ import {
   getChangeEventDataFromTypedEvent,
   getEntityName,
   getLabelsForEventDetails,
-  startCase,
   type AlertEventDetailsToDisplay,
   type TranslateFn,
 } from '@/utils/notifications/alertUtils';
+import { startCase } from '@/utils/text';
 import { reportErrorToast, type AlertSearchHooks } from '@/utils/notifications/alertSourceSearch';
 import {
   DEFAULT_GLOBAL_PAGE_SIZE,

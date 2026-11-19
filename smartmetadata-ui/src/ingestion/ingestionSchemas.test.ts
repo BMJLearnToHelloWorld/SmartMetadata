@@ -20,10 +20,10 @@ import {
   neutralizeUnresolvableRefs,
   resolveRef,
   selectBranch,
-  startCase,
   validateOwnerConfigMaps,
   type RjsfSchema,
 } from './ingestionSchemas';
+import { startCase } from '@/utils/text';
 
 /**
  * The default-seeding expectations below are ground truth from running

@@ -43,7 +43,7 @@ import {
   OVERVIEW_PARAMS,
 } from '@/features/home/widgets/usePlatformHealth';
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
-import { startCase } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import { SERVICE_LIST_API } from '@/ingestion/serviceApis';
 import { getOptionalFields } from '@/ingestion/serviceCardFields';
 import {

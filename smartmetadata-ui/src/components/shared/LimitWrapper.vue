@@ -7,7 +7,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Skeleton, Tooltip } from 'ant-design-vue';
 import { getLimitByResource, type ResourceLimit } from '@/api/limits';
-import { useLimitBannerStore, startCase } from '@/stores/limitBanner';
+import { useLimitBannerStore } from '@/stores/limitBanner';
+import { startCase } from '@/utils/text';
 import { useShellConfigStore } from '@/stores/shellConfig';
 
 /**

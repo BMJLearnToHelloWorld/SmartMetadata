@@ -12,6 +12,7 @@ import {
   type ConnectionFieldDef,
 } from '@/ingestion/connectionFields';
 import type { ServiceConnectionConfig, ServiceKind } from '@/types/ingestion';
+import { startCase } from '@/utils/text';
 
 /**
  * Structured connection details, ported from official
@@ -158,16 +159,6 @@ function isEmptyValue(value: unknown): boolean {
   return true;
 }
 
-/** Lodash `startCase` for pattern keys (`includes` -> `Includes`). */
-function startCasePatternKey(key: string): string {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-}
-
 function findFieldDef(
   defs: readonly ConnectionFieldDef[],
   parentKey: string,
@@ -251,7 +242,7 @@ function buildRows(
       const entries = Object.entries(value)
         .filter(([, patternValue]) => !isEmptyValue(patternValue))
         .map(([patternKey, patternValue]) => ({
-          heading: `${startCasePatternKey(patternKey)}:`,
+          heading: `${startCase(patternKey)}:`,
           text: Array.isArray(patternValue) ? patternValue.join(', ') : String(patternValue),
         }));
       rows.push({ type: 'pattern', key, description, entries });

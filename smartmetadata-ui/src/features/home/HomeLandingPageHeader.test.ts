@@ -27,4 +27,17 @@ describe('HomeLandingPageHeader', () => {
     expect(wrapper.get('[data-testid="home-landing-page-header"]').text()).toContain('Hi Jane Doe');
     expect(wrapper.text()).toContain("Here's what needs your attention across your data.");
   });
+
+  it('greets a non-Latin display name instead of falling back (Major-1)', () => {
+    // startCase must keep CJK names whole; the previous ASCII word
+    // pattern returned '' and the header fell back to generic copy.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const auth = useAuthStore();
+    auth.user = { id: 'u-2', name: '王小明', displayName: '王小明' };
+    const wrapper = mount(HomeLandingPageHeader, {
+      global: { plugins: [pinia, Antd, createTestI18n()] },
+    });
+    expect(wrapper.get('[data-testid="home-landing-page-header"]').text()).toContain('Hi 王小明');
+  });
 });

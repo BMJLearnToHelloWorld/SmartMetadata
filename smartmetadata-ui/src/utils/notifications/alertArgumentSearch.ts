@@ -22,9 +22,9 @@ import {
   getSelectOptionsFromValues,
   getSubscriptionTypeOptions,
   getEntityName,
-  startCase,
   type TranslateFn,
 } from './alertUtils';
+import { startCase } from '@/utils/text';
 import { buildGroupedOptions, type GroupedDestinationOption } from './alertDestinations';
 import { EVENT_TYPES } from '@/types/notifications';
 

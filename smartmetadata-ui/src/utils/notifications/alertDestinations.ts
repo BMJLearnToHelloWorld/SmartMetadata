@@ -15,7 +15,8 @@ import {
   EXTERNAL_DESTINATION_TYPES,
   INTERNAL_CATEGORY_OPTIONS,
 } from './alertConstants';
-import { normalizeDestinationConfig, startCase, type TranslateFn } from './alertUtils';
+import { normalizeDestinationConfig, type TranslateFn } from './alertUtils';
+import { startCase } from '@/utils/text';
 
 /**
  * Destination helpers, ported from pin utils/ObservabilityUtils.tsx,

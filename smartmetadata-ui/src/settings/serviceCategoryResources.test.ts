@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getResourceEntityFromServiceCategory,
   getServiceNameForTab,
-  startCase,
 } from './serviceCategoryResources';
+import { startCase } from '@/utils/text';
 
 describe('getResourceEntityFromServiceCategory (pin ServicePureUtils.ts:135-174)', () => {
   it.each([

@@ -7,6 +7,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Avatar, Button } from 'ant-design-vue';
 import { useAuthStore } from '@/stores/auth';
+import { startCase } from '@/utils/text';
 import {
   DEFAULT_HEADER_BG_COLOR,
   getLandingPageHeaderTintStyle,
@@ -29,14 +30,6 @@ const emit = defineEmits<{ (event: 'update:selected-color', color: string): void
 
 const { t } = useI18n();
 const auth = useAuthStore();
-
-function startCase(value: string): string {
-  return value
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
 
 const displayName = computed(() => {
   const name = auth.displayName || auth.user?.name || '';

@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { SERVICE_TYPES_BY_KIND } from '@/ingestion/connections';
-import { startCase } from '@/ingestion/ingestionSchemas';
+import { startCase } from '@/utils/text';
 import type { ServiceKind } from '@/types/ingestion';
 import { ALL_SERVICES_CATEGORY, type ServiceCategoryKind } from './serviceCategories';
 

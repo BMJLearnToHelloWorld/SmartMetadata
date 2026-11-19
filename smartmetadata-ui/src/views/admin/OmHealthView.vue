@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons-vue';
 import { Button, Divider, Tooltip, message, Spin } from 'ant-design-vue';
 import { fetchSystemStatus } from '@/api/system';
-import { startCase } from '@/api/customProperties';
+import { startCase } from '@/utils/text';
 import type { SystemValidationResponse } from '@/types/admin';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';

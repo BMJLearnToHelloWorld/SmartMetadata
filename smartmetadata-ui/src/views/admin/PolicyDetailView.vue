@@ -32,7 +32,7 @@ import {
   roleDetailLocation,
 } from './accessPaths';
 import { toPatchReference, toRulePatchValue } from './accessRefs';
-import { startCase } from './accessText';
+import { startCase } from '@/utils/text';
 
 const props = defineProps<{ fqn?: string }>();
 const { t } = useI18n();

@@ -13,7 +13,7 @@ import { assetLocation, isDetailWired } from '@/catalog/entityRoutes';
 import { splitFqn } from '@/catalog/fqn';
 import { getEntityName } from '@/components/shared/profilePictureUtils';
 import { roleDetailLocation, policyDetailLocation } from './accessPaths';
-import { startCase } from './accessText';
+import { startCase } from '@/utils/text';
 
 /**
  * Pure feed model for the audit log list, ported from
