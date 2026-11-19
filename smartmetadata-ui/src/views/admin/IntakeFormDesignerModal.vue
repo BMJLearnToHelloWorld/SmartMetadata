@@ -45,7 +45,7 @@ const title = computed(() =>
   <SmDrawer
     :open="open"
     :title="title"
-    width-key="feed"
+    width-key="intakeDesigner"
     test-id="intake-form-designer-modal"
     :ok-text="initialValue?.id ? t('crud.save') : t('crud.create')"
     :confirm-loading="confirmLoading ?? false"

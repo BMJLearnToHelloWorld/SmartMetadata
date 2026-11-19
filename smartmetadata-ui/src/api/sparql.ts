@@ -368,3 +368,73 @@ export function getTermDisplayText(term?: RDFTerm): string {
   return term?.type === 'triple' ? getTermSyntax(term) : getTermLexicalValue(term);
 }
 
+
+/** Official generated/api/rdf/rdfReindexFailuresResponse.ts RDFIndexFailure. */
+export interface RdfIndexFailureRecord {
+  id: string;
+  jobId: string;
+  entityType: string;
+  entityId?: string;
+  entityFqn?: string;
+  failureStage: string;
+  errorMessage?: string;
+  stackTrace?: string;
+  serverId?: string;
+  timestamp: number;
+}
+
+export interface RdfReindexFailuresResponse {
+  data: RdfIndexFailureRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface GetRdfReindexFailuresParams {
+  offset?: number;
+  limit?: number;
+  entityType?: string;
+}
+
+function mapRdfIndexFailureRecord(value: unknown): RdfIndexFailureRecord | null {
+  const rec = asRecord(value);
+  if (!rec) {
+    return null;
+  }
+  return {
+    id: asString(rec.id),
+    jobId: asString(rec.jobId),
+    entityType: asString(rec.entityType),
+    ...(asString(rec.entityId) ? { entityId: asString(rec.entityId) } : {}),
+    ...(asString(rec.entityFqn) ? { entityFqn: asString(rec.entityFqn) } : {}),
+    failureStage: asString(rec.failureStage),
+    ...(asString(rec.errorMessage) ? { errorMessage: asString(rec.errorMessage) } : {}),
+    ...(asString(rec.stackTrace) ? { stackTrace: asString(rec.stackTrace) } : {}),
+    ...(asString(rec.serverId) ? { serverId: asString(rec.serverId) } : {}),
+    timestamp: typeof rec.timestamp === 'number' ? rec.timestamp : 0,
+  };
+}
+
+/**
+ * Official rest/rdfAPI.ts getRdfReindexFailures: GET /v1/rdf/reindex/failures.
+ * Pin defaults offset=0, limit=50; an empty entityType is omitted.
+ */
+export async function getRdfReindexFailures(
+  params: GetRdfReindexFailuresParams = {},
+): Promise<RdfReindexFailuresResponse> {
+  const { offset = 0, limit = 50, entityType } = params;
+  const raw = await apiRequest<unknown>('/v1/rdf/reindex/failures', {
+    query: { offset, limit, ...(entityType ? { entityType } : {}) },
+  });
+  const rec = asRecord(raw);
+  const rows = Array.isArray(rec?.data) ? rec.data : [];
+  return {
+    data: rows.flatMap((row) => {
+      const mapped = mapRdfIndexFailureRecord(row);
+      return mapped ? [mapped] : [];
+    }),
+    total: typeof rec?.total === 'number' ? rec.total : 0,
+    offset: typeof rec?.offset === 'number' ? rec.offset : offset,
+    limit: typeof rec?.limit === 'number' ? rec.limit : limit,
+  };
+}

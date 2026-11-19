@@ -35,7 +35,9 @@ describe('settings-space highlight rule (DESIGN §6.6)', () => {
       'admin-bots',
       'admin-users',
       'admin-admins',
-      'admin-teams',
+      // 'admin-teams' is deleted (sections batch): the teams list is
+      // reached via the settings-members-teams redirect, so the name
+      // is intentionally absent from this list.
       'admin-team',
       'admin-roles',
       'admin-role',
@@ -231,6 +233,28 @@ describe('nav IA', () => {
     // Online Users moved into Settings (settings/members/online-users),
     // so its highlight follows the Hub, not the Insights leaf (§6.6).
     expect(selectedNavKey('insights-online-users')).toBe('admin-settings');
+    // Q5: catalog/install/detail never highlight the data-marketplace
+    // group — the catalog and install entries are deleted and the
+    // detail stays unmapped, so each resolves to itself.
+    expect(selectedNavKey('marketplace-app-catalog')).toBe('marketplace-app-catalog');
+    expect(selectedNavKey('marketplace-app-install')).toBe('marketplace-app-install');
+    expect(selectedNavKey('marketplace-app-detail')).toBe('marketplace-app-detail');
+    // Sections batch settings faces: hub attribution.
+    expect(selectedNavKey('settings-members')).toBe('admin-settings');
+    expect(selectedNavKey('settings-members-team')).toBe('admin-settings');
+    expect(selectedNavKey('settings-members-team-import')).toBe('admin-settings');
+    expect(selectedNavKey('settings-members-online-users')).toBe('admin-settings');
+    expect(selectedNavKey('settings-bots')).toBe('admin-settings');
+    expect(selectedNavKey('settings-notification-alerts')).toBe('admin-settings');
+    expect(selectedNavKey('settings-notification-alert')).toBe('admin-settings');
+    expect(selectedNavKey('settings-notification-announcements')).toBe('admin-settings');
+    expect(selectedNavKey('observability-alert-add')).toBe('observability-alerts');
+    expect(selectedNavKey('observability-alert-edit')).toBe('observability-alerts');
+    // The top-level user/bot/create faces are not settings pages and
+    // belong to no nav group: no highlight.
+    expect(selectedNavKey('user-detail')).toBe('user-detail');
+    expect(selectedNavKey('bot-detail')).toBe('bot-detail');
+    expect(selectedNavKey('create-user')).toBe('create-user');
   });
 
   it('opens the section that owns the current route', () => {

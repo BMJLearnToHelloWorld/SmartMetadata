@@ -25,7 +25,6 @@ import {
   SM_COLOR_CYAN_600,
   SM_COLOR_ERROR,
   SM_COLOR_FUCHSIA_600,
-  SM_COLOR_PRIMARY,
   SM_COLOR_PURPLE_600,
   SM_COLOR_SUCCESS,
   SM_COLOR_WARNING,
@@ -39,21 +38,26 @@ import {
  * R-6: official's subtype→icon/color contract, rendered with the product's
  * ant-design glyphs and token colors. The mapping is the contract; only
  * the glyph source differs.
+ *
+ * Q-TH-4: primary-colored entries read the managed CSS variable, not the
+ * static SM_COLOR_PRIMARY import, so a custom theme primary color reaches
+ * the workflow canvas/sidebar.
  */
+const PRIMARY_ICON_COLOR = 'var(--sm-color-primary)';
 
 describe('getWorkflowNodeIcon', () => {
   it.each([
     ['startEvent', PlayCircleOutlined, SM_COLOR_SUCCESS],
     ['endEvent', FlagOutlined, SM_COLOR_ERROR],
-    ['setEntityAttributeTask', SettingOutlined, SM_COLOR_PRIMARY],
-    ['setEntityCertificationTask', SettingOutlined, SM_COLOR_PRIMARY],
+    ['setEntityAttributeTask', SettingOutlined, PRIMARY_ICON_COLOR],
+    ['setEntityCertificationTask', SettingOutlined, PRIMARY_ICON_COLOR],
     ['checkEntityAttributesTask', CheckSquareOutlined, SM_COLOR_WARNING],
     ['checkChangeDescriptionTask', DiffOutlined, SM_COLOR_CYAN_600],
     ['userApprovalTask', CheckCircleOutlined, SM_COLOR_FUCHSIA_600],
     ['dataCompletenessTask', DashboardOutlined, SM_COLOR_SUCCESS],
     ['collectMetadataTask', DashboardOutlined, SM_COLOR_WARNING],
     ['rollbackEntityTask', UndoOutlined, SM_COLOR_ERROR],
-    ['policyAgentTask', SafetyOutlined, SM_COLOR_PRIMARY],
+    ['policyAgentTask', SafetyOutlined, PRIMARY_ICON_COLOR],
     ['sinkTask', CloudSyncOutlined, SM_COLOR_PURPLE_600],
   ] as const)('maps %s to its glyph and color', (subType, icon, color) => {
     const mapped = getWorkflowNodeIcon(subType);
@@ -64,11 +68,11 @@ describe('getWorkflowNodeIcon', () => {
   it('falls back to the star for unknown or missing subtypes', () => {
     expect(getWorkflowNodeIcon('notATask')).toEqual({
       icon: StarOutlined,
-      color: SM_COLOR_PRIMARY,
+      color: PRIMARY_ICON_COLOR,
     });
     expect(getWorkflowNodeIcon(undefined)).toEqual({
       icon: StarOutlined,
-      color: SM_COLOR_PRIMARY,
+      color: PRIMARY_ICON_COLOR,
     });
   });
 });
@@ -87,7 +91,7 @@ describe('getWorkflowCanvasNodeIcon', () => {
     // Official's canvas map has no setEntityCertification entry.
     expect(getWorkflowCanvasNodeIcon('setEntityCertificationTask')).toEqual({
       icon: StarOutlined,
-      color: SM_COLOR_PRIMARY,
+      color: PRIMARY_ICON_COLOR,
     });
   });
 });

@@ -7,9 +7,10 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asRecord } from '@/api/json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs } from '@/api/json';
+import { mapServiceStyle, mapServiceTags } from '@/api/serviceCommon';
 import { getQueryWithSlash } from '@/catalog/queryFilter';
-import type { ServiceKind } from '@/types/ingestion';
+import type { CatalogService, ServiceConnection, ServiceKind } from '@/types/ingestion';
 import { apiRequest } from './client';
 
 /**
@@ -33,6 +34,19 @@ export const SERVICE_SEARCH_INDEX = {
   INGESTION_PIPELINE: 'ingestionPipeline',
   FILE: 'file',
   SPREADSHEET: 'spreadsheet',
+  // Service-entity indexes (pin SearchIndex enum, same file): the
+  // services list search path (getSearchIndexFromService) queries
+  // these, not the child-entity indexes above.
+  DATABASE_SERVICE: 'databaseService',
+  MESSAGING_SERVICE: 'messagingService',
+  PIPELINE_SERVICE: 'pipelineService',
+  SEARCH_SERVICE: 'searchService',
+  DASHBOARD_SERVICE: 'dashboardService',
+  ML_MODEL_SERVICE: 'mlModelService',
+  STORAGE_SERVICE: 'storageService',
+  DRIVE_SERVICE: 'driveService',
+  API_SERVICE: 'apiService',
+  METADATA_SERVICE: 'metadataService',
 } as const;
 
 export type ServiceSearchIndexValue =
@@ -388,4 +402,108 @@ export function getServiceDisplayNameQueryFilter(displayName: string): Record<st
       },
     },
   };
+}
+
+// --- Services list search (01-services.md §3.6) ---------------------------
+
+export interface SearchServicesQuery {
+  /** Service-entity search index (getSearchIndexFromService). */
+  searchIndex: ServiceSearchIndexValue;
+  /** 1-based page number; defaults to 1. */
+  currentPage?: number;
+  /** Page size; defaults to 10 (pin searchService). */
+  limit?: number;
+  queryFilter?: Record<string, unknown>;
+  deleted?: boolean;
+}
+
+export interface SearchServicesResult {
+  data: CatalogService[];
+  total: number;
+}
+
+const KIND_BY_ENTITY_TYPE: Readonly<Record<string, ServiceKind>> = {
+  databaseService: 'database',
+  messagingService: 'messaging',
+  dashboardService: 'dashboard',
+  pipelineService: 'pipeline',
+  mlmodelService: 'mlmodel',
+  metadataService: 'metadata',
+  storageService: 'storage',
+  searchService: 'search',
+  apiService: 'api',
+  securityService: 'security',
+  driveService: 'drive',
+  llmService: 'llm',
+  mcpService: 'mcp',
+};
+
+function mapServiceSearchConnection(value: unknown): ServiceConnection | undefined {
+  const rec = asRecord(value);
+  if (!rec) {
+    return undefined;
+  }
+  const config = asRecord(rec.config);
+  return { config: config ?? undefined };
+}
+
+/**
+ * Map one search-hit `_source` to a CatalogService. The indexed owners
+ * / tags / style survive (the SearchHit shape would drop them, and the
+ * Owners column needs the indexed owners). The kind resolves from the
+ * hit's entityType, falling back to the requested category kind.
+ */
+export function mapServiceSearchHit(
+  source: Record<string, unknown>,
+  fallbackKind: ServiceKind,
+): CatalogService | null {
+  const id = asString(source.id);
+  const name = asString(source.name);
+  if (!id && !name) {
+    return null;
+  }
+  const entityType = asString(source.entityType);
+  return {
+    id,
+    name,
+    displayName: asString(source.displayName) || undefined,
+    description: asString(source.description) || undefined,
+    fullyQualifiedName: asString(source.fullyQualifiedName) || name,
+    kind: KIND_BY_ENTITY_TYPE[entityType] ?? fallbackKind,
+    serviceType: asString(source.serviceType),
+    owners: mapEntityRefs(source.owners),
+    tags: mapServiceTags(source.tags),
+    followers: mapEntityRefs(source.followers),
+    domains: mapEntityRefs(source.domains),
+    dataProducts: mapEntityRefs(source.dataProducts),
+    version: asNumber(source.version),
+    connection: mapServiceSearchConnection(source.connection),
+    deleted: asBoolean(source.deleted),
+    style: mapServiceStyle(source.style),
+  };
+}
+
+/**
+ * Pin `searchService` (rest/serviceAPI.ts:234-259): the caller passes
+ * no `search` text — the search term lives only in the queryFilter —
+ * so `q` is the wildcard; paging is numeric; `deleted` follows the
+ * show-deleted toggle.
+ */
+export async function searchServices(
+  query: SearchServicesQuery,
+  fallbackKind: ServiceKind,
+): Promise<SearchServicesResult> {
+  const response = await searchServiceIndex({
+    searchIndex: query.searchIndex,
+    query: '*',
+    pageNumber: query.currentPage ?? 1,
+    pageSize: query.limit ?? 10,
+    queryFilter: query.queryFilter,
+    includeDeleted: query.deleted ?? false,
+  });
+  const data = response.hits.flatMap((hit) => {
+    const mapped = mapServiceSearchHit(hit, fallbackKind);
+    return mapped ? [mapped] : [];
+  });
+  return { data, total: response.total };
 }

@@ -7,47 +7,37 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
-import { createTestI18n } from '@/test/i18n';
-import AirflowMessageBanner from '@/components/ingestion/AirflowMessageBanner.vue';
-import FilterPatternCard from '@/components/ingestion/FilterPatternCard.vue';
+import FiltersConfigForm from '@/components/ingestion/FiltersConfigForm.vue';
 import NavigationGuardModal from '@/components/ingestion/NavigationGuardModal.vue';
+import { clearConnectionSchemaCache } from '@/ingestion/connectionSchemaLoader';
+import { createTestI18n } from '@/test/i18n';
 import EditServiceConnectionView from './EditServiceConnectionView.vue';
 
-/** Stand-in for the contracted card: the card has its own tests; the view
- * test asserts wiring (props in, status-change out) only. */
-const TestConnectionCardStub = defineComponent({
-  name: 'TestConnectionCard',
-  props: {
-    connectionType: { type: String, required: true },
-    kind: { type: String, required: true },
-    serviceName: { type: String, required: true },
-    getConnection: { type: Function, required: true },
-    airflowAvailable: { type: Boolean, required: true },
-    hostIp: { type: String, default: undefined },
-    missingRequiredFieldsCount: { type: Number, default: 0 },
-    onValidateFormRequiredFields: { type: Function, default: undefined },
+/**
+ * The edit keys do not exist in the locale files yet (the integration line
+ * writes them from the worker's key list); merge the report's en values so
+ * the spec asserts real interpolation (FQN heading, missing-entity message)
+ * instead of key strings.
+ */
+const EDIT_MESSAGES = {
+  settings: {
+    services: {
+      edit: {
+        stepConnectionDetails: 'Connection Details',
+        stepSetDefaultFilters: 'Set Default Filters',
+        heading: 'Edit {entity} Service Connection',
+        breadcrumb: 'Edit Connection',
+        somethingWentWrong: 'Something went wrong',
+        entityMissing: '{entity} instance for {fqn} not found',
+      },
+    },
   },
-  emits: ['status-change'],
-  setup(_props, { emit }) {
-    return () =>
-      h('div', { 'data-testid': 'test-connection-stub' }, [
-        h(
-          'button',
-          {
-            'data-testid': 'test-connection-pass',
-            onClick: () => emit('status-change', true),
-          },
-          'pass',
-        ),
-      ]);
-  },
-});
+};
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,6 +46,12 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const SCHEMA = { type: 'object', properties: { hostPort: { type: 'string' } } };
+
+/** Stored config matches what the builder emits for the hydrated form
+ * (scheme/sslMode defaults included), so an unchanged save is an empty
+ * patch. The supports flags and unmodeled keys prove the merge preserves
+ * keys the form never emits. */
 const POSTGRES_SERVICE = {
   id: 's1',
   name: 'warehouse',
@@ -63,70 +59,126 @@ const POSTGRES_SERVICE = {
   displayName: 'Warehouse',
   description: 'Original description',
   serviceType: 'Postgres',
+  owners: [{ id: 'u1', name: 'owner-one', type: 'user' }],
   connection: {
     config: {
       type: 'Postgres',
       hostPort: 'localhost:5432',
       username: 'postgres',
-      authType: { password: '*****' },
       database: 'appdb',
+      scheme: 'postgresql+psycopg2',
+      sslMode: 'disable',
+      authType: { password: '*****' },
       schemaFilterPattern: { includes: ['^public$'], excludes: [] },
       includeSchemas: true,
+      ingestAllDatabases: false,
+      classificationName: 'PostgresPolicyTags',
+      queryStatementSource: 'pg_stat_statements',
+      supportsMetadataExtraction: true,
+      supportsProfiler: false,
+      unmodeledKey: 'kept',
     },
   },
 };
 
-const CUSTOM_SERVICE = {
-  id: 's2',
-  name: 'custom-svc',
-  fullyQualifiedName: 'custom-svc',
-  serviceType: 'CustomDatabase',
-  connection: { config: { type: 'CustomDatabase' } },
+const WEBHOOK_SERVICE = {
+  id: 'w1',
+  name: 'hook',
+  fullyQualifiedName: 'hook',
+  serviceType: 'WEBHOOK',
+  connection: { config: { type: 'WEBHOOK' } },
 };
 
-describe('EditServiceConnectionView (live-issues S-01..S-08)', () => {
-  const calls: Array<{ url: string; method?: string }> = [];
-  const putBodies: unknown[] = [];
-  let orchestratorStatus: number;
-  let orchestratorBody: unknown;
-  let hostIpStatus: number;
-  let hostIpBody: unknown;
-  let putGate: Promise<Response> | null;
+const OPEN_METADATA_SERVICE = {
+  ...POSTGRES_SERVICE,
+  id: 's9',
+  name: 'OpenMetadata',
+  fullyQualifiedName: 'OpenMetadata',
+};
+
+async function waitFor(check: () => boolean, what: string): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    if (check()) {
+      return;
+    }
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+describe('EditServiceConnectionView', () => {
+  const calls: Array<{
+    url: string;
+    method?: string;
+    body?: string;
+    contentType?: string;
+  }> = [];
+  let getStatus: number;
+  let getBody: unknown;
+  let patchStatus: number;
+  let schemaStatus: number;
+  let getGate: Promise<Response> | null;
+  let releaseGet: ((response: Response) => void) | null;
 
   beforeEach(() => {
     calls.length = 0;
-    putBodies.length = 0;
-    orchestratorStatus = 200;
-    orchestratorBody = { code: 200, platform: 'airflow' };
-    hostIpStatus = 200;
-    hostIpBody = { ip: '203.0.113.7' };
-    putGate = null;
+    getStatus = 200;
+    getBody = undefined;
+    patchStatus = 200;
+    schemaStatus = 200;
+    getGate = null;
+    releaseGet = null;
+    clearConnectionSchemaCache();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        calls.push({ url, method: init?.method });
-        if (url.includes('/api/v1/services/databaseServices/s1')) {
-          return jsonResponse(POSTGRES_SERVICE);
+        const headers = init?.headers as Record<string, string> | undefined;
+        calls.push({
+          url,
+          method: init?.method,
+          body: typeof init?.body === 'string' ? init.body : undefined,
+          contentType: headers?.['Content-Type'],
+        });
+        if (url.includes('/jsons/connectionSchemas/')) {
+          return jsonResponse(SCHEMA, schemaStatus);
         }
-        if (url.includes('/api/v1/services/databaseServices/s2')) {
-          return jsonResponse(CUSTOM_SERVICE);
-        }
-        if (url.includes('/api/v1/services/databaseServices') && init?.method === 'PUT') {
-          putBodies.push(JSON.parse(String(init.body)));
-          if (putGate) {
-            return putGate;
+        if (url.includes('/api/v1/services/') && init?.method === 'PATCH') {
+          if (patchStatus !== 200) {
+            return new Response('patch failed', { status: patchStatus });
           }
-          return jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'Postgres' });
+          return jsonResponse({
+            ...POSTGRES_SERVICE,
+            owners: undefined,
+            connection: {
+              config: {
+                ...POSTGRES_SERVICE.connection.config,
+                hostPort: 'db2:5432',
+              },
+            },
+          });
+        }
+        if (url.includes('/api/v1/services/databaseServices/s1')) {
+          if (getGate) {
+            return getGate;
+          }
+          if (getStatus !== 200) {
+            return new Response('fetch failed', { status: getStatus });
+          }
+          return jsonResponse(getBody ?? POSTGRES_SERVICE);
+        }
+        if (url.includes('/api/v1/services/databaseServices/s9')) {
+          return jsonResponse(OPEN_METADATA_SERVICE);
+        }
+        if (url.includes('/api/v1/services/apiServices/w1')) {
+          return jsonResponse(WEBHOOK_SERVICE);
         }
         if (url.includes('ingestionPipelines/status')) {
-          return jsonResponse(orchestratorBody, orchestratorStatus);
+          return jsonResponse({ code: 200, platform: 'airflow' });
         }
         if (url.includes('ingestionPipelines/ip')) {
-          if (hostIpStatus === 204) {
-            return new Response(null, { status: 204 });
-          }
-          return jsonResponse(hostIpBody, hostIpStatus);
+          return jsonResponse({ ip: '203.0.113.7' });
         }
         return new Response('not found', { status: 404 });
       }),
@@ -135,6 +187,8 @@ describe('EditServiceConnectionView (live-issues S-01..S-08)', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    message.destroy();
+    document.body.innerHTML = '';
   });
 
   function makeRouter(): Router {
@@ -158,22 +212,31 @@ describe('EditServiceConnectionView (live-issues S-01..S-08)', () => {
           component: { template: '<div>svc</div>' },
           props: true,
         },
+        {
+          path: '/other',
+          name: 'other',
+          component: { template: '<div>other</div>' },
+        },
       ],
     });
   }
 
-  async function mountAt(path: string) {
+  async function mountAt(path: string, history: string[] = []) {
     const pinia = createPinia();
     setActivePinia(pinia);
     const router = makeRouter();
+    for (const entry of history) {
+      await router.push(entry);
+    }
     await router.push(path);
     await router.isReady();
+    const i18n = createTestI18n();
+    i18n.global.mergeLocaleMessage('en-US', EDIT_MESSAGES);
     const wrapper = mount(
       { template: '<router-view />' },
       {
         global: {
-          plugins: [pinia, router, Antd, createTestI18n()],
-          stubs: { TestConnectionCard: TestConnectionCardStub },
+          plugins: [pinia, router, Antd, i18n],
         },
       },
     );
@@ -182,284 +245,301 @@ describe('EditServiceConnectionView (live-issues S-01..S-08)', () => {
     return { wrapper, router };
   }
 
+  async function waitForForm(wrapper: Awaited<ReturnType<typeof mountAt>>['wrapper']) {
+    await waitFor(
+      () => wrapper.find('[data-testid="service-host-port"]').exists(),
+      'connection form fields',
+    );
+  }
+
   async function goToStep2(wrapper: Awaited<ReturnType<typeof mountAt>>['wrapper']) {
+    await waitForForm(wrapper);
     await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
     await flushPromises();
     await wrapper.vm.$nextTick();
   }
 
-  it('renders breadcrumb, FQN heading, stepper, doc panel and the S-08 identity fields', async () => {
+  function patchCalls() {
+    return calls.filter((call) => call.method === 'PATCH');
+  }
+
+  function serviceGetCalls() {
+    // The orchestrator probe also lives under /v1/services/; only the
+    // service-detail GETs count here.
+    return calls.filter(
+      (call) =>
+        call.url.includes('/api/v1/services/') &&
+        !call.url.includes('ingestionPipelines') &&
+        (call.method === undefined || call.method === 'GET'),
+    );
+  }
+
+  it('renders the header with FQN, both step names, breadcrumb, and no identity fields', async () => {
     const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    expect(wrapper.text()).toContain('Database');
-    expect(wrapper.text()).toContain('Warehouse');
-    expect(wrapper.text()).toContain('Edit Connection');
-    expect(wrapper.text()).toContain('Edit warehouse Service Connection');
-    expect(wrapper.find('[data-testid="step-label-1"]').text()).toBe('Connection Details');
-    expect(wrapper.find('[data-testid="step-label-2"]').text()).toBe('Set Default Filters');
-    expect(wrapper.find('[data-testid="service-requirements"]').exists()).toBe(true);
-    // L-1: pin's doc panel shows the connector type as the title and
-    // the category word as the subtitle.
-    const panel = wrapper.find('[data-testid="service-requirements"]');
-    expect(panel.find('.service-doc-title').text()).toBe('Postgres');
-    expect(panel.find('.service-doc-subtitle').text()).toBe('Database Service');
-    expect(wrapper.find('[data-testid="edit-connection-display-name"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="edit-connection-description"]').exists()).toBe(true);
-    expect(
-      (wrapper.find('[data-testid="edit-connection-display-name"]').element as HTMLInputElement)
-        .value,
-    ).toBe('Warehouse');
-    expect(wrapper.find('[data-testid="edit-connection-filters-residual"]').exists()).toBe(false);
+    await waitForForm(wrapper);
+    expect(wrapper.find('[data-testid="header-heading"]').text()).toBe(
+      'Edit warehouse Service Connection',
+    );
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Database');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Warehouse');
+    expect(wrapper.find('[data-testid="sm-breadcrumb"]').text()).toContain('Edit Connection');
+    expect(wrapper.text()).toContain('Connection Details');
+    expect(wrapper.text()).toContain('Set Default Filters');
+    expect(wrapper.find('[data-testid="edit-connection-display-name"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-connection-description"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="edit-connection-no-form"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it('wires the test-connection card with the orchestrator probe and stored-shape connection (S-03/S-05)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    const card = wrapper.findComponent(TestConnectionCardStub);
-    expect(card.exists()).toBe(true);
-    expect(card.props('connectionType')).toBe('Postgres');
-    expect(card.props('serviceName')).toBe('warehouse');
-    expect(card.props('airflowAvailable')).toBe(true);
-    expect(card.props('missingRequiredFieldsCount')).toBe(0);
-    const validate = card.props('onValidateFormRequiredFields');
-    if (!validate) throw new Error('expected the card validator prop');
-    expect(validate()).toBe(true);
-    const connection = card.props('getConnection')() as Record<string, unknown>;
-    expect(connection['config']).toMatchObject({
-      hostPort: 'localhost:5432',
-      username: 'postgres',
+  it('shows a spinner while loading, then the form', async () => {
+    getGate = new Promise<Response>((resolve) => {
+      releaseGet = resolve;
     });
-    const banner = wrapper.findComponent(AirflowMessageBanner);
-    expect(banner.props('checked')).toBe(true);
+    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    expect(wrapper.find('.ant-spin-spinning').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(false);
+    releaseGet!(jsonResponse(POSTGRES_SERVICE));
+    await waitForForm(wrapper);
+    expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
-  it('reports airflow unavailable when the orchestrator probe fails (S-05)', async () => {
-    orchestratorStatus = 500;
-    orchestratorBody = { message: 'down' };
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    const card = wrapper.findComponent(TestConnectionCardStub);
-    expect(card.props('airflowAvailable')).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('shows the pipeline-server IP alert with the fetched host IP (F6, pin ConnectionConfigForm)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    await vi.waitFor(
-      () => expect(wrapper.find('[data-testid="ip-address"]').exists()).toBe(true),
-      { timeout: 3000 },
-    );
-    const alert = wrapper.find('[data-testid="ip-address"]');
-    expect(alert.text()).toContain('Pipeline Server IP Address');
-    expect(alert.text()).toContain('203.0.113.7');
-    expect(calls.some((call) => call.url.includes('ingestionPipelines/ip'))).toBe(true);
-    // Pin passes the fetched IP to TestConnection as well.
-    expect(wrapper.findComponent(TestConnectionCardStub).props('hostIp')).toBe('203.0.113.7');
-    wrapper.unmount();
-  });
-
-  it('hides the IP alert on the Hybrid platform (F6)', async () => {
-    orchestratorBody = { code: 200, platform: 'Hybrid' };
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+  it('enters the error state for the OpenMetadata service without rendering forms', async () => {
+    const { wrapper } = await mountAt('/ingestion/services/database/s9/connection');
     await flushPromises();
-    expect(wrapper.find('[data-testid="ip-address"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('hides the IP alert when the server disables IP info with an empty 204 (F6)', async () => {
-    hostIpStatus = 204;
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    await vi.waitFor(
-      () => expect(calls.some((call) => call.url.includes('ingestionPipelines/ip'))).toBe(true),
-      { timeout: 3000 },
-    );
-    await flushPromises();
-    expect(wrapper.find('[data-testid="ip-address"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('shows the error placeholder when the IP fetch fails (F6, pin fetchHostIp)', async () => {
-    hostIpStatus = 500;
-    hostIpBody = { message: 'boom' };
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    await vi.waitFor(
-      () => expect(wrapper.find('[data-testid="ip-address"]').exists()).toBe(true),
-      { timeout: 3000 },
-    );
-    expect(wrapper.find('[data-testid="ip-address"]').text()).toContain('[error - unknown]');
-    wrapper.unmount();
-  });
-
-  it('disables Back while saving (L-4)', async () => {
-    let resolvePut!: (value: Response) => void;
-    putGate = new Promise<Response>((resolve) => {
-      resolvePut = resolve;
-    });
-    const { wrapper, router } = await mountAt('/ingestion/services/database/s1/connection');
-    await wrapper
-      .find('[data-testid="edit-connection-description"]')
-      .setValue('edited description');
-    await goToStep2(wrapper);
-    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
     await wrapper.vm.$nextTick();
-    expect(
-      (wrapper.find('[data-testid="edit-connection-back"]').element as HTMLButtonElement).disabled,
-    ).toBe(true);
-    resolvePut(jsonResponse({ id: 's1', name: 'warehouse', serviceType: 'Postgres' }));
+    expect(wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-connection-error"]').text()).toContain(
+      'DatabaseServices instance for OpenMetadata not found',
+    );
+    expect(wrapper.find('[data-testid="edit-connection-next"]').exists()).toBe(false);
+    expect(serviceGetCalls()).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('enters the error state on 404 and toasts with an empty shell on other errors', async () => {
+    getStatus = 404;
+    const notFound = await mountAt('/ingestion/services/database/s1/connection');
     await flushPromises();
+    await notFound.wrapper.vm.$nextTick();
+    expect(notFound.wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(true);
+    expect(notFound.wrapper.find('[data-testid="edit-connection-error"]').text()).toContain(
+      'DatabaseServices instance for s1 not found',
+    );
+    notFound.wrapper.unmount();
+    document.body.innerHTML = '';
+
+    getStatus = 500;
+    const failed = await mountAt('/ingestion/services/database/s1/connection');
+    await flushPromises();
+    await failed.wrapper.vm.$nextTick();
+    expect(failed.wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(false);
+    expect(document.querySelector('.ant-message-error')).not.toBeNull();
+    // Pin-degenerate render: header/stepper/footer, no forms, no doc panel.
+    expect(failed.wrapper.find('[data-testid="edit-connection-next"]').exists()).toBe(true);
+    expect(failed.wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(false);
+    failed.wrapper.unmount();
+  });
+
+  it('never fetches and enters the error state for an unknown kind', async () => {
+    const { wrapper } = await mountAt('/ingestion/services/banana/s1/connection');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(serviceGetCalls()).toHaveLength(0);
+    expect(wrapper.find('[data-testid="edit-connection-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="edit-connection-error"]').text()).toContain(
+      'Banana instance for s1 not found',
+    );
+    wrapper.unmount();
+  });
+
+  it('seeds step 2 from the fetched details, not the step-1 draft', async () => {
+    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    await waitForForm(wrapper);
+    await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
+    const filters = wrapper.findComponent(FiltersConfigForm);
+    expect(filters.exists()).toBe(true);
+    expect(filters.props('initialConfig')).toEqual(POSTGRES_SERVICE.connection.config);
+    wrapper.unmount();
+  });
+
+  it('saves a key-level JSON Patch preserving unemitted keys, with no success toast', async () => {
+    const { wrapper, router } = await mountAt(
+      '/ingestion/services/database/s1/connection',
+    );
+    await waitForForm(wrapper);
+    await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(patchCalls()).toHaveLength(1);
+    const patch = patchCalls()[0];
+    expect(new URL(patch.url).pathname).toBe('/api/v1/services/databaseServices/s1');
+    expect(patch.contentType).toBe('application/json-patch+json');
+    const ops = JSON.parse(patch.body ?? '[]') as Array<{ op: string; path: string; value?: unknown }>;
+    expect(ops).toContainEqual({
+      op: 'replace',
+      path: '/connection/config/hostPort',
+      value: 'db2:5432',
+    });
+    for (const preserved of [
+      'supportsMetadataExtraction',
+      'supportsProfiler',
+      'unmodeledKey',
+      'schemaFilterPattern',
+      'includeSchemas',
+    ]) {
+      expect(ops.map((op) => op.path)).not.toContain(
+        expect.stringContaining(preserved),
+      );
+    }
+    expect(ops.map((op) => op.path)).not.toContain('/connection');
+    expect(document.querySelector('.ant-message-success')).toBeNull();
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     wrapper.unmount();
   });
 
-  it('advances to step 2 with filter cards from the declared table, first two open (S-01/S-02)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(true);
+  it('leaves with zero requests when the patch is empty', async () => {
+    const { wrapper, router } = await mountAt(
+      '/ingestion/services/database/s1/connection',
+    );
     await goToStep2(wrapper);
-    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('What should we ingest?');
-    const cards = wrapper.findAllComponents(FilterPatternCard);
-    expect(cards.map((card) => card.props('fieldName'))).toEqual([
-      'databaseFilterPattern',
-      'schemaFilterPattern',
-      'tableFilterPattern',
-      'storedProcedureFilterPattern',
-    ]);
-    expect(cards.map((card) => card.props('defaultOpen'))).toEqual([true, true, false, false]);
-    expect(cards[0].props('systemExcludes')).toEqual(['^template1$', '^template0$']);
-    expect(cards[1].props('systemExcludes')).toEqual(['^information_schema$']);
-    expect(cards[0].props('hasExistingData')).toBe(false);
-    expect(cards[1].props('hasExistingData')).toBe(true);
-    expect(cards[1].props('modelValue')).toEqual({ includes: ['^public$'], excludes: [] });
+    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(patchCalls()).toHaveLength(0);
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
     wrapper.unmount();
   });
 
-  it('shows the connected message on step 2 only after a successful test (S-02)', async () => {
+  it('advances a prompt-area type with the stored connection kept, then leaves patchless', async () => {
+    const { wrapper, router } = await mountAt('/ingestion/services/api/w1/connection');
+    await waitFor(
+      () => wrapper.find('[data-testid="no-config-available"]').exists(),
+      'connection prompt',
+    );
+    expect(wrapper.find('[data-testid="service-host-port"]').exists()).toBe(false);
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(patchCalls()).toHaveLength(0);
+    expect(router.currentRoute.value.name).toBe('ingestion-service');
+    wrapper.unmount();
+  });
+
+  it('advances on schema load failure with the stored connection kept', async () => {
+    schemaStatus = 500;
+    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
+    await waitFor(
+      () => wrapper.find('[data-testid="no-config-available"]').exists(),
+      'load-failed prompt',
+    );
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('toasts on patch failure and stays on the page', async () => {
+    patchStatus = 500;
+    const { wrapper, router } = await mountAt(
+      '/ingestion/services/database/s1/connection',
+    );
+    await waitForForm(wrapper);
+    await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(document.querySelector('.ant-message-error')).not.toBeNull();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-connection');
+    wrapper.unmount();
+  });
+
+  it('goes back in history from step 1, to the list or the detail page', async () => {
+    const fromList = await mountAt('/ingestion/services/database/s1/connection', [
+      '/ingestion/services',
+    ]);
+    await waitForForm(fromList.wrapper);
+    await fromList.wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
+    await flushPromises();
+    const discard = document.querySelector(
+      '[data-testid="navigation-guard-discard"]',
+    ) as HTMLElement | null;
+    expect(discard).not.toBeNull();
+    discard!.click();
+    await flushPromises();
+    await fromList.wrapper.vm.$nextTick();
+    expect(fromList.router.currentRoute.value.name).toBe('ingestion-services');
+    fromList.wrapper.unmount();
+    document.body.innerHTML = '';
+
+    const fromDetail = await mountAt('/ingestion/services/database/s1/connection', [
+      '/ingestion/services/database/s1',
+    ]);
+    await waitForForm(fromDetail.wrapper);
+    await fromDetail.wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
+    await flushPromises();
+    const discardDetail = document.querySelector(
+      '[data-testid="navigation-guard-discard"]',
+    ) as HTMLElement | null;
+    expect(discardDetail).not.toBeNull();
+    discardDetail!.click();
+    await flushPromises();
+    await fromDetail.wrapper.vm.$nextTick();
+    expect(fromDetail.router.currentRoute.value.name).toBe('ingestion-service');
+    fromDetail.wrapper.unmount();
+  });
+
+  it('asks before stepping back from step 2 and returns to step 1 on confirm', async () => {
     const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
     await goToStep2(wrapper);
-    expect(wrapper.find('[data-testid="edit-connection-connected"]').exists()).toBe(false);
     await wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
     await flushPromises();
-    // Back from step 2 asks for confirmation; confirm to return to step 1.
     const modals = wrapper.findAllComponents(NavigationGuardModal);
+    expect(modals).toHaveLength(2);
     await modals[1].vm.$emit('leave');
     await flushPromises();
     await wrapper.vm.$nextTick();
     expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="test-connection-pass"]').trigger('click');
-    await goToStep2(wrapper);
-    const connected = wrapper.find('[data-testid="edit-connection-connected"]');
-    expect(connected.exists()).toBe(true);
-    expect(connected.text()).toContain('Connected to localhost:5432');
     wrapper.unmount();
   });
 
-  it('shows the pin empty state when the type declares no filter patterns (S-02)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s2/connection');
-    await goToStep2(wrapper);
-    expect(wrapper.findAllComponents(FilterPatternCard)).toHaveLength(0);
-    expect(wrapper.find('[data-testid="no-config-available"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="no-config-available"]').text()).toContain(
-      'No filter patterns are available for this connector.',
+  it('guards navigation away even without edits, and lets the user stay', async () => {
+    const { wrapper, router } = await mountAt(
+      '/ingestion/services/database/s1/connection',
     );
-    wrapper.unmount();
-  });
-
-  it('leaves without a save when nothing changed — no PUT, just navigation (S-02)', async () => {
-    const { wrapper, router } = await mountAt('/ingestion/services/database/s1/connection');
-    await goToStep2(wrapper);
-    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
+    await waitForForm(wrapper);
+    // Do not await the push: the leave guard holds the navigation open
+    // until the modal is answered, so awaiting it deadlocks.
+    const navigation = router.push('/other');
     await flushPromises();
-    expect(putBodies).toHaveLength(0);
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    wrapper.unmount();
-  });
-
-  it('saves edits via PUT with blank-means-keep secrets, stored filters, and no flat keys (S-02)', async () => {
-    const { wrapper, router } = await mountAt('/ingestion/services/database/s1/connection');
-    await wrapper
-      .find('[data-testid="edit-connection-description"]')
-      .setValue('edited description');
-    await goToStep2(wrapper);
-    // Edit a fresh filter card: the new scope must reach the saved config.
-    const cards = wrapper.findAllComponents(FilterPatternCard);
-    await cards[2].vm.$emit('update:modelValue', { includes: ['^t$'], excludes: [] });
-    await wrapper.find('[data-testid="edit-connection-save"]').trigger('click');
-    await flushPromises();
-    expect(putBodies).toHaveLength(1);
-    const body = putBodies[0] as Record<string, unknown>;
-    expect(body['name']).toBe('warehouse');
-    expect(body['serviceType']).toBe('Postgres');
-    expect(body['displayName']).toBe('Warehouse');
-    expect(body['description']).toBe('edited description');
-    const config = (body['connection'] as Record<string, unknown>)['config'] as Record<
-      string,
-      unknown
-    >;
-    expect(config['hostPort']).toBe('localhost:5432');
-    expect(config['username']).toBe('postgres');
-    expect(config['database']).toBe('appdb');
-    expect(config['authType']).toEqual({ password: '*****' });
-    expect(config).not.toHaveProperty('password');
-    expect(config['schemaFilterPattern']).toEqual({ includes: ['^public$'], excludes: [] });
-    expect(config['tableFilterPattern']).toEqual({ includes: ['^t$'], excludes: [] });
-    expect(config).not.toHaveProperty('includeSchemas');
-    expect(router.currentRoute.value.name).toBe('ingestion-service');
-    wrapper.unmount();
-  });
-
-  it('guards dirty leaves with the confirm modal, and leaves clean pages at once (S-07)', async () => {
-    const { wrapper, router } = await mountAt('/ingestion/services/database/s1/connection');
-    // Clean: navigation proceeds with no modal.
-    const cleanNav = router.push({ name: 'ingestion-services' });
-    await flushPromises();
-    await cleanNav;
-    expect(router.currentRoute.value.name).toBe('ingestion-services');
-    expect(document.body.textContent).not.toContain('Do you want to save or discard changes?');
-    // Return and dirty the form.
-    await router.push('/ingestion/services/database/s1/connection');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    await wrapper
-      .find('[data-testid="edit-connection-description"]')
-      .setValue('dirty edit');
-    const blockedNav = router.push({ name: 'ingestion-services' });
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(document.body.textContent).toContain('Do you want to save or discard changes?');
-    const modals = wrapper.findAllComponents(NavigationGuardModal);
-    await modals[0].vm.$emit('stay');
-    await flushPromises();
-    await blockedNav.catch(() => undefined);
+    const discard = document.querySelector(
+      '[data-testid="navigation-guard-discard"]',
+    ) as HTMLElement | null;
+    expect(discard).not.toBeNull();
     expect(router.currentRoute.value.name).toBe('ingestion-service-connection');
-    // Second attempt, this time confirming the leave.
-    const leaveNav = router.push({ name: 'ingestion-services' });
+    // Stay: the modal closes and the route is unchanged.
+    (discard?.parentElement?.querySelector('.ant-btn-primary') as HTMLElement).click();
+    await navigation;
     await flushPromises();
-    await wrapper.vm.$nextTick();
-    await wrapper.findAllComponents(NavigationGuardModal)[0].vm.$emit('leave');
-    await flushPromises();
-    await leaveNav;
-    expect(router.currentRoute.value.name).toBe('ingestion-services');
+    expect(document.querySelector('[data-testid="navigation-guard-discard"]')).toBeNull();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-connection');
     wrapper.unmount();
   });
-
-  it('asks for confirmation when going back from step 2 to step 1 (S-07)', async () => {
-    const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
-    await goToStep2(wrapper);
-    await wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(document.body.textContent).toContain('Do you want to save or discard changes?');
-    const modals = wrapper.findAllComponents(NavigationGuardModal);
-    await modals[1].vm.$emit('stay');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
-    await wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    await wrapper.findAllComponents(NavigationGuardModal)[1].vm.$emit('leave');
-    await flushPromises();
-    await wrapper.vm.$nextTick();
-    expect(wrapper.find('[data-testid="edit-connection-step-connection"]').exists()).toBe(true);
-    wrapper.unmount();
-  });
-});
+}, 120000);

@@ -7,7 +7,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message, Select } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -28,6 +28,7 @@ describe('AddServiceIngestionView', () => {
   let serviceOwners: Array<Record<string, unknown>> = [];
   let serviceConfig: Record<string, unknown> = {};
   let deployReason: string | undefined;
+  let deployThrows = false;
   let createStatus = 200;
 
   function stubFetch() {
@@ -50,6 +51,9 @@ describe('AddServiceIngestionView', () => {
         }
         if (url.includes('/api/v1/services/ingestionPipelines/deploy/')) {
           deploys.push(url);
+          if (deployThrows) {
+            throw new Error('deploy boom');
+          }
           return jsonResponse(
             deployReason ? { code: 200, reason: deployReason } : { code: 200 },
           );
@@ -131,6 +135,7 @@ describe('AddServiceIngestionView', () => {
       schemaFilterPattern: { includes: ['public'], excludes: ['^tmp_.*$'] },
     };
     deployReason = undefined;
+    deployThrows = false;
     createStatus = 200;
     stubFetch();
   });
@@ -148,9 +153,7 @@ describe('AddServiceIngestionView', () => {
     );
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     const body = posts[0]!.body as {
       name: string;
       displayName: string;
@@ -214,9 +217,7 @@ describe('AddServiceIngestionView', () => {
     await flushPromises();
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     const body = posts[0]!.body as { owners?: Array<{ id: string }> };
     expect(body.owners).toEqual([{ id: 's9', type: 'user', name: 'owner9' }]);
   });
@@ -227,14 +228,69 @@ describe('AddServiceIngestionView', () => {
     await flushPromises();
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     expect(wrapper.find('[data-testid="add-ingestion-step-success"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="add-ingestion-deploy-retry"]').exists()).toBe(true);
     await wrapper.find('[data-testid="add-ingestion-deploy-retry"]').trigger('click');
     await flushPromises();
     expect(deploys).toHaveLength(2);
+  });
+
+  it('lists the flag-driven pipeline kinds for the chosen service in the type select', async () => {
+    serviceConfig = {
+      ...serviceConfig,
+      supportsMetadataExtraction: true,
+      supportsUsageExtraction: true,
+      supportsLineageExtraction: true,
+      supportsProfiler: true,
+    };
+    const { wrapper } = await mountView();
+    const typeSelect = wrapper
+      .findAllComponents(Select)
+      .find((candidate) => candidate.attributes('data-testid') === 'add-ingestion-type');
+    expect(typeSelect?.exists()).toBe(true);
+    // The Select consumes its Option children as data (they never mount
+    // as components), so the offered set is read from the slot VNodes
+    // the view passes in — exactly the options a user can pick.
+    const optionValues: unknown[] = [];
+    const collect = (nodes: unknown[]): void => {
+      for (const node of nodes) {
+        const vnode = node as { props?: Record<string, unknown>; children?: unknown[] };
+        if (Array.isArray(vnode.children)) {
+          collect(vnode.children);
+        } else if (vnode.props?.value !== undefined) {
+          optionValues.push(vnode.props.value);
+        }
+      }
+    };
+    collect((typeSelect?.vm.$slots.default?.() ?? []) as unknown[]);
+    expect(optionValues).toEqual([
+      'metadata',
+      'usage',
+      'lineage',
+      'profiler',
+      'autoClassification',
+    ]);
+  });
+
+  it('shows a deploy failure (not a create failure) on the success step when the deploy throws', async () => {
+    deployThrows = true;
+    const errorSpy = vi.spyOn(message, 'error');
+    const { wrapper } = await mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
+    await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    expect(deploys).toHaveLength(1);
+    // The pipeline was created: the success step renders with the
+    // deploy-failed copy and a retry, not a create-failed form.
+    expect(wrapper.find('[data-testid="add-ingestion-step-success"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain(
+      'The pipeline was created, but the deploy did not succeed. Retry the deploy below.',
+    );
+    expect(wrapper.find('[data-testid="add-ingestion-deploy-retry"]').exists()).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith('Error while deploying the ingestion pipeline!');
+    errorSpy.mockRestore();
   });
 
   it('does not report a deploy failure when the deploy succeeds with a reason body', async () => {
@@ -247,9 +303,7 @@ describe('AddServiceIngestionView', () => {
     await flushPromises();
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     expect(wrapper.find('[data-testid="add-ingestion-step-success"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="add-ingestion-deploy-retry"]').exists()).toBe(false);
   });
@@ -260,9 +314,7 @@ describe('AddServiceIngestionView', () => {
     await flushPromises();
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     expect(wrapper.find('[data-testid="add-ingestion-step-success"]').exists()).toBe(false);
     expect(router.currentRoute.value.name).toBe('ingestion-service-add-ingestion');
   });
@@ -281,9 +333,7 @@ describe('AddServiceIngestionView', () => {
     await wrapper.find('[data-testid="schema-field-enableDebugLog-switch"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-next"]').trigger('click');
     await wrapper.find('[data-testid="add-ingestion-create"]').trigger('click');
-    await flushPromises();
-    await flushPromises();
-    expect(posts).toHaveLength(1);
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
     const body = posts[0]!.body as {
       loggerLevel?: string;
       sourceConfig: { config: Record<string, unknown> };
@@ -329,4 +379,9 @@ describe('AddServiceIngestionView', () => {
     expect(wrapper.text()).toContain('线程数');
     expect(wrapper.text()).not.toContain('Option');
   });
-});
+  // Multi-step create-flow tests mount a schema-driven form and drive a
+  // create + deploy chain; under shared-VM load a single run can exceed
+  // the default 5s ceiling (AlertsListView.test.ts carries the same 10s
+  // allowance for its modal flows). A timeout abort mid-chain would
+  // leak the in-flight create POST into the next test's shared array.
+}, 10000);

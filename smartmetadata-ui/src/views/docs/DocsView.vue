@@ -29,7 +29,6 @@ import { authorizationHeader } from '@/auth/token';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import { useAuthStore } from '@/stores/auth';
-import { SM_COLOR_PRIMARY } from '@/theme/tokens';
 
 const { t } = useI18n();
 const auth = useAuthStore();
@@ -57,6 +56,9 @@ const apiKeyValue = computed(() => {
         {{ t('docs.specDownload') }}
       </a>
     </p>
+    <!-- Q-TH-4: primary color reads the managed CSS variable (CSS
+         custom properties pierce the shadow DOM) so a custom theme
+         primary color reaches the API docs. -->
     <rapi-doc
       v-if="apiKeyValue"
       data-testid="docs-rapidoc"
@@ -70,7 +72,7 @@ const apiKeyValue = computed(() => {
       api-key-name="Authorization"
       api-key-location="header"
       :api-key-value="apiKeyValue"
-      :primary-color="SM_COLOR_PRIMARY"
+      primary-color="var(--sm-color-primary)"
       :show-header="false"
       :load-fonts="false"
       :allow-spec-file-download="true"

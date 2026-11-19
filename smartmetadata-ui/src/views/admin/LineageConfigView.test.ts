@@ -8,10 +8,22 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
+import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createI18n } from 'vue-i18n';
+import { useShellConfigStore } from '@/stores/shellConfig';
 import LineageConfigView from './LineageConfigView.vue';
+
+const backMock = vi.hoisted(() => vi.fn());
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ back: backMock }),
+  // SmBreadcrumb imports the real RouterLink; the mount stubs it, but the
+  // mock must export it or the import itself fails. The back() stub above
+  // is what this mock exists for, so it stays.
+  RouterLink: { name: 'RouterLink', template: '<a><slot /></a>', props: ['to'] },
+}));
 
 vi.mock('@/api/system', () => ({
   getTypedSetting: vi.fn(),
@@ -25,6 +37,8 @@ const getMock = getTypedSetting as unknown as ReturnType<typeof vi.fn>;
 const updateMock = updateSetting as unknown as ReturnType<typeof vi.fn>;
 
 function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const i18n = createI18n({
     legacy: false,
     locale: 'en-US',
@@ -48,8 +62,9 @@ function mountView() {
             node: 'Node',
             edge: 'Edge',
             save: 'Save',
-            rangeNote: 'Valid range is 0–3.',
-            rangeInvalid: 'Depth must be an integer between 0 and 3.',
+            cancel: 'Cancel',
+            fieldRequired: '{field} is required',
+            minZero: '{field} must be at least {min}',
           },
         },
       },
@@ -57,7 +72,7 @@ function mountView() {
   });
   return mount(LineageConfigView, {
     global: {
-      plugins: [i18n, Antd],
+      plugins: [i18n, Antd, pinia],
       stubs: {
         RouterLink: true,
       },
@@ -65,8 +80,10 @@ function mountView() {
   });
 }
 
-describe('LineageConfigView depth range (Stage 8)', () => {
+describe('LineageConfigView', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
+    backMock.mockReset();
     getMock.mockReset();
     updateMock.mockReset();
     // Echo the sent value back as the PUT response, as updateSetting does
@@ -75,9 +92,11 @@ describe('LineageConfigView depth range (Stage 8)', () => {
       configType: 'lineageSettings',
       configValue: value,
     }));
+    vi.spyOn(message, 'success');
+    vi.spyOn(message, 'error');
   });
 
-  it('refuses to save an out-of-range legacy depth instead of silently clamping it', async () => {
+  it('saves a depth above 3: official validates min 0 only, with no upper bound', async () => {
     getMock.mockResolvedValue({
       upstreamDepth: 5,
       downstreamDepth: 2,
@@ -86,39 +105,132 @@ describe('LineageConfigView depth range (Stage 8)', () => {
     });
     const wrapper = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
-    expect(updateMock).not.toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledWith(
+      'lineageSettings',
+      expect.objectContaining({ upstreamDepth: 5, downstreamDepth: 2 }),
+    );
   });
 
-  it('saves depths at the official-minimum 0 and the product-maximum 3', async () => {
+  it('saves depths at the official minimum 0', async () => {
     getMock.mockResolvedValue({
       upstreamDepth: 0,
+      downstreamDepth: 0,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
+    await flushPromises();
+    expect(updateMock).toHaveBeenCalledWith(
+      'lineageSettings',
+      expect.objectContaining({ upstreamDepth: 0, downstreamDepth: 0 }),
+    );
+  });
+
+  it('blocks save on a negative depth and shows the per-field error', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: -1,
+      downstreamDepth: 2,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
+    await flushPromises();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Upstream depth must be at least 0');
+  });
+
+  it('maps missing depths to empty fields and blocks save as required', async () => {
+    getMock.mockResolvedValue({
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(
+      (wrapper.find('input[data-testid="field-upstream"]').element as HTMLInputElement).value,
+    ).toBe('');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
+    await flushPromises();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Upstream depth is required');
+  });
+
+  it('toasts on load failure and keeps the form empty', async () => {
+    getMock.mockRejectedValue(new Error('boom'));
+    const wrapper = mountView();
+    await flushPromises();
+    expect(message.error).toHaveBeenCalled();
+    expect(
+      (wrapper.find('input[data-testid="field-upstream"]').element as HTMLInputElement).value,
+    ).toBe('');
+  });
+
+  it('uses root field ids and official test ids', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: 2,
+      downstreamDepth: 2,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('input[data-testid="field-upstream"]').attributes('id')).toBe(
+      'root/upstreamDepth',
+    );
+    expect(wrapper.find('[data-testid="field-lineage-layer"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="field-pipeline-view-mode"]').exists()).toBe(true);
+  });
+
+  it('navigates back on cancel', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: 2,
+      downstreamDepth: 2,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="cancel-button"]').trigger('click');
+    expect(backMock).toHaveBeenCalled();
+  });
+
+  it('refreshes the shell lineage slice after a successful save', async () => {
+    getMock.mockResolvedValue({
+      upstreamDepth: 2,
       downstreamDepth: 3,
       lineageLayer: 'EntityLineage',
       pipelineViewMode: 'Node',
     });
     const wrapper = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
-    expect(updateMock).toHaveBeenCalledWith(
-      'lineageSettings',
-      expect.objectContaining({ upstreamDepth: 0, downstreamDepth: 3 }),
-    );
+    expect(useShellConfigStore().lineageSettings).toEqual({
+      upstreamDepth: 2,
+      downstreamDepth: 3,
+      lineageLayer: 'EntityLineage',
+      pipelineViewMode: 'Node',
+    });
   });
 });
 
 describe('LineageConfigView preserves settings the form does not edit', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     getMock.mockReset();
     updateMock.mockReset();
-    // Echo the sent value back as the PUT response, as updateSetting does
-    // when the server returns no parseable setting.
     updateMock.mockImplementation(async (_type: string, value: unknown) => ({
       configType: 'lineageSettings',
       configValue: value,
     }));
+    vi.spyOn(message, 'success');
+    vi.spyOn(message, 'error');
   });
 
   const stored = {
@@ -133,9 +245,8 @@ describe('LineageConfigView preserves settings the form does not edit', () => {
     getMock.mockResolvedValue(stored);
     const wrapper = mountView();
     await flushPromises();
-    // Antd InputNumber binds the test id to its inner <input>.
-    await wrapper.find('input[data-testid="lineage-upstream"]').setValue(1);
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('input[data-testid="field-upstream"]').setValue(1);
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
     expect(updateMock).toHaveBeenCalledWith('lineageSettings', {
       ...stored,
@@ -147,9 +258,9 @@ describe('LineageConfigView preserves settings the form does not edit', () => {
     getMock.mockResolvedValue(stored);
     const wrapper = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
     expect(updateMock).toHaveBeenCalledTimes(2);
     expect(updateMock.mock.calls[1]).toEqual(['lineageSettings', stored]);
@@ -159,7 +270,7 @@ describe('LineageConfigView preserves settings the form does not edit', () => {
     getMock.mockRejectedValue(new Error('boom'));
     const wrapper = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
     expect(updateMock).not.toHaveBeenCalled();
   });
@@ -173,7 +284,7 @@ describe('LineageConfigView preserves settings the form does not edit', () => {
     });
     const wrapper = mountView();
     await flushPromises();
-    await wrapper.find('[data-testid="lineage-save"]').trigger('click');
+    await wrapper.find('[data-testid="save-button"]').trigger('click');
     await flushPromises();
     expect(updateMock).toHaveBeenCalledWith('lineageSettings', {
       upstreamDepth: 2,

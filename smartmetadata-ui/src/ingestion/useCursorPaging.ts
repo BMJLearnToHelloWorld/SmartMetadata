@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { computed, ref, watch, type ComputedRef, type Ref } from 'vue';
+import { computed, ref, toValue, watch, type ComputedRef, type MaybeRefOrGetter, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   createEmptyPaging,
@@ -21,6 +21,7 @@ import {
   type PagingUrlParams,
   type QueryPatchValue,
 } from '@/catalog/servicePaging';
+import { readGlobalPageSize, writeGlobalPageSize } from '@/utils/userPageSizePreference';
 
 export interface CursorState {
   cursorType: CursorType | null;
@@ -52,13 +53,28 @@ function asCursorValue(value: unknown): string | undefined {
 }
 
 /**
- * Pin usePaging (hooks/paging/usePaging.ts) as a Vue composable,
- * without the saved-page-size preference. Page, cursor, and size
- * live in the URL query (currentPage/cursorType/cursorValue/
- * pageSize) and sync both ways: handlers replace the URL, and a
- * watcher adopts URL changes with equality guards so the replace
- * never loops. An off-scale URL size clears all four paging params
- * from the URL, exactly as the pin effect does.
+ * T-5 persistence (precondition 07 §2.7.2, opt-in like the shared
+ * `useCursorPagedList` contract): when provided, the fallback size
+ * reads the current user's persisted `globalPageSize` and size
+ * changes persist through the shared helper's {15,25,50} gate. When
+ * omitted, the composable never touches storage — the other call
+ * sites (service-detail surfaces) keep their current behavior until
+ * the integration line wires them.
+ */
+export interface CursorPagingPersistence {
+  storage: Storage;
+  userName: MaybeRefOrGetter<string | undefined>;
+}
+
+/**
+ * Pin usePaging (hooks/paging/usePaging.ts) as a Vue composable.
+ * Page, cursor, and size live in the URL query (currentPage/
+ * cursorType/cursorValue/pageSize) and sync both ways: handlers
+ * replace the URL, and a watcher adopts URL changes with equality
+ * guards so the replace never loops. An off-scale URL size clears
+ * all four paging params from the URL, exactly as the pin effect
+ * does. With `persistence`, the size fallback is the current user's
+ * saved preference (URL size still wins) and size changes persist.
  *
  * resetPaging is a design-required convenience composed from pin
  * primitives (page 1, no cursor, paging cleared); the pin has no
@@ -67,11 +83,15 @@ function asCursorValue(value: unknown): string | undefined {
 export function useCursorPaging(
   defaultPageSize?: number,
   pageSizeOptions: number[] = LIST_PAGE_SIZE_OPTIONS,
+  persistence?: CursorPagingPersistence,
 ): UseCursorPagingReturn {
   const route = useRoute();
   const router = useRouter();
 
-  const fallbackPageSize = defaultPageSize ?? PAGE_SIZE_BASE;
+  const persistedPageSize = persistence
+    ? readGlobalPageSize(persistence.storage, toValue(persistence.userName))
+    : undefined;
+  const fallbackPageSize = defaultPageSize ?? persistedPageSize ?? PAGE_SIZE_BASE;
   const processedPageSize = pageSizeOptions.includes(fallbackPageSize)
     ? fallbackPageSize
     : (pageSizeOptions[0] ?? PAGE_SIZE_BASE);
@@ -138,6 +158,12 @@ export function useCursorPaging(
     };
   };
 
+  const persistSize = (size: number): void => {
+    if (persistence) {
+      writeGlobalPageSize(persistence.storage, toValue(persistence.userName), size);
+    }
+  };
+
   const handlePageChange = (
     page: number | ((current: number) => number),
     cursorData?: CursorState,
@@ -152,11 +178,13 @@ export function useCursorPaging(
     }
     if (size) {
       patch.pageSize = size;
+      persistSize(size);
     }
     writeQuery(patch);
   };
 
   const handlePageSizeChange = (size: number): void => {
+    persistSize(size);
     storedPageSize.value = size;
     currentPage.value = INITIAL_PAGING_VALUE;
     writeQuery({

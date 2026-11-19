@@ -11,9 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import {
   createPersona,
+  deletePersona,
   getPersonaByName,
+  getPersonaVersions,
   listPersonas,
-  personaUsersPatch,
   searchPersonas,
   updatePersona,
 } from './persona';
@@ -94,10 +95,21 @@ describe('persona API', () => {
     expect(lastFetch().init?.headers).toMatchObject({ 'Content-Type': 'application/json-patch+json' });
   });
 
-  it('builds a full-reference users replace op', () => {
-    const patch = personaUsersPatch([{ id: 'u1', name: 'ada', type: 'user' }]);
-    expect(patch).toEqual([
-      { op: 'replace', path: '/users', value: [{ id: 'u1', name: 'ada', type: 'user' }] },
-    ]);
+  it('hard-deletes a persona with hardDelete=true and recursive=false', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    await deletePersona('p1');
+    expect(lastFetch().url).toContain('/v1/personas/p1?hardDelete=true&recursive=false');
+    expect(lastFetch().init?.method).toBe('DELETE');
+  });
+
+  it('fetches persona versions as an EntityHistory', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ entityType: 'persona', versions: [{ version: 0.1 }, { version: 0.2 }] })),
+    );
+    const history = await getPersonaVersions('p1');
+    expect(lastFetch().url).toContain('/v1/personas/p1/versions');
+    expect(history.entityType).toBe('persona');
+    expect(history.versions).toHaveLength(2);
   });
 });

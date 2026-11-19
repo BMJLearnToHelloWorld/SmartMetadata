@@ -9,10 +9,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ADMIN_ROUTE_RESOURCE,
   CREATE_USER_GUARD_DECLARATIONS,
   evaluateGuardDeclaration,
   guardDeclarationOf,
   guardDeclarationResources,
+  hasAdminEntryGrant,
+  isAdminPath,
+  membersTabGuard,
   resolveAdminAccess,
   resolveGuard,
   type GuardDeclaration,
@@ -133,6 +137,162 @@ describe('route guards (meta-driven, DESIGN §10)', () => {
         loginConfigApplicable: false,
       }),
     ).toEqual({ kind: 'login', redirect: '/settings/preferences/loginConfiguration' });
+  });
+});
+
+describe('sections route contract (retained table + segment guard)', () => {
+  // Tests from the sections batch. The table, segment guard, entry
+  // helper and prefix classifier are retained (see guards.ts header
+  // note); the three path-based resolveGuard cases at the end are
+  // translated to the declaration vocabulary — the live resolveGuard
+  // no longer judges by URL path (§10.5) — keeping the denied-in-place
+  // outcome each case pins. The two 'admits admin routes on the
+  // isAdminUser / permission line alone' cases are covered by the
+  // declared-route cases in the main describe above.
+  it('maps user/team admin routes to a permission resource', () => {
+    expect(ADMIN_ROUTE_RESOURCE['admin-users']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-user']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-admins']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['admin-team']).toBe('team');
+    // Sections batch: the settings members faces share the user/team
+    // mappings, and roles/policies map per 03 §12 (view-or-better
+    // entry; operations gated in-view).
+    expect(ADMIN_ROUTE_RESOURCE['settings-members']).toBe('user');
+    expect(ADMIN_ROUTE_RESOURCE['settings-members-team']).toBe('team');
+    expect(ADMIN_ROUTE_RESOURCE['settings-members-team-import']).toBe('team');
+    expect(ADMIN_ROUTE_RESOURCE['admin-roles']).toBe('role');
+    expect(ADMIN_ROUTE_RESOURCE['admin-role']).toBe('role');
+    expect(ADMIN_ROUTE_RESOURCE['admin-policies']).toBe('policy');
+    expect(ADMIN_ROUTE_RESOURCE['admin-policy']).toBe('policy');
+    // C-1 (Bai 2026-11-18): the custom-properties 'type' mappings are
+    // deleted; the per-type gate lives in the detail page.
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-custom-property-type']).toBeUndefined();
+    // The add-rule/add-role/add-policy routes stay unmapped: their
+    // §12 declarations are Create/EditAll operations, inexpressible
+    // in the view-or-better entry vocabulary, and their views carry
+    // no in-view Create gate. Bots, personas, audit logs and the
+    // debugger stay admin-only until their mappings are determined.
+    expect(ADMIN_ROUTE_RESOURCE['admin-role-add']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-policy-add']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-policy-rule-add']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-policy-rule-edit']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-audit-logs']).toBeUndefined();
+    expect(ADMIN_ROUTE_RESOURCE['admin-settings-permission-debugger']).toBeUndefined();
+  });
+
+  it('admits only the users/admins members segments, resolving the rest to /404', () => {
+    expect(membersTabGuard({ params: { tab: 'users' } })).toBe(true);
+    expect(membersTabGuard({ params: { tab: 'admins' } })).toBe(true);
+    expect(membersTabGuard({ params: { tab: 'teams' } })).toBe('/404');
+    expect(membersTabGuard({ params: { tab: 'bogus' } })).toBe('/404');
+    expect(membersTabGuard({ params: {} })).toBe('/404');
+  });
+
+  it('recognizes admin paths by prefix only', () => {
+    expect(isAdminPath('/admin')).toBe(true);
+    expect(isAdminPath('/admin/users')).toBe(true);
+    expect(isAdminPath('/administrator')).toBe(false);
+    expect(isAdminPath('/my-data')).toBe(false);
+  });
+
+  it('recognizes the announcements management list as admin-only (B-7)', () => {
+    expect(isAdminPath('/announcements')).toBe(true);
+    expect(isAdminPath('/announcements/duplicate/abc')).toBe(true);
+    // The home announcement rail is a read-only view on /my-data,
+    // not an admin route, and stays open to any signed-in user.
+    expect(isAdminPath('/my-data')).toBe(false);
+  });
+
+  it('recognizes the ingestion pipeline routes as admin-only (P-17)', () => {
+    // Official keeps only the Pipelines tab admin-only
+    // (ServicesPage.tsx:147-165); the service routes admit viewers and
+    // owners under their own view-permission behaviour, so they are not
+    // admin paths.
+    expect(isAdminPath('/ingestion/pipelines')).toBe(true);
+    expect(isAdminPath('/ingestion/pipelines/p1')).toBe(true);
+    expect(isAdminPath('/ingestion/pipelines/p1/edit')).toBe(true);
+    expect(isAdminPath('/ingestion')).toBe(false);
+    expect(isAdminPath('/ingestion/services')).toBe(false);
+    expect(isAdminPath('/ingestion/services/database/s1')).toBe(false);
+    expect(isAdminPath('/ingestionx')).toBe(false);
+  });
+
+  it('admits mapped admin entry on any view-or-better grant', () => {
+    expect(hasAdminEntryGrant({ ViewAll: true })).toBe(true);
+    expect(hasAdminEntryGrant({ ViewBasic: true })).toBe(true);
+    expect(hasAdminEntryGrant({ EditAll: true })).toBe(true);
+    expect(hasAdminEntryGrant({ Create: true })).toBe(false);
+    expect(hasAdminEntryGrant({})).toBe(false);
+    expect(hasAdminEntryGrant(null)).toBe(false);
+    expect(hasAdminEntryGrant(undefined)).toBe(false);
+  });
+
+  it('forbids admin routes when neither permission line passes', () => {
+    // Translated from the path-based case: the admin-users route
+    // carries { resource: 'USER', operation: 'view' }
+    // (router/index.ts); a non-admin with no grant is denied in place.
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/members/users',
+        declaration: { resource: 'USER', operation: 'view' },
+      }),
+    ).toEqual({ kind: 'deny' });
+  });
+
+  it('forbids the announcements list for non-admins, admits admins', () => {
+    // Translated from the path-based case: the announcements route is
+    // declared 'admin-only' (router/index.ts); denial renders the
+    // placeholder in place.
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/notifications/announcements',
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'deny' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/notifications/announcements/duplicate/abc',
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'deny' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/settings/notifications/announcements',
+        isAdminUser: true,
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'allow' });
+  });
+
+  it('forbids ingestion routes for non-admins, admits admins (P-17)', () => {
+    // Translated from the path-based case: the pipeline detail route
+    // is declared 'admin-only' (router/index.ts); the list route is
+    // deleted (DESIGN §6.7 row 2).
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/ingestion/pipelines/p1',
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'deny' });
+    expect(
+      resolveGuard({
+        isPublic: false,
+        hasSession: true,
+        fullPath: '/ingestion/pipelines/p1',
+        isAdminUser: true,
+        declaration: 'admin-only',
+      }),
+    ).toEqual({ kind: 'allow' });
   });
 });
 

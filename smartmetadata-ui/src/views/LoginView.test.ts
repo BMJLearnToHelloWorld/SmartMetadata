@@ -13,6 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { encodeLoginPassword } from '@/auth/token';
+import { useShellConfigStore } from '@/stores/shellConfig';
 import { createTestI18n } from '@/test/i18n';
 import LoginView from './LoginView.vue';
 
@@ -75,6 +76,41 @@ describe('LoginView', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     localStorage.clear();
+  });
+
+  it('renders the custom logo URL and falls back to the bundled logo on error', async () => {
+    const { wrapper } = await mountLogin();
+    await flushPromises();
+    const img = wrapper.find('.login__logo');
+    const bundledSrc = img.attributes('src');
+    expect(bundledSrc).toMatch(/^data:image\/svg\+xml/);
+    useShellConfigStore().uiThemePreference = {
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/custom-logo.svg' },
+      customTheme: {},
+    };
+    await flushPromises();
+    expect(img.attributes('src')).toBe('https://example.com/custom-logo.svg');
+    await img.trigger('error');
+    expect(img.attributes('src')).toBe(bundledSrc);
+  });
+
+  it('does not re-apply the fallback when the bundled logo also fails', async () => {
+    const { wrapper } = await mountLogin();
+    await flushPromises();
+    const img = wrapper.find('.login__logo');
+    useShellConfigStore().uiThemePreference = {
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/custom-logo.svg' },
+      customTheme: {},
+    };
+    await flushPromises();
+    await img.trigger('error');
+    expect(img.attributes('data-fallback-applied')).toBe('true');
+    // Simulate the bundled asset failing too: point the element at a
+    // third URL and fire error again — the guard must leave it alone
+    // (an unguarded handler would overwrite it with the bundled src).
+    (img.element as HTMLImageElement).setAttribute('src', 'https://example.com/other.svg');
+    await img.trigger('error');
+    expect(img.attributes('src')).toBe('https://example.com/other.svg');
   });
 
   it('renders the sign-in form', async () => {

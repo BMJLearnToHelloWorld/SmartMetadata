@@ -19,7 +19,6 @@ import {
   Typography,
   message,
 } from 'ant-design-vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import {
   buildSettingsBreadcrumbCatalog,
@@ -28,7 +27,7 @@ import {
 } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
 import { SETTINGS_BREADCRUMB_NAMES, type SettingsTranslator } from '@/settings/registry';
-import { asRecord, mapEntityRefs } from '@/api/json';
+import SmCodeEditor from '@/components/shared/SmCodeEditor.vue';
 import {
   createTaskFormSchema,
   listTaskFormSchemas,
@@ -37,10 +36,9 @@ import {
   type TaskFormSchema,
 } from '@/api/taskFormSchemas';
 import {
-  asBackendEdges,
-  asBackendNodes,
   getWorkflowDefinitionByFqn,
   updateWorkflowDefinition,
+  type SanitizedWorkflowDefinition,
 } from '@/api/workflows';
 import {
   buildDesignerSchema,
@@ -127,6 +125,17 @@ const generalTaskType = ref('');
 const generalTaskCategory = ref<string | undefined>(undefined);
 const generalWorkflowRef = ref('');
 
+// Set on the first save attempt: the required-field hints appear only
+// after the user tries to save, then live-update as the fields change,
+// matching the official form's required-rule + hint behaviour.
+const saveAttempted = ref(false);
+const nameError = computed(() =>
+  saveAttempted.value && !generalName.value.trim() ? t('taskForms.nameRequired') : '',
+);
+const taskTypeError = computed(() =>
+  saveAttempted.value && !generalTaskType.value.trim() ? t('taskForms.taskTypeRequired') : '',
+);
+
 const formSchemaValue = ref(stringifyDesignerJson(EMPTY_SCHEMA.formSchema));
 const uiSchemaValue = ref(stringifyDesignerJson(EMPTY_SCHEMA.uiSchema));
 const createFormSchemaValue = ref(stringifyDesignerJson(EMPTY_SCHEMA.createFormSchema));
@@ -175,12 +184,32 @@ const schemaSubtitle = computed(
 function parseJsonObject(value: string): JsonSchemaObject | undefined {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    // The official parse accepts any non-null object, arrays included.
+    return parsed !== null && typeof parsed === 'object'
       ? (parsed as JsonSchemaObject)
       : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Official sanitizeWorkflowDefinitionPayload: exactly these 8 fields,
+ * verbatim, all keys present. No id, no narrowing, no dropping.
+ */
+function sanitizeWorkflowDefinitionPayload(
+  record: Record<string, unknown>,
+): SanitizedWorkflowDefinition {
+  return {
+    name: record.name,
+    displayName: record.displayName,
+    description: record.description,
+    owners: record.owners,
+    config: record.config,
+    trigger: record.trigger,
+    nodes: record.nodes,
+    edges: record.edges,
+  };
 }
 
 function setSchemaEditors(schema: TaskFormSchema): void {
@@ -270,8 +299,8 @@ function handleLoadTemplate(): void {
     taskType,
     taskCategory,
     workflowDefinitionRef:
-      generalWorkflowRef.value ||
-      template.workflowDefinitionRef ||
+      generalWorkflowRef.value ??
+      template.workflowDefinitionRef ??
       getDefaultWorkflowDefinitionRef(taskType),
   });
 }
@@ -381,8 +410,8 @@ function onStageMappingsText(value: string): void {
 }
 
 async function handleSave(): Promise<void> {
-  if (!generalName.value.trim() || !generalTaskType.value.trim()) {
-    message.error(t('taskForms.generalRequired'));
+  saveAttempted.value = true;
+  if (nameError.value || taskTypeError.value) {
     return;
   }
   let parsedFormSchema: unknown;
@@ -409,12 +438,14 @@ async function handleSave(): Promise<void> {
   try {
     const payload: TaskFormSchema = {
       ...selectedSchema.value,
-      name: generalName.value.trim(),
-      displayName: generalDisplayName.value.trim() || undefined,
-      description: generalDescription.value.trim() || undefined,
-      taskType: generalTaskType.value.trim(),
+      // The official save spreads the form values as-is: no trim, no
+      // empty-to-undefined mapping.
+      name: generalName.value,
+      displayName: generalDisplayName.value,
+      description: generalDescription.value,
+      taskType: generalTaskType.value,
       taskCategory: generalTaskCategory.value,
-      workflowDefinitionRef: generalWorkflowRef.value.trim() || undefined,
+      workflowDefinitionRef: generalWorkflowRef.value,
       formSchema: parsedFormSchema as JsonSchemaObject,
       uiSchema: parsedUiSchema as JsonSchemaObject,
       createFormSchema: parsedCreateFormSchema as JsonSchemaObject,
@@ -426,7 +457,6 @@ async function handleSave(): Promise<void> {
     if (
       parsedWorkflowDefinition !== null &&
       typeof parsedWorkflowDefinition === 'object' &&
-      !Array.isArray(parsedWorkflowDefinition) &&
       Object.keys(parsedWorkflowDefinition as Record<string, unknown>).length > 0
     ) {
       const workflowRecord = parsedWorkflowDefinition as Record<string, unknown>;
@@ -438,26 +468,8 @@ async function handleSave(): Promise<void> {
         return;
       }
       const savedWorkflow = await updateWorkflowDefinition({
-        id: '',
+        ...sanitizeWorkflowDefinitionPayload(workflowRecord),
         name: workflowName,
-        displayName:
-          typeof workflowRecord.displayName === 'string'
-            ? workflowRecord.displayName
-            : undefined,
-        description:
-          typeof workflowRecord.description === 'string'
-            ? workflowRecord.description
-            : undefined,
-        owners: Array.isArray(workflowRecord.owners)
-          ? mapEntityRefs(workflowRecord.owners)
-          : undefined,
-        config: asRecord(workflowRecord.config) ?? undefined,
-        trigger: workflowRecord.trigger,
-        // The record comes from JSON.parse: narrow the unknown node/edge
-        // arrays through the same shape validators the API response
-        // mapper uses, rather than casting them.
-        nodes: asBackendNodes(workflowRecord.nodes),
-        edges: asBackendEdges(workflowRecord.edges),
       });
       payload.workflowDefinitionRef = savedWorkflow.name;
       payload.workflowVersion = savedWorkflow.version;
@@ -484,7 +496,6 @@ onMounted(() => {
 <template>
   <div data-testid="task-form-settings-page">
     <SmBreadcrumb :items="breadcrumbItems" />
-    <PageHeader :header="t('taskForms.title')" :sub-header="t('taskForms.lead')" />
     <Typography.Text v-if="errorMessage" type="danger" data-testid="task-form-error">
       {{ errorMessage }}
     </Typography.Text>
@@ -518,47 +529,62 @@ onMounted(() => {
                 {{ `${schema.taskType} / ${schema.taskCategory ?? '-'}` }}
               </Typography.Text>
             </Button>
-            <Button
-              type="primary"
-              block
-              data-testid="task-form-add-button"
-              style="margin-top: 12px"
-              @click="handleCreateNew"
-            >
-              {{ t('taskForms.add') }}
-            </Button>
           </div>
+          <Button
+            type="primary"
+            block
+            data-testid="task-form-add-button"
+            style="margin-top: 12px"
+            @click="handleCreateNew"
+          >
+            {{ t('taskForms.add') }}
+          </Button>
         </Card>
       </Col>
       <Col :span="18">
-        <div style="margin-bottom: 16px">
-          <Typography.Text type="secondary">{{ t('taskForms.formBuilder') }}</Typography.Text>
-          <Typography.Title :level="2" style="margin: 0">{{ schemaHeading }}</Typography.Title>
-          <Typography.Paragraph type="secondary" style="margin: 0">
-            {{ pageDescription }}
-          </Typography.Paragraph>
-          <Typography.Paragraph v-if="schemaSubtitle" type="secondary" style="margin: 0">
-            {{ schemaSubtitle }}
-          </Typography.Paragraph>
-        </div>
-        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px">
-          <Button data-testid="task-form-cancel-button" @click="handleDiscardChanges">
-            {{ t('crud.cancel') }}
-          </Button>
-          <Button
-            type="primary"
-            data-testid="task-form-save-button"
-            :loading="saving"
-            @click="handleSave"
-          >
-            {{ t('crud.save') }}
-          </Button>
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 16px;
+          "
+        >
+          <div>
+            <Typography.Text type="secondary">{{ t('taskForms.formBuilder') }}</Typography.Text>
+            <Typography.Title :level="2" style="margin: 0">{{ schemaHeading }}</Typography.Title>
+            <Typography.Paragraph type="secondary" style="margin: 0">
+              {{ pageDescription }}
+            </Typography.Paragraph>
+            <Typography.Paragraph v-if="schemaSubtitle" type="secondary" style="margin: 0">
+              {{ schemaSubtitle }}
+            </Typography.Paragraph>
+          </div>
+          <div style="display: flex; gap: 8px; flex-shrink: 0">
+            <Button data-testid="task-form-cancel-button" @click="handleDiscardChanges">
+              {{ t('crud.cancel') }}
+            </Button>
+            <Button
+              type="primary"
+              data-testid="task-form-save-button"
+              :loading="saving"
+              @click="handleSave"
+            >
+              {{ t('crud.save') }}
+            </Button>
+          </div>
         </div>
         <Row :gutter="16" style="margin-bottom: 16px">
           <Col :span="14">
             <Card :title="t('taskForms.generalConfiguration')">
               <Form layout="vertical">
-                <Form.Item :label="t('crud.name')" required>
+                <Form.Item
+                  :label="t('crud.name')"
+                  required
+                  :validate-status="nameError ? 'error' : undefined"
+                  :help="nameError || undefined"
+                >
                   <Input v-model:value="generalName" data-testid="task-form-name-input" />
                 </Form.Item>
                 <Form.Item :label="t('crud.displayName')">
@@ -577,7 +603,12 @@ onMounted(() => {
           <Col :span="10">
             <Card :title="t('taskForms.classification')">
               <Form layout="vertical">
-                <Form.Item :label="t('taskForms.taskType')" required>
+                <Form.Item
+                  :label="t('taskForms.taskType')"
+                  required
+                  :validate-status="taskTypeError ? 'error' : undefined"
+                  :help="taskTypeError || undefined"
+                >
                   <Input v-model:value="generalTaskType" data-testid="task-form-type-input" />
                 </Form.Item>
                 <Form.Item :label="t('taskForms.taskCategory')">
@@ -671,11 +702,14 @@ onMounted(() => {
                       {{ t('taskForms.noTransitionForms') }}
                     </Typography.Text>
                   </div>
+                  <div
+                    v-if="transitionBuilders.length > 0"
+                    style="display: grid; gap: 16px"
+                  >
                   <Card
                     v-for="(transition, index) in transitionBuilders"
                     :key="transition.key"
                     :data-testid="`task-form-transition-card-${index}`"
-                    style="margin-bottom: 12px"
                   >
                     <template #title>
                       {{ transition.transitionId || `${t('taskForms.transition')} ${index + 1}` }}
@@ -688,10 +722,10 @@ onMounted(() => {
                         :data-testid="`task-form-transition-remove-${index}`"
                         @click="syncTransitionDesigner(transitionBuilders.filter((_, currentIndex) => currentIndex !== index))"
                       >
-                        {{ t('crud.delete') }}
+                        {{ t('crud.remove') }}
                       </Button>
                     </template>
-                    <Form.Item :label="t('taskForms.transitionId')">
+                    <Form.Item :label="t('taskForms.transitionId')" required>
                       <Input
                         :value="transition.transitionId"
                         :data-testid="`task-form-transition-id-${index}`"
@@ -699,16 +733,20 @@ onMounted(() => {
                         @change="(event: { target: { value: string } }) => syncTransitionDesigner(transitionBuilders.map((current, currentIndex) => currentIndex === index ? { ...current, transitionId: event.target.value } : current))"
                       />
                     </Form.Item>
+                    <!-- The official page forces both base schemas to
+                         undefined here (double assertion), discarding the
+                         transition config's schemas; reproduce as-is. -->
                     <TaskFormBuilderSection
                       :title="t('taskForms.transitionFields')"
                       :description="t('taskForms.transitionFieldsHelp')"
                       :fields="transition.fields"
                       :test-id-prefix="`task-form-transition-builder-${index}`"
-                      :base-form-schema="(transition.config?.formSchema as JsonSchemaObject | undefined)"
-                      :base-ui-schema="(transition.config?.uiSchema as JsonSchemaObject | undefined)"
+                      :base-form-schema="undefined"
+                      :base-ui-schema="undefined"
                       @change="(fields: TaskFormDesignerField[]) => syncTransitionDesigner(transitionBuilders.map((current, currentIndex) => currentIndex === index ? { ...current, fields } : current))"
                     />
                   </Card>
+                  </div>
                   </div>
                 </Tabs.TabPane>
                 <Tabs.TabPane key="workflow" :tab="t('taskForms.workflowStages')">
@@ -734,12 +772,19 @@ onMounted(() => {
                       {{ t('taskForms.noStageMappings') }}
                     </Typography.Text>
                   </div>
+                  <div
+                    v-if="stageMappings.length > 0"
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                      gap: 16px;
+                    "
+                  >
                   <Card
                     v-for="(mapping, index) in stageMappings"
                     :key="mapping.key"
                     :data-testid="`task-form-stage-mapping-card-${index}`"
                     size="small"
-                    style="margin-bottom: 12px"
                   >
                     <template #title>
                       {{ mapping.stageId || `${t('taskForms.stage')} ${index + 1}` }}
@@ -752,7 +797,7 @@ onMounted(() => {
                         :data-testid="`task-form-stage-mapping-remove-${index}`"
                         @click="syncStageMappings(stageMappings.filter((_, currentIndex) => currentIndex !== index))"
                       >
-                        {{ t('crud.delete') }}
+                        {{ t('crud.remove') }}
                       </Button>
                     </template>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
@@ -781,67 +826,75 @@ onMounted(() => {
                     </div>
                   </Card>
                   </div>
+                  </div>
                 </Tabs.TabPane>
               </Tabs>
             </Tabs.TabPane>
             <Tabs.TabPane key="advanced" :tab="t('taskForms.advancedJson')">
               <div v-if="primaryTab === 'advanced'">
               <Typography.Title :level="5">{{ t('taskForms.resolveFormSchema') }}</Typography.Title>
-              <Input.TextArea
-                :value="formSchemaValue"
-                data-testid="task-form-resolve-schema-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onResolveSchemaText(event.target.value)"
-              />
+              <div data-testid="task-form-resolve-schema-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-schema-editor"
+                  :value="formSchemaValue"
+                  @change="onResolveSchemaText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.resolveUiSchema') }}</Typography.Title>
-              <Input.TextArea
-                :value="uiSchemaValue"
-                data-testid="task-form-resolve-ui-schema-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onResolveUiText(event.target.value)"
-              />
+              <div data-testid="task-form-resolve-ui-schema-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-ui-schema-editor"
+                  :value="uiSchemaValue"
+                  @change="onResolveUiText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.createFormSchema') }}</Typography.Title>
-              <Input.TextArea
-                :value="createFormSchemaValue"
-                data-testid="task-form-create-schema-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onCreateSchemaText(event.target.value)"
-              />
+              <div data-testid="task-form-create-schema-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-create-schema-editor"
+                  :value="createFormSchemaValue"
+                  @change="onCreateSchemaText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.createUiSchema') }}</Typography.Title>
-              <Input.TextArea
-                :value="createUiSchemaValue"
-                data-testid="task-form-create-ui-schema-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onCreateUiText(event.target.value)"
-              />
+              <div data-testid="task-form-create-ui-schema-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-create-ui-schema-editor"
+                  :value="createUiSchemaValue"
+                  @change="onCreateUiText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.transitionForms') }}</Typography.Title>
-              <Input.TextArea
-                :value="transitionFormsValue"
-                data-testid="task-form-transition-forms-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onTransitionFormsText(event.target.value)"
-              />
+              <div data-testid="task-form-transition-forms-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-transition-forms-editor"
+                  :value="transitionFormsValue"
+                  @change="onTransitionFormsText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.defaultStageMappings') }}</Typography.Title>
-              <Input.TextArea
-                :value="defaultStageMappingsValue"
-                data-testid="task-form-stage-mappings-editor"
-                :rows="10"
-                style="font-family: monospace; margin-bottom: 16px"
-                @change="(event: { target: { value: string } }) => onStageMappingsText(event.target.value)"
-              />
+              <div data-testid="task-form-stage-mappings-editor" style="margin-bottom: 16px">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-stage-mappings-editor"
+                  :value="defaultStageMappingsValue"
+                  @change="onStageMappingsText"
+                />
+              </div>
               <Typography.Title :level="5">{{ t('taskForms.workflowDefinitionJson') }}</Typography.Title>
-              <Input.TextArea
-                :value="workflowDefinitionValue"
-                data-testid="task-form-workflow-definition-editor"
-                :rows="10"
-                style="font-family: monospace"
-                @change="(event: { target: { value: string } }) => { workflowDefinitionValue = event.target.value; }"
-              />
+              <div data-testid="task-form-workflow-definition-editor">
+                <SmCodeEditor
+                  variant="code"
+                  editor-class="task-form-workflow-definition-editor"
+                  :value="workflowDefinitionValue"
+                  @change="(value: string) => { workflowDefinitionValue = value; }"
+                />
+              </div>
               </div>
             </Tabs.TabPane>
           </Tabs>

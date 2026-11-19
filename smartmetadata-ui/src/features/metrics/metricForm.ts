@@ -5,6 +5,7 @@
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef } from '@/types/api';
 import type { CreateMetric } from '@/api/metrics';
+import { ENTITY_NAME_REGEX } from '@/utils/entityName';
 
 /**
  * Metric create form: values, enum sets, the official transform and the
@@ -119,16 +120,6 @@ export const METRIC_FORM_DEFAULTS: MetricFormValues = {
 // ---------------------------------------------------------------------------
 // Validation (official AddMetricForm field rules)
 // ---------------------------------------------------------------------------
-
-/**
- * Official ENTITY_NAME_REGEX (constants/regex.constants.ts), verbatim:
- * blocks the reserved FQN separator characters (::, >, ") and ASCII
- * control characters; Unicode is supported. The product had no entity
- * name regex to reuse, so the official expression is created here
- * rather than invented.
- */
-// eslint-disable-next-line no-control-regex
-export const ENTITY_NAME_REGEX = /^((?!::)[^>"\u0000-\u001f])*$/;
 
 export const METRIC_NAME_MIN_LENGTH = 1;
 export const METRIC_NAME_MAX_LENGTH = 128;

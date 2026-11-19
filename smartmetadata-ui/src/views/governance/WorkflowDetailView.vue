@@ -16,24 +16,23 @@ import WorkflowHeader from '@/components/governance/workflowBuilder/WorkflowHead
 import WorkflowSidebar from '@/components/governance/workflowBuilder/WorkflowSidebar.vue';
 import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import { useWorkflowBuilder } from '@/composables/useWorkflowBuilder';
-import { WORKFLOW_BUILDER_TAB_TEST_IDS } from '@/constants/workflowBuilder';
+import { WORKFLOW_BUILDER_TAB_TEST_IDS, type WorkflowBuilderTab } from '@/constants/workflowBuilder';
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
 /**
- * Official WorkflowBuilder page (pin a3012259ca): the builder route
- * carries only :fqn, and the active tab is component-local state
- * defaulting to the first tab, matching official's useState
- * (WorkflowBuilder.tsx:252-253,720-721). The builder's own tabs are the
- * canvas ('workflow-builder' in official, 'workflow' here) and the
- * execution history. The header is the page variant — the product has no
- * embedded host. No-fqn redirects to the list: creating a workflow is
- * gated off in OSS.
+ * Official WorkflowBuilder page (pin a3012259ca). The builder tabs
+ * are internal state — 'workflow-builder' / 'execution-history',
+ * defaulting to the first tab — and switching only sets the value:
+ * no URL or query param is read (WorkflowBuilder.tsx:252-254,
+ * 720-721). The route's legacy `:tab` param is ignored entirely and
+ * disappears when shell D-5 removes it from the route. The header
+ * is the page variant — the product has no embedded host. No-fqn
+ * redirects to the list: creating a workflow is gated off in OSS.
  */
-const DETAIL_TABS = ['workflow', 'execution-history'] as const;
-type DetailTab = (typeof DETAIL_TABS)[number];
+const DETAIL_TABS: readonly WorkflowBuilderTab[] = ['workflow-builder', 'execution-history'];
 
 const fqn = computed(() => {
   const raw = route.params.fqn;
@@ -47,9 +46,9 @@ const fqn = computed(() => {
 
 const fqnRef = computed<string | undefined>(() => fqn.value || undefined);
 
-const activeTab = ref<DetailTab>(DETAIL_TABS[0]);
+const activeTab = ref<WorkflowBuilderTab>('workflow-builder');
 
-const isCanvasTabActive = computed(() => activeTab.value === 'workflow');
+const isCanvasTabActive = computed(() => activeTab.value === 'workflow-builder');
 
 const builder = useWorkflowBuilder(fqnRef, { t });
 const { state, mode, logic, actions } = builder;
@@ -66,7 +65,7 @@ const workflowName = computed(() => state.state.workflowMetadata?.name);
  * its own single-item TitleBreadcrumb — {name: workflow-plural, url: list
  * path} — instead of the settings helper, whose subCategory no pin caller
  * ever passes WORKFLOW_DEFINITIONS to. The label is the list page's own
- * i18n key; the link is the list route the back button already uses.
+ * i18n key; the link is the list route.
  */
 const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
   { label: t('workflows.title'), routeName: 'workflows' },
@@ -79,7 +78,10 @@ const isForbidden = computed(
 );
 
 function onTabChange(tab: string | number): void {
-  activeTab.value = tab as DetailTab;
+  const value = String(tab);
+  if ((DETAIL_TABS as readonly string[]).includes(value)) {
+    activeTab.value = value as WorkflowBuilderTab;
+  }
 }
 
 // The palette overlay only renders on the canvas tab when the sidebar is
@@ -99,22 +101,13 @@ const sidebarDimmed = computed(
 onMounted(() => {
   if (!fqn.value) {
     void router.replace({ name: 'workflows' });
-    return;
+
   }
 });
 </script>
 
 <template>
   <div data-testid="workflow-detail">
-    <Button
-      type="link"
-      data-testid="workflow-detail-back"
-      style="padding-left: 0"
-      @click="router.push({ name: 'workflows' })"
-    >
-      {{ t('workflows.detail.back') }}
-    </Button>
-
     <!-- Pin Classic renders TitleBreadcrumb above the header (renderPage)
          and above the load-error placeholder, but not while loading (bare
          Loader): one render point, hidden while loading, covers both. -->
@@ -148,7 +141,7 @@ onMounted(() => {
           @change="onTabChange"
         >
           <Tabs.TabPane
-            key="workflow"
+            key="workflow-builder"
             :tab="
               h(
                 'span',

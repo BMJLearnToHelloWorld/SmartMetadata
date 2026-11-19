@@ -3,52 +3,46 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { compare } from 'fast-json-patch';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Alert, Button, Form, Input, Spin, Typography, message } from 'ant-design-vue';
-import { getOrchestratorStatus, getPipelineServiceHostIp } from '@/api/ingestionPipelines';
+import { Button, Spin, message } from 'ant-design-vue';
+import { ApiError } from '@/api/client';
+import { getOrchestratorStatus } from '@/api/ingestionPipelines';
+import { patchService } from '@/api/serviceLookup';
+import { SERVICE_COLLECTION_BY_KIND } from '@/api/serviceVersions';
 import { SERVICE_CATEGORIES } from '@/catalog/ingestionTabs';
-import AirflowMessageBanner from '@/components/ingestion/AirflowMessageBanner.vue';
-import FilterPatternCard from '@/components/ingestion/FilterPatternCard.vue';
+import ConnectionConfigForm from '@/components/ingestion/ConnectionConfigForm.vue';
+import FiltersConfigForm from '@/components/ingestion/FiltersConfigForm.vue';
 import NavigationGuardModal from '@/components/ingestion/NavigationGuardModal.vue';
-import ServiceConnectionFields from '@/components/ingestion/ServiceConnectionFields.vue';
 import ServiceDocPanel from '@/components/ingestion/ServiceDocPanel.vue';
 import ServiceFlowStepper from '@/components/ingestion/ServiceFlowStepper.vue';
-import TestConnectionCard from '@/components/ingestion/TestConnectionCard.vue';
+import ServiceLogo from '@/components/ingestion/ServiceLogo.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
-import SmState from '@/components/shared/SmState.vue';
+import SomethingWentWrongPlaceholder from '@/components/shared/SomethingWentWrongPlaceholder.vue';
 import { useNavigationGuard } from '@/composables/useNavigationGuard';
 import {
-  buildServiceConnection,
+  connectionDisplayHost,
+  hydrateAuthBranchForm,
+} from '@/ingestion/connectionFields';
+import {
   createEmptyServiceForm,
   formValuesFromService,
   SERVICE_TYPES_BY_KIND,
 } from '@/ingestion/connections';
-import {
-  connectionDisplayHost,
-  filterPatternDefaultExcludes,
-  filterPatternSchemaMeta,
-  hasConnectionForm,
-  hydrateAuthBranchForm,
-  mergeAuthBranchIntoConfig,
-  missingRequiredConnectionFields,
-} from '@/ingestion/connectionFields';
-import { shouldTestConnection } from '@/ingestion/connectionTest';
 import { getDocPanelServiceType, useFieldFocus } from '@/ingestion/fieldFocus';
+import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
+import { SERVICE_GET_API } from '@/ingestion/serviceApis';
 import {
-  addSnowflakeSystemExcludes,
-  type FilterPatternConfig,
-} from '@/ingestion/filterPatterns';
-import { SERVICE_GET_API, SERVICE_UPDATE_API } from '@/ingestion/serviceApis';
-import { serviceFilterFieldsForType } from '@/ingestion/serviceFilterFields';
+  buildEditPatch,
+  getEditConfigData,
+  mergeEditConfig,
+} from '@/ingestion/serviceEditMerge';
 import type {
   CatalogService,
   OrchestratorStatus,
-  ServiceConnection,
   ServiceConnectionConfig,
   ServiceFormValues,
   ServiceKind,
@@ -58,27 +52,33 @@ const props = defineProps<{ kind: string; id: string }>();
 const { t } = useI18n();
 const router = useRouter();
 
-const kind = (Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]).includes(
-  props.kind as ServiceKind,
-)
+// D-11: no kind fallback. An unknown kind never fetches and lands in the
+// error state, like the pin's fetch-failure error state.
+const kind: ServiceKind | undefined = (
+  Object.keys(SERVICE_TYPES_BY_KIND) as ServiceKind[]
+).includes(props.kind as ServiceKind)
   ? (props.kind as ServiceKind)
-  : 'database';
+  : undefined;
 
-const loading = ref(false);
-const errorMessage = ref('');
+const loading = ref(true);
+const isError = ref(false);
 const saving = ref(false);
+const leaving = ref(false);
 const service = ref<CatalogService | null>(null);
+// Step-1 merged entity (pin `serviceConfig` state); undefined until the
+// connection form saves, and stays undefined on the keep-existing path.
+const serviceConfig = ref<CatalogService | undefined>(undefined);
 const form = reactive<ServiceFormValues>(createEmptyServiceForm());
-const filterForm = reactive<Record<string, FilterPatternConfig>>({});
 const currentStep = ref(1);
 const testConnectionPassed = ref(false);
 const showBackStepConfirm = ref(false);
-const leaving = ref(false);
 const orchestrator = ref<OrchestratorStatus | null>(null);
 const orchestratorChecked = ref(false);
-const pristinePayload = ref<object | null>(null);
-const pristineFailed = ref(false);
-const formRef = ref<{ validate: () => Promise<unknown> } | null>(null);
+
+const connectionFormRef = ref<InstanceType<typeof ConnectionConfigForm> | null>(
+  null,
+);
+const filtersFormRef = ref<InstanceType<typeof FiltersConfigForm> | null>(null);
 
 const { activeField, activeFieldMeta, handleFieldFocus, handleFieldBlur } =
   useFieldFocus();
@@ -87,28 +87,22 @@ const storedConfig = computed<ServiceConnectionConfig | undefined>(
   () => service.value?.connection?.config,
 );
 
-const filterFields = computed(() =>
-  service.value
-    ? serviceFilterFieldsForType(kind, service.value.serviceType)
-    : [],
-);
-
 const heading = computed(() =>
   service.value
-    ? t('ingestion.services.editConnectionPage.heading', {
+    ? t('settings.services.edit.heading', {
         entity: service.value.fullyQualifiedName,
       })
     : '',
 );
 
 const breadcrumbItems = computed(() => {
-  if (!service.value) {
+  if (!service.value || isError.value) {
     return [];
   }
   const category = SERVICE_CATEGORIES.find((row) => row.key === kind);
   return [
     {
-      label: category ? t(category.labelKey) : kind,
+      label: category ? t(category.labelKey) : (kind ?? props.kind),
       routeName: 'ingestion-services',
     },
     {
@@ -116,275 +110,43 @@ const breadcrumbItems = computed(() => {
       routeName: 'ingestion-service',
       routeParams: { kind: props.kind, id: props.id },
     },
-    { label: t('ingestion.services.editConnectionPage.breadcrumb') },
+    { label: t('settings.services.edit.breadcrumb') },
   ];
 });
 
 const stepperSteps = computed(() => [
   {
-    name: t('ingestion.services.editConnectionPage.stepConnectionDetails'),
+    name: t('settings.services.edit.stepConnectionDetails'),
     step: 1,
   },
   {
-    name: t('ingestion.services.editConnectionPage.stepSetDefaultFilters'),
+    name: t('settings.services.edit.stepSetDefaultFilters'),
     step: 2,
   },
 ]);
 
-const airflowAvailable = computed(
-  () =>
-    orchestratorChecked.value &&
-    orchestrator.value?.code === 200 &&
-    orchestrator.value?.platform !== 'disabled',
-);
-
-const hostIp = ref<string | undefined>(undefined);
-
-/**
- * Pin `ConnectionConfigForm.fetchHostIp` + `shouldShowIPAlert`: the
- * host IP is fetched once Airflow is available. An empty body (HTTP
- * 204, IP info disabled server-side) means no IP to show; a body
- * without an IP and any fetch failure keep pin's placeholders. The
- * runner clause of pin's predicate is inert here: `ingestionRunner`
- * is form data pin reads from the connection form, and no connection
- * schema declares it, so the Hybrid check alone decides. The schema
- * clause is the fork's `hasConnectionForm` — pin requires a
- * non-empty connection schema. The fork's `airflowAvailable` also
- * excludes the disabled platform, where the banner (not an
- * `[unknown]` IP alert) is the fork's answer.
- */
-async function fetchHostIp(): Promise<void> {
-  try {
-    const data = await getPipelineServiceHostIp();
-    hostIp.value = data === undefined ? undefined : data.ip || '[unknown]';
-  } catch {
-    hostIp.value = '[error - unknown]';
-  }
-}
-
-watch(airflowAvailable, (available) => {
-  if (available) {
-    void fetchHostIp();
-  }
+// Pin getEntityMissingError (EntityDisplayPureUtils.tsx:94-96): "{Capitalize
+// (entityType)} instance for {fqn} not found", where entityType is the
+// service-category enum value. The address is the fetched FQN when known
+// (OpenMetadata guard), otherwise the id that was fetched.
+const missingEntityMessage = computed(() => {
+  const enumValue = kind ? SERVICE_COLLECTION_BY_KIND[kind] : props.kind;
+  const entity = enumValue.charAt(0).toUpperCase() + enumValue.slice(1);
+  return t('settings.services.edit.entityMissing', {
+    entity,
+    fqn: service.value?.fullyQualifiedName ?? props.id,
+  });
 });
-
-const shouldShowIPAlert = computed(
-  () =>
-    service.value !== null &&
-    hasConnectionForm(service.value.serviceType) &&
-    airflowAvailable.value &&
-    hostIp.value !== undefined &&
-    orchestrator.value?.platform !== 'Hybrid',
-);
-
-const missingRequiredCount = computed(() =>
-  service.value
-    ? missingRequiredConnectionFields(service.value.serviceType, form)
-    : 0,
-);
-
-function validateRequiredFields(): boolean {
-  return missingRequiredCount.value === 0;
-}
-
-function buildCurrentPayload(): {
-  name: string;
-  serviceType: string;
-  displayName: string | undefined;
-  description: string | undefined;
-  connection: ServiceConnection | undefined;
-} {
-  const connection = buildServiceConnection(form, service.value?.connection);
-  if (connection?.config && service.value) {
-    mergeAuthBranchIntoConfig(
-      service.value.serviceType,
-      form,
-      connection.config,
-      storedConfig.value,
-    );
-    for (const field of filterFields.value) {
-      const pattern = filterForm[field.key];
-      if (pattern !== undefined) {
-        connection.config[field.key] = {
-          includes: [...(pattern.includes ?? [])],
-          excludes: [...(pattern.excludes ?? [])],
-        };
-      }
-    }
-  }
-  return {
-    name: service.value!.name,
-    serviceType: service.value!.serviceType,
-    displayName: form.displayName?.trim() || undefined,
-    description: form.description?.trim() || undefined,
-    connection,
-  };
-}
-
-function normalizePayload(value: unknown): object {
-  return JSON.parse(JSON.stringify(value)) as object;
-}
-
-function testConnectionGetter(): Record<string, unknown> | undefined {
-  try {
-    const connection = buildServiceConnection(form, service.value?.connection);
-    if (!connection?.config || !service.value) {
-      return undefined;
-    }
-    mergeAuthBranchIntoConfig(
-      service.value.serviceType,
-      form,
-      connection.config,
-      storedConfig.value,
-    );
-    return connection as unknown as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
 
 const connectedHost = computed(() => {
   if (!service.value) {
     return '';
   }
-  const tested = testConnectionGetter();
-  const config = tested?.config ?? storedConfig.value;
   return connectionDisplayHost(
-    (config ?? {}) as Record<string, unknown>,
+    serviceConfig.value?.connection?.config ?? storedConfig.value ?? {},
     service.value.serviceType,
   );
 });
-
-function systemExcludesFor(fieldName: string): string[] {
-  if (!service.value) {
-    return [];
-  }
-  return addSnowflakeSystemExcludes(
-    service.value.serviceType,
-    fieldName,
-    [...filterPatternDefaultExcludes(service.value.serviceType, fieldName)],
-  );
-}
-
-function hasStoredFilter(fieldName: string): boolean {
-  return storedConfig.value !== undefined && fieldName in storedConfig.value;
-}
-
-function setFilterValue(fieldName: string, value: FilterPatternConfig): void {
-  filterForm[fieldName] = value;
-}
-
-function onFilterFocus(fieldName: string, focusedName: string): void {
-  if (!focusedName) {
-    handleFieldBlur();
-    return;
-  }
-  const meta = filterPatternSchemaMeta(fieldName);
-  handleFieldFocus(`root/${fieldName}`, {
-    title: meta?.title,
-    description: meta?.description,
-    section: 'scope',
-  });
-}
-
-function onIdentityFocus(fieldName: string): void {
-  handleFieldFocus(`root/${fieldName}`, {
-    title:
-      fieldName === 'serviceName'
-        ? t('crud.displayName')
-        : t('crud.description'),
-    description:
-      fieldName === 'serviceName'
-        ? t('crud.displayNameHelp')
-        : t('crud.descriptionHelp'),
-  });
-}
-
-const isDirty = computed(() => {
-  if (!service.value) {
-    return false;
-  }
-  if (pristineFailed.value) {
-    return true;
-  }
-  try {
-    return (
-      pristinePayload.value !== null &&
-      compare(pristinePayload.value, normalizePayload(buildCurrentPayload()))
-        .length > 0
-    );
-  } catch {
-    return true;
-  }
-});
-
-const {
-  showModal: showGuardModal,
-  confirmLeave,
-  cancelLeave,
-} = useNavigationGuard({
-  enabled: () => !leaving.value && !saving.value && isDirty.value,
-});
-
-function initFilterForm(): void {
-  for (const key of Object.keys(filterForm)) {
-    delete filterForm[key];
-  }
-  const config = storedConfig.value as Record<string, unknown> | undefined;
-  if (!config) {
-    return;
-  }
-  for (const field of filterFields.value) {
-    const stored = config[field.key];
-    if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
-      const record = stored as Record<string, unknown>;
-      filterForm[field.key] = {
-        includes: Array.isArray(record.includes)
-          ? record.includes.filter(
-              (value): value is string => typeof value === 'string',
-            )
-          : [],
-        excludes: Array.isArray(record.excludes)
-          ? record.excludes.filter(
-              (value): value is string => typeof value === 'string',
-            )
-          : [],
-      };
-    }
-  }
-}
-
-function capturePristine(): void {
-  try {
-    pristinePayload.value = normalizePayload(buildCurrentPayload());
-    pristineFailed.value = false;
-  } catch {
-    pristinePayload.value = null;
-    pristineFailed.value = true;
-  }
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    service.value = await SERVICE_GET_API[kind](props.id);
-    Object.assign(form, formValuesFromService(service.value));
-    hydrateAuthBranchForm(
-      service.value.serviceType,
-      service.value.connection?.config ?? {},
-      form,
-    );
-    initFilterForm();
-    capturePristine();
-  } catch (error) {
-    service.value = null;
-    errorMessage.value =
-      error instanceof Error ? error.message : t('crud.loadFailed');
-  } finally {
-    loading.value = false;
-  }
-}
 
 function detailTarget() {
   return {
@@ -393,12 +155,73 @@ function detailTarget() {
   };
 }
 
+// Pin isLeaving effect (EditConnectionFormPage.tsx:226-235): the empty-patch
+// path leaves through this watcher, not through an inline navigation.
+watch(leaving, (value) => {
+  if (value) {
+    void router.push(detailTarget());
+  }
+});
+
+// Pin NavigationBlocker (EditConnectionFormPage.tsx:404-419): enabled
+// whenever not saving and not leaving — NOT a dirty gate. The dirty
+// machinery (isDirty/pristinePayload) is deleted with the guard change.
+const {
+  showModal: showGuardModal,
+  confirmLeave,
+  cancelLeave,
+} = useNavigationGuard({
+  enabled: () => !saving.value && !leaving.value,
+});
+
+async function load(): Promise<void> {
+  loading.value = true;
+  isError.value = false;
+  if (!kind) {
+    isError.value = true;
+    loading.value = false;
+    return;
+  }
+  try {
+    const fetched = await SERVICE_GET_API[kind](props.id);
+    service.value = fetched;
+    // Post-fetch OpenMetadata guard: the pin guards pre-fetch on the FQN
+    // route param (EditConnectionFormPage.tsx:92-107); the product fetches
+    // by id, so the FQN is only known after the fetch. The resulting error
+    // state is identical. Transitional until FQN addressing (§8.2).
+    if (fetched.fullyQualifiedName === 'OpenMetadata') {
+      isError.value = true;
+      return;
+    }
+    Object.assign(form, formValuesFromService(fetched));
+    hydrateAuthBranchForm(
+      fetched.serviceType,
+      fetched.connection?.config ?? {},
+      form,
+    );
+  } catch (error) {
+    service.value = null;
+    // Pin fetch split (EditConnectionFormPage.tsx:191-222): 404 enters the
+    // error state; any other failure toasts and the page renders its empty
+    // shell (header/stepper/footer, no forms).
+    if (error instanceof ApiError && error.status === 404) {
+      isError.value = true;
+    } else {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
 function onBack(): void {
   if (currentStep.value === 2) {
     showBackStepConfirm.value = true;
     return;
   }
-  void router.push(detailTarget());
+  // Pin cancel (EditConnectionFormPage.tsx:237-239): history back, not a
+  // fixed detail-route push.
+  router.back();
 }
 
 function confirmBackStep(): void {
@@ -406,35 +229,87 @@ function confirmBackStep(): void {
   currentStep.value = 1;
 }
 
-async function onNext(): Promise<void> {
-  try {
-    await formRef.value?.validate();
-  } catch {
+function onNext(): void {
+  if (!service.value) {
     return;
   }
+  const formRef = connectionFormRef.value;
+  if (!formRef) {
+    return;
+  }
+  // The guard decision branches without re-deriving it. The loader area
+  // never submits; prompt and load-failure areas advance with the stored
+  // connection kept (Q2a — the pin advances with an empty merge on schema
+  // load failure, which is the same merged outcome); form areas submit.
+  const area = formRef.guardDecision?.formArea;
+  if (area === 'loader') {
+    return;
+  }
+  if (
+    area === 'load-failed' ||
+    area === 'no-config' ||
+    area === 'read-only-prompt'
+  ) {
+    serviceConfig.value = undefined;
+    currentStep.value = 2;
+    return;
+  }
+  formRef.submit();
+}
+
+function handleConfigSave(config: ServiceConnectionConfig): void {
+  if (!service.value) {
+    return;
+  }
+  serviceConfig.value = getEditConfigData(service.value, config);
   currentStep.value = 2;
 }
 
-async function onSave(): Promise<void> {
-  if (!service.value || saving.value) {
+function onSave(): void {
+  filtersFormRef.value?.submit();
+}
+
+async function handleFiltersSave(
+  values: Record<string, FilterPatternConfig>,
+): Promise<void> {
+  if (!service.value || !kind) {
+    return;
+  }
+  const original = service.value;
+  // Pin handleFiltersSave (EditConnectionFormPage.tsx:136-155): three-way
+  // config merge, then a whole-entity rebuild over the fetched entity.
+  const configData: CatalogService = {
+    ...original,
+    ...(serviceConfig.value ?? {}),
+    connection: {
+      config: mergeEditConfig(
+        original.connection?.config,
+        serviceConfig.value?.connection?.config,
+        values,
+      ),
+    },
+  };
+  // No Q4 payload defense here: the merged config derives from the STORED
+  // config, which is authoritative, and the shared form's submit already
+  // refuses type-only NEW bodies. Refusing a type-only merged config would
+  // break keep-existing saves for no-config types (whose stored config IS
+  // type-only); the empty-patch path below is the correct no-change
+  // handling, exactly as in the pin.
+  const patch = buildEditPatch(original, configData);
+  if (patch.length === 0) {
+    // Pin empty-patch path (:160-164): no request, leave via the watcher.
+    leaving.value = true;
     return;
   }
   saving.value = true;
   try {
-    const payload = buildCurrentPayload();
-    const normalized = normalizePayload(payload);
-    if (
-      !pristineFailed.value &&
-      pristinePayload.value !== null &&
-      compare(pristinePayload.value, normalized).length === 0
-    ) {
-      leaving.value = true;
-      await router.push(detailTarget());
-      return;
-    }
-    await SERVICE_UPDATE_API[kind](payload);
-    message.success(t('ingestion.services.updated'));
-    leaving.value = true;
+    const response = await patchService(kind, original.id, patch);
+    // Pin owners fallback (:173-183): the patched response may omit
+    // owners; fall back to the fetched entity's owners. No success toast.
+    serviceConfig.value = {
+      ...response,
+      owners: response.owners ?? original.owners,
+    };
     await router.push(detailTarget());
   } catch (error) {
     message.error(
@@ -463,190 +338,93 @@ onMounted(() => {
 <template>
   <PageLayout>
     <SmBreadcrumb :items="breadcrumbItems" />
-    <PageHeader :header="heading" />
-    <ServiceFlowStepper :steps="stepperSteps" :active-step="currentStep" />
-    <div class="edit-connection-layout">
-      <div class="edit-connection-main">
-        <Spin :spinning="loading">
-          <SmState
-            v-if="errorMessage"
-            state="error"
-            test-id="edit-connection-error"
-            :error-text="errorMessage"
-          />
-          <template v-else-if="service">
-            <div
-              v-if="currentStep === 1"
-              data-testid="edit-connection-step-connection"
-            >
-              <AirflowMessageBanner
-                :status="orchestrator"
-                :checked="orchestratorChecked"
-                :disabled-message="t('ingestion.pipelines.orchestratorDisabled')"
-                :unreachable-message="
-                  t('ingestion.pipelines.orchestratorUnreachable')
-                "
-              />
-              <Form
-                ref="formRef"
-                layout="vertical"
-                :model="form"
-                data-testid="edit-connection-form"
-              >
-                <Form.Item
-                  :label="t('crud.displayName')"
-                  :extra="t('crud.displayNameHelp')"
-                  name="displayName"
-                >
-                  <Input
-                    v-model:value="form.displayName"
-                    data-testid="edit-connection-display-name"
-                    @focus="onIdentityFocus('serviceName')"
-                    @blur="handleFieldBlur"
-                  />
-                </Form.Item>
-                <Form.Item
-                  :label="t('crud.description')"
-                  :extra="t('crud.descriptionHelp')"
-                  name="description"
-                >
-                  <Input.TextArea
-                    v-model:value="form.description"
-                    :rows="3"
-                    data-testid="edit-connection-description"
-                    @focus="onIdentityFocus('serviceDescription')"
-                    @blur="handleFieldBlur"
-                  />
-                </Form.Item>
-                <ServiceConnectionFields
-                  :form="form"
-                  :stored-config="storedConfig"
-                  @focus="handleFieldFocus"
-                  @blur="handleFieldBlur"
-                />
-              </Form>
-              <Alert
-                v-if="!hasConnectionForm(service.serviceType)"
-                type="warning"
-                show-icon
-                data-testid="edit-connection-no-form"
-                :message="t('ingestion.services.wizard.noConnectionForm')"
-                style="margin: 16px 0"
-              />
-              <Alert
-                v-if="shouldShowIPAlert"
-                type="info"
-                show-icon
-                data-testid="ip-address"
-                :message="t('ingestion.services.editConnectionPage.pipelineServerIpAddress')"
-                :description="
-                  t('ingestion.services.editConnectionPage.airflowHostIpAddress', {
-                    brandName: t('product.name'),
-                    hostIp,
-                  })
-                "
-                style="margin: 16px 0"
-              />
-              <TestConnectionCard
-                v-if="
-                  hasConnectionForm(service.serviceType) &&
-                  shouldTestConnection(service.serviceType)
-                "
-                :connection-type="service.serviceType"
-                :kind="kind"
-                :service-name="service.name"
-                :get-connection="testConnectionGetter"
-                :airflow-available="airflowAvailable"
-                :host-ip="hostIp"
-                :missing-required-fields-count="missingRequiredCount"
-                :on-validate-form-required-fields="validateRequiredFields"
-                @status-change="testConnectionPassed = $event"
-              />
-            </div>
-            <div v-else data-testid="edit-connection-step-filters">
-              <Typography.Title :level="4">
-                {{ t('ingestion.services.editConnectionPage.whatToIngest') }}
-              </Typography.Title>
-              <Typography.Paragraph type="secondary">
-                {{
-                  t(
-                    'ingestion.services.editConnectionPage.whatToIngestDescription',
-                    { brandName: t('product.name') },
-                  )
-                }}
-              </Typography.Paragraph>
-              <Alert
-                v-if="testConnectionPassed"
-                type="success"
-                show-icon
-                :message="
-                  t('ingestion.services.editConnectionPage.connectedToHost', {
-                    host: connectedHost,
-                  })
-                "
-                :description="
-                  t(
-                    'ingestion.services.editConnectionPage.connectionVerifiedScope',
-                  )
-                "
-                data-testid="edit-connection-connected"
-              />
-              <template v-if="filterFields.length > 0">
-                <FilterPatternCard
-                  v-for="(field, index) in filterFields"
-                  :key="field.key"
-                  :field-name="field.key"
-                  :model-value="filterForm[field.key]"
-                  :schema-title="filterPatternSchemaMeta(field.key)?.title"
-                  :default-open="index < 2"
-                  :system-excludes="systemExcludesFor(field.key)"
-                  :has-existing-data="hasStoredFilter(field.key)"
-                  @update:model-value="setFilterValue(field.key, $event)"
-                  @focus="onFilterFocus(field.key, $event)"
-                />
-              </template>
-              <Typography.Paragraph v-else data-testid="no-config-available">
-                {{ t('forms.filter.noPatternsAvailable') }}
-              </Typography.Paragraph>
-            </div>
-            <div class="edit-connection-footer">
-              <Button
-                data-testid="edit-connection-back"
-                :disabled="saving"
-                @click="onBack"
-              >
-                {{ t('crud.back') }}
-              </Button>
-              <Button
-                v-if="currentStep === 1"
-                type="primary"
-                data-testid="edit-connection-next"
-                @click="onNext"
-              >
-                {{ t('ingestion.services.editConnectionPage.next') }}
-              </Button>
-              <Button
-                v-else
-                type="primary"
-                :loading="saving"
-                data-testid="edit-connection-save"
-                @click="onSave"
-              >
-                {{ t('crud.save') }}
-              </Button>
-            </div>
-          </template>
-        </Spin>
-      </div>
-      <ServiceDocPanel
-        v-if="service?.serviceType"
-        class="edit-connection-docs"
-        :service-name="service.serviceType"
-        :service-type="getDocPanelServiceType(kind)"
-        :active-field="activeField"
-        :active-field-meta="activeFieldMeta"
-      />
+    <div v-if="loading" class="edit-connection-loading">
+      <Spin size="large" />
     </div>
+    <SomethingWentWrongPlaceholder
+      v-else-if="isError"
+      test-id="edit-connection-error"
+      :title="t('settings.services.edit.somethingWentWrong')"
+      :description="missingEntityMessage"
+    />
+    <template v-else>
+      <div class="edit-connection-header">
+        <ServiceLogo v-if="service" :source="service" :size="40" />
+        <PageHeader test-id="header" :header="heading" />
+      </div>
+      <ServiceFlowStepper :steps="stepperSteps" :active-step="currentStep" />
+      <div class="edit-connection-layout">
+        <div class="edit-connection-main">
+          <div
+            v-if="currentStep === 1 && service && kind"
+            data-testid="edit-connection-step-connection"
+          >
+            <ConnectionConfigForm
+              ref="connectionFormRef"
+              :kind="kind"
+              :service-type="service.serviceType"
+              :form="form"
+              :stored-config="storedConfig"
+              :service-name="service.name"
+              :airflow-status="orchestrator"
+              :airflow-checked="orchestratorChecked"
+              @save="handleConfigSave"
+              @test-connection-status-change="testConnectionPassed = $event"
+              @focus="(fieldId, meta) => handleFieldFocus(fieldId, meta)"
+              @blur="handleFieldBlur"
+            />
+          </div>
+          <div
+            v-if="currentStep === 2 && service && kind"
+            data-testid="edit-connection-step-filters"
+          >
+            <FiltersConfigForm
+              ref="filtersFormRef"
+              :kind="kind"
+              :service-type="service.serviceType"
+              :initial-config="service.connection?.config"
+              :show-connected-message="testConnectionPassed"
+              :connected-host="connectedHost"
+              @save="handleFiltersSave"
+            />
+          </div>
+          <div class="edit-connection-footer">
+            <Button
+              data-testid="edit-connection-back"
+              :disabled="saving"
+              @click="onBack"
+            >
+              {{ t('crud.back') }}
+            </Button>
+            <Button
+              v-if="currentStep === 1"
+              type="primary"
+              data-testid="edit-connection-next"
+              @click="onNext"
+            >
+              {{ t('crud.next') }}
+            </Button>
+            <Button
+              v-else
+              type="primary"
+              :loading="saving"
+              data-testid="edit-connection-save"
+              @click="onSave"
+            >
+              {{ t('crud.save') }}
+            </Button>
+          </div>
+        </div>
+        <ServiceDocPanel
+          v-if="service?.serviceType && kind"
+          class="edit-connection-docs"
+          :service-name="service.serviceType"
+          :service-type="getDocPanelServiceType(kind)"
+          :active-field="activeField"
+          :active-field-meta="activeFieldMeta"
+        />
+      </div>
+    </template>
     <NavigationGuardModal
       :open="showGuardModal"
       @leave="confirmLeave"
@@ -662,6 +440,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.edit-connection-loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.edit-connection-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .edit-connection-layout {
   display: flex;
   gap: 24px;

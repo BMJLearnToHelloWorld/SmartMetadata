@@ -8,8 +8,9 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { mapSearchResponse } from '@/catalog/searchHits';
-import { asNumber, asRecord } from '@/api/json';
+import { asNumber, asRecord, asString } from '@/api/json';
 import type { SearchPage } from '@/types/api';
+import type { SearchSettings } from '@/types/admin';
 import { apiRequest } from './client';
 import { mapQuerySearchPage, type QuerySearchPage } from './queries';
 
@@ -119,17 +120,6 @@ export const escapeESReservedCharacters = (text?: string): string => {
   return text && reHasUnescapedHtml.test(text)
     ? text.replaceAll(reUnescapedHtml, getReplacedChar)
     : (text ?? '');
-};
-
-/**
- * Official getEncodedFqn (utils/StringUtils.ts), verbatim: the FQN as
- * a URI component, with spaces optionally rendered as `+` for query
- * strings. The agents search wraps the escaped search text in
- * `*...*` through this encoder before it reaches rawSearchQuery.
- */
-export const getEncodedFqn = (fqn: string, spaceAsPlus = false): string => {
-  const uri = encodeURIComponent(fqn);
-  return spaceAsPlus ? uri.replaceAll('%20', '+') : uri;
 };
 
 /**
@@ -331,4 +321,162 @@ export async function searchQueries(
     },
   });
   return mapQuerySearchPage(payload);
+}
+
+/** Official rest/searchAPI.ts SearchIndexFailureRecord. */
+export interface SearchIndexFailureRecord {
+  id: string;
+  jobId: string;
+  runId: string;
+  entityType: string;
+  entityId?: string;
+  entityFqn?: string;
+  failureStage: string;
+  errorMessage?: string;
+  stackTrace?: string;
+  timestamp: number;
+}
+
+export interface ReindexFailuresResponse {
+  data: SearchIndexFailureRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface GetReindexFailuresParams {
+  offset?: number;
+  limit?: number;
+  entityType?: string;
+}
+
+function mapSearchIndexFailureRecord(value: unknown): SearchIndexFailureRecord | null {
+  const rec = asRecord(value);
+  if (!rec) {
+    return null;
+  }
+  return {
+    id: asString(rec.id),
+    jobId: asString(rec.jobId),
+    runId: asString(rec.runId),
+    entityType: asString(rec.entityType),
+    ...(asString(rec.entityId) ? { entityId: asString(rec.entityId) } : {}),
+    ...(asString(rec.entityFqn) ? { entityFqn: asString(rec.entityFqn) } : {}),
+    failureStage: asString(rec.failureStage),
+    ...(asString(rec.errorMessage) ? { errorMessage: asString(rec.errorMessage) } : {}),
+    ...(asString(rec.stackTrace) ? { stackTrace: asString(rec.stackTrace) } : {}),
+    timestamp: asNumber(rec.timestamp) ?? 0,
+  };
+}
+
+/**
+ * Official rest/searchAPI.ts getReindexFailures: GET /v1/search/reindex/failures.
+ * Pin defaults offset=0, limit=50; an empty entityType is omitted.
+ */
+export async function getReindexFailures(
+  params: GetReindexFailuresParams = {},
+): Promise<ReindexFailuresResponse> {
+  const { offset = 0, limit = 50, entityType } = params;
+  const raw = await apiRequest<unknown>('/v1/search/reindex/failures', {
+    query: { offset, limit, ...(entityType ? { entityType } : {}) },
+  });
+  const rec = asRecord(raw);
+  const rows = Array.isArray(rec?.data) ? rec.data : [];
+  return {
+    data: rows.flatMap((row) => {
+      const mapped = mapSearchIndexFailureRecord(row);
+      return mapped ? [mapped] : [];
+    }),
+    total: asNumber(rec?.total) ?? 0,
+    offset: asNumber(rec?.offset) ?? offset,
+    limit: asNumber(rec?.limit) ?? limit,
+  };
+}
+
+/**
+ * Official rest/searchAPI.ts getSearchEntityTypes: GET /v1/search/entityTypes.
+ * Entity types that have a search index in this deployment, sorted and
+ * server-driven, so the entity picker also lists distribution-specific types.
+ */
+export async function getSearchEntityTypes(): Promise<string[]> {
+  const raw = await apiRequest<unknown>('/v1/search/entityTypes');
+  return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+
+export interface PreviewSearchHit {
+  id: string;
+  score?: number;
+  source: Record<string, unknown>;
+  highlight?: Record<string, string[]>;
+  explanation?: unknown;
+  matchedQueries?: string[];
+}
+
+export interface PreviewSearchResult {
+  hits: PreviewSearchHit[];
+  total: number;
+}
+
+export interface PreviewSearchPayload {
+  from: number;
+  size: number;
+  index: string;
+  query: string;
+  queryFilter: string;
+  explain: boolean;
+  searchSettings: SearchSettings;
+}
+
+export function mapPreviewSearchResponse(payload: unknown): PreviewSearchResult {
+  const root = asRecord(payload);
+  const hitsNode = asRecord(root?.hits);
+  const totalNode = asRecord(hitsNode?.total);
+  const rawHits = Array.isArray(hitsNode?.hits) ? hitsNode.hits : [];
+  const hits: PreviewSearchHit[] = rawHits.flatMap((raw) => {
+    const hit = asRecord(raw);
+    if (!hit) {
+      return [];
+    }
+    const source = asRecord(hit._source) ?? {};
+    const highlightNode = asRecord(hit.highlight);
+    const highlight: Record<string, string[]> | undefined = highlightNode
+      ? Object.fromEntries(
+          Object.entries(highlightNode)
+            .filter(([, value]) => Array.isArray(value))
+            .map(([key, value]) => [
+              key,
+              (value as unknown[]).map((fragment) => String(fragment)),
+            ]),
+        )
+      : undefined;
+    return [
+      {
+        id: asString(hit._id) || asString(source.id) || '',
+        score: asNumber(hit._score),
+        source,
+        highlight,
+        explanation: hit._explanation,
+        matchedQueries: Array.isArray(hit.matched_queries)
+          ? hit.matched_queries.map((query) => String(query))
+          : undefined,
+      },
+    ];
+  });
+  return { hits, total: asNumber(totalNode?.value) ?? 0 };
+}
+
+/**
+ * Official `rest/searchAPI.searchPreview` (searchAPI.ts:208): POST the
+ * preview payload to /v1/search/preview. Official returns the raw
+ * SearchResponse; the product parses it through
+ * mapPreviewSearchResponse so the preview pane consumes typed hits.
+ */
+export async function searchPreview(
+  payload: PreviewSearchPayload,
+): Promise<PreviewSearchResult> {
+  const response = await apiRequest<unknown>('/v1/search/preview', {
+    method: 'POST',
+    json: payload,
+  });
+  return mapPreviewSearchResponse(response);
 }

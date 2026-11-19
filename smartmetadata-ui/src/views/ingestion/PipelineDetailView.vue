@@ -15,7 +15,7 @@ import {
   deployIngestionPipeline,
   getIngestionPipeline,
   getOrchestratorStatus,
-  isPipelineClientDisabled,
+  isPipelineDeployed,
   listPipelineStatuses,
   toggleIngestionPipeline,
   triggerIngestionPipeline,
@@ -416,11 +416,7 @@ function reportActionResult(
   actionKey: 'actionDeployed' | 'actionTriggered',
 ): void {
   actionResult.value = result;
-  if (isPipelineClientDisabled(result)) {
-    message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
-    return;
-  }
-  if (result.code !== undefined && result.code !== 200) {
+  if (!isPipelineDeployed(result)) {
     message.error(result.reason ?? t('ingestion.pipelines.actionFailed'));
     return;
   }

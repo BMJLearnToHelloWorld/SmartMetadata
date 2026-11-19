@@ -27,7 +27,7 @@ import {
   deployIngestionPipeline,
   getIngestionPipeline,
   getOrchestratorStatus,
-  isPipelineClientDisabled,
+  isPipelineDeployed,
   updateIngestionPipeline,
 } from '@/api/ingestionPipelines';
 import { getDerivedPermissionFlags, type OperationPermissions } from '@/api/permissions';
@@ -323,7 +323,7 @@ async function attemptDeploy(): Promise<boolean> {
   }
   try {
     const result = await deployIngestionPipeline(props.id);
-    if (isPipelineClientDisabled(result) || (result.code !== undefined && result.code !== 200)) {
+    if (!isPipelineDeployed(result)) {
       message.error(t('ingestion.pipelines.deployEntityError'));
       deployAction.value = IngestionActionMessage.DeployingError;
       showDeployButton.value = true;

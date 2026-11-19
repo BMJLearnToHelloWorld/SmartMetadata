@@ -11,17 +11,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import {
+  ADD_CUSTOM_PROPERTIES_DOCS,
   ENTITY_TYPE_CATEGORY,
   FIELD_TYPE_CATEGORY,
+  TYPE_FIELDS,
   addOrUpdateCustomProperty,
   buildCustomPropertyConfig,
+  customPropertySorter,
   deleteCustomPropertyByName,
   filterCustomProperties,
   getCustomPropertyChanges,
+  getCustomPropertyPageHeader,
+  getCustomPropertyRouteSegment,
   getCustomPropertyTypeFlags,
   getEditFormValues,
+  getEntityName,
   getMetadataTypeByName,
   getPropertyConfigSummary,
+  getPropertyTypeBadge,
   getPropertyTypeOptions,
   listCustomProperties,
   listMetadataTypes,
@@ -29,10 +36,12 @@ import {
   mapCustomProperty,
   mapMetadataType,
   propertyTypeLabel,
+  startCase,
   toCustomPropertyPayload,
   updateCustomPropertyByName,
+  validateCustomPropertyEditForm,
   validateCustomPropertyForm,
-  TYPE_FIELDS,
+  type CustomPropertyFieldLabels,
   type CustomPropertyFormValues,
 } from './customProperties';
 
@@ -124,7 +133,8 @@ describe('custom properties API', () => {
     });
   });
 
-  it('loads one type by name including customProperties', async () => {
+  it('loads one type by name with fields=customProperties only', async () => {
+    expect(TYPE_FIELDS).toBe('customProperties');
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -141,10 +151,13 @@ describe('custom properties API', () => {
     const meta = await getMetadataTypeByName('table');
     expect(meta.id).toBe('tid');
     expect(meta.customProperties[0]?.name).toBe('retentionDays');
-    expect(decodeURIComponent(lastFetch().url)).toContain('/api/v1/metadata/types/name/table');
+    const url = decodeURIComponent(lastFetch().url);
+    expect(url).toContain('/api/v1/metadata/types/name/table');
+    expect(url).toContain('fields=customProperties');
+    expect(url).not.toContain('schema');
   });
 
-  it('lists field property types with category=field', async () => {
+  it('lists field property types with category=field, limit 20, and no fields', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -156,10 +169,13 @@ describe('custom properties API', () => {
     );
     const page = await listPropertyTypes();
     expect(page.data[0]?.name).toBe('string');
-    expect(decodeURIComponent(lastFetch().url)).toContain(`category=${FIELD_TYPE_CATEGORY}`);
+    const url = decodeURIComponent(lastFetch().url);
+    expect(url).toContain(`category=${FIELD_TYPE_CATEGORY}`);
+    expect(url).toContain('limit=20');
+    expect(url).not.toContain('fields=');
   });
 
-  it('adds or updates a custom property with PUT /v1/metadata/types/{id}', async () => {
+  it('adds or updates a custom property with PUT and ignores the response body', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       new Response(
         JSON.stringify({
@@ -171,15 +187,40 @@ describe('custom properties API', () => {
       ),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const updated = await addOrUpdateCustomProperty('tid', {
+    await expect(
+      addOrUpdateCustomProperty('tid', {
+        name: 'retentionDays',
+        description: 'days',
+        propertyType: { id: 'f1', type: 'type', name: 'integer' },
+      }),
+    ).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/api/v1/metadata/types/tid');
+    expect(init?.method).toBe('PUT');
+    expect(JSON.parse(String(init?.body))).toEqual({
       name: 'retentionDays',
       description: 'days',
       propertyType: { id: 'f1', type: 'type', name: 'integer' },
     });
-    expect(updated.customProperties[0]?.name).toBe('retentionDays');
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toContain('/api/v1/metadata/types/tid');
-    expect(init?.method).toBe('PUT');
+  });
+
+  it('resolves when the PUT response has no type body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    await expect(
+      addOrUpdateCustomProperty('tid', {
+        name: 'retentionDays',
+        description: 'days',
+        propertyType: { id: 'f1', type: 'type', name: 'integer' },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it('parses customPropertyConfig read-side (string, array, and object forms)', () => {
@@ -249,17 +290,35 @@ describe('custom properties API', () => {
     ).toEqual(['b']);
   });
 
-  it('builds type filter options from present types, sorted with counts', () => {
+  it('builds type filter options from present types, sorted by badge label with counts', () => {
+    const resolveBadgeLabel = (badge: { labelKey?: string; fallbackLabel: string }): string =>
+      badge.labelKey ?? badge.fallbackLabel;
     expect(
-      getPropertyTypeOptions([
-        { name: 'a', propertyType: 'string' },
-        { name: 'b', propertyType: 'integer' },
-        { name: 'c', propertyType: 'string' },
-        { name: 'd' },
-      ]),
+      getPropertyTypeOptions(
+        [
+          { name: 'a', propertyType: 'string' },
+          { name: 'b', propertyType: 'integer' },
+          { name: 'c', propertyType: 'string' },
+          { name: 'd' },
+        ],
+        resolveBadgeLabel,
+      ),
     ).toEqual([
-      { value: 'integer', label: 'integer', count: 1 },
-      { value: 'string', label: 'string', count: 2 },
+      { value: 'integer', label: 'label.integer', count: 1 },
+      { value: 'string', label: 'label.string', count: 2 },
+    ]);
+    // Unmapped types fall back to the startCase label and sort with the rest.
+    expect(
+      getPropertyTypeOptions(
+        [
+          { name: 'a', propertyType: 'myCustom-cp' },
+          { name: 'b', propertyType: 'integer' },
+        ],
+        resolveBadgeLabel,
+      ),
+    ).toEqual([
+      { value: 'integer', label: 'label.integer', count: 1 },
+      { value: 'myCustom-cp', label: 'My Custom', count: 1 },
     ]);
   });
 
@@ -420,12 +479,13 @@ describe('custom properties API', () => {
     });
 
     it('builds the four config forms and returns undefined for plain types', () => {
+      // INV-16 (t367): the create path preserves order and duplicates.
       expect(
         buildCustomPropertyConfig(
           { enumConfig: ['gold', 'silver', 'gold'], multiSelect: true },
           getCustomPropertyTypeFlags('enum'),
         ),
-      ).toEqual({ config: { multiSelect: true, values: ['gold', 'silver'] } });
+      ).toEqual({ config: { multiSelect: true, values: ['gold', 'silver', 'gold'] } });
       expect(
         buildCustomPropertyConfig(
           { formatConfig: 'dd-MM-yyyy' },
@@ -443,13 +503,28 @@ describe('custom properties API', () => {
           { columns: ['a', 'b', 'a'] },
           getCustomPropertyTypeFlags('table-cp'),
         ),
-      ).toEqual({ config: { columns: ['a', 'b'] } });
+      ).toEqual({ config: { columns: ['a', 'b', 'a'] } });
       expect(
         buildCustomPropertyConfig({}, getCustomPropertyTypeFlags('string')),
       ).toBeUndefined();
       expect(
         buildCustomPropertyConfig({}, getCustomPropertyTypeFlags('date-cp')),
       ).toBeUndefined();
+    });
+
+    it('preserves duplicates through the create ID mapping (t367 acceptance cases)', () => {
+      expect(
+        buildCustomPropertyConfig(
+          { enumConfig: ['A', 'A', 'B'], multiSelect: false },
+          getCustomPropertyTypeFlags('enum'),
+        ),
+      ).toEqual({ config: { multiSelect: false, values: ['A', 'A', 'B'] } });
+      expect(
+        buildCustomPropertyConfig(
+          { columns: ['c', 'c'] },
+          getCustomPropertyTypeFlags('table-cp'),
+        ),
+      ).toEqual({ config: { columns: ['c', 'c'] } });
     });
 
     it('assembles the create payload without the condition fields', () => {
@@ -470,9 +545,11 @@ describe('custom properties API', () => {
       expect(payload).toEqual({
         name: 'tier',
         description: 'Service tier',
-        propertyType: { id: 'f-enum', type: 'type', name: 'enum' },
+        propertyType: { id: 'f-enum', type: 'type' },
         customPropertyConfig: { config: { multiSelect: false, values: ['gold'] } },
       });
+      // Key-exact: propertyType carries only id and type, never name.
+      expect(Object.keys(payload.propertyType).sort()).toEqual(['id', 'type']);
       expect('enumConfig' in payload).toBe(false);
       const plain = toCustomPropertyPayload(
         {
@@ -491,21 +568,32 @@ describe('custom properties API', () => {
       expect(plain).toEqual({
         name: 'note',
         description: 'd',
-        propertyType: { id: 'f-str', type: 'type', name: 'string' },
+        propertyType: { id: 'f-str', type: 'type' },
         displayName: 'Note',
       });
       expect('customPropertyConfig' in plain).toBe(false);
     });
 
-    it('labels property types per official (sqlQuery special-cased, -cp stripped)', () => {
-      expect(propertyTypeLabel('sqlQuery', 'SQL query', 'SQL Query')).toBe('SQL Query');
-      expect(propertyTypeLabel('date-cp', undefined, 'SQL Query')).toBe('Date');
-      expect(propertyTypeLabel('date-cp', 'My Date', 'SQL Query')).toBe('My Date');
-      expect(propertyTypeLabel('entityReference', undefined, 'SQL Query')).toBe('Entity Reference');
+    it('labels property types per official (no sqlQuery special case, -cp stripped)', () => {
+      expect(propertyTypeLabel('sqlQuery', 'SQL query')).toBe('SQL Query');
+      expect(propertyTypeLabel('sqlQuery', undefined)).toBe('Sql Query');
+      expect(propertyTypeLabel('date-cp', undefined)).toBe('Date');
+      expect(propertyTypeLabel('date-cp', 'My Date')).toBe('My Date');
+      expect(propertyTypeLabel('entityReference', undefined)).toBe('Entity Reference');
     });
   });
 
   describe('validateCustomPropertyForm (official form rules)', () => {
+    const labels: CustomPropertyFieldLabels = {
+      name: 'Name',
+      displayName: 'Display Name',
+      description: 'Description',
+      propertyType: 'Type',
+      enumConfig: 'Enum Values',
+      formatConfig: 'Format',
+      entityReferenceConfig: 'Entity Reference Types',
+      columns: 'Columns',
+    };
     const base: CustomPropertyFormValues = {
       name: 'tier',
       displayName: '',
@@ -519,107 +607,202 @@ describe('custom properties API', () => {
     };
 
     it('accepts a valid form', () => {
-      expect(validateCustomPropertyForm(base, { existingNames: [], isEdit: false })).toEqual([]);
+      expect(validateCustomPropertyForm(base, labels)).toEqual([]);
     });
 
-    it('rejects an empty, too-long, or invalid name', () => {
+    it('rejects an empty, too-long, or invalid name with field-keyed issues', () => {
+      expect(validateCustomPropertyForm({ ...base, name: '' }, labels)).toEqual([
+        { field: 'name', key: 'label.field-required', params: { field: 'Name' } },
+      ]);
       expect(
-        validateCustomPropertyForm({ ...base, name: '' }, { existingNames: [], isEdit: false })[0]?.key,
-      ).toBe('settings.customProperties.nameRequired');
+        validateCustomPropertyForm({ ...base, name: 'a'.repeat(257) }, labels),
+      ).toContainEqual({
+        field: 'name',
+        key: 'message.entity-size-in-between',
+        params: { entity: 'Name', min: 1, max: 256 },
+      });
       expect(
-        validateCustomPropertyForm(
-          { ...base, name: 'a'.repeat(257) },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.nameLength');
-      expect(
-        validateCustomPropertyForm(
-          { ...base, name: 'bad"name' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.nameInvalid');
+        validateCustomPropertyForm({ ...base, name: 'bad"name' }, labels),
+      ).toContainEqual({ field: 'name', key: 'message.custom-property-name-validation' });
       // The regex allows a leading digit and spaces inside.
+      expect(validateCustomPropertyForm({ ...base, name: '9 lives ok' }, labels)).toEqual([]);
+      // Values are used as-is: a leading space fails the regex (no trim).
       expect(
-        validateCustomPropertyForm(
-          { ...base, name: '9 lives ok' },
-          { existingNames: [], isEdit: false },
-        ),
-      ).toEqual([]);
+        validateCustomPropertyForm({ ...base, name: ' tier' }, labels),
+      ).toContainEqual({ field: 'name', key: 'message.custom-property-name-validation' });
     });
 
-    it('rejects a case-insensitively duplicate name on create but not on edit', () => {
-      expect(
-        validateCustomPropertyForm(
-          { ...base, name: 'Tier' },
-          { existingNames: ['tier'], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.nameExists');
-      expect(
-        validateCustomPropertyForm(
-          { ...base, name: 'Tier' },
-          { existingNames: ['tier'], isEdit: true },
-        ),
-      ).toEqual([]);
+    it('has no uniqueness rule: a duplicate name is not rejected', () => {
+      expect(validateCustomPropertyForm({ ...base, name: 'Tier' }, labels)).toEqual([]);
     });
 
     it('rejects a missing description or property type', () => {
-      expect(
-        validateCustomPropertyForm(
-          { ...base, description: '' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.descriptionRequired');
-      expect(
-        validateCustomPropertyForm(
-          { ...base, propertyTypeName: '' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.propertyTypeRequired');
+      expect(validateCustomPropertyForm({ ...base, description: '' }, labels)).toContainEqual({
+        field: 'description',
+        key: 'label.field-required',
+        params: { field: 'Description' },
+      });
+      expect(validateCustomPropertyForm({ ...base, propertyTypeName: '' }, labels)).toEqual([
+        { field: 'propertyType', key: 'label.field-required', params: { field: 'Type' } },
+      ]);
     });
 
     it('requires each conditional field for its type', () => {
+      expect(validateCustomPropertyForm({ ...base, enumConfig: [] }, labels)).toContainEqual({
+        field: 'enumConfig',
+        key: 'label.field-required',
+        params: { field: 'Enum Values' },
+      });
+      // Format is NOT required; only an unsupported value is invalid.
       expect(
-        validateCustomPropertyForm(
-          { ...base, enumConfig: [] },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.enumValuesRequired');
-      expect(
-        validateCustomPropertyForm(
-          { ...base, propertyTypeName: 'date-cp' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.formatRequired');
+        validateCustomPropertyForm({ ...base, propertyTypeName: 'date-cp' }, labels),
+      ).toEqual([]);
       expect(
         validateCustomPropertyForm(
           { ...base, propertyTypeName: 'date-cp', formatConfig: 'yyyy-MM-dd HH:mm' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.formatInvalid');
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'formatConfig',
+        key: 'label.field-invalid',
+        params: { field: 'Format' },
+      });
       expect(
         validateCustomPropertyForm(
-          { ...base, propertyTypeName: 'entityReference' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.entityReferenceRequired');
+          { ...base, propertyTypeName: 'date-cp', formatConfig: 'dd-MM-yyyy' },
+          labels,
+        ),
+      ).toEqual([]);
       expect(
-        validateCustomPropertyForm(
-          { ...base, propertyTypeName: 'table-cp' },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.columnsRequired');
+        validateCustomPropertyForm({ ...base, propertyTypeName: 'entityReference' }, labels),
+      ).toContainEqual({
+        field: 'entityReferenceConfig',
+        key: 'label.field-required',
+        params: { field: 'Entity Reference Types' },
+      });
+      expect(
+        validateCustomPropertyForm({ ...base, propertyTypeName: 'table-cp' }, labels),
+      ).toContainEqual({
+        field: 'columns',
+        key: 'label.field-required',
+        params: { field: 'Columns' },
+      });
       expect(
         validateCustomPropertyForm(
           { ...base, propertyTypeName: 'table-cp', columns: ['a', 'b', 'c', 'd'] },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.columnsTooMany');
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'columns',
+        key: 'message.maximum-count-allowed',
+        params: { count: 3, label: 'Columns' },
+      });
       expect(
         validateCustomPropertyForm(
           { ...base, propertyTypeName: 'table-cp', columns: ['__row_id__'] },
-          { existingNames: [], isEdit: false },
-        ).map((issue) => issue.key),
-      ).toContain('settings.customProperties.columnReserved');
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'columns',
+        key: 'message.reserved-column-name',
+        params: { name: '__row_id__' },
+      });
+    });
+  });
+
+  describe('validateCustomPropertyEditForm (official edit rules)', () => {
+    const labels: CustomPropertyFieldLabels = {
+      name: 'Name',
+      displayName: 'Display Name',
+      description: 'Description',
+      propertyType: 'Type',
+      enumConfig: 'Enum Values',
+      formatConfig: 'Format',
+      entityReferenceConfig: 'Entity Reference Types',
+      columns: 'Columns',
+    };
+
+    it('accepts a valid edit and ignores condition fields for other types', () => {
+      expect(
+        validateCustomPropertyEditForm(
+          {
+            displayName: 'Tier',
+            description: 'd',
+            enumConfig: ['gold'],
+            multiSelect: false,
+            entityReferenceConfig: [],
+          },
+          { name: 'tier', propertyType: 'enum' },
+          labels,
+        ),
+      ).toEqual([]);
+      expect(
+        validateCustomPropertyEditForm(
+          {
+            displayName: '',
+            description: 'd',
+            enumConfig: [],
+            multiSelect: false,
+            entityReferenceConfig: [],
+          },
+          { name: 'note', propertyType: 'string' },
+          labels,
+        ),
+      ).toEqual([]);
+    });
+
+    it('requires description, enum values, and entity-reference types', () => {
+      expect(
+        validateCustomPropertyEditForm(
+          {
+            displayName: '',
+            description: '',
+            enumConfig: ['gold'],
+            multiSelect: false,
+            entityReferenceConfig: [],
+          },
+          { name: 'tier', propertyType: 'enum' },
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'description',
+        key: 'label.field-required',
+        params: { field: 'Description' },
+      });
+      expect(
+        validateCustomPropertyEditForm(
+          {
+            displayName: '',
+            description: 'd',
+            enumConfig: [],
+            multiSelect: false,
+            entityReferenceConfig: [],
+          },
+          { name: 'tier', propertyType: 'enum' },
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'enumConfig',
+        key: 'label.field-required',
+        params: { field: 'Enum Values' },
+      });
+      expect(
+        validateCustomPropertyEditForm(
+          {
+            displayName: '',
+            description: 'd',
+            enumConfig: [],
+            multiSelect: false,
+            entityReferenceConfig: [],
+          },
+          { name: 'refs', propertyType: 'entityReference' },
+          labels,
+        ),
+      ).toContainEqual({
+        field: 'entityReferenceConfig',
+        key: 'label.field-required',
+        params: { field: 'Entity Reference Types' },
+      });
     });
   });
 
@@ -661,6 +844,20 @@ describe('custom properties API', () => {
           enumConfig: [],
           multiSelect: false,
           entityReferenceConfig: ['topic'],
+        }),
+      ).toEqual({
+        displayName: undefined,
+        description: 'd',
+        customPropertyConfig: { config: ['table', 'topic'] },
+      });
+      // t367: saved [T1] + selected [T2, T2] → [T1, T2]; T1 must not be deleted.
+      expect(
+        getCustomPropertyChanges(property, {
+          displayName: '',
+          description: 'd',
+          enumConfig: [],
+          multiSelect: false,
+          entityReferenceConfig: ['topic', 'topic'],
         }),
       ).toEqual({
         displayName: undefined,
@@ -870,6 +1067,192 @@ describe('custom properties API', () => {
         updateCustomPropertyByName('table', 'tier', { displayName: undefined, description: 'new' }),
       ).resolves.toBeUndefined();
       expect(patchCalls(goneMock)).toHaveLength(0);
+    });
+  });
+
+  describe('startCase (lodash equivalent)', () => {
+    it('capitalizes every word, splitting camelCase and separators', () => {
+      // Discriminator: lodash "Foo Bar", not the old "Foo bar".
+      expect(startCase('foo_bar')).toBe('Foo Bar');
+      expect(startCase('fooBar')).toBe('Foo Bar');
+      expect(startCase('mlmodels')).toBe('Mlmodels');
+      expect(startCase('databaseSchema')).toBe('Database Schema');
+      expect(startCase('apiCollections')).toBe('Api Collections');
+      expect(startCase('tableColumn')).toBe('Table Column');
+      expect(startCase('dashboardDataModel')).toBe('Dashboard Data Model');
+      expect(startCase('my-type')).toBe('My Type');
+      expect(startCase('FOO_BAR')).toBe('FOO BAR');
+      expect(startCase('')).toBe('');
+    });
+  });
+
+  describe('getEntityName', () => {
+    it('prefers displayName, falls back to name, then empty', () => {
+      expect(getEntityName({ name: 'tier', displayName: 'Tier' })).toBe('Tier');
+      expect(getEntityName({ name: 'tier' })).toBe('tier');
+      expect(getEntityName({})).toBe('');
+    });
+  });
+
+  describe('customPropertySorter (official columnSorter)', () => {
+    it('sorts by entity name (displayName wins)', () => {
+      const defs: CustomPropertyDef[] = [
+        { name: 'zeta' },
+        { name: 'alpha', displayName: 'Omega' },
+        { name: 'mmm', displayName: 'AAA' },
+      ];
+      expect([...defs].sort(customPropertySorter).map((d) => d.name)).toEqual([
+        'mmm',
+        'alpha',
+        'zeta',
+      ]);
+      expect(
+        [{ name: 'aaa', displayName: 'zzz' }, { name: 'mmm' }].sort(customPropertySorter)[0]?.name,
+      ).toBe('mmm');
+    });
+  });
+
+  describe('getPropertyTypeBadge (official badge table)', () => {
+    it('maps all 17 property types to color roles and label keys', () => {
+      const expected: [string, string, string, boolean][] = [
+        ['string', 'gray-blue', 'label.string', false],
+        ['integer', 'blue-light', 'label.integer', false],
+        ['number', 'blue-light', 'label.number', false],
+        ['email', 'pink', 'label.email', false],
+        ['date-cp', 'orange', 'label.date', false],
+        ['dateTime-cp', 'orange', 'label.date-and-time', false],
+        ['time-cp', 'orange', 'label.time', false],
+        ['timestamp', 'warning', 'label.timestamp', false],
+        ['duration', 'warning', 'label.duration', false],
+        ['enum', 'purple', 'label.enum', false],
+        ['hyperlink-cp', 'blue', 'label.hyperlink', false],
+        ['entityReference', 'indigo', 'label.entity-ref', false],
+        ['entityReferenceList', 'indigo', 'label.entity-ref-list', false],
+        ['timeInterval', 'brand', 'label.time-interval', true],
+        ['table-cp', 'error', 'label.table', true],
+        ['sqlQuery', 'success', 'label.sql-uppercase', true],
+        ['markdown', 'gray', 'label.markdown', true],
+      ];
+      for (const [name, color, labelKey, isWide] of expected) {
+        expect(getPropertyTypeBadge(name)).toEqual({
+          color,
+          labelKey,
+          fallbackLabel: '',
+          isWide,
+        });
+      }
+    });
+
+    it('falls back to default gray with a startCase label for unmapped types', () => {
+      expect(getPropertyTypeBadge('myCustom-cp')).toEqual({
+        color: 'gray',
+        labelKey: undefined,
+        fallbackLabel: 'My Custom',
+        isWide: false,
+      });
+      expect(getPropertyTypeBadge(undefined)).toEqual({
+        color: 'gray',
+        labelKey: undefined,
+        fallbackLabel: '',
+        isWide: false,
+      });
+    });
+  });
+
+  describe('getCustomPropertyPageHeader (official 26-entry table)', () => {
+    it('returns the pin header keys per entity type', () => {
+      const expected: [string, string, string | undefined][] = [
+        ['table', 'label.table-plural', 'label.table-plural'],
+        ['topic', 'label.topic-plural', 'label.topic-plural'],
+        ['dashboard', 'label.dashboard-plural', 'label.dashboard-plural'],
+        ['dashboardDataModel', 'label.dashboard-data-model-plural', 'label.dashboard-data-model-plural'],
+        ['dataProduct', 'label.data-product-plural', 'label.data-product-plural'],
+        ['pipeline', 'label.pipeline-plural', 'label.pipeline-plural'],
+        ['mlmodel', 'label.ml-model-plural', 'label.ml-model-plural'],
+        ['container', 'label.container-plural', 'label.container-plural'],
+        ['storedProcedure', 'label.stored-procedure-plural', 'label.stored-procedure-plural'],
+        ['domain', 'label.domain-plural', 'label.domain-plural'],
+        ['searchIndex', 'label.search-index-plural', 'label.search-index-plural'],
+        ['glossaryTerm', 'label.glossary-term', 'label.glossary-term'],
+        ['database', 'label.database', 'label.database'],
+        ['databaseSchema', 'label.database-schema', 'label.database-schema'],
+        ['apiCollection', 'label.api-collection-plural', 'label.api-collection-plural'],
+        ['apiEndpoint', 'label.api-endpoint-plural', 'label.api-endpoint-plural'],
+        ['metric', 'label.metric-plural', 'label.metric-plural'],
+        ['chart', 'label.chart-plural', 'label.chart-plural'],
+        ['directory', 'label.directory-plural', 'label.directory-plural'],
+        ['file', 'label.file-plural', 'label.file-plural'],
+        ['spreadsheet', 'label.spreadsheet-plural', 'label.spreadsheet-plural'],
+        ['worksheet', 'label.worksheet-plural', 'label.worksheet-plural'],
+        ['team', 'label.team-plural', 'label.team-plural'],
+        ['page', 'label.article-plural', 'label.article-plural'],
+        ['tableColumn', 'label.column-plural', undefined],
+        ['user', 'label.user-plural', 'label.user-plural'],
+      ];
+      expect(expected).toHaveLength(26);
+      for (const [type, headerKey, subHeaderEntityKey] of expected) {
+        const header = getCustomPropertyPageHeader(type);
+        expect(header.headerKey).toBe(headerKey);
+        if (subHeaderEntityKey === undefined) {
+          expect(header.subHeaderKey).toBe('message.define-custom-property-for-column');
+          expect(header.subHeaderEntityKey).toBeUndefined();
+        } else {
+          expect(header.subHeaderKey).toBe('message.define-custom-property-for-entity');
+          expect(header.subHeaderEntityKey).toBe(subHeaderEntityKey);
+        }
+      }
+    });
+
+    it('falls back to the Tables header for unmapped types', () => {
+      expect(getCustomPropertyPageHeader('somethingNew')).toEqual(
+        getCustomPropertyPageHeader('table'),
+      );
+    });
+  });
+
+  describe('getCustomPropertyRouteSegment (reverse ENTITY_PATH)', () => {
+    it('maps all 26 entity types to their route segments', () => {
+      const expected: [string, string][] = [
+        ['table', 'tables'],
+        ['topic', 'topics'],
+        ['dashboard', 'dashboards'],
+        ['dashboardDataModel', 'dashboardDataModels'],
+        ['dataProduct', 'dataProducts'],
+        ['pipeline', 'pipelines'],
+        ['mlmodel', 'mlmodels'],
+        ['container', 'containers'],
+        ['storedProcedure', 'storedProcedures'],
+        ['domain', 'domains'],
+        ['searchIndex', 'searchIndexes'],
+        ['glossaryTerm', 'glossaryTerm'],
+        ['database', 'databases'],
+        ['databaseSchema', 'databaseSchemas'],
+        ['apiCollection', 'apiCollections'],
+        ['apiEndpoint', 'apiEndpoints'],
+        ['metric', 'metrics'],
+        ['chart', 'charts'],
+        ['directory', 'directories'],
+        ['file', 'files'],
+        ['spreadsheet', 'spreadsheets'],
+        ['worksheet', 'worksheets'],
+        ['team', 'teams'],
+        ['page', 'articles'],
+        ['tableColumn', 'column'],
+        ['user', 'users'],
+      ];
+      expect(expected).toHaveLength(26);
+      for (const [type, segment] of expected) {
+        expect(getCustomPropertyRouteSegment(type)).toBe(segment);
+      }
+      expect(getCustomPropertyRouteSegment('somethingNew')).toBe('somethingNew');
+    });
+  });
+
+  describe('docs link', () => {
+    it('uses the official ADD_CUSTOM_PROPERTIES_DOCS URL', () => {
+      expect(ADD_CUSTOM_PROPERTIES_DOCS).toBe(
+        'https://docs.open-metadata.org/latest/how-to-guides/guide-for-data-users/custom',
+      );
     });
   });
 });

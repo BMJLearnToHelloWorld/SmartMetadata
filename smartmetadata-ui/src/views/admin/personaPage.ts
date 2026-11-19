@@ -404,6 +404,56 @@ export const CUSTOMIZE_PAGE_TYPE_ORDER: readonly CustomizePageType[] = [
   'Worksheet',
 ];
 
+/**
+ * Official customize-page category labels (pin PersonaClassBase.ts:96-153)
+ * for the detail breadcrumb's optional category segment only (PER-D3):
+ * the segment renders only when the hash's second segment hits this
+ * table, and carries no link. Transitional: the C-4 batch rebuilds the
+ * category table (DEL-10); this lookup must not drive the customize UI.
+ * Keys are the pin category keys, including the PageType values
+ * `LandingPage` and `DataMarketplace` (generated/system/ui/uiCustomization.ts).
+ */
+export const CUSTOMIZE_PAGE_CATEGORY_LABEL_KEYS: Readonly<Record<string, string>> = {
+  navigation: 'label.navigation',
+  'app-layout': 'label.app-layout',
+  askCollateSidebar: 'label.app-mode-sidebar',
+  LandingPage: 'label.home-page',
+  DataMarketplace: 'label.data-marketplace',
+  governance: 'label.governance',
+  'data-assets': 'label.data-asset-plural',
+};
+
+/** Entity page types the entity customize overlay offers (official PageType enum). */
+export const ENTITY_PAGE_TYPES = [
+  'APICollection',
+  'APIEndpoint',
+  'Chart',
+  'Classification',
+  'Container',
+  'Dashboard',
+  'DashboardDataModel',
+  'DataMarketplace',
+  'DataProduct',
+  'Database',
+  'DatabaseSchema',
+  'Directory',
+  'Domain',
+  'File',
+  'Glossary',
+  'GlossaryTerm',
+  'LandingPage',
+  'Metric',
+  'MlModel',
+  'Pipeline',
+  'SearchIndex',
+  'Spreadsheet',
+  'StoredProcedure',
+  'Table',
+  'Tag',
+  'Topic',
+  'Worksheet',
+];
+
 export type CustomizePageCategoryKey =
   | 'navigation'
   | 'app-layout'

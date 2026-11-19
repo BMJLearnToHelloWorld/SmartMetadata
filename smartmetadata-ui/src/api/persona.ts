@@ -8,8 +8,8 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import type { JsonPatchOp } from '@/admin/jsonPatch';
-import { asString, mapEntityRefs, parsePaged } from '@/api/json';
-import type { EntityRef, Paged } from '@/types/api';
+import { asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import type { Paged } from '@/types/admin';
 import type { CreatePersonaRequest, Persona } from '@/types/persona';
 import { apiRequest } from './client';
 
@@ -108,10 +108,39 @@ export async function updatePersona(id: string, patch: JsonPatchOp[]): Promise<P
 }
 
 /**
- * Replace-op builder for a persona's member list (detail users tab).
- * The value carries the full references, as the official detail page's
- * whole-object diff does — not id stubs.
+ * Official persona delete (PER-D5): DELETE /v1/personas/{id} with the
+ * pin hard-delete request shape (hardDelete=true, recursive=false,
+ * following the `deleteDomain` shape and pin `hardDeleteEntity`).
+ * Verified against the deployed server source (PersonaResource,
+ * 18ee6e69): the endpoint takes no delete parameters and hardcodes
+ * soft delete + recursive, so the query params are server-ignored and
+ * the stored outcome is a soft delete — the UI-visible outcome is
+ * identical to pin (the persona leaves the list; no restore UI).
  */
-export function personaUsersPatch(users: EntityRef[]): JsonPatchOp[] {
-  return [{ op: 'replace', path: '/users', value: users }];
+export function deletePersona(id: string): Promise<unknown> {
+  return apiRequest(`/v1/personas/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    query: { hardDelete: true, recursive: false },
+  });
+}
+
+/**
+ * Official EntityHistory (generated/type/entityHistory.ts): the entity
+ * type plus the version payloads in server order. No versions UI is
+ * built in this partition; the Context Center batch owns the caller.
+ */
+export interface PersonaVersionHistory {
+  entityType: string;
+  versions: unknown[];
+}
+
+/** Official getPersonaVersions (rest/PersonaAPI.ts): GET /v1/personas/{id}/versions. */
+export async function getPersonaVersions(id: string): Promise<PersonaVersionHistory> {
+  const payload = await apiRequest<unknown>(`/v1/personas/${encodeURIComponent(id)}/versions`);
+  const root = asRecord(payload);
+  const versions = root?.versions;
+  return {
+    entityType: asString(root?.entityType),
+    versions: Array.isArray(versions) ? versions : [],
+  };
 }

@@ -6,7 +6,7 @@
 import { computed, markRaw, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Select, Space, Tooltip, message } from 'ant-design-vue';
-import { SM_COLOR_PRIMARY, SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
+import { SM_COLOR_WARNING, SM_SURFACES } from '@/theme/tokens';
 import { MarkerType, VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
@@ -130,7 +130,10 @@ const edges = computed<Edge[]>(() => {
     markerEnd: MarkerType.ArrowClosed,
     class: 'lineage-edge--column',
     style: {
-      stroke: SM_COLOR_PRIMARY,
+      // Q-TH-4: read the managed CSS variable so a custom theme
+      // primary color reaches column edges (Vue Flow applies this
+      // style to the SVG path, where the variable resolves live).
+      stroke: 'var(--sm-color-primary)',
       strokeWidth: 1.75,
       strokeDasharray: '5 4',
     },

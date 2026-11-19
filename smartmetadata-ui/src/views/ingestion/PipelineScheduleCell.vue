@@ -13,9 +13,10 @@ const props = defineProps<{
 /**
  * Official ScheduleFieldCell (openmetadata-ui
  * utils/IngestionListTableUtils.tsx, pin a3012259ca): the two-line
- * human-readable schedule description, '—' with no schedule. While
- * cronstrue is still loading, the cron itself stands in on the first
- * line so the cell never claims an existing schedule is absent.
+ * human-readable schedule description, '--' (NO_DATA_PLACEHOLDER)
+ * with no schedule. While cronstrue is still loading, the cron
+ * itself stands in on the first line so the cell never claims an
+ * existing schedule is absent.
  */
 const texts = useScheduleDescriptionTexts(() => props.scheduleInterval);
 const primary = computed(() => texts.value.descriptionFirstPart || props.scheduleInterval || '');
@@ -23,7 +24,7 @@ const secondary = computed(() => texts.value.descriptionSecondPart);
 </script>
 
 <template>
-  <span v-if="!scheduleInterval">—</span>
+  <span v-if="!scheduleInterval">--</span>
   <span v-else class="ing-schedule-cell">
     <span class="ing-schedule-cell__primary" data-testid="schedule-primary-details">{{ primary }}</span>
     <span

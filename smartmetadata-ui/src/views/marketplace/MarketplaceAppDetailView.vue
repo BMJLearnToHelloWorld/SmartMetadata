@@ -2,22 +2,38 @@
   Copyright 2026 SmartMetadata authors.
   Licensed under the Apache License, Version 2.0.
 -->
+<!--
+  Vue port of pin components/Settings/Applications/MarketPlaceAppDetails/
+  MarketPlaceAppDetails.tsx. Loading renders a bare spinner; a failed
+  definition fetch toasts only (the page still renders, with an empty
+  name); the installed probe fails silently. No PageHeader, no error
+  text, no Empty state. The inline admin gate is kept under the
+  DEL-22 HOLD (see the batch report). The paid-addon interpolation
+  passes the bare displayName (not getEntityName) in the bold span,
+  and the verify line interpolates the product name as brandName.
+  The `message.paid-addon-description` locale value must be written in
+  vue-i18n syntax (`{app} is a paid add-on for Collate customers.`),
+  not pin's i18next literal (`<0>{{app}}</0> ...`).
+-->
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Avatar, Button, Empty, Spin, Tooltip, Typography } from 'ant-design-vue';
+import { Alert, Button, Spin, Tooltip, message } from 'ant-design-vue';
+import { LeftOutlined } from '@ant-design/icons-vue';
+import checkmarkIconUrl from '@/assets/svg/ic-cloud-checkmark.svg';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
-import PageHeader from '@/components/shared/PageHeader.vue';
-import SmMarkdown from '@/components/shared/SmMarkdown.vue';
-import { getAppByName } from '@/api/apps';
+import { getApplicationByName } from '@/api/apps';
 import {
-  getMarketplaceAppByFqn,
+  getMarketPlaceApplicationByFqn,
   type MarketplaceApp,
 } from '@/api/marketplaceApps';
+import SmMarkdown from '@/components/shared/SmMarkdown.vue';
+import { useAuthStore } from '@/stores/auth';
+import AppLogo from './AppLogo.vue';
 import AppScreenshots, { type AppScreenshotItem } from './AppScreenshots.vue';
 import { getAppScreenshotUrl } from './appScreenshots';
-import { useAuthStore } from '@/stores/auth';
+import { getEntityName, isCacheWarmupApplication } from './appUtils';
 
 const props = defineProps<{ fqn?: string }>();
 
@@ -26,36 +42,13 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 
-/**
- * Official page shape (components/Settings/Applications/
- * MarketPlaceAppDetails): a two-column detail page over the marketplace
- * definition — left panel with back navigation, logo, Install action
- * with its installed/disabled states, the verified line and the support
- * links; main column with the title and the description. The route is
- * AdminProtectedRoute-gated without a permission prop, so the gate here
- * is the admin line alone, the same precedent as the install page.
- * The screenshots region renders the official carousel (D3): the names in
- * `appScreenshots` resolve against the PNGs bundled under
- * `assets/appScreenshots/` (glob-scanned at build time, so the set follows
- * whatever files are shipped — with zero PNGs every name degrades to an
- * empty slot instead of breaking the page; the 5 official PNGs are
- * uploaded to the branch separately and appear with no code change).
- * The description now renders through the shared SmMarkdown renderer
- * (A10, same renderer A4 rich-text diffs reuse); the disabled alert
- * carries the official please-contact-us line (without inventing a
- * vendor support address — the per-app supportEmail link below it is
- * the product's real contact route).
- */
 const fqn = computed(() => props.fqn ?? String(route.params.fqn ?? ''));
 
 const isAdmin = computed(() => authStore.user?.isAdmin === true);
-const loading = ref(true);
-const loadError = ref('');
-const appData = ref<MarketplaceApp | null>(null);
+const isLoading = ref(true);
+const appData = ref<MarketplaceApp | undefined>();
 const isInstalled = ref(false);
 
-const appName = computed(() => appData.value?.displayName || appData.value?.name || '');
-const appInitial = computed(() => appName.value.charAt(0).toUpperCase() || '?');
 const screenshotItems = computed<AppScreenshotItem[]>(() =>
   (appData.value?.appScreenshots ?? []).map((name) => ({
     key: name,
@@ -67,42 +60,45 @@ const isAppDisabled = computed(() => appData.value?.enabled === false);
 const isCacheWarmupDisabled = computed(
   () =>
     isAppDisabled.value &&
-    (appData.value?.name === 'CacheWarmupApplication' ||
-      appData.value?.fullyQualifiedName === 'CacheWarmupApplication'),
+    isCacheWarmupApplication(appData.value?.name ?? appData.value?.fullyQualifiedName),
 );
 const installDisabled = computed(() => isInstalled.value || isAppDisabled.value);
-const tooltipTitle = computed(() => {
+const showPaidAddonTooltip = computed(
+  () => !isInstalled.value && isAppDisabled.value && !isCacheWarmupDisabled.value,
+);
+const tooltipTitleText = computed(() => {
   if (isInstalled.value) {
-    return t('apps.detail.alreadyInstalled');
+    return t('message.app-already-installed');
   }
-  if (isAppDisabled.value) {
-    if (isCacheWarmupDisabled.value) {
-      return t('apps.detail.cacheServiceNotConfigured');
-    }
-    return t('apps.detail.paidAddonDescription', { app: appName.value });
+  if (isAppDisabled.value && isCacheWarmupDisabled.value) {
+    return t('message.cache-service-not-configured-message');
   }
-  return '';
+  return undefined;
 });
 
-async function loadApp(): Promise<void> {
-  loading.value = true;
-  loadError.value = '';
+async function fetchAppDetails(): Promise<void> {
+  isLoading.value = true;
   try {
-    appData.value = await getMarketplaceAppByFqn(fqn.value, 'owners');
+    appData.value = await getMarketPlaceApplicationByFqn(fqn.value, 'owners');
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : t('crud.loadFailed');
+    message.error(error instanceof Error ? error.message : String(error));
   } finally {
-    loading.value = false;
+    isLoading.value = false;
   }
 }
 
-async function checkInstalled(): Promise<void> {
+async function fetchInstalledAppDetails(): Promise<void> {
   try {
-    await getAppByName(fqn.value);
+    await getApplicationByName(fqn.value, { fields: ['owners'], include: 'all' });
     isInstalled.value = true;
   } catch {
     isInstalled.value = false;
   }
+}
+
+function loadAll(): void {
+  void fetchAppDetails();
+  void fetchInstalledAppDetails();
 }
 
 function onBrowseAppsClick(): void {
@@ -114,125 +110,134 @@ function onInstallClick(): void {
 }
 
 onMounted(() => {
-  void loadApp();
-  void checkInstalled();
+  if (isAdmin.value) {
+    loadAll();
+  } else {
+    isLoading.value = false;
+  }
 });
+
+watch(isAdmin, (admin) => {
+  if (admin) {
+    loadAll();
+  }
+});
+
+watch(
+  () => fqn.value,
+  () => {
+    if (isAdmin.value) {
+      loadAll();
+    }
+  },
+);
 </script>
 
 <template>
   <div data-testid="marketplace-app-detail">
     <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
     <template v-else>
-      <PageHeader
-        :header="appData ? appName : t('apps.detail.title')"
-      />
-      <Spin v-if="loading" data-testid="marketplace-app-detail-loading" />
-      <Typography.Text
-        v-if="loadError"
-        type="danger"
-        data-testid="marketplace-app-detail-error"
-      >
-        {{ loadError }}
-      </Typography.Text>
-      <template v-if="!loading && appData">
-        <div
-          style="display: flex; gap: 24px; align-items: flex-start"
-          data-testid="marketplace-app-detail-body"
-        >
-          <div style="width: 260px; flex-shrink: 0">
-            <Button data-testid="marketplace-app-detail-browse" @click="onBrowseAppsClick">
-              {{ t('apps.detail.browseApps') }}
-            </Button>
-            <div style="text-align: center; margin: 16px 0">
-              <Avatar :size="64" data-testid="marketplace-app-detail-logo">
-                {{ appInitial }}
-              </Avatar>
-            </div>
-            <Tooltip :title="tooltipTitle">
-              <Button
-                type="primary"
-                block
-                :disabled="installDisabled"
-                data-testid="install-application"
-                @click="onInstallClick"
-              >
-                {{ t('apps.detail.install') }}
-              </Button>
-            </Tooltip>
-            <Alert
-              v-if="isAppDisabled"
-              type="info"
-              show-icon
-              style="margin-top: 16px"
-              data-testid="marketplace-app-detail-disabled-alert"
-            >
-              <template #message>
-                <span v-if="isCacheWarmupDisabled">
-                  {{ t('apps.detail.cacheServiceNotConfigured') }}
-                </span>
-                <span v-else>
-                  {{ t('apps.detail.paidAddonDescription', { app: appName }) }}
-                  <span style="display: block" data-testid="marketplace-app-detail-contact">
-                    {{ t('apps.detail.pleaseContactUs') }}
-                  </span>
-                </span>
-              </template>
-            </Alert>
-            <Typography.Paragraph
-              type="secondary"
-              style="margin-top: 16px"
-              data-testid="marketplace-app-detail-verified"
-            >
-              {{ t('apps.detail.marketplaceVerified', { brandName: 'iSmart' }) }}
-            </Typography.Paragraph>
-            <div style="display: flex; flex-direction: column; gap: 8px">
-              <a
-                v-if="appData.supportEmail"
-                :href="`mailto:${appData.supportEmail}`"
-                rel="noopener noreferrer"
-                target="_blank"
-                data-testid="app-support-email"
-              >
-                {{ t('apps.detail.getAppSupport') }}
-              </a>
-              <a
-                v-if="appData.developerUrl"
-                :href="appData.developerUrl"
-                rel="noopener noreferrer"
-                target="_blank"
-                data-testid="marketplace-app-detail-developer-url"
-              >
-                {{ t('apps.detail.visitDeveloperWebsite') }}
-              </a>
-              <a
-                v-if="appData.privacyPolicyUrl"
-                :href="appData.privacyPolicyUrl"
-                rel="noopener noreferrer"
-                target="_blank"
-                data-testid="marketplace-app-detail-privacy-url"
-              >
-                {{ t('apps.detail.privacyPolicy') }}
-              </a>
-            </div>
+      <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
+        <Spin size="large" />
+      </div>
+      <div v-else style="display: flex; gap: 24px; align-items: flex-start">
+        <div style="width: 260px; flex-shrink: 0; padding: 16px 16px 0">
+          <Button type="text" size="small" @click="onBrowseAppsClick">
+            <template #icon><LeftOutlined /></template>
+            {{ t('label.browse-app-plural') }}
+          </Button>
+          <div style="display: flex; justify-content: center; margin-top: 16px">
+            <AppLogo :app-name="appData?.fullyQualifiedName ?? ''" />
           </div>
-          <div style="flex: 1; min-width: 0">
-            <AppScreenshots
-              v-if="screenshotItems.length > 0"
-              :key="fqn"
-              :screenshots="screenshotItems"
+          <Tooltip :title="tooltipTitleText">
+            <template v-if="showPaidAddonTooltip" #title>
+              <i18n-t keypath="message.paid-addon-description">
+                <template #app>
+                  <span data-testid="appName" style="font-weight: 600">
+                    {{ appData?.displayName }}
+                  </span>
+                </template>
+              </i18n-t>
+            </template>
+            <Button
+              type="primary"
+              block
+              style="margin-top: 16px"
+              :disabled="installDisabled"
+              data-testid="install-application"
+              @click="onInstallClick"
+            >
+              {{ t('label.install') }}
+            </Button>
+          </Tooltip>
+          <Alert
+            v-if="isAppDisabled"
+            type="info"
+            :show-icon="false"
+            style="margin-top: 16px"
+          >
+            <template #message>
+              <span v-if="isCacheWarmupDisabled">
+                {{ t('message.cache-service-not-configured-message') }}
+              </span>
+              <span v-else>
+                <i18n-t keypath="message.paid-addon-description">
+                  <template #app>
+                    <span data-testid="appName" style="font-weight: 600">
+                      {{ appData?.displayName }}
+                    </span>
+                  </template>
+                </i18n-t>
+                <span style="display: block">{{ t('message.please-contact-us') }}</span>
+              </span>
+            </template>
+          </Alert>
+          <div style="margin-top: 16px">
+            <img
+              :src="checkmarkIconUrl"
+              alt=""
+              style="vertical-align: middle; margin-right: 4px"
             />
-            <SmMarkdown
-              :markdown="appData.description ?? ''"
-              test-id="marketplace-app-detail-description"
-            />
+            <span style="font-size: 12px">
+              {{ t('message.marketplace-verify-msg', { brandName: t('product.name') }) }}
+            </span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 24px">
+            <a
+              v-if="appData?.supportEmail"
+              :href="`mailto:${appData.supportEmail}`"
+              rel="noopener noreferrer"
+              target="_blank"
+              data-testid="app-support-email"
+            >
+              {{ t('label.get-app-support') }}
+            </a>
+            <a
+              v-if="appData?.developerUrl"
+              :href="appData.developerUrl"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {{ t('label.visit-developer-website') }}
+            </a>
+            <a
+              v-if="appData?.privacyPolicyUrl"
+              :href="appData.privacyPolicyUrl"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {{ t('label.privacy-policy') }}
+            </a>
           </div>
         </div>
-      </template>
-      <Empty
-        v-if="!loading && !appData && !loadError"
-        :description="t('apps.detail.notFound', { app: fqn })"
-        data-testid="marketplace-app-detail-empty"
-      />
+        <div style="flex: 1; min-width: 0">
+          <h2 style="margin: 0; padding: 16px 16px 0">{{ getEntityName(appData) }}</h2>
+          <AppScreenshots :key="fqn" :screenshots="screenshotItems" />
+          <div style="padding: 16px">
+            <SmMarkdown :markdown="appData?.description ?? ''" />
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>

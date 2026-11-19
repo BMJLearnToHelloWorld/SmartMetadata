@@ -45,13 +45,31 @@ export interface ServiceChildColumnTitles {
 }
 
 /**
+ * Opt-in columns the version page adds to the shared set (pin
+ * `getServiceMainTabColumns`, ServiceMainTabContentUtils.tsx:55-128):
+ * Domains + Data Products for every category, Schedule Interval for
+ * pipelines only, Usage for databases only. The detail page passes no
+ * extras, so its columns are unchanged. A column is included when its
+ * title is provided; the caller owns the kind conditionals.
+ */
+export interface ServiceChildExtraColumnTitles {
+  domains?: string;
+  dataProducts?: string;
+  scheduleInterval?: string;
+  usage?: string;
+}
+
+/**
  * Pin `getServiceMainTabColumns` default visible set: Name +
  * Description + Owners + Tags + Tier + Certification, with the
  * detail page's widths. The version page reuses it verbatim — pin
- * ServiceVersionMainTabContent uses the same column builder.
+ * ServiceVersionMainTabContent uses the same column builder — plus
+ * the opt-in extras in pin order (Schedule Interval after
+ * Description, Domains + Data Products after Owners, Usage last).
  */
 export function serviceChildColumns(
   titles: ServiceChildColumnTitles,
+  extra?: ServiceChildExtraColumnTitles,
 ): TableProps['columns'] {
   return [
     {
@@ -62,10 +80,36 @@ export function serviceChildColumns(
       sorter: compareChildNames,
     },
     { title: titles.description, dataIndex: 'description', key: 'description', width: 300 },
+    ...(extra?.scheduleInterval
+      ? [
+          {
+            title: extra.scheduleInterval,
+            dataIndex: 'scheduleInterval',
+            key: 'scheduleInterval',
+            width: 200,
+          },
+        ]
+      : []),
     { title: titles.owners, dataIndex: 'owners', key: 'owners', width: 280 },
+    ...(extra?.domains
+      ? [{ title: extra.domains, dataIndex: 'domains', key: 'domains', width: 200 }]
+      : []),
+    ...(extra?.dataProducts
+      ? [
+          {
+            title: extra.dataProducts,
+            dataIndex: 'dataProducts',
+            key: 'dataProducts',
+            width: 200,
+          },
+        ]
+      : []),
     { title: titles.tags, dataIndex: 'tags', key: 'tags', width: 240 },
     { title: titles.tier, dataIndex: 'tier', key: 'tier', width: 120 },
     { title: titles.certification, dataIndex: 'certification', key: 'certification', width: 150 },
+    ...(extra?.usage
+      ? [{ title: extra.usage, dataIndex: 'usageSummary', key: 'usageSummary', width: 200 }]
+      : []),
   ];
 }
 

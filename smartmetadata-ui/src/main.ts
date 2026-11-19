@@ -11,11 +11,13 @@ import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import Antd from 'ant-design-vue';
 import App from './App.vue';
+import { reportUncaughtAppError } from './appErrorHandler';
 import { isSsoTestLoginPopup } from './auth/ssoTestLoginPopup';
 import { applyDocumentLang, createAppI18n } from './i18n';
 import type { SupportedLocale } from './i18n/localePreference';
 import { router } from './router';
 import { installDocumentTitle } from './router/title';
+import { installSocketLifecycle } from './socketLifecycle';
 import { useAuthStore } from './stores/auth';
 import 'ant-design-vue/dist/reset.css';
 import './styles/fonts.css';
@@ -40,6 +42,14 @@ if (isSsoTestLoginPopup()) {
   app.use(i18n);
   app.use(Antd);
   installDocumentTitle(router, i18n);
+  // Second net (N-4): errors outside SmErrorBoundary's subtree reach
+  // here; boundary-caught errors never do (onErrorCaptured returns
+  // false), so nothing is recorded twice.
+  app.config.errorHandler = reportUncaughtAppError;
+
+  // Socket lifecycle (contract §6.1): installed before hydrate so the
+  // first profile load already connects; logout disposes via the gate.
+  installSocketLifecycle();
 
   useAuthStore().hydrate();
 

@@ -38,7 +38,7 @@ describe('PermissionPlaceholder (§5.4)', () => {
   it('renders the access-denied title and the description with the given entity', () => {
     const wrapper = mountPlaceholder('View');
     expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
-    expect(wrapper.find('h3').text()).toBe('Access Denied');
+    expect(wrapper.find('.empty-placeholder__title').text()).toBe('Access Denied');
     expect(wrapper.text()).toContain('get the View permission');
   });
 

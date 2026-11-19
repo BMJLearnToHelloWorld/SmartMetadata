@@ -38,6 +38,27 @@ export const SERVICE_COLLECTION_BY_KIND: Record<ServiceKind, string> = {
   security: 'securityServices',
 };
 
+/**
+ * The versions endpoint returns `EntityHistory.versions` as JSON STRINGS
+ * (server `EntityResource.listVersionsInternal` + each service resource's
+ * `decryptOrNullify`/`pojoToJson` mapping, e.g.
+ * DatabaseServiceResource.java:288-323) — the pin parses each element with
+ * `JSON.parse` in `renderVersionButton` (EntityVersionUtils.tsx:181).
+ * Object elements are accepted too, so callers never depend on which
+ * shape a given server build serializes; unparseable elements are
+ * dropped, matching the existing drop of non-record items.
+ */
+function parseVersionRecord(item: unknown): Record<string, unknown> | null {
+  if (typeof item === 'string') {
+    try {
+      return asRecord(JSON.parse(item) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  return asRecord(item);
+}
+
 export async function listServiceVersions(kind: ServiceKind, id: string): Promise<EntityVersion[]> {
   const collection = SERVICE_COLLECTION_BY_KIND[kind];
   const body = await apiRequest<Record<string, unknown>>(
@@ -48,7 +69,7 @@ export async function listServiceVersions(kind: ServiceKind, id: string): Promis
     return [];
   }
   return versions.flatMap((item) => {
-    const rec = asRecord(item);
+    const rec = parseVersionRecord(item);
     if (!rec) {
       return [];
     }

@@ -52,7 +52,7 @@ const shouldAutoRotate = computed(
     !prefersReducedMotion(),
 );
 
-let timer: ReturnType<typeof setInterval> | null = null;
+let timer: number | null = null;
 
 function stopTimer(): void {
   if (timer !== null) {
@@ -90,7 +90,7 @@ function onFocusOut(event: FocusEvent): void {
 <template>
   <div
     role="region"
-    :aria-label="t('apps.detail.screenshots')"
+    :aria-label="t('label.image')"
     data-testid="app-screenshots"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
@@ -126,7 +126,7 @@ function onFocusOut(event: FocusEvent): void {
         v-for="(screenshot, index) in screenshots"
         :key="`dot-${screenshot.key}`"
         type="button"
-        :aria-label="t('apps.detail.screenshotsPage', { index: index + 1 })"
+        :aria-label="`${t('label.page')} ${index + 1}`"
         :aria-pressed="currentIndex === index"
         data-testid="app-screenshots-dot"
         style="background: transparent; border: none; cursor: pointer; padding: 4px; line-height: 0"
@@ -148,7 +148,7 @@ function onFocusOut(event: FocusEvent): void {
         style="background: transparent; border: none; cursor: pointer; color: var(--sm-primary, #005587)"
         @click="isPaused = !isPaused"
       >
-        {{ isPaused ? t('apps.detail.play') : t('apps.detail.pause') }}
+        {{ isPaused ? t('label.play') : t('label.pause') }}
       </button>
     </div>
   </div>

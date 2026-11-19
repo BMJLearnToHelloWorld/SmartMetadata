@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestI18n } from '@/test/i18n';
@@ -21,12 +21,18 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-async function mountBody(initialValue: Record<string, unknown> = {}) {
+async function mountBody(
+  initialValue: Record<string, unknown> = {},
+  fetchImpl?: (input: RequestInfo | URL) => Promise<Response>,
+) {
   const pinia = createPinia();
   setActivePinia(pinia);
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
+      if (fetchImpl) {
+        return fetchImpl(input);
+      }
       const url = String(input);
       if (url.includes('/v1/metadata/types/name/dataProduct/customProperties')) {
         return jsonResponse({
@@ -89,5 +95,54 @@ describe('IntakeFormDesignerBody', () => {
       formFields: Array<{ fieldPath: string }>;
     };
     expect(payload.formFields.map((field) => field.fieldPath)).toEqual(['displayName']);
+  });
+
+  it('keeps both table headers rendered while custom properties load', async () => {
+    let resolveFetch!: (response: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const wrapper = await mountBody({}, async (input) => {
+      if (String(input).includes('customProperties')) {
+        return gate;
+      }
+      return jsonResponse({});
+    });
+    const customTable = wrapper.find('[data-testid="intake-form-custom-table"]');
+    expect(customTable.exists()).toBe(true);
+    expect(customTable.findAll('thead th')).toHaveLength(4);
+    expect(customTable.find('.ant-spin').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="intake-form-native-table"]').exists()).toBe(true);
+    resolveFetch(jsonResponse({ data: [] }));
+    await flushPromises();
+    expect(customTable.find('.ant-spin').exists()).toBe(false);
+  });
+
+  it('toasts a custom-property load failure with no inline error and an empty custom table', async () => {
+    const errorSpy = vi.spyOn(message, 'error');
+    const wrapper = await mountBody({}, async (input) => {
+      if (String(input).includes('customProperties')) {
+        return jsonResponse({ message: 'props down' }, 500);
+      }
+      return jsonResponse({});
+    });
+    expect(errorSpy).toHaveBeenCalledWith('props down');
+    expect(wrapper.find('.ant-typography-danger').exists()).toBe(false);
+    const customTable = wrapper.find('[data-testid="intake-form-custom-table"]');
+    expect(customTable.exists()).toBe(true);
+    expect(customTable.text()).toContain(
+      createTestI18n().global.t('intakeForms.noCustomProperties'),
+    );
+    expect(wrapper.find('[data-testid^="include-"]').exists()).toBe(false);
+    // The native table is unaffected by the custom-property failure.
+    expect(wrapper.text()).toContain('Display name');
+  });
+
+  it('shows the empty message inside the custom table when no properties exist', async () => {
+    const wrapper = await mountBody({}, async () => jsonResponse({ data: [] }));
+    const customTable = wrapper.find('[data-testid="intake-form-custom-table"]');
+    expect(customTable.find('tbody').text()).toContain(
+      createTestI18n().global.t('intakeForms.noCustomProperties'),
+    );
   });
 });

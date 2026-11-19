@@ -26,7 +26,6 @@ import {
   SM_COLOR_CYAN_600,
   SM_COLOR_ERROR,
   SM_COLOR_FUCHSIA_600,
-  SM_COLOR_PRIMARY,
   SM_COLOR_PURPLE_600,
   SM_COLOR_SUCCESS,
   SM_COLOR_WARNING,
@@ -50,16 +49,25 @@ export interface WorkflowNodeIcon {
   color: string;
 }
 
+/**
+ * Q-TH-4: primary-colored node icons read the managed CSS variable
+ * instead of the static SM_COLOR_PRIMARY import, so a custom theme
+ * primary color reaches the workflow canvas/sidebar. Consumers apply
+ * the color as a CSS `color` style, where the variable resolves live;
+ * the other semantic colors stay static (not promised theme faces).
+ */
+const PRIMARY_ICON_COLOR = 'var(--sm-color-primary)';
+
 const FULL_ICON_MAP: Record<string, WorkflowNodeIcon> = {
   startEvent: { icon: markRaw(PlayCircleOutlined), color: SM_COLOR_SUCCESS },
   endEvent: { icon: markRaw(FlagOutlined), color: SM_COLOR_ERROR },
   setEntityAttributeTask: {
     icon: markRaw(SettingOutlined),
-    color: SM_COLOR_PRIMARY,
+    color: PRIMARY_ICON_COLOR,
   },
   setEntityCertificationTask: {
     icon: markRaw(SettingOutlined),
-    color: SM_COLOR_PRIMARY,
+    color: PRIMARY_ICON_COLOR,
   },
   checkEntityAttributesTask: {
     icon: markRaw(CheckSquareOutlined),
@@ -87,7 +95,7 @@ const FULL_ICON_MAP: Record<string, WorkflowNodeIcon> = {
   },
   policyAgentTask: {
     icon: markRaw(SafetyOutlined),
-    color: SM_COLOR_PRIMARY,
+    color: PRIMARY_ICON_COLOR,
   },
   sinkTask: {
     icon: markRaw(CloudSyncOutlined),
@@ -97,7 +105,7 @@ const FULL_ICON_MAP: Record<string, WorkflowNodeIcon> = {
 
 const FALLBACK_ICON: WorkflowNodeIcon = {
   icon: markRaw(StarOutlined),
-  color: SM_COLOR_PRIMARY,
+  color: PRIMARY_ICON_COLOR,
 };
 
 export function getWorkflowNodeIcon(

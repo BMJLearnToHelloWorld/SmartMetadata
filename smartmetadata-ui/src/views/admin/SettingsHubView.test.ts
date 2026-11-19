@@ -62,16 +62,64 @@ function testRouter(): Router {
       { path: '/settings/bots', name: 'admin-bots', component: stub('bots') },
       { path: '/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
       { path: '/settings/sso', name: 'admin-settings-sso', component: stub('sso') },
+      { path: '/admin/users', name: 'admin-users', component: stub('users') },
+      { path: '/admin/settings/system', name: 'admin-settings-system', component: stub('system') },
+      {
+        path: '/governance/classifications',
+        name: 'governance-classifications',
+        component: stub('tags'),
+      },
+      { path: '/ingestion/services', name: 'ingestion-services', component: stub('svc') },
+      { path: '/admin/roles', name: 'admin-roles', component: stub('roles') },
+      { path: '/admin/policies', name: 'admin-policies', component: stub('policies') },
+      {
+        path: '/admin/settings/custom-properties/:tab',
+        name: 'admin-settings-custom-property-type',
+        component: stub('def'),
+      },
+      { path: '/governance/glossaries', name: 'governance-glossaries', component: stub('glos') },
+      { path: '/governance/domains', name: 'governance-domains', component: stub('dom') },
+      {
+        path: '/governance/data-products',
+        name: 'governance-data-products',
+        component: stub('dp'),
+      },
+      { path: '/ingestion/pipelines', name: 'ingestion-pipelines', component: stub('pipe') },
+      { path: '/observability/alerts', name: 'observability-alerts', component: stub('al') },
+      { path: '/announcements', name: 'announcements', component: stub('ann') },
+      { path: '/admin/settings/audit-logs', name: 'admin-settings-audit-logs', component: stub('audit') },
+      { path: '/admin/settings/permission-debugger', name: 'admin-settings-permission-debugger', component: stub('permdbg') },
+      { path: '/admin/settings/governance/intake-forms', name: 'admin-settings-governance-intake-forms', component: stub('intake') },
+      { path: '/admin/settings/governance/task-forms', name: 'admin-settings-governance-task-forms', component: stub('taskforms') },
+      { path: '/admin/settings/governance/glossary-term-relations', name: 'admin-settings-governance-glossary-term-relations', component: stub('termrelations') },
+      { path: '/insights/online-users', name: 'insights-online-users', component: stub('online') },
+      { path: '/admin/users/admins', name: 'admin-admins', component: stub('admins') },
+      { path: '/inbox', name: 'inbox', component: stub('inbox') },
+      // Preferences residual→route (BACKEND_09 / hub pattern)
+      { path: '/admin/settings/preferences/appearance', name: 'settings-preferences-appearance', component: stub('appearance') },
+      { path: '/admin/settings/preferences/email', name: 'settings-preferences-email', component: stub('email') },
+      { path: '/admin/settings/preferences/login', name: 'settings-preferences-login', component: stub('login') },
+      { path: '/admin/settings/preferences/health', name: 'settings-preferences-health', component: stub('health') },
+      { path: '/admin/settings/preferences/profiler', name: 'settings-preferences-profiler', component: stub('profiler') },
+      { path: '/admin/settings/preferences/dq-dimensions', name: 'settings-preferences-dq-dimensions', component: stub('dq') },
+      { path: '/admin/settings/preferences/search', name: 'settings-preferences-search', component: stub('search') },
+      { path: '/admin/settings/preferences/lineage', name: 'settings-preferences-lineage', component: stub('lineage') },
+      { path: '/admin/settings/preferences/om-url', name: 'settings-preferences-om-url', component: stub('omurl') },
+      { path: '/admin/settings/preferences/entity-rules', name: 'settings-preferences-entity-rules', component: stub('rules') },
+      { path: '/admin/settings/preferences/learning', name: 'settings-preferences-learning', component: stub('learn') },
+      { path: '/admin/settings/preferences/app-mode', name: 'settings-preferences-app-mode', component: stub('mode') },
+      { path: '/admin/settings/preferences/glossary', name: 'settings-preferences-glossary', component: stub('gloss') },
+      { path: '/admin/settings/preferences/time-format', name: 'settings-preferences-time-format', component: stub('time') },
     ],
   });
 }
 
-async function mountHub() {
+async function mountHub(locale: 'en-US' | 'zh-CN' = 'en-US') {
   const router = testRouter();
   await router.push('/settings');
   await router.isReady();
   const wrapper = mount(SettingsHubView, {
-    global: { plugins: [router, Antd, createTestI18n('en-US')] },
+    global: { plugins: [router, Antd, createTestI18n(locale)] },
   });
   await flushPromises();
   return { wrapper, router };
@@ -95,12 +143,6 @@ const ALL_VIEW_RESOURCES = [
   'policy',
 ];
 
-function allowAllView(): void {
-  permissionFixture.opsByResource = Object.fromEntries(
-    ALL_VIEW_RESOURCES.map((key) => [key, { ViewAll: true }]),
-  );
-}
-
 beforeEach(() => {
   permissionFixture.isAdminUser = false;
   permissionFixture.authProvider = undefined;
@@ -108,6 +150,82 @@ beforeEach(() => {
   permissionFixture.gate = null;
   permissionFixture.forceEmpty = false;
 });
+
+describe('SettingsHubView', () => {
+  beforeEach(() => {
+    // The merged hub filters categories by permission (shell design);
+    // these sections cases were written against the unfiltered hub, so
+    // they run as an admin with view grants, like the shell cases.
+    permissionFixture.isAdminUser = true;
+    allowAllView();
+  });
+  // 20s cap, not the 5s default: the first mount renders every category
+  // card after the router setup, so under parallel workers it exceeds 5s
+  // — and under peak VM load (load avg > 5 on 4 CPUs) even 10s. Baseline
+  // was already ~4.0s single-run for this test, so the margin was gone
+  // before this batch. Assertions are unchanged; the cap still fails a
+  // genuinely hung mount.
+  it('renders official-like category cards from the registry in pin order', async () => {
+    const { wrapper } = await mountHub();
+    expect(wrapper.find('[data-testid="settings-hub"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="settings-hub-title-heading"]').text()).toBe('Settings');
+    expect(wrapper.find('[data-testid="settings-hub-grid"]').exists()).toBe(true);
+    // One SettingItemCard per registry category, in pin order, keyed by the
+    // category key only — the merged hub renders no per-link testids, so
+    // the old settings-link-* assertions retarget to the card testids.
+    const cards = wrapper.findAll('[data-testid="settings-hub-grid"] .setting-item-card');
+    expect(cards.map((card) => card.attributes('data-testid'))).toEqual([
+      'services',
+      'apps',
+      'notifications',
+      'members',
+      'access',
+      'preferences',
+      'customProperties',
+      'bots',
+      'persona',
+      'sso',
+      'governance',
+    ]);
+    expect(wrapper.find('[data-testid="members"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="access"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="customProperties"]').exists()).toBe(true);
+    // No per-link testids survive on the merged hub (the shell it
+    // 'renders no breadcrumb and no residual UI' asserts the same absence):
+    // no users/teams/bots/classifications/login/email/appearance/services/
+    // policies/custom-properties/audit-logs/persona links.
+    expect(wrapper.find('[data-testid^="settings-link-"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-users"]').exists()).toBe(false);
+    // P1: the standalone teams list page is deleted; teams live under
+    // the members detail surface, so the hub has no teams link.
+    expect(wrapper.find('[data-testid="settings-link-teams"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-custom-properties"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-audit-logs"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-audit-logs"]').exists()).toBe(false);
+    // P2 B5: persona flipped residual → route; the hub shows a card, not a link.
+    expect(wrapper.find('[data-testid="settings-residual-persona"]').exists()).toBe(false);
+  }, 20000);
+
+  // The merged hub navigates by route name through the registry-derived
+  // path: the members card lands on the members category page, NOT
+  // directly on the Users list. The Users list is one level down — the
+  // members.users card on the category page navigates to it by name,
+  // covered by SettingsCategoryView.test.ts
+  // 'navigates a card to its discrete route by name' (admin-users).
+  it('navigates a live card to its category page by name', async () => {
+    const { wrapper, router } = await mountHub();
+    await wrapper.find('[data-testid="members"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'members' });
+  });
+
+
+function allowAllView(): void {
+  permissionFixture.opsByResource = Object.fromEntries(
+    ALL_VIEW_RESOURCES.map((key) => [key, { ViewAll: true }]),
+  );
+}
 
 describe('SettingsHubView (DESIGN §5)', () => {
   it('renders all eleven category cards in pin order for an admin with view grants', async () => {
@@ -168,6 +286,10 @@ describe('SettingsHubView (DESIGN §5)', () => {
   it('filters categories by the two-stage permission rule', async () => {
     // Only user/team visibility: members survives (users/admins), services
     // survives (dataObservability is always visible), everything else drops.
+    // Non-admin: this describe nests under the sections describe, whose
+    // beforeEach grants admin + full view; reset it here, as the shell
+    // version relied on the top-level reset leaving isAdminUser false.
+    permissionFixture.isAdminUser = false;
     permissionFixture.opsByResource = { team: { ViewAll: true }, user: { ViewAll: true } };
     const { wrapper } = await mountHub();
     const cards = wrapper.findAll('[data-testid="settings-hub-grid"] .setting-item-card');
@@ -233,4 +355,70 @@ describe('SettingsHubView (DESIGN §5)', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('admin-apps');
   });
+});
+
+  // The hub has no per-type rows: the Custom Properties card lands on the
+  // category page, where the 26 type cards live. Row-level navigation
+  // (card → type detail with the tab segment) is covered by
+  // SettingsCategoryView.test.ts
+  // 'navigates a custom-properties card to the type page with the tab segment'
+  // (customProperties.tables → admin-settings-custom-property-type, { tab: 'tables' }).
+  it('navigates the custom-properties card to the category page by name', async () => {
+    const { wrapper, router } = await mountHub();
+    await wrapper.find('[data-testid="customProperties"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'customProperties' });
+  });
+
+  it('shows residual sections as text, not fake forms or dead buttons', async () => {
+    const { wrapper } = await mountHub();
+    // Card-DOM equivalents of the old per-link assertions: apps and sso
+    // are hub cards; appearance / search / profiler live under the
+    // Preferences card; inbox has no card at all.
+    expect(wrapper.find('[data-testid="apps"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="sso"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="preferences"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="inbox"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-apps"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-sso"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-apps"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-policies"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-custom-properties"]').exists()).toBe(false);
+    // 07 #14: the inbox hub item is deleted (the inbox route stays
+    // reachable directly); no hub link and no residual entry render.
+    expect(wrapper.find('[data-testid="settings-link-inbox"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-residual-inbox"]').exists()).toBe(false);
+    // B5-8: SSO flipped residual → route.
+    expect(wrapper.find('[data-testid="settings-residual-sso"]').exists()).toBe(false);
+    // Appearance / search / profiler flipped residual → route (Preferences full-chain).
+    expect(wrapper.find('[data-testid="settings-residual-appearance"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-appearance"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-search-settings"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="settings-link-profiler"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Ontology');
+    expect(wrapper.text()).not.toContain('Knowledge');
+  });
+
+  // 20s cap (same load evidence as the first test in this file). R-2: the
+  // 26 custom-properties rows sort by rendered label at render time, so
+  // the zh-CN order differs from the en-US order — but the rows live on
+  // the category page, not the hub. The hub-level check is that the card
+  // navigates to the category page in zh-CN; the sorting itself is
+  // covered by SettingsCategoryView.test.ts
+  // 'renders the customProperties cards sorted by rendered title (§6.2)'
+  // and by src/settings/customProperties.test.ts
+  // 'sorts entries by rendered label at render time, per locale (R-2)',
+  // which asserts the zh-CN order is localeCompare-sorted and differs
+  // from the en-US order.
+  it('navigates the custom-properties card to the category page in zh-CN (R-2 sorting lives on the category page)', async () => {
+    const { wrapper, router } = await mountHub('zh-CN');
+    const card = wrapper.find('[data-testid="customProperties"]');
+    expect(card.exists()).toBe(true);
+    await card.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('settings-category');
+    expect(router.currentRoute.value.params).toEqual({ category: 'customProperties' });
+  }, 20000);
+
 });

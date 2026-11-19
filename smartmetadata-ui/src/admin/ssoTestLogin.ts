@@ -38,8 +38,12 @@ export const SAFE_EDIT_PATHS: readonly string[] = [
 ];
 
 /**
- * The same four values gate the OIDC secret in ssoConfiguration.ts;
- * the two lists state one pin definition and must move together.
+ * Providers that never sign in through OIDC (the complement of the
+ * server's OIDC set, mirroring SystemRepository.isOidcProvider: pin
+ * a3012259ca, SystemRepository.java:1967-1976). Only isBrowserTestLogin
+ * below reads this list; the former twin in ssoConfiguration.ts
+ * (carriesOidcSecret) was removed with that file in the sections
+ * batch, so no second copy remains to keep in sync.
  */
 const NON_OIDC_PROVIDERS: readonly string[] = ['basic', 'ldap', 'openmetadata', 'saml'];
 

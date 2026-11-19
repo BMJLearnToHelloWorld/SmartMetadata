@@ -9,6 +9,7 @@
  */
 import { asBoolean, asNumber, asRecord, asString, parsePaged } from '@/api/json';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import type { SettingSource } from '@/utils/settingsSource';
 import type {
   AllowedFieldValueBoostFields,
   AppConfiguration,
@@ -121,6 +122,22 @@ export function fetchLoginConfig(): Promise<LoginConfiguration> {
   return apiRequest<unknown>('/v1/system/config/loginConfig').then(mapLogin);
 }
 
+/**
+ * The public config endpoint, not the admin-only settings read:
+ * ConfigResource serves the cached preference without authorization
+ * (JwtFilter EXCLUDED_ENDPOINTS), so the custom theme applies to
+ * every user and the login page, as in official theme boot. The
+ * settings endpoint 403s for non-admins, which fail-open would
+ * silently turn into iSmart defaults. Returns the bare preference,
+ * parsed through the display whitelist (settingAsUiTheme). Callers
+ * fail open on rejection; this function itself propagates errors.
+ */
+export function getCustomUiThemePreference(): Promise<UiThemePreference> {
+  return apiRequest<unknown>('/v1/system/config/customUiThemePreference').then(
+    settingAsUiTheme,
+  );
+}
+
 export function fetchServerVersion(): Promise<ServerVersion> {
   return apiRequest<unknown>('/v1/system/version').then((raw) => {
     const rec = asRecord(raw) ?? {};
@@ -135,14 +152,14 @@ export function fetchServerVersion(): Promise<ServerVersion> {
 export function fetchSystemStatus(): Promise<SystemValidationResponse> {
   return apiRequest<unknown>('/v1/system/status').then((raw) => {
     const rec = asRecord(raw) ?? {};
-    return {
-      database: mapStep(rec.database),
-      searchInstance: mapStep(rec.searchInstance),
-      pipelineServiceClient: mapStep(rec.pipelineServiceClient),
-      jwks: mapStep(rec.jwks),
-      migrations: mapStep(rec.migrations),
-      logStorage: mapStep(rec.logStorage),
-    };
+    // Map every key, not just the six named checks: the official
+    // ValidationResponse has an index signature and OmHealthPage renders
+    // one card per key, so unknown checks must be preserved. Non-record
+    // values map to undefined and the view's falsy guard skips them,
+    // mirroring official's `validation &&` guard.
+    return Object.fromEntries(
+      Object.entries(rec).map(([key, value]) => [key, mapStep(value)]),
+    );
   });
 }
 
@@ -171,6 +188,54 @@ export function updateSetting(configType: string, configValue: unknown): Promise
       return { configType, configValue };
     }
     return mapped;
+  });
+}
+
+/**
+ * Official `rest/settingConfigAPI.patchAppConfiguration` (pin a3012259ca):
+ * PATCH the appConfiguration setting with one RFC 6902 `add` op per entry,
+ * targeting only the updated key so other appConfiguration fields are never
+ * overwritten and concurrent edits to other keys do not race.
+ */
+export function patchAppConfiguration(patch: Partial<AppConfiguration>): Promise<void> {
+  const ops: JsonPatchOp[] = Object.entries(patch).map(([key, value]) => ({
+    op: 'add',
+    path: `/${key}`,
+    value,
+  }));
+  return apiRequest<void>('/v1/system/settings/appConfiguration', {
+    method: 'PATCH',
+    json: ops,
+    contentType: 'application/json-patch+json',
+  });
+}
+
+/**
+ * PUT /v1/system/email/test (DR-1): SystemResource.sendTestEmail
+ * answers with a String entity, so the wire body is either the raw
+ * sentence or a JSON-quoted string depending on the JSON provider.
+ * Axios (official) tolerates both — its transformResponse falls back
+ * to the raw body when JSON parsing fails — while apiRequest's
+ * default JSON parse throws on the raw form and would report a sent
+ * email as failed. Read the body as text; callers unquote a JSON
+ * string themselves.
+ */
+export function testEmailConnection(email: string): Promise<string> {
+  return apiRequest<string>('/v1/system/email/test', {
+    method: 'PUT',
+    json: { email },
+    response: 'text',
+  });
+}
+
+/**
+ * Official `rest/settingConfigAPI.restoreSettingsConfig`
+ * (settingConfigAPI.ts:214): PUT /v1/system/settings/reset/{settingType};
+ * returns the bare setting value (see SystemResource.resetSettingToDefault).
+ */
+export async function restoreSettingsConfig(settingType: string): Promise<unknown> {
+  return apiRequest<unknown>(`/v1/system/settings/reset/${settingType}`, {
+    method: 'PUT',
   });
 }
 
@@ -509,31 +574,102 @@ export function patchSecurityConfiguration(ops: JsonPatchOp[]): Promise<void> {
   });
 }
 
+/**
+ * Official securityConfigAPI.applySecurityConfiguration: PUT the whole
+ * SecurityConfiguration document at /v1/system/security/config. Used for
+ * new SSO configurations (after validate) and provider switches; the
+ * endpoint answers 200 with the current configuration document, returned
+ * here with the same section normalization as the GET read.
+ */
+export async function applySecurityConfiguration(
+  candidate: SecurityConfigurationDocument,
+): Promise<SecurityConfigurationDocument> {
+  const raw = await apiRequest<Record<string, unknown>>('/v1/system/security/config', {
+    method: 'PUT',
+    json: candidate,
+  });
+  return {
+    authenticationConfiguration: cloneJsonSection(raw.authenticationConfiguration),
+    authorizerConfiguration: cloneJsonSection(raw.authorizerConfiguration),
+  };
+}
+
 /** Deployment-ownership info for the authenticationConfiguration setting. */
-export interface SettingsSourceInfo {
-  authenticationEditable: boolean;
-  authenticationManagedPaths: string[];
+function mapSettingSource(value: unknown): SettingSource | undefined {
+  const entry = asRecord(value);
+  if (!entry) {
+    return undefined;
+  }
+  const configType = asString(entry.configType);
+  if (!configType) {
+    return undefined;
+  }
+  const source = asString(entry.source);
+  const overridden = Array.isArray(entry.overriddenFields)
+    ? entry.overriddenFields.flatMap((field) => {
+        const rec = asRecord(field);
+        const path = rec ? asString(rec.path) : '';
+        if (!path) {
+          return [];
+        }
+        const envVariable = rec ? asString(rec.envVariable) : '';
+        return [{ path, ...(envVariable ? { envVariable } : {}) }];
+      })
+    : [];
+  return {
+    configType,
+    editable: entry.editable !== false,
+    ...(asString(entry.lastReloadError)
+      ? { lastReloadError: asString(entry.lastReloadError) }
+      : {}),
+    managedPaths: Array.isArray(entry.managedPaths)
+      ? (entry.managedPaths as unknown[]).filter(
+          (p): p is string => typeof p === 'string',
+        )
+      : [],
+    ...(overridden.length > 0 ? { overriddenFields: overridden } : {}),
+    source: source === 'ENV' || source === 'AUTO' ? source : 'DB',
+    ...(asString(entry.sourceVariable)
+      ? { sourceVariable: asString(entry.sourceVariable) }
+      : {}),
+  };
 }
 
 /**
- * GET /v1/system/settings/source: for each dual-source setting, its source
- * and the fields the deployment owns. managedPaths are JSON pointers inside
- * the setting document (e.g. /provider); editable is false when the
- * deployment owns every field of the setting.
+ * Official settingConfigAPI.getSettingsSource: GET
+ * /v1/system/settings/source, the full per-setting source list. Callers
+ * filter to the config types they need; a failed request yields no
+ * sources at the call site (render as database-only).
  */
-export async function getSettingsSource(): Promise<SettingsSourceInfo> {
+export async function getSettingsSource(): Promise<SettingSource[]> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/system/settings/source');
   const settings = Array.isArray(raw.settings) ? raw.settings : [];
-  const auth = settings
-    .map((entry) => asRecord(entry))
-    .find((entry) => entry?.configType === 'authenticationConfiguration');
-  const managed = Array.isArray(auth?.managedPaths)
-    ? (auth?.managedPaths as unknown[]).filter((p): p is string => typeof p === 'string')
-    : [];
-  return {
-    authenticationEditable: auth?.editable !== false,
-    authenticationManagedPaths: managed,
-  };
+  return settings.flatMap((entry) => {
+    const mapped = mapSettingSource(entry);
+    return mapped ? [mapped] : [];
+  });
+}
+
+/**
+ * Official settingConfigAPI.adoptDeploymentConfig: POST
+ * /v1/system/settings/source/{configType}/adopt with {paths}. Replaces
+ * the stored values of `paths` (every overridden field when omitted)
+ * with the deployment values and returns the setting's source status
+ * after the change.
+ */
+export async function adoptDeploymentConfig(
+  configType: string,
+  paths?: string[],
+): Promise<SettingSource> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/system/settings/source/${configType}/adopt`,
+    { method: 'POST', json: { paths } },
+  );
+  const mapped = mapSettingSource(raw);
+  if (!mapped) {
+    throw new Error('Adopt deployment config succeeded but the response had no setting source');
+  }
+  return mapped;
 }
 
 export function settingAsLoginConfig(value: unknown): LoginConfiguration {
@@ -810,7 +946,7 @@ export function buildSearchSettingsPayload(config: SearchSettings): SearchSettin
 /** The keys the entity search form owns, plus the effective ranking it carries. */
 export type EntitySearchDraft = Pick<
   AssetTypeConfiguration,
-  'searchFields' | 'highlightFields' | 'scoreMode' | 'boostMode'
+  'searchFields' | 'highlightFields' | 'scoreMode' | 'boostMode' | 'termBoosts' | 'fieldValueBoosts'
 > & { ranking?: SearchRankingConfiguration };
 
 // ADR:2026-11-18-search-settings-save-preserves-unedited-fields

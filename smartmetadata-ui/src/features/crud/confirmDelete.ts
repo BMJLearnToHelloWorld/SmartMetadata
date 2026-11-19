@@ -15,6 +15,12 @@ export type ConfirmDeleteOptions = {
   okText: string;
   cancelText: string;
   /**
+   * Dialog width in pixels. Official delete Dialogs are 480 wide
+   * (GlossaryTermRelationSettings.tsx:430, IntakeFormsPage.tsx:289);
+   * callers that pass nothing keep the existing antd default.
+   */
+  width?: number;
+  /**
    * P-18: async delete run while the confirm stays open. When provided,
    * Modal.confirm's onOk returns the promise, so antd shows the confirm
    * button loading and keeps the modal open until it settles; a
@@ -33,6 +39,7 @@ export function confirmDelete(options: ConfirmDeleteOptions): Promise<boolean> {
       content: options.content,
       okText: options.okText,
       cancelText: options.cancelText,
+      width: options.width,
       okType: 'danger',
       okButtonProps: { danger: true, type: 'primary' },
       autoFocusButton: 'cancel',

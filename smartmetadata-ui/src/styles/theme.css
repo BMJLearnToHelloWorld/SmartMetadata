@@ -29,6 +29,9 @@
   --sm-trigger-hover-bg: #e3e6e8;
   --sm-menu-hover-bg: #bfd7e6;
   --sm-row-hover-bg: #f7f8fa;
+  /* Q-TH-2(a) (Bai 2026-11-18 18:34): the theme effect overwrites this
+     with the effective custom hoverColor; empty custom value restores
+     this iSmart default (#bfd7e6). Dark form: see the dark block below. */
   --sm-row-selected-bg: #bfd7e6;
   --sm-table-header-bg: #f7f8fa;
   --sm-font-family: Inter, Poppins, sans-serif;
@@ -97,6 +100,18 @@
   --sm-nav-panel: #fafafa;
   --sm-count-pill-bg: #e7f4fb;
   --sm-count-pill-text: #0c7bc0;
+  /* B-QR-1 (settings sections fix-up, 2026-11-19): two feature hues with
+     no product-token counterpart by any role; values preserved verbatim
+     from the scoped styles they replace (no dark override: both render
+     the same value in dark today, and the icon accent is consumed only
+     under a [data-theme='dark'] rule). CSS-only tokens, like the
+     --sm-count-pill-* / --sm-login-* / --sm-home-* vars above (no
+     tokens.ts const). */
+  /* Major-version badge background: pin literal (VersionButton.tsx:86). */
+  --sm-version-major-bg: #eeeaf8;
+  /* Light accent glyph on dark surfaces: solid form of the dark
+     --sm-focus-ring hue rgb(132, 202, 255). */
+  --sm-icon-accent-on-dark: #84caff;
 }
 
 /* Home widget "view more" links: slotted widget bodies carry the
@@ -132,6 +147,14 @@
   --sm-trigger-hover-bg: #2a3140;
   --sm-menu-hover-bg: rgba(0, 85, 135, 0.16);
   --sm-row-hover-bg: #1b1f2a;
+  /* Q-TH-2(a) DARK-BLOCK RULE (Bai 2026-11-18 18:34): when a custom
+     hoverColor is set, the theme effect overwrites this variable with
+     that color derived to rgba AT THE SAME ALPHA (0.16) — see
+     resolveCustomThemeCssVars in src/theme/customTheme.ts. With no
+     custom value this fixed rgba stays. Only --sm-row-selected-bg
+     derives: the --sm-menu-hover-bg rgba two lines above is out of
+     Q-TH-2 scope and stays fixed. Never follow in one place and
+     hardcode in the other without this rule. */
   --sm-row-selected-bg: rgba(0, 85, 135, 0.16);
   --sm-table-header-bg: #1b1f2a;
   --sm-color-success-bg: rgba(3, 152, 85, 0.16);

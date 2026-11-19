@@ -52,7 +52,11 @@ function mapWorkflowDefinition(raw: Record<string, unknown>): WorkflowDefinition
   return {
     id,
     name,
-    displayName: asString(raw.displayName) || undefined,
+    // A server-sent empty displayName must survive: the list card
+    // renders `displayName ?? name` (official getWorkflows mapping,
+    // WorkflowsPage.tsx:194), so only a missing/non-string value
+    // becomes undefined.
+    displayName: typeof raw.displayName === 'string' ? raw.displayName : undefined,
     fullyQualifiedName: asString(raw.fullyQualifiedName) || undefined,
     description: asString(raw.description) || undefined,
   };
@@ -194,9 +198,28 @@ export async function getWorkflowDefinitionByFqn(fqn: string): Promise<WorkflowD
   return mapped;
 }
 
+/**
+ * The official task-form settings page sanitizes a parsed workflow
+ * definition JSON down to exactly these 8 fields and passes them
+ * verbatim (no id, no narrowing) to the workflow update call
+ * (pin:pages/TaskFormSettingsPage/TaskFormSettingsPage.tsx:151-175).
+ * Every field is `unknown` because the values come straight from
+ * JSON.parse and must survive untouched.
+ */
+export interface SanitizedWorkflowDefinition {
+  name: unknown;
+  displayName: unknown;
+  description: unknown;
+  owners: unknown;
+  config: unknown;
+  trigger: unknown;
+  nodes: unknown;
+  edges: unknown;
+}
+
 /** Official workflowDefinitionsAPI: PUT /v1/governance/workflowDefinitions. */
 export async function updateWorkflowDefinition(
-  body: WorkflowDefinitionDetail | WorkflowDefinitionFull,
+  body: WorkflowDefinitionDetail | WorkflowDefinitionFull | SanitizedWorkflowDefinition,
 ): Promise<WorkflowDefinitionDetail> {
   const raw = await apiRequest<unknown>(WORKFLOW_DEFINITIONS_PATH, {
     method: 'PUT',

@@ -37,6 +37,12 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: proxyTarget,
           changeOrigin: true,
+          // P-DEP-2: the single Socket.IO client (stores/socket.ts)
+          // connects websocket-only to /api/v1/push/feed; without ws
+          // proxying the dev server drops the Upgrade and the socket
+          // never connects. Only Upgrade requests are affected; REST
+          // traffic is unchanged.
+          ws: true,
         },
       },
     },

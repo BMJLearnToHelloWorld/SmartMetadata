@@ -15,6 +15,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { LOCALE_STORAGE_KEY } from '@/i18n/localePreference';
 import { useAuthStore } from '@/stores/auth';
 import { useGuardDecisionStore } from '@/stores/guardDecision';
+import { useShellConfigStore } from '@/stores/shellConfig';
 import { createTestI18n } from '@/test/i18n';
 import AppShell from './AppShell.vue';
 
@@ -63,6 +64,7 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
           { path: 'admin/settings', name: 'admin-settings', component: { template: '<div>settings</div>' } },
           { path: 'inbox', name: 'inbox', component: { template: '<div>inbox</div>' } },
           { path: 'admin/users/:id', name: 'admin-user', component: { template: '<div>profile</div>' } },
+          { path: 'users/:fqn', name: 'user-detail', component: { template: '<div>user</div>' } },
         ],
       },
     ],
@@ -87,6 +89,39 @@ describe('AppShell', () => {
 
   afterEach(() => {
     localStorage.clear();
+  });
+
+  it('renders the custom logo URL and falls back to the bundled logo on error', async () => {
+    const { wrapper } = await mountShell();
+    const img = wrapper.find('.shell__logo');
+    const bundledSrc = img.attributes('src');
+    expect(bundledSrc).toMatch(/^data:image\/svg\+xml/);
+    useShellConfigStore().uiThemePreference = {
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/custom-logo.svg' },
+      customTheme: {},
+    };
+    await flushPromises();
+    expect(img.attributes('src')).toBe('https://example.com/custom-logo.svg');
+    await img.trigger('error');
+    expect(img.attributes('src')).toBe(bundledSrc);
+  });
+
+  it('does not re-apply the fallback when the bundled logo also fails', async () => {
+    const { wrapper } = await mountShell();
+    const img = wrapper.find('.shell__logo');
+    useShellConfigStore().uiThemePreference = {
+      customLogoConfig: { customLogoUrlPath: 'https://example.com/custom-logo.svg' },
+      customTheme: {},
+    };
+    await flushPromises();
+    await img.trigger('error');
+    expect(img.attributes('data-fallback-applied')).toBe('true');
+    // Simulate the bundled asset failing too: point the element at a
+    // third URL and fire error again — the guard must leave it alone
+    // (an unguarded handler would overwrite it with the bundled src).
+    (img.element as HTMLImageElement).setAttribute('src', 'https://example.com/other.svg');
+    await img.trigger('error');
+    expect(img.attributes('src')).toBe('https://example.com/other.svg');
   });
 
   it('renders reference left-nav groups, child labels, and footer Settings/Logout', async () => {
@@ -179,7 +214,7 @@ describe('AppShell', () => {
     });
   });
 
-  it('opens the profile from the user menu only when loggedInUser has an id, and offers no Settings entry (D-9)', async () => {
+  it('opens the profile from the user menu only when loggedInUser has a name, and offers no Settings entry (D-9)', async () => {
     const { wrapper, router } = await mountShell();
     const { useAuthStore } = await import('@/stores/auth');
     const auth = useAuthStore();
@@ -193,8 +228,8 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="user-settings-item"]').exists()).toBe(false);
     await wrapper.find('[data-testid="user-profile-item"]').trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.name).toBe('admin-user');
-    expect(router.currentRoute.value.params.id).toBe('u-1');
+    expect(router.currentRoute.value.name).toBe('user-detail');
+    expect(router.currentRoute.value.params.fqn).toBe('alice');
   });
 
   it('hides the header search on My Data so the hero owns search', async () => {

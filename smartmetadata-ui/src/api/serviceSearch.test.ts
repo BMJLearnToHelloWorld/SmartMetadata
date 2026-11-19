@@ -37,6 +37,18 @@ describe('SERVICE_SEARCH_INDEX', () => {
       INGESTION_PIPELINE: 'ingestionPipeline',
       FILE: 'file',
       SPREADSHEET: 'spreadsheet',
+      // Service-entity indexes (01 services batch; pin SearchIndex enum
+      // verbatim, enums/search.enum.ts:36-59).
+      DATABASE_SERVICE: 'databaseService',
+      MESSAGING_SERVICE: 'messagingService',
+      PIPELINE_SERVICE: 'pipelineService',
+      SEARCH_SERVICE: 'searchService',
+      DASHBOARD_SERVICE: 'dashboardService',
+      ML_MODEL_SERVICE: 'mlModelService',
+      STORAGE_SERVICE: 'storageService',
+      DRIVE_SERVICE: 'driveService',
+      API_SERVICE: 'apiService',
+      METADATA_SERVICE: 'metadataService',
     });
   });
 });

@@ -83,16 +83,20 @@ export interface ListMarketplaceAppsQuery {
  * @Path("/v1/apps/marketplace")). This is the installable-app catalog —
  * distinct from the installed-app list (GET /v1/apps) and from the data
  * marketplace overview the product's /marketplace route already serves.
+ * No page-size default is applied here; callers pass the limit they need.
  */
 export function listMarketplaceApps(query: ListMarketplaceAppsQuery = {}): Promise<Paged<MarketplaceApp>> {
   return apiRequest<unknown>('/v1/apps/marketplace', {
     query: {
-      limit: query.limit ?? 25,
+      limit: query.limit,
       after: query.after,
       before: query.before,
     },
   }).then((payload) => parsePaged(payload, mapMarketplaceApp));
 }
+
+/** Pin name for {@link listMarketplaceApps}. */
+export const getMarketPlaceApplicationList = listMarketplaceApps;
 
 /** Official applicationMarketPlaceAPI: GET /v1/apps/marketplace/name/{fqn}. */
 export async function getMarketplaceAppByFqn(
@@ -110,6 +114,9 @@ export async function getMarketplaceAppByFqn(
   }
   return mapped;
 }
+
+/** Pin name for {@link getMarketplaceAppByFqn}. */
+export const getMarketPlaceApplicationByFqn = getMarketplaceAppByFqn;
 
 export interface EntityReferenceInput {
   id: string;
@@ -134,3 +141,6 @@ export interface InstallAppRequest {
 export function installApp(payload: InstallAppRequest): Promise<unknown> {
   return apiRequest<unknown>('/v1/apps', { json: payload });
 }
+
+/** Pin name for {@link installApp}; one implementation, two names. */
+export const installApplication = installApp;
