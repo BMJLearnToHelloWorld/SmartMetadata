@@ -180,12 +180,11 @@ const addServiceTooltip = computed(() =>
 );
 
 function addService(): void {
-  // D-17 coordination reading: the button navigates by route name to the
-  // retained wizard route. The official `/:serviceCategory/add-service`
-  // form and the button switch belong to the partition batch (atomic
-  // handoff, DESIGN §4.5): the wizard view does not read the kind
-  // parameter yet, so this batch must not reroute first.
-  void router.push({ name: 'ingestion-service-add' });
+  // D-17: the official `/:serviceCategory/add-service` form. This
+  // landing page spans every service category, so the wizard opens on
+  // the 'all' sentinel (pin GlobalSettingCategoryPage.tsx:70-75,
+  // ALL_SERVICES_CATEGORY).
+  void router.push({ name: 'ingestion-service-add', params: { serviceCategory: 'all' } });
 }
 </script>
 

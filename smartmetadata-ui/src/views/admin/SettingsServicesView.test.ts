@@ -141,6 +141,11 @@ function testRouter(): Router {
         name: 'ingestion-service',
         component: stub('detail'),
       },
+      {
+        path: '/:serviceCategory/add-service',
+        name: 'ingestion-service-add',
+        component: stub('add'),
+      },
       { path: '/:pathMatch(.*)*', name: 'not-found', component: stub('404') },
     ],
   });
@@ -329,6 +334,23 @@ describe('SettingsServicesView (DESIGN §6.4)', () => {
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service');
     expect(router.currentRoute.value.params).toEqual({ kind: 'database', id: 'database-mysql-prod' });
+  });
+
+  it("shows the Add Service button when the tab grants Create, and navigates to that category's add-service page (D-17)", async () => {
+    permissionFixture.handler = async () => ({ ViewBasic: true, Create: true });
+    const { wrapper, router } = await mountServicesApp('/settings/services/databases');
+    await settle();
+    expect(wrapper.find('[data-testid="add-service-button"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="add-service-button"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices' });
+  });
+
+  it('hides the Add Service button without Create on the tab resource (D-17)', async () => {
+    const { wrapper } = await mountServices('/settings/services/databases');
+    await settle();
+    expect(wrapper.find('[data-testid="add-service-button"]').exists()).toBe(false);
   });
 
   it('surfaces a fetch failure instead of crashing', async () => {

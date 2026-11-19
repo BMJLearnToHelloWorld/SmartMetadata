@@ -164,6 +164,7 @@ import { useAuthStore } from '@/stores/auth';
 import { principalKeyFor, useGuardDecisionStore } from '@/stores/guardDecision';
 import { usePermissionStore } from '@/stores/permissions';
 import {
+  CREATE_USER_GUARD_DECLARATIONS,
   evaluateGuardDeclaration,
   guardDeclarationOf,
   guardDeclarationResources,
@@ -313,16 +314,28 @@ export const router = createRouter({
         // BOTS_PROFILE / CREATE_USER* (AuthenticatedAppRouter.tsx:
         // 505-530). No guard mapping applies: these paths are not
         // admin paths, so ADMIN_ROUTE_RESOURCE is never consulted
-        // for them (see guards.ts); the create-user Create/ conjunction
-        // gap is recorded in the integration report.
+        // for them (see guards.ts); the create-user declarations are
+        // mounted here (R-1): Create(USER) for /create-user, the
+        // Create(USER) AND Create(BOT) conjunction for /create-user/bot
+        // (official AuthenticatedAppRouter.tsx: createBotPermission).
         {
           path: 'users/:fqn/:tab?/:subTab?',
           name: 'user-detail',
           component: UserDetailView,
         },
         { path: 'bots/:fqn', name: 'bot-detail', component: BotDetailView, props: true },
-        { path: 'create-user', name: 'create-user', component: CreateUserPage },
-        { path: 'create-user/bot', name: 'create-user-bot', component: CreateUserPage },
+        {
+          path: 'create-user',
+          name: 'create-user',
+          component: CreateUserPage,
+          meta: { guard: CREATE_USER_GUARD_DECLARATIONS['/create-user'] },
+        },
+        {
+          path: 'create-user/bot',
+          name: 'create-user-bot',
+          component: CreateUserPage,
+          meta: { guard: CREATE_USER_GUARD_DECLARATIONS['/create-user/bot'] },
+        },
         // G-09 (visual comparison): official SETTINGS '/settings'
         // (SettingsRouter at '/settings/*'). The old admin/settings
         // path and the alias are gone (D-1, product compatibility
@@ -476,19 +489,19 @@ export const router = createRouter({
         // alerts/edit/:fqn) — they are NOT nested under `alerts/`.
         // The list/detail faces are the shell batch's canonical
         // records (observability-alerts / announcements); only the
-        // add/edit faces land here, declared 'admin-only' — under the
-        // old table they were admin-only by the /settings prefix.
+        // add/edit faces land here, session-only (R-3): pin mounts the
+        // add/edit faces bare (SettingsRouter.tsx:575-607) and gates
+        // them in the page (useAlertFormAccess: Create for add,
+        // EditAll for edit), so no 'admin-only' declaration here.
         {
           path: 'settings/notifications/add-notification',
           name: 'settings-notification-alert-add',
           component: AlertFormView,
-          meta: { guard: 'admin-only' },
         },
         {
           path: 'settings/notifications/edit-notification/:fqn',
           name: 'settings-notification-alert-edit',
           component: AlertFormView,
-          meta: { guard: 'admin-only' },
         },
         {
           path: 'settings/notifications/announcements/add',
@@ -546,7 +559,7 @@ export const router = createRouter({
         // '/domains' does not exist in the official framework.
         { path: 'governance/domains', name: 'governance-domains', component: DomainsListView, alias: 'domain' },
         {
-          path: 'governance/domains/:id',
+          path: 'governance/domains/:fqn',
           name: 'governance-domain',
           component: DomainDetailView,
           props: true,
@@ -993,7 +1006,17 @@ export const router = createRouter({
         // name and current behaviour (all/kind Tabs/?health= buckets)
         // until the D-1/D-16 deletion ruling executes (DESIGN §4.5).
         { path: 'ingestion/services', name: 'ingestion-services', component: ServicesListView },
-        { path: 'ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+        // D-17: the official add-service form (pin ROUTES.ADD_SERVICE,
+        // `/:serviceCategory/add-service`; AuthenticatedAppRouter.tsx:
+        // 421-427). The category is a ServiceCategory enum value
+        // (databaseServices, …) or the 'all' sentinel
+        // (ALL_SERVICES_CATEGORY); AddServiceView reads
+        // route.params.serviceCategory. The retained interim
+        // `/ingestion/services/add` route is deleted with this change
+        // (Bai 2026-11-19 17:43: wrong inventions are removed with the
+        // change, no separate step); the route name is kept so the
+        // callers below only change path + params.
+        { path: ':serviceCategory/add-service', name: 'ingestion-service-add', component: AddServiceView },
         {
           path: 'ingestion/services/:kind/:id/connection',
           name: 'ingestion-service-connection',

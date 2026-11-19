@@ -302,13 +302,10 @@ export function guardDeclarationOf(metaValue: unknown): GuardDeclaration | undef
 }
 
 /**
- * Reserved create-user declarations (DESIGN §10.6). Contract only:
- * no route or page is registered for these paths in this batch.
- * Rebase note: the sections batch registers the user-detail, bot-detail
- * and create-user routes without declarations (session-only); these
- * declarations remain the contract for when the Create/ conjunction
- * gap is closed. The bot branch is the conjunction Create(user) AND Create(bot)
- * (official AuthenticatedAppRouter.tsx: createBotPermission).
+ * Create-user declarations (DESIGN §10.6, R-1). Mounted as the two
+ * create-user routes' meta.guard (router/index.ts). The bot branch is
+ * the conjunction Create(user) AND Create(bot) (official
+ * AuthenticatedAppRouter.tsx: createBotPermission).
  */
 export const CREATE_USER_GUARD_DECLARATIONS = {
   '/create-user': { resource: 'USER', operation: 'Create' },

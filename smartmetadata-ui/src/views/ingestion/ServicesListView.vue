@@ -494,9 +494,9 @@ function handleAddServiceClick(): void {
   if (!row) {
     return;
   }
-  // Interim until the R-10 category-level wizard URL lands: the
-  // category travels as a query param the wizard reads.
-  void router.push({ name: 'ingestion-service-add', query: { category: row.segment } });
+  // D-17: the category travels as the `:serviceCategory` path param
+  // (pin getAddServicePath: the ServiceCategory enum value).
+  void router.push({ name: 'ingestion-service-add', params: { serviceCategory: row.enumValue } });
 }
 
 function loadForMode(): void {
@@ -776,7 +776,7 @@ onMounted(() => {
           <h1>{{ t('ingestion.services.title') }}</h1>
           <p>{{ t('ingestion.services.lead') }}</p>
         </div>
-        <Button type="primary" data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add' })">
+        <Button type="primary" data-testid="create-service-wizard" @click="router.push({ name: 'ingestion-service-add', params: { serviceCategory: 'all' } })">
           {{ t('ingestion.services.createWizard') }}
         </Button>
       </div>

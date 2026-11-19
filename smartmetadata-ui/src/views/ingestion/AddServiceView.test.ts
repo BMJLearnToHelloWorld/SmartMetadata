@@ -124,7 +124,7 @@ async function mountWizard(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/ingestion/services/add', name: 'ingestion-service-add', component: AddServiceView },
+      { path: '/:serviceCategory/add-service', name: 'ingestion-service-add', component: AddServiceView },
       {
         path: '/ingestion/services/:kind/:id',
         name: 'ingestion-service',
@@ -404,7 +404,7 @@ describe('AddServiceView', () => {
   });
 
   it('renders the connector grid on step 1 with no footer and no doc panel', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper } = await mountWizard('/databaseServices/add-service');
     expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="select-service"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="Postgres"]').exists()).toBe(true);
@@ -420,7 +420,7 @@ describe('AddServiceView', () => {
   });
 
   it('advances to step 2 on a same-category card click with the type header and doc panel', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
@@ -436,44 +436,46 @@ describe('AddServiceView', () => {
   });
 
   it('navigates on category change and refreshes the grid', async () => {
-    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper, router } = await mountWizard('/databaseServices/add-service');
     const selects = wrapper.findAllComponents(Select);
     expect(selects.length).toBeGreaterThan(0);
     await selects[0]?.vm.$emit('update:value', 'messaging');
     await flushPromises();
-    expect(router.currentRoute.value.query).toEqual({ category: 'messaging' });
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'messagingServices' });
+    expect(router.currentRoute.value.query).toEqual({});
     expect(wrapper.find('[data-testid="Kafka"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="Postgres"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
   });
 
   it('navigates with state on a cross-category click from the all grid', async () => {
-    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=all');
+    const { wrapper, router } = await mountWizard('/all/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await waitFor(
       () => wrapper.find('[data-testid="wizard-step-connection"]').exists(),
       'step 2 after cross-category navigation',
     );
-    expect(router.currentRoute.value.query).toEqual({ category: 'databases' });
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices' });
+    expect(router.currentRoute.value.query).toEqual({});
     expect(wrapper.find('[data-testid="add-new-service-container"]').text()).toContain(
       'Postgres Service',
     );
   });
 
   it('preselects step 2 for a valid deep-linked serviceType and ignores invalid ones', async () => {
-    const valid = await mountWizard('/ingestion/services/add?category=databases', {}, {
+    const valid = await mountWizard('/databaseServices/add-service', {}, {
       serviceType: 'Postgres',
     });
     expect(valid.wrapper.find('[data-testid="wizard-step-connection"]').exists()).toBe(true);
     valid.wrapper.unmount();
 
-    const invalid = await mountWizard('/ingestion/services/add?category=databases', {}, {
+    const invalid = await mountWizard('/databaseServices/add-service', {}, {
       serviceType: 'Nope',
     });
     expect(invalid.wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
     invalid.wrapper.unmount();
 
-    const unsupported = await mountWizard('/ingestion/services/add?category=metadata', {}, {
+    const unsupported = await mountWizard('/metadataServices/add-service', {}, {
       serviceType: 'Alation',
     });
     expect(unsupported.wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
@@ -483,7 +485,7 @@ describe('AddServiceView', () => {
   it('walks all three steps and creates the service with owners and no displayName', async () => {
     const successSpy = vi.spyOn(message, 'success');
     const { wrapper, router, calls } = await mountWizard(
-      '/ingestion/services/add?category=databases',
+      '/databaseServices/add-service',
     );
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await waitFor(
@@ -540,7 +542,7 @@ describe('AddServiceView', () => {
     // not in the grid.
     const successSpy = vi.spyOn(message, 'success');
     const { wrapper, router, calls } = await mountWizard(
-      '/ingestion/services/add?category=security',
+      '/securityServices/add-service',
     );
     expect(wrapper.find('[data-testid="wizard-step-type"]').exists()).toBe(true);
     await wrapper
@@ -566,7 +568,7 @@ describe('AddServiceView', () => {
   });
 
   it('drops the entered filter scope when the kind changes (D-L3)', async () => {
-    const { wrapper, calls } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper, calls } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await walkToFilterStep(wrapper);
     await enterSchemaInclude(wrapper);
@@ -594,7 +596,7 @@ describe('AddServiceView', () => {
   }, 60000);
 
   it('drops the entered filter scope when the service type changes within a kind (D-L3)', async () => {
-    const { wrapper, calls } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper, calls } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await walkToFilterStep(wrapper);
     await enterSchemaInclude(wrapper);
@@ -618,7 +620,7 @@ describe('AddServiceView', () => {
   }, 60000);
 
   it('blocks the Next button on a duplicate name with the suggested name', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases', {
+    const { wrapper } = await mountWizard('/databaseServices/add-service', {
       nameLookup: 'duplicate',
     });
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
@@ -637,7 +639,7 @@ describe('AddServiceView', () => {
   });
 
   it('shows the read-only prompt and blocks Next for a blocked connector type', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=mlmodels', {}, {
+    const { wrapper } = await mountWizard('/mlmodelServices/add-service', {}, {
       serviceType: 'CustomMlModel',
     });
     await waitFor(
@@ -651,7 +653,7 @@ describe('AddServiceView', () => {
   });
 
   it('confirms Back: step 2 resets the wizard, step 3 returns to step 2', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await waitFor(
       () => wrapper.find('[data-testid="service-host-port"]').exists(),
@@ -690,7 +692,7 @@ describe('AddServiceView', () => {
 
   it('still navigates to the detail on create failure, using the service name', async () => {
     const errorSpy = vi.spyOn(message, 'error');
-    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases', {
+    const { wrapper, router } = await mountWizard('/databaseServices/add-service', {
       createStatus: 500,
     });
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
@@ -714,7 +716,7 @@ describe('AddServiceView', () => {
   it('still navigates when the AutoPilot trigger fails, with both toasts', async () => {
     const errorSpy = vi.spyOn(message, 'error');
     const successSpy = vi.spyOn(message, 'success');
-    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases', {
+    const { wrapper, router } = await mountWizard('/databaseServices/add-service', {
       triggerStatus: 500,
     });
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
@@ -736,7 +738,7 @@ describe('AddServiceView', () => {
   });
 
   it('shows the connected message on the filter step only after a passed test connection', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await waitFor(
       () => wrapper.find('[data-testid="service-host-port"]').exists(),
@@ -756,7 +758,7 @@ describe('AddServiceView', () => {
   });
 
   it('guards navigation away from step 2 and lets the user stay or leave', async () => {
-    const { wrapper, router } = await mountWizard('/ingestion/services/add?category=databases');
+    const { wrapper, router } = await mountWizard('/databaseServices/add-service');
     await wrapper.find('[data-testid="Postgres"]').trigger('click');
     await waitFor(
       () => wrapper.find('[data-testid="service-host-port"]').exists(),
@@ -782,7 +784,7 @@ describe('AddServiceView', () => {
   });
 
   it('offers only the eleven listable kinds in the step-1 category select, never llm/mcp (C-2)', async () => {
-    const { wrapper } = await mountWizard('/ingestion/services/add');
+    const { wrapper } = await mountWizard('/all/add-service');
     const categorySelect = wrapper
       .findAllComponents(Select)
       .find((candidate) => candidate.attributes('data-testid') === 'service-category');

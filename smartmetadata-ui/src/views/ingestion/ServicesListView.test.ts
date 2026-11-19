@@ -69,7 +69,7 @@ async function mountView(initialPath = '/ingestion/services') {
         component: { template: '<div>svc</div>' },
       },
       {
-        path: '/ingestion/services/add',
+        path: '/:serviceCategory/add-service',
         name: 'ingestion-service-add',
         component: { template: '<div>wizard</div>' },
       },
@@ -179,6 +179,38 @@ describe('ServicesListView', () => {
     await wrapper.find('[data-testid="create-service-wizard"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'all' });
+  });
+
+  it("navigates the single-kind Add Service button to that category's add-service page (D-17)", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/databaseService')) {
+          return jsonResponse(
+            permissionResponse([
+              { operation: 'ViewAll', access: 'allow' },
+              { operation: 'Create', access: 'allow' },
+            ]),
+          );
+        }
+        if (url.includes('/api/v1/services/databaseServices')) {
+          return jsonResponse({
+            data: [{ id: 's1', name: 'warehouse', displayName: 'Warehouse', serviceType: 'Postgres' }],
+            paging: { total: 1 },
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const { wrapper, router } = await mountView();
+    await clickKindTab(wrapper, /database/i);
+    expect(wrapper.find('[data-testid="add-service-button"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="add-service-button"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('ingestion-service-add');
+    expect(router.currentRoute.value.params).toMatchObject({ serviceCategory: 'databaseServices' });
   });
 
   it('opens service detail on name click', async () => {

@@ -6,7 +6,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { Alert, Tabs } from 'ant-design-vue';
+import { Alert, Button, Tabs } from 'ant-design-vue';
 import { permissionFlags } from '@/api/permissions';
 import PageLayout from '@/components/shared/PageLayout.vue';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
@@ -33,6 +33,7 @@ import {
   startCase,
 } from '@/settings/serviceCategoryResources';
 import { resolveServiceTab, type ListableServiceKind } from '@/router/serviceTabSegments';
+import { serviceCategoryByKind } from '@/ingestion/serviceCategories';
 import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
 
 /**
@@ -109,16 +110,27 @@ const viewPermissionLoaded = ref(false);
 const viewPermissionGranted = ref(false);
 let viewPermissionRun = 0;
 
+/**
+ * Pin `addServicePermission` (Services.tsx:243-251): Create on the
+ * resource for the current tab's service category. It is derived from
+ * the same single permission fetch as the view gate (D-17): the header
+ * Add Service button renders only when it holds, and the button lands
+ * on that category's own `/:serviceCategory/add-service` page.
+ */
+const canCreateService = ref(false);
+
 async function loadViewPermission(run: number): Promise<void> {
   try {
     const ops = await permissionStore.getResourcePermission(gateResourceKey.value);
     if (run === viewPermissionRun) {
       viewPermissionGranted.value = permissionFlags(ops).hasViewAccess;
+      canCreateService.value = permissionFlags(ops).canCreate;
       viewPermissionLoaded.value = true;
     }
   } catch {
     if (run === viewPermissionRun) {
       viewPermissionGranted.value = false;
+      canCreateService.value = false;
       viewPermissionLoaded.value = false;
     }
   }
@@ -130,6 +142,7 @@ watch(
     viewPermissionRun += 1;
     viewPermissionLoaded.value = false;
     viewPermissionGranted.value = false;
+    canCreateService.value = false;
     void loadViewPermission(viewPermissionRun);
   },
   { immediate: true },
@@ -138,6 +151,25 @@ watch(
 const viewAllPermission = computed(
   () => viewPermissionLoaded.value && viewPermissionGranted.value,
 );
+
+/** The current tab's ServiceCategory enum value (pin `serviceName`). */
+const serviceCategoryEnumValue = computed(() => {
+  const resolved = resolution.value;
+  if (resolved === null || 'dataObservability' in resolved) {
+    return undefined;
+  }
+  return serviceCategoryByKind(resolved.kind)?.enumValue;
+});
+
+function addService(): void {
+  if (serviceCategoryEnumValue.value === undefined) {
+    return;
+  }
+  void router.push({
+    name: 'ingestion-service-add',
+    params: { serviceCategory: serviceCategoryEnumValue.value },
+  });
+}
 
 /**
  * Pin `permissionValue`: t('label.view-entity', { entity:
@@ -269,6 +301,14 @@ function serviceRow(record: CatalogService) {
     <PermissionPlaceholder v-if="!viewAllPermission" :permission-value="permissionValue" />
     <template v-else>
       <SmBreadcrumb :items="breadcrumbItems" />
+      <div
+        v-if="activeInnerTab === SERVICES_INNER_TAB && !isDataObservability && canCreateService"
+        class="settings-services__header"
+      >
+        <Button type="primary" data-testid="add-service-button" @click="addService">
+          {{ t('settings.services.addNewService') }}
+        </Button>
+      </div>
       <Tabs
         v-if="tabItems.length > 0"
         :active-key="activeInnerTab ?? undefined"

@@ -251,8 +251,8 @@ async function openAnnouncement(item: Announcement): Promise<void> {
   try {
     if (target.entityType === 'domain') {
       const domain = await getDomainByName(target.fullyQualifiedName);
-      if (domain.id) {
-        await router.push({ name: 'governance-domain', params: { id: domain.id } });
+      if (domain.fullyQualifiedName) {
+        await router.push({ name: 'governance-domain', params: { fqn: domain.fullyQualifiedName } });
       }
     } else {
       const product = await getDataProductByName(target.fullyQualifiedName);
@@ -270,7 +270,7 @@ function openHit(hit: SearchHit): void {
     return;
   }
   if (hit.entityType === 'domain') {
-    void router.push({ name: 'governance-domain', params: { id: hit.id } });
+    void router.push({ name: 'governance-domain', params: { fqn: hit.fullyQualifiedName } });
   } else {
     void router.push({ name: 'governance-data-product', params: { id: hit.id } });
   }

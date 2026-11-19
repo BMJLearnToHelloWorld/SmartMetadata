@@ -84,25 +84,29 @@ function onPickerSave(ids: string[], options: DomainPickerOption[]): void {
     </template>
     <span v-if="domains.length === 0" data-testid="no-domain-text">{{ emptyText }}</span>
     <span v-else class="domain-label__list">
-      <RouterLink
-        v-for="domain in domains"
-        :key="domain.id"
-        :to="{ name: 'governance-domain', params: { id: domain.id } }"
-      >
-        {{ getEntityName(domain) }}
-      </RouterLink>
+      <template v-for="domain in domains" :key="domain.id">
+        <RouterLink
+          v-if="domain.fullyQualifiedName"
+          :to="{ name: 'governance-domain', params: { fqn: domain.fullyQualifiedName } }"
+        >
+          {{ getEntityName(domain) }}
+        </RouterLink>
+        <span v-else>{{ getEntityName(domain) }}</span>
+      </template>
     </span>
   </Card>
   <span v-else class="domain-label">
     <span v-if="domains.length === 0" data-testid="no-domain-text">{{ emptyText }}</span>
     <span v-else class="domain-label__list">
-      <RouterLink
-        v-for="domain in domains"
-        :key="domain.id"
-        :to="{ name: 'governance-domain', params: { id: domain.id } }"
-      >
-        {{ getEntityName(domain) }}
-      </RouterLink>
+      <template v-for="domain in domains" :key="domain.id">
+        <RouterLink
+          v-if="domain.fullyQualifiedName"
+          :to="{ name: 'governance-domain', params: { fqn: domain.fullyQualifiedName } }"
+        >
+          {{ getEntityName(domain) }}
+        </RouterLink>
+        <span v-else>{{ getEntityName(domain) }}</span>
+      </template>
     </span>
     <Button
       v-if="canEdit && domains.length === 0"

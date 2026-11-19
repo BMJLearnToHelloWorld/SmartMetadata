@@ -54,12 +54,14 @@ import { getEntityFeedLink } from '@/utils/entityLink';
  * clicks navigate; a deep-linked serviceType is validated and
  * preselects step 2.
  *
- * Interim routing (R-10): the route still carries no category path
- * parameter, so the category resolves from the `serviceCategory`
- * path param when present, else the `?category=` query the services
- * list passes, else `all`. An unresolvable value falls back to
- * `all` here; rejecting llm/mcp/invalid segments with NOT_FOUND is
- * the router line's D-18 work, requested in the batch report.
+ * D-17: the route carries the category as the `:serviceCategory`
+ * path parameter (pin ROUTES.ADD_SERVICE, `/:serviceCategory/add-service`;
+ * a ServiceCategory enum value or the 'all' sentinel). The retired
+ * `?category=` query form is gone with the old route — the param is
+ * always present, so no query fallback remains. An unresolvable value
+ * falls back to `all` here; rejecting llm/mcp/invalid segments with
+ * NOT_FOUND is the router line's D-18 work, requested in the batch
+ * report.
  */
 const { t } = useI18n();
 const route = useRoute();
@@ -84,7 +86,7 @@ const { activeField, activeFieldMeta, handleFieldBlur, handleFieldFocus, resetAc
   useFieldFocus();
 
 const rawCategoryParam = computed(
-  () => (route.params.serviceCategory ?? route.query.category) as string | undefined,
+  () => route.params.serviceCategory as string | undefined,
 );
 
 const resolvedCategory = computed<ServiceCategoryRow | 'all' | undefined>(() =>
@@ -198,11 +200,12 @@ function syncFromRoute(): void {
 watch(rawCategoryParam, syncFromRoute, { immediate: true });
 
 function navigateToCategory(category: ServiceCategoryRow | 'all', serviceType?: string): void {
-  const query =
-    category === 'all' ? { category: 'all' } : { category: category.segment };
+  // D-17: a category switch navigates (pin AddServicePage: cross-category
+  // clicks navigate to that category's own add-service path).
+  const serviceCategory = category === 'all' ? 'all' : category.enumValue;
   void router.push({
     name: 'ingestion-service-add',
-    query,
+    params: { serviceCategory },
     state: serviceType ? { serviceType } : undefined,
   });
 }
