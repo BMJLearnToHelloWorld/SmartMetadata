@@ -26,6 +26,7 @@ from typing import Any
 import pytest
 
 from smartmetadata_ingestion.config import SourceConfig
+from smartmetadata_ingestion.connectors.postgres_lineage import PostgresLineageSource
 from smartmetadata_ingestion.connectors.postgres_query_log import (
     POSTGRES_DBID_FILTER,
     POSTGRES_QUERY_LOG_SPEC,
@@ -354,3 +355,155 @@ def test_timescale_multi_engine_statements_carry_dbid_filter() -> None:
     assert len(history_statements) == 2
     for statement in history_statements:
         assert POSTGRES_DBID_FILTER in statement
+
+
+# --- D-L2c K: statement-source dbid preflight --------------------------------
+
+
+class ProbeCursor:
+    """Fake cursor whose description follows the statement: the dbid
+    probe sees the source's own columns, history reads see COLUMNS.
+    History rows are always empty here; the probe never fetches."""
+
+    def __init__(self, *, source_columns: list[str]) -> None:
+        self._source_columns = source_columns
+        self.statements: list[str] = []
+        self.description: list[tuple] = []
+
+    def execute(self, statement: str, *args: Any) -> None:
+        self.statements.append(statement)
+        if statement.startswith("SELECT dbid FROM"):
+            self.description = [(column, None) for column in self._source_columns]
+        else:
+            self.description = [(column, None) for column in COLUMNS]
+
+    def fetchall(self) -> list[tuple]:
+        return []
+
+    def close(self) -> None:
+        return None
+
+
+def _custom_source_config(**overrides: Any) -> SourceConfig:
+    connection: dict[str, Any] = {
+        "hostPort": "localhost:5432",
+        "username": "u",
+        "database": "db",
+        "queryStatementSource": "my_stats_view",
+    }
+    connection.update(overrides.pop("connection", {}))
+    return _config(connection=connection, **overrides)
+
+
+def test_preflight_missing_dbid_raises_naming_source_and_column() -> None:
+    cursor = ProbeCursor(
+        source_columns=["query", "userid", "mean_exec_time", "calls"]
+    )
+    source = PostgresUsageSource(
+        _custom_source_config(), connect=_factory(cursor)
+    )
+    with pytest.raises(WorkflowError) as excinfo:
+        source.prepare()
+    assert "my_stats_view" in str(excinfo.value)
+    assert "dbid" in str(excinfo.value)
+    # Exactly one probe, in table form, before any history read.
+    assert cursor.statements == ["SELECT dbid FROM my_stats_view LIMIT 0"]
+
+
+def test_preflight_with_dbid_passes_and_history_still_reads() -> None:
+    cursor = ProbeCursor(
+        source_columns=["query", "userid", "mean_exec_time", "calls", "dbid"]
+    )
+    source = PostgresUsageSource(
+        _custom_source_config(), connect=_factory(cursor)
+    )
+    source.prepare()
+    assert cursor.statements == ["SELECT dbid FROM my_stats_view LIMIT 0"]
+    records = list(source.produce())
+    assert records == []
+    assert len(cursor.statements) == 2
+    assert "JOIN pg_catalog.pg_database d ON s.dbid = d.oid" in cursor.statements[1]
+
+
+def test_preflight_skipped_for_default_source() -> None:
+    # The built-in pg_stat_statements always exposes dbid; the
+    # preflight must not touch it — existing prepare() callers with
+    # dbid-less fakes stay unaffected.
+    cursor = FakeCursor([])
+    source = PostgresUsageSource(_config(), connect=_factory(cursor))
+    source.prepare()
+    assert cursor.statements == []
+
+
+def test_preflight_skipped_for_csv_path() -> None:
+    # A CSV run never reads history, so prepare() must not open a
+    # database connection at all.
+    def _must_not_connect() -> Any:
+        raise AssertionError("CSV production must not open a database connection")
+
+    source = PostgresUsageSource(
+        _config(queryLogFilePath="some/log.csv"), connect=_must_not_connect
+    )
+    source.prepare()
+
+
+def test_preflight_skipped_for_timescale_default_source() -> None:
+    cursor = FakeCursor([])
+    source = TimescaleUsageSource(
+        _config("timescale-usage"), connect=_factory(cursor)
+    )
+    source.prepare()
+    assert cursor.statements == []
+
+
+def _lineage_config(**overrides: Any) -> SourceConfig:
+    payload: dict[str, Any] = {
+        "type": "postgres-lineage",
+        "service_name": "svc",
+        "connection": {"hostPort": "localhost:5432", "username": "u", "database": "db"},
+    }
+    payload.update(overrides)
+    return SourceConfig.model_validate(payload)
+
+
+def test_lineage_preflight_missing_dbid_raises_when_query_channel_enabled() -> None:
+    cursor = ProbeCursor(
+        source_columns=["query", "userid", "mean_exec_time", "calls"]
+    )
+    source = PostgresLineageSource(
+        _lineage_config(
+            connection={
+                "hostPort": "localhost:5432",
+                "username": "u",
+                "database": "db",
+                "queryStatementSource": "my_stats_view",
+            },
+            process_query_lineage=True,
+        ),
+        query_log_connect=_factory(cursor),
+    )
+    with pytest.raises(WorkflowError) as excinfo:
+        source.prepare()
+    assert "my_stats_view" in str(excinfo.value)
+    assert "dbid" in str(excinfo.value)
+    assert cursor.statements == ["SELECT dbid FROM my_stats_view LIMIT 0"]
+
+
+def test_lineage_preflight_skipped_when_query_channel_disabled() -> None:
+    cursor = ProbeCursor(
+        source_columns=["query", "userid", "mean_exec_time", "calls"]
+    )
+    source = PostgresLineageSource(
+        _lineage_config(
+            connection={
+                "hostPort": "localhost:5432",
+                "username": "u",
+                "database": "db",
+                "queryStatementSource": "my_stats_view",
+            },
+            process_query_lineage=False,
+        ),
+        query_log_connect=_factory(cursor),
+    )
+    source.prepare()
+    assert cursor.statements == []

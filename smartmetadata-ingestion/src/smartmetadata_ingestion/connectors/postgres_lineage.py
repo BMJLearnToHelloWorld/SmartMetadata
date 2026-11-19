@@ -52,6 +52,8 @@ class PostgresLineageSource(LineageSource):
 
     def prepare(self) -> None:
         postgres.run_connection_test(self._config.connection or {})
+        if self._config.process_query_lineage:
+            self._build_query_log_source().verify_statement_source_dbid()
 
     def _build_view_enumerator(self) -> ViewEnumerator:
         raw = self._config.connection or {}

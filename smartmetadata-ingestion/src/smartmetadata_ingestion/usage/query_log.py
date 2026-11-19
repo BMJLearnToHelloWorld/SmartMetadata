@@ -402,6 +402,59 @@ class QueryLogSource:
             raise WorkflowError(f"unsafe query statement source {value!r}")
         return value
 
+    def verify_statement_source_dbid(self) -> None:
+        """Preflight for history statements that join on a ``dbid``
+        column (Postgres/Timescale): confirm the configured statement
+        source exposes the column, before any history read. A missing
+        column raises ``WorkflowError`` naming the source and the
+        column, instead of failing mid-run with a bare SQL error.
+        The probe is a ``LIMIT 0`` read — no rows, no time-column
+        dependency — through the first usable connection (the
+        connect override when one is set, else the connect builder
+        with the raw connection, never the engine provider, so an
+        all-databases run does not enumerate databases to probe).
+        Two runs never probe: a CSV run reads no history at all, and
+        the spec's built-in default source (``pg_stat_statements``)
+        always exposes ``dbid`` — only a configured custom source
+        carries the risk this preflight exists for."""
+        if self._config.query_log_file_path:
+            return None
+        source = self.statement_source()
+        if not source or source == (self._spec.statement_source_default or ""):
+            return None
+        factory = self._connect_override or self._connect_builder(
+            self._config.connection or {}
+        )
+        statement = f"SELECT dbid FROM {source} LIMIT 0"
+        try:
+            with factory() as connection:
+                cursor = connection.cursor()
+                try:
+                    cursor.execute(statement)
+                    if cursor.description is None:
+                        raise WorkflowError(
+                            f"query statement source {source!r} returned no columns"
+                        )
+                    columns = {
+                        str(column[0]).lower() for column in cursor.description
+                    }
+                finally:
+                    cursor.close()
+        except WorkflowError:
+            raise
+        except Exception as exc:
+            raise WorkflowError(
+                f"could not verify the dbid column of query statement source "
+                f"{source!r}: {exc}"
+            ) from exc
+        if "dbid" not in columns:
+            raise WorkflowError(
+                f"query statement source {source!r} has no dbid column; "
+                "the source must expose dbid (the database OID) for the "
+                "history statement's join to pg_database"
+            )
+        return None
+
     def account_usage(self) -> str:
         """The configured account-usage schema, shape-validated."""
         key = self._spec.account_usage_key

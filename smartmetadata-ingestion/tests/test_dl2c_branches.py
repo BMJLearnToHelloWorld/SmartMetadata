@@ -616,3 +616,90 @@ def test_sqlparse_lateral_view_emits_only_the_base_table() -> None:
     assert not result.failed
     assert _shapes(result) == [(("t",), (False,))]
     assert result.unsupported_names == ()
+
+
+def test_sqlparse_truncated_name_followed_by_list_recovers_later_names() -> None:
+    # D-L2c F: "t.1, u" lexes as Identifier('t') followed by the
+    # IdentifierList '.1, u' (the '.1' float tail hides one level
+    # down). The truncated 't' stays an unsupported occurrence, but
+    # the legal name 'u' hidden in the following list must be
+    # recovered as a normal occurrence, not silently dropped. The
+    # same shape holds for a qualified name and for a truncated
+    # function call.
+    for sql, expected in (
+        ("SELECT * FROM t.1, u", [None, ("u",)]),
+        ("SELECT * FROM sch.tbl.1, u", [None, ("u",)]),
+        ("SELECT * FROM f().1, u", [None, ("u",)]),
+    ):
+        result = extract_sqlparse_names(sql, Dialect.POSTGRES)
+        assert not result.failed, sql
+        assert [
+            name.identifier.texts if name.identifier is not None else None
+            for name in result.names
+        ] == expected, sql
+        assert (
+            result.names[0].unsupported_reason
+            is UnsupportedReason.NON_IDENTIFIER_NAME
+        ), sql
+        assert result.names[1].role is NameRole.SOURCE, sql
+        assert result.names[1].identifier is not None, sql
+    # Same defect one level deeper: the truncation sits on the last
+    # element of a table-position list ("a, t.1, u" lexes as two
+    # lists), and the following list's 'u' must recover as well.
+    deep = extract_sqlparse_names("SELECT * FROM a, t.1, u", Dialect.POSTGRES)
+    assert not deep.failed
+    assert [
+        name.identifier.texts if name.identifier is not None else None
+        for name in deep.names
+    ] == [("a",), None, ("u",)]
+    assert deep.names[1].unsupported_reason is UnsupportedReason.NON_IDENTIFIER_NAME
+    assert deep.names[2].role is NameRole.SOURCE
+
+
+def test_sqlfluff_exasol_create_view_target_is_emitted() -> None:
+    # D-L2c G: Exasol puts the view name in a view_reference segment
+    # the walker did not visit, so the CREATE VIEW target never
+    # reached binding. It must be emitted as TARGET; the SELECT's
+    # source tables stay SOURCE.
+    result = extract_sqlfluff_names(
+        "CREATE VIEW my_view AS SELECT a FROM t", Dialect.EXASOL
+    )
+    assert not result.failed
+    assert _shapes(result) == [(("my_view",), (False,)), (("t",), (False,))]
+    assert _roles(result) == [NameRole.TARGET, NameRole.SOURCE]
+    qualified = extract_sqlfluff_names(
+        "CREATE OR REPLACE VIEW sch.my_view AS SELECT a FROM t", Dialect.EXASOL
+    )
+    assert not qualified.failed
+    assert _shapes(qualified) == [
+        (("sch", "my_view"), (False, False)),
+        (("t",), (False,)),
+    ]
+    assert _roles(qualified) == [NameRole.TARGET, NameRole.SOURCE]
+
+
+def test_sqlfluff_tsql_create_view_target_is_emitted() -> None:
+    # D-L2c G: TSQL puts the view name in an object_reference segment.
+    result = extract_sqlfluff_names(
+        "CREATE VIEW dbo.my_view AS SELECT a FROM t", Dialect.TSQL
+    )
+    assert not result.failed
+    assert _shapes(result) == [
+        (("dbo", "my_view"), (False, False)),
+        (("t",), (False,)),
+    ]
+    assert _roles(result) == [NameRole.TARGET, NameRole.SOURCE]
+    altered = extract_sqlfluff_names(
+        "CREATE OR ALTER VIEW v AS SELECT a FROM t", Dialect.TSQL
+    )
+    assert not altered.failed
+    assert _shapes(altered) == [(("v",), (False,)), (("t",), (False,))]
+    assert _roles(altered) == [NameRole.TARGET, NameRole.SOURCE]
+
+
+def test_sqlfluff_tsql_execute_object_reference_is_not_a_target() -> None:
+    # D-L2c G guard: an object_reference outside CREATE VIEW (a
+    # stored-procedure call) must not be mistaken for a write target.
+    result = extract_sqlfluff_names("EXEC dbo.my_proc", Dialect.TSQL)
+    assert not result.failed
+    assert result.names == ()

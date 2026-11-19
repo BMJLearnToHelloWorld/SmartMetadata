@@ -22,6 +22,7 @@ dropping the query.
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -155,6 +156,7 @@ def parse_sql_statement(
     dialect: Dialect,
     parser_type: QueryParserType,
     timeout_seconds: float = LINEAGE_PARSING_TIMEOUT,
+    on_fidelity_skip: Callable[[str], None] | None = None,
 ) -> ParsedData | None:
     """Parse one query-log record. Returns ``None`` when the parser
     reports no involved tables: the query contributes no counts, no
@@ -164,7 +166,13 @@ def parse_sql_statement(
     structured extraction via the association verdicts: only
     confirmed endpoints enter binding, sorted by segment texts and
     deduplicated; a failed extraction leaves no tables and marks
-    the fidelity skip for the stage to count."""
+    the fidelity skip for the stage to count. When the extraction
+    failed and there are no involved tables, ``on_fidelity_skip``
+    (if given) is called with the winning branch before returning
+    ``None``: with no ``ParsedData`` to carry the count, the
+    callback is the only way the usage chain learns of the skip.
+    The ``None`` return itself never changes — an empty-table
+    ``ParsedData`` would wrongly add a cost record downstream."""
     try:
         parser = LineageParser(
             record.query,
@@ -179,6 +187,8 @@ def parse_sql_statement(
     except Exception as exc:
         raise QueryParseFailure(f"failed to parse query {record.label()}") from exc
     if not involved:
+        if extraction.failed and on_fidelity_skip is not None:
+            on_fidelity_skip(extraction.branch)
         return None
     tables = sorted(
         {

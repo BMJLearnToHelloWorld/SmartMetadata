@@ -83,6 +83,7 @@ class UsageWorkflow(MetadataWorkflow):
     ) -> None:
         self._stage: UsageStage | None = None
         self._bulk_sink: UsageBulkSink | None = None
+        self._binding_resolver: RestTableBindingResolver | None = None
         self._dialect: Dialect = Dialect.ANSI
         self._parser_type: QueryParserType = QueryParserType.AUTO
         self._zero_publish = False
@@ -121,6 +122,7 @@ class UsageWorkflow(MetadataWorkflow):
                 default_schema=default_schema,
                 engine_key=engine_key,
             )
+            self._binding_resolver = binding_resolver
             self._stage = UsageStage(
                 stage_dir=stage_dir,
                 service_name=self.config.source.service_name,
@@ -193,7 +195,25 @@ class UsageWorkflow(MetadataWorkflow):
                 # aggregation cannot distinguish from a real total.
                 self.processor_status.expect(record.kind)
                 try:
-                    parsed = parse_sql_statement(record, self._dialect, self._parser_type)
+                    # The fidelity callback carries the skip for the
+                    # None path: a failed extraction with no involved
+                    # tables yields no ParsedData, so the stage's
+                    # _forward_parse_counts never sees it. The
+                    # lineage chain never passes a callback — it
+                    # counts the skip itself before its early return —
+                    # so the skip is counted once, here, on the usage
+                    # chain only.
+                    resolver = self._binding_resolver
+                    parsed = parse_sql_statement(
+                        record,
+                        self._dialect,
+                        self._parser_type,
+                        on_fidelity_skip=(
+                            resolver.note_fidelity_skip
+                            if resolver is not None
+                            else None
+                        ),
+                    )
                 except QueryParseFailure as exc:
                     failure = self._record_failure(
                         self.processor_status, record.label(), record.kind, exc

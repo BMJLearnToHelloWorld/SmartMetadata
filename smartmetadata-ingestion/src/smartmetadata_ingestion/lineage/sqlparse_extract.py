@@ -405,6 +405,24 @@ def _is_cut_short(parts: _NameParts, following: Any | None) -> bool:
     return parts.segments is not None and _is_dot_tail(following)
 
 
+def _name_cut_short(token: Any, following: Any | None) -> bool:
+    """Whether a table-position token is a proven name the lexer cut
+    short: the same read the emit helpers do, asked without emitting,
+    so the caller can decide whether a following identifier list
+    hides names that still belong to this table position. Derived
+    names and unreadable groups are never cut short."""
+    if isinstance(token, Identifier):
+        parts = _read_identifier(token)
+    elif isinstance(token, Function):
+        parts = _read_function_name(token)
+    else:
+        segment = _name_segment(token)
+        if segment is None:
+            return False
+        parts = _NameParts([segment])
+    return _is_cut_short(parts, following)
+
+
 def _truncated_parts(parts: _NameParts) -> _NameParts:
     """The unsupported outcome for a name the lexer cut short,
     keeping the group's alias and function shape: only the name
@@ -450,6 +468,12 @@ class _StatementWalk:
         # A DELETE statement's first top-level table is its target;
         # subquery tables (inside parentheses) are sources.
         self._delete_target_pending = self._statement_type == "DELETE"
+        # Identifier lists already re-consumed as the tail of a
+        # truncated name: the walker still steps onto them, but their
+        # elements must not be visited a second time through the
+        # non-table path (a function or subquery element would emit
+        # twice).
+        self._reconsumed_lists: set[int] = set()
 
     def run(self) -> list[ExtractedName]:
         self._walk_tokens(self._statement.tokens, depth=0, enclosing_ctes=frozenset())
@@ -565,6 +589,14 @@ class _StatementWalk:
                     depth=depth,
                     enclosing_ctes=enclosing_ctes,
                     following=_following_token(items, index),
+                    # _following_token looks *inside* a following
+                    # identifier list, so the list itself is passed
+                    # separately: a name cut short by such a list
+                    # leaves the list's later names to be recovered.
+                    following_group=(
+                        items[index + 1] if index + 1 < len(items) else None
+                    ),
+                    following_after_group=_following_token(items, index + 1),
                 ):
                     pending = None
                     index += 1
@@ -620,13 +652,20 @@ class _StatementWalk:
         depth: int,
         enclosing_ctes: frozenset[str],
         following: Any | None = None,
+        following_group: Any | None = None,
+        following_after_group: Any | None = None,
     ) -> bool:
         """Consume one token as the pending table position. Returns
         False when the token is not table-shaped, in which case the
         caller clears the pending role and handles the token
         normally. ``following`` is the next significant token after
         this one in the enclosing sequence: a name followed by a
-        dot tail was cut short by the lexer and must not bind."""
+        dot tail was cut short by the lexer and must not bind.
+        ``following_group`` is that next token un-looked-into:
+        when the name was cut short by a following identifier list
+        (``t.1, u``), the list's later names are re-consumed here
+        as table positions; ``following_after_group`` is the peeked
+        token after that list, for the last re-consumed element."""
         if isinstance(token, IdentifierList):
             elements = [
                 element
@@ -656,6 +695,18 @@ class _StatementWalk:
                         is_function=False,
                         reason=UnsupportedReason.NON_IDENTIFIER_NAME,
                     )
+            if (
+                elements
+                and _name_cut_short(elements[-1], following)
+                and isinstance(following_group, IdentifierList)
+            ):
+                self._consume_following_list(
+                    following_group,
+                    role,
+                    depth=depth,
+                    enclosing_ctes=enclosing_ctes,
+                    following=following_after_group,
+                )
             return True
         if isinstance(token, Identifier):
             self._emit_table_identifier(
@@ -665,6 +716,16 @@ class _StatementWalk:
                 enclosing_ctes=enclosing_ctes,
                 following=following,
             )
+            if _name_cut_short(token, following) and isinstance(
+                following_group, IdentifierList
+            ):
+                self._consume_following_list(
+                    following_group,
+                    role,
+                    depth=depth,
+                    enclosing_ctes=enclosing_ctes,
+                    following=following_after_group,
+                )
             return True
         if isinstance(token, Function):
             self._emit_table_function(
@@ -674,6 +735,16 @@ class _StatementWalk:
                 enclosing_ctes=enclosing_ctes,
                 following=following,
             )
+            if _name_cut_short(token, following) and isinstance(
+                following_group, IdentifierList
+            ):
+                self._consume_following_list(
+                    following_group,
+                    role,
+                    depth=depth,
+                    enclosing_ctes=enclosing_ctes,
+                    following=following_after_group,
+                )
             return True
         if isinstance(token, Parenthesis):
             self._walk_tokens(token.tokens, depth=depth + 1, enclosing_ctes=enclosing_ctes)
@@ -681,9 +752,18 @@ class _StatementWalk:
         segment = _name_segment(token)
         if segment is not None:
             parts = _NameParts([segment])
-            if _is_cut_short(parts, following):
+            truncated = _is_cut_short(parts, following)
+            if truncated:
                 parts = _truncated_parts(parts)
             self._emit_parts(parts, role=role, enclosing_ctes=enclosing_ctes)
+            if truncated and isinstance(following_group, IdentifierList):
+                self._consume_following_list(
+                    following_group,
+                    role,
+                    depth=depth,
+                    enclosing_ctes=enclosing_ctes,
+                    following=following_after_group,
+                )
             return True
         if token.ttype in ttypes.Literal:
             # A literal in a table position ("FROM 123", "FROM
@@ -699,6 +779,54 @@ class _StatementWalk:
             )
             return True
         return False
+
+    def _consume_following_list(
+        self,
+        group: IdentifierList,
+        role: NameRole,
+        *,
+        depth: int,
+        enclosing_ctes: frozenset[str],
+        following: Any | None = None,
+    ) -> None:
+        """Re-consume the identifier list that follows a truncated
+        name (``t.1, u``: the list is ``.1, u``). The leading dot
+        tail is the truncated name's own tail — already accounted
+        for by that name's unsupported occurrence — so it is skipped,
+        not re-emitted; every later element is consumed as a table
+        position on its own, failing elements emitting an unsupported
+        occurrence without interrupting the rest. The list is marked
+        re-consumed so the walker's later step onto it does not
+        visit its elements a second time."""
+        elements = [
+            element
+            for element in _significant(group.tokens)
+            if not (element.ttype in ttypes.Punctuation and element.value == ",")
+        ]
+        if elements and _is_dot_tail(elements[0]):
+            elements = elements[1:]
+        self._reconsumed_lists.add(id(group))
+        for position, element in enumerate(elements):
+            element_following = (
+                elements[position + 1]
+                if position + 1 < len(elements)
+                else following
+            )
+            if not self._consume_table_position(
+                element,
+                role,
+                depth=depth,
+                enclosing_ctes=enclosing_ctes,
+                following=element_following,
+            ):
+                self._emit(
+                    identifier=None,
+                    role=role,
+                    alias=None,
+                    alias_quoted=False,
+                    is_function=False,
+                    reason=UnsupportedReason.NON_IDENTIFIER_NAME,
+                )
 
     def _emit_table_identifier(
         self,
@@ -789,6 +917,12 @@ class _StatementWalk:
             self._handle_identifier(token, depth=depth, enclosing_ctes=enclosing_ctes)
             return None
         if isinstance(token, IdentifierList):
+            if id(token) in self._reconsumed_lists:
+                # Already re-consumed as the tail of a truncated
+                # name: its elements were emitted as table positions
+                # there, and visiting them again here would emit
+                # functions and subqueries twice.
+                return None
             for element in _significant(token.tokens):
                 if element.ttype in ttypes.Punctuation and element.value == ",":
                     continue
