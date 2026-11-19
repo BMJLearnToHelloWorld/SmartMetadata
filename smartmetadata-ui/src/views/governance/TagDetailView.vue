@@ -7,6 +7,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Empty, Form, Input, Switch, message } from 'ant-design-vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
 import { listEntityActivity } from '@/api/activity';
@@ -43,7 +46,30 @@ const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const editOpen = ref(false);
+const editKey = ref(0);
+const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
 const saving = ref(false);
+
+/**
+ * D-4: the composable fetches the tag's permissions by FQN and derives
+ * the flags. Official TagPage isEditable is disabled AND deleted, so
+ * both feed the deleted gate. A fetch failure is toasted once via the
+ * error watcher; the flags stay all-false (fail-closed).
+ */
+const tagPermissions = useEntityPermissions(
+  'tag',
+  () => tag.value?.fullyQualifiedName || tag.value?.name || '',
+  { deleted: () => tag.value?.deleted === true || tag.value?.disabled === true },
+);
+const canEditDescription = computed(() => tagPermissions.canEditDescription.value);
+watch(
+  () => tagPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
 const editForm = reactive({
   displayName: '',
   description: '',
@@ -215,6 +241,8 @@ function openEdit(): void {
   }
   editForm.displayName = tag.value.displayName || '';
   editForm.description = tag.value.description || '';
+  // Rebuild the rich-text editor so it opens on the current description.
+  editKey.value += 1;
   editOpen.value = true;
 }
 
@@ -226,7 +254,7 @@ async function onSave(): Promise<void> {
   try {
     await updateTag({
       name: tag.value.name,
-      description: editForm.description.trim(),
+      description: descriptionEditorRef.value?.getEditorContent()?.trim() ?? editForm.description.trim(),
       displayName: editForm.displayName.trim() || undefined,
       classification: tag.value.classification?.fullyQualifiedName || tag.value.classification?.name,
       parent: tag.value.parent?.fullyQualifiedName || tag.value.parent?.name,
@@ -239,6 +267,27 @@ async function onSave(): Promise<void> {
   } finally {
     saving.value = false;
   }
+}
+
+/**
+ * D-3 description-cell save: the same full-body PUT as onSave, built
+ * from the loaded entity (not the edit form, which is only populated
+ * while the page modal is open). Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  await updateTag({
+    name: tag.value.name,
+    description,
+    displayName: tag.value.displayName || undefined,
+    classification: tag.value.classification?.fullyQualifiedName || tag.value.classification?.name,
+    parent: tag.value.parent?.fullyQualifiedName || tag.value.parent?.name,
+  });
+  message.success(t('tags.updated'));
+  await load();
 }
 
 watch(
@@ -287,9 +336,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Tag">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="tag.description"
+              :entity-name="tag.displayName || tag.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -313,7 +365,14 @@ onMounted(() => {
         <Descriptions.Item :label="t('crud.fqn')">{{ tag.fullyQualifiedName }}</Descriptions.Item>
         <Descriptions.Item :label="t('tags.classification')">{{ tag.classification?.name || '—' }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.parent')">{{ tag.parent?.name || '—' }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">
+              <EntityDescriptionCell
+                :description="tag.description"
+                :entity-name="tag.displayName || tag.name"
+                :has-edit-access="canEditDescription"
+                :on-description-update="onDescriptionUpdate"
+              />
+            </Descriptions.Item>
         <Descriptions.Item :label="t('crud.disabled')">
           <Switch
             :checked="tag.disabled === true"
@@ -328,9 +387,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Tag">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="tag.description"
+              :entity-name="tag.displayName || tag.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -355,9 +417,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="Tag">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="tag.description"
+              :entity-name="tag.displayName || tag.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -389,9 +454,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="Tag">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ tag.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="tag.description"
+              :entity-name="tag.displayName || tag.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -425,7 +493,12 @@ onMounted(() => {
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+        <SmRichTextEditor
+              :key="editKey"
+              ref="descriptionEditorRef"
+              :autofocus="true"
+              :initial-value="editForm.description"
+            />
       </Form.Item>
     </Form>
   </FormModal>

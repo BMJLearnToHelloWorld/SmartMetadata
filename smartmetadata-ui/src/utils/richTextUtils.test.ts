@@ -10,11 +10,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   convertMarkdownFormatToHtmlString,
+  DESCRIPTION_PREVIEW_MAX_LENGTH,
   formatClientContent,
   formatServerContent,
   formatValueBasedOnContent,
   getHtmlStringFromMarkdownString,
   getTextFromHtmlString,
+  getTrimmedContent,
   isDescriptionContentEmpty,
   isHTMLString,
   prepareEditorContent,
@@ -187,6 +189,32 @@ describe('getTextFromHtmlString', () => {
   it('strips tags and trims', () => {
     expect(getTextFromHtmlString('<p>Hello <b>world</b></p>')).toBe('Hello world');
     expect(getTextFromHtmlString(undefined)).toBe('');
+  });
+});
+
+describe('getTrimmedContent (official StringUtils)', () => {
+  it('uses the official 350-character preview limit', () => {
+    expect(DESCRIPTION_PREVIEW_MAX_LENGTH).toBe(350);
+  });
+
+  it('drops the last word unconditionally — the caller only invokes it past the limit', () => {
+    // Verbatim official behaviour: the trailing word is dropped even
+    // when nothing was cut. The previewer only calls this when the
+    // content exceeds the limit (hasReadMore), so the drop always
+    // removes a word the limit cut mid-way in practice.
+    expect(getTrimmedContent('short description', 350)).toBe('short');
+  });
+
+  it('keeps only the first three lines', () => {
+    expect(getTrimmedContent('one\ntwo\nthree\nfour\nfive', 350)).toBe('one\ntwo\nthree');
+  });
+
+  it('cuts at the limit and drops the trailing broken word', () => {
+    expect(getTrimmedContent('alpha beta gamma delta', 12)).toBe('alpha beta');
+  });
+
+  it('returns the cut content as-is when it is a single word', () => {
+    expect(getTrimmedContent('superlongword', 5)).toBe('super');
   });
 });
 

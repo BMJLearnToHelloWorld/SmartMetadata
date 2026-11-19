@@ -124,6 +124,20 @@ describe('DataProductDetailView assets + tabs', () => {
     wrapper.unmount();
   });
 
+  it('shows the description edit button with EditAll and hides it without any grant (D-4)', async () => {
+    stubFetch(true);
+    const granted = mountView();
+    await flushPromises();
+    expect(granted.find('[data-testid="edit-description"]').exists()).toBe(true);
+    granted.unmount();
+
+    stubFetch(false);
+    const denied = mountView();
+    await flushPromises();
+    expect(denied.find('[data-testid="edit-description"]').exists()).toBe(false);
+    denied.unmount();
+  });
+
   it('removes an asset with PUT assets/remove after confirmation', async () => {
     stubFetch(true);
     const wrapper = mountView();

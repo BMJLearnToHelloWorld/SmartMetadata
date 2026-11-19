@@ -977,16 +977,8 @@ describe('registry copy (§12)', () => {
       'Ability to configure the {brandName} application to suit your needs.',
     );
     expect(enT('settings.shell.accessDenied')).toBe('Access Denied');
-    expect(enT('settings.shell.noAccessPlaceholder')).toBe(
-      "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
-    );
     expect(enT('settings.shell.entityConfiguration')).toBe('{entity} Configuration');
     expect(enT('settings.shell.learningResource')).toBe('Learning Resource');
-    expect(
-      enT('settings.shell.noAccessPlaceholder', { entity: 'Settings' }),
-    ).toBe(
-      "You don't have necessary permissions. Please check with the admin to get the Settings permission.",
-    );
   });
 
   it('keeps en-US and zh-CN registry/shell leaves in lockstep with matching placeholders', () => {

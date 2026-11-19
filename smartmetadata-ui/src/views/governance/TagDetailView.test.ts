@@ -384,3 +384,91 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     wrapper.unmount();
   });
 });
+
+describe('TagDetailView description gate (D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            description: 'Sensitive data',
+            fullyQualifiedName: 'PII.pii',
+            disabled: false,
+            owners: [],
+          });
+        }
+        if (url.includes('/v1/permissions/tag/name/')) {
+          return jsonResponse({ resource: 'tag', permissions: operations });
+        }
+        if (url.includes('/api/v1/activity/entity/tag/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const wrapper = await mountTag('t1');
+    await flushPromises();
+    await flushPromises();
+    return wrapper;
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button on a disabled tag even with EditDescription', async () => {
+    // Official TagPage isEditable is disabled AND deleted: the
+    // composable's deleted input folds disabled in, revoking Edit*.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            description: 'Sensitive data',
+            fullyQualifiedName: 'PII.pii',
+            disabled: true,
+            owners: [],
+          });
+        }
+        if (url.includes('/v1/permissions/tag/name/')) {
+          return jsonResponse({
+            resource: 'tag',
+            permissions: [{ operation: 'EditDescription', access: 'allow' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const wrapper = await mountTag('t1');
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});

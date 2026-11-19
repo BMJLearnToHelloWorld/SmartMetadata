@@ -8,7 +8,10 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { Button, Descriptions, Empty, message } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
-import { deleteMetricAsync } from '@/api/metrics';
+import { deleteMetricAsync, patchMetric } from '@/api/metrics';
+import { descriptionPatch } from '@/governance/assetPatch';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
@@ -33,11 +36,13 @@ import type { AssetDetail, TagRef } from '@/types/api';
 /**
  * Stage 4 metric detail page, following the official MetricDetailsPage
  * shape (FQN lookup, definition fields, version entry) without inventing
- * what the product API does not serve: there is no /v1/metrics endpoint,
- * so the page reads the metric entity through the Stage 2 entity detail
- * endpoint (metrics collection, metricExpression/metricType/
- * unitOfMeasurement/granularity fields). Delete and single-version detail
- * are residuals, not buttons that call nothing.
+ * what the product API does not serve: the page reads the metric entity
+ * through the Stage 2 entity detail endpoint (metrics collection,
+ * metricExpression/metricType/unitOfMeasurement/granularity fields).
+ * The description write goes through PATCH /v1/metrics/{id} (official
+ * patchMetric; the server is the pin tree, so the endpoint exists with
+ * no backend change). Delete and single-version detail are residuals,
+ * not buttons that call nothing.
  *
  * B-11 tab surface: the five official Metric tabs (METRIC_TABS, from
  * MetricDetailsClassBase.getMetricDetailPageTabsIds) through the
@@ -59,6 +64,44 @@ const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const customProperties = ref<CustomPropertyDef[]>([]);
 const customPropsError = ref('');
+
+/**
+ * D-4: the composable fetches the metric's permissions by FQN and
+ * derives the flags (deleted-gated). A fetch failure is toasted once
+ * via the error watcher; the flags stay all-false (fail-closed).
+ */
+const metricPermissions = useEntityPermissions(
+  'metric',
+  () => metric.value?.fullyQualifiedName || metric.value?.name || '',
+  { deleted: () => metric.value?.deleted === true },
+);
+const canEditDescription = computed(() => metricPermissions.canEditDescription.value);
+/** Custom-properties read gate: null while the permission fetch is still resolving. */
+const customPropsCanView = computed<boolean | null>(() =>
+  metricPermissions.isLoading.value ? null : metricPermissions.can('ViewCustomFields'),
+);
+watch(
+  () => metricPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
+
+/**
+ * D-3 description-cell save: official patchMetric (PATCH /v1/metrics/{id})
+ * with a description JSON Patch. Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!metric.value?.id) {
+    return;
+  }
+  await patchMetric(metric.value.id, descriptionPatch(metric.value.description, description));
+  message.success(t('crud.updated'));
+  await load();
+}
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('metrics.title'), to: { name: 'governance-metrics' } },
@@ -254,9 +297,13 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Metric">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ metric.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="metric.description"
+              :entity-name="metric.displayName || metric.name"
+              :has-edit-access="canEditDescription"
+              :expanded="true"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
             <Descriptions bordered :column="1" size="small">
@@ -302,13 +349,20 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
       </GenericTab>
       <Descriptions v-else-if="metric" bordered size="small" data-testid="metric-details">
         <Descriptions.Item :label="t('crud.description')" :span="3">
-          {{ metric.description || '—' }}
+          <EntityDescriptionCell
+            :description="metric.description"
+            :entity-name="metric.displayName || metric.name"
+            :has-edit-access="canEditDescription"
+            :expanded="true"
+            :on-description-update="onDescriptionUpdate"
+          />
         </Descriptions.Item>
         <Descriptions.Item :label="t('metrics.type')">
           {{ metric.metricType || '—' }}
@@ -334,9 +388,13 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('lineage')" :layout="widgetLayoutFor('lineage')" page-type="Metric">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ metric.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="metric.description"
+              :entity-name="metric.displayName || metric.name"
+              :has-edit-access="canEditDescription"
+              :expanded="true"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
             <Descriptions bordered :column="1" size="small">
@@ -382,6 +440,7 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -397,9 +456,13 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Metric">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ metric.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="metric.description"
+              :entity-name="metric.displayName || metric.name"
+              :has-edit-access="canEditDescription"
+              :expanded="true"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
             <Descriptions bordered :column="1" size="small">
@@ -445,6 +508,7 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -455,9 +519,13 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="Metric">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ metric.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="metric.description"
+              :entity-name="metric.displayName || metric.name"
+              :has-edit-access="canEditDescription"
+              :expanded="true"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
             <Descriptions bordered :column="1" size="small">
@@ -503,6 +571,7 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -520,9 +589,13 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('custom_properties')" :layout="widgetLayoutFor('custom_properties')" page-type="Metric">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ metric.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="metric.description"
+              :entity-name="metric.displayName || metric.name"
+              :has-edit-access="canEditDescription"
+              :expanded="true"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
             <Descriptions bordered :column="1" size="small">
@@ -568,6 +641,7 @@ onMounted(() => {
               :values="metric?.extension || {}"
               :error="customPropsError"
               entity-type="metric"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -578,6 +652,7 @@ onMounted(() => {
         :values="metric?.extension || {}"
         :error="customPropsError"
         entity-type="metric"
+      :can-view="customPropsCanView"
       />
     </template>
   </EntityDetailShell>

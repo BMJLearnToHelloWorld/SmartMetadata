@@ -219,6 +219,19 @@ export interface SchemaRow {
   /** Nested columns of a STRUCT column; absent when there are none, so no
       expand icon is drawn for leaf columns. */
   children?: SchemaRow[];
+  /** Column/field tags carried by the detail payload (D-F2 read side):
+      Classification and Glossary labels together, split by `source` at
+      render time, following the official SchemaTable's single `TAGS`
+      dataIndex shared by its Tags and Glossary Terms columns. */
+  tags?: TagRef[];
+  /** Fully qualified column/field name, used by the D-F2 single-column PUT
+      (`PUT /v1/columns/name/{fqn}`); absent when the payload carries none. */
+  fullyQualifiedName?: string;
+  /** Positional path into the detail payload's row array (top-level index,
+      then one index per nested `children` level): the D-F2 PATCH group
+      (topic / container / searchIndex) builds its JSON Patch path from
+      this instead of re-deriving indexes from the flattened rows. */
+  indexPath?: number[];
 }
 
 export interface PipelineTask {

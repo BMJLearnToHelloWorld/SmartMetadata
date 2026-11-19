@@ -8,15 +8,18 @@ import { useI18n } from 'vue-i18n';
 import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } from 'ant-design-vue';
 import { StarOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
+import SchemaTagCell from '@/views/SchemaTagCell.vue';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
+import type { AssetTagOption, TagSource } from '@/types/governance';
 
 /**
  * One shared piece of asset-detail content, rendered by both the
@@ -80,6 +83,33 @@ export interface AssetDetailPieceContext {
   apiEndpointsError: string;
   apiEndpointSchemaJson: (schema: Record<string, unknown> | undefined) => string;
   onApiEndpointClick: (row: ApiEndpointRef) => void;
+  /**
+   * D-F2 column-tag editing. `schemaTagOptions` is the governance catalog's
+   * tag list (both sources; the cell filters to its own source).
+   * `schemaTagAccess` carries the per-surface derived flags — Table /
+   * Container pass `deleted` into the derivation, Topic / SearchIndex /
+   * DataModel do not (official permission convention per surface) — plus
+   * the cell-level `readOnly` from the entity's deleted flag, so a
+   * soft-deleted entity's cells stay read-only even when the ungated
+   * flags still grant. `onSchemaTagChange` writes one source's selection
+   * for one row (PUT group or PATCH group, decided by the view).
+   */
+  schemaTagOptions: AssetTagOption[];
+  schemaTagAccess: { canEditTags: boolean; canEditGlossaryTerms: boolean; readOnly: boolean };
+  onSchemaTagChange: (row: SchemaRow, source: TagSource, tagFqns: string[]) => void;
+  /**
+   * D-3 description cell: `descriptionAccess` is the derived
+   * canEditDescription for the asset (deleted-gated); `onDescriptionUpdate`
+   * is the view's description PATCH save. `descriptionExpanded` is the
+   * official isDescriptionExpandedFor value for this entity type (the
+   * description starts unfolded when the type's primary collection is
+   * empty). `customPropsCanView` is the custom-properties read gate
+   * (null while the permission fetch resolves).
+   */
+  descriptionAccess: boolean;
+  descriptionExpanded: boolean;
+  onDescriptionUpdate: (description: string) => Promise<unknown> | unknown;
+  customPropsCanView: boolean | null;
 }
 
 const props = withDefaults(
@@ -147,6 +177,24 @@ const showMetricExpression = computed(
         <template v-else-if="column.key === 'dataType'">
           {{ (record as SchemaRow).dataType }}
         </template>
+        <template v-else-if="column.key === 'tags'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Classification"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+          />
+        </template>
+        <template v-else-if="column.key === 'glossaryTerms'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Glossary"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
+          />
+        </template>
         <template v-else>
           {{ (record as SchemaRow).description }}
         </template>
@@ -161,7 +209,37 @@ const showMetricExpression = computed(
       :expandable="context.schemaExpandable"
       :pagination="false"
       size="small"
-    />
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          {{ (record as SchemaRow).name }}
+        </template>
+        <template v-else-if="column.key === 'dataType'">
+          {{ (record as SchemaRow).dataType }}
+        </template>
+        <template v-else-if="column.key === 'tags'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Classification"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+          />
+        </template>
+        <template v-else-if="column.key === 'glossaryTerms'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Glossary"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
+          />
+        </template>
+        <template v-else>
+          {{ (record as SchemaRow).description }}
+        </template>
+      </template>
+    </SmTable>
     <FrequentlyJoinedTables v-if="withJoins && context.entityType === 'table'" :joins="context.asset.joins" />
   </template>
   <template v-else-if="piece === 'related'">
@@ -289,12 +367,19 @@ const showMetricExpression = computed(
       :values="context.asset.extension ?? {}"
       :error="context.customPropsError"
       :entity-type="context.entityType"
+      :can-view="context.customPropsCanView"
     />
   </template>
   <template v-else-if="piece === 'description'">
     <div data-testid="asset-widget-description">
       <Typography.Text type="secondary">{{ t('asset.fields.description') }}</Typography.Text>
-      <Typography.Paragraph>{{ context.asset.description || '—' }}</Typography.Paragraph>
+      <EntityDescriptionCell
+        :description="context.asset.description"
+        :entity-name="context.asset.displayName || context.asset.name"
+        :has-edit-access="context.descriptionAccess"
+        :expanded="context.descriptionExpanded"
+        :on-description-update="context.onDescriptionUpdate"
+      />
     </div>
   </template>
   <template v-else-if="piece === 'tags'">

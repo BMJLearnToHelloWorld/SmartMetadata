@@ -10,6 +10,7 @@ import {Alert, Button, Descriptions, Tag, Tooltip, message} from 'ant-design-vue
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import {
   deleteIngestionPipeline,
   deployIngestionPipeline,
@@ -21,6 +22,7 @@ import {
   triggerIngestionPipeline,
 } from '@/api/ingestionPipelines';
 import type { OperationPermissions } from '@/api/permissions';
+import { getDerivedPermissionFlags } from '@/api/permissions';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -109,20 +111,31 @@ const orchestratorBannerMessage = computed(() => {
   return t('ingestion.pipelines.orchestratorUnreachable');
 });
 
+/**
+ * D-4 derived flags (official getDerivedPermissionFlags): the
+ * pipeline's `deleted` gates every Edit* flag. Deploy/Trigger are
+ * their own operations and are read through the `can` escape hatch,
+ * which applies the same derivation (deleted revokes Edit* only).
+ */
+const pipelineFlags = computed(() =>
+  getDerivedPermissionFlags(pipelineOps.value ?? {}, pipeline.value?.deleted === true),
+);
+const canEditDescription = computed(() => pipelineFlags.value.canEditDescription);
+
 const canDeploy = computed(
   () =>
     pipeline.value?.enabled !== false &&
     !orchestratorUnavailable.value &&
     (permissionStore.isAdminUser ||
-      pipelineOps.value?.EditAll === true ||
-      pipelineOps.value?.Deploy === true),
+      pipelineFlags.value.canEditAll ||
+      pipelineFlags.value.can('Deploy')),
 );
 const canTrigger = computed(
   () =>
     pipeline.value?.enabled !== false &&
     pipeline.value?.deployed === true &&
     !orchestratorUnavailable.value &&
-    (permissionStore.isAdminUser || pipelineOps.value?.Trigger === true),
+    (permissionStore.isAdminUser || pipelineFlags.value.can('Trigger')),
 );
 /**
  * Official PipelineActions editStatusPermission: EditAll or
@@ -135,19 +148,19 @@ const canTrigger = computed(
 const canToggleStatus = computed(
   () =>
     permissionStore.isAdminUser ||
-    pipelineOps.value?.EditAll === true ||
-    pipelineOps.value?.EditIngestionPipelineStatus === true,
+    pipelineFlags.value.canEditAll ||
+    pipelineFlags.value.can('EditIngestionPipelineStatus'),
 );
 /** P-46: edit/delete gates (admin line ORs in, fail-closed). */
 const canEdit = computed(
-  () => permissionStore.isAdminUser || pipelineOps.value?.EditAll === true,
+  () => permissionStore.isAdminUser || pipelineFlags.value.canEditAll,
 );
 const canDelete = computed(
-  () => permissionStore.isAdminUser || pipelineOps.value?.Delete === true,
+  () => permissionStore.isAdminUser || pipelineFlags.value.canDelete,
 );
 /** P-05: Kill renders only for EditAll (or admin); the orchestrator gate disables it, it does not hide it. */
 const canKillPermission = computed(
-  () => permissionStore.isAdminUser || pipelineOps.value?.EditAll === true,
+  () => permissionStore.isAdminUser || pipelineFlags.value.canEditAll,
 );
 const canKill = computed(() => canKillPermission.value && !orchestratorUnavailable.value);
 const canViewLogs = computed(() => !orchestratorUnavailable.value);
@@ -731,7 +744,16 @@ onMounted(() => {
           </span>
         </Descriptions.Item>
         <Descriptions.Item :label="t('ingestion.pipelines.orchestrator')">{{ orchestratorLabel }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ pipeline.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">
+          <!-- D-3 preview-only: the ingestion Pipeline has no description
+               write path (no onDescriptionUpdate), so the cell renders no
+               edit button whatever the permission flags say. -->
+          <EntityDescriptionCell
+            :description="pipeline.description"
+            :entity-name="pipeline.displayName || pipeline.name"
+            :has-edit-access="canEditDescription"
+          />
+        </Descriptions.Item>
       </Descriptions>
       <p class="entity-detail__tab-lead">
         {{ t('ingestion.pipelines.yamlTitle') }}

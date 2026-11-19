@@ -93,8 +93,6 @@ function createDetailI18n() {
         settings: {
           shell: {
             accessDenied: 'Access Denied',
-            noAccessPlaceholder:
-              "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
           },
         },
       },

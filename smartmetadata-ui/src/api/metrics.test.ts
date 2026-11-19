@@ -18,6 +18,7 @@ import {
   listMetrics,
   mapMetricHierarchyItem,
   METRIC_STATUS_VALUES,
+  patchMetric,
 } from './metrics';
 
 function jsonResponse(body: unknown): Response {
@@ -118,6 +119,28 @@ describe('deleteMetricAsync', () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ jobId: 'j1' })));
     await deleteMetricAsync('m1', false);
     expect(lastUrl().searchParams.get('recursive')).toBe('false');
+  });
+});
+
+describe('patchMetric (official rest/metricsAPI.ts)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('PATCHes /v1/metrics/{id} as a JSON Patch document', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: 'm1', name: 'mau' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await patchMetric('m1', [{ op: 'replace', path: '/description', value: 'New copy' }]);
+    // csvImport.test.ts pattern: the stubbed global fetch carries the
+    // real fetch signature, so the call destructure type-checks.
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain('/api/v1/metrics/m1');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual([
+      { op: 'replace', path: '/description', value: 'New copy' },
+    ]);
+    const headers = new Headers(init.headers);
+    expect(headers.get('Content-Type')).toContain('application/json-patch+json');
   });
 });
 

@@ -4089,8 +4089,6 @@ const enUS = {
     shell: {
       hubDescription: 'Ability to configure the {brandName} application to suit your needs.',
       accessDenied: 'Access Denied',
-      noAccessPlaceholder:
-        "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
       entityConfiguration: '{entity} Configuration',
       learningResource: 'Learning Resource',
     },

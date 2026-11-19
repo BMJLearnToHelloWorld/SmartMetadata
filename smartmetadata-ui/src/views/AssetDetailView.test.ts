@@ -12,12 +12,22 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { useAuthStore } from '@/stores/auth';
 import AssetDetailView from './AssetDetailView.vue';
+
+// The description cell's read-only editor applies its content on a 0ms
+// timer (SmRichTextEditor content effect), so mounts wait a real tick
+// before asserting rendered description text.
+async function tick(ms = 10) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  await nextTick();
+}
 
 vi.mock('@vue-flow/core', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/core']());
 vi.mock('@vue-flow/background', async () => (await import('@/test/vueFlowStub')).vueFlowStubs['@vue-flow/background']());
@@ -65,6 +75,7 @@ async function mountView(entityType = 'table', fqn = 'svc.db.schema.orders', que
     global: { plugins: [pinia, router, Antd, createTestI18n()] },
   });
   await flushPromises();
+  await tick();
   return { wrapper, router };
 }
 
@@ -75,6 +86,20 @@ describe('AssetDetailView governance', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        // D-4: the view derives description + custom-properties flags
+        // from this fetch; the stub models an authorized viewer so the
+        // panels render (a denied viewer sees the placeholder instead).
+        if (url.includes('/api/v1/permissions/table/name/')) {
+          return jsonResponse({
+            resource: 'table',
+            permissions: [
+              { operation: 'ViewBasic', access: 'allow' },
+              { operation: 'ViewCustomFields', access: 'allow' },
+              { operation: 'EditDescription', access: 'allow' },
+              { operation: 'EditCustomFields', access: 'allow' },
+            ],
+          });
+        }
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse({
             id: 'tbl-1',
@@ -301,9 +326,18 @@ describe('AssetDetailView governance', () => {
     const { wrapper } = await mountView();
     await wrapper.find('[data-testid="edit-governance"]').trigger('click');
     await flushPromises();
-    const textarea = wrapper.find('[data-testid="asset-description"]');
-    expect(textarea.exists()).toBe(true);
-    await textarea.setValue('Updated description');
+    // D-3: the modal description is a rich-text editor now, not a
+    // TextArea. The testid anchor is kept on its wrapper; the content
+    // is set through the editor's exposed API after its content timer
+    // has landed the initial value, and the stored format is HTML.
+    const editorBox = wrapper.find('[data-testid="asset-description"]');
+    expect(editorBox.exists()).toBe(true);
+    await tick();
+    const editor = editorBox.findComponent(SmRichTextEditor);
+    expect(editor.exists()).toBe(true);
+    (editor.vm as unknown as { setEditorContent: (content: string) => void }).setEditorContent(
+      'Updated description',
+    );
     const ok = wrapper.findAll('button').find((button) => button.text() === 'Save');
     expect(ok).toBeTruthy();
     await ok!.trigger('click');
@@ -311,7 +345,7 @@ describe('AssetDetailView governance', () => {
     const patch = lastMatchingFetch((url, init) => url.includes('/api/v1/tables/tbl-1') && init?.method === 'PATCH');
     expect((patch.init?.headers as Record<string, string>)['Content-Type']).toBe('application/json-patch+json');
     const body = JSON.parse(String(patch.init?.body)) as Array<{ path: string; value?: unknown }>;
-    expect(body.some((op) => op.path === '/description' && op.value === 'Updated description')).toBe(true);
+    expect(body.some((op) => op.path === '/description' && op.value === '<p>Updated description</p>')).toBe(true);
     expect(body.some((op) => op.path === '/tags')).toBe(true);
     expect(body.some((op) => op.path === '/owners')).toBe(true);
     expect(body.some((op) => op.path === '/domains')).toBe(true);
@@ -951,7 +985,12 @@ describe('AssetDetailView usage percentile header (C-F02/C-F03)', () => {
     const urls = stubFetch('allow');
     const { wrapper } = await mountTypedView('topic', 'kafka.events');
     expect(detailUrl(urls, 'topics')).not.toContain('usageSummary');
-    expect(urls.some((url) => url.includes('/api/v1/permissions/'))).toBe(false);
+    // D-F2 still reads the topic's entity permission for the schema-cell
+    // edit flags, but that read must not smuggle usageSummary into the
+    // detail request: the only permissions call is the topic's own.
+    expect(urls.filter((url) => url.includes('/api/v1/permissions/'))).toEqual([
+      expect.stringContaining('/api/v1/permissions/topic/name/kafka.events'),
+    ]);
     wrapper.unmount();
   }, 20000);
 });
@@ -1295,6 +1334,14 @@ describe('AssetDetailView widget layer (B-8)', () => {
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse(BASE_TABLE);
         }
+        if (url.includes('/api/v1/permissions/table/name/')) {
+          // D-4: the widget panel needs the ViewCustomFields grant to
+          // render instead of the no-permission placeholder.
+          return jsonResponse({
+            resource: 'table',
+            permissions: [{ operation: 'ViewCustomFields', access: 'allow' }],
+          });
+        }
         if (url.includes('/customProperties')) {
           return jsonResponse([
             { name: 'retentionDays', displayName: 'Retention days', propertyType: { name: 'integer' } },
@@ -1517,6 +1564,38 @@ describe('AssetDetailView widget layer (B-8)', () => {
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(0);
     expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
+    wrapper.unmount();
+  }, 20000);
+
+  it('renders the D-F2 Tags and Glossary Terms columns with per-source chips (read-only without permission)', async () => {
+    const table = {
+      ...BASE_TABLE,
+      columns: [
+        {
+          name: 'email',
+          dataType: 'VARCHAR',
+          fullyQualifiedName: 'svc.db.schema.orders.email',
+          tags: [
+            { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+            { tagFQN: 'Glossary.Contact', name: 'Contact', source: 'Glossary', labelType: 'Manual' },
+          ],
+        },
+      ],
+    };
+    stubWithDoc(null, tableResponder(table));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    const schemaTable = wrapper.find('[data-testid="asset-schema-table"]');
+    expect(schemaTable.exists()).toBe(true);
+    expect(schemaTable.text()).toContain('Tags');
+    expect(schemaTable.text()).toContain('Glossary Terms');
+    expect(schemaTable.text()).toContain('Email');
+    expect(schemaTable.text()).toContain('Contact');
+    // The permission read 404s in this stub, so the cells fail closed to
+    // read-only: no inline editor is offered.
+    expect(schemaTable.find('[data-testid="schema-tag-select-Classification-email"]').exists()).toBe(false);
+    expect(schemaTable.find('[data-testid="schema-tag-select-Glossary-email"]').exists()).toBe(false);
     wrapper.unmount();
   }, 20000);
 
@@ -2146,4 +2225,76 @@ describe('AssetDetailView widget layer (B-8)', () => {
     expect(tabLabels(wrapper)).toEqual(['Fields']);
     wrapper.unmount();
   }, 20000);
+});
+
+describe('AssetDetailView description gate (D-3/D-4)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithOps(operations: Array<{ operation: string; access: string }>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tables/name/')) {
+          return jsonResponse({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            description: 'Orders fact',
+            owners: [],
+            tags: [],
+            domains: [],
+            columns: [{ name: 'id', dataType: 'BIGINT' }],
+            extension: { retentionDays: 7 },
+            tableType: 'Regular',
+            serviceType: 'BigQuery',
+            service: { name: 'bq', displayName: 'BigQuery Prod' },
+            database: { name: 'analytics' },
+            databaseSchema: { name: 'marts' },
+          });
+        }
+        if (url.includes('/api/v1/permissions/table/name/')) {
+          return jsonResponse({ resource: 'table', permissions: operations });
+        }
+        if (url.includes('/api/v1/metadata/types/name/table/customProperties')) {
+          return jsonResponse([
+            { name: 'retentionDays', displayName: 'Retention days', propertyType: { name: 'integer' } },
+          ]);
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    return mountView('table', 'svc.db.schema.orders');
+  }
+
+  it('shows the description edit button with EditDescription', async () => {
+    const { wrapper } = await mountWithOps([{ operation: 'EditDescription', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('hides the description edit button without EditDescription', async () => {
+    const { wrapper } = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows the custom-properties placeholder without ViewCustomFields', async () => {
+    const { wrapper } = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    // The overview custom-properties tab renders the placeholder
+    // instead of the values table when the read gate denies.
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('renders the custom-properties values with ViewCustomFields', async () => {
+    const { wrapper } = await mountWithOps([{ operation: 'ViewCustomFields', access: 'allow' }]);
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Retention days');
+    wrapper.unmount();
+  });
 });

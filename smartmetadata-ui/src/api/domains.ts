@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDomainRequest, Domain } from '@/types/governance';
@@ -39,6 +39,7 @@ function mapDomain(raw: Record<string, unknown>): Domain | null {
     description: asString(raw.description) || undefined,
     fullyQualifiedName: asString(raw.fullyQualifiedName) || name,
     domainType: asString(raw.domainType) || 'Source-aligned',
+    deleted: asBoolean(raw.deleted),
     parent: parentRefs[0],
     owners: mapEntityRefs(raw.owners),
     experts: mapEntityRefs(raw.experts),

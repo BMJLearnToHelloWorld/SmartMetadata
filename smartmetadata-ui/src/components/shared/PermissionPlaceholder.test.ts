@@ -21,9 +21,15 @@ function mountPlaceholder(permissionValue: string) {
         settings: {
           shell: {
             accessDenied: 'Access Denied',
-            noAccessPlaceholder:
-              "You don't have necessary permissions. Please check with the admin to get the {entity} permission.",
           },
+        },
+        // R-3 scheme A: the component reads message.no-access-placeholder
+        // for the description and settings.shell.accessDenied for the
+        // title; the inline messages must provide both, mirroring the
+        // real locale sentence including the <0> slot the component splits on.
+        message: {
+          'no-access-placeholder':
+            "You don't have necessary permissions. Please check with the admin to get the <0>{entity}</0> permission.",
         },
       },
     },

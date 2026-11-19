@@ -8,6 +8,8 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -30,6 +32,7 @@ import {
 import type { BulkAssetResult } from '@/api/bulkAssets';
 import { usePermissionStore } from '@/stores/permissions';
 import type { OperationPermissions } from '@/api/permissions';
+import { getDerivedPermissionFlags } from '@/api/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import AddAssetsModal from '@/features/crud/AddAssetsModal.vue';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
@@ -58,6 +61,8 @@ const domains = ref<Domain[]>([]);
 const assets = ref<EntityRef[]>([]);
 const activeTab = ref('overview');
 const editOpen = ref(false);
+const editKey = ref(0);
+const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
 const saving = ref(false);
 const ops = ref<OperationPermissions | null>(null);
 const activity = ref<ActivityEvent[]>([]);
@@ -155,12 +160,27 @@ function tagFqnList(tags: readonly TagRef[]): string {
 }
 
 /**
+ * D-4 derived flags (official getDerivedPermissionFlags, DescriptionWidget
+ * shape): the entity's `deleted` gates every Edit* flag.
+ */
+const productFlags = computed(() =>
+  getDerivedPermissionFlags(ops.value ?? {}, product.value?.deleted === true),
+);
+
+/**
  * P1 both lines for asset writes: the server authorizes EDIT_ALL on the
  * data product for assets/add|remove, and isAdminUser ORs in on top. A
- * failed or missing permission fetch denies (fail-closed).
+ * failed or missing permission fetch denies (fail-closed). Field-level
+ * EditAll is read through the derivation now, not raw.
  */
 const canEditAssets = computed(
-  () => permissionStore.isAdminUser || ops.value?.EditAll === true,
+  () => permissionStore.isAdminUser || productFlags.value.canEditAll,
+);
+const canEditDescription = computed(() => productFlags.value.canEditDescription);
+const canEditCustomFields = computed(() => productFlags.value.canEditCustomFields);
+/** Custom-properties read gate: null while the permission fetch is still resolving. */
+const customPropsCanView = computed<boolean | null>(() =>
+  loading.value ? null : ops.value ? productFlags.value.canViewCustomFields : false,
 );
 
 const assetColumns = computed<EntityListColumn[]>(() => [
@@ -308,6 +328,8 @@ function openEdit(): void {
   editForm.domainFqns = product.value.domains
     .map((item) => item.fullyQualifiedName || item.name)
     .filter(Boolean);
+  // Rebuild the rich-text editor so it opens on the current description.
+  editKey.value += 1;
   editOpen.value = true;
 }
 
@@ -319,7 +341,7 @@ async function onSave(): Promise<void> {
   try {
     await updateDataProduct({
       name: product.value.name,
-      description: editForm.description.trim(),
+      description: descriptionEditorRef.value?.getEditorContent()?.trim() ?? editForm.description.trim(),
       displayName: editForm.displayName.trim() || undefined,
       domains: editForm.domainFqns,
     });
@@ -331,6 +353,28 @@ async function onSave(): Promise<void> {
   } finally {
     saving.value = false;
   }
+}
+
+/**
+ * D-3 description-cell save: the same full-body PUT as onSave, built
+ * from the loaded entity (not the edit form, which is only populated
+ * while the page modal is open). Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!product.value) {
+    return;
+  }
+  await updateDataProduct({
+    name: product.value.name,
+    description,
+    displayName: product.value.displayName || undefined,
+    domains: product.value.domains
+      .map((item) => item.fullyQualifiedName || item.name)
+      .filter(Boolean),
+  });
+  message.success(t('governance.dataProducts.updated'));
+  await load();
 }
 
 function openAsset(asset: EntityRef): void {
@@ -382,9 +426,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="DataProduct">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="product.description"
+              :entity-name="product.displayName || product.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
             <Descriptions bordered :column="1" size="small">
@@ -432,6 +479,7 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -439,7 +487,14 @@ onMounted(() => {
       <Descriptions v-else-if="product" bordered :column="1" size="small">
         <Descriptions.Item :label="t('crud.name')">{{ product.name }}</Descriptions.Item>
         <Descriptions.Item :label="t('crud.fqn')">{{ product.fullyQualifiedName }}</Descriptions.Item>
-        <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
+        <Descriptions.Item :label="t('crud.description')">
+              <EntityDescriptionCell
+                :description="product.description"
+                :entity-name="product.displayName || product.name"
+                :has-edit-access="canEditDescription"
+                :on-description-update="onDescriptionUpdate"
+              />
+            </Descriptions.Item>
         <Descriptions.Item :label="t('governance.dataProducts.domains')">
           {{ joinRefNames(product.domains) || '—' }}
         </Descriptions.Item>
@@ -452,9 +507,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="DataProduct">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="product.description"
+              :entity-name="product.displayName || product.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
             <Descriptions bordered :column="1" size="small">
@@ -502,6 +560,7 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -551,9 +610,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="DataProduct">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="product.description"
+              :entity-name="product.displayName || product.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
             <Descriptions bordered :column="1" size="small">
@@ -601,6 +663,7 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -618,9 +681,12 @@ onMounted(() => {
       <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="DataProduct">
         <template #widget="{ contentKey }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.description')">{{ product.description || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <EntityDescriptionCell
+              :description="product.description"
+              :entity-name="product.displayName || product.name"
+              :has-edit-access="canEditDescription"
+              :on-description-update="onDescriptionUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && product" data-testid="widget-domain">
             <Descriptions bordered :column="1" size="small">
@@ -668,6 +734,7 @@ onMounted(() => {
               :values="product?.extension || {}"
               :error="customPropsError"
               entity-type="dataProduct"
+            :can-view="customPropsCanView"
             />
           </div>
         </template>
@@ -676,7 +743,7 @@ onMounted(() => {
       <div style="margin-bottom: 12px">
         <Button
           data-testid="edit-data-product-custom-properties"
-          :disabled="!product || !canEditAssets || !customProperties.length"
+          :disabled="!product || !canEditCustomFields || !customProperties.length"
           @click="propsOpen = true"
         >
           {{ t('asset.editCustomProperties') }}
@@ -687,6 +754,7 @@ onMounted(() => {
         :values="product?.extension || {}"
         :error="customPropsError"
         entity-type="dataProduct"
+      :can-view="customPropsCanView"
       />
       </template>
     </template>
@@ -718,7 +786,12 @@ onMounted(() => {
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+        <SmRichTextEditor
+              :key="editKey"
+              ref="descriptionEditorRef"
+              :autofocus="true"
+              :initial-value="editForm.description"
+            />
       </Form.Item>
       <Form.Item :label="t('governance.dataProducts.domains')" required>
         <Select v-model:value="editForm.domainFqns" mode="multiple">

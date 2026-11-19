@@ -72,6 +72,46 @@ export function domainsPatch(current: unknown, domainIds: string[]): JsonPatchOp
   );
 }
 
+/**
+ * D-F2 PATCH group (official TopicSchema / ContainerDataModel /
+ * SearchIndexFieldsTable write path): the official UI edits a field's
+ * tags in a local copy and PATCHes the whole entity; the product sends
+ * the same change as one JSON Patch op on the field's tags array via
+ * `patchAsset`, which resolves the entity path per type. The base is the
+ * payload field that holds the rows — `messageSchema.schemaFields` for
+ * topics, `dataModel.columns` for containers, `fields` for search
+ * indexes — and each nesting level descends through `children`
+ * (official Field / Column / SearchIndexField all nest under that key).
+ * The value is the row's full tag list (both sources merged, as the
+ * official TagsContainerV2 sends it), never a single-source subset.
+ */
+const COLUMN_TAGS_BASE: Record<string, string> = {
+  topic: '/messageSchema/schemaFields',
+  container: '/dataModel/columns',
+  searchIndex: '/fields',
+};
+
+export function columnTagsPatch(
+  entityType: string,
+  indexPath: number[] | undefined,
+  currentTags: unknown,
+  tags: TagLabelInput[],
+): JsonPatchOp[] {
+  const base = COLUMN_TAGS_BASE[entityType];
+  if (!base) {
+    throw new Error(`No column-tags patch base for entity type "${entityType}"`);
+  }
+  if (!indexPath?.length) {
+    throw new Error('columnTagsPatch requires a non-empty index path');
+  }
+  const path =
+    indexPath.reduce(
+      (acc, index, depth) => (depth === 0 ? `${acc}/${index}` : `${acc}/children/${index}`),
+      base,
+    ) + '/tags';
+  return setFieldPatch(path, currentTags, tags.map(toTagLabel));
+}
+
 /** Custom property values live on the entity `extension` object. */
 export function extensionPatch(current: unknown, extension: Record<string, unknown>): JsonPatchOp[] {
   return setFieldPatch('/extension', current, extension);

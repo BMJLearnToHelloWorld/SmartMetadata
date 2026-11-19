@@ -18,6 +18,8 @@ export interface Glossary {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Soft-delete flag (spec `glossary.json#/deleted`); mapped so permission derivation can gate edits. */
+  deleted?: boolean;
   mutuallyExclusive?: boolean;
   termCount?: number;
   owners: EntityRef[];
@@ -49,6 +51,8 @@ export interface GlossaryTerm {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Soft-delete flag (spec `glossaryTerm.json#/deleted`); mapped so permission derivation can gate edits. */
+  deleted?: boolean;
   glossary?: EntityRef;
   parent?: EntityRef;
   mutuallyExclusive?: boolean;
@@ -119,6 +123,8 @@ export interface ClassificationTag {
   mutuallyExclusive?: boolean;
   /** OM Tag entity field; previously unmapped by the product. */
   disabled?: boolean;
+  /** Soft-delete flag (spec `tag.json#/deleted`), distinct from `disabled`; mapped so permission derivation can gate edits. */
+  deleted?: boolean;
   usageCount?: number;
   owners: EntityRef[];
   /** Reviewers (spec `tag.json#/reviewers`); requested via TAG_FIELDS
@@ -148,6 +154,8 @@ export interface Domain {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Soft-delete flag (spec `domain.json#/deleted`, pin generated `domain.ts`); mapped so permission derivation can gate edits. */
+  deleted?: boolean;
   domainType: string;
   parent?: EntityRef;
   owners: EntityRef[];
@@ -190,6 +198,8 @@ export interface DataProduct {
   displayName?: string;
   description?: string;
   fullyQualifiedName?: string;
+  /** Soft-delete flag (spec `dataProduct.json#/deleted`); mapped so permission derivation can gate edits. */
+  deleted?: boolean;
   domains: EntityRef[];
   owners: EntityRef[];
   /** Reviewers (spec `dataProduct.json#/reviewers`); requested via

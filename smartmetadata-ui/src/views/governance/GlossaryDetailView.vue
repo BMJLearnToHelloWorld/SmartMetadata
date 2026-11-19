@@ -11,6 +11,9 @@ import SmIcon from '@/components/shared/SmIcon.vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
+import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
+import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
@@ -53,6 +56,26 @@ const glossaries = ref<Glossary[]>([]);
 const glossary = ref<Glossary | null>(null);
 const terms = ref<GlossaryTerm[]>([]);
 const activeTab = ref('terms');
+
+/**
+ * D-4: the composable fetches the glossary's permissions by FQN and
+ * derives the flags (deleted-gated). A fetch failure is toasted once
+ * via the error watcher; the flags stay all-false (fail-closed).
+ */
+const glossaryPermissions = useEntityPermissions(
+  'glossary',
+  () => glossary.value?.fullyQualifiedName || glossary.value?.name || '',
+  { deleted: () => glossary.value?.deleted === true },
+);
+const canEditDescription = computed(() => glossaryPermissions.canEditDescription.value);
+watch(
+  () => glossaryPermissions.error.value,
+  (error) => {
+    if (error) {
+      message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+    }
+  },
+);
 
 // Activity feed + tasks (A3, official GlossaryDetails ActivityFeedTab):
 // activity events via listEntityActivity('glossary', fqn), conversations
@@ -176,6 +199,8 @@ function syntheticParentId(record: GlossaryTerm): string {
 }
 
 const editOpen = ref(false);
+const editKey = ref(0);
+const descriptionEditorRef = ref<{ getEditorContent: () => string } | null>(null);
 const createGlossaryOpen = ref(false);
 const createTermOpen = ref(false);
 const saving = ref(false);
@@ -624,6 +649,8 @@ function openEdit(): void {
   editForm.displayName = glossary.value.displayName || '';
   editForm.description = glossary.value.description || '';
   editForm.mutuallyExclusive = Boolean(glossary.value.mutuallyExclusive);
+  // Rebuild the rich-text editor so it opens on the current description.
+  editKey.value += 1;
   editOpen.value = true;
 }
 
@@ -635,7 +662,7 @@ async function onSave(): Promise<void> {
   try {
     await updateGlossary({
       name: glossary.value.name,
-      description: editForm.description.trim(),
+      description: descriptionEditorRef.value?.getEditorContent()?.trim() ?? editForm.description.trim(),
       displayName: editForm.displayName.trim() || undefined,
       mutuallyExclusive: editForm.mutuallyExclusive,
     });
@@ -648,6 +675,27 @@ async function onSave(): Promise<void> {
   } finally {
     saving.value = false;
   }
+}
+
+/**
+ * D-3 description-cell save: the same full-body PUT as onSave, built
+ * from the loaded entity (not the edit form, which is only populated
+ * while the page modal is open). Throws on failure so the cell keeps
+ * its editor open.
+ */
+async function onDescriptionUpdate(description: string): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await updateGlossary({
+    name: glossary.value.name,
+    description,
+    displayName: glossary.value.displayName || undefined,
+    mutuallyExclusive: Boolean(glossary.value.mutuallyExclusive),
+  });
+  message.success(t('governance.glossaries.updated'));
+  await loadDetail(glossary.value.id);
+  await loadGlossaryList();
 }
 
 async function onCreateGlossary(): Promise<void> {
@@ -859,10 +907,14 @@ onMounted(() => {
               <GenericTab v-if="customizedEntryFor(tab.key)" :layout="widgetLayoutFor(tab.key)" page-type="Glossary">
                 <template #widget="{ contentKey }">
                   <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && glossary" data-testid="widget-description">
-                    <Typography.Text strong>{{ t('crud.description') }}</Typography.Text>
-                    <Typography.Paragraph type="secondary">
-                      {{ glossary.description || t('governance.glossaries.noDescription') }}
-                    </Typography.Paragraph>
+                    <EntityDescriptionCell
+                      :description="glossary.description"
+                      :entity-name="glossary.displayName || glossary.name"
+                      :has-edit-access="canEditDescription"
+                      :expanded="(glossary.termCount ?? terms.length) === 0"
+                      :empty-text="t('governance.glossaries.noDescription')"
+                      :on-description-update="onDescriptionUpdate"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.TERMS_TABLE && glossary" data-testid="widget-terms-table">
                     <SmTable
@@ -947,13 +999,15 @@ onMounted(() => {
               <section class="glossary__description" data-testid="glossary-description">
                 <div class="glossary__section-head">
                   <Typography.Text strong>{{ t('crud.description') }}</Typography.Text>
-                  <Button type="link" size="small" data-testid="edit-description" @click="openEdit">
-                    {{ t('crud.edit') }}
-                  </Button>
                 </div>
-                <Typography.Paragraph type="secondary">
-                  {{ glossary.description || t('governance.glossaries.noDescription') }}
-                </Typography.Paragraph>
+                <EntityDescriptionCell
+                  :description="glossary.description"
+                  :entity-name="glossary.displayName || glossary.name"
+                  :has-edit-access="canEditDescription"
+                  :expanded="(glossary.termCount ?? terms.length) === 0"
+                  :empty-text="t('governance.glossaries.noDescription')"
+                  :on-description-update="onDescriptionUpdate"
+                />
               </section>
 
               <div class="glossary__terms-toolbar">
@@ -1266,7 +1320,12 @@ onMounted(() => {
         <Input v-model:value="editForm.displayName" />
       </Form.Item>
       <Form.Item :label="t('crud.description')" required>
-        <Input.TextArea v-model:value="editForm.description" :rows="3" />
+        <SmRichTextEditor
+              :key="editKey"
+              ref="descriptionEditorRef"
+              :autofocus="true"
+              :initial-value="editForm.description"
+            />
       </Form.Item>
       <Form.Item>
         <Checkbox v-model:checked="editForm.mutuallyExclusive">

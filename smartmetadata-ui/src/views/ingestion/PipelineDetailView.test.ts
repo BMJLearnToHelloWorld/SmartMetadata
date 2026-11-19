@@ -169,6 +169,16 @@ describe('PipelineDetailView', () => {
     expect(router.currentRoute.value.name).toBe('ingestion-pipeline-edit');
   });
 
+  it('renders the description preview-only: no edit button even with EditAll (D-3)', async () => {
+    // The ingestion Pipeline has no description write path, so the
+    // cell is preview-only (no onDescriptionUpdate) whatever the
+    // permission flags say. The describe-level stub grants EditAll.
+    const { wrapper } = await mountView();
+    await waitForLoaded(wrapper);
+    expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('shows deploy and trigger actions disabled without a permission grant (P1 fail-closed)', async () => {
     serviceTypeOverride = null;
     pipelineTypeOverride = null;
