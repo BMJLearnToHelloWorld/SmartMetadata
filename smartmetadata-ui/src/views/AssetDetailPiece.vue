@@ -15,6 +15,8 @@ import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
+import ColumnFilter from '@/components/ingestion/ColumnFilter.vue';
+import type { SchemaTagFilterOptions } from '@/utils/schemaTagFilter';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
@@ -98,6 +100,18 @@ export interface AssetDetailPieceContext {
   schemaTagAccess: { canEditTags: boolean; canEditGlossaryTerms: boolean; readOnly: boolean };
   onSchemaTagChange: (row: SchemaRow, source: TagSource, tagFqns: string[]) => void;
   /**
+   * D-F2-2 column-tag filtering. `schemaTagFilterOptions` are the Tags /
+   * Glossary Terms dropdown options collected from the detail rows (the
+   * full, unfiltered set — the server-filtered page is a subset of it);
+   * `onSchemaTableChange` is the antd table change handler the view
+   * owns (server fetch for Table, local pruning for the other four
+   * surfaces); `schemaRowsOverride` replaces `asset.schemaRows` as the
+   * displayed rows when set. The piece never decides which rows to show.
+   */
+  schemaTagFilterOptions: SchemaTagFilterOptions;
+  schemaRowsOverride?: SchemaRow[];
+  onSchemaTableChange: TableProps['onChange'];
+  /**
    * D-3 description cell: `descriptionAccess` is the derived
    * canEditDescription for the asset (deleted-gated); `onDescriptionUpdate`
    * is the view's description PATCH save. `descriptionExpanded` is the
@@ -137,6 +151,11 @@ const glossaryTags = computed(() =>
   props.context.asset.tags.filter((tag) => tag.source === 'Glossary'),
 );
 
+/** D-F2-2: the rows the table shows — the view's override (server-filtered page or locally pruned tree) when set, else the detail rows. */
+const displayedSchemaRows = computed(
+  () => props.context.schemaRowsOverride ?? props.context.asset.schemaRows,
+);
+
 const showMetricExpression = computed(
   () =>
     props.context.entityType === 'metric' &&
@@ -151,7 +170,7 @@ const showMetricExpression = computed(
   <template v-if="piece === 'schemaTable'">
     <Typography.Title :level="5">{{ context.asset.schemaLabel }}</Typography.Title>
     <Empty
-      v-if="!context.asset.schemaRows.length"
+      v-if="!displayedSchemaRows.length"
       data-testid="asset-schema-empty"
       :description="t('asset.schemaEmpty')"
     />
@@ -164,11 +183,20 @@ const showMetricExpression = computed(
       row-key="key"
       test-id="asset-schema-table"
       :columns="context.schemaColumns"
-      :data-source="context.asset.schemaRows"
+      :data-source="displayedSchemaRows"
       :expandable="context.schemaExpandable"
       :pagination="false"
+      :on-change="context.onSchemaTableChange"
       size="small"
     >
+      <template #customFilterDropdown="{ setSelectedKeys, selectedKeys, confirm, column }">
+        <ColumnFilter
+          :options="column.key === 'glossaryTerms' ? context.schemaTagFilterOptions.glossary : context.schemaTagFilterOptions.classification"
+          :selected-values="(selectedKeys as string[])"
+          :confirm="confirm"
+          @change="setSelectedKeys($event)"
+        />
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
           {{ (record as SchemaRow).name }}
@@ -205,11 +233,20 @@ const showMetricExpression = computed(
       row-key="key"
       test-id="asset-schema-table"
       :columns="context.schemaColumns"
-      :data-source="context.asset.schemaRows"
+      :data-source="displayedSchemaRows"
       :expandable="context.schemaExpandable"
       :pagination="false"
+      :on-change="context.onSchemaTableChange"
       size="small"
     >
+      <template #customFilterDropdown="{ setSelectedKeys, selectedKeys, confirm, column }">
+        <ColumnFilter
+          :options="column.key === 'glossaryTerms' ? context.schemaTagFilterOptions.glossary : context.schemaTagFilterOptions.classification"
+          :selected-values="(selectedKeys as string[])"
+          :confirm="confirm"
+          @change="setSelectedKeys($event)"
+        />
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
           {{ (record as SchemaRow).name }}

@@ -1599,6 +1599,148 @@ describe('AssetDetailView widget layer (B-8)', () => {
     wrapper.unmount();
   }, 20000);
 
+  it('filters Table columns server-side when a tag is picked in the Tags column (D-F2-2)', async () => {
+    const table = {
+      ...BASE_TABLE,
+      columns: [
+        {
+          name: 'email',
+          dataType: 'VARCHAR',
+          fullyQualifiedName: 'svc.db.schema.orders.email',
+          tags: [
+            { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' },
+            { tagFQN: 'Glossary.Contact', name: 'Contact', source: 'Glossary', labelType: 'Manual' },
+          ],
+        },
+        { name: 'id', dataType: 'BIGINT', fullyQualifiedName: 'svc.db.schema.orders.id' },
+      ],
+    };
+    stubWithDoc(null, (url) => {
+      if (url.includes('/columns/search')) {
+        return jsonResponse({ data: [table.columns[0]], paging: { total: 1 } });
+      }
+      return tableResponder(table)(url);
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    const schemaTable = wrapper.find('[data-testid="asset-schema-table"]');
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(2);
+    const triggers = schemaTable.findAll('.ant-table-filter-trigger');
+    expect(triggers).toHaveLength(2);
+    await triggers[0].trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const options = [...document.querySelectorAll('.column-filter__row input')];
+    expect(options).toHaveLength(1);
+    (options[0] as HTMLElement).click();
+    await settle(wrapper);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await settle(wrapper);
+    const searchUrls = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => String(call[0]))
+      .filter((url) => url.includes('/columns/search'));
+    expect(searchUrls).toHaveLength(1);
+    expect(decodeURIComponent(searchUrls[0])).toContain('tags=PII.Email');
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(1);
+    expect(schemaTable.text()).toContain('email');
+    wrapper.unmount();
+  }, 20000);
+
+  it('returns to the detail rows when the Table tag filter is cleared (D-F2-2)', async () => {
+    const table = {
+      ...BASE_TABLE,
+      columns: [
+        {
+          name: 'email',
+          dataType: 'VARCHAR',
+          fullyQualifiedName: 'svc.db.schema.orders.email',
+          tags: [{ tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Generated' }],
+        },
+        { name: 'id', dataType: 'BIGINT', fullyQualifiedName: 'svc.db.schema.orders.id' },
+      ],
+    };
+    stubWithDoc(null, (url) => {
+      if (url.includes('/columns/search')) {
+        return jsonResponse({ data: [table.columns[0]], paging: { total: 1 } });
+      }
+      return tableResponder(table)(url);
+    });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('table', 'svc.db.schema.orders');
+    await settle(wrapper);
+    const schemaTable = wrapper.find('[data-testid="asset-schema-table"]');
+    const pick = async () => {
+      await schemaTable.findAll('.ant-table-filter-trigger')[0].trigger('click');
+      await flushPromises();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const options = [...document.querySelectorAll('.column-filter__row input')];
+      expect(options).toHaveLength(1);
+      (options[0] as HTMLElement).click();
+      await settle(wrapper);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await settle(wrapper);
+    };
+    await pick();
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(1);
+    await pick();
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(2);
+    const searchUrls = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => String(call[0]))
+      .filter((url) => url.includes('/columns/search'));
+    expect(searchUrls).toHaveLength(1);
+    wrapper.unmount();
+  }, 20000);
+
+  it('filters Topic fields locally with no server search request (D-F2-2)', async () => {
+    const topic = {
+      id: 't-1',
+      name: 'events',
+      fullyQualifiedName: 'kafka.events',
+      owners: [],
+      tags: [],
+      domains: [],
+      messageSchema: {
+        schemaFields: [
+          {
+            name: 'email',
+            dataType: 'STRING',
+            fullyQualifiedName: 'kafka.events.email',
+            tags: [{ tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'Manual' }],
+          },
+          { name: 'id', dataType: 'STRING', fullyQualifiedName: 'kafka.events.id' },
+        ],
+      },
+      service: { name: 'kafka' },
+    };
+    stubWithDoc(null, (url) => (url.includes('/api/v1/topics/name/') ? jsonResponse(topic) : null));
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const { wrapper } = await mountView('topic', 'kafka.events', { tab: 'schema' });
+    await settle(wrapper);
+    const schemaTable = wrapper.find('[data-testid="asset-schema-table"]');
+    expect(schemaTable.exists()).toBe(true);
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(2);
+    await schemaTable.findAll('.ant-table-filter-trigger')[0].trigger('click');
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const options = [...document.querySelectorAll('.column-filter__row input')];
+    expect(options).toHaveLength(1);
+    (options[0] as HTMLElement).click();
+    await settle(wrapper);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await settle(wrapper);
+    const searchUrls = vi
+      .mocked(fetch)
+      .mock.calls.map((call) => String(call[0]))
+      .filter((url) => url.includes('/columns/search'));
+    expect(searchUrls).toHaveLength(0);
+    expect(schemaTable.findAll('.ant-table-row')).toHaveLength(1);
+    expect(schemaTable.text()).toContain('email');
+    wrapper.unmount();
+  }, 20000);
+
   it('maps the metric-definition widget to the metric expression on the metric overview tab', async () => {
     stubWithDoc(
       docWithPage('Metric', [

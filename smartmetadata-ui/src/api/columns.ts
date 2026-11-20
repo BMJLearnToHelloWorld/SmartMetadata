@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asRecord, asString } from '@/api/json';
+import { asNumber, asRecord, asString } from '@/api/json';
 import { mapCsvImportResult, type CsvImportResult } from '@/api/csvImport';
 import { encodeFqnForApi } from '@/catalog/entityRoutes';
 import type { TagRef } from '@/types/api';
@@ -378,4 +378,67 @@ export async function updateDataModelColumn(
   tags: TagLabelValue[],
 ): Promise<TagRef[]> {
   return updateSingleColumn(columnFqn, 'dashboardDataModel', tags);
+}
+
+export interface TableColumnSearchParams {
+  /** Text search query (official `q`). The product has no column search box, so the filter lane leaves this unset; the field stays so a later search surface reuses this client instead of forking it. */
+  q?: string;
+  /** Comma-separated classification tag FQNs (official `tags`). */
+  tags?: string;
+  /** Comma-separated glossary term FQNs (official `glossaryTerms`). */
+  glossaryTerms?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TableColumnPage {
+  /** Raw column payloads, in the order the server returned them; the caller maps them (see `mapColumns`). */
+  columns: unknown[];
+  total?: number;
+}
+
+/**
+ * D-F2-2 server-side column filter (official `rest/tableAPI.ts:338-348`
+ * `searchTableColumnsByFQN`): `GET /v1/tables/name/{fqn}/columns/search`
+ * with `tags` / `glossaryTerms` as comma-separated FQNs. The server
+ * prunes the column tree to matches itself (`TableRepository`
+ * `pruneColumnsToMatches`, mirroring the UI's `getFilteredTagsData`:
+ * a node is kept when it matches or has a kept descendant), OR within
+ * each group and AND across the two groups — so the caller passes the
+ * two groups separately and never filters locally. `fields` carries
+ * `tags` because the server only populates column tags when requested.
+ * `sortBy: ordinalPosition` keeps source order (the product has no
+ * tenant DefaultColumnOrder setting; the unfiltered detail rows are in
+ * source order, and a name-sorted filtered page would reorder the table).
+ * `include: all` matches the official client (the search endpoint
+ * defaults to non-deleted). No `getTableColumnsByFQN` client: without a
+ * filter the product keeps rendering the detail payload's rows (T-1
+ * C-1), and the plain paginated endpoint is only needed when filtering
+ * — which is exactly this search endpoint.
+ */
+export async function searchTableColumnsByFQN(
+  tableFqn: string,
+  params: TableColumnSearchParams = {},
+): Promise<TableColumnPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/tables/name/${encodeFqnForApi(tableFqn)}/columns/search`,
+    {
+      query: {
+        fields: 'tags,customMetrics,extension',
+        sortBy: 'ordinalPosition',
+        sortOrder: 'asc',
+        include: 'all',
+        limit: params.limit,
+        offset: params.offset,
+        q: params.q,
+        tags: params.tags,
+        glossaryTerms: params.glossaryTerms,
+      },
+    },
+  );
+  const paging = asRecord(payload.paging);
+  return {
+    columns: Array.isArray(payload.data) ? payload.data : [],
+    total: asNumber(paging?.total),
+  };
 }

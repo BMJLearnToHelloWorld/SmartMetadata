@@ -104,5 +104,14 @@ export function buildEditorPieceContext(
     apiEndpointsError: '',
     apiEndpointSchemaJson: () => '',
     onApiEndpointClick: () => {},
+    descriptionAccess: false,
+    descriptionExpanded: false,
+    onDescriptionUpdate: () => {},
+    customPropsCanView: false,
+    schemaTagOptions: [],
+    schemaTagAccess: { canEditTags: false, canEditGlossaryTerms: false, readOnly: false },
+    onSchemaTagChange: () => {},
+    schemaTagFilterOptions: { classification: [], glossary: [] },
+    onSchemaTableChange: () => {},
   };
 }
