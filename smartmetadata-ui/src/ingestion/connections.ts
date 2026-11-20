@@ -1388,25 +1388,31 @@ interface SslLeafFormKeys {
     | 'consumerConfigSSLCaCertificate'
     | 'schemaRegistrySSLCaCertificate'
     | 'supersetSSLCaCertificate'
+    | 'supersetDbSslCaCertificate'
     | 'restSSLCaCertificate'
     | 'openMetadataSSLCaCertificate'
-    | 'alationDbSslCaCertificate';
+    | 'alationDbSslCaCertificate'
+    | 'alationSinkSSLCaCertificate';
   sslCertificate:
     | 'sslCertificate'
     | 'consumerConfigSSLCertificate'
     | 'schemaRegistrySSLCertificate'
     | 'supersetSSLCertificate'
+    | 'supersetDbSslCertificate'
     | 'restSSLCertificate'
     | 'openMetadataSSLCertificate'
-    | 'alationDbSslCertificate';
+    | 'alationDbSslCertificate'
+    | 'alationSinkSSLCertificate';
   sslKey:
     | 'sslKey'
     | 'consumerConfigSSLKey'
     | 'schemaRegistrySSLKey'
     | 'supersetSSLKey'
+    | 'supersetDbSslKey'
     | 'restSSLKey'
     | 'openMetadataSSLKey'
-    | 'alationDbSslKey';
+    | 'alationDbSslKey'
+    | 'alationSinkSSLKey';
 }
 
 function sslConfigFromFormKeys(
