@@ -902,3 +902,117 @@ def test_workflow_writeback_carries_full_shape() -> None:
         "tableName": "t1",
     }
     assert record.profile_data == record.table_profile
+
+
+# --- C-7: live icrm profiler run filtered 102/102 ---------------------------
+#
+# Root-cause characterization (lane BENCHMARK.md): the live AutoPilot
+# profiler pipeline carries tableFilterPattern ^sys_ AND
+# classificationFilterPattern includes [Tier1, Tier2]. The table filter
+# passes every sys_* table (bare-name re.match); the classification
+# filter drops every table because no icrm table carries a tag — the
+# pin's own rule (pin filters.py filter_by_classifications, locked by
+# pin test_filter_pattern.py:82-83). These tests reproduce the live run
+# shape and pin the mechanism: the gate is the classification scope,
+# not the table filter. If Bai later rules the Tier scope away from the
+# AutoPilot profiler agent, the first test must change with that ruling.
+
+
+def _c7_source(table_names: list[str]) -> PostgresSource:
+    """The live shape: the enumerating source applies the table filter
+    (``^sys_``), the workflow applies the classification scope."""
+    return PostgresSource(
+        SourceConfig(
+            type="postgres",
+            service_name="warehouse",
+            connection={"database": "analytics"},
+            include_tables=["^sys_"],
+        ),
+        reader=SequenceCatalogReader(
+            schemas=[SchemaRow("public")],
+            tables=[TableRow("public", name, "BASE TABLE") for name in table_names],
+            columns=[ColumnRow("public", name, "id", "integer", 1) for name in table_names]
+            + [ColumnRow("public", name, "name", "character varying", 2) for name in table_names],
+        ),
+    )
+
+
+def _c7_run(table_names, *, fetcher, source_overrides):
+    from smartmetadata_ingestion.workflow import ProfilerWorkflow
+
+    sink = _CollectingSink()
+    reader = _TableReader()
+    workflow = ProfilerWorkflow(
+        _workflow_config(table_names, source_overrides),
+        client=_StubClient(),
+        source=_c7_source(table_names),
+        sink=sink,
+        profile_reader=reader,
+        table_fetcher=fetcher,
+    )
+    report = workflow.execute()
+    workflow.stop()
+    return report, sink, reader, workflow
+
+
+def test_c7_live_config_filters_all_untagged_tables() -> None:
+    # Live icrm shape: 102 sys_* tables, 3 non-sys tables the table
+    # filter drops at the source, no table tagged. The run reports
+    # success with 0 profiles and Source filtered == 102 — exactly the
+    # live run 7c778730 (filtered 102/102, table total 0).
+    tables = [f"sys_t{i:03d}" for i in range(102)] + [
+        "orders",
+        "customers",
+        "events",
+    ]
+    report, sink, reader, workflow = _c7_run(
+        tables,
+        fetcher=lambda fqn: {},
+        source_overrides={
+            "include_tables": ["^sys_"],
+            "include_classifications": ["Tier1", "Tier2"],
+        },
+    )
+    assert report.ok()
+    assert report.succeeded == 0
+    assert report.failures == []
+    assert reader.seen == []
+    assert sink.written == []
+    assert workflow.source_status.filtered == 102
+    assert workflow.source_status.progress["table"].total == 0
+
+
+def test_c7_tier_tagged_tables_profile_under_live_config() -> None:
+    # Counterfactual 1: the same 102 sys_* tables, each Tier1-tagged,
+    # profile under the unchanged live config — the table filter was
+    # never the gate.
+    tables = [f"sys_t{i:03d}" for i in range(102)]
+    report, sink, reader, workflow = _c7_run(
+        tables,
+        fetcher=lambda fqn: {"tags": [{"tagFQN": "Tier.Tier1", "name": "Tier1"}]},
+        source_overrides={
+            "include_tables": ["^sys_"],
+            "include_classifications": ["Tier1", "Tier2"],
+        },
+    )
+    assert report.ok()
+    assert report.succeeded == 102
+    assert len(sink.written) == 102
+    assert sorted(reader.seen) == sorted(tables)
+    assert workflow.source_status.filtered == 0
+
+
+def test_c7_clearing_classification_scope_profiles_untagged_tables() -> None:
+    # Counterfactual 2: the same 102 untagged sys_* tables, classification
+    # scope cleared (the pin-supported pipeline edit) — all profile.
+    tables = [f"sys_t{i:03d}" for i in range(102)]
+    report, sink, reader, workflow = _c7_run(
+        tables,
+        fetcher=lambda fqn: {},
+        source_overrides={"include_tables": ["^sys_"]},
+    )
+    assert report.ok()
+    assert report.succeeded == 102
+    assert len(sink.written) == 102
+    assert sorted(reader.seen) == sorted(tables)
+    assert workflow.source_status.filtered == 0
