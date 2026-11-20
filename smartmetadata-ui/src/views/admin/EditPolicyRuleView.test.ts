@@ -151,10 +151,12 @@ describe('EditPolicyRuleView', () => {
     };
   });
 
-  it('renders the hardcoded-English breadcrumb segments and the quoted title', async () => {
+  it('renders the i18n breadcrumb segments and the quoted title', async () => {
     const { wrapper } = await mountEditRule(defaultFetch());
     const items = wrapper.getComponent(SmBreadcrumb).props('items') as Array<{ label: string }>;
-    // Pin literals, not translation keys (EditRulePage.tsx:57-66).
+    // N-2 (§6A ruling): the first two segments go through the i18n
+    // keys, like the Add page — not the pin Edit page's hardcoded
+    // 'Settings'/'Policies' literals. The en-US values are unchanged.
     expect(items.map((item) => item.label)).toEqual([
       'Settings',
       'Policies',

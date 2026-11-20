@@ -8,6 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import {
+  addRuleLocation,
+  editRuleLocation,
+  policyDetailLocation,
+  roleDetailLocation,
+} from '@/views/admin/accessPaths';
 import { membersTabGuard, resolveGuard } from './guards';
 import { router } from './index';
 import type { GuardDeclaration } from './guards';
@@ -180,12 +186,48 @@ describe('settings route-pattern manifest (§4.5)', () => {
 
   it('registers each policy-rule action pattern exactly once (M1a)', () => {
     const paths = router.getRoutes().map((route) => route.path);
-    expect(paths.filter((path) => path === '/settings/access/policies/:id/add-rule')).toHaveLength(1);
+    expect(paths.filter((path) => path === '/settings/access/policies/:fqn/add-rule')).toHaveLength(1);
     expect(
-      paths.filter((path) => path === '/settings/access/policies/:id/edit-rule/:ruleName'),
+      paths.filter((path) => path === '/settings/access/policies/:fqn/edit-rule/:ruleName'),
     ).toHaveLength(1);
-    expect(paths).not.toContain('/settings/access/policies/:fqn/add-rule');
-    expect(paths).not.toContain('/settings/access/policies/:fqn/edit-rule/:ruleName');
+    expect(paths).not.toContain('/settings/access/policies/:id/add-rule');
+    expect(paths).not.toContain('/settings/access/policies/:id/edit-rule/:ruleName');
+  });
+
+  it('registers the policy and role detail segments as :fqn (C-P6j)', () => {
+    const paths = router.getRoutes().map((route) => route.path);
+    expect(paths.filter((path) => path === '/settings/access/policies/:fqn')).toHaveLength(1);
+    expect(paths.filter((path) => path === '/settings/access/roles/:fqn')).toHaveLength(1);
+    expect(paths).not.toContain('/settings/access/policies/:id');
+    expect(paths).not.toContain('/settings/access/roles/:id');
+  });
+
+  it('resolves the accessPaths locations against the real router (C-P6j)', () => {
+    // Regression: accessPaths builds { fqn } params while the router
+    // table declared :id, so resolving a policy/role link threw
+    // "Missing required param id" and props:true never injected the
+    // views' fqn prop. The view tests never caught it — they mount
+    // against local test routers that were already :fqn.
+    const policy = router.resolve(policyDetailLocation('Data Consumer'));
+    expect(policy.name).toBe('admin-policy');
+    expect(policy.params).toMatchObject({ fqn: 'Data Consumer' });
+    const role = router.resolve(roleDetailLocation('DataConsumer'));
+    expect(role.name).toBe('admin-role');
+    expect(role.params).toMatchObject({ fqn: 'DataConsumer' });
+    const addRule = router.resolve(addRuleLocation('Data Consumer'));
+    expect(addRule.name).toBe('admin-policy-rule-add');
+    expect(addRule.params).toMatchObject({ fqn: 'Data Consumer' });
+    const editRule = router.resolve(editRuleLocation('Data Consumer', 'RuleA'));
+    expect(editRule.name).toBe('admin-policy-rule-edit');
+    expect(editRule.params).toMatchObject({ fqn: 'Data Consumer', ruleName: 'RuleA' });
+    // And the resolved URL segments feed the views' fqn prop.
+    expect(router.resolve('/settings/access/policies/Data%20Consumer').params).toMatchObject({
+      fqn: 'Data Consumer',
+    });
+    expect(router.resolve('/settings/access/policies/Data%20Consumer/edit-rule/RuleA').params).toMatchObject({
+      fqn: 'Data Consumer',
+      ruleName: 'RuleA',
+    });
   });
 
   it('drops the :tab segment from the workflow detail pattern (D-5)', () => {
@@ -292,10 +334,10 @@ describe('settings route-pattern manifest (§4.5)', () => {
     // patterns and are handled as detail unknown-ids under the detail guard.
     const roleResolved = router.resolve('/settings/access/roles/add-role');
     expect(roleResolved.name).toBe('admin-role');
-    expect(roleResolved.params).toMatchObject({ id: 'add-role' });
+    expect(roleResolved.params).toMatchObject({ fqn: 'add-role' });
     const policyResolved = router.resolve('/settings/access/policies/add-policy');
     expect(policyResolved.name).toBe('admin-policy');
-    expect(policyResolved.params).toMatchObject({ id: 'add-policy' });
+    expect(policyResolved.params).toMatchObject({ fqn: 'add-policy' });
     expect(router.resolve('/create-user').name).toBe('create-user');
     expect(router.resolve('/create-user/bot').name).toBe('create-user-bot');
   });
@@ -528,11 +570,11 @@ describe('settings sections faces', () => {
     ['/create-user/bot', 'create-user-bot', {}],
     // 03 access faces: add routes + :fqn segments.
     ['/admin/roles/add', 'admin-role-add', {}],
-    ['/settings/access/roles/r1', 'admin-role', { id: 'r1' }],
+    ['/settings/access/roles/r1', 'admin-role', { fqn: 'r1' }],
     ['/admin/policies/add', 'admin-policy-add', {}],
-    ['/settings/access/policies/p1', 'admin-policy', { id: 'p1' }],
-    ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { id: 'p1' }],
-    ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { id: 'p1', ruleName: 'r1' }],
+    ['/settings/access/policies/p1', 'admin-policy', { fqn: 'p1' }],
+    ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { fqn: 'p1' }],
+    ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { fqn: 'p1', ruleName: 'r1' }],
     // 08 admin-app :fqn.
     ['/settings/apps/a1', 'admin-app', { id: 'a1' }],
     // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
