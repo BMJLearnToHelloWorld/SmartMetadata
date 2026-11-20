@@ -3,12 +3,15 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Form, Input, Select, message} from 'ant-design-vue';
+import {Button, Form, Input, Select, Segmented, message} from 'ant-design-vue';
+import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createDataProduct, deleteDataProduct, listDataProducts } from '@/api/dataProducts';
+import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
+import EntityCardGrid, { type EntityCardItem } from '@/features/crud/EntityCardGrid.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { listDomains } from '@/api/domains';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
@@ -26,6 +29,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import type { DataProduct, Domain } from '@/types/governance';
+import type { PageViewMode } from '@/types/persona';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -53,6 +57,37 @@ const columns = computed<EntityListColumn[]>(() => [
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
+
+// B-10: same persona view-mode chain as DomainsListView /
+// LearningResourcesView — stored view is the default, the local
+// selection overrides it, a change resets paging and reloads (pin
+// `DataProductListPage` + `usePersonaViewMode`).
+const personaView = usePersonaViewMode('dataProducts');
+const selectedView = ref<PageViewMode | null>(null);
+const view = computed<PageViewMode>(() => selectedView.value ?? personaView.value);
+const viewOptions = [
+  { value: 'table', label: () => h(TableOutlined) },
+  { value: 'card', label: () => h(AppstoreOutlined) },
+];
+const cardItems = computed<EntityCardItem[]>(() =>
+  products.value.map((product) => ({
+    id: product.id,
+    title: entityLabel(product),
+    description: product.description,
+    meta: joinRefNames(product.domains) || undefined,
+    testId: product.id,
+  })),
+);
+
+function handleViewChange(next: PageViewMode): void {
+  selectedView.value = next;
+  cursor.value = createCursorPager();
+  void load();
+}
+
+function openProduct(record: DataProduct): void {
+  void router.push({ name: 'governance-data-product', params: { id: record.id } });
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -152,9 +187,24 @@ onMounted(() => {
     @delete="(record) => onDelete(record as DataProduct)"
   >
     <template #actions>
+      <Segmented
+        :value="view"
+        :options="viewOptions"
+        data-testid="data-products-view-toggle"
+        @update:value="handleViewChange($event as PageViewMode)"
+      />
       <Button type="primary" data-testid="create-data-product" @click="createOpen = true">
         {{ t('governance.dataProducts.create') }}
       </Button>
+    </template>
+    <template v-if="view === 'card'" #content>
+      <EntityCardGrid
+        :items="cardItems"
+        show-delete
+        test-id="data-products-cards"
+        @open="(id) => openProduct(products.find((product) => product.id === id) as DataProduct)"
+        @delete="(id) => onDelete(products.find((product) => product.id === id) as DataProduct)"
+      />
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">

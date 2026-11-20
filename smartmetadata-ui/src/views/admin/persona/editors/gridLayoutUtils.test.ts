@@ -207,6 +207,26 @@ describe('isSameDetailsPageLayout', () => {
     expect(isSameDetailsPageLayout(original, same)).toBe(true);
     expect(isSameDetailsPageLayout(original, different)).toBe(false);
   });
+
+  it('treats an absent tabs field vs an empty tabs array as different (N-4)', () => {
+    // Pin `toComparablePage` maps `page.tabs?.map(...)`: an absent
+    // tabs stays absent, and fast-json-patch `compare` reports an add
+    // op against `tabs: []` — dirty, not clean.
+    const withoutTabs = { pageType: 'Table' } as unknown as PersonaPage;
+    const emptyTabs = { pageType: 'Table', tabs: [] } as unknown as PersonaPage;
+    expect(isSameDetailsPageLayout(withoutTabs, emptyTabs)).toBe(false);
+    expect(isSameDetailsPageLayout(withoutTabs, withoutTabs)).toBe(true);
+    expect(isSameDetailsPageLayout(emptyTabs, emptyTabs)).toBe(true);
+  });
+
+  it('is insensitive to key order', () => {
+    const original = page([widget({ i: 'KnowledgePanel.Domain', x: 6, y: 0, w: 2, h: 2 })]);
+    const reordered = {
+      pageType: 'Table',
+      tabs: [{ layout: [widget({ h: 2, w: 2, y: 0, x: 6, i: 'KnowledgePanel.Domain' })], id: 'schema' }],
+    } as unknown as PersonaPage;
+    expect(isSameDetailsPageLayout(original, reordered)).toBe(true);
+  });
 });
 
 describe('add-widget placement', () => {

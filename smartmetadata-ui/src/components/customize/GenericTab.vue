@@ -58,13 +58,21 @@ import {
  * silent default — the stored coordinates still decide placement.
  * Two disclosed consequences (m-4/m-5): floor/ceil does not clip, so
  * two adjacent fractional cells can theoretically overlap by under
- * one row/column — default layouts carry integer top-level `x`/`w`,
- * so the practical risk is negligible. And direction: official
- * `useGridLayoutDirection` (`hooks/useGridLayoutDirection.ts:16-32`,
- * called at `GenericTab.tsx:76`) forces the grid container to
- * `dir="ltr"` with children following `i18n.dir()`; the product
- * ships only en/zh, both LTR, so the omission has zero actual
- * effect.
+ * one row/column. That overlap was not the rounding's fault — the
+ * stored default layouts themselves carry overlapping right-column
+ * rects (pin `TableClassBase.ts:142-246`: FJT y0 h2, AssetHealth y1
+ * h3, DataProducts y2 h2, Tags y3 h2, ...), which only the official
+ * grid's vertical compaction separates at render time. The read side
+ * now compacts the same way (`customizeWidgetLayout.ts`
+ * `resolveWidgetLayout`, a port of react-grid-layout v1 `compact`):
+ * stored rects are left untouched, and the compaction runs before
+ * the floor/ceil, so floor/ceil only ever handles the residual
+ * fractional panel heights, not stored overlaps. And direction:
+ * official `useGridLayoutDirection`
+ * (`hooks/useGridLayoutDirection.ts:16-32`, called at
+ * `GenericTab.tsx:76`) forces the grid container to `dir="ltr"`
+ * with children following `i18n.dir()`; the product ships only
+ * en/zh, both LTR, so the omission has zero actual effect.
  *
  * The left panel is structural, as officially: the panel widget
  * itself is never offered to the slot. Its children render inside

@@ -34,6 +34,15 @@ export const usePersonaStore = defineStore('persona', () => {
   const loaded = ref(false);
   const documentLoading = ref(false);
   const documentLoaded = ref(false);
+  /**
+   * D-9: the last non-404 document-load failure, as a message, or null.
+   * A 404 means "no customizations yet" and is not an error; any other
+   * failure sets this (and leaves `document` null, so consumers render
+   * defaults) until the next successful load or persona switch clears
+   * it. The shell renders it as a visible alert; the read itself stays
+   * non-throwing so a failed DocStore read never blanks the app.
+   */
+  const documentError = ref<string | null>(null);
 
   const selectedPersona = computed(
     () => personas.value.find((item) => item.id === selectedPersonaId.value) ?? null,
@@ -90,6 +99,7 @@ export const usePersonaStore = defineStore('persona', () => {
     // reloaded for the new selection, never reset to a template.
     document.value = null;
     documentLoaded.value = false;
+    documentError.value = null;
     await loadDocument();
   }
 
@@ -157,24 +167,31 @@ export const usePersonaStore = defineStore('persona', () => {
     if (!persona) {
       document.value = null;
       documentLoaded.value = true;
+      documentError.value = null;
       return;
     }
     const fqn = personaDocFqn(persona.fullyQualifiedName);
     if (!fqn) {
       document.value = null;
       documentLoaded.value = true;
+      documentError.value = null;
       return;
     }
     documentLoading.value = true;
     try {
       document.value = normalizePersonaDocument(await getDocumentByFqn(fqn));
+      documentError.value = null;
     } catch (error) {
       // A missing document is not an error: the persona simply has no
       // customizations yet, as official treats the 404 as empty. Other
       // failures also leave no document rather than a stale one — but
-      // unlike a 404 they are logged, so a failing DocStore read is
-      // visible instead of silently looking like "no customizations".
-      if (!(error instanceof ApiError && error.status === 404)) {
+      // unlike a 404 they set `documentError`, so a failing DocStore
+      // read is visible instead of silently looking like "no
+      // customizations" (D-9).
+      if (error instanceof ApiError && error.status === 404) {
+        documentError.value = null;
+      } else {
+        documentError.value = error instanceof Error ? error.message : 'Failed to load persona document';
         console.error('Failed to load persona document', error);
       }
       document.value = null;
@@ -193,6 +210,7 @@ export const usePersonaStore = defineStore('persona', () => {
     loaded,
     documentLoading,
     documentLoaded,
+    documentError,
     hydrate,
     ensureLoaded,
     selectPersona,

@@ -32,6 +32,7 @@ import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue
 import { handleGlobalShortcut, isMacPlatform } from '@/features/shortcuts';
 import { navIcon } from '@/layouts/navIcons';
 import { useAuthStore } from '@/stores/auth';
+import { usePersonaStore } from '@/stores/persona';
 import { principalKeyFor, useGuardDecisionStore } from '@/stores/guardDecision';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { resolveBrandImageSrc } from '@/theme/customTheme';
@@ -97,6 +98,11 @@ const selectedKeys = computed(() => [
 // `useSidebarItems.ts`). A save lands here without a reload through
 // the shared persona store slot.
 const sidebarItems = useSidebarItems();
+// D-9: a failed persona-document read is visible here (the shell's
+// content top, beside the version alert) instead of console-only:
+// the sidebar and detail pages keep rendering their defaults while
+// this is set, so the alert must not block navigation.
+const personaStore = usePersonaStore();
 const flushContent = computed(() => route.meta.flush === true);
 const hideHeaderSearch = computed(() => route.name === 'home');
 
@@ -557,6 +563,15 @@ async function onLogout(): Promise<void> {
             </Button>
           </template>
         </Alert>
+        <Alert
+          v-if="personaStore.documentError"
+          class="shell__version-alert"
+          data-testid="persona-document-error-alert"
+          type="warning"
+          show-icon
+          :message="t('persona.docLoadFailed')"
+          :description="personaStore.documentError"
+        />
         <router-view v-slot="{ Component }">
           <PermissionPlaceholder v-if="guardDenied" :permission-value="t('crud.view')" />
           <component :is="Component" v-else />

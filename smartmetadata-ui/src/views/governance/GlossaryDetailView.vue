@@ -33,7 +33,7 @@ import OntologyGraphCanvas from '@/features/ontology/OntologyGraphCanvas.vue';
 import { governanceTabsFor } from '@/catalog/governanceTabs';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
-import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
@@ -924,13 +924,14 @@ onMounted(() => {
               :data-testid="`glossary-tab-${tab.key}`"
             >
               <GenericTab v-if="customizedEntryFor(tab.key)" :layout="widgetLayoutFor(tab.key)" page-type="Glossary">
-                <template #widget="{ contentKey }">
+                <template #widget="{ contentKey, widget }">
                   <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && glossary" data-testid="widget-description">
                     <EntityDescriptionCell
                       :description="glossary.description"
                       :entity-name="glossary.displayName || glossary.name"
                       :has-edit-access="canEditDescription"
                       :expanded="(glossary.termCount ?? terms.length) === 0"
+                      :remove-blur="isLargeWidget(widget)"
                       :empty-text="t('governance.glossaries.noDescription')"
                       :on-description-update="onDescriptionUpdate"
                     />

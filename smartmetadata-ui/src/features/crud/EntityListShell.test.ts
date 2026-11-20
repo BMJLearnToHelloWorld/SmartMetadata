@@ -19,7 +19,7 @@ const columns = [
   { title: 'Email', dataIndex: 'email', key: 'email' },
 ];
 
-async function mountShell(props: Record<string, unknown> = {}, slots: Record<string, unknown> = {}) {
+async function mountShell(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const wrapper = mount(EntityListShell, {
     props: {
       title: 'Users',

@@ -525,6 +525,26 @@ describe('navigation dispatch (§3.6)', () => {
     ).toEqual(['members.teams']);
   });
 
+  it('falls back to the default settings path for every entry, regardless of kind (§F-37)', () => {
+    // The navigators use defaultSettingsPathForKey for every target,
+    // including the teams-list exception: the target kind is a D-11
+    // marker only and must not change where navigation lands.
+    for (const entry of flattenSettingsRegistry()) {
+      const target = resolveSettingsNavigation(entry.key);
+      expect(target, entry.key).toBeDefined();
+      expect(defaultSettingsPathForKey(entry.key)).toBe(
+        `/settings/${target!.segments.join('/')}`,
+      );
+    }
+    // The exception resolves to the teams list, not the pin
+    // Organization target — that target is still unlanded (D-11),
+    // deliberately not asserted as landed here.
+    expect(defaultSettingsPathForKey('members.teams')).toBe('/settings/members/teams');
+    expect(defaultSettingsPathForKey('members.teams')).not.toBe(
+      '/settings/members/teams/Organization',
+    );
+  });
+
   it('resolves no target for unknown keys', () => {
     expect(resolveSettingsNavigation('services.security')).toBeUndefined();
     expect(resolveSettingsNavigation('search')).toBeUndefined();

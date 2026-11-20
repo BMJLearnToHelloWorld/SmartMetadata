@@ -3,10 +3,11 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Alert, Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue';
+import {Alert, Button, Descriptions, Form, Input, Segmented, Select, message} from 'ant-design-vue';
+import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
@@ -15,6 +16,9 @@ import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
+import EntityCardGrid, { type EntityCardItem } from '@/features/crud/EntityCardGrid.vue';
+import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { listEntityActivity } from '@/api/activity';
@@ -50,6 +54,7 @@ import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/feat
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
 import type { EntityRef, TagRef } from '@/types/api';
+import type { PageViewMode } from '@/types/persona';
 
 const props = defineProps<{ fqn: string }>();
 const { t } = useI18n();
@@ -220,6 +225,30 @@ const subDomainColumns = computed<EntityListColumn[]>(() => [
   { title: t('crud.type'), dataIndex: 'type', key: 'type', width: 140 },
   { title: t('crud.fqn'), dataIndex: 'fullyQualifiedName', key: 'fullyQualifiedName' },
 ]);
+
+// B-10: the sub-domains list gets the same table/card toggle as the
+// list pages (pin `SubDomainsTable.component` + `usePersonaViewMode`).
+// Sub-domains are the domain's own children — already loaded with
+// the detail, no paging to reset on a view change. The toggle lives
+// on the default (non-customized) rendering only; a customized
+// subDomains tab renders its widget grid instead.
+const subDomainPersonaView = usePersonaViewMode('subDomains');
+const selectedSubDomainView = ref<PageViewMode | null>(null);
+const subDomainView = computed<PageViewMode>(
+  () => selectedSubDomainView.value ?? subDomainPersonaView.value,
+);
+const subDomainViewOptions = [
+  { value: 'table', label: () => h(TableOutlined) },
+  { value: 'card', label: () => h(AppstoreOutlined) },
+];
+const subDomainCardItems = computed<EntityCardItem[]>(() =>
+  (domain.value?.children ?? []).map((child) => ({
+    id: child.id ?? child.fullyQualifiedName ?? child.name,
+    title: entityLabel(child),
+    meta: child.type,
+    testId: child.id ?? child.name,
+  })),
+);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -522,7 +551,7 @@ onMounted(() => {
     </template>
     <template #overview>
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Domain">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
               :description="domain.description"
@@ -570,6 +599,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="domain?.extension || {}"
               :error="customPropsError"
@@ -601,7 +631,7 @@ onMounted(() => {
     </template>
     <template #assets>
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Domain">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
               :description="domain.description"
@@ -649,6 +679,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="domain?.extension || {}"
               :error="customPropsError"
@@ -732,7 +763,7 @@ onMounted(() => {
     </template>
     <template #subDomains>
       <GenericTab v-if="customizedEntryFor('subDomains')" :layout="widgetLayoutFor('subDomains')" page-type="Domain">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
               :description="domain.description"
@@ -780,6 +811,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="domain?.extension || {}"
               :error="customPropsError"
@@ -790,7 +822,22 @@ onMounted(() => {
         </template>
       </GenericTab>
       <template v-else>
+      <div class="entity-detail__tab-toolbar">
+        <Segmented
+          :value="subDomainView"
+          :options="subDomainViewOptions"
+          data-testid="subdomains-view-toggle"
+          @update:value="selectedSubDomainView = $event as PageViewMode"
+        />
+      </div>
+      <EntityCardGrid
+        v-if="subDomainView === 'card' && (domain?.children?.length ?? 0) > 0"
+        :items="subDomainCardItems"
+        test-id="subdomains-cards"
+        @open="(id) => openSubDomain((domain?.children ?? []).find((child) => (child.id ?? child.fullyQualifiedName ?? child.name) === id) as EntityRef)"
+      />
       <SmTable
+        v-else
         row-key="id"
         test-id="domain-subdomains-table"
         :columns="subDomainColumns"
@@ -818,7 +865,7 @@ onMounted(() => {
     </template>
     <template #activity>
       <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="Domain">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
               :description="domain.description"
@@ -866,6 +913,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="domain?.extension || {}"
               :error="customPropsError"
@@ -886,7 +934,7 @@ onMounted(() => {
     </template>
     <template #customProperties>
       <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="Domain">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && domain" data-testid="widget-description">
             <EntityDescriptionCell
               :description="domain.description"
@@ -934,6 +982,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="domain?.extension || {}"
               :error="customPropsError"
@@ -1010,5 +1059,11 @@ onMounted(() => {
 .entity-detail__tab-lead {
   color: var(--sm-text-secondary);
   margin-top: 12px;
+}
+
+.entity-detail__tab-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 </style>

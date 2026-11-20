@@ -172,10 +172,26 @@ export function getDefaultTabs(
  * layouts, `CustomizeTabWidget` preview) and the read-side default
  * (`customizeWidgetLayout`), so the correction lands on both paths
  * at once; neither path may bypass it with the raw table.
+ *
+ * A falsy tab yields the page's shared `defaultLayout`, as official
+ * `getDefaultLayout(tab?)` does (`if (tab && tab !== PRIMARY) return
+ * []`, e.g. `utils/TableClassBase.ts:142-145` — falsy means the primary
+ * tab's layout). The shared layout IS the primary-tab layout: Table's
+ * is the SCHEMA layout, and Container's is the SCHEMA layout too
+ * (its `defaultLayoutByTab` holds only the CHILDREN override, pin
+ * `ContainerDetailsClassBase.ts:115-131` falls through to SCHEMA for a
+ * falsy tab). A non-empty tab outside `layoutAppliesTo` still yields
+ * `[]`, and an unknown page type yields `[]`.
  */
 export function getDefaultWidgetForTab(pageType: string, tab: string): WidgetConfig[] {
   const table = PAGE_DATA_TABLES[pageType];
-  if (!table || !table.layoutAppliesTo.includes(tab)) {
+  if (!table) {
+    return [];
+  }
+  if (!tab) {
+    return cloneJson(table.defaultLayout) as WidgetConfig[];
+  }
+  if (!table.layoutAppliesTo.includes(tab)) {
     return [];
   }
   return cloneJson(table.defaultLayoutByTab?.[tab] ?? table.defaultLayout) as WidgetConfig[];

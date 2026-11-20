@@ -3,12 +3,15 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import {Button, Form, Input, Select, message} from 'ant-design-vue';
+import {Button, Form, Input, Select, Segmented, message} from 'ant-design-vue';
+import { AppstoreOutlined, TableOutlined } from '@ant-design/icons-vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { createDomain, deleteDomain, listDomains } from '@/api/domains';
+import { usePersonaViewMode } from '@/composables/usePersonaViewMode';
+import EntityCardGrid, { type EntityCardItem } from '@/features/crud/EntityCardGrid.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityListShell from '@/features/crud/EntityListShell.vue';
 import { requiredField } from '@/features/crud/formRules';
@@ -24,6 +27,7 @@ import {
 } from '@/features/crud/paging';
 import type { EntityListColumn } from '@/features/crud/types';
 import { DOMAIN_TYPES, type Domain } from '@/types/governance';
+import type { PageViewMode } from '@/types/persona';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -52,6 +56,39 @@ const columns = computed<EntityListColumn[]>(() => [
 
 const hasNext = computed(() => canGoNext(pageAfter.value));
 const hasPrev = computed(() => canGoPrev(cursor.value));
+
+// B-10: the persona view-mode chain, wired the same way as
+// LearningResourcesView — the stored view is the default, the local
+// selection overrides it, and a change resets paging and reloads
+// (pin `DomainListPage` + `usePersonaViewMode`). The toggle offers
+// table and card only: pin's third view, tree, needs the domain
+// hierarchy, which the paginated flat list API does not provide, so
+// it stays a named residual rather than a broken third button; a
+// stored 'tree' still resolves to 'tree' through the resolver (the
+// page declares it), but the toggle offers only table/card, so the
+// table renders for any non-card view.
+const personaView = usePersonaViewMode('domains');
+const selectedView = ref<PageViewMode | null>(null);
+const view = computed<PageViewMode>(() => selectedView.value ?? personaView.value);
+const viewOptions = [
+  { value: 'table', label: () => h(TableOutlined) },
+  { value: 'card', label: () => h(AppstoreOutlined) },
+];
+const cardItems = computed<EntityCardItem[]>(() =>
+  domains.value.map((domain) => ({
+    id: domain.id,
+    title: entityLabel(domain),
+    description: domain.description,
+    meta: domain.domainType,
+    testId: domain.id,
+  })),
+);
+
+function handleViewChange(next: PageViewMode): void {
+  selectedView.value = next;
+  cursor.value = createCursorPager();
+  void load();
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -159,9 +196,24 @@ onMounted(() => {
     @delete="(record) => onDelete(record as Domain)"
   >
     <template #actions>
+      <Segmented
+        :value="view"
+        :options="viewOptions"
+        data-testid="domains-view-toggle"
+        @update:value="handleViewChange($event as PageViewMode)"
+      />
       <Button type="primary" data-testid="create-domain" @click="createOpen = true">
         {{ t('governance.domains.create') }}
       </Button>
+    </template>
+    <template v-if="view === 'card'" #content>
+      <EntityCardGrid
+        :items="cardItems"
+        show-delete
+        test-id="domains-cards"
+        @open="(id) => openDomain(domains.find((domain) => domain.id === id) as Domain)"
+        @delete="(id) => onDelete(domains.find((domain) => domain.id === id) as Domain)"
+      />
     </template>
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
