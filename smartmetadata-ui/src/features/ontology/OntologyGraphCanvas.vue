@@ -42,9 +42,11 @@ import {
  * node click selects, double-click opens the concept detail, edge click
  * selects the edge, canvas click clears. View mode never produces a write.
  *
- * Handle (official OntologyGraphHandle, export methods excluded — stage
- * 3): fitView / zoomIn / zoomOut / runLayout / focusNode /
- * getNodePositions, exposed for the caller. fit follows the official
+ * Handle (official OntologyGraphHandle, export methods added for the
+ * term-scope relations graph — B-15: pin OntologyGraphG6.tsx
+ * exportAsPng/exportAsSvg via graph.toDataURL): fitView / zoomIn /
+ * zoomOut / runLayout / focusNode / getNodePositions / exportAsPng /
+ * exportAsSvg, exposed for the caller. fit follows the official
  * fitViewWithMinZoom rule (fit, then clamp zoom to <= 1).
  */
 
@@ -114,6 +116,8 @@ type GraphLike = {
   updateNodeData: (data: Array<Record<string, unknown>>) => void;
   updateEdgeData: (data: Array<Record<string, unknown>>) => void;
   setSize: (width: number, height: number) => void;
+  toDataURL: (options: { mode: string; type: string }) => Promise<string>;
+  getCanvas: () => { getSize: () => [number, number] };
 };
 let graph: GraphLike | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -524,7 +528,39 @@ defineExpose({
   runLayout: () => graph?.layout(),
   focusNode: (nodeId: string) => graph?.focusElement(nodeId, { duration: 0 }),
   getNodePositions,
+  exportAsPng,
+  exportAsSvg,
 });
+
+async function exportAsPng(): Promise<void> {
+  if (!graph) {
+    return;
+  }
+  const dataUrl = await graph.toDataURL({ mode: 'overall', type: 'image/png' });
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'ontology-graph.png';
+  a.click();
+}
+
+async function exportAsSvg(): Promise<void> {
+  if (!graph) {
+    return;
+  }
+  // G6 only supports raster image export here; keep the SVG wrapper explicit.
+  const dataUrl = await graph.toDataURL({ mode: 'overall', type: 'image/png' });
+  const [width, height] = graph.getCanvas().getSize();
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <image href="${dataUrl}" width="${width}" height="${height}"/>
+</svg>`;
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'ontology-graph-raster.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 onMounted(() => {
   void mountGraph();

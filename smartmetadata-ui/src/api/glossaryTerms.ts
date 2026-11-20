@@ -278,6 +278,29 @@ export async function getGlossaryTermAssets(
 }
 
 /**
+ * Official getGlossaryTermsAssetCounts (rest/glossaryAPI.ts): GET
+ * /v1/glossaryTerms/assets/counts?parent=<glossaryFqn> — the FQN ->
+ * asset-count map the term-scope explorer uses for node counts
+ * (useOntologyExplorer fetchTermAssetCounts). Without `parent` the
+ * server returns the unscoped map. Non-numeric values are dropped, so
+ * a malformed payload degrades to an empty map instead of breaking
+ * the graph.
+ */
+export async function getGlossaryTermsAssetCounts(parent?: string): Promise<Record<string, number>> {
+  const payload = await apiRequest<unknown>('/v1/glossaryTerms/assets/counts', {
+    query: parent ? { parent } : undefined,
+  });
+  const rec = asRecord(payload) ?? {};
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(rec)) {
+    if (typeof value === 'number') {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/**
  * Official getOntologySummary (rest/glossaryAPI.ts): GET
  * /v1/glossaryTerms/ontology/summary?limit&offset&parent — the health
  * panel's endpoint. Field mapping follows the spec

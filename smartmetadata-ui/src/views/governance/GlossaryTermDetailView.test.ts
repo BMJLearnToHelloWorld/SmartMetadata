@@ -11,6 +11,15 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import { createTestI18n } from '@/test/i18n';
 import GlossaryTermDetailView from './GlossaryTermDetailView.vue';
 
+// B-15: the relations-graph slot mounts the real term-scope graph, whose
+// canvas dynamically imports @antv/g6; the mock only keeps Vite from
+// resolving the uninstalled package (canvas behaviour is covered by
+// OntologyGraphCanvas.test.ts, term-scope behaviour by
+// OntologyTermRelationsGraph.test.ts).
+vi.mock('@antv/g6', () => ({
+  Graph: class {},
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -161,11 +170,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="edit-term"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
-    // Relations graph, custom properties and data observability have no
-    // product backing: three honest residual states, distinctly stated.
+    // Relations graph is fixed content now (B-15); custom properties
+    // and data observability have no product backing: two honest
+    // residual states, distinctly stated.
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(3);
-    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(3);
+    expect(residuals).toHaveLength(2);
+    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(2);
     wrapper.unmount();
   });
 
@@ -360,10 +370,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     // Mount tab: the grid replaces the overview pane.
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Money in');
     expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
-    // Every other tab keeps its existing panel.
+    // Every other tab keeps its existing panel; relations graph is
+    // fixed content now (B-15), so only custom properties and data
+    // observability still render residuals.
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
     expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(3);
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });

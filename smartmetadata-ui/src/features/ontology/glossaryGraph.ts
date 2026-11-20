@@ -124,7 +124,7 @@ export function buildGlossaryGraphData(terms: readonly GlossaryTerm[]): Ontology
   return { nodes, edges };
 }
 
-async function resolveRelatedTerms(terms: GlossaryTerm[]): Promise<void> {
+export async function resolveRelatedTerms(terms: GlossaryTerm[]): Promise<void> {
   const loadedIds = new Set(terms.map((term) => term.id).filter((id): id is string => Boolean(id)));
   const skippedIds = new Set<string>();
   for (let depth = 0; depth < MAX_RESOLUTION_DEPTH; depth++) {
