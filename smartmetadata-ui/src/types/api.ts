@@ -172,6 +172,8 @@ export interface SearchHit {
   domains?: EntityRef[];
   dataProducts?: EntityRef[];
   dataType?: string;
+  /** Domain type (official Domain.domainType), from the ES `_source`. */
+  domainType?: string;
   tableName?: string;
   // Parent table FQN for tableColumn hits, from the ES source's embedded
   // `table` reference (official column cards link to the parent table, not
@@ -242,6 +244,10 @@ export interface PipelineTask {
   taskType?: string;
   sourceUrl?: string;
   downstreamTasks: string[];
+  /** Classification and Glossary tags on the task (official Task.tags). */
+  tags?: TagRef[];
+  /** Task owners (official Task.owners). */
+  owners?: EntityRef[];
 }
 
 export interface PipelineTaskStatus {
@@ -293,6 +299,8 @@ export interface AssetDetail {
   chartType?: string;
   metricType?: string;
   unitOfMeasurement?: string;
+  /** Custom unit shown when unitOfMeasurement is "Other" (official Metric.customUnitOfMeasurement). */
+  customUnitOfMeasurement?: string;
   granularity?: string;
   dataModelType?: string;
   algorithm?: string;
@@ -321,6 +329,8 @@ export interface AssetDetail {
   votes?: EntityVotes;
   tags: TagRef[];
   domains: EntityRef[];
+  /** Data products the asset belongs to (official EntityReference list, D-2 read side). */
+  dataProducts?: EntityRef[];
   schemaRows: SchemaRow[];
   schemaLabel: string;
   extension?: Record<string, unknown>;

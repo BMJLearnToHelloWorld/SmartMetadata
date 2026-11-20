@@ -529,6 +529,17 @@ describe('AssetDetailView non-table shells', () => {
       }),
     );
     const { wrapper } = await mountTypedView('pipeline', 'airflow.daily_etl');
+    // The tasks tab defaults to the List view (pin PipelineTaskTab); the Dag
+    // graph renders after switching views.
+    expect(wrapper.find('[data-testid="task-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="pipeline-task-empty"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pipeline-task-graph"]').exists()).toBe(false);
+    const dagOption = [...wrapper.findAll('.ant-segmented-item')].find((item) =>
+      item.text().includes('Dag'),
+    );
+    expect(dagOption).toBeDefined();
+    await dagOption!.trigger('click');
+    await flushPromises();
     expect(wrapper.find('[data-testid="pipeline-task-graph"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipeline-task-extract"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="pipeline-task-load"]').exists()).toBe(true);
@@ -654,10 +665,12 @@ describe('AssetDetailView non-table shells', () => {
     chart.wrapper.unmount();
 
     const metric = await mountTypedView('metric', 'kpi.mau');
-    expect(metric.wrapper.text()).toContain('COUNT');
+    // The definition widget renders the pin enum label (mono uppercase).
+    expect(metric.wrapper.text()).toContain('Count');
     // R2: official metric tabs have no code tab, so the expression moved
     // into the overview tab instead of a code tab slot.
-    expect(metric.wrapper.find('[data-testid="asset-metric-expression"]').exists()).toBe(true);
+    expect(metric.wrapper.find('[data-testid="metric-definition-card"]').exists()).toBe(true);
+    expect(metric.wrapper.find('[data-testid="metric-expression-code"]').exists()).toBe(true);
     expect(metric.wrapper.text()).toContain('SELECT 1');
     metric.wrapper.unmount();
 
@@ -1624,9 +1637,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
     const cell = cellFor(wrapper, DetailWidgetKeys.METRIC_DEFINITION);
-    expect(cell.find('[data-testid="asset-metric-expression"]').exists()).toBe(true);
+    expect(cell.find('[data-testid="metric-definition-card"]').exists()).toBe(true);
+    expect(cell.find('[data-testid="metric-expression-code"]').exists()).toBe(true);
     expect(cell.text()).toContain('SELECT 1');
-    expect(wrapper.findAll('[data-testid="asset-metric-expression"]').length).toBe(1);
+    expect(wrapper.findAll('[data-testid="metric-definition-card"]').length).toBe(1);
     wrapper.unmount();
   }, 20000);
 
@@ -1663,6 +1677,15 @@ describe('AssetDetailView widget layer (B-8)', () => {
     await settle(wrapper);
     expect(wrapper.findAllComponents(GenericTab).length).toBe(1);
     const cell = cellFor(wrapper, DetailWidgetKeys.PIPELINE_TASKS);
+    // The tasks widget defaults to the List view (pin PipelineTaskTab).
+    expect(cell.find('[data-testid="task-table"]').exists()).toBe(true);
+    expect(cell.text()).toContain('Extract');
+    const dagOption = [...cell.findAll('.ant-segmented-item')].find((item) =>
+      item.text().includes('Dag'),
+    );
+    expect(dagOption).toBeDefined();
+    await dagOption!.trigger('click');
+    await flushPromises();
     expect(cell.find('[data-testid="pipeline-task-graph"]').exists()).toBe(true);
     expect(cell.find('[data-testid="pipeline-task-extract"]').exists()).toBe(true);
     wrapper.unmount();

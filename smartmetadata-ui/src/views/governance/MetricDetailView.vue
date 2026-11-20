@@ -9,8 +9,12 @@ import { useRouter } from 'vue-router';
 import { Button, Descriptions, Empty, message } from 'ant-design-vue';
 import { fetchAssetDetail } from '@/api/entities';
 import { deleteMetricAsync, patchMetric } from '@/api/metrics';
+import { getDerivedPermissionFlags } from '@/api/permissions';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { descriptionPatch } from '@/governance/assetPatch';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import MetricDefinitionWidget from '@/components/widgets/MetricDefinitionWidget.vue';
+import { usePermissionStore } from '@/stores/permissions';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
@@ -103,6 +107,34 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 5b metric definition: the pin `MetricDefinitionCard` call
+ * site derives `canEditAll` WITHOUT the `deleted` flag
+ * (`MetricDefinitionCard.tsx:391`); the widget hides the Edit button
+ * itself when the metric is deleted. The admin line is the P1 dual
+ * line; fail-closed until the permission operations resolve.
+ */
+const permissionStore = usePermissionStore();
+const metricDefinitionCanEdit = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    getDerivedPermissionFlags(metricPermissions.permissions.value).canEditAll,
+);
+
+/**
+ * D-2 batch 5b metric definition save: the widget hands over the JSON
+ * Patch ops it diffed from the pin save payload; a thrown failure keeps
+ * the edit dialog open with its error alert.
+ */
+async function onMetricDefinitionSave(ops: JsonPatchOp[]): Promise<void> {
+  if (!metric.value?.id) {
+    throw new Error(t('crud.loadFailed'));
+  }
+  await patchMetric(metric.value.id, ops);
+  message.success(t('crud.updated'));
+  await load();
+}
+
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   { label: t('metrics.title'), to: { name: 'governance-metrics' } },
   { label: entityLabel(metric.value) || props.fqn },
@@ -176,12 +208,6 @@ function tagFqnList(tags: readonly TagRef[]): string {
   return tags.map((tag) => tag.tagFQN).join(', ');
 }
 
-const metricExpression = computed(
-  () =>
-    [metric.value?.storedProcedureCode?.language, metric.value?.storedProcedureCode?.code]
-      .filter(Boolean)
-      .join('\n\n') || t('metrics.noExpression'),
-);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -306,12 +332,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('metrics.type')">{{ metric.metricType || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.unit')">{{ metric.unitOfMeasurement || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.granularity')">{{ metric.granularity || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.expression')">{{ metricExpression }}</Descriptions.Item>
-            </Descriptions>
+            <MetricDefinitionWidget
+              :metric="metric"
+              :can-edit="metricDefinitionCanEdit"
+              :on-save="onMetricDefinitionSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -364,17 +389,12 @@ onMounted(() => {
             :on-description-update="onDescriptionUpdate"
           />
         </Descriptions.Item>
-        <Descriptions.Item :label="t('metrics.type')">
-          {{ metric.metricType || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('metrics.unit')">
-          {{ metric.unitOfMeasurement || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('metrics.granularity')">
-          {{ metric.granularity || '—' }}
-        </Descriptions.Item>
-        <Descriptions.Item :label="t('metrics.expression')" :span="3">
-          {{ metricExpression }}
+        <Descriptions.Item :span="3">
+          <MetricDefinitionWidget
+            :metric="metric"
+            :can-edit="metricDefinitionCanEdit"
+            :on-save="onMetricDefinitionSave"
+          />
         </Descriptions.Item>
         <Descriptions.Item :label="t('crud.owners')" :span="3">
           {{ joinRefNames(metric.owners) || '—' }}
@@ -397,12 +417,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('metrics.type')">{{ metric.metricType || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.unit')">{{ metric.unitOfMeasurement || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.granularity')">{{ metric.granularity || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.expression')">{{ metricExpression }}</Descriptions.Item>
-            </Descriptions>
+            <MetricDefinitionWidget
+              :metric="metric"
+              :can-edit="metricDefinitionCanEdit"
+              :on-save="onMetricDefinitionSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -465,12 +484,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('metrics.type')">{{ metric.metricType || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.unit')">{{ metric.unitOfMeasurement || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.granularity')">{{ metric.granularity || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.expression')">{{ metricExpression }}</Descriptions.Item>
-            </Descriptions>
+            <MetricDefinitionWidget
+              :metric="metric"
+              :can-edit="metricDefinitionCanEdit"
+              :on-save="onMetricDefinitionSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -528,12 +546,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('metrics.type')">{{ metric.metricType || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.unit')">{{ metric.unitOfMeasurement || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.granularity')">{{ metric.granularity || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.expression')">{{ metricExpression }}</Descriptions.Item>
-            </Descriptions>
+            <MetricDefinitionWidget
+              :metric="metric"
+              :can-edit="metricDefinitionCanEdit"
+              :on-save="onMetricDefinitionSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">
@@ -598,12 +615,11 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.METRIC_DEFINITION && metric" data-testid="widget-metric-definition">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('metrics.type')">{{ metric.metricType || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.unit')">{{ metric.unitOfMeasurement || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.granularity')">{{ metric.granularity || '—' }}</Descriptions.Item>
-              <Descriptions.Item :label="t('metrics.expression')">{{ metricExpression }}</Descriptions.Item>
-            </Descriptions>
+            <MetricDefinitionWidget
+              :metric="metric"
+              :can-edit="metricDefinitionCanEdit"
+              :on-save="onMetricDefinitionSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && metric" data-testid="widget-owners">
             <Descriptions bordered :column="1" size="small">

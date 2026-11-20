@@ -314,6 +314,7 @@ export async function fetchAssetDetail(
     chartType: asString(body.chartType) || undefined,
     metricType: asString(body.metricType) || undefined,
     unitOfMeasurement: asString(body.unitOfMeasurement) || undefined,
+    customUnitOfMeasurement: asString(body.customUnitOfMeasurement) || undefined,
     granularity: asString(body.granularity) || undefined,
     dataModelType: asString(body.dataModelType) || undefined,
     algorithm: asString(body.algorithm) || undefined,
@@ -338,6 +339,10 @@ export async function fetchAssetDetail(
     votes: mapVotes(body.votes),
     tags: mapTags(body.tags),
     domains: mapOwners(body.domains),
+    // D-2 batch 5b: data products the asset belongs to (official
+    // EntityReference list), read side for the default-panel row and
+    // the DATA_PRODUCTS grid cell.
+    dataProducts: mapEntityRefs(body.dataProducts),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
     // P2 B5: API endpoint detail fields (entity/data/apiEndpoint.json).

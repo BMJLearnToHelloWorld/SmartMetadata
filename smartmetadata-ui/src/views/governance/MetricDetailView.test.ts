@@ -82,8 +82,9 @@ describe('MetricDetailView', () => {
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('Monthly Active Users');
     expect(wrapper.text()).toContain('count(distinct user_id)');
-    expect(wrapper.text()).toContain('NUMBER');
-    expect(wrapper.text()).toContain('MONTHLY');
+    // The definition widget renders the pin enum labels (mono uppercase).
+    expect(wrapper.text()).toContain('Number');
+    expect(wrapper.text()).toContain('Monthly');
   });
 
   it('navigates to the Stage 2 version skeleton', async () => {
@@ -324,9 +325,12 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountMetric();
     const definition = wrapper.find('[data-testid="widget-metric-definition"]');
-    expect(definition.text()).toContain('NUMBER');
-    expect(definition.text()).toContain('MONTHLY');
-    expect(definition.text()).toContain('count(distinct user_id)');
+    // The definition widget renders the pin enum labels (mono uppercase).
+    expect(definition.text()).toContain('Number');
+    expect(definition.text()).toContain('Monthly');
+    expect(definition.find('[data-testid="metric-expression-code"]').text()).toContain(
+      'count(distinct user_id)',
+    );
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Active users per month');
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     wrapper.unmount();
@@ -417,7 +421,7 @@ describe('MetricDetailView tab surface + widget grid (B-11)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountMetric();
     // Mount tab: the grid replaces the overview pane.
-    expect(wrapper.find('[data-testid="widget-metric-definition"]').text()).toContain('NUMBER');
+    expect(wrapper.find('[data-testid="widget-metric-definition"]').text()).toContain('Number');
     expect(wrapper.find('[data-testid="metric-details"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual(['widget-metric-definition']);
     // Every other tab keeps its existing panel.

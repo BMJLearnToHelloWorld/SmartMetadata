@@ -9,15 +9,18 @@ import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } f
 import { StarOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
-import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
+import MetricDefinitionWidget from '@/components/widgets/MetricDefinitionWidget.vue';
+import PipelineTasksWidget from '@/components/widgets/PipelineTasksWidget.vue';
+import StoredProcedureCodeWidget from '@/components/widgets/StoredProcedureCodeWidget.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
+import type { JsonPatchOp } from '@/admin/jsonPatch';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
-import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, PipelineTask, SchemaRow, TagRef } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption, TagSource } from '@/types/governance';
 
@@ -76,13 +79,39 @@ export interface AssetDetailPieceContext {
   refColumns: TableProps['columns'];
   apiEndpointColumns: TableProps['columns'];
   taskGraph: PipelineTaskGraphModel;
-  taskGraphEmpty: boolean;
   customProperties: CustomPropertyDef[];
   customPropsError: string;
   apiEndpoints: ApiEndpointRef[];
   apiEndpointsError: string;
   apiEndpointSchemaJson: (schema: Record<string, unknown> | undefined) => string;
   onApiEndpointClick: (row: ApiEndpointRef) => void;
+  /**
+   * D-2 batch 5b metric definition: `metricDefinitionCanEdit` is the
+   * `getDerivedPermissionFlags` `canEditAll` WITHOUT the `deleted` flag,
+   * OR `isAdminUser` (pin call site + P1 dual line); the widget hides
+   * the Edit button itself when the metric is deleted.
+   * `onMetricDefinitionSave` patches the metric and reloads; it throws
+   * on failure so the dialog stays open with its error alert.
+   */
+  metricDefinitionCanEdit: boolean;
+  onMetricDefinitionSave: (ops: JsonPatchOp[]) => Promise<void>;
+  /**
+   * D-2 batch 5b pipeline tasks: the three `canEdit*` flags are the
+   * `getDerivedPermissionFlags` derivation WITHOUT the `deleted` flag,
+   * each OR `isAdminUser`; `readOnly` is the entity's deleted flag, so
+   * a soft-deleted pipeline's cells stay read-only even when the
+   * ungated flags still grant. `onTaskDescriptionUpdate` writes one
+   * task's description (throws on failure so the cell stays open);
+   * `onTaskTagChange` writes one task's one-source tag selection.
+   */
+  pipelineTaskAccess: {
+    canEditDescription: boolean;
+    canEditTags: boolean;
+    canEditGlossaryTerms: boolean;
+    readOnly: boolean;
+  };
+  onTaskDescriptionUpdate: (task: PipelineTask, index: number, description: string) => Promise<void>;
+  onTaskTagChange: (task: PipelineTask, source: TagSource, tagFqns: string[]) => Promise<void>;
   /**
    * D-F2 column-tag editing. `schemaTagOptions` is the governance catalog's
    * tag list (both sources; the cell filters to its own source).
@@ -135,15 +164,6 @@ function isGeneratedTag(tag: TagRef): boolean {
 
 const glossaryTags = computed(() =>
   props.context.asset.tags.filter((tag) => tag.source === 'Glossary'),
-);
-
-const showMetricExpression = computed(
-  () =>
-    props.context.entityType === 'metric' &&
-    Boolean(
-      props.context.asset.storedProcedureCode?.code ||
-        props.context.asset.storedProcedureCode?.language,
-    ),
 );
 </script>
 
@@ -275,23 +295,21 @@ const showMetricExpression = computed(
   </template>
   <template v-else-if="piece === 'tasks'">
     <Typography.Paragraph type="secondary">{{ t('asset.tasksLead') }}</Typography.Paragraph>
-    <Empty
-      v-if="context.taskGraphEmpty"
-      data-testid="pipeline-task-empty"
-      :description="t('asset.tasksEmpty')"
+    <PipelineTasksWidget
+      :tasks="context.asset.tasks ?? []"
+      :task-graph="context.taskGraph"
+      :deleted="context.asset.deleted === true"
+      :can-edit-description="context.pipelineTaskAccess.canEditDescription"
+      :can-edit-tags="context.pipelineTaskAccess.canEditTags"
+      :can-edit-glossary-terms="context.pipelineTaskAccess.canEditGlossaryTerms"
+      :tag-options="context.schemaTagOptions"
+      :on-task-description-update="context.onTaskDescriptionUpdate"
+      :on-task-tag-change="context.onTaskTagChange"
     />
-    <PipelineTaskGraph v-else :model="context.taskGraph" />
   </template>
   <template v-else-if="piece === 'code'">
     <Typography.Paragraph type="secondary">{{ t('asset.codeLead') }}</Typography.Paragraph>
-    <Empty
-      v-if="!context.asset.storedProcedureCode?.code && !context.asset.storedProcedureCode?.language"
-      data-testid="asset-code-empty"
-      :description="t('asset.codeEmpty')"
-    />
-    <pre v-else data-testid="asset-code-block" class="detail__code">{{
-      [context.asset.storedProcedureCode?.language, context.asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
-    }}</pre>
+    <StoredProcedureCodeWidget :code="context.asset.storedProcedureCode" />
   </template>
   <template v-else-if="piece === 'chartsTables'">
     <Typography.Paragraph type="secondary">{{ t('asset.chartsLead') }}</Typography.Paragraph>
@@ -354,12 +372,11 @@ const showMetricExpression = computed(
     </template>
   </template>
   <template v-else-if="piece === 'metricExpression'">
-    <template v-if="showMetricExpression">
-      <Typography.Title :level="5">{{ t('asset.metricExpressionTitle') }}</Typography.Title>
-      <pre data-testid="asset-metric-expression" class="detail__code">{{
-        [context.asset.storedProcedureCode?.language, context.asset.storedProcedureCode?.code].filter(Boolean).join('\n\n')
-      }}</pre>
-    </template>
+    <MetricDefinitionWidget
+      :metric="context.asset"
+      :can-edit="context.metricDefinitionCanEdit"
+      :on-save="context.onMetricDefinitionSave"
+    />
   </template>
   <template v-else-if="piece === 'customProperties'">
     <AssetCustomPropertiesPanel

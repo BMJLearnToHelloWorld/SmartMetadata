@@ -40,63 +40,63 @@ export const USAGE_SUMMARY_ENTITY_TYPES: readonly string[] = ['table', 'dashboar
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
     collection: 'tables',
-    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins',
+    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins,dataProducts',
   },
-  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes' },
+  topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes,dataProducts' },
   dashboard: {
     collection: 'dashboards',
-    fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers,votes',
+    fields: 'owners,tags,domains,extension,service,charts,dataModels,project,followers,votes,dataProducts',
   },
   pipeline: {
     collection: 'pipelines',
-    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers,votes',
+    fields: 'owners,tags,domains,extension,service,tasks,pipelineStatus,scheduleInterval,sourceUrl,state,followers,votes,dataProducts',
   },
   mlmodel: {
     collection: 'mlmodels',
-    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers,votes',
+    fields: 'owners,tags,domains,extension,service,mlFeatures,mlHyperParameters,algorithm,target,dashboard,followers,votes,dataProducts',
   },
   container: {
     collection: 'containers',
-    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers,votes',
+    fields: 'owners,tags,domains,extension,service,dataModel,parent,children,prefix,fileFormats,followers,votes,dataProducts',
   },
   searchIndex: {
     collection: 'searchIndexes',
-    fields: 'owners,tags,domains,extension,service,fields,indexType,followers,votes',
+    fields: 'owners,tags,domains,extension,service,fields,indexType,followers,votes,dataProducts',
   },
   storedProcedure: {
     collection: 'storedProcedures',
-    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers,votes',
+    fields: 'owners,tags,domains,extension,service,database,databaseSchema,storedProcedureCode,storedProcedureType,followers,votes,dataProducts',
   },
   chart: {
     collection: 'charts',
-    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers,votes',
+    fields: 'owners,tags,domains,extension,service,dashboards,chartType,sourceUrl,followers,votes,dataProducts',
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,customUnitOfMeasurement,granularity,followers,votes,dataProducts',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',
-    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers,votes',
+    fields: 'owners,tags,domains,extension,service,columns,dataModelType,project,sql,sourceUrl,followers,votes,dataProducts',
   },
   database: {
     collection: 'databases',
-    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers,votes',
+    fields: 'owners,tags,domains,extension,service,databaseSchemas,sourceUrl,followers,votes,dataProducts',
   },
   databaseSchema: {
     collection: 'databaseSchemas',
-    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers,votes',
+    fields: 'owners,tags,domains,extension,service,database,tables,sourceUrl,followers,votes,dataProducts',
   },
   // P2 B5: official APICollectionPage / APIEndpointPage, reached through
   // the generic entity detail route (no explicit router entries exist
   // officially either — EntityDetailComponentUtils maps the types).
   apiCollection: {
     collection: 'apiCollections',
-    fields: 'owners,tags,domains,extension,service,followers,votes',
+    fields: 'owners,tags,domains,extension,service,followers,votes,dataProducts',
   },
   apiEndpoint: {
     collection: 'apiEndpoints',
-    fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes',
+    fields: 'owners,tags,domains,extension,service,apiCollection,endpointURL,requestMethod,requestSchema,responseSchema,followers,votes,dataProducts',
   },
   // C-14: queries are wired for vote/patch (PUT /v1/queries/{id}/vote,
   // PATCH /v1/queries/{id}) and for GET /v1/queries/name/{fqn}, all

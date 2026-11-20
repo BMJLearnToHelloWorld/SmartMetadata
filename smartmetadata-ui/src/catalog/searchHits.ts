@@ -153,6 +153,13 @@ export function mapSearchResponse(payload: unknown): SearchPage {
     // falls back to 0). A present-but-unmappable value still counts.
     const usageSummary =
       'usageSummary' in source ? (mapUsageSummary(source.usageSummary) ?? {}) : undefined;
+    // Official Domain.domainType enum (domain.json): only the three enum
+    // values pass through; anything else is dropped, never shown.
+    const domainTypeRaw = asString(source.domainType);
+    const domainType =
+      domainTypeRaw === 'Source-aligned' || domainTypeRaw === 'Consumer-aligned' || domainTypeRaw === 'Aggregate'
+        ? domainTypeRaw
+        : undefined;
     const mapped: SearchHit = {
       id: asString(source.id) || asString(hit._id) || undefined,
       name: name || fullyQualifiedName,
@@ -170,6 +177,7 @@ export function mapSearchResponse(payload: unknown): SearchPage {
       domains: mapOwners(source.domains),
       dataProducts: mapOwners(source.dataProducts),
       dataType: asString(source.dataType) || undefined,
+      domainType,
       tableName: nestedName(source.table, 'displayName', 'name') || asString(source.tableName) || undefined,
       tableFqn: asString(asRecord(source.table)?.fullyQualifiedName) || undefined,
       constraint: asString(source.constraint) || undefined,
