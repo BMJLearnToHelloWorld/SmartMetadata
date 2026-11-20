@@ -14,10 +14,8 @@ import {
   getSsoProviderIcon,
 } from '@/admin/ssoProviders';
 import type { SsoFormData } from '@/admin/ssoSchemas';
-import {
-  resolveSsoSecuritySources,
-  type SsoSettingSource,
-} from '@/admin/ssoSettingsSource';
+import { resolveSsoSecuritySources } from '@/admin/ssoSecuritySources';
+import type { SettingSource } from '@/utils/settingsSource';
 import { showSsoErrorToast } from '@/admin/ssoToasts';
 import {
   getSecurityConfigurationDocument,
@@ -25,13 +23,13 @@ import {
   patchSecurityConfiguration,
 } from '@/api/system';
 import PageLayout from '@/components/shared/PageLayout.vue';
+import SettingsSourceBanner from '@/components/shared/SettingsSourceBanner.vue';
 import SmBreadcrumb, {
   type SmBreadcrumbItem,
 } from '@/components/shared/SmBreadcrumb.vue';
 import SsoProviderIcon from './SsoProviderIcon.vue';
 import SsoProviderSelector from './SsoProviderSelector.vue';
 import SsoSchemaForm from './SsoSchemaForm.vue';
-import SsoSettingsSourceBanner from './SsoSettingsSourceBanner.vue';
 
 /**
  * Settings SSO page (pin SettingsSso.tsx): three render branches driven by
@@ -55,7 +53,7 @@ const showProviderSelector = ref(false);
 const ssoEnabled = ref(true);
 const securityConfig = ref<SsoFormData | null | undefined>(undefined);
 const configReloadKey = ref(0);
-const sources = ref<SsoSettingSource[]>([]);
+const sources = ref<SettingSource[]>([]);
 
 let configFetched = false;
 
@@ -293,7 +291,7 @@ watch(
       v-else-if="showProviderSelector || (!hasExistingConfig && isProviderManaged)"
     >
       <SmBreadcrumb :items="breadcrumbItems" />
-      <SsoSettingsSourceBanner
+      <SettingsSourceBanner
         :sources="sources"
         :on-refetch="refetchSources"
         :on-adopted="handleSettingsAdopted"
@@ -315,7 +313,7 @@ watch(
 
     <template v-else-if="!hasExistingConfig">
       <SmBreadcrumb :items="breadcrumbItems" />
-      <SsoSettingsSourceBanner
+      <SettingsSourceBanner
         :sources="sources"
         :on-refetch="refetchSources"
         :on-adopted="handleSettingsAdopted"
@@ -332,7 +330,7 @@ watch(
 
     <template v-else>
       <SmBreadcrumb :items="breadcrumbItems" />
-      <SsoSettingsSourceBanner
+      <SettingsSourceBanner
         :sources="sources"
         :on-refetch="refetchSources"
         :on-adopted="handleSettingsAdopted"

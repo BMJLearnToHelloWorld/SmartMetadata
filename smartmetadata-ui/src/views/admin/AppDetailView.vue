@@ -6,10 +6,11 @@
   Vue port of pin components/Settings/Applications/AppDetails/AppDetails.tsx.
   Route param: `:fqn` (pin SettingsRouter.tsx:643-648 mounts AppDetails on
   getSettingPathRelative(APPLICATIONS, undefined, true), i.e.
-  SETTINGS_WITH_CATEGORY_FQN `/settings/:settingCategory/:fqn`); the value is
-  the FQN and is fetched by name. No breadcrumb (AP-C1), no description
-  rendering, no plugin component (the OSS plugin registry is empty). Page title
-  is set by the shell/title line, not here.
+  SETTINGS_WITH_CATEGORY_FQN `/settings/:settingCategory/:fqn`; pin
+  RouterUtils.ts:206 getApplicationDetailsPath builds `/settings/apps/:fqn`);
+  the value is the FQN and is fetched by name (ByName). No breadcrumb (AP-C1),
+  no description rendering, no plugin component (the OSS plugin registry is
+  empty). Page title is set by the shell/title line, not here.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';

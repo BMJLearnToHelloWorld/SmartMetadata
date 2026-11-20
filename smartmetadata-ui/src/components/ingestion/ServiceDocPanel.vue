@@ -3,7 +3,7 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SmMarkdown from '@/components/shared/SmMarkdown.vue';
 import {
@@ -18,22 +18,32 @@ import {
   getServiceTypeDisplay,
   getSupportedDocLanguage,
   isUsableMarkdown,
+  splitDocMarkdown,
   type FieldFocusMeta,
 } from '@/ingestion/fieldFocus';
 
 /**
- * Port of official ServiceDocPanel in focused mode (pin a3012259ca),
- * the mode both edit pages use. The panel owns the connector-markdown
- * fetch, as pin does: same-origin files bundled under
- * `public/locales/`, requested in the active locale with an English
- * fallback, guarded so only the newest response writes. The focused
- * field's `$$section` block plus the Requirements body render when
- * the doc carries them; otherwise the field area falls back to the
- * parsed schema title/description (Q-2 C′), and the setup-guide
- * default shows with nothing focused. The docs link renders only
- * when a connector URL can be extracted from the markdown (for
- * workflows, from the connector file, which the shared workflow doc
- * can never carry).
+ * Port of official ServiceDocPanel (pin a3012259ca), both modes:
+ * focused (`focusedMode`, the mode the service/ingestion edit pages
+ * use) and full-document (the pin default, used by the SSO doc panel,
+ * the application configurations, and custom properties). The panel
+ * owns the connector-markdown fetch, as pin does: same-origin files
+ * bundled under `public/locales/`, requested in the active locale with
+ * an English fallback, guarded so only the newest response writes.
+ * The focused field's `$$section` block plus the Requirements body
+ * render when the doc carries them; otherwise the field area falls
+ * back to the parsed schema title/description (Q-2 C′), and the
+ * setup-guide default shows with nothing focused. The docs link
+ * renders only when a connector URL can be extracted from the markdown
+ * (for workflows, from the connector file, which the shared workflow
+ * doc can never carry).
+ *
+ * Full-document mode renders the whole markdown split into prose /
+ * `$$section` / admonition segments (pin `processDocMarkdown`, via
+ * shared `splitDocMarkdown`), and highlights + scrolls to the active
+ * field's section — pin's non-focused effect, which only runs outside
+ * focused mode. The header (service name + type) renders in focused
+ * mode only, as in pin.
  */
 const props = withDefaults(
   defineProps<{
@@ -41,6 +51,7 @@ const props = withDefaults(
     serviceType: string;
     activeField?: string;
     activeFieldMeta?: FieldFocusMeta;
+    focusedMode?: boolean;
     isWorkflow?: boolean;
     workflowType?: string;
     testId?: string;
@@ -48,6 +59,7 @@ const props = withDefaults(
   {
     activeField: undefined,
     activeFieldMeta: undefined,
+    focusedMode: false,
     isWorkflow: false,
     workflowType: undefined,
     testId: 'service-requirements',
@@ -59,6 +71,7 @@ const { t, locale } = useI18n();
 const markdownContent = ref('');
 const connectorMarkdown = ref('');
 const isLoading = ref(false);
+const isMarkdownReady = ref(false);
 
 // Pin's markdownRequestIdRef: the host pages render once before the
 // service has loaded, so a first request can still be in flight when a
@@ -72,6 +85,7 @@ async function fetchRequirement(): Promise<void> {
   if (!props.serviceName) {
     markdownContent.value = '';
     isLoading.value = false;
+    isMarkdownReady.value = true;
     return;
   }
   isLoading.value = true;
@@ -94,6 +108,7 @@ async function fetchRequirement(): Promise<void> {
   }
   markdownContent.value = response.replaceAll('OpenMetadata', t('product.name'));
   isLoading.value = false;
+  isMarkdownReady.value = true;
 }
 
 async function fetchConnectorMarkdown(): Promise<void> {
@@ -164,11 +179,93 @@ const docsUrl = computed(() =>
 const serviceTypeDisplay = computed(() =>
   getServiceTypeDisplay(props.serviceType, t('forms.docPanel.service')),
 );
+
+const segments = computed(() => splitDocMarkdown(markdownContent.value));
+
+const panelRef = ref<HTMLElement | null>(null);
+
+function getScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let parent = node?.parentElement ?? null;
+  while (parent) {
+    const { overflowY } = window.getComputedStyle(parent);
+    if (/(auto|scroll|overlay)/.test(overflowY) && parent.scrollHeight > parent.clientHeight) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
+// Scrolls only the nearest scroll parent: `scrollIntoView` would scroll
+// every scrollable ancestor, including containers holding open popovers.
+function scrollDocElementIntoView(
+  element: HTMLElement,
+  alignToStart: boolean,
+): void {
+  const scrollParent = getScrollParent(element);
+  if (!scrollParent) {
+    element.scrollIntoView({
+      block: alignToStart ? 'start' : 'center',
+      behavior: 'smooth',
+      inline: 'nearest',
+    });
+    return;
+  }
+  const containerRect = scrollParent.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const relativeTop = elementRect.top - containerRect.top;
+  const delta = alignToStart
+    ? relativeTop
+    : relativeTop - scrollParent.clientHeight / 2 + elementRect.height / 2;
+  scrollParent.scrollTo({ top: scrollParent.scrollTop + delta, behavior: 'smooth' });
+}
+
+let observer: MutationObserver | undefined;
+let frame = 0;
+
+function highlightActiveField(): void {
+  const fieldName = activeFieldName.value;
+  if (props.focusedMode || !isMarkdownReady.value || !fieldName || !panelRef.value) {
+    return;
+  }
+  const selector = `[data-id="${CSS.escape(fieldName)}"]`;
+  const highlight = (): boolean => {
+    const element = panelRef.value?.querySelector<HTMLElement>(selector);
+    if (!element) {
+      return false;
+    }
+    observer?.disconnect();
+    scrollDocElementIntoView(element, fieldName === 'selected-entity');
+    element.dataset.highlighted = 'true';
+    return true;
+  };
+  cancelAnimationFrame(frame);
+  frame = requestAnimationFrame(() => {
+    panelRef.value
+      ?.querySelectorAll<HTMLElement>('[data-highlighted="true"]')
+      .forEach((el) => {
+        el.dataset.highlighted = 'false';
+      });
+    if (!highlight() && panelRef.value) {
+      observer = new MutationObserver(highlight);
+      observer.observe(panelRef.value, { childList: true, subtree: true });
+    }
+  });
+}
+
+watch([activeFieldName, isMarkdownReady], () => {
+  void nextTick(highlightActiveField);
+});
+
+onBeforeUnmount(() => {
+  cancelAnimationFrame(frame);
+  observer?.disconnect();
+});
 </script>
 
 <template>
-  <div :data-testid="testId" class="service-doc-panel">
-    <div class="service-doc-header">
+  <div ref="panelRef" :data-testid="testId" class="service-doc-panel">
+    <div v-if="focusedMode" class="service-doc-header">
       <div class="service-doc-title">{{ serviceName }}</div>
       <div class="service-doc-subtitle">{{ serviceTypeDisplay }}</div>
     </div>
@@ -177,7 +274,7 @@ const serviceTypeDisplay = computed(() =>
       {{ t('shared.loading') }}
     </div>
 
-    <template v-else>
+    <template v-else-if="focusedMode">
       <div class="service-doc-intro">
         <div class="service-doc-eyebrow">{{ details.eyebrow }}</div>
         <h1 class="service-doc-heading">{{ details.title }}</h1>
@@ -220,6 +317,25 @@ const serviceTypeDisplay = computed(() =>
         <span class="service-doc-link-hint">{{ t('forms.docPanel.docsDescription') }}</span>
       </div>
     </template>
+
+    <div v-else>
+      <template v-for="(segment, index) in segments" :key="index">
+        <section
+          v-if="segment.kind === 'section'"
+          :data-id="segment.id"
+          data-highlighted="false"
+        >
+          <SmMarkdown :markdown="segment.markdown" />
+        </section>
+        <div
+          v-else-if="segment.kind === 'admonition'"
+          :class="`admonition admonition-${segment.admonitionType}`"
+        >
+          <SmMarkdown :markdown="segment.markdown" />
+        </div>
+        <SmMarkdown v-else :markdown="segment.markdown" />
+      </template>
+    </div>
   </div>
 </template>
 

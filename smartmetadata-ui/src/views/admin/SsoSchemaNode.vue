@@ -14,8 +14,8 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { resolveSsoFieldText } from '@/admin/ssoFieldText';
 import type { SsoJsonSchema } from '@/admin/ssoSchemas';
-import { isSsoPointerManaged } from '@/admin/ssoSettingsSource';
-import type { SsoSecuritySources } from '@/admin/ssoSettingsSource';
+import { isPointerManaged } from '@/utils/settingsSource';
+import type { SsoSecuritySources } from '@/admin/ssoSecuritySources';
 import {
   buildSsoFieldGroups,
   isSsoDeprecatedProperty,
@@ -82,7 +82,7 @@ const sectionPaths = computed(
 // `applyManagedPathsToUiSchema` + RJSF disabled propagation.
 const effectiveDisabled = computed(
   () =>
-    props.disabled || isSsoPointerManaged(sectionPaths.value, pointer.value),
+    props.disabled || isPointerManaged(sectionPaths.value, pointer.value),
 );
 const isReadonly = computed(() => props.entry?.['ui:readonly'] === true);
 const controlDisabled = computed(

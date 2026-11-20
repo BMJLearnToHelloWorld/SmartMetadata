@@ -15,7 +15,6 @@ import {
   extractSsoFieldName,
   resolveSsoActiveField,
   resolveSsoDocServiceName,
-  splitSsoDocMarkdown,
   SSO_DOC_FIELD_MAPPINGS,
   SSO_PROVIDER_FILE_MAP,
 } from './ssoDocSections';
@@ -147,52 +146,5 @@ describe('form keydown handler', () => {
     handler(comboEvent);
     expect(comboPrevent).not.toHaveBeenCalled();
     document.body.innerHTML = '';
-  });
-});
-
-describe('splitSsoDocMarkdown', () => {
-  it('splits sections with ids removed and content trimmed', () => {
-    const segments = splitSsoDocMarkdown(
-      '# Intro\n\n$$section\n$(id="clientId")\n\nContent one.\n$$\n\nBetween.\n\n$$section\n$(id="authority")\nContent two.\n$$\n',
-    );
-    expect(segments).toEqual([
-      { kind: 'prose', markdown: '# Intro\n\n' },
-      { kind: 'section', id: 'clientId', markdown: 'Content one.' },
-      { kind: 'prose', markdown: '\n\nBetween.\n\n' },
-      { kind: 'section', id: 'authority', markdown: 'Content two.' },
-      { kind: 'prose', markdown: '\n' },
-    ]);
-  });
-
-  it('uses an empty id when the marker is missing', () => {
-    expect(
-      splitSsoDocMarkdown('$$section\nNo marker here.\n$$'),
-    ).toEqual([{ kind: 'section', id: '', markdown: 'No marker here.' }]);
-  });
-
-  it('returns plain prose unchanged when no blocks exist', () => {
-    expect(splitSsoDocMarkdown('# Hello\n\nPlain text.')).toEqual([
-      { kind: 'prose', markdown: '# Hello\n\nPlain text.' },
-    ]);
-    expect(splitSsoDocMarkdown('')).toEqual([]);
-  });
-
-  it('splits top-level admonition blocks with trimmed content', () => {
-    const segments = splitSsoDocMarkdown(
-      'Before.\n\n$$note\nBe careful.\n$$\n\nAfter.',
-    );
-    expect(segments).toEqual([
-      { kind: 'prose', markdown: 'Before.\n\n' },
-      { kind: 'admonition', admonitionType: 'note', markdown: 'Be careful.' },
-      { kind: 'prose', markdown: '\n\nAfter.' },
-    ]);
-  });
-
-  it('only matches known admonition types at line starts', () => {
-    expect(
-      splitSsoDocMarkdown('$$unknown\nNot an admonition.\n$$'),
-    ).toEqual([
-      { kind: 'prose', markdown: '$$unknown\nNot an admonition.\n$$' },
-    ]);
   });
 });
