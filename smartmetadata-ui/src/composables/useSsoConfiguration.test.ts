@@ -114,6 +114,18 @@ const googleConfigWithoutUseNonce = (): SsoFormData => ({
   },
 });
 
+// Stored OIDC config as the GET returns it: the secret arrives masked.
+const googleConfigWithMaskedSecret = (): SsoFormData => {
+  const config = googleConfigWithoutUseNonce();
+  (
+    config.authenticationConfiguration.oidcConfiguration as Record<
+      string,
+      unknown
+    >
+  ).secret = '********';
+  return config;
+};
+
 const samlConfig = (): SsoFormData => ({
   authenticationConfiguration: {
     provider: 'saml',
@@ -703,6 +715,86 @@ describe('useSsoConfiguration', () => {
           op.path.startsWith('/authenticationConfiguration/oidcConfiguration/'),
         ),
       ).toEqual([]);
+    });
+
+    it('emits a leaf replace for an edited stored OIDC secret (N-1)', async () => {
+      securityConfigRef.value = googleConfigWithMaskedSecret();
+      mountHarness();
+      patchSecurityConfiguration.mockResolvedValueOnce(undefined);
+
+      api.handleFieldChange(
+        ['authenticationConfiguration', 'oidcConfiguration', 'secret'],
+        'new-secret',
+      );
+      await api.handleSave();
+      await flushPromises();
+
+      expect(patchSecurityConfiguration).toHaveBeenCalledTimes(1);
+      const ops = patchSecurityConfiguration.mock.calls[0][0] as Array<{
+        op: string;
+        path: string;
+        value?: unknown;
+      }>;
+      // The stored provider is OIDC, so the server filter keeps this op
+      // and really rewrites the stored secret (pin SystemRepository
+      // filterInvalidPatchOperations keys on the stored provider).
+      expect(ops).toContainEqual({
+        op: 'replace',
+        path: '/authenticationConfiguration/oidcConfiguration/secret',
+        value: 'new-secret',
+      });
+      expect(ops.filter((op) => op.path.includes('secret'))).toHaveLength(1);
+    });
+
+    it('emits no secret op for an untouched stored secret (N-1)', async () => {
+      securityConfigRef.value = googleConfigWithMaskedSecret();
+      mountHarness();
+      patchSecurityConfiguration.mockResolvedValueOnce(undefined);
+
+      await api.handleSave();
+      await flushPromises();
+
+      expect(patchSecurityConfiguration).toHaveBeenCalledTimes(1);
+      const ops = patchSecurityConfiguration.mock.calls[0][0] as Array<{
+        op: string;
+        path: string;
+        value?: unknown;
+      }>;
+      // An absent secret op means "keep the server value": the masked
+      // value stays masked and the server restores the live secret.
+      expect(ops.filter((op) => op.path.includes('secret'))).toEqual([]);
+      expect(applySecurityConfiguration).not.toHaveBeenCalled();
+    });
+
+    it('saves via PUT, not PATCH, when a provider is selected after an existing config loads (N-1)', async () => {
+      securityConfigRef.value = googleConfigWithoutUseNonce();
+      mountHarness();
+      expect(api.hasExistingConfig.value).toBe(true);
+
+      selectedProviderRef.value = 'okta';
+      await nextTick();
+
+      // The selector route resets to the new-configuration flow: the saved
+      // baseline is dropped, so the provider switch never reaches the
+      // PATCH filter keyed on the stored provider.
+      expect(api.hasExistingConfig.value).toBe(false);
+      expect(api.savedData.value).toBeUndefined();
+      expect(api.currentProvider.value).toBe('okta');
+
+      validateSecurityConfiguration.mockResolvedValueOnce({
+        status: 'success',
+      });
+      applySecurityConfiguration.mockResolvedValueOnce({
+        authenticationConfiguration: {},
+        authorizerConfiguration: {},
+      });
+
+      await api.handleSave();
+      await flushPromises();
+
+      expect(validateSecurityConfiguration).toHaveBeenCalledTimes(1);
+      expect(applySecurityConfiguration).toHaveBeenCalledTimes(1);
+      expect(patchSecurityConfiguration).not.toHaveBeenCalled();
     });
 
     it('pins deployment-owned fields in the PATCH candidate only', async () => {
