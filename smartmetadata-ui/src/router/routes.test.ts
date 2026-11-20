@@ -239,8 +239,9 @@ describe('settings route-pattern manifest (§4.5)', () => {
   });
 
   it('resolves staged-retained records at their original URLs', () => {
+    // B-9 (a1): the user detail segment is `:fqn` (the value is the username).
     expect(router.resolve('/admin/users/u1').name).toBe('admin-user');
-    expect(router.resolve('/admin/users/u1').params).toMatchObject({ id: 'u1' });
+    expect(router.resolve('/admin/users/u1').params).toMatchObject({ fqn: 'u1' });
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
     expect(router.resolve('/connections').name).toBe('connections');
     expect(router.resolve('/ingestion/services').name).toBe('not-found');
@@ -321,7 +322,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     // falls into the catch-all.
     const resolved = router.resolve('/admin/users/admins');
     expect(resolved.name).toBe('admin-user');
-    expect(resolved.params).toMatchObject({ id: 'admins' });
+    expect(resolved.params).toMatchObject({ fqn: 'admins' });
     const botResolved = router.resolve('/admin/bots/bots');
     expect(botResolved.name).toBe('admin-bot');
     expect(botResolved.params).toMatchObject({ id: 'bots' });
@@ -478,6 +479,22 @@ describe('guard declaration table (§10.2)', () => {
 
   it('declares the staged entry equivalence for the old user detail (M1b)', () => {
     expect(declarationOf('admin-user')).toEqual({ resource: 'USER', operation: 'entry' });
+  });
+
+  it('declares the three marketplace app routes admin-only (AP-D3 meta gate)', () => {
+    // Officially each is wrapped in a bare AdminProtectedRoute; the
+    // product equivalent is the 'admin-only' meta guard, and the views
+    // carry no inline gate (DEL-22 HOLD lifted).
+    for (const name of [
+      'marketplace-app-catalog',
+      'marketplace-app-detail',
+      'marketplace-app-install',
+    ]) {
+      expect(declarationOf(name)).toBe('admin-only');
+    }
+    // The data marketplace overview stays unguarded, like the official
+    // DataMarketplacePage route.
+    expect(declarationOf('marketplace-overview')).toBeUndefined();
   });
 
   it('leaves the staged unit, the service family, inbox and column-bulk-ops undeclared', () => {

@@ -90,13 +90,12 @@ const DUMMY = { template: '<div />' };
 
 async function mountDetail(
   appOverrides: Record<string, unknown> = {},
-  asAdmin = true,
   installed = false,
   definitionError = false,
 ) {
   const pinia = createPinia();
   setActivePinia(pinia);
-  useAuthStore().user = { name: asAdmin ? 'admin' : 'bob', isAdmin: asAdmin } as LoginUser;
+  useAuthStore().user = { name: 'admin', isAdmin: true } as LoginUser;
   if (definitionError) {
     mockedByFqn.mockRejectedValue(new Error('gone'));
   } else {
@@ -127,7 +126,6 @@ async function mountDetail(
     global: {
       plugins: [Antd, pinia, router, createI18n({ legacy: false, locale: 'en', messages: MESSAGES })],
       stubs: {
-        PermissionPlaceholder: { template: '<div data-testid="permission-error-placeholder">Access Denied</div>' },
         AppLogo: { template: '<div class="logo-stub" />' },
       },
     },
@@ -166,7 +164,7 @@ describe('MarketplaceAppDetailView', () => {
   });
 
   it('disables install when the app is already installed', async () => {
-    const { wrapper } = await mountDetail({}, true, true);
+    const { wrapper } = await mountDetail({}, true);
     expect(
       wrapper.find('[data-testid="install-application"]').attributes('disabled'),
     ).toBeDefined();
@@ -308,19 +306,13 @@ describe('MarketplaceAppDetailView', () => {
     wrapper.unmount();
   });
 
-  it('renders the forbidden page for non-admin users without fetching', async () => {
-    const { wrapper } = await mountDetail({}, false);
-    expect(wrapper.find('[data-testid="marketplace-app-detail-body"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Access Denied');
-    expect(mockedByFqn).not.toHaveBeenCalled();
-    expect(mockedByName).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
+  // No non-admin case here: the admin gate lives on the route (meta
+  // guard 'admin-only'), so a non-admin never mounts this view —
+  // the denial is locked in routes.test.ts (guard declaration table).
 
   it('toasts and renders an empty page when the definition fetch fails', async () => {
     const errorSpy = vi.spyOn(message, 'error').mockImplementation(() => undefined as never);
-    const { wrapper } = await mountDetail({}, true, false, true);
+    const { wrapper } = await mountDetail({}, false, true);
     expect(wrapper.find('h2').exists()).toBe(true);
     expect(wrapper.find('h2').text()).toBe('');
     expect(wrapper.find('[data-testid="install-application"]').exists()).toBe(true);

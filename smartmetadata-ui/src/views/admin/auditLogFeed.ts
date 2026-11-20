@@ -168,14 +168,16 @@ export function isDescriptionField(fieldName: string): boolean {
 
 /**
  * Field → path table (pin LINKABLE_FIELD_RESOLVERS, product routes).
- * Team and user detail pages load by name, so FQN values resolve
- * through their current `:id` params (the D-11 transition shape).
+ * Team and user detail pages load by name. The user detail route is
+ * :fqn-addressed (B-9 (a1)), so user FQN values resolve through the
+ * :fqn param; the team route still carries its FQN value in the :id
+ * param (the D-11 transition shape).
  */
 const FIELD_LINK_RESOLVERS: Record<string, (fqn: string) => RouteLocationRaw> = {
   teams: (fqn) => ({ name: 'admin-team', params: { id: fqn } }),
-  owner: (fqn) => ({ name: 'admin-user', params: { id: fqn } }),
-  reviewers: (fqn) => ({ name: 'admin-user', params: { id: fqn } }),
-  experts: (fqn) => ({ name: 'admin-user', params: { id: fqn } }),
+  owner: (fqn) => ({ name: 'admin-user', params: { fqn } }),
+  reviewers: (fqn) => ({ name: 'admin-user', params: { fqn } }),
+  experts: (fqn) => ({ name: 'admin-user', params: { fqn } }),
 };
 
 function findFieldResolverKey(fieldName: string): string | undefined {
@@ -489,7 +491,7 @@ export function getUserEntityLink(
   }
   return {
     kind: 'link',
-    to: { name: 'admin-user', params: { id: userNameForLink } },
+    to: { name: 'admin-user', params: { fqn: userNameForLink } },
     label: entityLabel ?? userNameForLink,
   };
 }
@@ -520,7 +522,7 @@ export function getAuditLogHeaderUserLink(
   if (log.userName) {
     return {
       kind: 'link',
-      to: { name: 'admin-user', params: { id: log.userName } },
+      to: { name: 'admin-user', params: { fqn: log.userName } },
       label: info.userName,
     };
   }

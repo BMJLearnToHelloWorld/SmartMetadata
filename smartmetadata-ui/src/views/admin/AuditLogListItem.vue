@@ -71,7 +71,7 @@ function hasDetailValue(detail: AuditLogChangeDetail): boolean {
           <span class="audit-log-list-item__dash">–</span>
           <span data-testid="impersonated-by">{{ t('label.impersonated-by-with-colon') }}</span>
           <RouterLink
-            :to="{ name: 'admin-user', params: { id: log.impersonatedBy } }"
+            :to="{ name: 'admin-user', params: { fqn: log.impersonatedBy } }"
             class="audit-log-list-item__actor"
           >
             {{ log.impersonatedBy }}

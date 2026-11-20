@@ -90,7 +90,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const permissionStore = usePermissionStore();
 
-const username = computed(() => String(route.params.fqn ?? route.params.id ?? ''));
+const username = computed(() => String(route.params.fqn ?? ''));
 const tabParam = computed(() =>
   typeof route.params.tab === 'string' ? route.params.tab : undefined,
 );

@@ -278,7 +278,9 @@ function teamLinkFor(record: AdminEntityRef) {
 }
 
 function userLinkFor(record: AdminEntityRef) {
-  return { name: 'admin-user', params: { id: record.id } };
+  // B-9 (a1): the user detail route is :fqn-addressed, so link by the
+  // fully qualified name (the username), never by UUID.
+  return { name: 'admin-user', params: { fqn: record.fullyQualifiedName ?? record.name ?? '' } };
 }
 </script>
 

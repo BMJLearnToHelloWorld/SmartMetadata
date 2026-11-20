@@ -36,7 +36,7 @@ async function mountItem(log: AuditLogEntry) {
         name: 'admin-settings-audit-logs',
         component: { template: '<div>audit</div>' },
       },
-      { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
+      { path: '/admin/users/:fqn', name: 'admin-user', component: { template: '<div>user</div>' } },
       { path: '/admin/teams/:id', name: 'admin-team', component: { template: '<div>team</div>' } },
       { path: '/admin/roles/:fqn', name: 'admin-role', component: { template: '<div>role</div>' } },
       {
@@ -78,9 +78,9 @@ describe('AuditLogListItem', () => {
       'Impersonated By:',
     );
     const links = header.findAllComponents(RouterLink);
-    expect(links[0]!.props('to')).toEqual({ name: 'admin-user', params: { id: 'alice' } });
+    expect(links[0]!.props('to')).toEqual({ name: 'admin-user', params: { fqn: 'alice' } });
     expect(links[0]!.text()).toBe('alice');
-    expect(links[1]!.props('to')).toEqual({ name: 'admin-user', params: { id: 'bob' } });
+    expect(links[1]!.props('to')).toEqual({ name: 'admin-user', params: { fqn: 'bob' } });
     const meta = wrapper.find('[data-testid="item-meta"]');
     expect(meta.find('[data-testid="entity-type-badge"]').text()).toBe('Table');
     expect(meta.find('[data-testid="timestamp"]').text()).not.toBe('');
@@ -173,7 +173,7 @@ describe('AuditLogListItem', () => {
       ),
     ).toEqual([
       { name: 'admin-team', params: { id: 'Eng' } },
-      { name: 'admin-user', params: { id: 'bob' } },
+      { name: 'admin-user', params: { fqn: 'bob' } },
     ]);
     const avatars = wrapper.findAllComponents(SmProfilePicture);
     expect(avatars.some((avatar) => avatar.props('size') === 'xxs')).toBe(true);
