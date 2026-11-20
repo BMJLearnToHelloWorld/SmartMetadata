@@ -54,13 +54,16 @@ describe('TagDetailView edit gating (upstream revokeEditPermissions)', () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/api/v1/tags/')) {
-          // The stub encodes the tag state in the id: 'disabled-tag' loads disabled.
+          // The stub encodes the tag state in the id: 'disabled-tag' loads disabled,
+          // 'deleted-tag' loads deleted.
           const disabled = url.includes('disabled-tag');
+          const deleted = url.includes('deleted-tag');
           return jsonResponse({
-            id: disabled ? 'disabled-tag' : 't1',
+            id: deleted ? 'deleted-tag' : disabled ? 'disabled-tag' : 't1',
             name: 'pii',
             displayName: 'PII',
             disabled,
+            deleted,
             owners: [],
           });
         }
@@ -83,6 +86,17 @@ describe('TagDetailView edit gating (upstream revokeEditPermissions)', () => {
     const wrapper = await mountTag('disabled-tag');
     expect(isDisabled(wrapper, 'edit-tag')).toBe(true);
     // Delete is not an Edit* operation: upstream revoke leaves it untouched.
+    expect(isDisabled(wrapper, 'delete-tag')).toBe(false);
+  });
+
+  it('disables edit but not delete on a deleted tag', async () => {
+    // Pin TagPage isEditable is disabled AND deleted (TagPage.tsx:289);
+    // the edit button reads the same isEditable computed, so the
+    // deleted half is fixed by the same line. The Add assets button
+    // needs no change: pin gates it on disabled only
+    // (renderAddAssetsButton, TagPage.tsx:857-858).
+    const wrapper = await mountTag('deleted-tag');
+    expect(isDisabled(wrapper, 'edit-tag')).toBe(true);
     expect(isDisabled(wrapper, 'delete-tag')).toBe(false);
   });
 });
@@ -245,11 +259,10 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     ]);
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
-    // Assets and data-observability have no product backing: two honest
-    // residual states with distinct stated reasons.
+    // B-15 Lane A: the assets tab mounts AssetsTabs, so only
+    // data-observability keeps an honest residual state.
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(2);
-    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(2);
+    expect(residuals).toHaveLength(1);
     wrapper.unmount();
   });
 
@@ -351,9 +364,9 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     );
     localStorage.setItem('sm.persona.v1', 'p1');
     const wrapper = await mountTagView();
-    // Neither assets nor data-observability is the widget-layout tab:
-    // both keep their residual states, and overview keeps its pane.
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
+    // Neither data-observability is the widget-layout tab: it keeps
+    // its residual state; the assets tab mounts AssetsTabs instead.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
@@ -378,8 +391,9 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Sensitive data');
     expect(wrapper.find('[data-testid="tag-disabled"]').exists()).toBe(false);
     expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
-    // Every other tab keeps its existing panel.
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
+    // Every other tab keeps its existing panel; the assets tab mounts
+    // AssetsTabs, so only data-observability keeps a residual.
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
@@ -400,6 +414,199 @@ describe('TagDetailView fixed tabs + widget grid (B-7)', () => {
     // cell renders, the activity panel stays.
     expect(widgetTestIds(wrapper)).toEqual([]);
     expect(wrapper.find('[data-testid="asset-activity-table"]').text()).toContain('description changed');
+    wrapper.unmount();
+  });
+
+  it('mounts AssetsTabs on the assets tab with the ES count and a preview panel', async () => {
+    // B-15 Lane A: the tab count is the ES hit total for the tag
+    // query filter, not usageCount (7 on the tag doc below).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            fullyQualifiedName: 'PII.pii',
+            classification: { id: 'c1', name: 'PII', displayName: 'PII' },
+            disabled: false,
+            owners: [],
+            usageCount: 7,
+          });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return jsonResponse({
+            hits: {
+              total: { value: 2 },
+              hits: [
+                {
+                  _id: 'a1',
+                  _source: {
+                    id: 'a1',
+                    name: 'orders',
+                    displayName: 'Orders',
+                    fullyQualifiedName: 'svc.db.schema.orders',
+                    entityType: 'table',
+                  },
+                },
+                {
+                  _id: 'a2',
+                  _source: {
+                    id: 'a2',
+                    name: 'sales',
+                    displayName: 'Sales',
+                    fullyQualifiedName: 'svc.sales',
+                    entityType: 'dashboard',
+                  },
+                },
+              ],
+            },
+            aggregations: {},
+          });
+        }
+        if (url.includes('/api/v1/activity/entity/tag/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return new Response('not found', { status: 404 });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tag-assets-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tag-tab-assets-count"]').text()).toBe('2');
+    expect(wrapper.text()).toContain('Orders');
+    // Clicking a row opens the preview panel beside the list; the
+    // close button dismisses it without navigating away.
+    const rows = wrapper.findAll('.ant-table-row');
+    expect(rows.length).toBe(2);
+    await rows[0].trigger('click');
+    expect(wrapper.find('[data-testid="tag-asset-preview"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="explore-preview"]').text()).toContain('Orders');
+    await wrapper.find('[data-testid="tag-asset-preview-close"]').trigger('click');
+    expect(wrapper.find('[data-testid="tag-asset-preview"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows the header Add Assets button on the overview tab when editing is permitted (pin renderAddAssetsButton)', async () => {
+    // Pin renders the button in the page header on every tab
+    // (TagPage.tsx:857-866, 893-899, 911-916); the tag-level EditAll
+    // grant alone satisfies haveAssetEditPermission, so the bulk
+    // resource load may fail closed here.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/permissions/tag/name/')) {
+          return jsonResponse({
+            resource: 'tag',
+            permissions: [{ operation: 'EditAll', access: 'allow' }],
+          });
+        }
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            fullyQualifiedName: 'PII.pii',
+            classification: { id: 'c1', name: 'PII', displayName: 'PII' },
+            disabled: false,
+            owners: [],
+            usageCount: 7,
+          });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} });
+        }
+        if (url.includes('/api/v1/activity/entity/tag/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return new Response('not found', { status: 404 });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    await flushPromises();
+    await flushPromises();
+    // Default tab is overview: the button must already be there.
+    expect(wrapper.find('[data-testid="tag-add-assets"]').exists()).toBe(true);
+    await wrapper.find('[data-testid="tag-add-assets"]').trigger('click');
+    await flushPromises();
+    // FormModal portals to document.body (Ant default), so the picker
+    // input is asserted there, not inside the mounted wrapper.
+    expect(
+      document.body.querySelector('[data-testid="asset-selection-search"]'),
+    ).not.toBeNull();
+    wrapper.unmount();
+    document.body.innerHTML = '';
+  });
+
+  it('keeps the assets count pill hidden when the ES count fetch fails', async () => {
+    // Intentional deviation (f): pin's catch sets the count to 0
+    // (TagPage.tsx:451-474), which would render a misleading "0" pill;
+    // the lane leaves assetCount undefined, so EntityDetailShell
+    // (only renders the pill when tab.count !== undefined) hides it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/tags/')) {
+          return jsonResponse({
+            id: 't1',
+            name: 'pii',
+            displayName: 'PII',
+            fullyQualifiedName: 'PII.pii',
+            classification: { id: 'c1', name: 'PII', displayName: 'PII' },
+            disabled: false,
+            owners: [],
+            usageCount: 7,
+          });
+        }
+        if (url.includes('/api/v1/search/query')) {
+          return new Response('error', { status: 500 });
+        }
+        if (url.includes('/api/v1/activity/entity/tag/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return new Response('not found', { status: 404 });
+        }
+        return jsonResponse({}, 404);
+      }),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTagView();
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="tag-assets-tab"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tag-tab-assets-count"]').exists()).toBe(false);
     wrapper.unmount();
   });
 });

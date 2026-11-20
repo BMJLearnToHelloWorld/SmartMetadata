@@ -1457,7 +1457,6 @@ const zhCN = {
       assets: '此控制台尚未接入指标资产列表。',
       tagAssets: '此控制台尚未接入标签资产列表。',
       dataObservability: '此控制台尚未接入数据观测。',
-      relationsGraph: '此控制台尚未接入术语关系图谱。',
     },
     name: '名称',
     noCustomProperties: 'No custom properties defined',
@@ -2200,6 +2199,15 @@ const zhCN = {
       bulkSummary: '成功 {passed} 个，失败 {failed} 个，待审批 {pending} 个。',
       pendingApprovalNote: '待审批的资产以变更请求形式暂存，尚未发布。',
       unknownAsset: '未知资产',
+    },
+    /** 标签资产页签（B-15 Lane A，pin TagPage 的 AssetsTabs）。 */
+    tagAssets: {
+      /** 关联资产空态描述中的名词（pin getEntityTypeString(TAG)）。 */
+      tagNoun: '标签',
+      removeConfirm: '将资产 {name} 从此标签中移除？',
+      removeSuccess: '已从此标签中移除资产。',
+      removeFailed: '从此标签中移除资产失败。',
+      selectedCount: '已选 {count} 项',
     },
   },
   profilerSettings: {

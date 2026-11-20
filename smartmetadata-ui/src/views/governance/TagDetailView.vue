@@ -10,18 +10,29 @@ import { Button, Descriptions, Empty, Form, Input, Switch, message } from 'ant-d
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { useTagAssetPermissions } from '@/composables/useTagAssetPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
+import { searchAssets } from '@/api/search';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTagVersionPath } from '@/catalog/versionPaths';
+import { openSearchHit } from '@/catalog/entityRoutes';
+import {
+  CERTIFICATION_CLASSIFICATION_NAME,
+  getQueryFilterToExcludeTermsAndEntities,
+  getTagAssetsQueryFilter,
+} from '@/catalog/tagAssets';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
+import AssetsTabs from '@/features/governance/AssetsTabs.vue';
+import AssetSelectionModal from '@/features/governance/AssetSelectionModal.vue';
+import ExplorePreview from '@/features/explore/ExplorePreview.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
@@ -29,6 +40,7 @@ import { toEntityLink } from '@/quality/entityLink';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { ActivityEvent, Conversation } from '@/types/collaboration';
+import type { SearchHit } from '@/types/api';
 import type { ClassificationTag } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
@@ -37,10 +49,12 @@ const { t } = useI18n();
 const loading = ref(false);
 const errorMessage = ref('');
 const tag = ref<ClassificationTag | null>(null);
-// Upstream TagPage isEditable (disabled AND deleted): the product read path
-// never surfaces deleted tags (the server default excludes them), so disabled
-// is the observable half. Delete is not an Edit* operation and keeps its own gate.
-const isEditable = computed(() => !!tag.value && tag.value.disabled !== true);
+// Pin TagPage isEditable (TagPage.tsx:289): disabled AND deleted.
+// The edit button reads this computed, so a deleted tag loses edit
+// access here; delete keeps its own gate (not an Edit* operation).
+const isEditable = computed(
+  () => !!tag.value && tag.value.disabled !== true && tag.value.deleted !== true,
+);
 const activeTab = ref('overview');
 const activity = ref<ActivityEvent[]>([]);
 const conversations = ref<Conversation[]>([]);
@@ -75,6 +89,92 @@ const editForm = reactive({
   description: '',
 });
 
+// B-15 Lane A — TagPage ASSETS tab (TagPage.tsx:632-674, 982-991).
+const assetModalVisible = ref(false);
+const previewAsset = ref<SearchHit | undefined>();
+const assetCount = ref<number | undefined>(undefined);
+const assetsTabRef = ref<{ refreshAssets: () => void } | null>(null);
+
+// Pin TagPage isCertificationClassification: the classification
+// name is the Certification category (TagPage.tsx:326-327).
+const isCertificationClassification = computed(
+  () => tag.value?.classification?.name === CERTIFICATION_CLASSIFICATION_NAME,
+);
+// Pin TagPage editTagsPermission: the tag entity's EditAll gated by isEditable.
+const editTagsPermission = computed(() => isEditable.value && tagPermissions.canEditAll.value);
+const { haveAssetEditPermission, entitiesNotHavingPermission } =
+  useTagAssetPermissions(editTagsPermission);
+// Pin TagPage ASSETS permissions: Create/EditAll =
+// haveAssetEditPermission && !isCertificationClassification.
+const assetPermissions = computed(() => ({
+  Create: haveAssetEditPermission.value && !isCertificationClassification.value,
+  EditAll: haveAssetEditPermission.value && !isCertificationClassification.value,
+}));
+// Pin TagPage AssetSelectionModal queryFilter: already-tagged assets
+// and the entity types the viewer cannot EditTags on are excluded.
+const assetModalQueryFilter = computed(() =>
+  tag.value?.fullyQualifiedName
+    ? JSON.stringify(
+        getQueryFilterToExcludeTermsAndEntities(
+          tag.value.fullyQualifiedName,
+          entitiesNotHavingPermission.value,
+        ),
+      )
+    : undefined,
+);
+
+/**
+ * Pin TagPage fetchClassificationTagAssets (TagPage.tsx:451-474):
+ * the tab count is the ES hit total for the tag query filter (page
+ * size 0), NOT usageCount. A zero total clears the preview panel.
+ */
+async function fetchAssetCount(): Promise<void> {
+  const fqn = tag.value?.fullyQualifiedName || tag.value?.name;
+  if (!fqn) {
+    assetCount.value = 0;
+    return;
+  }
+  try {
+    const result = await searchAssets('', 0, 0, {
+      index: 'all',
+      query_filter: JSON.stringify(getTagAssetsQueryFilter(fqn)),
+    });
+    assetCount.value = result.total ?? 0;
+    if (assetCount.value === 0) {
+      previewAsset.value = undefined;
+    }
+  } catch (error) {
+    // Unknown, not zero: pin's catch sets 0, but a failed count fetch
+    // must not masquerade as "no assets" on the tab pill — the pill
+    // stays hidden until a count is actually known.
+    message.error(error instanceof Error ? error.message : t('crud.loadFailed'));
+  }
+}
+
+function handleAssetClick(hit: SearchHit | undefined): void {
+  previewAsset.value = hit;
+}
+
+function handleAddAsset(): void {
+  assetModalVisible.value = true;
+}
+
+/** Pin TagPage handleAssetSave (TagPage.tsx:502-508). */
+function handleAssetSave(): void {
+  assetModalVisible.value = false;
+  void fetchAssetCount();
+  assetsTabRef.value?.refreshAssets();
+  if (activeTab.value !== 'assets') {
+    activeTab.value = 'assets';
+  }
+}
+
+function handlePreviewOpen(hit: SearchHit): void {
+  if (!openSearchHit((to) => router.push(to), hit)) {
+    previewAsset.value = hit;
+  }
+}
+
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   {
     label: entityLabel(tag.value?.classification) || t('tags.classification'),
@@ -94,7 +194,7 @@ const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
 // is not rendered, matching the official page.
 const tabs = computed<EntityDetailTab[]>(() => [
   { key: 'overview', label: t('asset.tabs.overview'), testId: 'tag-tab-overview' },
-  { key: 'assets', label: t('asset.tabs.assets'), testId: 'tag-tab-assets' },
+  { key: 'assets', label: t('asset.tabs.assets'), testId: 'tag-tab-assets', count: assetCount.value },
   { key: 'activity_feed', label: t('asset.tabs.activityFeed'), testId: 'tag-tab-activity-feed' },
   {
     key: 'data_observability',
@@ -149,9 +249,12 @@ function widgetLayoutFor(tabKey: string) {
 async function load(): Promise<void> {
   loading.value = true;
   errorMessage.value = '';
+  previewAsset.value = undefined;
+  assetCount.value = undefined;
   try {
     tag.value = await getTag(props.id);
     const fqn = tag.value.fullyQualifiedName || tag.value.name;
+    void fetchAssetCount();
     try {
       const [activityPage, conversationPage] = await Promise.all([
         listEntityActivity('tag', fqn),
@@ -328,6 +431,20 @@ onMounted(() => {
       </Button>
       <Button key="delete-tag" danger data-testid="delete-tag" :disabled="!tag" @click="onDeleteTag">{{ t('crud.delete') }}</Button>
       <Button key="tag-versions" data-testid="tag-versions" :disabled="!tag" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
+      <!-- Pin TagPage renderAddAssetsButton: the add-assets entry lives
+           on the page header, gated by haveAssetEditPermission, hidden
+           for Certification tags and disabled tags. Pin renders it in
+           the header on every tab (primaryAction), not only on the
+           assets tab; saving from it switches to the assets tab. -->
+      <Button
+        key="tag-add-assets"
+        v-if="tag && haveAssetEditPermission && !isCertificationClassification && tag.disabled !== true"
+        type="primary"
+        data-testid="tag-add-assets"
+        @click="handleAddAsset"
+      >
+        {{ t('label.add-entity', { entity: t('label.asset-plural') }) }}
+      </Button>
       <Button key="edit-tag" type="primary" data-testid="edit-tag" :disabled="!isEditable" @click="openEdit">
         {{ t('tags.edit') }}
       </Button>
@@ -384,33 +501,34 @@ onMounted(() => {
       </Descriptions>
     </template>
     <template #assets>
-      <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Tag">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="tag.description"
-              :entity-name="tag.displayName || tag.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
+      <!-- B-15 Lane A: the pin ASSETS tab (AssetsTabs + EntitySummaryPanel
+           in ResizablePanels). The preview panel is the product's
+           ExplorePreview in a fixed split beside the list: there is no
+           ResizablePanels generic in the product, and a draggable
+           splitter is a follow-up, not a silent navigation change. -->
+      <div v-if="tag" class="tag-assets-tab-wrap" data-testid="tag-assets-tab">
+        <div class="tag-assets-tab-list">
+          <AssetsTabs
+            ref="assetsTabRef"
+            :entity-fqn="tag.fullyQualifiedName || tag.name"
+            :tag-id="tag.id"
+            :permissions="assetPermissions"
+            :asset-count="assetCount"
+            :is-summary-panel-open="Boolean(previewAsset)"
+            @add-asset="handleAddAsset"
+            @asset-click="handleAssetClick"
+            @remove-asset="handleAssetSave"
+          />
+        </div>
+        <aside v-if="previewAsset" class="tag-assets-tab-preview" data-testid="tag-asset-preview">
+          <div class="tag-assets-tab-preview-head">
+            <Button type="text" data-testid="tag-asset-preview-close" @click="previewAsset = undefined">
+              {{ t('crud.close') }}
+            </Button>
           </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
+          <ExplorePreview :hit="previewAsset" @open="handlePreviewOpen" />
+        </aside>
+      </div>
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.tagAssets')" />
     </template>
     <template #activity_feed>
@@ -453,6 +571,15 @@ onMounted(() => {
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.dataObservability')" />
     </template>
   </EntityDetailShell>
+  <!-- Pin TagPage renderModals: the asset picker lives at page level. -->
+  <AssetSelectionModal
+    v-if="tag && assetModalVisible"
+    :entity-fqn="tag.fullyQualifiedName || tag.name"
+    :open="assetModalVisible"
+    :query-filter="assetModalQueryFilter"
+    @cancel="assetModalVisible = false"
+    @save="handleAssetSave"
+  />
   <FormModal
     :open="editOpen"
     :title="t('tags.editTitle')"
@@ -475,3 +602,24 @@ onMounted(() => {
     </Form>
   </FormModal>
 </template>
+
+<style scoped>
+.tag-assets-tab-wrap {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.tag-assets-tab-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tag-assets-tab-preview {
+  flex: 0 0 360px;
+  border-left: 1px solid var(--sm-border-color);
+  padding-left: 16px;
+}
+.tag-assets-tab-preview-head {
+  display: flex;
+  justify-content: flex-end;
+}
+</style>
