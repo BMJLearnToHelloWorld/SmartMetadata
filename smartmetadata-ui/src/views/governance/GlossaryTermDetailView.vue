@@ -11,6 +11,7 @@ import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
@@ -72,6 +73,26 @@ const termPermissions = useEntityPermissions(
   { deleted: () => term.value?.deleted === true },
 );
 const canEditDescription = computed(() => termPermissions.canEditDescription.value);
+const permissionStore = usePermissionStore();
+/**
+ * D-4 header gates (pin DataAssetsHeader): the edit modal writes
+ * displayName/description/relatedTerms, so it is the OR of those field
+ * flags (relatedTerms ride on EditGlossaryTerms); delete is the
+ * soft-delete action, so it additionally requires !deleted. The P1
+ * admin line ORs in on top of both.
+ */
+const canEditTerm = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    termPermissions.canEditDescription.value ||
+    termPermissions.canEditDisplayName.value ||
+    termPermissions.can('EditGlossaryTerms'),
+);
+const canDeleteTerm = computed(
+  () =>
+    term.value?.deleted !== true &&
+    (permissionStore.isAdminUser || termPermissions.canDelete.value),
+);
 /**
  * Custom-properties read gate (official GlossaryTermsV1:
  * viewCustomPropertiesPermission is the derived canViewCustomFields
@@ -437,8 +458,8 @@ onMounted(() => {
         {{ t('terms.back') }}
       </Button>
       <Button key="term-versions" data-testid="term-versions" :disabled="!term" @click="onOpenVersions">{{ t('governance.versions.openVersions') }}</Button>
-      <Button key="delete-term" danger data-testid="delete-term" :disabled="!term" @click="onDeleteTerm">{{ t('crud.delete') }}</Button>
-      <Button key="edit-term" type="primary" data-testid="edit-term" :disabled="!term" @click="openEdit">
+      <Button key="delete-term" danger data-testid="delete-term" :disabled="!term || !canDeleteTerm" @click="onDeleteTerm">{{ t('crud.delete') }}</Button>
+      <Button key="edit-term" type="primary" data-testid="edit-term" :disabled="!term || !canEditTerm" @click="openEdit">
         {{ t('terms.edit') }}
       </Button>
     </template>

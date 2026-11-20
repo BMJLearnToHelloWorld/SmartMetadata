@@ -23,6 +23,14 @@ import {
 } from '@/api/ingestionPipelines';
 import type { OperationPermissions } from '@/api/permissions';
 import { getDerivedPermissionFlags } from '@/api/permissions';
+import {
+  canDeletePipeline,
+  canDeployPipeline,
+  canEditPipeline,
+  canKillPipeline,
+  canTogglePipelineStatus,
+  canTriggerPipeline,
+} from '@/ingestion/pipelineActions';
 import { usePermissionStore } from '@/stores/permissions';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
@@ -113,29 +121,41 @@ const orchestratorBannerMessage = computed(() => {
 
 /**
  * D-4 derived flags (official getDerivedPermissionFlags): the
- * pipeline's `deleted` gates every Edit* flag. Deploy/Trigger are
- * their own operations and are read through the `can` escape hatch,
- * which applies the same derivation (deleted revokes Edit* only).
+ * pipeline's `deleted` gates every Edit* flag. Action gating lives in
+ * the single pipelineActions system (M-1/D-5): the helpers route the
+ * same derivation and spell out pin PipelineActions' raw ORs
+ * (EditAll || Deploy, EditAll || EditIngestionPipelineStatus), plus the
+ * deleted gate Deploy/Trigger missed when read raw. The orchestrator
+ * probe stays in the view: it is availability, not permission.
+ * ADR:2026-11-11-ingestion-pipeline-born-unpaused
  */
 const pipelineFlags = computed(() =>
   getDerivedPermissionFlags(pipelineOps.value ?? {}, pipeline.value?.deleted === true),
 );
 const canEditDescription = computed(() => pipelineFlags.value.canEditDescription);
+const isDeleted = computed(() => pipeline.value?.deleted === true);
 
 const canDeploy = computed(
   () =>
-    pipeline.value?.enabled !== false &&
     !orchestratorUnavailable.value &&
-    (permissionStore.isAdminUser ||
-      pipelineFlags.value.canEditAll ||
-      pipelineFlags.value.can('Deploy')),
+    pipeline.value != null &&
+    canDeployPipeline(
+      permissionStore.isAdminUser,
+      pipelineOps.value ?? undefined,
+      pipeline.value,
+      isDeleted.value,
+    ),
 );
 const canTrigger = computed(
   () =>
-    pipeline.value?.enabled !== false &&
-    pipeline.value?.deployed === true &&
     !orchestratorUnavailable.value &&
-    (permissionStore.isAdminUser || pipelineFlags.value.can('Trigger')),
+    pipeline.value != null &&
+    canTriggerPipeline(
+      permissionStore.isAdminUser,
+      pipelineOps.value ?? undefined,
+      pipeline.value,
+      isDeleted.value,
+    ),
 );
 /**
  * Official PipelineActions editStatusPermission: EditAll or
@@ -143,24 +163,24 @@ const canTrigger = computed(
  * missing permission fetch denies (fail-closed, as deploy/trigger do).
  * The button is additionally disabled while the pipeline is not deployed
  * (official: isDisabled || !pipeline.deployed).
- * ADR:2026-11-11-ingestion-pipeline-born-unpaused
  */
-const canToggleStatus = computed(
-  () =>
-    permissionStore.isAdminUser ||
-    pipelineFlags.value.canEditAll ||
-    pipelineFlags.value.can('EditIngestionPipelineStatus'),
+const canToggleStatus = computed(() =>
+  canTogglePipelineStatus(
+    permissionStore.isAdminUser,
+    pipelineOps.value ?? undefined,
+    isDeleted.value,
+  ),
 );
 /** P-46: edit/delete gates (admin line ORs in, fail-closed). */
-const canEdit = computed(
-  () => permissionStore.isAdminUser || pipelineFlags.value.canEditAll,
+const canEdit = computed(() =>
+  canEditPipeline(permissionStore.isAdminUser, pipelineOps.value ?? undefined, isDeleted.value),
 );
-const canDelete = computed(
-  () => permissionStore.isAdminUser || pipelineFlags.value.canDelete,
+const canDelete = computed(() =>
+  canDeletePipeline(permissionStore.isAdminUser, pipelineOps.value ?? undefined),
 );
 /** P-05: Kill renders only for EditAll (or admin); the orchestrator gate disables it, it does not hide it. */
-const canKillPermission = computed(
-  () => permissionStore.isAdminUser || pipelineFlags.value.canEditAll,
+const canKillPermission = computed(() =>
+  canKillPipeline(permissionStore.isAdminUser, pipelineOps.value ?? undefined, isDeleted.value),
 );
 const canKill = computed(() => canKillPermission.value && !orchestratorUnavailable.value);
 const canViewLogs = computed(() => !orchestratorUnavailable.value);

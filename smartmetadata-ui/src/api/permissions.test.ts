@@ -12,6 +12,7 @@ import { persistSession } from '@/auth/token';
 import {
   PERMISSION_DEBUG_OPERATIONS,
   PERMISSION_DEBUG_RESOURCES,
+  checkPermissionEntityResource,
   debugEvaluatePermission,
   debugMyPermissions,
   debugUserPermissions,
@@ -19,6 +20,7 @@ import {
   getEntityPermissionById,
   getEntityTypeFieldPermissions,
   getDerivedPermissionFlags,
+  getExcludedIndexesBasedOnEntityTypeEditTagPermission,
   getLoggedInUserPermissions,
   getResourcePermission,
   permissionFlags,
@@ -399,5 +401,72 @@ describe('getDerivedPermissionFlags (W2-2 row + page gates)', () => {
     expect(flags.canEditSampleData).toBe(false);
     expect(flags.canViewUsage).toBe(true);
     expect(flags.canViewQueries).toBe(true);
+  });
+});
+
+describe('checkPermissionEntityResource (M-1 OR semantics, pin PermissionsUtils.ts:55-70)', () => {
+  it('grants EditTags when the field key is denied but EditAll is allowed and the flag is set', () => {
+    // The M-1 divergence: the derived field-first rule denies this shape,
+    // the TagPage OR site grants it.
+    expect(
+      checkPermissionEntityResource(
+        'EditTags',
+        'table',
+        { table: { EditTags: false, EditAll: true } },
+        true,
+      ),
+    ).toBe(true);
+    expect(getDerivedPermissionFlags({ EditTags: false, EditAll: true }).canEditTags).toBe(false);
+  });
+
+  it('does not fall back to EditAll without the flag', () => {
+    expect(
+      checkPermissionEntityResource('EditTags', 'table', {
+        table: { EditTags: false, EditAll: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('grants on the field key alone and denies when neither key is held', () => {
+    expect(
+      checkPermissionEntityResource(
+        'EditTags',
+        'table',
+        { table: { EditTags: true, EditAll: false } },
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      checkPermissionEntityResource(
+        'EditTags',
+        'table',
+        { table: { EditTags: false, EditAll: false } },
+        true,
+      ),
+    ).toBe(false);
+    expect(checkPermissionEntityResource('EditTags', 'table', {}, true)).toBe(false);
+    expect(checkPermissionEntityResource('EditTags', 'table', undefined, true)).toBe(false);
+  });
+});
+
+describe('getExcludedIndexesBasedOnEntityTypeEditTagPermission (pin TagsPureUtils.ts:223-400)', () => {
+  it('splits the 24 taggable types by EditTags OR EditAll per resource', () => {
+    const { entitiesHavingPermission, entitiesNotHavingPermission } =
+      getExcludedIndexesBasedOnEntityTypeEditTagPermission({
+        table: { EditTags: true },
+        topic: { EditTags: false, EditAll: true },
+        dashboard: { EditTags: false, EditAll: false },
+      });
+    expect(entitiesHavingPermission).toEqual(['table', 'topic']);
+    expect(entitiesNotHavingPermission).toHaveLength(22);
+    expect(entitiesNotHavingPermission).toContain('dashboard');
+    expect(entitiesNotHavingPermission).toContain('domain');
+  });
+
+  it('grants nothing when the user holds no resource permission', () => {
+    const { entitiesHavingPermission, entitiesNotHavingPermission } =
+      getExcludedIndexesBasedOnEntityTypeEditTagPermission({});
+    expect(entitiesHavingPermission).toEqual([]);
+    expect(entitiesNotHavingPermission).toHaveLength(24);
   });
 });

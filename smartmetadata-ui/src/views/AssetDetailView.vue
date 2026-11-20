@@ -124,6 +124,19 @@ const assetFlags = computed(() =>
 );
 const canEditDescription = computed(() => assetFlags.value.canEditDescription);
 const canEditCustomFields = computed(() => assetFlags.value.canEditCustomFields);
+/**
+ * D-4 governance-modal gate (pin DataAssetsHeader hasEditableMetadata):
+ * the modal writes description/owners/tags/domains, so it is the OR of
+ * those field flags. The P1 admin line ORs in on top.
+ */
+const canEditGovernance = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    assetFlags.value.canEditDescription ||
+    assetFlags.value.can('EditOwners') ||
+    assetFlags.value.canEditTags ||
+    assetFlags.value.canEditDomains,
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
@@ -1129,7 +1142,7 @@ onMounted(() => {
         <Button data-testid="asset-versions" @click="router.push({ name: 'asset-version', params: { entityType, fqn: decodedFqn } })">
           {{ t('asset.versionsTitle') }}
         </Button>
-        <Button data-testid="edit-governance" :disabled="!asset?.id" @click="openEdit">
+        <Button data-testid="edit-governance" :disabled="!asset?.id || !canEditGovernance" @click="openEdit">
           {{ t('asset.editGovernance') }}
         </Button>
         <Button data-testid="create-asset-conversation" :disabled="!asset" @click="openComment">
