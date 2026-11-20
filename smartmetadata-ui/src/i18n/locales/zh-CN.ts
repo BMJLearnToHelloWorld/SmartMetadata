@@ -6074,7 +6074,6 @@ const zhCN = {
     removeEntity: '删除{entity}',
     rolePlural: '角色',
     saveChanges: '保存更改',
-    secretSaveBlocked: '当前配置下无法保存客户端密钥。请清除密钥后保存其他更改。',
     selectField: '选择{field}',
     setUp: '设置',
     settingsDeploymentValuesOverridden: '以下设置的已保存值覆盖了部署配置：',
