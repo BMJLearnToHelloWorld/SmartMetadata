@@ -152,7 +152,7 @@ async function mountView(appOverrides: Record<string, unknown> = {}, schemaError
   await router.push('/admin/apps/SearchIndexingApplication');
   await router.isReady();
   const wrapper = mount(AppDetailView, {
-    props: { id: 'SearchIndexingApplication' },
+    props: { fqn: 'SearchIndexingApplication' },
     global: {
       plugins: [Antd, pinia, router, createI18n({ legacy: false, locale: 'en', messages: MESSAGES })],
       stubs: {
@@ -389,13 +389,13 @@ describe('AppDetailView breadcrumb exception (row 2)', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/settings/apps', name: 'admin-apps', component: { template: '<div>apps</div>' } },
-        { path: '/settings/apps/:id', name: 'admin-app', component: AppDetailView, props: true },
+        { path: '/settings/apps/:fqn', name: 'admin-app', component: AppDetailView, props: true },
       ],
     });
     await router.push('/settings/apps/a1');
     await router.isReady();
     const wrapper = mount(AppDetailView, {
-      props: { id: 'a1' },
+      props: { fqn: 'a1' },
       global: {
         plugins: [pinia, router, Antd, createTestI18n()],
         stubs: {

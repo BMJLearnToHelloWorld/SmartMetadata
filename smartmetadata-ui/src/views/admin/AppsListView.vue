@@ -5,11 +5,11 @@
 <!--
   Vue port of pin pages/Application/ApplicationPage.tsx (282 lines).
   Card grid, Disabled toggle, LimitWrapper Add button, cursor paging.
-  Navigation uses the current router record (`admin-app`, `:id` param)
-  with the FQN as the param value; the `:id` -> `:fqn` rename is a
-  router-line request (see the batch report). The Add button navigates
-  to the app-marketplace catalog route, which lives at pin
-  ROUTES.MARKETPLACE (/marketplace) after the AP-D3 hard cut.
+  Navigation uses the router record (`admin-app`, `:fqn` param) with the
+  FQN as the param value, matching pin ApplicationPage.tsx:116-118
+  (viewAppDetails -> getApplicationDetailsPath(fullyQualifiedName)).
+  The Add button navigates to the app-marketplace catalog route, which
+  lives at pin ROUTES.MARKETPLACE (/marketplace) after the AP-D3 hard cut.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue';
