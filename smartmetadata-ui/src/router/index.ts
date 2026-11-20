@@ -301,7 +301,13 @@ export const router = createRouter({
         // reached via the settings-members-teams redirect below.
         { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
         { path: 'settings/access/roles', name: 'admin-roles', component: RolesListView, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
-        { path: 'settings/access/roles/:id', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        // C-P6j: the detail segment is `:fqn`, not `:id` — the pin
+        // detail path is SETTINGS_WITH_TAB_FQN (constants.ts:184) and
+        // every navigation site passes { fqn } (accessPaths
+        // roleDetailLocation; PersonaUsersTab). With `:id`, resolving
+        // those locations threw "Missing required param id" and
+        // `props: true` never injected the views' `fqn` prop.
+        { path: 'settings/access/roles/:fqn', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
         // 03 §12: the add-role route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
         // equivalent is the explicit 'admin-only' declaration — the
@@ -401,18 +407,29 @@ export const router = createRouter({
         { path: 'settings/preferences/timeFormat', name: 'settings-preferences-time-format', component: TimeFormatSettingsView, meta: { guard: 'admin-only' } },
 
         { path: 'settings/access/policies', name: 'admin-policies', component: PoliciesListView, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
-        { path: 'settings/access/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        // C-P6j: the detail/rule segments are `:fqn`, not `:id` — the
+        // pin paths are SETTINGS_WITH_TAB_FQN / ADD_POLICY_RULE /
+        // EDIT_POLICY_RULE (constants.ts:184,286-287). accessPaths and
+        // the three views already speak `fqn`; the `:id` table broke
+        // every one of them (list crash on resolve, detail/edit
+        // fetching by an empty fqn). The D-11 transition claimed in
+        // accessPaths is only complete with this landing.
+        { path: 'settings/access/policies/:fqn', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
         // 03 §12: the add-policy route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
         // equivalent is the explicit 'admin-only' declaration — the
         // view carries no in-view Create gate.
         { path: 'admin/policies/add', name: 'admin-policy-add', component: AddPolicyView, meta: { guard: 'admin-only' } },
         // M1a: the two policy-rule action routes are canonical this
-        // stage; :id/:fqn spell the same single-segment pattern and
-        // must never be registered twice.
-        { path: 'settings/access/policies/:id/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
+        // stage; each pattern is registered exactly once, on the `:fqn`
+        // segment the pin uses (see the C-P6j note on the detail
+        // route above). The old `:id` spelling is deleted, not kept
+        // as an alias: `:id` and `:fqn` are different params to
+        // vue-router (props injection + resolve requirements), so
+        // keeping both would re-admit the mismatch.
+        { path: 'settings/access/policies/:fqn/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
         {
-          path: 'settings/access/policies/:id/edit-rule/:ruleName',
+          path: 'settings/access/policies/:fqn/edit-rule/:ruleName',
           name: 'admin-policy-rule-edit',
           component: EditPolicyRuleView,
           props: true,

@@ -4,13 +4,15 @@
 -->
 <!--
   Port of pages/PoliciesPage/PoliciesDetailPage/EditRulePage.tsx (03 §8.2).
-  The breadcrumb's first two segments are the pin's hardcoded English
-  'Settings'/'Policies' — not translation keys. The form is reset with the
-  selected rule merged over INITIAL_RULE; a missing rule yields the empty
-  form with no error state, and submit still PATCHes (the map finds no
-  match, so the rules array is unchanged). Replacement matches the OLD
-  rule name, so renaming works. Conflicts are judged by HTTP status.
-  No success toast.
+  The breadcrumb's first two segments follow the §6A ruling (N-2 /
+  CONFLICT-1): they go through the i18n keys, like the Add page
+  (AddPolicyRuleView.vue), even though the pin Edit page hardcodes the
+  English literals 'Settings'/'Policies' (EditRulePage.tsx:57-66). The
+  form is reset with the selected rule merged over INITIAL_RULE; a
+  missing rule yields the empty form with no error state, and submit
+  still PATCHes (the map finds no match, so the rules array is
+  unchanged). Replacement matches the OLD rule name, so renaming works.
+  Conflicts are judged by HTTP status. No success toast.
 -->
 <script setup lang="ts">
 import { Button, Card, Space, Spin, Typography, message } from 'ant-design-vue';
@@ -45,9 +47,10 @@ const loading = ref(false);
 const ruleFormRef = ref<RuleFormHandle | null>(null);
 
 const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
-  // Pin hardcoded literals, not translation keys (EditRulePage.tsx:57-66).
-  { label: 'Settings', routeName: 'admin-settings' },
-  { label: 'Policies', routeName: 'admin-policies' },
+  // N-2 (§6A ruling): i18n keys, like the Add page — not the pin Edit
+  // page's hardcoded 'Settings'/'Policies' literals.
+  { label: t('label.setting-plural'), routeName: 'admin-settings' },
+  { label: t('label.policy-plural'), routeName: 'admin-policies' },
   {
     label: getEntityName(policy.value ?? { name: '' }),
     routeName: 'admin-policy',
