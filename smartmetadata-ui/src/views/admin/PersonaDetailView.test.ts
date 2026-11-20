@@ -117,8 +117,10 @@ const MESSAGES = {
     },
     persona: {
       customizeCategoryGovernance: 'Governance',
+      backToPersona: 'Back to persona',
     },
     message: {
+      'no-data-available': 'No data available.',
       'remove-default-persona-confirmation': 'Remove {persona} as the default persona?',
       'set-default-persona-confirmation': 'Set {persona} as the default persona?',
       'default-persona-set-successfully': 'Default persona set successfully',
@@ -377,6 +379,33 @@ describe('PersonaDetailView', () => {
     expect(errorSpy).toHaveBeenCalled();
     expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('detail boom');
+    wrapper.unmount();
+  });
+
+  it('C-4 U-07(b): detail failure keeps the placeholder title and offers a back-to-settings link', async () => {
+    const fixture: Fixture = { requests: [], failDetail: true };
+    const { wrapper } = await mountDetail(fixture, '#customize-ui');
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.find('[data-testid="no-data-placeholder"]').exists()).toBe(true);
+    // The footer slot must not swallow the placeholder title.
+    expect(wrapper.text()).toContain('No data available.');
+    const backLink = wrapper.find('[data-testid="persona-detail-back-settings"]');
+    expect(backLink.exists()).toBe(true);
+    expect(backLink.text()).toBe('Back to persona');
+    expect(backLink.attributes('href')).toBe('/settings/persona');
+    wrapper.unmount();
+  });
+
+  it('C-4 U-07(b): the back-to-settings link navigates to the persona list', async () => {
+    const fixture: Fixture = { requests: [], failDetail: true };
+    const { wrapper, router } = await mountDetail(fixture, '#customize-ui');
+    await flushPromises();
+    await nextTick();
+    await wrapper.find('[data-testid="persona-detail-back-settings"]').trigger('click');
+    await flushPromises();
+    await nextTick();
+    expect(router.currentRoute.value.name).toBe('admin-settings-persona');
     wrapper.unmount();
   });
 
