@@ -7,6 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { isFilterPatternConfig, type FilterPatternConfig } from '@/ingestion/filterPatterns';
 import { isMaskedSecret, shouldPersistSecret } from '@/ingestion/secrets';
 import {
   buildAzureAuthType,
@@ -792,6 +793,12 @@ export function formValuesFromService(service: CatalogService): ServiceFormValue
     // Collibra (collibraConnection.json).
     enableEnrichment:
       typeof config.enableEnrichment === 'boolean' ? config.enableEnrichment : false,
+    glossaryFilterPattern: isFilterPatternConfig(config.glossaryFilterPattern)
+      ? config.glossaryFilterPattern
+      : undefined,
+    domainFilterPattern: isFilterPatternConfig(config.domainFilterPattern)
+      ? config.domainFilterPattern
+      : undefined,
     // MetadataES (metadataESConnection.json).
     metadataESEntities: Array.isArray(config.entities)
       ? JSON.stringify(config.entities)
@@ -1200,6 +1207,22 @@ function secretFieldValue(
     return previous;
   }
   return undefined;
+}
+
+/**
+ * A filter-pattern value worth sending: at least one includes or excludes
+ * entry. An empty object (or a missing value) means "not set" and is
+ * omitted, never sent as `{}` — the same rule the filter step applies
+ * when it drops undefined values on submit.
+ */
+function nonEmptyFilterPattern(
+  value: FilterPatternConfig | undefined,
+): FilterPatternConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const entries = (value.includes?.length ?? 0) + (value.excludes?.length ?? 0);
+  return entries > 0 ? value : undefined;
 }
 
 /**
@@ -1700,9 +1723,11 @@ export function buildServiceConnection(
     }
   } else if (type === 'Collibra') {
     // A2 (2026-11-19): pin collibraConnection.json — flat username /
-    // password / hostPort + enableEnrichment + connectionOptions /
-    // connectionArguments. The glossary/domain filter leaves live in the
-    // filter step, not in this form (D-A2-3).
+    // password / hostPort + glossary/domain filter patterns +
+    // enableEnrichment + connectionOptions / connectionArguments. The
+    // filter leaves live in BOTH the connection form (Scope section) and
+    // the filter step, as in pin; both edit the same `connection.config`
+    // keys, and only a non-empty pattern is written.
     const prev = existing?.config;
     if (form.username?.trim()) {
       config.username = form.username.trim();
@@ -1716,6 +1741,14 @@ export function buildServiceConnection(
     }
     if (form.hostPort?.trim()) {
       config.hostPort = form.hostPort.trim();
+    }
+    const glossaryFilterPattern = nonEmptyFilterPattern(form.glossaryFilterPattern);
+    if (glossaryFilterPattern) {
+      config.glossaryFilterPattern = glossaryFilterPattern;
+    }
+    const domainFilterPattern = nonEmptyFilterPattern(form.domainFilterPattern);
+    if (domainFilterPattern) {
+      config.domainFilterPattern = domainFilterPattern;
     }
     if (typeof form.enableEnrichment === 'boolean') {
       config.enableEnrichment = form.enableEnrichment;

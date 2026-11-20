@@ -89,6 +89,26 @@ const CUSTOM_MLMODEL_SERVICE = {
   connection: { config: { type: 'CustomMlModel' } },
 };
 
+/** Collibra stored config for the stale-seed mount test: the connection
+ * form (Scope section) and the filter step both edit glossaryFilterPattern. */
+const COLLIBRA_SERVICE = {
+  id: 'cb1',
+  name: 'collibra',
+  fullyQualifiedName: 'collibra',
+  displayName: 'Collibra',
+  serviceType: 'Collibra',
+  connection: {
+    config: {
+      type: 'Collibra',
+      username: 'col-user',
+      password: '*********',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^glossary-.*$'], excludes: [] },
+      enableEnrichment: false,
+    },
+  },
+};
+
 const OPEN_METADATA_SERVICE = {
   ...POSTGRES_SERVICE,
   id: 's9',
@@ -173,6 +193,9 @@ describe('EditServiceConnectionView', () => {
         }
         if (url.includes('/api/v1/services/mlmodelServices/c1')) {
           return jsonResponse(CUSTOM_MLMODEL_SERVICE);
+        }
+        if (url.includes('/api/v1/services/metadataServices/cb1')) {
+          return jsonResponse(COLLIBRA_SERVICE);
         }
         if (url.includes('ingestionPipelines/status')) {
           return jsonResponse({ code: 200, platform: 'airflow' });
@@ -353,7 +376,7 @@ describe('EditServiceConnectionView', () => {
     wrapper.unmount();
   });
 
-  it('seeds step 2 from the fetched details, not the step-1 draft', async () => {
+  it('seeds step 2 from the step-1 merged config, not the stored details (stale-seed fix)', async () => {
     const { wrapper } = await mountAt('/ingestion/services/database/s1/connection');
     await waitForForm(wrapper);
     await wrapper.find('[data-testid="service-host-port"]').setValue('db2:5432');
@@ -363,7 +386,45 @@ describe('EditServiceConnectionView', () => {
     expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
     const filters = wrapper.findComponent(FiltersConfigForm);
     expect(filters.exists()).toBe(true);
-    expect(filters.props('initialConfig')).toEqual(POSTGRES_SERVICE.connection.config);
+    // Named deviation from pin (EditConnectionFormPage.tsx:383 seeds the
+    // filter step from the STORED serviceDetails): the step-1 merged config
+    // wins, so a step-1 edit is visible to the filter step instead of being
+    // silently overwritten by the stale stored value on save. If the
+    // binding regresses to the stored config, hostPort reads localhost:5432.
+    expect(filters.props('initialConfig')).toEqual({
+      ...POSTGRES_SERVICE.connection.config,
+      hostPort: 'db2:5432',
+    });
+    wrapper.unmount();
+  });
+
+  it('seeds step 2 with a step-1 filter-pattern edit, not the stored pattern (stale-seed fix)', async () => {
+    // Only Collibra has filterPattern controls in the step-1 connection
+    // form (connectionFields.ts); Postgres renders no filter card there.
+    const { wrapper } = await mountAt('/ingestion/services/metadata/cb1/connection');
+    await waitForForm(wrapper);
+    await wrapper.find('[data-testid="connection-section-scope-toggle"]').trigger('click');
+    const card = wrapper.find('[data-testid="filter-section-glossaryFilterPattern"]');
+    expect(card.exists()).toBe(true);
+    await card.find('[data-testid="include-filter-input"]').setValue('new_glossary');
+    await card.find('[data-testid="include-add-button"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.find('[data-testid="edit-connection-next"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="edit-connection-step-filters"]').exists()).toBe(true);
+    const filters = wrapper.findComponent(FiltersConfigForm);
+    expect(filters.exists()).toBe(true);
+    const initialConfig = filters.props('initialConfig') as Record<string, unknown>;
+    // The stored pattern was { includes: ['^glossary-.*$'], excludes: [] };
+    // the step-1 edit appends a contains condition for new_glossary.
+    // Seeding from the stored config would show only ^glossary-.*$ and the
+    // merge would then silently drop the step-1 edit on save.
+    expect(initialConfig.glossaryFilterPattern).toEqual({
+      includes: ['^glossary-.*$', '.*new_glossary.*'],
+      excludes: [],
+    });
     wrapper.unmount();
   });
 

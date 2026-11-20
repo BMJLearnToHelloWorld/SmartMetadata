@@ -9,6 +9,7 @@
  */
 import type { EntityRef, TagLabelState, TagLabelType } from './api';
 import type { EntityStyle, TagSource } from './governance';
+import type { FilterPatternConfig } from '@/ingestion/filterPatterns';
 
 export const DATABASE_SERVICE_TYPES = ['Postgres', 'Mysql', 'Snowflake', 'Databricks', 'UnityCatalog', 'Doris', 'Mssql', 'Redshift', 'MariaDB', 'Greenplum', 'Timescale'] as const;
 export type DatabaseServiceType = (typeof DATABASE_SERVICE_TYPES)[number];
@@ -343,6 +344,11 @@ export interface ServiceConnectionConfig {
   alationTagClassificationName?: string;
   /** Collibra (collibraConnection.json): asset-enrichment toggle. */
   enableEnrichment?: boolean;
+  /** Collibra (collibraConnection.json): glossary/domain filter patterns.
+   * Edited both by the connection form (Scope section) and the filter
+   * step; both write the same `connection.config` keys. */
+  glossaryFilterPattern?: FilterPatternConfig;
+  domainFilterPattern?: FilterPatternConfig;
   /** OpenAI (openAIConnection.json): max retries for failed requests. */
   maxRetries?: number;
   /** Kafka/Redpanda (kafkaConnection.json / redpandaConnection.json). */
@@ -816,6 +822,12 @@ export interface ServiceFormValues {
   alationTagClassificationName?: string;
   /** Collibra (metadata/collibraConnection.json): asset-enrichment toggle. */
   enableEnrichment?: boolean;
+  /** Collibra (metadata/collibraConnection.json): glossary/domain filter
+   * patterns (pin order: after hostPort, before enableEnrichment). The
+   * connection form (Scope section) and the filter step both edit these
+   * keys on the same `connection.config`. */
+  glossaryFilterPattern?: FilterPatternConfig;
+  domainFilterPattern?: FilterPatternConfig;
   /** MetadataES (metadata/metadataESConnection.json): reindex selection. */
   metadataESEntities?: string;
   recreateIndex?: boolean;

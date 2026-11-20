@@ -49,9 +49,11 @@ import type {
  * hideFooter prop has no product meaning — this form never renders
  * its own footer — so it is not accepted.
  *
- * Filter-pattern fields never appear here: the static field table
- * declares no `*FilterPattern` field (the pin's getFilteredSchema
- * exclusion, structural in the product).
+ * Filter-pattern fields DO appear here when the pin keeps them in the
+ * connection form: pin's `getFilteredSchema` excludes only the 19 known
+ * filter fields (SERVICE_FILTER_PATTERN_FIELDS), so Collibra's
+ * glossary/domain filter patterns render in the Scope section here
+ * while the standalone filter step edits the same keys.
  */
 const props = withDefaults(
   defineProps<{
@@ -118,7 +120,13 @@ const showStaticForm = computed(
 const schemaPresent = computed(() => schemaState.value === 'present' || isPassThrough.value);
 
 const missingRequiredCount = computed(() =>
-  schemaPresent.value ? missingRequiredConnectionFields(props.serviceType, props.form) : 0,
+  schemaPresent.value
+    ? missingRequiredConnectionFields(
+        props.serviceType,
+        props.form,
+        props.storedConfig === undefined,
+      )
+    : 0,
 );
 
 /** Pin isSubmitDisabled memo: parent flag first, empty schema false, else missing > 0. */

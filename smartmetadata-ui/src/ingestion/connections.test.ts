@@ -18,6 +18,7 @@ import {
   kindForServiceType,
   redactConnectionForDisplay,
 } from './connections';
+import { mergeEditConfig } from './serviceEditMerge';
 import type { CatalogService, ServiceFormValues, ServiceKind } from '@/types/ingestion';
 
 function postgresForm(overrides: Partial<ServiceFormValues> = {}): ServiceFormValues {
@@ -2650,6 +2651,206 @@ describe('A2 A-class builders (T-2)', () => {
     expect(
       buildServiceConnection({ name: 'c', kind: 'metadata', serviceType: 'Collibra' }),
     ).toBeUndefined();
+  });
+
+  it('carries the Collibra filter leaves from the connection form (D-A2-3)', () => {
+    const connection = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^glossary-.*$'] },
+      domainFilterPattern: { excludes: ['^internal$'] },
+    });
+    expect(connection?.config).toEqual({
+      type: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^glossary-.*$'] },
+      domainFilterPattern: { excludes: ['^internal$'] },
+      enableEnrichment: false,
+    });
+  });
+
+  it('omits empty Collibra filter patterns instead of sending empty objects', () => {
+    const connection = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: [], excludes: [] },
+    });
+    expect(connection?.config).not.toHaveProperty('glossaryFilterPattern');
+    expect(connection?.config).not.toHaveProperty('domainFilterPattern');
+  });
+
+  it('round-trips the Collibra filter leaves through formValuesFromService', () => {
+    const service: CatalogService = {
+      id: 's1',
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      connection: {
+        config: {
+          type: 'Collibra',
+          username: 'col-user',
+          hostPort: 'collibra.example.com:443',
+          glossaryFilterPattern: { includes: ['^glossary-.*$'] },
+          domainFilterPattern: { excludes: ['^internal$'] },
+        },
+      },
+    };
+    const form = formValuesFromService(service);
+    expect(form.glossaryFilterPattern).toEqual({ includes: ['^glossary-.*$'] });
+    expect(form.domainFilterPattern).toEqual({ excludes: ['^internal$'] });
+    const rebuilt = buildServiceConnection(form)?.config;
+    expect(rebuilt?.glossaryFilterPattern).toEqual({ includes: ['^glossary-.*$'] });
+    expect(rebuilt?.domainFilterPattern).toEqual({ excludes: ['^internal$'] });
+  });
+
+  it('keeps Collibra filter leaves through the create-wizard merge (connection form -> filter step -> create)', () => {
+    // AddServiceView merges `{...step2Config, ...filterValues}`: the filter
+    // step seeds from the step-1 config, so an untouched filter step
+    // returns the step-1 values and the merge keeps them.
+    const step1 = buildServiceConnection({
+      ...createEmptyServiceForm(),
+      name: 'collibra',
+      kind: 'metadata',
+      serviceType: 'Collibra',
+      username: 'col-user',
+      password: 'col-secret',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^glossary-.*$'] },
+      domainFilterPattern: { excludes: ['^internal$'] },
+    })?.config;
+    const filterValues = {
+      glossaryFilterPattern: step1?.glossaryFilterPattern,
+      domainFilterPattern: step1?.domainFilterPattern,
+    };
+    const merged = { ...step1, ...filterValues };
+    expect(merged.glossaryFilterPattern).toEqual({ includes: ['^glossary-.*$'] });
+    expect(merged.domainFilterPattern).toEqual({ excludes: ['^internal$'] });
+  });
+
+  it('keeps a step-1 Collibra filter edit when the filter step is untouched (edit stale-seed fix)', () => {
+    const stored = {
+      type: 'Collibra',
+      username: 'col-user',
+      password: '********',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^old$'] },
+    };
+    const step1 = buildServiceConnection(
+      {
+        ...createEmptyServiceForm(),
+        name: 'collibra',
+        kind: 'metadata',
+        serviceType: 'Collibra',
+        username: 'col-user',
+        password: '',
+        hostPort: 'collibra.example.com:443',
+        glossaryFilterPattern: { includes: ['^new$'] },
+      },
+      { config: stored },
+    )?.config;
+    expect(step1?.glossaryFilterPattern).toEqual({ includes: ['^new$'] });
+    // The filter step seeds from the step-1 merged config (the fix in
+    // EditServiceConnectionView), so an untouched filter step returns the
+    // step-1 value — not the stored one — and the real three-way merge
+    // (serviceEditMerge.ts mergeEditConfig: stored, then step-1, then
+    // filter values, later wins) keeps it.
+    const filterValues = { glossaryFilterPattern: step1?.glossaryFilterPattern };
+    expect(mergeEditConfig(stored, step1, filterValues).glossaryFilterPattern).toEqual({
+      includes: ['^new$'],
+    });
+  });
+
+  it('lets a filter-step change win over the step-1 value on edit', () => {
+    const stored = {
+      type: 'Collibra',
+      username: 'col-user',
+      password: '********',
+      hostPort: 'collibra.example.com:443',
+      glossaryFilterPattern: { includes: ['^old$'] },
+    };
+    const step1 = buildServiceConnection(
+      {
+        ...createEmptyServiceForm(),
+        name: 'collibra',
+        kind: 'metadata',
+        serviceType: 'Collibra',
+        username: 'col-user',
+        password: '',
+        hostPort: 'collibra.example.com:443',
+        glossaryFilterPattern: { includes: ['^new$'] },
+      },
+      { config: stored },
+    )?.config;
+    expect(
+      mergeEditConfig(stored, step1, {
+        glossaryFilterPattern: { includes: ['^filter$'] },
+      }).glossaryFilterPattern,
+    ).toEqual({ includes: ['^filter$'] });
+  });
+
+  it('builds the nested Alation IAM authType on create (M-1)', () => {
+    const connection = buildServiceConnection(
+      alationForm({
+        alationDbAuthBranch: 'iam',
+        authAwsEnabled: true,
+        authAwsAccessKeyId: 'AKID',
+        authAwsSecretAccessKey: 'aws-secret',
+        authAwsRegion: 'us-east-1',
+      }),
+    );
+    expect(connection?.config?.connection?.authType).toEqual({
+      awsConfig: {
+        enabled: true,
+        awsAccessKeyId: 'AKID',
+        awsSecretAccessKey: 'aws-secret',
+        awsRegion: 'us-east-1',
+      },
+    });
+  });
+
+  it('keeps a masked nested Alation Azure secret on edit (M-1)', () => {
+    const existing = {
+      config: {
+        type: 'Alation',
+        hostPort: 'alation.example.com:443',
+        authType: { username: 'api-user', password: '********' },
+        connection: {
+          type: 'Postgres',
+          scheme: 'postgresql+psycopg2',
+          username: 'db-user',
+          authType: {
+            azureConfig: { clientId: 'cid', clientSecret: '********', tenantId: 'tid' },
+          },
+          hostPort: 'db:5432',
+          database: 'alation',
+        },
+      },
+    };
+    const connection = buildServiceConnection(
+      alationForm({
+        alationDbAuthBranch: 'azure',
+        authAzureClientId: 'cid',
+        authAzureClientSecret: '',
+        authAzureTenantId: 'tid',
+        alationDbPassword: '',
+      }),
+      existing,
+    );
+    expect(connection?.config?.connection?.authType).toEqual({
+      azureConfig: { clientId: 'cid', clientSecret: '********', tenantId: 'tid' },
+    });
   });
 
   it('builds the MetadataES reindex selection', () => {

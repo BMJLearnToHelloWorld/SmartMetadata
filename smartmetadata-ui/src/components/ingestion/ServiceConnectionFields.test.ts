@@ -14,6 +14,7 @@ import type { SupportedLocale } from '@/i18n/localePreference';
 import { createEmptyServiceForm } from '@/ingestion/connections';
 import type { ServiceFormValues } from '@/types/ingestion';
 import FileOrInputField from './FileOrInputField.vue';
+import FilterPatternCard from './FilterPatternCard.vue';
 import MapEditor from './MapEditor.vue';
 import ServiceConnectionFields from './ServiceConnectionFields.vue';
 import ToggleField from '@/components/shared/ToggleField.vue';
@@ -227,5 +228,31 @@ describe('ServiceConnectionFields (live-issues S-09/S-10/S-12/S-13/S-14/S-15/S-1
     const leaves = wrapper.findAllComponents(FileOrInputField);
     expect(leaves[0].props('hasStoredValue')).toBe(true);
     expect(leaves[1].props('hasStoredValue')).toBe(false);
+  });
+
+  it('renders the Collibra filter-pattern cards in the Scope section and flows values back (D-A2-3)', async () => {
+    const { wrapper, form } = mountFields('Collibra');
+    // Scope is collapsed by default; the cards are not in the DOM yet.
+    expect(
+      wrapper.find('[data-testid="filter-section-glossaryFilterPattern"]').exists(),
+    ).toBe(false);
+    await wrapper
+      .find('[data-testid="connection-section-scope-toggle"]')
+      .trigger('click');
+    expect(
+      wrapper.find('[data-testid="filter-section-glossaryFilterPattern"]').exists(),
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="filter-section-domainFilterPattern"]').exists(),
+    ).toBe(true);
+    const cards = wrapper.findAllComponents(FilterPatternCard);
+    expect(cards).toHaveLength(2);
+    expect(cards[0].props('fieldName')).toBe('glossaryFilterPattern');
+    expect(cards[0].props('schemaTitle')).toBe('Glossary Filter Pattern');
+    expect(cards[1].props('fieldName')).toBe('domainFilterPattern');
+    await cards[0].vm.$emit('update:modelValue', { includes: ['^glossary-.*$'] });
+    expect(form.glossaryFilterPattern).toEqual({ includes: ['^glossary-.*$'] });
+    await cards[1].vm.$emit('update:modelValue', { excludes: ['^internal$'] });
+    expect(form.domainFilterPattern).toEqual({ excludes: ['^internal$'] });
   });
 });
