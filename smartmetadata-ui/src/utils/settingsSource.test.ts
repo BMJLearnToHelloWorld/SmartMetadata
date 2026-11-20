@@ -8,6 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import { reactive } from 'vue';
 import {
   WHOLE_SETTING_PATH,
   areAllPathsManaged,
@@ -157,5 +158,88 @@ describe('settingsSource predicates (official settingsSource.utils.ts)', () => {
     expect(pinManagedFields(candidate, saved, ['/provider'], 'auth')).toEqual({
       auth: { provider: 'old', other: 1 },
     });
+  });
+
+  it('pins both sections when called per section, like the SSO save path', () => {
+    const candidate = {
+      authenticationConfiguration: { provider: 'google' },
+      authorizerConfiguration: { botDomain: 'new.example' },
+    };
+    const saved = {
+      authenticationConfiguration: { provider: 'okta' },
+      authorizerConfiguration: { botDomain: 'old.example' },
+    };
+    const once = pinManagedFields(
+      candidate,
+      saved,
+      ['/provider'],
+      'authenticationConfiguration',
+    );
+    const twice = pinManagedFields(
+      once,
+      saved,
+      ['/botDomain'],
+      'authorizerConfiguration',
+    );
+    expect(twice.authenticationConfiguration.provider).toBe('okta');
+    expect(twice.authorizerConfiguration.botDomain).toBe('old.example');
+  });
+
+  it('deep-clones saved values so mutating the pin never touches the saved doc', () => {
+    const saved = {
+      authenticationConfiguration: { oidcConfiguration: { id: 'saved' } },
+    };
+    const pinned = pinManagedFields(
+      { authenticationConfiguration: { oidcConfiguration: { id: 'new' } } },
+      saved,
+      ['/oidcConfiguration/id'],
+      'authenticationConfiguration',
+    );
+    expect(pinned.authenticationConfiguration.oidcConfiguration.id).toBe('saved');
+    pinned.authenticationConfiguration.oidcConfiguration.id = 'mutated';
+    expect(saved.authenticationConfiguration.oidcConfiguration.id).toBe('saved');
+  });
+
+  it('clones reactive inputs instead of throwing a DataCloneError', () => {
+    // Save-path inputs come from Vue refs, so their trees are reactive
+    // proxies; structuredClone rejects those, the hand-rolled clone reads
+    // through them (as pin's lodash cloneDeep does).
+    const candidate = reactive<{
+      authenticationConfiguration: { provider: string; clientId?: string };
+    }>({
+      authenticationConfiguration: { provider: 'google', clientId: 'new' },
+    });
+    const saved = reactive<{
+      authenticationConfiguration: { provider: string; clientId?: string };
+    }>({
+      authenticationConfiguration: { provider: 'okta' },
+    });
+    const pinned = pinManagedFields(
+      candidate,
+      saved,
+      ['/provider'],
+      'authenticationConfiguration',
+    );
+    expect(pinned.authenticationConfiguration.provider).toBe('okta');
+    expect(pinned.authenticationConfiguration.clientId).toBe('new');
+    expect(candidate.authenticationConfiguration.provider).toBe('google');
+    // The pinned tree is plain: mutating it never touches the reactive input.
+    pinned.authenticationConfiguration.clientId = 'pinned';
+    expect(candidate.authenticationConfiguration.clientId).toBe('new');
+  });
+
+  it('creates an array for a numeric segment only when nothing is there yet, like lodash set', () => {
+    const pinned = pinManagedFields(
+      {},
+      { items: ['saved'] },
+      ['/items/0'],
+    );
+    expect(pinned).toEqual({ items: ['saved'] });
+    expect(Array.isArray((pinned as { items: unknown }).items)).toBe(true);
+    // An existing object is kept (lodash keeps any object value), so the
+    // saved element lands on the numeric key of that object.
+    expect(
+      pinManagedFields({ items: {} }, { items: ['saved'] }, ['/items/0']),
+    ).toEqual({ items: { 0: 'saved' } });
   });
 });

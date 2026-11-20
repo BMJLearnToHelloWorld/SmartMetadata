@@ -4,9 +4,9 @@
 -->
 <!--
   Vue port of pin components/Settings/Applications/AppDetails/AppDetails.tsx.
-  Route param: the router still declares `:id`; the value is treated as
-  the FQN (ByName fetch) and the `:id` -> `:fqn` rename is a router-line
-  request. No breadcrumb (AP-C1), no description rendering, no plugin
+  Route param is `:fqn` (pin RouterUtils.ts:206 getApplicationDetailsPath
+  builds `/settings/apps/:fqn`); the value is the FQN, fetched ByName.
+  No breadcrumb (AP-C1), no description rendering, no plugin
   component (the OSS plugin registry is empty). Page title is set by the
   shell/title line, not here.
 -->
@@ -59,13 +59,13 @@ import {
   isRuntimeDisabled as computeRuntimeDisabled,
 } from '@/views/marketplace/appUtils';
 
-const props = defineProps<{ id?: string; fqn?: string }>();
+const props = defineProps<{ fqn?: string }>();
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const shellConfig = useShellConfigStore();
 
-const fqn = computed(() => props.fqn ?? props.id ?? '');
+const fqn = computed(() => props.fqn ?? '');
 const appData = ref<AdminApp | undefined>();
 const showActions = ref(false);
 const showDeleteModel = ref(false);

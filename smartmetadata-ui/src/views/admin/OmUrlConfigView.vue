@@ -9,7 +9,6 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Button, Col, Form, Input, Row, Space, Typography, message, Spin } from 'ant-design-vue';
-import type { SsoSettingSource } from '@/admin/ssoSettingsSource';
 import {
   getSettingsSource,
   getTypedSetting,
@@ -29,7 +28,7 @@ import {
   registryDescription,
   type SettingsTranslator,
 } from '@/settings/registry';
-import { findSettingSource, isPathManaged } from '@/utils/settingsSource';
+import { findSettingSource, isPathManaged, type SettingSource } from '@/utils/settingsSource';
 
 const { t } = useI18n();
 const settingsTranslator = ((key: string, params?: Record<string, string>) => t(key, params ?? {})) as SettingsTranslator;
@@ -53,7 +52,7 @@ const breadcrumbItems = computed(() =>
 const openMetadataUrl = ref<string | undefined>(undefined);
 const loading = ref(false);
 const sourcesLoading = ref(false);
-const sources = ref<SsoSettingSource[]>([]);
+const sources = ref<SettingSource[]>([]);
 const editMode = ref(false);
 const saving = ref(false);
 const activeField = ref('');

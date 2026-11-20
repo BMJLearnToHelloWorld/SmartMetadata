@@ -26,7 +26,6 @@ import {
   message,
   Spin,
 } from 'ant-design-vue';
-import type { SsoSettingSource } from '@/admin/ssoSettingsSource';
 import {
   getSetting,
   getSettingsSource,
@@ -53,6 +52,7 @@ import {
   findSettingSource,
   isPathManaged,
   toJsonPointer,
+  type SettingSource,
 } from '@/utils/settingsSource';
 
 const { t } = useI18n();
@@ -130,7 +130,7 @@ type EmailFormState = {
 const config = ref<Record<string, unknown> | undefined>(undefined);
 const loading = ref(false);
 const sourcesLoading = ref(false);
-const sources = ref<SsoSettingSource[]>([]);
+const sources = ref<SettingSource[]>([]);
 const editMode = ref(false);
 const saving = ref(false);
 const activeField = ref('');

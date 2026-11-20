@@ -11,7 +11,7 @@ import { mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSsoFreshFormData } from '@/admin/ssoDefaults';
 import { getSsoProviderSchema } from '@/admin/ssoSchemas';
-import type { SsoSecuritySources } from '@/admin/ssoSettingsSource';
+import type { SsoSecuritySources } from '@/admin/ssoSecuritySources';
 import { getSsoUiEntry, resolveSsoUiSchema } from '@/admin/ssoUiSchema';
 import { searchSsoRoles } from '@/api/ssoRoles';
 import { createTestI18n } from '@/test/i18n';

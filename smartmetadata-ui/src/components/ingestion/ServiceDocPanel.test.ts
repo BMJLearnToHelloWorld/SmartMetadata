@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { nextTick, type ComponentPublicInstance } from 'vue';
 import type { SupportedLocale } from '@/i18n/localePreference';
 import { createTestI18n } from '@/test/i18n';
@@ -58,7 +58,7 @@ async function mountPanel(
   locale: SupportedLocale = 'en-US',
 ): Promise<PanelWrapper> {
   const wrapper = mount(ServiceDocPanel, {
-    props: { serviceName: 'Mysql', serviceType: 'Database', ...props },
+    props: { serviceName: 'Mysql', serviceType: 'Database', focusedMode: true, ...props },
     global: { plugins: [createTestI18n(locale)] },
   });
   await flushPromises();
@@ -152,7 +152,7 @@ describe('ServiceDocPanel (official ServiceDocPanel, focused mode)', () => {
     const gate = deferred<string>();
     stubFetch(() => ({ ok: true, status: 200, text: () => gate.promise }));
     const wrapper = mount(ServiceDocPanel, {
-      props: { serviceName: 'Mysql', serviceType: 'Database' },
+      props: { serviceName: 'Mysql', serviceType: 'Database', focusedMode: true },
       global: { plugins: [createTestI18n()] },
     });
     expect(wrapper.find('[data-testid="service-doc-loading"]').exists()).toBe(true);
@@ -177,6 +177,7 @@ describe('ServiceDocPanel (official ServiceDocPanel, focused mode)', () => {
       props: {
         serviceName: 'Mysql',
         serviceType: 'Database',
+        focusedMode: true,
         activeField: 'root/hostPort',
         activeFieldMeta: { title: 'Host and Port', section: 'connection' },
       },
@@ -314,6 +315,105 @@ describe('ServiceDocPanel (official ServiceDocPanel, focused mode)', () => {
     expect(link.attributes('href')).toBe(
       'https://docs.open-metadata.org/latest/connectors/database/postgres',
     );
+    wrapper.unmount();
+  });
+});
+
+describe('ServiceDocPanel full-document mode (pin default, focusedMode unset)', () => {
+  const FULL_DOC_MARKDOWN = [
+    '$$section',
+    '## Client ID',
+    '$(id="clientId")',
+    'Your OpenMetadata client id.',
+    '$$',
+    '$$section',
+    '## Secret',
+    '$(id="clientSecret")',
+    'Your secret.',
+    '$$',
+  ].join('\n');
+
+  beforeEach(() => {
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    if (typeof globalThis.CSS === 'undefined' || !globalThis.CSS.escape) {
+      vi.stubGlobal('CSS', { escape: (value: string) => value });
+    }
+  });
+
+  it('renders sectioned docs with brand replacement and no focused header', async () => {
+    const fetchMock = stubFetch(() => textResponse(FULL_DOC_MARKDOWN));
+    const wrapper = await mountPanel({ focusedMode: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/locales/en-US/Database/Mysql.md',
+      expect.objectContaining({ headers: { Accept: 'text/markdown' } }),
+    );
+    expect(wrapper.find('.service-doc-title').exists()).toBe(false);
+    expect(wrapper.find('.service-doc-heading').exists()).toBe(false);
+    const sections = wrapper.findAll('section');
+    expect(sections.map((s) => s.attributes('data-id'))).toEqual([
+      'clientId',
+      'clientSecret',
+    ]);
+    expect(wrapper.text()).toContain('Your iSmart client id.');
+    wrapper.unmount();
+  });
+
+  it('renders an empty body when no doc file exists', async () => {
+    stubFetch(() => textResponse('', false));
+    const wrapper = await mountPanel({ focusedMode: false });
+    expect(wrapper.findAll('section').length).toBe(0);
+    expect(wrapper.find('[data-testid="service-doc-loading"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('highlights the active field section', async () => {
+    stubFetch(() => textResponse(FULL_DOC_MARKDOWN));
+    const wrapper = await mountPanel({
+      focusedMode: false,
+      activeField: 'root/clientSecret',
+    });
+    await vi.waitFor(() => {
+      const section = wrapper.find('section[data-id="clientSecret"]');
+      expect(section.attributes('data-highlighted')).toBe('true');
+    });
+    wrapper.unmount();
+  });
+
+  it('does not highlight in focused mode', async () => {
+    stubFetch(() => textResponse(FULL_DOC_MARKDOWN));
+    const wrapper = await mountPanel({
+      focusedMode: true,
+      activeField: 'root/clientSecret',
+    });
+    expect(wrapper.find('section[data-id="clientSecret"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('discards a stale full-doc response when the service changes mid-flight', async () => {
+    const mysqlGate = deferred<string>();
+    const postgresGate = deferred<string>();
+    stubFetch((url) => ({
+      ok: true,
+      status: 200,
+      text: () => (url.includes('Postgres') ? postgresGate.promise : mysqlGate.promise),
+    }));
+    const wrapper = mount(ServiceDocPanel, {
+      props: {
+        serviceName: 'Mysql',
+        serviceType: 'Database',
+        focusedMode: false,
+      },
+      global: { plugins: [createTestI18n()] },
+    });
+    await wrapper.setProps({ serviceName: 'Postgres' });
+    postgresGate.resolve('$$section\n## Host $(id="hostPort")\nPostgres host docs.');
+    await flushPromises();
+    await nextTick();
+    mysqlGate.resolve('$$section\n## Host $(id="hostPort")\nMysql host docs.');
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.text()).toContain('Postgres host docs.');
+    expect(wrapper.text()).not.toContain('Mysql host docs.');
     wrapper.unmount();
   });
 });

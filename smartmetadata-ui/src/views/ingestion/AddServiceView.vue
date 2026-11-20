@@ -459,6 +459,7 @@ onMounted(() => {
 
       <div v-if="!hideSecondPanel" class="add-service-doc-panel">
         <ServiceDocPanel
+          focused-mode
           :service-name="form.serviceType"
           :service-type="entityTypeForKind(form.kind)"
           :active-field="activeField"

@@ -20,14 +20,14 @@ import {
   getSsoProviderDisplayName,
   getSsoProviderIcon,
 } from '@/admin/ssoProviders';
-import type { SsoSecuritySources } from '@/admin/ssoSettingsSource';
+import type { SsoSecuritySources } from '@/admin/ssoSecuritySources';
 import type { SsoFormData } from '@/admin/ssoSchemas';
 import { getSsoUiEntry } from '@/admin/ssoUiSchema';
 import { useSsoConfiguration } from '@/composables/useSsoConfiguration';
+import ResizablePanels from '@/components/shared/ResizablePanels.vue';
 import SsoDocPanel from './SsoDocPanel.vue';
 import SsoProviderIcon from './SsoProviderIcon.vue';
 import SsoProviderSelector from './SsoProviderSelector.vue';
-import SsoResizablePanels from './SsoResizablePanels.vue';
 import SsoSamlMetadataUpload from './SsoSamlMetadataUpload.vue';
 import SsoSchemaNode from './SsoSchemaNode.vue';
 import SsoTestLoginModal from './SsoTestLoginModal.vue';
@@ -178,7 +178,8 @@ function handleChangeFile(): void {
       @discard="config.handleCancelConfirm"
       @save="config.handleSaveAndExit"
     />
-    <SsoResizablePanels
+    <ResizablePanels
+      class-name="content-height-with-resizable-panel sso-configured"
       :first-panel="{
         className: 'content-resizable-panel-container sso-configured m-t-2',
         minWidth: 400,
@@ -191,7 +192,7 @@ function handleChangeFile(): void {
         flex: 0.5,
       }"
     >
-      <template #first-panel>
+      <template #first>
         <div v-if="config.isEditMode.value && config.showForm.value">
           <div v-if="showSamlUpload" class="m-b-md">
             <SsoSamlMetadataUpload
@@ -305,13 +306,13 @@ function handleChangeFile(): void {
           />
         </div>
       </template>
-      <template #second-panel>
+      <template #second>
         <SsoDocPanel
           :active-field="activeField"
           :service-name="config.currentProvider.value || 'general'"
         />
       </template>
-    </SsoResizablePanels>
+    </ResizablePanels>
   </div>
 
   <div v-else>
@@ -351,7 +352,8 @@ function handleChangeFile(): void {
       class="sso-configuration-form-card"
       data-testid="sso-configuration-form-card"
     >
-      <SsoResizablePanels
+      <ResizablePanels
+        class-name="content-height-with-resizable-panel"
         :first-panel="{
           className: 'content-resizable-panel-container',
           minWidth: 700,
@@ -362,7 +364,7 @@ function handleChangeFile(): void {
           minWidth: 400,
         }"
       >
-        <template #first-panel>
+        <template #first>
           <div class="sso-form-sticky-header" />
           <div v-if="config.isEditMode.value && config.showForm.value">
             <div v-if="showSamlUpload" class="m-b-md">
@@ -477,13 +479,13 @@ function handleChangeFile(): void {
             />
           </div>
         </template>
-        <template #second-panel>
+        <template #second>
           <SsoDocPanel
             :active-field="activeField"
             :service-name="config.currentProvider.value || 'general'"
           />
         </template>
-      </SsoResizablePanels>
+      </ResizablePanels>
     </Card>
   </div>
 </template>

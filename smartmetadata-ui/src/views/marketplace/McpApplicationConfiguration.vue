@@ -9,7 +9,7 @@ import ServiceDocPanel from '@/components/ingestion/ServiceDocPanel.vue';
 import SettingsSourceBanner from '@/components/shared/SettingsSourceBanner.vue';
 import { useFieldFocus } from '@/ingestion/fieldFocus';
 import type { JsonSchema } from './appAssets';
-import AppResizablePanels from './AppResizablePanels.vue';
+import ResizablePanels from '@/components/shared/ResizablePanels.vue';
 import AppSchemaForm from './AppSchemaForm.vue';
 import { formatFormDataForSubmit } from './formDataFormat';
 import { useMcpConfiguration } from './useMcpConfiguration';
@@ -61,7 +61,7 @@ function onSubmit(formData: Record<string, unknown>): void {
 
 <template>
   <Spin v-if="isFetching" data-testid="mcp-config-loader" style="display: flex; justify-content: center; padding: 48px" />
-  <AppResizablePanels
+  <ResizablePanels
     v-else
     :first-panel="{
       minWidth: 700,
@@ -103,5 +103,5 @@ function onSubmit(formData: Record<string, unknown>): void {
         service-type="Applications"
       />
     </template>
-  </AppResizablePanels>
+  </ResizablePanels>
 </template>

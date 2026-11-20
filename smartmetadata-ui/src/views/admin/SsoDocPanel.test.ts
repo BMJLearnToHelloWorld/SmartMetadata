@@ -53,17 +53,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('SsoDocPanel', () => {
+describe('SsoDocPanel (pin SSODocPanel thin wrapper over ServiceDocPanel)', () => {
   it('renders the provider header and sectioned docs with brand replacement', async () => {
     const wrapper = mountPanel();
     await vi.waitFor(() => {
       expect(wrapper.find('h1').text()).toBe('Google SSO Configuration');
     });
+    // The shared panel's outer testid exists from mount, so wait for the
+    // fetched sections themselves rather than the container.
     await vi.waitFor(() => {
-      expect(
-        wrapper.find('[data-testid="service-requirements"]').exists(),
-      ).toBe(true);
+      expect(wrapper.findAll('section')).toHaveLength(2);
     });
+    // Full-document mode: no focused header inside the shared panel.
+    expect(wrapper.find('.service-doc-title').exists()).toBe(false);
     const sections = wrapper.findAll('section');
     expect(sections.map((s) => s.attributes('data-id'))).toEqual([
       'clientId',
@@ -83,12 +85,22 @@ describe('SsoDocPanel', () => {
         'Openmetadata SSO Configuration',
       );
     });
+    // Wait for the fetch to settle: the shared panel's outer testid
+    // exists from mount, so the loading indicator is the settle signal.
     await vi.waitFor(() => {
       expect(
-        wrapper.find('[data-testid="service-requirements"]').exists(),
-      ).toBe(true);
+        wrapper.find('[data-testid="service-doc-loading"]').exists(),
+      ).toBe(false);
     });
     expect(wrapper.findAll('section').length).toBe(0);
+  });
+
+  it('renders the basic title for the basic provider', async () => {
+    const wrapper = mountPanel({ serviceName: 'basic' });
+    await vi.waitFor(() => {
+      expect(wrapper.find('h1').text()).toBe('Basic Configuration');
+    });
+    wrapper.unmount();
   });
 
   it('highlights the resolved active field section', async () => {

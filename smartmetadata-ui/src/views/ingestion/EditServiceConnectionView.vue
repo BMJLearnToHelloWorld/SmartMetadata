@@ -425,6 +425,7 @@ onMounted(() => {
         </div>
         <ServiceDocPanel
           v-if="service?.serviceType && kind"
+          focused-mode
           class="edit-connection-docs"
           :service-name="service.serviceType"
           :service-type="getDocPanelServiceType(kind)"

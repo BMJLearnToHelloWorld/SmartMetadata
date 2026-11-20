@@ -28,6 +28,7 @@ import {
   hasAuthMethodGuidance,
   isUsableMarkdown,
   resolveFocusedSection,
+  splitDocMarkdown,
   useFieldFocus,
   type DocFilePaths,
   type DocPanelTranslate,
@@ -559,5 +560,52 @@ describe('getFocusedDocDetails C′ field-area fallback', () => {
     expect(details.title).toBe('Threads');
     expect(details.markdown).toBe('Thread docs.');
     expect(details.schemaFallback).toBeUndefined();
+  });
+});
+
+describe('splitDocMarkdown (pin ServiceUtils.processDocMarkdown shape)', () => {
+  it('splits sections with ids removed and content trimmed', () => {
+    const segments = splitDocMarkdown(
+      '# Intro\n\n$$section\n$(id="clientId")\n\nContent one.\n$$\n\nBetween.\n\n$$section\n$(id="authority")\nContent two.\n$$\n',
+    );
+    expect(segments).toEqual([
+      { kind: 'prose', markdown: '# Intro\n\n' },
+      { kind: 'section', id: 'clientId', markdown: 'Content one.' },
+      { kind: 'prose', markdown: '\n\nBetween.\n\n' },
+      { kind: 'section', id: 'authority', markdown: 'Content two.' },
+      { kind: 'prose', markdown: '\n' },
+    ]);
+  });
+
+  it('uses an empty id when the marker is missing', () => {
+    expect(
+      splitDocMarkdown('$$section\nNo marker here.\n$$'),
+    ).toEqual([{ kind: 'section', id: '', markdown: 'No marker here.' }]);
+  });
+
+  it('returns plain prose unchanged when no blocks exist', () => {
+    expect(splitDocMarkdown('# Hello\n\nPlain text.')).toEqual([
+      { kind: 'prose', markdown: '# Hello\n\nPlain text.' },
+    ]);
+    expect(splitDocMarkdown('')).toEqual([]);
+  });
+
+  it('splits top-level admonition blocks with trimmed content', () => {
+    const segments = splitDocMarkdown(
+      'Before.\n\n$$note\nBe careful.\n$$\n\nAfter.',
+    );
+    expect(segments).toEqual([
+      { kind: 'prose', markdown: 'Before.\n\n' },
+      { kind: 'admonition', admonitionType: 'note', markdown: 'Be careful.' },
+      { kind: 'prose', markdown: '\n\nAfter.' },
+    ]);
+  });
+
+  it('only matches known admonition types at line starts', () => {
+    expect(
+      splitDocMarkdown('$$unknown\nNot an admonition.\n$$'),
+    ).toEqual([
+      { kind: 'prose', markdown: '$$unknown\nNot an admonition.\n$$' },
+    ]);
   });
 });

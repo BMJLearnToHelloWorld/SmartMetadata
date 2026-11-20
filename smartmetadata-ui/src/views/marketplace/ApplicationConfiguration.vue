@@ -11,7 +11,7 @@ import type { EntityRef } from '@/types/api';
 import type { AdminApp } from '@/types/admin';
 import type { MarketplaceApp } from '@/api/marketplaceApps';
 import type { JsonSchema } from './appAssets';
-import AppResizablePanels from './AppResizablePanels.vue';
+import ResizablePanels from '@/components/shared/ResizablePanels.vue';
 import AppSchemaForm from './AppSchemaForm.vue';
 
 const props = defineProps<{
@@ -57,7 +57,7 @@ function onSubmit(formData: Record<string, unknown>): void {
 </script>
 
 <template>
-  <AppResizablePanels
+  <ResizablePanels
     :first-panel="{
       minWidth: 700,
       flex: 0.7,
@@ -90,5 +90,5 @@ function onSubmit(formData: Record<string, unknown>): void {
         service-type="Applications"
       />
     </template>
-  </AppResizablePanels>
+  </ResizablePanels>
 </template>

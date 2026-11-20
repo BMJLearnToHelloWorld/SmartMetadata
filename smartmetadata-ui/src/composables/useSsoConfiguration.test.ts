@@ -13,7 +13,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { defineComponent, h, nextTick, ref, type Ref } from 'vue';
 import type { SsoFormData } from '@/admin/ssoSchemas';
-import type { SsoSecuritySources } from '@/admin/ssoSettingsSource';
+import type { SsoSecuritySources } from '@/admin/ssoSecuritySources';
 import { ApiError } from '@/api/client';
 import type { TestLoginResult } from '@/api/system';
 import type { ConfigurationCheckState } from '@/composables/useSsoTestLogin';
