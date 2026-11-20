@@ -162,13 +162,25 @@ def test_resolve_table_two_part_name_uses_context_database() -> None:
 def test_resolve_table_one_part_name_uses_context_database_and_schema() -> None:
     client = _FakeClient({"svc.db.public.orders": _table("svc.db.public.orders")})
     resolver = _resolver(client)
-    assert resolver.resolve_table(_ident("orders"), context=_ctx()) == "svc.db.public.orders"
+    # After D-L2c E the connection schema default no longer
+    # supplies the schema, so the bare name takes both segments
+    # from the row context.
+    assert (
+        resolver.resolve_table(_ident("orders"), context=_ctx("db", "public"))
+        == "svc.db.public.orders"
+    )
 
 
 def test_resolve_table_case_insensitive_unique_match() -> None:
     client = _FakeClient({"svc.db.public.Orders": _table("svc.db.public.Orders")})
     resolver = _resolver(client)
-    assert resolver.resolve_table(_ident("ORDERS"), context=_ctx()) == "svc.db.public.Orders"
+    # After D-L2c E the schema comes from the row context, not the
+    # connection default; the case-insensitive unique match itself
+    # is unchanged.
+    assert (
+        resolver.resolve_table(_ident("ORDERS"), context=_ctx("db", "public"))
+        == "svc.db.public.Orders"
+    )
 
 
 def test_resolve_table_ambiguous_case_insensitive_match_skips() -> None:
@@ -188,9 +200,14 @@ def test_resolve_table_unresolvable_returns_none() -> None:
 
 
 def test_resolve_table_non_404_error_propagates() -> None:
+    """A non-404 catalog error still propagates instead of being
+    swallowed as unresolved. The name is 2-part on purpose: after
+    D-L2c E a bare name with no row schema never reaches the catalog
+    (no candidate exists), so the propagation path is exercised
+    through a name that does build a candidate."""
     resolver = _resolver(_FakeClient(fail_tables_with=500))
     try:
-        resolver.resolve_table(_ident("orders"), context=_ctx())
+        resolver.resolve_table(_ident("public", "orders"), context=_ctx("db"))
     except RestError as exc:
         assert exc.status_code == 500
     else:  # pragma: no cover
@@ -305,7 +322,12 @@ def test_resolve_procedure_exact_then_case_insensitive() -> None:
         == "svc.db.public.load_orders"
     )
     assert (
-        resolver.resolve_procedure(_ident("calctotal"), context=_ctx())["fullyQualifiedName"]
+        # After D-L2c E the case-insensitive probe is a 2-part name
+        # (database from the row context); the bare name would miss
+        # without a row schema, so it cannot exercise this path.
+        resolver.resolve_procedure(
+            _ident("public", "calctotal"), context=_ctx("db")
+        )["fullyQualifiedName"]
         == "svc.db.public.CalcTotal"
     )
 
@@ -322,8 +344,11 @@ def test_resolve_udf_counts_misses_separately() -> None:
         procedures={"svc.db.public.my_udf": _procedure("svc.db.public.my_udf", "SELECT 1")}
     )
     resolver = _resolver(client)
-    assert resolver.resolve_udf(_ident("my_udf"), context=_ctx()) is not None
-    assert resolver.resolve_udf(_ident("missing_fn"), context=_ctx()) is None
+    # After D-L2c E the names are 2-part (database from the row
+    # context); a bare name with no row schema misses instead of
+    # resolving through the connection default.
+    assert resolver.resolve_udf(_ident("public", "my_udf"), context=_ctx("db")) is not None
+    assert resolver.resolve_udf(_ident("public", "missing_fn"), context=_ctx("db")) is None
     assert resolver.unresolved_udf_count == 1
     assert resolver.unresolved_procedure_count == 1
 
@@ -457,9 +482,20 @@ def test_unresolved_table_count_counts_final_outcome_only() -> None:
         {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
     )
     resolver = _resolver(client, cross_services=[OTHER], cross_enabled=True)
-    assert resolver.resolve_table(_ident("orders"), context=_ctx()) == "other_svc.db.public.orders"
-    assert resolver.resolve_table(_ident("ghost"), context=_ctx()) is None
-    assert resolver.resolve_table(_ident("ghost"), context=_ctx()) is None
+    # After D-L2c E the names are 2-part (database from the row
+    # context); the counting semantics are unchanged.
+    assert (
+        resolver.resolve_table(_ident("public", "orders"), context=_ctx("db"))
+        == "other_svc.db.public.orders"
+    )
+    assert (
+        resolver.resolve_table(_ident("public", "ghost"), context=_ctx("db"))
+        is None
+    )
+    assert (
+        resolver.resolve_table(_ident("public", "ghost"), context=_ctx("db"))
+        is None
+    )
     assert resolver.unresolved_table_count == 2
 
 

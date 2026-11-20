@@ -360,6 +360,10 @@ class TableQueryRecord(Record):
     schema_source: FieldSource = FieldSource.MISSING
     duration: float | None = None
     cost: float | None = None
+    # The history query's own id (D-L2c C): the execution identity
+    # row-cardinality dedupe keys on. ``None`` on CSV rows and other
+    # engines, where dedupe bypasses and current behavior holds.
+    query_id: str | None = None
 
     def label(self) -> str:
         query_hash = hashlib.md5(self.query.encode("utf-8")).hexdigest()[:8]

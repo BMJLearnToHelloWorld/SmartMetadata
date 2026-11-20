@@ -16,6 +16,7 @@ from smartmetadata_ingestion.connectors.redshift_query_log import (
     REDSHIFT_QUERY_LOG_SPEC,
     redshift_connect_builder,
     redshift_engines,
+    redshift_spec_for_instance,
 )
 from smartmetadata_ingestion.connectors.registry import register_source
 from smartmetadata_ingestion.usage.query_log import ConnectFactory, QueryLogSource
@@ -39,3 +40,11 @@ class RedshiftUsageSource(QueryLogSource):
 
     def prepare(self) -> None:
         redshift.run_connection_test(self._config.connection or {})
+        # D-L2c C preflight, before any history read: detect the
+        # instance type, probe that branch's privileges (loud on a
+        # miss), and select the matching history template.
+        connect_factory = self._connect_override or redshift_connect_builder(
+            self._config.connection or {}
+        )
+        instance_type = redshift.redshift_query_preflight(connect_factory)
+        self._spec = redshift_spec_for_instance(instance_type)

@@ -275,15 +275,15 @@ def test_fallback_ambiguity_skips_and_counts() -> None:
 # --- §6 test 3: scan-range conditional compat (mechanism lock) -----------
 
 
-def test_scan_range_default_binds_and_counts_default_segment() -> None:
-    """MECHANISM LOCK, NOT A CORRECTNESS ASSERTION: with no schema
-    on the row, the scan-range default (``sales``) supplies the
-    schema, so a bare name binds ``sales.orders`` even when the
-    session actually used ``public`` and both hold an ``orders``
-    table. This is the pre-existing conditional-compat behavior
-    (design §5.7): correct only when the session schema happens to
-    equal the scan range. The default-bound count makes the
-    exposure measurable."""
+def test_scan_range_default_no_longer_binds_bare_names() -> None:
+    """D-L2c E (full delete): with no schema on the row, the
+    scan-range default (``sales``) no longer supplies the schema,
+    so a bare name misses even when the scan range holds an
+    ``orders`` table. The old binding behavior (design §5.7
+    conditional compat) is deleted, not narrowed: a bare name with
+    no row schema is a miss + ``missing_schema``, and
+    ``default_bound_schema`` stays 0. The database default is
+    untouched — only the schema half is deleted."""
     client = _FakeClient(
         {
             "svc.warehouse.sales.orders": _table("svc.warehouse.sales.orders"),
@@ -294,12 +294,56 @@ def test_scan_range_default_binds_and_counts_default_segment() -> None:
     context = _ctx(
         "warehouse", None, database_source=FieldSource.ROW_NATIVE
     )
+    assert resolver.resolve(_ident("orders"), context=context) is None
+    counts = resolver.binding_counts
+    assert counts["missing_schema"] == 1
+    assert counts["default_bound_schema"] == 0
+    assert counts["default_bound_database"] == 0
+
+
+def test_row_schema_still_binds_and_default_schema_never_consulted() -> None:
+    """D-L2c E: only the default is deleted. A bare name whose
+    schema comes from the row still binds, and the configured
+    default schema is never consulted for it — not even to count:
+    the bound table is the row-schema one, and
+    ``default_bound_schema`` stays 0."""
+    client = _FakeClient(
+        {
+            "svc.warehouse.sales.orders": _table("svc.warehouse.sales.orders"),
+            "svc.warehouse.other.orders": _table("svc.warehouse.other.orders"),
+        }
+    )
+    resolver = _usage_resolver(client, default_schema="other")
+    context = _ctx(
+        "warehouse", "sales", database_source=FieldSource.ROW_NATIVE
+    )
     assert resolver.resolve(_ident("orders"), context=context) == (
         "svc.warehouse.sales.orders"
     )
-    counts = resolver.binding_counts
-    assert counts["default_bound_schema"] == 1
-    assert counts["default_bound_database"] == 0
+    assert resolver.binding_counts["default_bound_schema"] == 0
+
+
+def test_two_and_three_part_names_unaffected_by_schema_fallback_delete() -> None:
+    """D-L2c E: names that carry their own schema (2-part) or both
+    segments (3-part) are unaffected by the deletion — the default
+    schema was never part of their construction."""
+    client = _FakeClient(
+        {
+            "svc.warehouse.sales.orders": _table("svc.warehouse.sales.orders"),
+            "svc.qdb.qschema.thing": _table("svc.qdb.qschema.thing"),
+        }
+    )
+    resolver = _usage_resolver(client, default_schema="other")
+    assert (
+        resolver.resolve(_ident("sales", "orders"), context=_ctx("warehouse"))
+        == "svc.warehouse.sales.orders"
+    )
+    assert (
+        resolver.resolve(_ident("qdb", "qschema", "thing"), context=_ctx())
+        == "svc.qdb.qschema.thing"
+    )
+    assert resolver.binding_counts["missing_schema"] == 0
+    assert resolver.binding_counts["default_bound_schema"] == 0
 
 
 # --- D-L2c B: schema-only connection (design §6.2) ------------------------
@@ -346,11 +390,13 @@ def test_schema_only_connection_binds_qualified_names_but_not_bare_name() -> Non
 # --- §6 test 11: cross-service limits (behavior record) ------------------
 
 
-def test_cross_service_first_hit_wins_without_ambiguity_judgment() -> None:
-    """BEHAVIOR RECORD, NOT A CORRECTNESS ASSERTION: with the same
-    candidate under two named services, the first in config order
-    wins; no ambiguity judgment runs across services (design §3.6,
-    retained limitation)."""
+def test_cross_service_ambiguity_skips_and_counts(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D-L2c D, rule 1 (collect-then-judge): with the same candidate
+    under two named services, neither binds — the attempt is skipped,
+    counted once as ambiguous, and the warning lists both competing
+    FQNs. The old first-hit binding is gone."""
     client = _FakeClient(
         {
             "other_svc.db.public.orders": _table("other_svc.db.public.orders"),
@@ -364,18 +410,29 @@ def test_cross_service_first_hit_wins_without_ambiguity_judgment() -> None:
         cross_services=[OTHER, "third_svc"],
         cross_enabled=True,
     )
-    assert (
-        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
-        == "other_svc.db.public.orders"
-    )
-    assert resolver.unresolved_table_count == 0
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.resolution"
+    ):
+        assert (
+            resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+            is None
+        )
+    counts = resolver.binding_counts
+    assert counts["cross_service_ambiguous"] == 1
+    assert counts["cross_service_bound"] == 0
+    assert counts["unresolved_404"] == 0
+    assert counts["ambiguous"] == 0
+    assert resolver.unresolved_table_count == 1
+    assert "other_svc.db.public.orders" in caplog.text
+    assert "third_svc.db.public.orders" in caplog.text
 
 
 def test_cross_service_reuses_source_context_and_stays_exact_only() -> None:
     """Cross-service candidates reuse the source-service context
-    (retained limitation), and no case-insensitive step runs across
-    services: a case-variant table under the other service does not
-    bind."""
+    (retained limitation — target-service context recomputation is a
+    follow-up item, D-L2c D rule 2), and no case-insensitive step runs
+    across services: a case-variant table under the other service does
+    not bind."""
     client = _FakeClient(
         {"other_svc.db.public.Orders": _table("other_svc.db.public.Orders")}
     )
@@ -403,6 +460,8 @@ def test_cross_service_disabled_never_leaves_own_service() -> None:
     )
     assert resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx()) is None
     assert client.table_lookups == ["svc.db.public.orders"]
+    assert resolver.binding_counts["cross_service_ambiguous"] == 0
+    assert resolver.binding_counts["cross_service_bound"] == 0
 
 
 # --- Folding (§5.5b) ------------------------------------------------------
@@ -642,9 +701,44 @@ def test_quiet_missing_probe_counts_missing_key_only_when_warned_loudly() -> Non
 
 def test_cross_service_success_counts_default_bound_segments() -> None:
     """A cross-service hit built from the connection defaults counts
-    each default-supplied segment: the bare name needs both segments
-    from the defaults, so the second candidate construction on the
-    cross-service path must attribute both to ``default``."""
+    each default-supplied segment: a 2-part name takes its database
+    from the defaults, so the cross-service candidate construction
+    must attribute it to ``default``. (D-L2c E: the schema default
+    is deleted, so the database segment is the only default-supplied
+    one left; a bare name can no longer bind this way.)"""
+    client = _FakeClient(
+        {"other_svc.dflt.public.orders": _table("other_svc.dflt.public.orders")}
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database="dflt",
+        default_schema="dfltsch",
+        cross_services=[OTHER],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("public", "orders"), context=_ctx())
+        == "other_svc.dflt.public.orders"
+    )
+    assert client.table_lookups == [
+        "svc.dflt.public.orders",
+        "other_svc.dflt.public.orders",
+    ]
+    counts = resolver.binding_counts
+    assert counts["default_bound_database"] == 1
+    assert counts["default_bound_schema"] == 0
+    assert counts["cross_service_bound"] == 1
+    assert counts["cross_service_ambiguous"] == 0
+    assert counts["unresolved_404"] == 0
+    assert resolver.unresolved_table_count == 0
+
+
+def test_cross_service_bare_name_misses_without_schema_default() -> None:
+    """D×E: after the schema fallback is deleted, a bare name
+    cannot be built into a candidate on any service — not
+    own-service, not cross-service — even though the catalog holds
+    the table under the old default schema. Both paths miss in the
+    same way: no lookup is issued anywhere, ``missing_schema`` +1."""
     client = _FakeClient(
         {"other_svc.dflt.dfltsch.orders": _table("other_svc.dflt.dfltsch.orders")}
     )
@@ -655,19 +749,13 @@ def test_cross_service_success_counts_default_bound_segments() -> None:
         cross_services=[OTHER],
         cross_enabled=True,
     )
-    assert (
-        resolver.resolve_table(_ident("orders"), context=_ctx())
-        == "other_svc.dflt.dfltsch.orders"
-    )
-    assert client.table_lookups == [
-        "svc.dflt.dfltsch.orders",
-        "other_svc.dflt.dfltsch.orders",
-    ]
+    assert resolver.resolve_table(_ident("orders"), context=_ctx()) is None
+    assert client.table_lookups == []
     counts = resolver.binding_counts
-    assert counts["default_bound_database"] == 1
-    assert counts["default_bound_schema"] == 1
-    assert counts["unresolved_404"] == 0
-    assert resolver.unresolved_table_count == 0
+    assert counts["missing_schema"] == 1
+    assert counts["cross_service_bound"] == 0
+    assert counts["cross_service_ambiguous"] == 0
+    assert resolver.unresolved_table_count == 1
 
 
 def test_procedure_fallback_compares_full_fqn_and_counts_ambiguity() -> None:
@@ -770,6 +858,239 @@ def test_cross_service_success_counts_no_skip() -> None:
     assert resolver.unresolved_table_count == 0
 
 
+def test_cross_service_three_services_ambiguous_lists_all_three(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Three exact hits across three named services still skip, and
+    the warning lists all three competing FQNs."""
+    client = _FakeClient(
+        {
+            "other_svc.db.public.orders": _table("other_svc.db.public.orders"),
+            "third_svc.db.public.orders": _table("third_svc.db.public.orders"),
+            "fourth_svc.db.public.orders": _table("fourth_svc.db.public.orders"),
+        }
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER, "third_svc", "fourth_svc"],
+        cross_enabled=True,
+    )
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.resolution"
+    ):
+        assert (
+            resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+            is None
+        )
+    assert resolver.binding_counts["cross_service_ambiguous"] == 1
+    assert resolver.unresolved_table_count == 1
+    assert "other_svc.db.public.orders" in caplog.text
+    assert "third_svc.db.public.orders" in caplog.text
+    assert "fourth_svc.db.public.orders" in caplog.text
+
+
+def test_cross_service_single_hit_among_misses_binds() -> None:
+    """One exact hit and one 404 bind the hit: ambiguity needs two
+    hits, not two probes."""
+    client = _FakeClient(
+        {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER, "third_svc"],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+        == "other_svc.db.public.orders"
+    )
+    counts = resolver.binding_counts
+    assert counts["cross_service_bound"] == 1
+    assert counts["cross_service_ambiguous"] == 0
+    assert resolver.unresolved_table_count == 0
+
+
+def test_cross_service_no_hit_keeps_miss_path() -> None:
+    """Zero cross-service hits keep the existing miss path: the
+    pending probe classification is spent exactly once, under the
+    probe's own key, with no ambiguity count."""
+    client = _FakeClient({})
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER, "third_svc"],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("db", "public", "ghost"), context=_ctx()) is None
+    )
+    counts = resolver.binding_counts
+    assert counts["unresolved_404"] == 1
+    assert counts["cross_service_ambiguous"] == 0
+    assert counts["cross_service_bound"] == 0
+    assert resolver.unresolved_table_count == 1
+
+
+def test_cross_service_ambiguity_verdict_ignores_config_order(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Config order no longer decides the outcome: swapping the
+    service list still skips, and only the warning's listing order
+    follows the config order."""
+    tables = {
+        "other_svc.db.public.orders": _table("other_svc.db.public.orders"),
+        "third_svc.db.public.orders": _table("third_svc.db.public.orders"),
+    }
+    first = _lineage_resolver(
+        _FakeClient(tables),
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER, "third_svc"],
+        cross_enabled=True,
+    )
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.resolution"
+    ):
+        assert (
+            first.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+            is None
+        )
+    assert first.binding_counts["cross_service_ambiguous"] == 1
+    assert caplog.text.index("other_svc.db.public.orders") < caplog.text.index(
+        "third_svc.db.public.orders"
+    )
+    caplog.clear()
+    swapped = _lineage_resolver(
+        _FakeClient(tables),
+        default_database=None,
+        default_schema=None,
+        cross_services=["third_svc", OTHER],
+        cross_enabled=True,
+    )
+    with caplog.at_level(
+        logging.WARNING, logger="smartmetadata_ingestion.lineage.resolution"
+    ):
+        assert (
+            swapped.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+            is None
+        )
+    assert swapped.binding_counts["cross_service_ambiguous"] == 1
+    assert caplog.text.index("third_svc.db.public.orders") < caplog.text.index(
+        "other_svc.db.public.orders"
+    )
+
+
+def test_cross_service_own_service_hit_never_probes_cross_services() -> None:
+    """An own-service hit never enters the cross-service loop: no
+    cross-service FQN is looked up and no cross-service count moves."""
+    client = _FakeClient(
+        {
+            "svc.db.public.orders": _table("svc.db.public.orders"),
+            "other_svc.db.public.orders": _table("other_svc.db.public.orders"),
+        }
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+        == "svc.db.public.orders"
+    )
+    assert client.table_lookups == ["svc.db.public.orders"]
+    assert resolver.binding_counts["cross_service_bound"] == 0
+    assert resolver.binding_counts["cross_service_ambiguous"] == 0
+
+
+def test_cross_service_ambiguity_leaves_no_pending_pollution() -> None:
+    """An ambiguity skip discards the own-service probe's pending
+    classification instead of spending it: the next ghost counts
+    exactly one 404, with no ambiguity residue and no ambiguity
+    count on the second attempt."""
+    client = _FakeClient(
+        {
+            "other_svc.db.public.orders": _table("other_svc.db.public.orders"),
+            "third_svc.db.public.orders": _table("third_svc.db.public.orders"),
+        }
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER, "third_svc"],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx()) is None
+    )
+    assert resolver.binding_counts["cross_service_ambiguous"] == 1
+    assert resolver.binding_counts["unresolved_404"] == 0
+    assert (
+        resolver.resolve_table(_ident("db", "public", "ghost"), context=_ctx()) is None
+    )
+    counts = resolver.binding_counts
+    assert counts["cross_service_ambiguous"] == 1
+    assert counts["unresolved_404"] == 1
+    assert counts["ambiguous"] == 0
+    assert resolver.unresolved_table_count == 2
+
+
+def test_cross_service_three_part_hit_binds_without_default_segments() -> None:
+    """A 3-part name carries its own segments, so a cross-service hit
+    binds with no default-supplied segment — only the path count
+    moves."""
+    client = _FakeClient(
+        {"other_svc.db.public.orders": _table("other_svc.db.public.orders")}
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database="dflt",
+        default_schema="dfltsch",
+        cross_services=[OTHER],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_table(_ident("db", "public", "orders"), context=_ctx())
+        == "other_svc.db.public.orders"
+    )
+    counts = resolver.binding_counts
+    assert counts["cross_service_bound"] == 1
+    assert counts["default_bound_database"] == 0
+    assert counts["default_bound_schema"] == 0
+
+
+def test_procedure_chain_has_no_cross_service_path() -> None:
+    """D-L2c D, rule 3 (verified fact): ``resolve_procedure`` never
+    probes another service, even with cross-service enabled and a
+    same-named procedure sitting under the other service — only the
+    own-service FQN is looked up."""
+    client = _FakeClient(
+        procedures={
+            "other_svc.db.public.orders": _procedure("other_svc.db.public.orders")
+        }
+    )
+    resolver = _lineage_resolver(
+        client,
+        default_database=None,
+        default_schema=None,
+        cross_services=[OTHER],
+        cross_enabled=True,
+    )
+    assert (
+        resolver.resolve_procedure(_ident("db", "public", "orders"), context=_ctx())
+        is None
+    )
+    assert client.procedure_lookups == ["svc.db.public.orders"]
+
+
 def test_read_failure_counts_then_propagates() -> None:
     resolver = _usage_resolver(_FakeClient(fail_tables_with=500))
     with pytest.raises(RestError):
@@ -784,24 +1105,29 @@ def test_read_failure_counts_then_propagates() -> None:
 def test_unresolved_warning_carries_both_provenance_levels(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    resolver = _usage_resolver(_FakeClient(), default_schema="public")
+    resolver = _usage_resolver(_FakeClient(), default_database="db")
     context = _ctx(
-        "db", None,
-        database_source=FieldSource.ROW_NATIVE,
+        None, None,
+        database_source=FieldSource.MISSING,
         schema_source=FieldSource.MISSING,
     )
     with caplog.at_level(logging.WARNING, logger="smartmetadata_ingestion.usage.stage"):
-        assert resolver.resolve(_ident("ghost"), context=context) is None
-    assert "candidate database from row" in caplog.text
-    assert "schema from default" in caplog.text
-    assert "input sources database=row_native" in caplog.text
+        assert resolver.resolve(_ident("public", "ghost"), context=context) is None
+    assert "candidate database from default" in caplog.text
+    assert "schema from qualifier" in caplog.text
+    assert "input sources database=missing" in caplog.text
     assert "schema=missing" in caplog.text
 
 
 def test_default_bound_counted_per_segment_per_success() -> None:
+    """Per-segment default-bound counting after D-L2c E: the database
+    default still supplies its segment (a 2-part name binds through
+    it), but the schema default is deleted — a bare name misses
+    instead of binding through it, so ``default_bound_schema``
+    stays 0."""
     client = _FakeClient(
         {
-            "svc.dflt.dfltsch.orders": _table("svc.dflt.dfltsch.orders"),
+            "svc.dflt.public.orders": _table("svc.dflt.public.orders"),
             "svc.rowdb.rowschema.items": _table("svc.rowdb.rowschema.items"),
             "svc.qdb.qschema.thing": _table("svc.qdb.qschema.thing"),
         }
@@ -809,8 +1135,10 @@ def test_default_bound_counted_per_segment_per_success() -> None:
     resolver = _usage_resolver(
         client, default_database="dflt", default_schema="dfltsch"
     )
-    assert resolver.resolve(_ident("orders"), context=_ctx()) == (
-        "svc.dflt.dfltsch.orders"
+    assert resolver.resolve(_ident("orders"), context=_ctx()) is None
+    assert (
+        resolver.resolve(_ident("public", "orders"), context=_ctx())
+        == "svc.dflt.public.orders"
     )
     assert (
         resolver.resolve(_ident("items"), context=_ctx("rowdb", "rowschema"))
@@ -822,7 +1150,8 @@ def test_default_bound_counted_per_segment_per_success() -> None:
     )
     counts = resolver.binding_counts
     assert counts["default_bound_database"] == 1
-    assert counts["default_bound_schema"] == 1
+    assert counts["default_bound_schema"] == 0
+    assert counts["missing_schema"] == 1
 
 
 # --- view_parent_schema_tables (structured, via association) --------------

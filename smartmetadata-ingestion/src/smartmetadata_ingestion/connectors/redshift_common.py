@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Protocol
 
 from smartmetadata_ingestion.connectors.constraints import nullable_flag
@@ -247,6 +248,133 @@ def run_connection_test(connection: dict[str, Any]) -> list[str]:
         raise WorkflowError("database is required")
     steps.append("CheckDatabase")
     return steps
+
+
+class RedshiftInstanceType(str, Enum):
+    """Provisioned vs serverless, per the pin's ``RedshiftInstanceType``
+    (``connection.py``): which system views the query history reads
+    from. Detected once per run by :func:`redshift_query_preflight`."""
+
+    PROVISIONED = "provisioned"
+    SERVERLESS = "serverless"
+
+
+# The instance probe, verbatim from the pin (``connection.py:329``).
+_REDSHIFT_INSTANCE_PROBE = "SELECT 1 FROM pg_catalog.stl_query LIMIT 1"
+
+# Permission-probe views per branch, from the pin's test queries
+# (``queries.py:365-382``). The stored-procedure-channel views
+# (``SVL_STORED_PROC_CALL`` / ``STL_INSERT`` / ``STL_DELETE`` /
+# ``SYS_PROCEDURE_CALL``) are not probed here: they serve the
+# stored-procedure queries, which are out of scope for the query-log
+# preflight.
+_REDSHIFT_PROVISIONED_PRIVILEGE_VIEWS = (
+    "STL_QUERY",
+    "STL_QUERYTEXT",
+    "STL_SCAN",
+    "SVV_TABLE_INFO",
+)
+_REDSHIFT_SERVERLESS_PRIVILEGE_VIEWS = (
+    "SYS_QUERY_HISTORY",
+    "SYS_QUERY_TEXT",
+    "SYS_QUERY_DETAIL",
+)
+
+
+def _pgcode(error: BaseException) -> str | None:
+    """The PostgreSQL SQLSTATE on the error or anywhere in its cause
+    chain — the pin's ``_pgcode`` idea (``connection.py:343-358``):
+    the driver exposes it on ``.pgcode`` and SQLAlchemy preserves
+    the original DBAPI error at ``.orig``."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        code = getattr(current, "pgcode", None)
+        if code is None:
+            code = getattr(getattr(current, "orig", None), "pgcode", None)
+        if code is not None:
+            return str(code)
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _execute_one(connect_factory, statement: str) -> list[tuple[Any, ...]]:
+    """One statement through a DB-API factory, returning its rows as
+    tuples. The factory is the query-log connect factory (the test
+    seam when one is set), never a new connection shape."""
+    with connect_factory() as connection:
+        cursor = connection.cursor()
+        try:
+            cursor.execute(statement)
+            return [tuple(row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+
+
+def detect_redshift_instance_type(connect_factory) -> RedshiftInstanceType:
+    """Provisioned or serverless, by probing for the STL system
+    tables (pin ``connection.py:312-340``). Only SQLSTATE ``42P01``
+    (undefined table) means serverless — D-L2c C, deviation D-C3:
+    the pin catches bare ``ProgrammingError``, but on this product's
+    native psycopg2 path a connection/auth/permission failure
+    happens inside the same call, and a bare catch would disguise
+    that failure as a branch switch. Anything else propagates."""
+    try:
+        _execute_one(connect_factory, _REDSHIFT_INSTANCE_PROBE)
+    except Exception as exc:
+        if _pgcode(exc) == "42P01":
+            return RedshiftInstanceType.SERVERLESS
+        raise
+    return RedshiftInstanceType.PROVISIONED
+
+
+def check_redshift_query_privileges(
+    connect_factory, instance_type: RedshiftInstanceType
+) -> None:
+    """The branch's ``has_table_privilege`` probe (pin
+    ``queries.py:365-382``), loud on any missing SELECT: a
+    ``WorkflowError`` naming the missing views and the branch. A
+    missing privilege must never silently fall back to the old
+    context-less template."""
+    views = (
+        _REDSHIFT_PROVISIONED_PRIVILEGE_VIEWS
+        if instance_type is RedshiftInstanceType.PROVISIONED
+        else _REDSHIFT_SERVERLESS_PRIVILEGE_VIEWS
+    )
+    selects = ", ".join(
+        f"has_table_privilege('{view}', 'SELECT') AS can_access_{view.lower()}"
+        for view in views
+    )
+    rows = _execute_one(connect_factory, f"SELECT {selects}")
+    if not rows:
+        raise WorkflowError(
+            f"Redshift {instance_type.value} query-log preflight failed: "
+            f"privilege probe returned no rows for {', '.join(views)}"
+        )
+    first = rows[0]
+    if isinstance(first, dict):
+        values = [
+            bool(first.get(f"can_access_{view.lower()}")) for view in views
+        ]
+    else:
+        values = [bool(value) for value in list(first)[: len(views)]]
+    missing = [view for view, ok in zip(views, values, strict=True) if not ok]
+    if missing:
+        raise WorkflowError(
+            f"Redshift {instance_type.value} query-log preflight failed: "
+            f"account lacks SELECT on {', '.join(missing)}"
+        )
+
+
+def redshift_query_preflight(connect_factory) -> RedshiftInstanceType:
+    """The Redshift query-log preflight, run in ``prepare()`` before
+    any history read: detect the instance type first (it decides
+    the branch), then probe that branch's privileges. Returns the
+    instance type so the caller can select the matching template."""
+    instance_type = detect_redshift_instance_type(connect_factory)
+    check_redshift_query_privileges(connect_factory, instance_type)
+    return instance_type
 
 
 def build_service_connection_config(
