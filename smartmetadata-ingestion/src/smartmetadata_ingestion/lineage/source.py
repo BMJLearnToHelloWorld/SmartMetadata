@@ -74,6 +74,7 @@ from smartmetadata_ingestion.records import (
     BindingContext,
     LineageEndpoint,
     LineageRecord,
+    QueryRecord,
     TableQueryRecord,
     WorkflowRecord,
 )
@@ -506,12 +507,21 @@ class LineageSource:
     ) -> Iterator[tuple[list[WorkflowRecord], dict[str, int]]]:
         """Query records through the chunked processor, one outcome
         per record. Temp hops go to the run graph in the main thread;
-        the worker threads never touch it."""
+        the worker threads never touch it. One execution that fanned
+        out to several context rows still emits each distinct edge
+        and its query record once (D-L2c C): the dedupe runs here,
+        in the main thread, on the chunked results in submission
+        order — ``seen`` still counts every record, but ``edges``
+        and ``query_records`` count what was actually emitted."""
         config = self._config
+        seen_edges: set[
+            tuple[str, str, str | None, tuple[tuple[tuple[str, ...], str, str | None], ...]]
+        ] = set()
+        seen_query_ids: set[str] = set()
 
         def process_one(
             record: TableQueryRecord,
-        ) -> tuple[list[WorkflowRecord], dict[str, int], list]:
+        ) -> tuple[list[WorkflowRecord], dict[str, int], list, str | None]:
             processed = processor.process(
                 record.query,
                 context=BindingContext.from_record(record),
@@ -544,13 +554,46 @@ class LineageSource:
                 "edges": len(processed.edges),
                 "query_records": 1 if processed.query_record is not None else 0,
             }
-            return records, outcome, list(processed.temp_hops)
+            return records, outcome, list(processed.temp_hops), record.query_id
 
-        for records, outcome, hops in self._run_chunked(
+        for records, outcome, hops, query_id in self._run_chunked(
             query_log.produce(), process_one
         ):
             for hop in hops:
                 self._graph.add(hop)
+            if query_id is not None:
+                kept: list[WorkflowRecord] = []
+                for record in records:
+                    if isinstance(record, LineageRecord):
+                        key = (
+                            record.from_entity.fqn,
+                            record.to_entity.fqn,
+                            record.sql_query,
+                            tuple(
+                                (
+                                    tuple(column.from_columns),
+                                    column.to_column,
+                                    column.function,
+                                )
+                                for column in record.columns_lineage
+                            ),
+                        )
+                        if key in seen_edges:
+                            continue
+                        seen_edges.add(key)
+                    elif isinstance(record, QueryRecord):
+                        if query_id in seen_query_ids:
+                            continue
+                        seen_query_ids.add(query_id)
+                    kept.append(record)
+                outcome = dict(outcome)
+                outcome["edges"] = sum(
+                    1 for record in kept if isinstance(record, LineageRecord)
+                )
+                outcome["query_records"] = sum(
+                    1 for record in kept if isinstance(record, QueryRecord)
+                )
+                records = kept
             yield records, outcome
 
     def _produce_cross_database_channel(self) -> None:

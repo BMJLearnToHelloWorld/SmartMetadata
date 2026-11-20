@@ -481,17 +481,37 @@ def test_builtin_udf_never_reaches_the_catalog() -> None:
 def test_real_udf_still_expands_once() -> None:
     client = _FakeCatalogClient(with_count_udf=True)
     resolver, processor = _expand_processor(client)
+    # The call reaches _expand_udfs as the bare column text
+    # "my_func(x)": the SQL text's `public.` qualifier is incidental
+    # — the extraction yields the bare name, and resolve_udf
+    # qualifies it from the row context passed in (database "db",
+    # schema "public"). The connection schema default is inert here,
+    # so the schema must come from the row context. The body tables
+    # (`src2`/`tgt2`, bare in the stored body) bind through that
+    # same row context, which the edge assertion below pins.
     parser = LineageParser(
-        "SELECT my_func(x) FROM t",
+        "SELECT public.my_func(x) FROM t",
         dialect=Dialect.POSTGRES,
         parser_type=QueryParserType.SQLFLUFF,
     )
+    context = BindingContext(
+        database_name="db",
+        database_schema="public",
+        database_source=FieldSource.ROW_NATIVE,
+        schema_source=FieldSource.ROW_NATIVE,
+    )
+    extra_edges: list = []
+    extra_hops: list = []
     expansions = processor._expand_udfs(
-        parser, ["my_func(x)"], 0, [], [], set(), _missing_context()
+        parser, ["my_func(x)"], 0, extra_edges, extra_hops, set(), context
     )
     assert expansions == 1
     assert client.procedure_calls == ["svc.db.public.my_func"]
     assert resolver.binding_counts["builtin_function_filtered"] == 0
+    assert [(edge.from_fqn, edge.to_fqn) for edge in extra_edges] == [
+        ("svc.db.public.src2", "svc.db.public.tgt2")
+    ]
+    assert extra_hops == []
 
 
 # --- D-L2c H: lock-table test (DRAFT-H §2.3/§6) ---

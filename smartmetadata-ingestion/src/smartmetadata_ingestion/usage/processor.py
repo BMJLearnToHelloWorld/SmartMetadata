@@ -108,6 +108,7 @@ class ParsedData:
     service_name: str
     duration: float | None
     cost: float | None
+    query_id: str | None = None
     masked_sql: str = ""
     query_hash: str = ""
     parser_name: str | None = None
@@ -213,6 +214,7 @@ def parse_sql_statement(
         service_name=record.service_name,
         duration=record.duration,
         cost=record.cost,
+        query_id=record.query_id,
         masked_sql=parser.masked_query,
         query_hash=parser.query_hash,
         parser_name=parser.parser_name,
