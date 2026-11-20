@@ -123,6 +123,7 @@ BINDING_COUNT_KEYS: tuple[str, ...] = (
     "read_failure",
     "default_bound_database",
     "default_bound_schema",
+    "builtin_function_filtered",
 )
 
 
