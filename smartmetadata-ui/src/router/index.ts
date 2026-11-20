@@ -436,7 +436,7 @@ export const router = createRouter({
           meta: { guard: { resource: 'POLICY', operation: 'EditAll' } },
         },
         { path: 'settings/apps', name: 'admin-apps', component: AppsListView, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
-        { path: 'settings/apps/:id', name: 'admin-app', component: AppDetailView, props: true, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
+        { path: 'settings/apps/:fqn', name: 'admin-app', component: AppDetailView, props: true, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
         // P2 B5: Persona list + detail (official settings PERSONA
         // routes). The nested customize record is deleted (C-4 §5.3);
         // the top-level customize-page route keeps admin-only.

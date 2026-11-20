@@ -576,7 +576,7 @@ describe('settings sections faces', () => {
     ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { fqn: 'p1' }],
     ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { fqn: 'p1', ruleName: 'r1' }],
     // 08 admin-app :fqn.
-    ['/settings/apps/a1', 'admin-app', { id: 'a1' }],
+    ['/settings/apps/a1', 'admin-app', { fqn: 'a1' }],
     // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
     ['/settings/governance/workflow-definitions/w1', 'workflow-detail', { fqn: 'w1' }],
     // Same canonical record, distinct fqn so the case title stays unique.
