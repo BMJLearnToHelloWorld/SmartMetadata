@@ -178,10 +178,19 @@ function toComparableWidget(widget: WidgetConfig): WidgetConfig {
 }
 
 function toComparablePage(page: PersonaPage): Record<string, unknown> {
-  const tabs = Array.isArray(page.tabs) ? page.tabs : [];
+  // N-4: pin maps `page.tabs?.map(...)`, so an absent `tabs` stays
+  // absent — an original without tabs vs an edited with `tabs: []`
+  // is dirty under pin's fast-json-patch `compare` (an add op). The
+  // previous normalization to `[]` collapsed that to clean. A
+  // present-but-non-array `tabs` is compared opaquely instead: pin
+  // would throw on `.map`, but a dirty predicate must never throw on
+  // corrupt data (same treatment as a non-array layout, D2/D3).
+  if (!Array.isArray(page.tabs)) {
+    return { ...page };
+  }
   return {
     ...page,
-    tabs: tabs.map((rawTab) => {
+    tabs: page.tabs.map((rawTab) => {
       const tab = asCustomizeTab(rawTab);
       // D2/D3: a present-but-non-array layout is compared opaquely —
       // never normalized to [] — so an untouched object layout keeps
@@ -203,6 +212,14 @@ function toComparablePage(page: PersonaPage): Record<string, unknown> {
  * Whether two detail pages draw the same page. Official compares with
  * fast-json-patch `compare().length === 0` after the same reduction;
  * deepEqualJson is the equivalent predicate for these shapes.
+ * Verified against fast-json-patch 3.1.1 (`_generate`, pin `^3.1.1`):
+ * key order is ignored by both; `undefined`-valued keys are ignored
+ * by deepEqualJson and, in `compare`, only matter when one side
+ * carries the key and the other does not — which cannot arise here
+ * (inputs are JSON-shaped, and `toComparableWidget` always emits the
+ * `config` key on both sides, so its `undefined` is symmetric).
+ * Numbers compare by `===` on both sides. The two deliberate
+ * deviations from pin are the non-throwing opaque compares above.
  */
 export function isSameDetailsPageLayout(original: PersonaPage, edited: PersonaPage): boolean {
   return deepEqualJson(toComparablePage(original), toComparablePage(edited));

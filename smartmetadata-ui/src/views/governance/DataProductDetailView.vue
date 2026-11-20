@@ -14,7 +14,8 @@ import FormModal from '@/components/shared/FormModal.vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
 import GenericTab from '@/components/customize/GenericTab.vue';
-import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
+import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { listEntityActivity } from '@/api/activity';
@@ -424,9 +425,10 @@ onMounted(() => {
     </template>
     <template #overview>
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="DataProduct">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="product.description"
               :entity-name="product.displayName || product.name"
               :has-edit-access="canEditDescription"
@@ -475,6 +477,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="product?.extension || {}"
               :error="customPropsError"
@@ -505,9 +508,10 @@ onMounted(() => {
     </template>
     <template #assets>
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="DataProduct">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="product.description"
               :entity-name="product.displayName || product.name"
               :has-edit-access="canEditDescription"
@@ -556,6 +560,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="product?.extension || {}"
               :error="customPropsError"
@@ -608,9 +613,10 @@ onMounted(() => {
     </template>
     <template #activity>
       <GenericTab v-if="customizedEntryFor('activity')" :layout="widgetLayoutFor('activity')" page-type="DataProduct">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="product.description"
               :entity-name="product.displayName || product.name"
               :has-edit-access="canEditDescription"
@@ -659,6 +665,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="product?.extension || {}"
               :error="customPropsError"
@@ -679,9 +686,10 @@ onMounted(() => {
     </template>
     <template #customProperties>
       <GenericTab v-if="customizedEntryFor('customProperties')" :layout="widgetLayoutFor('customProperties')" page-type="DataProduct">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && product" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="product.description"
               :entity-name="product.displayName || product.name"
               :has-edit-access="canEditDescription"
@@ -730,6 +738,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="product?.extension || {}"
               :error="customPropsError"

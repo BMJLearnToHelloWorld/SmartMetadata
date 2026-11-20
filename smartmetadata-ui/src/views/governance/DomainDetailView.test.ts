@@ -775,3 +775,93 @@ describe('DomainDetailView description gate (D-4)', () => {
     wrapper.unmount();
   });
 });
+
+describe('DomainDetailView sub-domains view toggle (B-10)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  async function mountWithChildren() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/v1/domains/name/Finance')) {
+          return jsonResponse({
+            id: 'd1',
+            name: 'finance',
+            displayName: 'Finance Domain',
+            fullyQualifiedName: 'finance.fqn',
+            description: 'Finance assets',
+            domainType: 'Source-aligned',
+            owners: [],
+            experts: [],
+            tags: [],
+            children: [{ id: 'sd1', name: 'Retail', fullyQualifiedName: 'Finance.Retail', type: 'domain' }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/domains', name: 'governance-domains', component: { template: '<div>list</div>' } },
+        { path: '/governance/domains/:fqn', name: 'governance-domain', component: DomainDetailView, props: true },
+      ],
+    });
+    await router.push('/governance/domains/Finance');
+    await router.isReady();
+    const wrapper = mount(DomainDetailView, {
+      props: { fqn: 'Finance' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await tick();
+    return { wrapper, router };
+  }
+
+  // The tab testid lives on the TabPane, not the clickable nav item:
+  // switch tabs through the nav, as the shell tests do.
+  async function openSubDomainsTab(wrapper: Awaited<ReturnType<typeof mountWithChildren>>['wrapper']): Promise<void> {
+    const tabs = wrapper.find('.ant-tabs-nav').findAll('.ant-tabs-tab');
+    const target = tabs.find((tab) => tab.text().trim() === 'Sub-domains');
+    expect(target?.exists()).toBe(true);
+    await target!.trigger('click');
+    await flushPromises();
+  }
+
+  it('shows the sub-domains table by default and cards from the toggle', async () => {
+    const { wrapper } = await mountWithChildren();
+    await openSubDomainsTab(wrapper);
+    expect(wrapper.find('[data-testid="subdomains-view-toggle"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="domain-subdomains-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="subdomains-cards"]').exists()).toBe(false);
+    await wrapper.findAll('.ant-segmented-item')[1].trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[data-testid="subdomains-cards"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="domain-subdomains-table"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="subdomains-cards-sd1"]').exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('opens the sub-domain detail from a card click', async () => {
+    const { wrapper, router } = await mountWithChildren();
+    await openSubDomainsTab(wrapper);
+    await wrapper.findAll('.ant-segmented-item')[1].trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="subdomains-cards-open-sd1"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('governance-domain');
+    expect(router.currentRoute.value.params).toMatchObject({ fqn: 'Finance.Retail' });
+    wrapper.unmount();
+  });
+});

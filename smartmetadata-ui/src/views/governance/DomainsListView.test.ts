@@ -12,6 +12,7 @@ import Antd from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { usePersonaStore } from '@/stores/persona';
 import { createTestI18n } from '@/test/i18n';
 import DomainsListView from './DomainsListView.vue';
 
@@ -118,5 +119,86 @@ describe('DomainsListView', () => {
       .filter((url) => url.includes('/api/v1/domains'));
     expect(domainCalls.some((url) => url.includes('after=c1'))).toBe(true);
     expect(wrapper.text()).toContain('Sales');
+  });
+
+  describe('view toggle (B-10)', () => {
+    async function mountView() {
+      const pinia = createPinia();
+      setActivePinia(pinia);
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          { path: '/governance/domains', name: 'governance-domains', component: DomainsListView },
+          { path: '/governance/domains/:fqn', name: 'governance-domain', component: { template: '<div>d</div>' } },
+        ],
+      });
+      await router.push('/governance/domains');
+      await router.isReady();
+      const wrapper = mount(DomainsListView, {
+        // attachTo: jsdom label activation (the Segmented's radio
+        // input) only fires for nodes connected to the document.
+        attachTo: document.body,
+        global: { plugins: [pinia, router, Antd, createTestI18n()] },
+      });
+      await flushPromises();
+      return { wrapper, router, store: usePersonaStore() };
+    }
+
+    function seedStoredView(store: ReturnType<typeof usePersonaStore>, view: string): void {
+      store.selectedPersonaId = 'p1';
+      store.document = {
+        name: 'p1',
+        fullyQualifiedName: 'persona.p1',
+        entityType: 'Page',
+        data: {
+          pages: [],
+          personaPreferences: [{ personaId: 'p1', defaultViewModes: { domains: view } }],
+        },
+      } as never;
+    }
+
+    it('defaults to the table view and switches to cards from the toggle', async () => {
+      const { wrapper } = await mountView();
+      expect(wrapper.find('[data-testid="domains-table"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="domains-cards"]').exists()).toBe(false);
+      await wrapper.findAll('.ant-segmented-item')[1].trigger('click');
+      await flushPromises();
+      expect(wrapper.find('[data-testid="domains-cards"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="domains-table"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="domains-cards-d1"]').exists()).toBe(true);
+      wrapper.unmount();
+    });
+
+    it('opens the domain detail from a card click', async () => {
+      const { wrapper, router } = await mountView();
+      await wrapper.findAll('.ant-segmented-item')[1].trigger('click');
+      await flushPromises();
+      await wrapper.find('[data-testid="domains-cards-open-d1"]').trigger('click');
+      await flushPromises();
+      expect(router.currentRoute.value.name).toBe('governance-domain');
+      expect(router.currentRoute.value.params).toMatchObject({ fqn: 'Marketing' });
+      wrapper.unmount();
+    });
+
+    it('starts in card view when the persona document stores it', async () => {
+      const { wrapper, store } = await mountView();
+      seedStoredView(store, 'card');
+      await flushPromises();
+      expect(wrapper.find('[data-testid="domains-cards"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="domains-table"]').exists()).toBe(false);
+      wrapper.unmount();
+    });
+
+    it('renders the table when the stored view is tree, which the toggle does not offer', async () => {
+      // 'tree' is in the page's offered views (pin declares it), so
+      // the resolver keeps it — but the toggle offers only table/card,
+      // and the table is the rendering for any non-card view.
+      const { wrapper, store } = await mountView();
+      seedStoredView(store, 'tree');
+      await flushPromises();
+      expect(wrapper.find('[data-testid="domains-table"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="domains-cards"]').exists()).toBe(false);
+      wrapper.unmount();
+    });
   });
 });

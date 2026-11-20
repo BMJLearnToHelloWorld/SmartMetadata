@@ -132,6 +132,7 @@ describe('persona store', () => {
       await store.selectPersona('p1');
       expect(store.document).toBeNull();
       expect(store.documentLoaded).toBe(true);
+      expect(store.documentError).toBeNull();
       expect(errorSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
@@ -157,6 +158,42 @@ describe('persona store', () => {
       expect(store.document).toBeNull();
       expect(store.documentLoaded).toBe(true);
       expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('records a non-404 document read failure as documentError (D-9), cleared by success', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      let failDoc = true;
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({
+            data: [{ id: 'p1', name: 'Analyst', fullyQualifiedName: 'Analyst' }],
+            paging: { total: 1 },
+          });
+        }
+        if (failDoc) {
+          return new Response('Server error', { status: 500 });
+        }
+        return jsonResponse({
+          name: 'Analyst-Analyst',
+          fullyQualifiedName: 'persona.Analyst',
+          entityType: 'Page',
+          data: { pages: [{ pageType: 'LandingPage', layout: [] }] },
+        });
+      }));
+      const store = usePersonaStore();
+      await store.ensureLoaded();
+      await store.selectPersona('p1');
+      expect(store.document).toBeNull();
+      expect(store.documentError).toBeTruthy();
+      failDoc = false;
+      await store.loadDocument();
+      expect(store.documentError).toBeNull();
+      expect(store.document?.data.pages).toHaveLength(1);
     } finally {
       errorSpy.mockRestore();
     }

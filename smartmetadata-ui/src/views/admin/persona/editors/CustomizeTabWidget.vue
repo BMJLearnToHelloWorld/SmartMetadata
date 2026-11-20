@@ -580,6 +580,7 @@ function openAddWidgetModal(placeholderKey?: string): void {
             v-else-if="pieceForEditorContentKey(contentKey)"
             :piece="pieceForEditorContentKey(contentKey)"
             :context="editorPieceContext"
+            :widget="widget"
           />
         </template>
       </DetailGridEditor>

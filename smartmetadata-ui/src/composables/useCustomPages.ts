@@ -37,15 +37,18 @@ import { getPersonaPage } from '@/views/admin/personaPage';
  * loading; it uses the store's own `loadDocument()` (global selected
  * scope), not a new fetch chain.
  *
- * Error semantics: the store exposes no load-error state (a failed
- * read leaves `document` null, exactly like a 404), so the official
- * error branch (`navigation: []`, `useCustomPages.ts`) cannot be told
- * apart from "no document" here — both yield `null`. The outcomes
- * coincide for the only `navigation` consumer, the sidebar: the
- * official filter returns the default item set for both `[]` and
- * `null` (`CustomizeNavigation.ts:316-338`), and the store's
- * null-on-error likewise yields defaults, with no stale document
- * retained. See `useSidebarItems.ts`.
+ * Error semantics: the store exposes the last non-404 load failure
+ * as `documentError` (D-9); a failed read leaves `document` null,
+ * exactly like a 404, so the official error branch (`navigation:
+ * []`, `useCustomPages.ts`) cannot be told apart from "no document"
+ * at the `document` level — both yield `null`. The outcomes coincide
+ * for the only `navigation` consumer, the sidebar: the official
+ * filter returns the default item set for both `[]` and `null`
+ * (`CustomizeNavigation.ts:316-338`), and the store's null-on-error
+ * likewise yields defaults, with no stale document retained. The
+ * difference is now visible instead of console-only: `loadError`
+ * carries the failure, and the shell renders it. See
+ * `useSidebarItems.ts`.
  */
 export interface PersonaNavigationItem {
   children?: PersonaNavigationItem[];
@@ -145,13 +148,24 @@ export function useCustomPages(pageType: MaybeRefOrGetter<string | null | undefi
   const customizedPage = computed<PersonaPage | null>(
     () => getPersonaPage(store.document, toValue(pageType)) ?? null,
   );
+  // D-9: the store's last non-404 load failure, or null. Consumers
+  // render their defaults while this is set; the shell surfaces it.
+  const loadError = computed(() => store.documentError);
   const navigation = computed<PersonaNavigationItem[] | null>(() => {
     const raw = store.document?.data?.navigation;
+    if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
+      // D-7: official `filterHiddenNavigationItems` calls
+      // `navigationItems.map(...)`, so a present-but-non-array
+      // navigation throws there; the product throws here instead of
+      // silently defaulting, surfacing through the top-level error
+      // boundary (SYS-7) like the tab layer's throw.
+      throw new TypeError('useCustomPages: navigation must be an array when present');
+    }
     return Array.isArray(raw) ? (raw as PersonaNavigationItem[]) : null;
   });
   const isLoading = computed(() => !hasMounted.value);
 
-  return { customizedPage, navigation, isLoading };
+  return { customizedPage, navigation, isLoading, loadError };
 }
 
 /**

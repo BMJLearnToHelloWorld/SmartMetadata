@@ -16,7 +16,7 @@ import { isDetailWired } from '@/catalog/entityRoutes';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
-import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
@@ -444,9 +444,10 @@ onMounted(() => {
     </template>
     <template #overview>
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="term.description"
               :entity-name="term.displayName || term.name"
               :has-edit-access="canEditDescription"
@@ -633,9 +634,10 @@ onMounted(() => {
     </template>
     <template #data_observability>
       <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="term.description"
               :entity-name="term.displayName || term.name"
               :has-edit-access="canEditDescription"

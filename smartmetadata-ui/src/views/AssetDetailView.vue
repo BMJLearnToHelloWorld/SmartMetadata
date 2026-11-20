@@ -1149,8 +1149,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('overview') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1170,8 +1170,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('schemas') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1184,8 +1184,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('table') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1198,8 +1198,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('children') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1212,8 +1212,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('model') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1234,8 +1234,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('fields') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1256,8 +1256,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('schema') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1278,8 +1278,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('features') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1292,8 +1292,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('tasks') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1306,8 +1306,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('executions') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1347,8 +1347,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('code') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1361,8 +1361,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('lineage') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1375,8 +1375,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('quality') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1406,8 +1406,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('activity') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1426,8 +1426,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('details') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1447,8 +1447,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('apiEndpoints') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1461,8 +1461,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('endpoint') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1475,8 +1475,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('activity_feed') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1495,8 +1495,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('sample_data') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1520,8 +1520,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('stored_procedure') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1534,8 +1534,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('search_index_settings') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1548,8 +1548,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('assets') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1562,8 +1562,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('profiler') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1587,8 +1587,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('table_queries') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1609,8 +1609,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('dbt') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1623,8 +1623,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('view_definition') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1637,8 +1637,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('contract') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1651,8 +1651,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('config') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1665,8 +1665,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('customProperties') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>
@@ -1685,8 +1685,8 @@ onMounted(() => {
             :layout="widgetLayoutFor('custom_properties') ?? []"
             :page-type="pageType ?? ''"
           >
-            <template #widget="{ contentKey }">
-              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" />
+            <template #widget="{ contentKey, widget }">
+              <AssetDetailPiece :piece="pieceForContentKey(contentKey)" :context="pieceContext" :widget="widget" />
             </template>
           </GenericTab>
           <template v-else>

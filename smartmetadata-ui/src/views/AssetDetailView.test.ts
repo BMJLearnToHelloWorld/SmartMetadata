@@ -16,6 +16,7 @@ import { nextTick } from 'vue';
 import { createTestI18n } from '@/test/i18n';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import { compactWidgetLayoutVertical } from '@/composables/customizeWidgetLayout';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -1224,7 +1225,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     localStorage.clear();
   });
 
-  it('renders the customized schema tab as a grid with the stored geometry and content', async () => {
+  it('renders the customized schema tab as a grid with the compacted stored geometry and content', async () => {
     const layout = [
       { i: DetailWidgetKeys.TABLE_SCHEMA, x: 1, y: 2, w: 3, h: 2 },
       { i: DetailWidgetKeys.FREQUENTLY_JOINED_TABLES, x: 4, y: 0, w: 4, h: 1 },
@@ -1238,12 +1239,15 @@ describe('AssetDetailView widget layer (B-8)', () => {
     await settle(wrapper);
     const grids = wrapper.findAllComponents(GenericTab);
     expect(grids.length).toBe(1);
-    expect(grids[0].props('layout')).toEqual(layout);
+    // D-8: the read side compacts vertically like official
+    // react-grid-layout, so the stored y:2 schema cell (empty rows
+    // above it, no collision) renders at y:0.
+    expect(grids[0].props('layout')).toEqual(compactWidgetLayoutVertical(layout));
     expect(grids[0].props('pageType')).toBe('Table');
     const schemaCell = cellFor(wrapper, DetailWidgetKeys.TABLE_SCHEMA);
     expect(schemaCell.exists()).toBe(true);
     expect(schemaCell.attributes('style')).toContain('grid-column: 2 / span 3');
-    expect(schemaCell.attributes('style')).toContain('grid-row: 3 / span 2');
+    expect(schemaCell.attributes('style')).toContain('grid-row: 1 / span 2');
     expect(schemaCell.find('[data-testid="asset-schema-table"]').exists()).toBe(true);
     const joinsCell = cellFor(wrapper, DetailWidgetKeys.FREQUENTLY_JOINED_TABLES);
     expect(joinsCell.exists()).toBe(true);

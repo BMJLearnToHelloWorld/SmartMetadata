@@ -20,6 +20,9 @@ import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption, TagSource } from '@/types/governance';
+import { isLargeWidget } from '@/composables/customizeWidgetLayout';
+import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
+import type { WidgetConfig } from '@/views/admin/persona/editors/customizeTypes';
 
 /**
  * One shared piece of asset-detail content, rendered by both the
@@ -118,8 +121,16 @@ const props = withDefaults(
     context: AssetDetailPieceContext;
     /** Schema-table joins affordances: only the `schema` pane carries them. */
     withJoins?: boolean;
+    /**
+     * The widget being rendered, for `config` reads (D-8): the
+     * description fragment's `removeBlur` and the custom-properties
+     * fragment's settings come from this widget's config, as official
+     * `DescriptionWidget` / `CustomPropertiesWidget` read
+     * `widgetConfig.config`. Null outside a widget cell.
+     */
+    widget?: WidgetConfig | null;
   }>(),
-  { withJoins: false },
+  { withJoins: false, widget: null },
 );
 
 const { t } = useI18n();
@@ -368,6 +379,7 @@ const showMetricExpression = computed(
       :error="context.customPropsError"
       :entity-type="context.entityType"
       :can-view="context.customPropsCanView"
+      :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
     />
   </template>
   <template v-else-if="piece === 'description'">
@@ -378,6 +390,7 @@ const showMetricExpression = computed(
         :entity-name="context.asset.displayName || context.asset.name"
         :has-edit-access="context.descriptionAccess"
         :expanded="context.descriptionExpanded"
+        :remove-blur="isLargeWidget(widget)"
         :on-description-update="context.onDescriptionUpdate"
       />
     </div>

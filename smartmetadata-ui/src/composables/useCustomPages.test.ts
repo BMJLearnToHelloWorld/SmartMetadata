@@ -604,9 +604,29 @@ describe('useCustomPages', () => {
     store.document = documentWithPages([], { navigation });
     await nextTick();
     expect(exposed().navigation.value).toEqual(navigation);
+  });
+
+  it('throws a TypeError for a present-but-non-array navigation (D-7)', async () => {
+    stubEmptyPersonas();
+    const { store, exposed } = mountHook('Navigation');
     store.document = documentWithPages([], { navigation: 'not-an-array' });
     await nextTick();
-    expect(exposed().navigation.value).toBeNull();
+    expect(() => exposed().navigation.value).toThrow(TypeError);
+    store.document = documentWithPages([], { navigation: { home: true } });
+    await nextTick();
+    expect(() => exposed().navigation.value).toThrow(TypeError);
+  });
+
+  it('exposes the store document load error (D-9)', async () => {
+    stubEmptyPersonas();
+    const { store, exposed } = mountHook('Table');
+    expect(exposed().loadError.value).toBeNull();
+    store.documentError = 'boom';
+    await nextTick();
+    expect(exposed().loadError.value).toBe('boom');
+    store.documentError = null;
+    await nextTick();
+    expect(exposed().loadError.value).toBeNull();
   });
 
   it('reacts to store updates, so a save lands on consumers without a refetch', async () => {

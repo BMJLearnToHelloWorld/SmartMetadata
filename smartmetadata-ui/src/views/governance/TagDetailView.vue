@@ -18,7 +18,7 @@ import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getTagVersionPath } from '@/catalog/versionPaths';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
-import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
@@ -334,9 +334,10 @@ onMounted(() => {
     </template>
     <template #overview>
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Tag">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="tag.description"
               :entity-name="tag.displayName || tag.name"
               :has-edit-access="canEditDescription"
@@ -385,9 +386,10 @@ onMounted(() => {
     </template>
     <template #assets>
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Tag">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="tag.description"
               :entity-name="tag.displayName || tag.name"
               :has-edit-access="canEditDescription"
@@ -424,9 +426,10 @@ onMounted(() => {
     </template>
     <template #data_observability>
       <GenericTab v-if="customizedEntryFor('data_observability')" :layout="widgetLayoutFor('data_observability')" page-type="Tag">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
             <EntityDescriptionCell
+              :remove-blur="isLargeWidget(widget)"
               :description="tag.description"
               :entity-name="tag.displayName || tag.name"
               :has-edit-access="canEditDescription"

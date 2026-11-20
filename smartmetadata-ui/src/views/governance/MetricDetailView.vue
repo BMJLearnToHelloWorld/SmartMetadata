@@ -19,7 +19,8 @@ import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { entityDetailTabDefs } from '@/catalog/entityDetailTabs';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import LineageCanvas from '@/components/lineage/LineageCanvas.vue';
-import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
+import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
+import { getCustomPropertiesWidgetSettings } from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
@@ -295,13 +296,14 @@ onMounted(() => {
     </template>
     <template #overview>
       <GenericTab v-if="customizedEntryFor('overview')" :layout="widgetLayoutFor('overview')" page-type="Metric">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
             <EntityDescriptionCell
               :description="metric.description"
               :entity-name="metric.displayName || metric.name"
               :has-edit-access="canEditDescription"
               :expanded="true"
+              :remove-blur="isLargeWidget(widget)"
               :on-description-update="onDescriptionUpdate"
             />
           </div>
@@ -345,6 +347,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="metric?.extension || {}"
               :error="customPropsError"
@@ -386,13 +389,14 @@ onMounted(() => {
     </template>
     <template #lineage>
       <GenericTab v-if="customizedEntryFor('lineage')" :layout="widgetLayoutFor('lineage')" page-type="Metric">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
             <EntityDescriptionCell
               :description="metric.description"
               :entity-name="metric.displayName || metric.name"
               :has-edit-access="canEditDescription"
               :expanded="true"
+              :remove-blur="isLargeWidget(widget)"
               :on-description-update="onDescriptionUpdate"
             />
           </div>
@@ -436,6 +440,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="metric?.extension || {}"
               :error="customPropsError"
@@ -454,13 +459,14 @@ onMounted(() => {
     </template>
     <template #assets>
       <GenericTab v-if="customizedEntryFor('assets')" :layout="widgetLayoutFor('assets')" page-type="Metric">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
             <EntityDescriptionCell
               :description="metric.description"
               :entity-name="metric.displayName || metric.name"
               :has-edit-access="canEditDescription"
               :expanded="true"
+              :remove-blur="isLargeWidget(widget)"
               :on-description-update="onDescriptionUpdate"
             />
           </div>
@@ -504,6 +510,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="metric?.extension || {}"
               :error="customPropsError"
@@ -517,13 +524,14 @@ onMounted(() => {
     </template>
     <template #activity_feed>
       <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="Metric">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
             <EntityDescriptionCell
               :description="metric.description"
               :entity-name="metric.displayName || metric.name"
               :has-edit-access="canEditDescription"
               :expanded="true"
+              :remove-blur="isLargeWidget(widget)"
               :on-description-update="onDescriptionUpdate"
             />
           </div>
@@ -567,6 +575,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="metric?.extension || {}"
               :error="customPropsError"
@@ -587,13 +596,14 @@ onMounted(() => {
     </template>
     <template #custom_properties>
       <GenericTab v-if="customizedEntryFor('custom_properties')" :layout="widgetLayoutFor('custom_properties')" page-type="Metric">
-        <template #widget="{ contentKey }">
+        <template #widget="{ contentKey, widget }">
           <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && metric" data-testid="widget-description">
             <EntityDescriptionCell
               :description="metric.description"
               :entity-name="metric.displayName || metric.name"
               :has-edit-access="canEditDescription"
               :expanded="true"
+              :remove-blur="isLargeWidget(widget)"
               :on-description-update="onDescriptionUpdate"
             />
           </div>
@@ -637,6 +647,7 @@ onMounted(() => {
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
+              :widget-settings="getCustomPropertiesWidgetSettings(widget?.config)"
               :defs="customProperties"
               :values="metric?.extension || {}"
               :error="customPropsError"

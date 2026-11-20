@@ -8,6 +8,10 @@ import { useI18n } from 'vue-i18n';
 import { Alert, Table, Typography } from 'ant-design-vue';
 import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import type { CustomPropertyDef } from '@/types/collaboration';
+import {
+  widgetVisibleProperties,
+  type CustomPropertiesWidgetSettings,
+} from '@/views/admin/persona/editors/customPropertiesWidgetSettings';
 
 const props = withDefaults(
   defineProps<{
@@ -24,11 +28,27 @@ const props = withDefaults(
      * keep the current table.
      */
     canView?: boolean | null;
+    /**
+     * Widget settings from the widget's `config` (official
+     * CustomPropertiesWidget: `getCustomPropertiesWidgetSettings`).
+     * Only widget cells pass this; standalone usages (the custom
+     * properties tab, Team/User detail) omit it and keep showing all
+     * defs. When present, the visible defs are the settings selection
+     * (default: first five), `showHeader: false` hides the lead, and
+     * `size: 'large'` renders the table at size "middle".
+     */
+    widgetSettings?: CustomPropertiesWidgetSettings | null;
   }>(),
-  { canView: true },
+  { canView: true, widgetSettings: null },
 );
 
 const { t } = useI18n();
+
+const visibleDefs = computed(() =>
+  props.widgetSettings
+    ? widgetVisibleProperties(props.defs, props.widgetSettings)
+    : props.defs,
+);
 
 const columns = computed(() => [
   { title: t('asset.columns.property'), key: 'property' },
@@ -51,8 +71,12 @@ function extensionValue(name: string): string {
       :permission-value="t('label.view-entity', { entity: t('label.custom-property-plural') })"
     />
   </div>
-  <div v-else-if="canView === true">
-    <Typography.Paragraph type="secondary">
+  <!-- Official filterWidgets: a widget cell with nothing to show is
+       removed from the grid, so an empty selection renders nothing
+       rather than an empty table. Standalone usages (no settings)
+       keep the table even when empty. -->
+  <div v-else-if="canView === true && !(widgetSettings && visibleDefs.length === 0)">
+    <Typography.Paragraph v-if="!widgetSettings || widgetSettings.showHeader" type="secondary">
       {{ t('asset.customPropertiesLead', { type: entityType }) }}
     </Typography.Paragraph>
     <Alert v-if="error" type="warning" show-icon :message="error" class="detail__alert" />
@@ -60,9 +84,9 @@ function extensionValue(name: string): string {
       row-key="name"
       data-testid="asset-custom-properties-table"
       :columns="columns"
-      :data-source="defs"
+      :data-source="visibleDefs"
       :pagination="false"
-      size="small"
+      :size="widgetSettings?.size === 'large' ? 'middle' : 'small'"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'property'">

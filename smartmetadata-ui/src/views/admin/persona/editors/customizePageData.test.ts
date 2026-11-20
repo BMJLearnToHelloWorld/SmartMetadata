@@ -114,6 +114,23 @@ describe('customizePageData dispatch', () => {
     expect(getDefaultWidgetForTab('DataMarketplace', 'schema')).toEqual([]);
   });
 
+  it('treats a falsy tab as the primary tab layout (D-8, official getDefaultLayout)', () => {
+    // Official `if (tab && tab !== PRIMARY) return []`: a falsy tab
+    // yields the primary tab's layout, not []. Container's falsy-tab
+    // result is the SCHEMA layout (its shared defaultLayout), not the
+    // CHILDREN override (ContainerDetailsClassBase.ts:115-131).
+    expect(getDefaultWidgetForTab('Table', '')).toEqual(
+      getDefaultWidgetForTab('Table', 'schema'),
+    );
+    expect(getDefaultWidgetForTab('Container', '')).toEqual(
+      getDefaultWidgetForTab('Container', 'schema'),
+    );
+    expect(getDefaultWidgetForTab('GlossaryTerm', '')).toEqual(
+      getDefaultWidgetForTab('GlossaryTerm', 'overview'),
+    );
+    expect(getDefaultWidgetForTab('NoSuchPage', '')).toEqual([]);
+  });
+
   it('returns the marketplace default layout (2 full-width widgets)', () => {
     const layout = getDefaultWidgetForTab('DataMarketplace', 'overview');
     expect(layout).toHaveLength(2);

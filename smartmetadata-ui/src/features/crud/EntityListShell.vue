@@ -221,6 +221,10 @@ const tableColumns = computed<EntityListColumn[]>(() => {
         :paragraph="{ rows: 5 }"
         data-testid="entity-list-loading"
       />
+      <slot
+        v-else-if="$slots.content && (dataSource.length > 0 || error)"
+        name="content"
+      />
       <SmTable
         v-else-if="dataSource.length > 0 || error"
         :row-key="rowKey"
