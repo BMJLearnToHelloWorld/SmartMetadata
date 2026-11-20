@@ -21,8 +21,7 @@
   Deliberately NOT included (official pieces outside D-3): the
   request-description task button, the comment button, and the AI
   suggestion alert. `onDescriptionUpdate` is optional: without it the
-  cell is preview-only and renders no edit button (ingestion Pipeline,
-  which has no description write path).
+  cell is preview-only and renders no edit button.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
