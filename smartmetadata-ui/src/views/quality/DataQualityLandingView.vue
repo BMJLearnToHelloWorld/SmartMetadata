@@ -23,15 +23,6 @@ import {
   Typography,
 } from 'ant-design-vue';
 import { listGlossaryTerms } from '@/api/glossaryTerms';
-import {
-  DQ_COVERED_ASSETS_AGGREGATION,
-  DQ_DIMENSION_STATUS_AGGREGATION,
-  DQ_STATUS_AGGREGATION,
-  DQ_TABLE_INDEX,
-  DQ_TEST_CASE_INDEX,
-  DQ_TOTAL_TABLES_AGGREGATION,
-  getDataQualityReportBatch,
-} from '@/api/dataQualityReports';
 import { searchAssets } from '@/api/search';
 import { isTestCaseSearchListAvailable, listTestCases } from '@/api/testCases';
 import { isTestSuiteSearchListAvailable, listTestSuites } from '@/api/testSuites';
@@ -42,20 +33,14 @@ import PageLayout from '@/components/shared/PageLayout.vue';
 import { namedSeries } from '@/features/charts/series';
 import { seriesWindow } from '@/features/charts/types';
 import {
-  buildDqDashboardQuery,
-  buildDqNoDimensionQuery,
-  buildDqTableQuery,
-  cardinalityFromReportRows,
   coverageFrom,
   dimensionCards,
-  dimensionCardsFromReportRows,
   facetOptions,
   governanceFiltersActive,
   healthFromCases,
   healthFromTableSuites,
   parseDqTab,
   statusCountsFromCases,
-  statusCountsFromReportRows,
   tableCountFromFacets,
   uniqueCoveredAssets,
   type CoverageCounts,
@@ -65,6 +50,10 @@ import {
   type HealthCounts,
   type StatusCounts,
 } from '@/quality/landing';
+import {
+  fetchDqDashboardAggregations,
+  type DqDashboardChartFilters,
+} from '@/quality/dashboard';
 import type { TestCase, TestSuite } from '@/types/quality';
 import TestCasesListView from './TestCasesListView.vue';
 import TestSuitesListView from './TestSuitesListView.vue';
@@ -136,6 +125,38 @@ const caseSearchTags = computed(() =>
   [filters.tag, filters.glossaryTerm, filters.certification].filter((item): item is string => Boolean(item)).join(','),
 );
 
+// Dashboard drill-down query (pin getTestCaseListPath): the dashboard
+// navigates here with testCaseStatus / dataQualityDimension / tags /
+// tier / dataProductFqn / tableFqn / startTs / endTs, and the list tab
+// applies them. A key present in the query wins over this view's own
+// filter state; absent keys keep the local filters and range.
+function queryString(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+function queryStrings(value: unknown): string | undefined {
+  const list = (Array.isArray(value) ? value : [value]).filter(
+    (item): item is string => typeof item === 'string' && Boolean(item),
+  );
+  return list.length ? list.join(',') : undefined;
+}
+
+function queryNumber(value: unknown): number | undefined {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : undefined;
+}
+
+const listDrill = computed(() => ({
+  testCaseStatus: queryString(route.query.testCaseStatus),
+  dataQualityDimension: queryString(route.query.dataQualityDimension),
+  tags: queryStrings(route.query.tags),
+  tier: queryString(route.query.tier),
+  dataProductFqn: queryString(route.query.dataProductFqn),
+  tableFqn: queryString(route.query.tableFqn),
+  startTs: queryNumber(route.query.startTs),
+  endTs: queryNumber(route.query.endTs),
+}));
+
 function dimensionLabel(id: string): string {
   const key = id === 'No Dimension' ? 'quality.landing.dimensions.none' : `quality.landing.dimensions.${id.toLowerCase()}`;
   return te(key) ? t(key) : id;
@@ -180,29 +201,32 @@ async function loadAggregations(
   residualNotes.value = residualNotes.value.filter(
     (note) => note !== 'quality.landing.residualAggregationFallback',
   );
-  // Status, dimensions and coverage come from one dataQualityReport batch
-  // (official mechanism), not from the capped lists. If the batch fails,
-  // the cards fall back to the listed rows and say so — never silently.
+  // Status, dimensions and coverage come from the shared dashboard
+  // batch (quality/dashboard.ts: fetchDqDashboardAggregations — the
+  // official mechanism, one dataQualityReport batch), not from the
+  // capped lists. If the batch fails, the cards fall back to the
+  // listed rows and say so — never silently. The shared batch also
+  // carries an unhealthy-covered item for the dashboard's health pie;
+  // the landing view ignores it and keeps its list-derived health
+  // plus the residualHealthCap note. The glossaryTerm filter is
+  // deliberately NOT carried into the shared chart filters: this
+  // view's documented contract keeps it on the search-list path only
+  // (quality.landing.residualSearchList), while the shared dashboard
+  // merges glossaryTerms into tags per the pin hook.
   try {
-    const dashboardQuery = buildDqDashboardQuery(filters, range.value);
-    const reports = await getDataQualityReportBatch([
-      { key: 'status', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: dashboardQuery },
-      { key: 'dimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_DIMENSION_STATUS_AGGREGATION, q: dashboardQuery },
-      { key: 'noDimensionStatus', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_STATUS_AGGREGATION, q: buildDqNoDimensionQuery(filters, range.value) },
-      { key: 'covered', index: DQ_TEST_CASE_INDEX, aggregationQuery: DQ_COVERED_ASSETS_AGGREGATION, q: dashboardQuery },
-      { key: 'totalTables', index: DQ_TABLE_INDEX, aggregationQuery: DQ_TOTAL_TABLES_AGGREGATION, q: buildDqTableQuery(filters) },
-    ]);
-    const status = statusCountsFromReportRows(reports.get('status')?.data ?? []);
-    results.value = status.total ? status : null;
-    dimensions.value = dimensionCardsFromReportRows([
-      ...(reports.get('dimensionStatus')?.data ?? []),
-      ...(reports.get('noDimensionStatus')?.data ?? []),
-    ]);
-    const covered = cardinalityFromReportRows(reports.get('covered')?.data ?? [], 'originEntityFQN');
-    const totalTables =
-      cardinalityFromReportRows(reports.get('totalTables')?.data ?? [], 'fullyQualifiedName') ??
-      tableCountFromFacets(facets.value);
-    coverage.value = coverageFrom(covered, totalTables);
+    const chartFilters: DqDashboardChartFilters = {
+      ownerFqn: filters.owner,
+      tags: filters.tag ? [filters.tag] : undefined,
+      tier: filters.tier ? [filters.tier] : undefined,
+      certification: filters.certification ? [filters.certification] : undefined,
+      dataProductFqns: filters.dataProduct ? [filters.dataProduct] : undefined,
+    };
+    const agg = await fetchDqDashboardAggregations(chartFilters, range.value, {
+      totalTablesFallback: tableCountFromFacets(facets.value),
+    });
+    results.value = agg.results;
+    dimensions.value = agg.dimensions;
+    coverage.value = agg.coverage;
   } catch {
     residualNotes.value.push('quality.landing.residualAggregationFallback');
     const status = statusCountsFromCases(cases);
@@ -558,11 +582,14 @@ onMounted(() => {
       embedded
       :prefer-search="preferCaseSearch"
       :owner-fqn="filters.owner"
-      :tier="filters.tier"
-      :tags="caseSearchTags"
-      :data-product-fqn="filters.dataProduct"
-      :start-ts="range.startTs"
-      :end-ts="range.endTs"
+      :tier="listDrill.tier ?? filters.tier"
+      :tags="listDrill.tags ?? caseSearchTags"
+      :data-product-fqn="listDrill.dataProductFqn ?? filters.dataProduct"
+      :start-ts="listDrill.startTs ?? range.startTs"
+      :end-ts="listDrill.endTs ?? range.endTs"
+      :status="listDrill.testCaseStatus"
+      :data-quality-dimension="listDrill.dataQualityDimension"
+      :entity-fqn="listDrill.tableFqn"
     />
 
     <TestSuitesListView

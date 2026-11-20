@@ -171,11 +171,11 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
     // Relations graph is fixed content now (B-15); custom properties
-    // renders its table (B-15). Data observability has no product
-    // backing: one honest residual state.
+    // renders its table (B-15); data observability mounts the shared
+    // DQ dashboard (B-15). No residual state remains on this view.
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(1);
-    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(1);
+    expect(residuals).toHaveLength(0);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     wrapper.unmount();
   });
 
@@ -372,10 +372,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(widgetTestIds(wrapper)).toEqual(['widget-description']);
     // Every other tab keeps its existing panel; relations graph is
     // fixed content now (B-15) and custom properties renders its
-    // table (B-15), so only data observability still renders a residual.
+    // table (B-15); data-observability mounts the DQ dashboard
+    // instead of its former residual.
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
     expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="dq-dashboard-container"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });

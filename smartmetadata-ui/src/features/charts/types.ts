@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-export type ChartKind = 'line' | 'bar' | 'donut';
+export type ChartKind = 'line' | 'bar' | 'donut' | 'area';
 
 export interface ChartPoint {
   label: string;

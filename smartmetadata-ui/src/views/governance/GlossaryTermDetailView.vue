@@ -6,7 +6,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typography, message } from 'ant-design-vue';
+import { Button, Descriptions, Form, Input, Select, Space, Tag, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
@@ -17,6 +17,7 @@ import { isDetailWired } from '@/catalog/entityRoutes';
 import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
+import DataQualityDashboard from '@/features/quality/DataQualityDashboard.vue';
 import { resolveWidgetLayout, isLargeWidget } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
@@ -37,6 +38,7 @@ import { entityLabel, joinRefNames } from '@/features/crud/paging';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
+import type { DqDashboardChartFilters } from '@/quality/dashboard';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { GlossaryTerm } from '@/types/governance';
@@ -167,6 +169,17 @@ const tabs = computed<EntityDetailTab[]>(() =>
     customizedPage.value?.tabs,
   ),
 );
+
+// B-15: pin GlossaryTermClassBase (utils/Glossary/GlossaryTermClassBase.ts):
+// the DQ tab mounts DataQualityDashboard with hiddenFilters
+// ['glossaryTerms'] and initialFilters {glossaryTerms: [termFqn]}. Pin
+// appends the tab only outside the version view; this view has no
+// version mode (versions open on a separate route), so it mounts
+// directly.
+const termDqInitialFilters = computed<DqDashboardChartFilters | undefined>(() => {
+  const fqn = term.value?.fullyQualifiedName;
+  return fqn ? { glossaryTerms: [fqn] } : undefined;
+});
 
 // Widget layer (B-8): the widget grid mounts ONLY on this page type's
 // widget-layout tab (GlossaryTerm: overview — only buildOverviewTab
@@ -730,7 +743,13 @@ onMounted(() => {
           </div>
         </template>
       </GenericTab>
-      <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.dataObservability')" />
+      <DataQualityDashboard
+        v-if="term"
+        is-governance-view
+        class-name="data-quality-governance-tab-wrapper"
+        :hidden-filters="['glossaryTerms']"
+        :initial-filters="termDqInitialFilters"
+      />
     </template>
   </EntityDetailShell>
   <CustomPropertiesEditModal

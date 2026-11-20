@@ -42,6 +42,10 @@ export function buildChartOption(
   }
 
   const labels = [...new Set(series.flatMap((item) => item.points.map((point) => point.label)))];
+  // 'area' is the pin CustomAreaChart shape: a smooth line with the
+  // area beneath it filled. It reuses the registered LineChart, so no
+  // extra echarts registration is needed.
+  const echartsKind = kind === 'area' ? 'line' : kind;
   return {
     color: palette,
     textStyle: { fontFamily: SM_FONT_FAMILY },
@@ -51,9 +55,10 @@ export function buildChartOption(
     xAxis: { type: 'category', data: labels, axisLabel: { hideOverlap: true } },
     yAxis: { type: 'value', minInterval: 1 },
     series: series.map((item) => ({
-      type: kind,
+      type: echartsKind,
       name: item.name,
-      smooth: kind === 'line',
+      smooth: kind === 'line' || kind === 'area',
+      ...(kind === 'area' ? { areaStyle: {} } : {}),
       data: labels.map((label) => item.points.find((point) => point.label === label)?.value ?? 0),
     })),
   };
