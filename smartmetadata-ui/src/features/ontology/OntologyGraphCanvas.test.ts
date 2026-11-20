@@ -30,6 +30,8 @@ type G6Instance = {
   updateNodeData: ReturnType<typeof vi.fn>;
   updateEdgeData: ReturnType<typeof vi.fn>;
   setSize: ReturnType<typeof vi.fn>;
+  toDataURL: ReturnType<typeof vi.fn>;
+  getCanvas: ReturnType<typeof vi.fn>;
 };
 
 const g6State = vi.hoisted(() => ({
@@ -62,6 +64,8 @@ vi.mock('@antv/g6', () => ({
     updateNodeData = vi.fn(() => undefined);
     updateEdgeData = vi.fn(() => undefined);
     setSize = vi.fn(() => undefined);
+    toDataURL = vi.fn(async () => 'data:image/png;base64,stub');
+    getCanvas = vi.fn(() => ({ getSize: () => [800, 600] }));
     constructor(options: Record<string, unknown>) {
       this.options = options;
       this.data = options.data;
@@ -232,6 +236,40 @@ describe('OntologyGraphCanvas', () => {
     await exposed.focusNode('a');
     expect(instance.focusElement).toHaveBeenCalledWith('a', { duration: 0 });
     expect(exposed.getNodePositions()).toEqual({ a: { x: 10, y: 20 }, b: { x: 30, y: 40 } });
+  });
+
+  it('exports PNG and raster-wrapped SVG through the G6 data URL (B-15 term scope)', async () => {
+    const { wrapper, instance } = await mountCanvas({ canEdit: false });
+    const exposed = wrapper.vm as unknown as {
+      exportAsPng: () => Promise<void>;
+      exportAsSvg: () => Promise<void>;
+    };
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    const createObjectURLSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:ontology-graph-raster');
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    try {
+      await exposed.exportAsPng();
+      expect(instance.toDataURL).toHaveBeenCalledWith({ mode: 'overall', type: 'image/png' });
+      const pngAnchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
+      expect(pngAnchor.download).toBe('ontology-graph.png');
+      expect(pngAnchor.href).toContain('data:image/png;base64,stub');
+      clickSpy.mockClear();
+      await exposed.exportAsSvg();
+      expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+      const svgBlob = createObjectURLSpy.mock.calls[0]?.[0] as Blob;
+      expect(svgBlob.type).toBe('image/svg+xml');
+      expect(await svgBlob.text()).toContain('width="800" height="600"');
+      expect(await svgBlob.text()).toContain('data:image/png;base64,stub');
+      const svgAnchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
+      expect(svgAnchor.download).toBe('ontology-graph-raster.svg');
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:ontology-graph-raster');
+    } finally {
+      clickSpy.mockRestore();
+      createObjectURLSpy.mockRestore();
+      revokeObjectURLSpy.mockRestore();
+    }
   });
 
   it('keeps node positions on a same-scope refresh and re-fits on a scope change', async () => {

@@ -25,6 +25,7 @@ import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getGlossaryTermVersionPath } from '@/catalog/versionPaths';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
+import OntologyTermRelationsGraph from '@/features/ontology/OntologyTermRelationsGraph.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
@@ -774,82 +775,19 @@ onMounted(() => {
       />
     </template>
     <template #relations_graph>
-      <GenericTab v-if="customizedEntryFor('relations_graph')" :layout="widgetLayoutFor('relations_graph')" page-type="GlossaryTerm">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && term" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="term.description"
-              :entity-name="term.displayName || term.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.tags')">{{ tagFqnList(termTags) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && term" data-testid="widget-glossary-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.tabs.glossaryTerms')">{{ tagFqnList(termGlossaryTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.TIER && term" data-testid="widget-tier">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.tier')">{{ termTierTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && term" data-testid="widget-certification">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.reviewers')">{{ joinRefNames(term.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && term" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(term.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
-      <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.relationsGraph')" />
+      <!-- B-15: fixed content — official OntologyExplorer scope="term"
+           (GlossaryTermUtils buildRelationsGraphTab); the GenericTab +
+           residual Empty are gone. The graph loads on first activation
+           (see OntologyTermRelationsGraph `active`). -->
+      <OntologyTermRelationsGraph
+        v-if="term"
+        scope="term"
+        :entity-id="term.id"
+        :glossary-id="term.glossary?.id"
+        :glossary-fqn="term.glossary?.fullyQualifiedName"
+        height="100%"
+        :active="activeTab === 'relations_graph'"
+      />
     </template>
     <template #custom_properties>
       <GenericTab v-if="customizedEntryFor('custom_properties')" :layout="widgetLayoutFor('custom_properties')" page-type="GlossaryTerm">
