@@ -91,13 +91,25 @@ const COLUMN_TAGS_BASE: Record<string, string> = {
   searchIndex: '/fields',
 };
 
+/**
+ * D-2 batch 3: the APISchema face writes into one of the endpoint's two
+ * schema objects, so its base is chosen by the active view, not by
+ * entity type. Callers pass the base verbatim; the entity-type table
+ * above stays the default.
+ */
+export const API_SCHEMA_FIELD_BASES = {
+  requestSchema: '/requestSchema/schemaFields',
+  responseSchema: '/responseSchema/schemaFields',
+} as const;
+
 export function columnTagsPatch(
   entityType: string,
   indexPath: number[] | undefined,
   currentTags: unknown,
   tags: TagLabelInput[],
+  baseOverride?: string,
 ): JsonPatchOp[] {
-  const base = COLUMN_TAGS_BASE[entityType];
+  const base = baseOverride ?? COLUMN_TAGS_BASE[entityType];
   if (!base) {
     throw new Error(`No column-tags patch base for entity type "${entityType}"`);
   }
@@ -110,6 +122,40 @@ export function columnTagsPatch(
       base,
     ) + '/tags';
   return setFieldPatch(path, currentTags, tags.map(toTagLabel));
+}
+
+/**
+ * D-2 batch 3 PATCH-group column description (official TopicSchema /
+ * ContainerDataModel / SearchIndexFieldsTable / APIEndpointSchema write
+ * path): the official UI edits a field's description in a local copy
+ * and PATCHes the whole entity; the product sends the same change as
+ * one JSON Patch op on the field's description, via `patchAsset`.
+ * Same base table as `columnTagsPatch` (plus `baseOverride` for the
+ * APISchema face). The description string is written as-is — pin sends
+ * the edited string through `updateFieldDescription`, including an
+ * empty string, so no `remove` op is emitted here (unlike the entity
+ * description path, where empty means remove).
+ */
+export function columnDescriptionPatch(
+  entityType: string,
+  indexPath: number[] | undefined,
+  currentDescription: unknown,
+  description: string,
+  baseOverride?: string,
+): JsonPatchOp[] {
+  const base = baseOverride ?? COLUMN_TAGS_BASE[entityType];
+  if (!base) {
+    throw new Error(`No column-description patch base for entity type "${entityType}"`);
+  }
+  if (!indexPath?.length) {
+    throw new Error('columnDescriptionPatch requires a non-empty index path');
+  }
+  const path =
+    indexPath.reduce(
+      (acc, index, depth) => (depth === 0 ? `${acc}/${index}` : `${acc}/children/${index}`),
+      base,
+    ) + '/description';
+  return setFieldPatch(path, currentDescription, description);
 }
 
 /** Custom property values live on the entity `extension` object. */

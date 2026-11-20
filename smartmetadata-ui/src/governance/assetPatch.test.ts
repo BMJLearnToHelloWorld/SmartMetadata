@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { columnTagsPatch, descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
+import { columnDescriptionPatch, columnTagsPatch, API_SCHEMA_FIELD_BASES, descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, toTagLabel } from './assetPatch';
 
 describe('asset governance patches', () => {
   it('builds a TagLabel with the schema-required keys', () => {
@@ -182,5 +182,77 @@ describe('asset governance patches', () => {
 
   it('rejects an empty index path instead of patching the whole array', () => {
     expect(() => columnTagsPatch('topic', [], [], [])).toThrow('non-empty index path');
+  });
+});
+
+describe('columnDescriptionPatch (D-2 batch 3 PATCH-group column description)', () => {
+  it('replaces one topic field description by its schemaFields index', () => {
+    expect(columnDescriptionPatch('topic', [1], 'old', 'new')).toEqual([
+      { op: 'replace', path: '/messageSchema/schemaFields/1/description', value: 'new' },
+    ]);
+  });
+
+  it('adds the description when a search index field has none', () => {
+    expect(columnDescriptionPatch('searchIndex', [0], undefined, 'new')).toEqual([
+      { op: 'add', path: '/fields/0/description', value: 'new' },
+    ]);
+  });
+
+  it('writes an empty string as-is instead of emitting a remove op', () => {
+    // Pin sends the edited string through updateFieldDescription,
+    // including an empty string; the entity-description path differs
+    // (empty means remove there).
+    expect(columnDescriptionPatch('container', [0], 'old', '')).toEqual([
+      { op: 'replace', path: '/dataModel/columns/0/description', value: '' },
+    ]);
+  });
+
+  it('descends through children for a nested field', () => {
+    expect(columnDescriptionPatch('topic', [0, 2], undefined, 'new')).toEqual([
+      { op: 'add', path: '/messageSchema/schemaFields/0/children/2/description', value: 'new' },
+    ]);
+  });
+
+  it('writes into the active API schema object via the base override', () => {
+    expect(
+      columnDescriptionPatch(
+        'apiEndpoint',
+        [0],
+        undefined,
+        'new',
+        API_SCHEMA_FIELD_BASES.responseSchema,
+      ),
+    ).toEqual([
+      { op: 'add', path: '/responseSchema/schemaFields/0/description', value: 'new' },
+    ]);
+    expect(
+      columnTagsPatch(
+        'apiEndpoint',
+        [0],
+        undefined,
+        [{ tagFQN: 'PII.Email', name: 'Email', source: 'Classification' }],
+        API_SCHEMA_FIELD_BASES.requestSchema,
+      ),
+    ).toEqual([
+      {
+        op: 'add',
+        path: '/requestSchema/schemaFields/0/tags',
+        value: [
+          { tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+        ],
+      },
+    ]);
+  });
+
+  it('rejects an entity type with no column-description patch base', () => {
+    expect(() => columnDescriptionPatch('table', [0], undefined, 'new')).toThrow(
+      'No column-description patch base',
+    );
+  });
+
+  it('rejects an empty index path instead of patching the whole object', () => {
+    expect(() => columnDescriptionPatch('topic', [], undefined, 'new')).toThrow(
+      'non-empty index path',
+    );
   });
 });

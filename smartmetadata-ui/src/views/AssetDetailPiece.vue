@@ -3,11 +3,16 @@
   Licensed under the Apache License, Version 2.0.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } from 'ant-design-vue';
-import { StarOutlined } from '@ant-design/icons-vue';
+import { useRouter } from 'vue-router';
+import { Alert, Button, Descriptions, Empty, Input, Pagination, Select, Space, Switch, Tag, Typography, type TableProps } from 'ant-design-vue';
+import { EditOutlined, SearchOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
+import ColumnCustomPropertyCell from '@/components/shared/ColumnCustomPropertyCell.vue';
+import ColumnDescriptionModal from '@/components/shared/ColumnDescriptionModal.vue';
+import ColumnDisplayNameModal, { type ColumnDisplayNameData } from '@/components/shared/ColumnDisplayNameModal.vue';
+import ColumnFilter from '@/components/ingestion/ColumnFilter.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
@@ -15,6 +20,8 @@ import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
+import type { DatabaseSchemaRow } from '@/api/databaseSchemas';
+import { assetLocation } from '@/catalog/entityRoutes';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
@@ -61,7 +68,8 @@ export type AssetDetailPieceId =
   | 'glossaryTerms'
   | 'owners'
   | 'domains'
-  | 'frequentlyJoined';
+  | 'frequentlyJoined'
+  | 'databaseSchemas';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -110,6 +118,78 @@ export interface AssetDetailPieceContext {
   descriptionExpanded: boolean;
   onDescriptionUpdate: (description: string) => Promise<unknown> | unknown;
   customPropsCanView: boolean | null;
+  /**
+   * D-2 batch 3 schema-cell editing (official SchemaTable / TopicSchema /
+   * DatabaseSchema / ContainerDataModel / SearchIndexFieldsTable /
+   * ModelTab / APIEndpointSchema / MlModelFeaturesList). `schemaAccess`
+   * is the full derived flag set (A8 + P1 dual line, fail-closed while
+   * unresolved); `schemaRows` is the effective row list — the server
+   * page for Table / DataModel, client-searched/filtered context rows
+   * for Topic / SearchIndex, context rows otherwise. The search / sort /
+   * page / tag-filter callbacks drive the view's state machine; the
+   * description / display-name / extension saves throw on failure so
+   * the modals keep open.
+   */
+  schemaAccess: {
+    canEditDescription: boolean;
+    canEditTags: boolean;
+    canEditGlossaryTerms: boolean;
+    canEditDisplayName: boolean;
+    canEditCustomFields: boolean;
+    canEditAll: boolean;
+    canViewUsage: boolean;
+    readOnly: boolean;
+    resolved: boolean;
+  };
+  schemaRows: SchemaRow[];
+  schemaSearchText: string;
+  schemaSortBy: 'name' | 'ordinalPosition';
+  schemaSortOrder: 'asc' | 'desc';
+  schemaPage: number;
+  schemaPageSize: number;
+  schemaTotal: number;
+  schemaLoading: boolean;
+  schemaError: string;
+  schemaTagFilterOptions: {
+    classification: { text: string; value: string }[];
+    glossary: { text: string; value: string }[];
+  };
+  schemaTagClassification: string[];
+  schemaTagGlossary: string[];
+  schemaExpandedKeys: string[];
+  columnCustomProperties: CustomPropertyDef[];
+  onSchemaSearchChange: (value: string) => void;
+  onSchemaSortChange: (sortBy: 'name' | 'ordinalPosition', sortOrder: 'asc' | 'desc') => void;
+  onSchemaPageChange: (page: number) => void;
+  onSchemaTagFilterChange: (classification: string[], glossary: string[]) => void;
+  onSchemaDescriptionSave: (row: SchemaRow, description: string) => Promise<unknown>;
+  onSchemaDisplayNameSave: (
+    row: SchemaRow,
+    data: { displayName?: string; constraint?: string; removeConstraint?: boolean },
+  ) => Promise<unknown>;
+  onSchemaExtensionSave: (row: SchemaRow, extension: Record<string, unknown>) => Promise<unknown>;
+  /** Topic Fields / Text view (pin TopicSchema schemaText code view). */
+  topicView: 'fields' | 'text';
+  onTopicViewChange: (view: 'fields' | 'text') => void;
+  /** APISchema Request / Response view (pin APIEndpointSchema). */
+  apiSchemaView: 'requestSchema' | 'responseSchema';
+  apiSchemaRows: SchemaRow[];
+  onApiSchemaViewChange: (view: 'requestSchema' | 'responseSchema') => void;
+  /** Database child schemas (pin DatabaseSchema.component). */
+  databaseSchemas: DatabaseSchemaRow[];
+  databaseSchemasTotal: number;
+  databaseSchemaHasNext: boolean;
+  databaseSchemaHasPrev: boolean;
+  databaseSchemaLoading: boolean;
+  databaseSchemaError: string;
+  databaseSchemaSearch: string;
+  databaseSchemaShowDeleted: boolean;
+  databaseSchemaCanViewUsage: boolean;
+  onDatabaseSchemaSearchChange: (value: string) => void;
+  onDatabaseSchemaNextPage: () => void;
+  onDatabaseSchemaPrevPage: () => void;
+  onDatabaseSchemaShowDeletedChange: (show: boolean) => void;
+  onDatabaseSchemaDisplayNameSave: (row: DatabaseSchemaRow, displayName: string) => Promise<unknown>;
 }
 
 const props = withDefaults(
@@ -145,102 +225,281 @@ const showMetricExpression = computed(
         props.context.asset.storedProcedureCode?.language,
     ),
 );
+
+/* D-2 batch 3: the parent holds the data; this piece holds the modal
+   state (pin TableDescription/TableTags pattern — the edited row lives
+   in the caller, the modal only edits). */
+const editDescriptionRow = ref<SchemaRow | null>(null);
+const editDisplayNameRow = ref<SchemaRow | null>(null);
+const editDatabaseSchemaRow = ref<DatabaseSchemaRow | null>(null);
+
+const isServerSchemaFace = computed(
+  () => props.context.entityType === 'table' || props.context.entityType === 'dashboardDataModel',
+);
+const hasSchemaSearch = computed(
+  () =>
+    props.context.entityType === 'table' ||
+    props.context.entityType === 'dashboardDataModel' ||
+    props.context.entityType === 'topic' ||
+    props.context.entityType === 'searchIndex',
+);
+const canEditSchemaDescription = computed(
+  () => props.context.schemaAccess.canEditDescription && !props.context.schemaAccess.readOnly,
+);
+const canEditSchemaDisplayName = computed(
+  () => props.context.schemaAccess.canEditDisplayName && !props.context.schemaAccess.readOnly,
+);
+const canEditSchemaCustomFields = computed(
+  () => props.context.schemaAccess.canEditCustomFields && !props.context.schemaAccess.readOnly,
+);
+
+/** Search box draft: every keystroke reports to the view (debounced
+    server reload for Table / DataModel, immediate client filter for
+    Topic / SearchIndex). */
+const schemaSearchDraft = computed({
+  get: () => props.context.schemaSearchText,
+  set: (value: string) => props.context.onSchemaSearchChange(value),
+});
+
+/** Pin sort control: name / ordinalPosition × asc / desc, one select. */
+const schemaSortValue = computed({
+  get: () => `${props.context.schemaSortBy}:${props.context.schemaSortOrder}`,
+  set: (value: string) => {
+    const [sortBy, sortOrder] = value.split(':') as ['name' | 'ordinalPosition', 'asc' | 'desc'];
+    props.context.onSchemaSortChange(sortBy, sortOrder);
+  },
+});
+
+function customPropertyDef(propertyName: string): CustomPropertyDef | undefined {
+  return props.context.columnCustomProperties.find((def) => def.name === propertyName);
+}
+
+function columnDisplayLabel(row: SchemaRow): string {
+  return row.displayName || row.name;
+}
+
+async function saveDescriptionRow(description: string): Promise<void> {
+  if (!editDescriptionRow.value) {
+    return;
+  }
+  await props.context.onSchemaDescriptionSave(editDescriptionRow.value, description);
+  editDescriptionRow.value = null;
+}
+
+async function saveDisplayNameRow(data: ColumnDisplayNameData): Promise<void> {
+  if (!editDisplayNameRow.value) {
+    return;
+  }
+  await props.context.onSchemaDisplayNameSave(editDisplayNameRow.value, data);
+  editDisplayNameRow.value = null;
+}
+
+async function saveDatabaseSchemaDisplayName(displayName: string): Promise<void> {
+  if (!editDatabaseSchemaRow.value) {
+    return;
+  }
+  await props.context.onDatabaseSchemaDisplayNameSave(editDatabaseSchemaRow.value, displayName);
+  editDatabaseSchemaRow.value = null;
+}
+
+/** Pin DatabaseSchema columns: Name / Description / Tags / Usage
+    (Usage only when the viewer holds VIEW_USAGE on the resource). */
+const databaseSchemaColumns = computed(() => {
+  const columns: { title: string; dataIndex: string; key: string; width?: number }[] = [
+    { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
+    { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
+    { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags' },
+  ];
+  if (props.context.databaseSchemaCanViewUsage) {
+    columns.push({ title: t('usage.usage'), dataIndex: 'usagePercentile', key: 'usage', width: 120 });
+  }
+  return columns;
+});
+
+const router = useRouter();
+
+function openDatabaseSchema(row: DatabaseSchemaRow): void {
+  if (!row.fullyQualifiedName) {
+    return;
+  }
+  void router.push(assetLocation('databaseSchema', row.fullyQualifiedName));
+}
 </script>
 
 <template>
   <template v-if="piece === 'schemaTable'">
     <Typography.Title :level="5">{{ context.asset.schemaLabel }}</Typography.Title>
-    <Empty
-      v-if="!context.asset.schemaRows.length"
-      data-testid="asset-schema-empty"
-      :description="t('asset.schemaEmpty')"
-    />
-    <!-- Two SmTable branches, not one table with a conditional bodyCell
-         slot: SmTable forwards bodyCell only when the caller provides
-         it, and a present-but-empty slot would blank the default
-         rendering the model/fields panes rely on. -->
-    <SmTable
-      v-else-if="withJoins"
-      row-key="key"
-      test-id="asset-schema-table"
-      :columns="context.schemaColumns"
-      :data-source="context.asset.schemaRows"
-      :expandable="context.schemaExpandable"
-      :pagination="false"
-      size="small"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'name'">
-          {{ (record as SchemaRow).name }}
-          <FrequentlyJoinedColumns :joins="context.asset.joins" :column-name="(record as SchemaRow).name" />
+    <!-- D-2 batch 3: pin TopicSchema Fields/Text toggle (the TEXT view
+         renders the read-only schemaText code block). -->
+    <div v-if="context.entityType === 'topic'" style="margin-bottom: 12px">
+      <Button
+        data-testid="topic-view-fields"
+        :type="context.topicView === 'fields' ? 'primary' : 'default'"
+        @click="context.onTopicViewChange('fields')"
+      >
+        {{ t('asset.tabs.fields') }}
+      </Button>
+      <Button
+        data-testid="topic-view-text"
+        :type="context.topicView === 'text' ? 'primary' : 'default'"
+        @click="context.onTopicViewChange('text')"
+      >
+        {{ t('asset.columns.text') }}
+      </Button>
+    </div>
+    <pre
+      v-if="context.entityType === 'topic' && context.topicView === 'text'"
+      data-testid="asset-topic-schema-text"
+      class="detail__code"
+    >{{ context.asset.schemaText || '—' }}</pre>
+    <template v-else>
+      <!-- D-2 batch 3 toolbar: pin TableSchema / ModelTab search box +
+           sort control (server faces); Topic / SearchIndex get the
+           search box only (client filter). -->
+      <div v-if="hasSchemaSearch" style="display: flex; gap: 8px; margin-bottom: 12px">
+        <Input
+          v-model:value="schemaSearchDraft"
+          data-testid="schema-search-input"
+          :placeholder="t('asset.columns.findInTable')"
+          allow-clear
+        >
+          <template #prefix><SearchOutlined /></template>
+        </Input>
+        <Select
+          v-if="isServerSchemaFace"
+          v-model:value="schemaSortValue"
+          data-testid="schema-sort-select"
+          style="min-width: 180px"
+        >
+          <Select.Option value="ordinalPosition:asc">{{ t('asset.columns.originalOrder') }}</Select.Option>
+          <Select.Option value="name:asc">{{ t('asset.columns.alphabeticalAsc') }}</Select.Option>
+          <Select.Option value="name:desc">{{ t('asset.columns.alphabeticalDesc') }}</Select.Option>
+          <Select.Option value="ordinalPosition:desc">{{ t('asset.columns.originalOrderDesc') }}</Select.Option>
+        </Select>
+      </div>
+      <Alert
+        v-if="context.schemaError"
+        type="error"
+        :message="context.schemaError"
+        show-icon
+        style="margin-bottom: 12px"
+      />
+      <Empty
+        v-if="!context.schemaRows.length && !context.schemaLoading"
+        data-testid="asset-schema-empty"
+        :description="t('asset.schemaEmpty')"
+      />
+      <SmTable
+        v-else
+        row-key="key"
+        test-id="asset-schema-table"
+        :columns="context.schemaColumns"
+        :data-source="context.schemaRows"
+        :expandable="context.schemaExpandable"
+        :expanded-row-keys="context.schemaExpandedKeys"
+        :loading="context.schemaLoading"
+        :pagination="false"
+        size="small"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            {{ columnDisplayLabel(record as SchemaRow) }}
+            <Button
+              v-if="
+                canEditSchemaDisplayName &&
+                (context.entityType === 'table' || context.entityType === 'dashboardDataModel')
+              "
+              type="text"
+              size="small"
+              data-testid="schema-display-name-edit"
+              :title="t('label.edit-entity', { entity: t('label.column') })"
+              @click="editDisplayNameRow = record as SchemaRow"
+            >
+              <template #icon><EditOutlined /></template>
+            </Button>
+            <FrequentlyJoinedColumns
+              v-if="withJoins"
+              :joins="context.asset.joins"
+              :column-name="(record as SchemaRow).name"
+            />
+          </template>
+          <template v-else-if="column.key === 'dataType'">
+            {{ (record as SchemaRow).dataType }}
+          </template>
+          <template v-else-if="column.key === 'description'">
+            <!-- Pin TableDescription: the description text itself opens
+                 the editor when the viewer may edit it. -->
+            <span
+              v-if="canEditSchemaDescription"
+              data-testid="schema-description-edit"
+              style="cursor: pointer"
+              @click="editDescriptionRow = record as SchemaRow"
+            >
+              {{ (record as SchemaRow).description || '—' }}
+            </span>
+            <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+          </template>
+          <template v-else-if="column.key === 'tags'">
+            <SchemaTagCell
+              :row="(record as SchemaRow)"
+              source="Classification"
+              :options="context.schemaTagOptions"
+              :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
+              :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+            />
+          </template>
+          <template v-else-if="column.key === 'glossaryTerms'">
+            <SchemaTagCell
+              :row="(record as SchemaRow)"
+              source="Glossary"
+              :options="context.schemaTagOptions"
+              :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
+              :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
+            />
+          </template>
+          <template v-else-if="typeof column.key === 'string' && column.key.startsWith('customProperty:')">
+            <ColumnCustomPropertyCell
+              v-if="customPropertyDef(column.key.slice('customProperty:'.length))"
+              :property="customPropertyDef(column.key.slice('customProperty:'.length)) as CustomPropertyDef"
+              :record="(record as SchemaRow)"
+              :has-edit-permissions="canEditSchemaCustomFields"
+              :on-extension-update="(row, extension) => context.onSchemaExtensionSave(row, extension)"
+            />
+          </template>
+          <template v-else>
+            {{ (record as SchemaRow).description }}
+          </template>
         </template>
-        <template v-else-if="column.key === 'dataType'">
-          {{ (record as SchemaRow).dataType }}
-        </template>
-        <template v-else-if="column.key === 'tags'">
-          <SchemaTagCell
-            :row="(record as SchemaRow)"
-            source="Classification"
-            :options="context.schemaTagOptions"
-            :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
-            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+        <template #customFilterDropdown="{ confirm, column }">
+          <ColumnFilter
+            v-if="column.key === 'tags'"
+            :options="context.schemaTagFilterOptions.classification"
+            :selected-values="context.schemaTagClassification"
+            :confirm="confirm"
+            @change="(values) => context.onSchemaTagFilterChange(values, context.schemaTagGlossary)"
+          />
+          <ColumnFilter
+            v-else-if="column.key === 'glossaryTerms'"
+            :options="context.schemaTagFilterOptions.glossary"
+            :selected-values="context.schemaTagGlossary"
+            :confirm="confirm"
+            @change="(values) => context.onSchemaTagFilterChange(context.schemaTagClassification, values)"
           />
         </template>
-        <template v-else-if="column.key === 'glossaryTerms'">
-          <SchemaTagCell
-            :row="(record as SchemaRow)"
-            source="Glossary"
-            :options="context.schemaTagOptions"
-            :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
-            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
-          />
-        </template>
-        <template v-else>
-          {{ (record as SchemaRow).description }}
-        </template>
-      </template>
-    </SmTable>
-    <SmTable
-      v-else
-      row-key="key"
-      test-id="asset-schema-table"
-      :columns="context.schemaColumns"
-      :data-source="context.asset.schemaRows"
-      :expandable="context.schemaExpandable"
-      :pagination="false"
-      size="small"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'name'">
-          {{ (record as SchemaRow).name }}
-        </template>
-        <template v-else-if="column.key === 'dataType'">
-          {{ (record as SchemaRow).dataType }}
-        </template>
-        <template v-else-if="column.key === 'tags'">
-          <SchemaTagCell
-            :row="(record as SchemaRow)"
-            source="Classification"
-            :options="context.schemaTagOptions"
-            :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
-            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
-          />
-        </template>
-        <template v-else-if="column.key === 'glossaryTerms'">
-          <SchemaTagCell
-            :row="(record as SchemaRow)"
-            source="Glossary"
-            :options="context.schemaTagOptions"
-            :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
-            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
-          />
-        </template>
-        <template v-else>
-          {{ (record as SchemaRow).description }}
-        </template>
-      </template>
-    </SmTable>
-    <FrequentlyJoinedTables v-if="withJoins && context.entityType === 'table'" :joins="context.asset.joins" />
+      </SmTable>
+      <!-- D-2 batch 3: server pagination (pin TableSchema / ModelTab
+           number-based paging on the column endpoints). -->
+      <Pagination
+        v-if="isServerSchemaFace && context.schemaTotal > context.schemaPageSize"
+        :current="context.schemaPage"
+        :page-size="context.schemaPageSize"
+        :total="context.schemaTotal"
+        :show-size-changer="false"
+        style="margin-top: 12px; text-align: right"
+        @change="(page: number) => context.onSchemaPageChange(page)"
+      />
+      <FrequentlyJoinedTables v-if="withJoins && context.entityType === 'table'" :joins="context.asset.joins" />
+    </template>
   </template>
   <template v-else-if="piece === 'related'">
     <AssetRelatedPanel :asset="context.asset" />
@@ -261,7 +520,52 @@ const showMetricExpression = computed(
         :data-source="context.asset.mlFeatures ?? []"
         :pagination="false"
         size="small"
-      />
+      >
+        <!-- D-2 batch 3: pin MlModelFeaturesList edits description /
+             tags / glossary per feature card; the product keeps the
+             SmTable form (named deviation, BENCHMARK §12) with the same
+             edit cells as the schema table. -->
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'name'">
+            {{ (record as SchemaRow).name }}
+          </template>
+          <template v-else-if="column.key === 'dataType'">
+            {{ (record as SchemaRow).dataType }}
+          </template>
+          <template v-else-if="column.key === 'description'">
+            <span
+              v-if="canEditSchemaDescription"
+              data-testid="schema-description-edit"
+              style="cursor: pointer"
+              @click="editDescriptionRow = record as SchemaRow"
+            >
+              {{ (record as SchemaRow).description || '—' }}
+            </span>
+            <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+          </template>
+          <template v-else-if="column.key === 'tags'">
+            <SchemaTagCell
+              :row="(record as SchemaRow)"
+              source="Classification"
+              :options="context.schemaTagOptions"
+              :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
+              :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+            />
+          </template>
+          <template v-else-if="column.key === 'glossaryTerms'">
+            <SchemaTagCell
+              :row="(record as SchemaRow)"
+              source="Glossary"
+              :options="context.schemaTagOptions"
+              :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
+              :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
+            />
+          </template>
+          <template v-else>
+            {{ (record as SchemaRow).description }}
+          </template>
+        </template>
+      </SmTable>
       <Typography.Title :level="5" class="detail__schema-title">{{ t('asset.hyperTitle') }}</Typography.Title>
       <SmTable
         row-key="name"
@@ -344,6 +648,82 @@ const showMetricExpression = computed(
       <Descriptions.Item :label="t('asset.apiEndpointUrl')">{{ context.asset.apiEndpointUrl || '—' }}</Descriptions.Item>
       <Descriptions.Item :label="t('asset.apiRequestMethod')">{{ context.asset.apiRequestMethod || '—' }}</Descriptions.Item>
     </Descriptions>
+    <!-- D-2 batch 3: pin APIEndpointSchema Request/Response toggle; the
+         active schema's fields render in the shared schema table (same
+         description/tag edit cells), keeping the JSON blocks below as a
+         supplementary read surface. -->
+    <div style="margin: 12px 0">
+      <Button
+        data-testid="api-schema-view-request"
+        :type="context.apiSchemaView === 'requestSchema' ? 'primary' : 'default'"
+        @click="context.onApiSchemaViewChange('requestSchema')"
+      >
+        {{ t('asset.apiRequestSchema') }}
+      </Button>
+      <Button
+        data-testid="api-schema-view-response"
+        :type="context.apiSchemaView === 'responseSchema' ? 'primary' : 'default'"
+        @click="context.onApiSchemaViewChange('responseSchema')"
+      >
+        {{ t('asset.apiResponseSchema') }}
+      </Button>
+    </div>
+    <Empty
+      v-if="!context.apiSchemaRows.length"
+      data-testid="asset-api-schema-empty"
+      :description="t('asset.schemaEmpty')"
+    />
+    <SmTable
+      v-else
+      row-key="key"
+      test-id="asset-api-schema-table"
+      :columns="context.schemaColumns"
+      :data-source="context.apiSchemaRows"
+      :expandable="context.schemaExpandable"
+      :pagination="false"
+      size="small"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          {{ columnDisplayLabel(record as SchemaRow) }}
+        </template>
+        <template v-else-if="column.key === 'dataType'">
+          {{ (record as SchemaRow).dataType }}
+        </template>
+        <template v-else-if="column.key === 'description'">
+          <span
+            v-if="canEditSchemaDescription"
+            data-testid="schema-description-edit"
+            style="cursor: pointer"
+            @click="editDescriptionRow = record as SchemaRow"
+          >
+            {{ (record as SchemaRow).description || '—' }}
+          </span>
+          <span v-else>{{ (record as SchemaRow).description || '—' }}</span>
+        </template>
+        <template v-else-if="column.key === 'tags'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Classification"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditTags && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Classification', fqns)"
+          />
+        </template>
+        <template v-else-if="column.key === 'glossaryTerms'">
+          <SchemaTagCell
+            :row="(record as SchemaRow)"
+            source="Glossary"
+            :options="context.schemaTagOptions"
+            :editable="context.schemaTagAccess.canEditGlossaryTerms && !context.schemaTagAccess.readOnly"
+            :on-change="(fqns) => context.onSchemaTagChange(record as SchemaRow, 'Glossary', fqns)"
+          />
+        </template>
+        <template v-else>
+          {{ (record as SchemaRow).description }}
+        </template>
+      </template>
+    </SmTable>
     <template v-if="context.asset.apiRequestSchema">
       <Typography.Title :level="5">{{ t('asset.apiRequestSchema') }}</Typography.Title>
       <pre data-testid="asset-api-request-schema" class="detail__code">{{ context.apiEndpointSchemaJson(context.asset.apiRequestSchema) }}</pre>
@@ -352,6 +732,105 @@ const showMetricExpression = computed(
       <Typography.Title :level="5">{{ t('asset.apiResponseSchema') }}</Typography.Title>
       <pre data-testid="asset-api-response-schema" class="detail__code">{{ context.apiEndpointSchemaJson(context.asset.apiResponseSchema) }}</pre>
     </template>
+  </template>
+  <template v-else-if="piece === 'databaseSchemas'">
+    <Typography.Title :level="5">{{ t('asset.schemasTitle') }}</Typography.Title>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px">
+      <Input
+        :value="context.databaseSchemaSearch"
+        data-testid="database-schema-search-input"
+        :placeholder="t('asset.columns.findInTable')"
+        allow-clear
+        @change="(event: Event) => context.onDatabaseSchemaSearchChange((event.target as HTMLInputElement).value)"
+      >
+        <template #prefix><SearchOutlined /></template>
+      </Input>
+      <span style="display: flex; align-items: center; gap: 6px; white-space: nowrap">
+        <Switch
+          :checked="context.databaseSchemaShowDeleted"
+          data-testid="database-schema-show-deleted"
+          @change="(checked: boolean | string | number) => context.onDatabaseSchemaShowDeletedChange(checked === true)"
+        />
+        {{ t('label.show-deleted') }}
+      </span>
+    </div>
+    <Alert
+      v-if="context.databaseSchemaError"
+      type="error"
+      :message="context.databaseSchemaError"
+      show-icon
+      style="margin-bottom: 12px"
+    />
+    <Empty
+      v-else-if="!context.databaseSchemas.length && !context.databaseSchemaLoading"
+      data-testid="asset-database-schemas-empty"
+      :description="t('asset.schemaEmpty')"
+    />
+    <SmTable
+      v-else
+      row-key="id"
+      test-id="asset-database-schemas-table"
+      :columns="databaseSchemaColumns"
+      :data-source="context.databaseSchemas"
+      :loading="context.databaseSchemaLoading"
+      :pagination="false"
+      size="small"
+      :custom-row="(row: DatabaseSchemaRow) => ({ onClick: () => openDatabaseSchema(row) })"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'name'">
+          {{ (record as DatabaseSchemaRow).displayName || (record as DatabaseSchemaRow).name }}
+          <Button
+            v-if="canEditSchemaDisplayName"
+            type="text"
+            size="small"
+            data-testid="database-schema-display-name-edit"
+            :title="t('label.edit-entity', { entity: t('label.database-schema') })"
+            @click.stop="editDatabaseSchemaRow = record as DatabaseSchemaRow"
+          >
+            <template #icon><EditOutlined /></template>
+          </Button>
+        </template>
+        <template v-else-if="column.key === 'description'">
+          {{ (record as DatabaseSchemaRow).description || '—' }}
+        </template>
+        <template v-else-if="column.key === 'tags'">
+          <Space wrap>
+            <Tag v-for="tag in (record as DatabaseSchemaRow).tags ?? []" :key="tag.tagFQN">
+              {{ tag.name }}
+            </Tag>
+            <Typography.Text v-if="!(record as DatabaseSchemaRow).tags?.length" type="secondary">—</Typography.Text>
+          </Space>
+        </template>
+        <template v-else-if="column.key === 'usage'">
+          {{ (record as DatabaseSchemaRow).usagePercentile === undefined ? '—' : `${(record as DatabaseSchemaRow).usagePercentile}%` }}
+        </template>
+      </template>
+    </SmTable>
+    <div v-if="context.databaseSchemaHasNext || context.databaseSchemaHasPrev" style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px">
+      <Button
+        data-testid="database-schema-prev-page"
+        :disabled="!context.databaseSchemaHasPrev"
+        @click="context.onDatabaseSchemaPrevPage()"
+      >
+        {{ t('label.previous') }}
+      </Button>
+      <Button
+        data-testid="database-schema-next-page"
+        :disabled="!context.databaseSchemaHasNext"
+        @click="context.onDatabaseSchemaNextPage()"
+      >
+        {{ t('label.next') }}
+      </Button>
+    </div>
+    <ColumnDisplayNameModal
+      :open="editDatabaseSchemaRow !== null"
+      :name="editDatabaseSchemaRow?.name ?? ''"
+      :display-name="editDatabaseSchemaRow?.displayName"
+      :show-constraint="false"
+      :on-save="(data) => saveDatabaseSchemaDisplayName(data.displayName ?? '')"
+      :on-cancel="() => { editDatabaseSchemaRow = null; }"
+    />
   </template>
   <template v-else-if="piece === 'metricExpression'">
     <template v-if="showMetricExpression">
@@ -439,6 +918,25 @@ const showMetricExpression = computed(
   <template v-else-if="piece === 'frequentlyJoined'">
     <FrequentlyJoinedTables :joins="context.asset.joins" />
   </template>
+  <!-- D-2 batch 3: shared column modals at piece root so the schema,
+       features and API-schema tables all edit through the same state. -->
+  <ColumnDescriptionModal
+    :open="editDescriptionRow !== null"
+    :column-name="editDescriptionRow?.name ?? ''"
+    :entity-label="context.entityType === 'table' || context.entityType === 'dashboardDataModel' ? 'column' : 'field'"
+    :initial-value="editDescriptionRow?.description"
+    :on-save="saveDescriptionRow"
+    :on-cancel="() => { editDescriptionRow = null; }"
+  />
+  <ColumnDisplayNameModal
+    :open="editDisplayNameRow !== null"
+    :name="editDisplayNameRow?.name ?? ''"
+    :display-name="editDisplayNameRow?.displayName"
+    :show-constraint="context.entityType === 'table'"
+    :constraint="editDisplayNameRow?.constraint"
+    :on-save="saveDisplayNameRow"
+    :on-cancel="() => { editDisplayNameRow = null; }"
+  />
 </template>
 
 <style scoped>

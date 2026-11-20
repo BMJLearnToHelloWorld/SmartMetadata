@@ -100,6 +100,15 @@ describe('AssetDetailView governance', () => {
             ],
           });
         }
+        if (url.includes('/api/v1/tables/name/') && url.includes('/columns')) {
+          // D-2 batch 3: the schema table self-fetches its columns
+          // (pin TableSchema), so the stub serves the column-list
+          // endpoints from the same payload columns as the detail GET.
+          return jsonResponse({
+            data: [{ name: 'id', dataType: 'BIGINT' }],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse({
             id: 'tbl-1',
@@ -601,6 +610,14 @@ describe('AssetDetailView non-table shells', () => {
             metricExpression: { language: 'SQL', code: 'SELECT 1' },
           });
         }
+        if (url.includes('/api/v1/dashboard/datamodels/name/') && url.includes('/columns')) {
+          // D-2 batch 3: DataModel columns are self-fetched (pin
+          // ModelTab), served here from the detail payload's columns.
+          return jsonResponse({
+            data: [{ name: 'amount', dataType: 'DECIMAL' }],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/dashboard/datamodels/name/')) {
           return jsonResponse({
             id: 'dm-1',
@@ -609,6 +626,11 @@ describe('AssetDetailView non-table shells', () => {
             dataModelType: 'SupersetDataModel',
             columns: [{ name: 'amount', dataType: 'DECIMAL' }],
           });
+        }
+        if (url.includes('/api/v1/databaseSchemas?')) {
+          // D-2 batch 3: the database page lists its child schemas
+          // (pin DatabaseSchema.component) instead of the payload copy.
+          return jsonResponse({ data: [], paging: { total: 0 } });
         }
         if (url.includes('/api/v1/databases/name/')) {
           return jsonResponse({
@@ -669,7 +691,7 @@ describe('AssetDetailView non-table shells', () => {
 
     const database = await mountTypedView('database', 'svc.analytics');
     expect(database.wrapper.find('[data-testid="entity-detail-shell"]').exists()).toBe(true);
-    expect(database.wrapper.find('[data-testid="asset-related-empty"]').exists()).toBe(true);
+    expect(database.wrapper.find('[data-testid="asset-database-schemas-empty"]').exists()).toBe(true);
     expect(database.wrapper.text()).not.toContain('No detail page is wired');
     database.wrapper.unmount();
 
@@ -718,6 +740,20 @@ describe('AssetDetailView R2 header and split tabs', () => {
             databaseSchemas: [{ name: 'marts', type: 'databaseSchema' }],
           });
         }
+        if (url.includes('/api/v1/databaseSchemas?')) {
+          // D-2 batch 3: the database page lists its child schemas
+          // (pin DatabaseSchema.component) instead of the payload copy.
+          return jsonResponse({
+            data: [
+              {
+                id: 'sch-1',
+                name: 'marts',
+                fullyQualifiedName: 'svc.analytics.marts',
+              },
+            ],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/databases/db-1/vote') && init?.method === 'PUT') {
           return jsonResponse({ eventType: 'ENTITY_UPDATED' });
         }
@@ -740,7 +776,7 @@ describe('AssetDetailView R2 header and split tabs', () => {
     expect(wrapper.find('[data-testid="asset-header-owners"]').text()).toContain('bob');
     expect(wrapper.text()).toContain('Schemas');
     expect(wrapper.text()).not.toContain('Lineage');
-    expect(wrapper.find('[data-testid="asset-related-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-database-schemas-table"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('marts');
   });
 
@@ -1012,6 +1048,13 @@ describe('AssetDetailView persona tab customization (C-4)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/v1/tables/name/') && url.includes('/columns')) {
+          // D-2 batch 3: the schema table self-fetches its columns.
+          return jsonResponse({
+            data: [{ name: 'id', dataType: 'BIGINT' }],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse({
             id: 'tbl-1',
@@ -1172,7 +1215,16 @@ describe('AssetDetailView widget layer (B-8)', () => {
   }
 
   function tableResponder(table: Record<string, unknown>): EntityResponder {
-    return (url) => (url.includes('/api/v1/tables/name/') ? jsonResponse(table) : null);
+    return (url) => {
+      // D-2 batch 3: Table / DataModel columns are self-fetched (pin
+      // TableSchema / ModelTab), so the stub serves the column-list
+      // endpoints from the same payload columns as the detail GET.
+      if (url.includes('/columns')) {
+        const columns = Array.isArray(table.columns) ? table.columns : [];
+        return jsonResponse({ data: columns, paging: { total: columns.length } });
+      }
+      return url.includes('/api/v1/tables/name/') ? jsonResponse(table) : null;
+    };
   }
 
   const BASE_TABLE = {
@@ -1331,6 +1383,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
         },
       ]),
       (url) => {
+        if (url.includes('/api/v1/tables/name/') && url.includes('/columns')) {
+          // D-2 batch 3: the schema table self-fetches its columns.
+          return jsonResponse({ data: BASE_TABLE.columns, paging: { total: 1 } });
+        }
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse(BASE_TABLE);
         }
@@ -1516,6 +1572,10 @@ describe('AssetDetailView widget layer (B-8)', () => {
       { id: 'custom_properties', name: 'custom_properties', editable: false, layout: [] },
     ];
     stubWithDoc(docWithPage('Table', editorSavedTabs), (url) => {
+      if (url.includes('/api/v1/tables/name/') && url.includes('/columns')) {
+        // D-2 batch 3: the schema table self-fetches its columns.
+        return jsonResponse({ data: BASE_TABLE.columns, paging: { total: 1 } });
+      }
       if (url.includes('/api/v1/tables/name/')) {
         return jsonResponse(BASE_TABLE);
       }
@@ -2239,6 +2299,13 @@ describe('AssetDetailView description gate (D-3/D-4)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes('/api/v1/tables/name/') && url.includes('/columns')) {
+          // D-2 batch 3: the schema table self-fetches its columns.
+          return jsonResponse({
+            data: [{ name: 'id', dataType: 'BIGINT' }],
+            paging: { total: 1 },
+          });
+        }
         if (url.includes('/api/v1/tables/name/')) {
           return jsonResponse({
             id: 'tbl-1',

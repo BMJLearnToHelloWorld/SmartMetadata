@@ -333,29 +333,52 @@ export async function importColumnsCsv(
 }
 
 /**
- * D-F2 single-column PUT (official `rest/tableAPI.ts:352-361`
+ * D-2 batch 3 single-column PUT (official `rest/tableAPI.ts:352-361`
  * `updateTableColumn` and `rest/dataModelsAPI.ts:165-175`
  * `updateDataModelColumn`): `PUT /v1/columns/name/{fqn}?entityType=...`
- * with body `{ tags }`. The official UI calls this only for Table
+ * with a partial-column body. The official UI calls this only for Table
  * (`entityType=table`) and DataModel (`entityType=dashboardDataModel`);
  * Topic / Container / SearchIndex go through the whole-entity PATCH
- * instead (see `columnTagsPatch`). The response is the updated column:
- * its tags are the write-back source, and when the response carries no
- * tags at all the sent labels stand in — the server contract returns
- * the updated column, so a tag-less body means a malformed response,
- * not a silent wipe. The stand-in display name is the tag FQN's last
- * segment (the same display name the server returns for a classified
- * tag, e.g. `PII.Email` -> `Email`), never the bare FQN.
+ * instead (see `columnTagsPatch`). The response is the updated column.
+ */
+export type ColumnEntityType = 'table' | 'dashboardDataModel';
+
+export interface ColumnPartialUpdate {
+  description?: string;
+  displayName?: string;
+  constraint?: string;
+  removeConstraint?: boolean;
+  extension?: Record<string, unknown>;
+  tags?: TagLabelValue[];
+}
+
+export async function updateColumnDetails(
+  columnFqn: string,
+  entityType: ColumnEntityType,
+  partial: ColumnPartialUpdate,
+): Promise<Record<string, unknown>> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/columns/name/${encodeFqnForApi(columnFqn)}?entityType=${entityType}`,
+    { method: 'PUT', json: partial },
+  );
+  return payload;
+}
+
+/**
+ * D-F2 single-column PUT (tags-only callers): the response's tags are
+ * the write-back source, and when the response carries no tags at all
+ * the sent labels stand in — the server contract returns the updated
+ * column, so a tag-less body means a malformed response, not a silent
+ * wipe. The stand-in display name is the tag FQN's last segment (the
+ * same display name the server returns for a classified tag, e.g.
+ * `PII.Email` -> `Email`), never the bare FQN.
  */
 async function updateSingleColumn(
   columnFqn: string,
-  entityType: 'table' | 'dashboardDataModel',
+  entityType: ColumnEntityType,
   tags: TagLabelValue[],
 ): Promise<TagRef[]> {
-  const payload = await apiRequest<Record<string, unknown>>(
-    `/v1/columns/name/${encodeFqnForApi(columnFqn)}?entityType=${entityType}`,
-    { method: 'PUT', json: { tags } },
-  );
+  const payload = await updateColumnDetails(columnFqn, entityType, { tags });
   const returned = mapTags(payload.tags);
   if (payload.tags === undefined) {
     return tags.map((tag) => ({
@@ -378,4 +401,126 @@ export async function updateDataModelColumn(
   tags: TagLabelValue[],
 ): Promise<TagRef[]> {
   return updateSingleColumn(columnFqn, 'dashboardDataModel', tags);
+}
+
+export type ColumnSortBy = 'name' | 'ordinalPosition';
+export type ColumnSortOrder = 'asc' | 'desc';
+
+export interface ColumnListParams {
+  limit?: number;
+  offset?: number;
+  /** Official fields: Table `tags,customMetrics,extension`, DataModel `tags`. */
+  fields?: string;
+  sortBy?: ColumnSortBy;
+  sortOrder?: ColumnSortOrder;
+}
+
+export interface ColumnListPage {
+  data: unknown[];
+  paging: { total?: number };
+}
+
+function columnListQuery(params: ColumnListParams): Record<string, string | number | undefined> {
+  return {
+    fields: params.fields,
+    sortBy: params.sortBy,
+    sortOrder: params.sortOrder,
+    include: 'all',
+    limit: params.limit,
+    offset: params.offset,
+  };
+}
+
+/**
+ * D-2 batch 3 Table self-fetch (official `rest/tableAPI.ts:304-314`
+ * `getTableColumnsByFQN`): `GET /v1/tables/name/{fqn}/columns`.
+ */
+export async function getTableColumnsByFQN(
+  fqn: string,
+  params: ColumnListParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/tables/name/${encodeFqnForApi(fqn)}/columns`,
+    { query: columnListQuery({ fields: 'tags,customMetrics,extension', ...params }) },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+export interface SearchTableColumnsParams extends ColumnListParams {
+  q?: string;
+  /** Comma-separated classification tag FQNs. */
+  tags?: string;
+  /** Comma-separated glossary term FQNs. */
+  glossaryTerms?: string;
+}
+
+/**
+ * D-2 batch 3 Table column search (official `rest/tableAPI.ts:338-348`
+ * `searchTableColumnsByFQN`, D-F2-2 design): `GET
+ * /v1/tables/name/{fqn}/columns/search`. Same shape as the A6
+ * `m2-df2-2-server-filter` branch; merge dedupe applies (see
+ * d2b3/BENCHMARK.md §11).
+ */
+export async function searchTableColumnsByFQN(
+  fqn: string,
+  params: SearchTableColumnsParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/tables/name/${encodeFqnForApi(fqn)}/columns/search`,
+    {
+      query: {
+        ...columnListQuery({ fields: 'tags,customMetrics,extension', ...params }),
+        q: params.q,
+        tags: params.tags,
+        glossaryTerms: params.glossaryTerms,
+      },
+    },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+/**
+ * D-2 batch 3 DataModel self-fetch (official
+ * `rest/dataModelsAPI.ts:127-144` `getDataModelColumnsByFQN`): `GET
+ * /v1/dashboard/datamodels/name/{fqn}/columns`.
+ */
+export async function getDataModelColumnsByFQN(
+  fqn: string,
+  params: ColumnListParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/dashboard/datamodels/name/${encodeFqnForApi(fqn)}/columns`,
+    { query: columnListQuery({ fields: 'tags', ...params }) },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
+}
+
+/**
+ * D-2 batch 3 DataModel column search (official
+ * `rest/dataModelsAPI.ts:146-163` `searchDataModelColumnsByFQN`): `GET
+ * /v1/dashboard/datamodels/name/{fqn}/columns/search`. Unlike Table,
+ * this endpoint takes no tags/glossaryTerms parameters — tag filtering
+ * on this face stays client-side (A6 §2).
+ */
+export async function searchDataModelColumnsByFQN(
+  fqn: string,
+  params: SearchTableColumnsParams = {},
+): Promise<ColumnListPage> {
+  const payload = await apiRequest<Record<string, unknown>>(
+    `/v1/dashboard/datamodels/name/${encodeFqnForApi(fqn)}/columns/search`,
+    { query: { ...columnListQuery({ fields: 'tags', ...params }), q: params.q } },
+  );
+  return {
+    data: Array.isArray(payload.data) ? payload.data : [],
+    paging: (payload.paging as ColumnListPage['paging']) ?? {},
+  };
 }

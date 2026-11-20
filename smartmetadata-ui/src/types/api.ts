@@ -214,8 +214,15 @@ export interface SchemaRow {
       STRUCT parents, which a bare column name cannot guarantee. */
   key: string;
   name: string;
+  /** Display name when the payload carries one (pin renders
+      `getEntityName` = displayName || name). */
+  displayName?: string;
+  /** Column constraint (pin `prepareConstraintIcon` input). */
+  constraint?: string;
   dataType: string;
   description?: string;
+  /** Column-level extension (pin custom-property columns). */
+  extension?: Record<string, unknown>;
   /** Nested columns of a STRUCT column; absent when there are none, so no
       expand icon is drawn for leaf columns. */
   children?: SchemaRow[];
@@ -313,6 +320,10 @@ export interface AssetDetail {
   charts?: EntityRef[];
   dataModels?: EntityRef[];
   mlFeatures?: SchemaRow[];
+  /** Raw mlFeatures payload (full feature objects): the mapped
+      SchemaRow drops `featureAlgorithm` / `source`, so a feature
+      write-back that must preserve them patches from this copy. */
+  mlFeaturesRaw?: unknown[];
   mlHyperParameters?: MlHyperParameter[];
   tasks?: PipelineTask[];
   pipelineStatus?: CatalogPipelineStatus;
@@ -323,6 +334,8 @@ export interface AssetDetail {
   domains: EntityRef[];
   schemaRows: SchemaRow[];
   schemaLabel: string;
+  /** Topic message-schema text (TEXT view source). */
+  schemaText?: string;
   extension?: Record<string, unknown>;
   /**
    * Usage summary (VIEW_USAGE-gated field, requested only when the

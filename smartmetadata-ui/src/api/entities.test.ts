@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
 import { tagsPatch } from '@/governance/assetPatch';
 import type { SchemaRow } from '@/types/api';
-import { fetchAssetDetail, mapTags, patchAsset, updateSchemaRowTags } from './entities';
+import { fetchAssetDetail, mapColumns, mapTags, patchAsset, updateSchemaRowField, updateSchemaRowTags } from './entities';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -553,5 +553,40 @@ describe('D-F2 schema rows', () => {
     expect(next[1].tags).toBeUndefined();
     // The input rows are untouched: the update returns new rows.
     expect(rows[0].children?.[0].tags).toBeUndefined();
+  });
+
+  it('passes displayName, constraint and extension through mapColumns', () => {
+    const rows = mapColumns([
+      {
+        name: 'email',
+        dataType: 'VARCHAR',
+        displayName: 'Email Address',
+        constraint: 'UNIQUE',
+        extension: { 'x-review': 'done' },
+        fullyQualifiedName: 't.email',
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      displayName: 'Email Address',
+      constraint: 'UNIQUE',
+      extension: { 'x-review': 'done' },
+    });
+  });
+
+  it('patches one row field by key, at any nesting depth, without mutating the input', () => {
+    const rows: SchemaRow[] = [
+      {
+        key: 'address',
+        name: 'address',
+        dataType: 'STRUCT',
+        children: [{ key: 'address.city', name: 'city', dataType: 'STRING', indexPath: [0, 0] }],
+        indexPath: [0],
+      },
+    ];
+    const next = updateSchemaRowField(rows, 'address.city', { description: 'City name' });
+    expect(next[0].children?.[0].description).toBe('City name');
+    expect(rows[0].children?.[0].description).toBeUndefined();
+    expect(updateSchemaRowField(rows, 'missing', { description: 'x' })).toEqual(rows);
   });
 });

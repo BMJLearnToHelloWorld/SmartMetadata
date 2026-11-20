@@ -109,9 +109,11 @@ export function mapTags(value: unknown): TagRef[] {
  * icon for an empty list. Tags, the column FQN and the positional path are
  * carried (D-F2): tags feed the Tags / Glossary Terms columns, the FQN
  * feeds the single-column PUT, and the index path feeds the PATCH group's
- * JSON Patch path for nested fields.
+ * JSON Patch path for nested fields. Exported for D-2 batch 3: the
+ * server-fetched column pages (Table / DataModel) are mapped with the
+ * same function as the detail payload rows.
  */
-function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow[] {
+export function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -128,12 +130,16 @@ function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow
     const indexPath = [...path, index];
     const children = mapColumns(rec.children, key, indexPath);
     const tags = mapTags(rec.tags);
+    const extension = asRecord(rec.extension);
     return [
       {
         key,
         name,
+        displayName: asString(rec.displayName) || undefined,
+        constraint: asString(rec.constraint) || undefined,
         dataType: asString(rec.dataTypeDisplay) || asString(rec.dataType),
         description: asString(rec.description) || undefined,
+        extension: extension ?? undefined,
         children: children.length ? children : undefined,
         tags: tags.length ? tags : undefined,
         fullyQualifiedName: asString(rec.fullyQualifiedName) || undefined,
@@ -157,6 +163,28 @@ export function updateSchemaRowTags(rows: SchemaRow[], key: string, tags: TagRef
     }
     if (row.children?.length) {
       return { ...row, children: updateSchemaRowTags(row.children, key, tags) };
+    }
+    return row;
+  });
+}
+
+/**
+ * D-2 batch 3 write-back for the PATCH group (topic / container /
+ * searchIndex description + display-name writes): the same key match as
+ * `updateSchemaRowTags`, merging a partial row patch instead of only
+ * tags, so a successful PATCH is reflected without a refetch.
+ */
+export function updateSchemaRowField(
+  rows: SchemaRow[],
+  key: string,
+  patch: Partial<SchemaRow>,
+): SchemaRow[] {
+  return rows.map((row) => {
+    if (row.key === key) {
+      return { ...row, ...patch };
+    }
+    if (row.children?.length) {
+      return { ...row, children: updateSchemaRowField(row.children, key, patch) };
     }
     return row;
   });
@@ -330,6 +358,7 @@ export async function fetchAssetDetail(
     charts: mapEntityRefs(body.charts),
     dataModels: mapEntityRefs(body.dataModels),
     mlFeatures: mapColumns(body.mlFeatures),
+    mlFeaturesRaw: Array.isArray(body.mlFeatures) ? [...body.mlFeatures] : undefined,
     mlHyperParameters: mapHyperParameters(body.mlHyperParameters),
     tasks,
     pipelineStatus,
@@ -340,6 +369,11 @@ export async function fetchAssetDetail(
     domains: mapOwners(body.domains),
     schemaRows: schema.rows,
     schemaLabel: schema.label,
+    /** Topic TEXT view (pin TopicSchema `schemaText`, read-only code). */
+    schemaText:
+      entityType === 'topic'
+        ? asString(asRecord(body.messageSchema)?.schemaText) || undefined
+        : undefined,
     // P2 B5: API endpoint detail fields (entity/data/apiEndpoint.json).
     apiEndpointUrl: asString(body.endpointURL) || undefined,
     apiRequestMethod: asString(body.requestMethod) || undefined,

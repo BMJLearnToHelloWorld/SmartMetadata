@@ -13,10 +13,26 @@ import FormModal from '@/components/shared/FormModal.vue';
 import { listEntityActivity } from '@/api/activity';
 import { apiEndpointLocation, listApiEndpoints, type ApiEndpointRef } from '@/api/apiCollections';
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
+import {
+  getDataModelColumnsByFQN,
+  getTableColumnsByFQN,
+  searchDataModelColumnsByFQN,
+  searchTableColumnsByFQN,
+  updateColumnDetails,
+  updateDataModelColumn,
+  updateTableColumn,
+  type ColumnSortBy,
+  type ColumnSortOrder,
+} from '@/api/columns';
+import {
+  listDatabaseSchemas,
+  patchDatabaseSchema,
+  searchDatabaseSchemas,
+  type DatabaseSchemaRow,
+} from '@/api/databaseSchemas';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
-import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset, updateSchemaRowTags } from '@/api/entities';
-import { updateDataModelColumn, updateTableColumn } from '@/api/columns';
+import { fetchAssetDetail, followAsset, mapColumns, patchAsset, unfollowAsset, updateSchemaRowTags } from '@/api/entities';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import type { OperationPermissions } from '@/api/permissions';
 import { getQueryCount } from '@/api/queries';
@@ -69,7 +85,10 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnDescriptionPatch, columnTagsPatch, API_SCHEMA_FIELD_BASES, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
+import { setFieldPatch } from '@/admin/jsonPatch';
+import { schemaRowKeys, searchSchemaRows, updateNestedSchemaRows } from '@/utils/schemaColumns';
+import { collectSchemaTagOptions, filterSchemaRowsByTags } from '@/utils/schemaTagFilter';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
@@ -187,6 +206,9 @@ const conversations = ref<Conversation[]>([]);
 const collaborationError = ref('');
 const customProperties = ref<CustomPropertyDef[]>([]);
 const customPropsError = ref('');
+/** D-2 batch 3: `column`-type custom properties for the Table face's
+    dynamic columns (pin `getTypeByFQN('column')`). */
+const columnCustomProperties = ref<CustomPropertyDef[]>([]);
 const pipelineStatuses = ref<CatalogPipelineStatus[]>([]);
 const pipelineStatusError = ref('');
 const pipelineStatusTried = ref(false);
@@ -410,7 +432,7 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.CONTAINER_SCHEMA]: 'schemaTable',
   [DetailWidgetKeys.SEARCH_INDEX_FIELDS]: 'schemaTable',
   [DetailWidgetKeys.DATA_MODEL]: 'schemaTable',
-  [DetailWidgetKeys.DATABASE_SCHEMA]: 'related',
+  [DetailWidgetKeys.DATABASE_SCHEMA]: 'databaseSchemas',
   [DetailWidgetKeys.TABLES]: 'related',
   [DetailWidgetKeys.CONTAINER_CHILDREN]: 'related',
   [DetailWidgetKeys.FREQUENTLY_JOINED_TABLES]: 'frequentlyJoined',
@@ -511,16 +533,34 @@ const schemaColumns = computed(() => {
       { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
     ];
   }
-  return [
+  const baseColumns = [
     { title: t('asset.columns.name'), dataIndex: 'name', key: 'name', width: widths.name },
     { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: widths.dataType },
     { title: t('asset.columns.description'), dataIndex: 'description', key: 'description', width: widths.description },
     // D-F2 read side: Tags and Glossary Terms share the row's single tags
     // list (official SchemaTable's shared `TAGS` dataIndex, split by
     // TagSource at render time); widths are per surface, not unified.
-    { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags', width: widths.tags },
-    { title: t('asset.tabs.glossaryTerms'), dataIndex: 'tags', key: 'glossaryTerms', width: widths.glossaryTerms },
+    // D-2 batch 3: `filteredValue` drives the filter icon's active
+    // state; the dropdown itself is the piece's customFilterDropdown
+    // (ColumnFilter), which reports through onSchemaTagFilterChange.
+    { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags', width: widths.tags, filteredValue: schemaTagClassification.value },
+    { title: t('asset.tabs.glossaryTerms'), dataIndex: 'tags', key: 'glossaryTerms', width: widths.glossaryTerms, filteredValue: schemaTagGlossary.value },
   ];
+  // D-2 batch 3: pin SchemaTable renders one column per `column`-type
+  // custom property (getTypeByFQN('column') customProperties); the
+  // product equivalent is listCustomProperties('column').
+  if (props.entityType === 'table') {
+    return [
+      ...baseColumns,
+      ...columnCustomProperties.value.map((def) => ({
+        title: def.displayName || def.name,
+        dataIndex: 'extension',
+        key: `customProperty:${def.name}`,
+        width: 180,
+      })),
+    ];
+  }
+  return baseColumns;
 });
 
 // Official SchemaTable's second guard: only STRUCT columns with loaded
@@ -539,6 +579,10 @@ const featureColumns = computed(() => [
   { title: t('asset.columns.name'), dataIndex: 'name', key: 'name' },
   { title: t('asset.columns.dataType'), dataIndex: 'dataType', key: 'dataType', width: 160 },
   { title: t('asset.columns.description'), dataIndex: 'description', key: 'description' },
+  // D-2 batch 3: pin MlModelFeaturesList edits tags / glossary per
+  // feature (cards in pin, SmTable rows here — named deviation).
+  { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags', width: 230 },
+  { title: t('asset.tabs.glossaryTerms'), dataIndex: 'tags', key: 'glossaryTerms', width: 230 },
 ]);
 
 const hyperColumns = computed(() => [
@@ -591,6 +635,20 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   asset.value = null;
   schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: false };
+  // D-2 batch 3: reset the server schema page + database-schema list so
+  // a navigation never shows the previous entity's rows.
+  serverSchemaRows.value = [];
+  serverSchemaTotal.value = 0;
+  schemaPage.value = 1;
+  schemaSearchText.value = '';
+  schemaTagClassification.value = [];
+  schemaTagGlossary.value = [];
+  databaseSchemas.value = [];
+  databaseSchemasTotal.value = 0;
+  databaseSchemaCursor.value = undefined;
+  databaseSchemaNextCursor.value = undefined;
+  databaseSchemaCursorStack.value = [];
+  databaseSchemaSearch.value = '';
   resetSecondary();
   if (!isDetailWired(props.entityType)) {
     errorMessage.value = t('asset.unwired', { type: props.entityType });
@@ -663,6 +721,15 @@ async function load(): Promise<void> {
         .catch(() => undefined);
     }
     await Promise.all([loadQuality(), loadCollaboration(), loadCustomProperties(), loadPipelineStatuses(), loadApiEndpoints()]);
+    // D-2 batch 3: Table / DataModel columns come from their own
+    // endpoints (pin TableSchema / ModelTab self-fetch); the database
+    // page lists its child schemas (pin DatabaseSchema.component).
+    if (isServerSchemaFace.value) {
+      await loadServerSchema();
+    }
+    if (props.entityType === 'database') {
+      await loadDatabaseSchemas();
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('asset.loadFailed');
     assetOps.value = null;
@@ -800,6 +867,18 @@ async function loadCustomProperties(): Promise<void> {
     customProperties.value = [];
     customPropsError.value = error instanceof Error ? error.message : t('asset.customPropsFailed');
   }
+  // D-2 batch 3: the Table face's dynamic custom-property columns need
+  // the `column` type's definitions; a failure leaves the table without
+  // those columns rather than failing the page.
+  if (props.entityType === 'table') {
+    try {
+      columnCustomProperties.value = await listCustomProperties('column');
+    } catch {
+      columnCustomProperties.value = [];
+    }
+  } else {
+    columnCustomProperties.value = [];
+  }
 }
 
 function openEdit(): void {
@@ -929,20 +1008,497 @@ async function onSchemaTagChange(row: SchemaRow, source: TagSource, tagFqns: str
     } else if (
       props.entityType === 'topic' ||
       props.entityType === 'container' ||
-      props.entityType === 'searchIndex'
+      props.entityType === 'searchIndex' ||
+      props.entityType === 'apiEndpoint'
     ) {
       // PATCH group (official whole-entity PATCH, one JSON Patch op on
-      // this field's tags array via patchAsset).
-      const ops = columnTagsPatch(props.entityType, row.indexPath, row.tags, nextInputs);
+      // this field's tags array via patchAsset). The APISchema face
+      // writes into the active schema object (request/response), not
+      // the entity-type base.
+      const base =
+        props.entityType === 'apiEndpoint'
+          ? API_SCHEMA_FIELD_BASES[apiSchemaView.value]
+          : undefined;
+      const ops = columnTagsPatch(props.entityType, row.indexPath, row.tags, nextInputs, base);
       await patchAsset(props.entityType, asset.value.id, ops);
       writtenTags = nextTags;
+      if (props.entityType === 'apiEndpoint') {
+        // The API-schema rows derive from the endpoint's schema
+        // records, not from schemaRows, so the page reloads to pick
+        // up the patched field.
+        message.success(t('asset.updated'));
+        await load();
+        return;
+      }
+    } else if (props.entityType === 'mlmodel') {
+      // Pin MlModelFeaturesList: tags edit rewrites the whole
+      // mlFeatures array via onUpdate. The raw copy preserves
+      // featureAlgorithm / source, which the mapped row drops.
+      const raw = [...(asset.value.mlFeaturesRaw ?? [])];
+      const index = raw.findIndex(
+        (feature) => (feature as { name?: unknown }).name === row.name,
+      );
+      if (index < 0) {
+        message.error(t('asset.updateFailed'));
+        return;
+      }
+      raw[index] = { ...(raw[index] as Record<string, unknown>), tags: nextLabels };
+      await patchAsset(props.entityType, asset.value.id, [
+        { op: 'replace', path: '/mlFeatures', value: raw },
+      ]);
+      message.success(t('asset.updated'));
+      await load();
+      return;
     } else {
       return;
     }
     asset.value.schemaRows = updateSchemaRowTags(asset.value.schemaRows, row.key, writtenTags);
+    if (isServerSchemaFace.value && row.fullyQualifiedName) {
+      // Keep the server-fetched page in sync with the context rows.
+      serverSchemaRows.value = updateNestedSchemaRows(
+        serverSchemaRows.value,
+        row.fullyQualifiedName,
+        { tags: writtenTags },
+      );
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* D-2 batch 3: schema-cell editing (official SchemaTable / TopicSchema
+   / DatabaseSchema / ContainerDataModel / SearchIndexFieldsTable /
+   ModelTab / APIEndpointSchema / MlModelFeaturesList).                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Full schema-face permission set (A8 `DerivedPermissionFlags` + P1
+ * dual line: admin OR derived flag on every action gate; fail-closed
+ * while `assetOps` is unresolved). The deleted convention follows pin
+ * per face: Table / Container pass `deleted` into the derivation;
+ * Topic / SearchIndex / DataModel / APISchema / MlModelFeatures do not
+ * (their cells take `deleted` as a separate read-only gate). The
+ * DataModel display-name flag DOES pass `deleted` (pin ModelTab dual
+ * derivation); the DatabaseSchema display-name flag does NOT (pin
+ * comment preserved in `DatabaseSchema.component.tsx`).
+ */
+const schemaAccess = computed(() => {
+  const deleted = asset.value?.deleted === true;
+  const admin = permissionStore.isAdminUser === true;
+  const passDeleted =
+    props.entityType === 'table' || props.entityType === 'container' ? deleted : false;
+  const displayNameDeleted =
+    props.entityType === 'table' ||
+    props.entityType === 'container' ||
+    props.entityType === 'dashboardDataModel'
+      ? deleted
+      : false;
+  const flags = getDerivedPermissionFlags(assetOps.value ?? {}, passDeleted);
+  const displayFlags = getDerivedPermissionFlags(assetOps.value ?? {}, displayNameDeleted);
+  const or = (flag: boolean) => admin || flag;
+  return {
+    canEditDescription: or(flags.canEditDescription),
+    canEditTags: or(flags.canEditTags),
+    canEditGlossaryTerms: or(flags.canEditGlossaryTerms),
+    canEditDisplayName: or(displayFlags.canEditDescription),
+    canEditCustomFields: or(flags.canEditCustomFields),
+    canEditAll: or(flags.canEditAll),
+    canViewUsage: or(flags.canViewUsage),
+    readOnly: deleted,
+    resolved: assetOps.value !== null,
+  };
+});
+
+/** Faces whose column list is self-fetched (pin TableSchema / ModelTab). */
+const isServerSchemaFace = computed(
+  () => props.entityType === 'table' || props.entityType === 'dashboardDataModel',
+);
+
+/** Server-fetched column page state (pin `PAGE_SIZE_LARGE = 50`). */
+const schemaSearchText = ref('');
+const schemaSortBy = ref<ColumnSortBy>('ordinalPosition');
+const schemaSortOrder = ref<ColumnSortOrder>('asc');
+const schemaPage = ref(1);
+const SCHEMA_PAGE_SIZE = 50;
+const schemaTagClassification = ref<string[]>([]);
+const schemaTagGlossary = ref<string[]>([]);
+const serverSchemaRows = ref<SchemaRow[]>([]);
+const serverSchemaTotal = ref(0);
+const serverSchemaLoading = ref(false);
+const serverSchemaError = ref('');
+const schemaSearchTimer = ref<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+const schemaTagOptions = computed(() =>
+  collectSchemaTagOptions(
+    isServerSchemaFace.value ? serverSchemaRows.value : (asset.value?.schemaRows ?? []),
+  ),
+);
+
+/**
+ * Effective schema rows for the piece: server page for Table /
+ * DataModel; client search + tag filter over the context rows for
+ * Topic / SearchIndex; context rows as-is for the rest. Client search
+ * expands every matching ancestor path (pin `searchInFields`); the tag
+ * filter prunes to matching paths (pin `getFilteredTagsData`).
+ */
+const effectiveSchemaRows = computed<SchemaRow[]>(() => {
+  if (isServerSchemaFace.value) {
+    return serverSchemaRows.value;
+  }
+  const base = asset.value?.schemaRows ?? [];
+  if (props.entityType === 'topic' || props.entityType === 'searchIndex') {
+    const searched = schemaSearchText.value.trim()
+      ? searchSchemaRows(base, schemaSearchText.value)
+      : base;
+    return filterSchemaRowsByTags(
+      searched,
+      schemaTagClassification.value,
+      schemaTagGlossary.value,
+    );
+  }
+  return base;
+});
+
+const schemaExpandedKeys = computed(() =>
+  schemaSearchText.value.trim() ? schemaRowKeys(effectiveSchemaRows.value) : [],
+);
+
+async function loadServerSchema(): Promise<void> {
+  if (!isServerSchemaFace.value || !asset.value?.fullyQualifiedName) {
+    return;
+  }
+  const fqn = asset.value.fullyQualifiedName;
+  const searching =
+    schemaSearchText.value.trim() !== '' ||
+    schemaTagClassification.value.length > 0 ||
+    schemaTagGlossary.value.length > 0;
+  serverSchemaLoading.value = true;
+  serverSchemaError.value = '';
+  try {
+    const list =
+      props.entityType === 'table' ? getTableColumnsByFQN : getDataModelColumnsByFQN;
+    const search =
+      props.entityType === 'table' ? searchTableColumnsByFQN : searchDataModelColumnsByFQN;
+    const page = searching
+      ? await search(fqn, {
+          q: schemaSearchText.value.trim() || undefined,
+          // Pin TableSchema passes the tag filter to the search endpoint
+          // (comma-joined FQNs); pin ModelTab's search endpoint has no
+          // tags params, so DataModel tag filtering stays client-side
+          // over the fetched page (applied below).
+          ...(props.entityType === 'table'
+            ? {
+                tags: schemaTagClassification.value.join(',') || undefined,
+                glossaryTerms: schemaTagGlossary.value.join(',') || undefined,
+              }
+            : {}),
+          sortBy: schemaSortBy.value,
+          sortOrder: schemaSortOrder.value,
+          offset: (schemaPage.value - 1) * SCHEMA_PAGE_SIZE,
+          limit: SCHEMA_PAGE_SIZE,
+        })
+      : await list(fqn, {
+          sortBy: schemaSortBy.value,
+          sortOrder: schemaSortOrder.value,
+          offset: (schemaPage.value - 1) * SCHEMA_PAGE_SIZE,
+          limit: SCHEMA_PAGE_SIZE,
+        });
+    const mapped = page.data.map((column) => mapColumns([column])[0]);
+    serverSchemaRows.value =
+      props.entityType === 'dashboardDataModel' &&
+      (schemaTagClassification.value.length > 0 || schemaTagGlossary.value.length > 0)
+        ? filterSchemaRowsByTags(
+            mapped,
+            schemaTagClassification.value,
+            schemaTagGlossary.value,
+          )
+        : mapped;
+    serverSchemaTotal.value = page.paging.total ?? page.data.length;
+  } catch (error) {
+    serverSchemaRows.value = [];
+    serverSchemaTotal.value = 0;
+    serverSchemaError.value = error instanceof Error ? error.message : t('asset.loadFailed');
+  } finally {
+    serverSchemaLoading.value = false;
+  }
+}
+
+/** Debounced reload for the server search box (pin: 500 ms). */
+function onSchemaSearchChange(value: string): void {
+  schemaSearchText.value = value;
+  schemaPage.value = 1;
+  if (schemaSearchTimer.value) {
+    clearTimeout(schemaSearchTimer.value);
+  }
+  schemaSearchTimer.value = setTimeout(() => {
+    void loadServerSchema();
+  }, 500);
+}
+
+function onSchemaSortChange(sortBy: ColumnSortBy, sortOrder: ColumnSortOrder): void {
+  schemaSortBy.value = sortBy;
+  schemaSortOrder.value = sortOrder;
+  schemaPage.value = 1;
+  void loadServerSchema();
+}
+
+function onSchemaPageChange(page: number): void {
+  schemaPage.value = page;
+  void loadServerSchema();
+}
+
+function onSchemaTagFilterChange(classification: string[], glossary: string[]): void {
+  schemaTagClassification.value = classification;
+  schemaTagGlossary.value = glossary;
+  schemaPage.value = 1;
+  if (isServerSchemaFace.value) {
+    void loadServerSchema();
+  }
+}
+
+/** Column display-name edit (pin `EntityNameModal` save shape). */
+async function onSchemaDisplayNameSave(
+  row: SchemaRow,
+  data: { displayName?: string; constraint?: string; removeConstraint?: boolean },
+): Promise<void> {
+  if (!asset.value?.id || !row.fullyQualifiedName) {
+    message.error(t('asset.updateFailed'));
+    return;
+  }
+  const entityType = props.entityType === 'table' ? 'table' : 'dashboardDataModel';
+  const updated = await updateColumnDetails(row.fullyQualifiedName, entityType, {
+    displayName: data.displayName,
+    constraint: data.constraint,
+    removeConstraint: data.removeConstraint,
+  });
+  const mapped = mapColumns([updated])[0];
+  if (isServerSchemaFace.value) {
+    serverSchemaRows.value = updateNestedSchemaRows(
+      serverSchemaRows.value,
+      row.fullyQualifiedName,
+      mapped,
+    );
+  }
+  if (asset.value) {
+    asset.value.schemaRows = updateNestedSchemaRows(
+      asset.value.schemaRows,
+      row.fullyQualifiedName,
+      mapped,
+    );
+  }
+  message.success(t('asset.updated'));
+}
+
+/** Column description edit: PUT group (Table / DataModel) vs PATCH group. */
+async function onSchemaDescriptionSave(row: SchemaRow, description: string): Promise<void> {
+  if (!asset.value?.id) {
+    message.error(t('asset.patchNeedsId'));
+    return;
+  }
+  if (props.entityType === 'table' || props.entityType === 'dashboardDataModel') {
+    if (!row.fullyQualifiedName) {
+      message.error(t('asset.updateFailed'));
+      return;
+    }
+    const entityType = props.entityType === 'table' ? 'table' : 'dashboardDataModel';
+    const updated = await updateColumnDetails(row.fullyQualifiedName, entityType, { description });
+    const mapped = mapColumns([updated])[0];
+    serverSchemaRows.value = updateNestedSchemaRows(
+      serverSchemaRows.value,
+      row.fullyQualifiedName,
+      mapped,
+    );
+    asset.value.schemaRows = updateNestedSchemaRows(
+      asset.value.schemaRows,
+      row.fullyQualifiedName,
+      mapped,
+    );
+    message.success(t('asset.updated'));
+    return;
+  }
+  if (
+    props.entityType === 'topic' ||
+    props.entityType === 'container' ||
+    props.entityType === 'searchIndex' ||
+    props.entityType === 'apiEndpoint'
+  ) {
+    const base =
+      props.entityType === 'apiEndpoint'
+        ? API_SCHEMA_FIELD_BASES[apiSchemaView.value]
+        : undefined;
+    const ops = columnDescriptionPatch(
+      props.entityType,
+      row.indexPath,
+      row.description,
+      description,
+      base,
+    );
+    await patchAsset(props.entityType, asset.value.id, ops);
+    message.success(t('asset.updated'));
+    await load();
+    return;
+  }
+  if (props.entityType === 'mlmodel') {
+    const raw = [...(asset.value.mlFeaturesRaw ?? [])];
+    const index = raw.findIndex(
+      (feature) => (feature as { name?: unknown }).name === row.name,
+    );
+    if (index < 0) {
+      message.error(t('asset.updateFailed'));
+      return;
+    }
+    raw[index] = { ...(raw[index] as Record<string, unknown>), description };
+    await patchAsset(props.entityType, asset.value.id, [
+      { op: 'replace', path: '/mlFeatures', value: raw },
+    ]);
+    message.success(t('asset.updated'));
+    await load();
+  }
+}
+
+/** Column extension-field edit (pin `ColumnCustomPropertyCell` PUT). */
+async function onSchemaExtensionSave(
+  row: SchemaRow,
+  extension: Record<string, unknown>,
+): Promise<void> {
+  if (!asset.value?.id || !row.fullyQualifiedName) {
+    message.error(t('asset.updateFailed'));
+    return;
+  }
+  if (props.entityType !== 'table' && props.entityType !== 'dashboardDataModel') {
+    return;
+  }
+  const entityType = props.entityType === 'table' ? 'table' : 'dashboardDataModel';
+  const updated = await updateColumnDetails(row.fullyQualifiedName, entityType, { extension });
+  const mapped = mapColumns([updated])[0];
+  if (isServerSchemaFace.value) {
+    serverSchemaRows.value = updateNestedSchemaRows(
+      serverSchemaRows.value,
+      row.fullyQualifiedName,
+      mapped,
+    );
+  }
+  asset.value.schemaRows = updateNestedSchemaRows(
+    asset.value.schemaRows,
+    row.fullyQualifiedName,
+    mapped,
+  );
+  message.success(t('asset.updated'));
+}
+
+/** Topic Fields / Text toggle (pin TopicSchema `schemaText` code view). */
+const topicView = ref<'fields' | 'text'>('fields');
+
+/** APISchema Request / Response toggle (pin APIEndpointSchema). */
+const apiSchemaView = ref<'requestSchema' | 'responseSchema'>('requestSchema');
+const apiSchemaRows = computed<SchemaRow[]>(() => {
+  const schema =
+    apiSchemaView.value === 'requestSchema'
+      ? asset.value?.apiRequestSchema
+      : asset.value?.apiResponseSchema;
+  const fields = schema?.schemaFields;
+  return Array.isArray(fields) ? mapColumns(fields) : [];
+});
+
+/** DatabaseSchema child list (pin DatabaseSchema.component, database page). */
+const databaseSchemas = ref<DatabaseSchemaRow[]>([]);
+const databaseSchemasTotal = ref(0);
+const databaseSchemaCursor = ref<string | undefined>(undefined);
+const databaseSchemaNextCursor = ref<string | undefined>(undefined);
+/** Cursor stack for the Previous button (pin cursor paging has no
+    total page count, so history is kept client-side). */
+const databaseSchemaCursorStack = ref<string[]>([]);
+const databaseSchemaSearch = ref('');
+const databaseSchemaShowDeleted = ref(false);
+const databaseSchemaLoading = ref(false);
+const databaseSchemaError = ref('');
+const databaseSchemaCanViewUsage = computed(() => schemaAccess.value.canViewUsage);
+
+async function loadDatabaseSchemas(): Promise<void> {
+  if (props.entityType !== 'database' || !asset.value?.fullyQualifiedName) {
+    return;
+  }
+  databaseSchemaLoading.value = true;
+  databaseSchemaError.value = '';
+  try {
+    const term = databaseSchemaSearch.value.trim();
+    if (term) {
+      const page = await searchDatabaseSchemas({
+        databaseFqn: asset.value.fullyQualifiedName,
+        searchValue: term,
+      });
+      databaseSchemas.value = page.data;
+      databaseSchemasTotal.value = page.paging.total ?? page.data.length;
+      databaseSchemaNextCursor.value = undefined;
+    } else {
+      const page = await listDatabaseSchemas({
+        databaseName: asset.value.fullyQualifiedName,
+        include: databaseSchemaShowDeleted.value ? 'all' : 'non-deleted',
+        after: databaseSchemaCursor.value,
+      });
+      databaseSchemas.value = page.data;
+      databaseSchemasTotal.value = page.paging.total ?? page.data.length;
+      databaseSchemaNextCursor.value = page.paging.after;
+    }
+  } catch (error) {
+    databaseSchemas.value = [];
+    databaseSchemasTotal.value = 0;
+    databaseSchemaError.value = error instanceof Error ? error.message : t('asset.loadFailed');
+  } finally {
+    databaseSchemaLoading.value = false;
+  }
+}
+
+function onDatabaseSchemaSearchChange(value: string): void {
+  databaseSchemaSearch.value = value;
+  databaseSchemaCursor.value = undefined;
+  databaseSchemaCursorStack.value = [];
+  if (schemaSearchTimer.value) {
+    clearTimeout(schemaSearchTimer.value);
+  }
+  schemaSearchTimer.value = setTimeout(() => {
+    void loadDatabaseSchemas();
+  }, 500);
+}
+
+function onDatabaseSchemaNextPage(): void {
+  if (!databaseSchemaNextCursor.value) {
+    return;
+  }
+  databaseSchemaCursorStack.value = [
+    ...databaseSchemaCursorStack.value,
+    databaseSchemaCursor.value ?? '',
+  ];
+  databaseSchemaCursor.value = databaseSchemaNextCursor.value;
+  void loadDatabaseSchemas();
+}
+
+function onDatabaseSchemaPrevPage(): void {
+  const stack = [...databaseSchemaCursorStack.value];
+  const prev = stack.pop();
+  databaseSchemaCursorStack.value = stack;
+  databaseSchemaCursor.value = prev || undefined;
+  void loadDatabaseSchemas();
+}
+
+async function onDatabaseSchemaDisplayNameSave(
+  row: DatabaseSchemaRow,
+  displayName: string,
+): Promise<void> {
+  if (!row.id) {
+    message.error(t('asset.updateFailed'));
+    return;
+  }
+  // Pin `patchDatabaseSchemaDetails` sends a JSON Patch from
+  // `compare()`; the product equivalent is one setFieldPatch op on
+  // /displayName (add-when-absent, replace-when-present).
+  await patchDatabaseSchema(
+    row.id,
+    setFieldPatch('/displayName', row.displayName, displayName),
+  );
+  message.success(t('asset.updated'));
+  await loadDatabaseSchemas();
 }
 
 function openComment(): void {
@@ -1043,6 +1599,57 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   schemaTagOptions: catalog.value.tags,
   schemaTagAccess: schemaTagAccess.value,
   onSchemaTagChange,
+  // D-2 batch 3 schema-cell editing.
+  schemaAccess: schemaAccess.value,
+  schemaRows: effectiveSchemaRows.value,
+  schemaSearchText: schemaSearchText.value,
+  schemaSortBy: schemaSortBy.value,
+  schemaSortOrder: schemaSortOrder.value,
+  schemaPage: schemaPage.value,
+  schemaPageSize: SCHEMA_PAGE_SIZE,
+  schemaTotal: serverSchemaTotal.value,
+  schemaLoading: serverSchemaLoading.value,
+  schemaError: serverSchemaError.value,
+  schemaTagFilterOptions: schemaTagOptions.value,
+  schemaTagClassification: schemaTagClassification.value,
+  schemaTagGlossary: schemaTagGlossary.value,
+  schemaExpandedKeys: schemaExpandedKeys.value,
+  columnCustomProperties: columnCustomProperties.value,
+  onSchemaSearchChange,
+  onSchemaSortChange,
+  onSchemaPageChange,
+  onSchemaTagFilterChange,
+  onSchemaDescriptionSave,
+  onSchemaDisplayNameSave,
+  onSchemaExtensionSave,
+  topicView: topicView.value,
+  onTopicViewChange: (view: 'fields' | 'text') => {
+    topicView.value = view;
+  },
+  apiSchemaView: apiSchemaView.value,
+  apiSchemaRows: apiSchemaRows.value,
+  onApiSchemaViewChange: (view: 'requestSchema' | 'responseSchema') => {
+    apiSchemaView.value = view;
+  },
+  databaseSchemas: databaseSchemas.value,
+  databaseSchemasTotal: databaseSchemasTotal.value,
+  databaseSchemaHasNext: databaseSchemaNextCursor.value !== undefined,
+  databaseSchemaLoading: databaseSchemaLoading.value,
+  databaseSchemaError: databaseSchemaError.value,
+  databaseSchemaSearch: databaseSchemaSearch.value,
+  databaseSchemaShowDeleted: databaseSchemaShowDeleted.value,
+  databaseSchemaCanViewUsage: databaseSchemaCanViewUsage.value,
+  databaseSchemaHasPrev: databaseSchemaCursorStack.value.length > 0,
+  onDatabaseSchemaSearchChange,
+  onDatabaseSchemaNextPage,
+  onDatabaseSchemaPrevPage,
+  onDatabaseSchemaShowDeletedChange: (show: boolean) => {
+    databaseSchemaShowDeleted.value = show;
+    databaseSchemaCursor.value = undefined;
+    databaseSchemaCursorStack.value = [];
+    void loadDatabaseSchemas();
+  },
+  onDatabaseSchemaDisplayNameSave,
 }));
 
 watch(
@@ -1175,7 +1782,15 @@ onMounted(() => {
             </template>
           </GenericTab>
           <template v-else>
-            <AssetRelatedPanel :asset="asset" />
+            <!-- D-2 batch 3: the database page's child-schema list (pin
+                 DatabaseSchema.component); other entities keep the
+                 related panel here. -->
+            <AssetDetailPiece
+              v-if="entityType === 'database'"
+              piece="databaseSchemas"
+              :context="pieceContext"
+            />
+            <AssetRelatedPanel v-else :asset="asset" />
           </template>
       </template>
       <template v-if="asset" #table>

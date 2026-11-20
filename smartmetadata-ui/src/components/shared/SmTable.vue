@@ -85,5 +85,11 @@ withDefaults(
     <template v-if="$slots.bodyCell" #bodyCell="slotProps">
       <slot name="bodyCell" v-bind="slotProps" />
     </template>
+    <!-- Same rule for the column filter dropdown (D-F2-2 / D-2 batch 3):
+         forwarded only when the caller provides it, so plain tables keep
+         antd's default filter menu. -->
+    <template v-if="$slots.customFilterDropdown" #customFilterDropdown="slotProps">
+      <slot name="customFilterDropdown" v-bind="slotProps" />
+    </template>
   </Table>
 </template>
