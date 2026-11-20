@@ -20,6 +20,7 @@ import { useI18n } from 'vue-i18n';
 import { CloseOutlined } from '@ant-design/icons-vue';
 import type { WorkflowFlowEdge } from '@/types/governance';
 import { useWorkflowBuilderContext } from '@/composables/useWorkflowBuilder';
+import { capitalize, startCase } from '@/utils/text';
 
 /**
  * Official StraightEdge (pin a3012259ca), ported to Vue Flow: a clean
@@ -97,18 +98,12 @@ function getCleanStraightPath(): [string, number, number] {
   return [path, midX, props.sourceY + (props.targetY - props.sourceY) / 2];
 }
 
-// lodash startCase + capitalize, reimplemented locally: the product has no
-// lodash dependency, and the label set here is small (approve/reject/
-// TRUE/FALSE/quality-band names).
+// Pin `formatEdgeLabel` (StraightEdge.tsx:85-87): lodash `startCase`, then
+// lodash `capitalize` per word. The capitalize step is what lower-cases the
+// rest (`TRUE` -> `True`); the shared `@/utils/text` carries both ports, so
+// this file no longer reimplements either.
 function formatEdgeLabel(label: string): string {
-  return label
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[^A-Za-z0-9]+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+  return startCase(label).split(' ').map(capitalize).join(' ');
 }
 
 const pathInfo = computed(() => getCleanStraightPath());

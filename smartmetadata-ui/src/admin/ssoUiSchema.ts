@@ -7,8 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
+import { startCase } from '@/utils/text';
 import { SSO_FIELD_TEXT_ZH, resolveSsoFieldText } from './ssoFieldText';
-import { ssoStartCase } from './ssoProviders';
 import type { SsoJsonSchema } from './ssoSchemas';
 
 /**
@@ -998,7 +998,7 @@ export function resolveSsoFieldLabel(args: {
     ) {
       return resolveSsoFieldText(titleCandidate, locale, brandName);
     }
-    return ssoStartCase(propertyName);
+    return startCase(propertyName);
   }
   const label = titleCandidate ?? propertyName;
   return resolveSsoFieldText(label, locale, brandName);

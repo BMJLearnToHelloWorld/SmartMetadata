@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
-import { ssoStartCase } from './ssoProviders';
+import { startCase } from '@/utils/text';
 import type { SsoJsonSchema } from './ssoSchemas';
 import {
   getSsoUiEntry,
@@ -287,11 +287,11 @@ export function transformSsoValidationErrors(
       continue;
     }
 
-    const fieldName = ssoStartCase(property?.split('/').pop() ?? '');
+    const fieldName = startCase(property?.split('/').pop() ?? '');
     let message: string | undefined;
     if (name === 'required') {
       message = context.formatMessage('message.field-text-is-required', {
-        fieldText: ssoStartCase(
+        fieldText: startCase(
           (params?.missingProperty as string | undefined) ?? '',
         ),
       });

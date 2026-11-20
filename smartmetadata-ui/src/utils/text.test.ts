@@ -8,7 +8,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
-import { getFormDisplayLabel, startCase } from './text';
+import { capitalize, getFormDisplayLabel, startCase } from './text';
 
 /**
  * Differential vectors locked against lodash 4.18.1 (the pin's version):
@@ -49,6 +49,49 @@ describe('startCase (lodash 4.18.1)', () => {
     ['john doe', 'John Doe'],
     ['alice.admin', 'Alice Admin'],
   ])('renders %j as %j', (input, expected) => {
+    expect(startCase(input)).toBe(expected);
+  });
+
+  it.each([
+    // SSO field names (migrated from the deleted `ssoStartCase`,
+    // ssoProviders.test.ts): pin renders these labels with plain lodash
+    // `startCase` (SsoConfigurationFormArrayFieldTemplate.tsx:224,236,
+    // SsoRolesSelectField.tsx:122,128, formPureUtils.ts:31,36).
+    ['publicKeyUrls', 'Public Key Urls'],
+    ['additionalTrustedRedirectUris', 'Additional Trusted Redirect Uris'],
+    ['jwtPrincipalClaims', 'Jwt Principal Claims'],
+    ['jwtPrincipalClaimsMapping', 'Jwt Principal Claims Mapping'],
+    ['adminPrincipals', 'Admin Principals'],
+    ['adminEmails', 'Admin Emails'],
+    ['allowedEmailDomains', 'Allowed Email Domains'],
+    ['botPrincipals', 'Bot Principals'],
+    ['testPrincipals', 'Test Principals'],
+    ['allowedEmailRegistrationDomains', 'Allowed Email Registration Domains'],
+    ['allowedDomains', 'Allowed Domains'],
+    ['acceptableHostNames', 'Acceptable Host Names'],
+    ['samlDisplayNameAttributes', 'Saml Display Name Attributes'],
+    ['scope', 'Scope'],
+    ['authReassignRoles', 'Auth Reassign Roles'],
+    ['providerName', 'Provider Name'],
+    ['provider', 'Provider'],
+    [
+      '.authenticationConfiguration.sessionExpiry',
+      'Authentication Configuration Session Expiry',
+    ],
+    [
+      '.authenticationConfiguration.maxActiveSessionsPerUser',
+      'Authentication Configuration Max Active Sessions Per User',
+    ],
+    [
+      '.authenticationConfiguration.oidcConfiguration.tokenValidity',
+      'Authentication Configuration Oidc Configuration Token Validity',
+    ],
+    [
+      '.authenticationConfiguration.samlConfiguration.security.tokenValidity',
+      'Authentication Configuration Saml Configuration Security Token Validity',
+    ],
+    ['', ''],
+  ])('renders SSO field name %j as %j', (input, expected) => {
     expect(startCase(input)).toBe(expected);
   });
 
@@ -186,5 +229,50 @@ describe('getFormDisplayLabel (official formBuilderV1LabelUtils)', () => {
       'Connection Options',
     );
     expect(getFormDisplayLabel('')).toBe('');
+  });
+});
+
+describe('capitalize (lodash 4.18.1)', () => {
+  it('capitalizes with the rest lowercased', () => {
+    // Vectors moved from accessText.test.ts (same expectations; the
+    // definition now lives here, `accessText.ts` is deleted).
+    expect(capitalize('allow')).toBe('Allow');
+    expect(capitalize('DENY')).toBe('Deny');
+    expect(capitalize('')).toBe('');
+    expect(capitalize('TRUE')).toBe('True');
+    expect(capitalize('API')).toBe('Api');
+    expect(capitalize('Obrien')).toBe('Obrien');
+  });
+
+  it('upper-cases an astral first letter like lodash upperFirst', () => {
+    // The old `charAt(0)` spelling could not upper-case a lone surrogate;
+    // `upperFirst` splits by grapheme cluster (see `startCase` above).
+    expect(capitalize('𐐷')).toBe('𐐏');
+  });
+});
+
+describe('workflow edge labels (pin StraightEdge.tsx:85-87)', () => {
+  // Pin: `startCase(label).split(' ').map(capitalize).join(' ')`.
+  // `WorkflowStraightEdge.vue` transcribes this formula; these vectors lock
+  // the composed behaviour at the shared helpers (no component test exists
+  // for the edge label itself).
+  const formatEdgeLabel = (label: string): string =>
+    startCase(label).split(' ').map(capitalize).join(' ');
+
+  it.each([
+    ['TRUE', 'True'],
+    ['FALSE', 'False'],
+    ['approve', 'Approve'],
+    ['reject', 'Reject'],
+    ['highQuality', 'High Quality'],
+    ['needsImprovement', 'Needs Improvement'],
+    ['GOLD', 'Gold'],
+    ['APIReady', 'Api Ready'],
+    ["o'brien", 'Obrien'],
+    ['王小明', '王小明'],
+    ['DBT S3 Config', 'Dbt S 3 Config'],
+    ['1st', '1st'],
+  ])('formats edge label %j as %j', (input, expected) => {
+    expect(formatEdgeLabel(input)).toBe(expected);
   });
 });
