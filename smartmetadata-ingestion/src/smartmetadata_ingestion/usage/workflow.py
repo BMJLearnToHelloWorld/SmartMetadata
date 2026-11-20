@@ -106,6 +106,18 @@ class UsageWorkflow(MetadataWorkflow):
             self._dialect, self._parser_type = self._resolve_parse_settings()
             stage_dir = resolve_stage_dir(self.config.source.stage_file_location)
             connection = self.config.source.connection or {}
+            if connection.get("schema"):
+                # D-L2c B: the bare ``schema`` connection key is no longer
+                # read — only ``databaseSchema`` supplies the default schema.
+                # Warn once per run (``prepare`` runs at most once per
+                # workflow) so bare-dict/YAML users learn their default
+                # schema was dropped instead of silently losing it. This
+                # is a configuration-level warning: it changes no binding
+                # behaviour and is not counted.
+                logger.warning(
+                    'connection key "schema" is no longer read; '
+                    'move its value to "databaseSchema"'
+                )
             # The binding defaults come from the shared naming rule —
             # the same function the lineage source calls — and the
             # same engine key drives both the naming rule and the

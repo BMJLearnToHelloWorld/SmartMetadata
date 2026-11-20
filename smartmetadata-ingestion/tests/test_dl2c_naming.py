@@ -9,8 +9,9 @@
 """Tests for the shared connection-default naming rule (design §5.7).
 
 The priority table is exercised row by row: every engine's database
-and schema chains, falsy step-through, the ``schema`` compatibility
-key, unknown engine keys, and engine-key normalization. The
+and schema chains, falsy step-through, the removed ``schema`` key
+(ignored since D-L2c B), unknown engine keys, and engine-key
+normalization. The
 delegation tests prove the four metadata ``_database_name`` methods
 select through the same rule — including the one deliberate split:
 Postgres keeps its required check in its own method while the shared
@@ -48,18 +49,23 @@ def _config(source_type: str, connection: dict[str, Any]) -> SourceConfig:
                 "databaseName": "warehouse",
                 "database": "db",
                 "databaseSchema": "sales",
-                "schema": "other",
+                "schema": "other",  # D-L2c B: removed key — ignored.
             },
             ("warehouse", "sales"),
         ),
         ({"database": "db"}, ("db", None)),
         ({"databaseSchema": "sales"}, ("default", "sales")),
-        ({"schema": "compat"}, ("default", "compat")),
+        # D-L2c B: the removed ``schema`` key is ignored — was ("default", "compat").
+        ({"schema": "compat"}, ("default", None)),
         ({}, ("default", None)),
         # Falsy values never shadow a later step in the chain.
         ({"databaseName": "", "database": "db"}, ("db", None)),
         ({"databaseName": None, "database": ""}, ("default", None)),
-        ({"databaseSchema": "", "schema": "compat"}, ("default", "compat")),
+        # D-L2c B: the removed ``schema`` key is ignored — was ("default", "compat").
+        # The falsy ``databaseSchema`` no longer falls through to ``schema``.
+        ({"databaseSchema": "", "schema": "compat"}, ("default", None)),
+        # D-L2c B: expectation unchanged — both keys are falsy, so the
+        # dead ``schema`` step never mattered here.
         ({"databaseSchema": None, "schema": ""}, ("default", None)),
         ({"databaseName": 0, "database": "db"}, ("db", None)),
     ],
@@ -82,11 +88,13 @@ def test_mysql_family_none_connection_yields_default_database(engine: str) -> No
     ("connection", "expected"),
     [
         ({"database": "db", "databaseSchema": "sales"}, ("db", "sales")),
-        ({"database": "db", "schema": "compat"}, ("db", "compat")),
+        # D-L2c B: the removed ``schema`` key is ignored — was ("db", "compat").
+        ({"database": "db", "schema": "compat"}, ("db", None)),
         ({}, (None, None)),
         ({"database": ""}, (None, None)),
         ({"database": None, "databaseSchema": "sales"}, (None, "sales")),
-        ({"databaseSchema": "", "schema": "compat"}, (None, "compat")),
+        # D-L2c B: the removed ``schema`` key is ignored — was (None, "compat").
+        ({"databaseSchema": "", "schema": "compat"}, (None, None)),
         # Other families' keys are not consulted: no guessing.
         ({"databaseName": "warehouse", "catalog": "cat"}, (None, None)),
     ],
@@ -127,7 +135,8 @@ def test_alias_engine_keys_share_database_family_rules() -> None:
     ("connection", "expected"),
     [
         ({"catalog": "cat", "databaseSchema": "sales"}, ("cat", "sales")),
-        ({"catalog": "cat", "schema": "compat"}, ("cat", "compat")),
+        # D-L2c B: the removed ``schema`` key is ignored — was ("cat", "compat").
+        ({"catalog": "cat", "schema": "compat"}, ("cat", None)),
         ({}, (None, None)),
         ({"catalog": ""}, (None, None)),
         # The database-family keys do not name a catalog.
@@ -147,6 +156,8 @@ def test_catalog_family_none_connection_yields_no_defaults(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ["oracle", "trino", "clickhouse", "sqlite", ""])
 def test_unknown_engine_key_yields_no_defaults(engine: str) -> None:
+    # D-L2c B: the ``schema`` key is ignored — unknown engines never had
+    # defaults, so the removal changes nothing here.
     connection = {
         "databaseName": "warehouse",
         "database": "db",
