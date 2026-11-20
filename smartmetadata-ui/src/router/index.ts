@@ -726,12 +726,15 @@ export const router = createRouter({
         },
         // P2 B2: the three remaining shells are real pages now; the
         // the former residual entries are real pages now.
-        // Each keeps its product path and gains the official path as an alias.
+        // The ontology records keep their product path and gain the
+        // official path as an alias. The marketplace overview keeps no
+        // alias: the AP-D3 hard cut moved it onto its official path
+        // (data-marketplace), so /marketplace is the app catalog
+        // (ADR:2026-11-20-ap-d3-marketplace-routes-hard-cut).
         {
-          path: 'marketplace',
+          path: 'data-marketplace',
           name: 'marketplace-overview',
           component: MarketplaceOverviewView,
-          alias: 'data-marketplace',
         },
         {
           path: 'govern/ontology',
@@ -763,12 +766,12 @@ export const router = createRouter({
           meta: { guard: 'admin-only' },
         },
         // A2 app catalog (official MarketPlacePage, /marketplace):
-        // /marketplace itself already serves the data marketplace
-        // (official /data-marketplace), so the catalog takes
-        // marketplace/apps — the parent of the detail route below —
+        // the AP-D3 hard cut moved the data marketplace overview onto
+        // its official /data-marketplace path, so the catalog takes
+        // /marketplace itself — the parent of the detail route below —
         // and the detail page's browse button points here.
         {
-          path: 'marketplace/apps',
+          path: 'marketplace',
           name: 'marketplace-app-catalog',
           component: MarketplaceAppCatalogView,
           meta: { titleKey: 'label.market-place' },

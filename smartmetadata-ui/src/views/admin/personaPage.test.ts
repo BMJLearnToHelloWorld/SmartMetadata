@@ -44,7 +44,7 @@ const doc: PersonaDocument = {
         personaId: 'p1',
         personaName: 'Analyst',
         appMode: 'classic',
-        defaultLandingPage: '/marketplace',
+        defaultLandingPage: '/data-marketplace',
         defaultViewModes: { domains: 'tree' },
       },
     ],
@@ -184,14 +184,23 @@ describe('personaPage utils', () => {
   });
 
   it('resolves the landing page only from the curated list', () => {
-    expect(resolvePersonaLandingPage(doc, 'p1')).toBe('/marketplace');
-    expect(isLandingPageOption('/marketplace')).toBe(true);
+    expect(resolvePersonaLandingPage(doc, 'p1')).toBe('/data-marketplace');
+    expect(isLandingPageOption('/data-marketplace')).toBe(true);
     expect(isLandingPageOption('/admin/settings')).toBe(false);
+    // S-A: a stored '/marketplace' value no longer hits the option
+    // table once the option moves to /data-marketplace, so reads fall
+    // back to Home.
+    expect(isLandingPageOption('/marketplace')).toBe(false);
     const stale = {
       ...doc,
       data: { personaPreferences: [{ personaId: 'p1', defaultLandingPage: '/admin/settings' }] },
     };
     expect(resolvePersonaLandingPage(stale, 'p1')).toBe(DEFAULT_LANDING_PAGE);
+    const staleMarketplace = {
+      ...doc,
+      data: { personaPreferences: [{ personaId: 'p1', defaultLandingPage: '/marketplace' }] },
+    };
+    expect(resolvePersonaLandingPage(staleMarketplace, 'p1')).toBe(DEFAULT_LANDING_PAGE);
     expect(resolvePersonaLandingPage(undefined, 'p1')).toBe(DEFAULT_LANDING_PAGE);
   });
 
@@ -206,10 +215,10 @@ describe('personaPage utils', () => {
   });
 
   it('redirects only on app entry to a non-default landing page', () => {
-    expect(resolveLandingRedirect({ landingPage: '/marketplace', alreadyHandled: false })).toBe(
-      '/marketplace',
+    expect(resolveLandingRedirect({ landingPage: '/data-marketplace', alreadyHandled: false })).toBe(
+      '/data-marketplace',
     );
-    expect(resolveLandingRedirect({ landingPage: '/marketplace', alreadyHandled: true })).toBeNull();
+    expect(resolveLandingRedirect({ landingPage: '/data-marketplace', alreadyHandled: true })).toBeNull();
     expect(resolveLandingRedirect({ landingPage: DEFAULT_LANDING_PAGE, alreadyHandled: false })).toBeNull();
   });
 
@@ -283,7 +292,7 @@ describe('personaPage utils', () => {
         personaId: 'p1',
         personaName: 'Analyst',
         appMode: 'classic' as const,
-        defaultLandingPage: '/marketplace',
+        defaultLandingPage: '/data-marketplace',
         landingPageSettings: { headerColor: '#099250' },
       },
     ];

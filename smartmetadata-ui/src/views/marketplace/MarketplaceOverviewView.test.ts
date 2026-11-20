@@ -105,7 +105,7 @@ function mountPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/marketplace', name: 'marketplace-overview', component: MarketplaceOverviewView },
+      { path: '/data-marketplace', name: 'marketplace-overview', component: MarketplaceOverviewView },
       { path: '/governance/domains', name: 'governance-domains', component: { template: '<div />' } },
       { path: '/governance/data-products', name: 'governance-data-products', component: { template: '<div />' } },
       { path: '/governance/domains/:fqn', name: 'governance-domain', component: { template: '<div />' } },
@@ -128,7 +128,7 @@ describe('MarketplaceOverviewView', () => {
   it('renders the greeting hero, announcements, and both widgets', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -145,7 +145,7 @@ describe('MarketplaceOverviewView', () => {
   it('searches both indexes and shows result links', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -169,7 +169,7 @@ describe('MarketplaceOverviewView', () => {
   it('shows search results grouped into data products and domains', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -231,7 +231,7 @@ describe('MarketplaceOverviewView', () => {
       }),
     );
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -276,7 +276,7 @@ describe('MarketplaceOverviewView', () => {
       }),
     );
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -306,7 +306,7 @@ describe('MarketplaceOverviewView', () => {
   it('hides the NLQ toggle when the server reports NLQ disabled', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -318,7 +318,7 @@ describe('MarketplaceOverviewView', () => {
   it('renders owners, experts, icon, and color fields in both create modals', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -365,7 +365,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona], doc });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -390,7 +390,7 @@ describe('MarketplaceOverviewView', () => {
   it('falls back to the default widget order without a selected persona', { timeout: 15000 }, async () => {
     stubFetch();
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -433,7 +433,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona], doc });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -479,7 +479,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona], doc });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -526,7 +526,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona], doc });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -563,7 +563,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona], doc: badDoc });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -582,7 +582,7 @@ describe('MarketplaceOverviewView', () => {
     stubFetch(undefined, { personas: [persona] });
     const { pinia, router } = mountPage();
     localStorage.setItem('sm.persona.v1', 'p1');
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
@@ -606,7 +606,7 @@ describe('MarketplaceOverviewView', () => {
       return jsonResponse({ id: 'dp9', name: body.name });
     });
     const { pinia, router } = mountPage();
-    await router.push('/marketplace');
+    await router.push('/data-marketplace');
     await router.isReady();
     const wrapper = mount(MarketplaceOverviewView, {
       global: { plugins: [pinia, router, Antd, createTestI18n()] },

@@ -39,7 +39,7 @@ async function mountRedirect(options: { storedPersona?: string; handled?: boolea
     routes: [
       { path: '', component: PersonaLandingRedirect },
       { path: '/my-data', name: 'home', component: { template: '<div>home</div>' } },
-      { path: '/marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
+      { path: '/data-marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
     ],
   });
   await router.push('/');
@@ -86,8 +86,8 @@ describe('PersonaLandingRedirect', () => {
   });
 
   it('redirects the app entry to the persona landing page', async () => {
-    const { router } = await mountRedirect({ storedPersona: 'p1', landing: '/marketplace' });
-    expect(router.currentRoute.value.path).toBe('/marketplace');
+    const { router } = await mountRedirect({ storedPersona: 'p1', landing: '/data-marketplace' });
+    expect(router.currentRoute.value.path).toBe('/data-marketplace');
     expect(sessionStorage.getItem(PERSONA_LANDING_HANDLED_KEY)).toBe('1');
   });
 
@@ -97,7 +97,7 @@ describe('PersonaLandingRedirect', () => {
   });
 
   it('resolves to Home when the entry was already handled', async () => {
-    const { router } = await mountRedirect({ storedPersona: 'p1', landing: '/marketplace', handled: true });
+    const { router } = await mountRedirect({ storedPersona: 'p1', landing: '/data-marketplace', handled: true });
     expect(router.currentRoute.value.name).toBe('home');
   });
 

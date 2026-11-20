@@ -56,7 +56,7 @@ async function mountShell(locale: 'en-US' | 'zh-CN' = 'en-US') {
             name: 'observability-incidents',
             component: { template: '<div>inc</div>' },
           },
-          { path: 'marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
+          { path: 'data-marketplace', name: 'marketplace-overview', component: { template: '<div>mkt</div>' } },
           { path: 'governance/domains', name: 'governance-domains', component: { template: '<div>dom</div>' } },
           { path: 'governance/metrics', name: 'governance-metrics', component: { template: '<div>met</div>' } },
           { path: 'context-center', name: 'context-center-overview', component: { template: '<div>cc</div>' } },
