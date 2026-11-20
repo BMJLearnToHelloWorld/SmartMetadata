@@ -849,7 +849,6 @@ const enUS = {
   nav: {
     home: 'Home',
     explore: 'Explore',
-    connections: 'Connections',
     lineage: 'Lineage',
     insights: 'Insights',
     observability: 'Observability',

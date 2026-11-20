@@ -153,8 +153,8 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-testid="ingestion-nav"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="collaboration-nav"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="admin-nav"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="nav-settings"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="nav-logout"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="nav-settings"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="nav-logout"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="locale-switcher"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="global-search"]').attributes('placeholder')).toBe(
@@ -174,6 +174,38 @@ describe('AppShell', () => {
     await wrapper.find('[data-testid="user-menu-trigger"]').trigger('click');
     await flushPromises();
     expect(wrapper.find('[data-testid="logout-button"]').text()).toBe('Logout');
+  });
+
+  it('navigates to the Settings hub from the footer Settings entry', async () => {
+    const { wrapper, router } = await mountShell();
+    await wrapper.find('[data-testid="nav-settings"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('admin-settings');
+  });
+
+  it('highlights the footer Settings entry on a settings route', async () => {
+    const { wrapper, router } = await mountShell();
+    await router.push({ name: 'admin-settings' });
+    await flushPromises();
+    const settings = wrapper.find('[data-testid="nav-settings"]');
+    expect(settings.exists()).toBe(true);
+    expect(settings.classes()).toContain('ant-menu-item-selected');
+  });
+
+  it('logs out from the footer Logout entry', async () => {
+    const { wrapper, router } = await mountShell();
+    await wrapper.find('[data-testid="nav-logout"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe('login');
+  });
+
+  it('keeps the footer Settings/Logout entries when the sider is collapsed', async () => {
+    const { wrapper } = await mountShell();
+    await wrapper.find('.shell__sider-toggle').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.shell__sider').classes()).toContain('ant-layout-sider-collapsed');
+    expect(wrapper.find('[data-testid="nav-settings"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="nav-logout"]').exists()).toBe(true);
   });
 
   it('switches locale, persists sm.locale.v1, and relabels chrome', async () => {
@@ -264,9 +296,8 @@ describe('AppShell', () => {
     try {
       // Origin carried in router state: the Data Quality list. A
       // settings-space origin resolves to 'admin-settings' at the nav-key
-      // level (unit-covered in nav.test.ts); the shell renders no
-      // Settings footer entry, so no visible target exists for it yet —
-      // that is a pre-existing shell gap, not this mechanism.
+      // level (unit-covered in nav.test.ts); the shell renders the
+      // Settings footer entry, so it is the visible highlight target.
       window.history.pushState(
         { breadcrumbData: [{ url: '/quality/test-cases' }] },
         '',
