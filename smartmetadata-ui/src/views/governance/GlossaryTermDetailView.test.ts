@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0.
  */
 import { flushPromises, mount } from '@vue/test-utils';
-import Antd from 'ant-design-vue';
+import Antd, { message } from 'ant-design-vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
@@ -161,11 +161,12 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(wrapper.find('[data-testid="edit-term"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
     expect(widgetTestIds(wrapper)).toEqual([]);
-    // Relations graph, custom properties and data observability have no
-    // product backing: three honest residual states, distinctly stated.
+    // Relations graph and data observability have no product backing:
+    // two honest residual states, distinctly stated. Custom properties
+    // renders its table (B-15).
     const residuals = wrapper.findAll('[data-testid="asset-tab-residual"]');
-    expect(residuals).toHaveLength(3);
-    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(3);
+    expect(residuals).toHaveLength(2);
+    expect(new Set(residuals.map((node) => node.text()))).toHaveLength(2);
     wrapper.unmount();
   });
 
@@ -329,11 +330,11 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTerm();
     // Only overview mounts a grid: assets keeps its table and the
-    // listed custom-properties tab keeps its residual state. The
-    // unlisted tabs — overview included — are removed (F-2), so only
-    // one residual renders and the overview description is gone.
+    // listed custom-properties tab renders its panel (B-15). The
+    // unlisted tabs — overview included — are removed (F-2), so no
+    // residual renders and the overview description is gone.
     expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
     expect(wrapper.text()).not.toContain('Money in');
     expect(widgetTestIds(wrapper)).toEqual([]);
     wrapper.unmount();
@@ -363,7 +364,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     // Every other tab keeps its existing panel.
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
     expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
-    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(3);
+    expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(2);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
@@ -450,6 +451,381 @@ describe('GlossaryTermDetailView description gate (D-4)', () => {
   it('hides the description edit button without EditDescription', async () => {
     const wrapper = await mountWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
     expect(wrapper.find('[data-testid="edit-description"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+describe('GlossaryTermDetailView custom properties (B-15)', () => {
+  const persona = { id: 'p1', name: 'analyst', fullyQualifiedName: 'analyst', displayName: 'Analyst' };
+
+  function termDoc(tabs: unknown[]) {
+    return {
+      name: 'analyst-persona',
+      fullyQualifiedName: 'persona.analyst',
+      entityType: 'Page',
+      data: { pages: [{ pageType: 'GlossaryTerm', tabs }] },
+    };
+  }
+
+  function stubWithOps(
+    operations: Array<{ operation: string; access: string }>,
+    doc: Record<string, unknown> | null = null,
+    faults: { defsFail?: boolean; patchFail?: boolean; deferPermissions?: boolean; noExtension?: boolean } = {},
+  ) {
+    // Held permissions response for the null-gate test: while the fetch
+    // is pending, customPropsCanView stays null and the panel renders
+    // nothing instead of flashing the table or the placeholder.
+    let resolvePerms!: (response: Response) => void;
+    const permsPending = faults.deferPermissions
+      ? new Promise<Response>((resolve) => {
+          resolvePerms = resolve;
+        })
+      : null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === 'PATCH' && url.includes('/api/v1/glossaryTerms/term1')) {
+          if (faults.patchFail) {
+            return new Response('patch boom', { status: 500 });
+          }
+          return jsonResponse({
+            id: 'term1',
+            name: 'revenue',
+            displayName: 'Revenue',
+            description: 'Money in',
+            fullyQualifiedName: 'Business.revenue',
+          });
+        }
+        if (url.includes('/api/v1/glossaryTerms/term1/assets')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/glossaryTerms/term1')) {
+          return jsonResponse({
+            id: 'term1',
+            name: 'revenue',
+            displayName: 'Revenue',
+            description: 'Money in',
+            fullyQualifiedName: 'Business.revenue',
+            glossary: { id: 'g1', name: 'Business', displayName: 'Business' },
+            relatedTerms: [],
+            owners: [],
+            reviewers: [],
+            domains: [],
+            synonyms: [],
+            references: [],
+            tags: [],
+            children: [],
+            extension: faults.noExtension ? undefined : { region: 'EU' },
+            entityStatus: 'Approved',
+          });
+        }
+        if (url.includes('/api/v1/glossaryTerms')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/activity/entity/glossaryTerm/')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/api/v1/conversations')) {
+          return jsonResponse({ data: [], paging: { total: 0 } });
+        }
+        if (url.includes('/v1/metadata/types/name/glossaryTerm/customProperties')) {
+          if (faults.defsFail) {
+            return new Response('defs boom', { status: 500 });
+          }
+          return jsonResponse([
+            { name: 'region', displayName: 'Region', propertyType: 'string' },
+          ]);
+        }
+        if (url.includes('/v1/permissions/glossaryTerm/name/')) {
+          if (permsPending) {
+            return permsPending;
+          }
+          return jsonResponse({ resource: 'glossaryTerm', permissions: operations });
+        }
+        if (url.includes('/v1/personas')) {
+          return jsonResponse({ data: [persona], paging: { total: 1 } });
+        }
+        if (url.includes('/v1/docStore/name/')) {
+          return doc ? jsonResponse(doc) : new Response('not found', { status: 404 });
+        }
+        return new Response('not found', { status: 404 });
+      }),
+    );
+    return {
+      resolvePerms: faults.deferPermissions
+        ? (ops: Array<{ operation: string; access: string }>) =>
+            resolvePerms(jsonResponse({ resource: 'glossaryTerm', permissions: ops }))
+        : undefined,
+    };
+  }
+
+  async function mountTermCp() {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/governance/glossaries', name: 'governance-glossaries', component: { template: '<div>list</div>' } },
+        { path: '/governance/glossaries/:id', name: 'governance-glossary', component: { template: '<div>glossary</div>' } },
+        { path: '/governance/terms/:id', name: 'governance-term', component: { template: '<div>term</div>' } },
+      ],
+    });
+    await router.push('/governance/terms/term1');
+    await router.isReady();
+    const wrapper = mount(GlossaryTermDetailView, {
+      props: { id: 'term1' },
+      attachTo: document.body,
+      global: { plugins: [pinia, router, Antd, createTestI18n()] },
+    });
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  afterEach(() => {
+    // Antd message keeps a global holder: clearing body.innerHTML
+    // without destroying it first leaves the cached holder detached,
+    // so the next test's toast renders off-document and is unfindable.
+    message.destroy();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('renders the custom-properties table from defs + term extension', async () => {
+    stubWithOps([
+      { operation: 'ViewBasic', access: 'allow' },
+      { operation: 'ViewCustomFields', access: 'allow' },
+      { operation: 'EditCustomFields', access: 'allow' },
+    ]);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    const calls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(calls.some((url) => url.includes('/v1/metadata/types/name/glossaryTerm/customProperties'))).toBe(true);
+    const table = wrapper.find('[data-testid="asset-custom-properties-table"]');
+    expect(table.exists()).toBe(true);
+    expect(table.text()).toContain('Region');
+    expect(table.text()).toContain('EU');
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows the permission placeholder without ViewCustomFields', async () => {
+    stubWithOps([{ operation: 'ViewBasic', access: 'allow' }]);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    expect(wrapper.find('.custom-properties__no-access').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(false);
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('saves edited values back through a JSON-patch write', async () => {
+    stubWithOps([
+      { operation: 'ViewBasic', access: 'allow' },
+      { operation: 'ViewCustomFields', access: 'allow' },
+      { operation: 'EditCustomFields', access: 'allow' },
+    ]);
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    await wrapper.find('[data-testid="edit-term-custom-properties"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const input = document.querySelector('[data-testid="custom-prop-region"]') as HTMLInputElement | null;
+    expect(input?.value).toBe('EU');
+    if (input) {
+      input.value = 'APAC';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton?.click();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    const patchCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(patchCall).toBeDefined();
+    expect(String(patchCall?.[0])).toContain('/api/v1/glossaryTerms/term1');
+    const ops = JSON.parse(String(patchCall?.[1]?.body ?? '[]')) as Array<Record<string, unknown>>;
+    const extOp = ops.find((op) => op.path === '/extension');
+    expect(extOp).toBeDefined();
+    expect((extOp?.value as Record<string, unknown> | undefined)?.region).toBe('APAC');
+    wrapper.unmount();
+  });
+
+  it('keeps the edit modal open and toasts the error when the patch write fails', async () => {
+    stubWithOps(
+      [
+        { operation: 'ViewBasic', access: 'allow' },
+        { operation: 'ViewCustomFields', access: 'allow' },
+        { operation: 'EditCustomFields', access: 'allow' },
+      ],
+      null,
+      { patchFail: true },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    await wrapper.find('[data-testid="edit-term-custom-properties"]').trigger('click');
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const input = document.querySelector('[data-testid="custom-prop-region"]') as HTMLInputElement | null;
+    expect(input?.value).toBe('EU');
+    if (input) {
+      input.value = 'APAC';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const okButton = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okButton).not.toBeNull();
+    okButton?.click();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    // The write was attempted exactly once…
+    const patchCalls = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH');
+    expect(patchCalls).toHaveLength(1);
+    // …and failed: error toast, no success toast, no reload of the term.
+    expect(document.querySelector('.ant-message-error')?.textContent).toContain('patch boom');
+    expect(document.querySelector('.ant-message-success')).toBeNull();
+    const termGets = vi
+      .mocked(fetch)
+      .mock.calls.filter(
+        ([callInput, init]) =>
+          String(callInput).includes('/api/v1/glossaryTerms/term1') &&
+          !String(callInput).includes('/assets') &&
+          (init?.method ?? 'GET') === 'GET',
+      );
+    expect(termGets).toHaveLength(1);
+    // The modal stays open with the edited value intact…
+    const keptInput = document.querySelector('[data-testid="custom-prop-region"]') as HTMLInputElement | null;
+    expect(keptInput).not.toBeNull();
+    expect(keptInput?.value).toBe('APAC');
+    // …and the save button is no longer loading (propsSaving reset via finally).
+    const okAfter = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement | null;
+    expect(okAfter).not.toBeNull();
+    expect(okAfter?.classList.contains('ant-btn-loading')).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('warns and disables editing when the custom-property defs fail to load', async () => {
+    stubWithOps(
+      [
+        { operation: 'ViewBasic', access: 'allow' },
+        { operation: 'ViewCustomFields', access: 'allow' },
+        { operation: 'EditCustomFields', access: 'allow' },
+      ],
+      null,
+      { defsFail: true },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    // load() survives the defs failure: the term still renders.
+    expect(wrapper.text()).toContain('Revenue');
+    const calls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]));
+    expect(calls.some((url) => url.includes('/v1/metadata/types/name/glossaryTerm/customProperties'))).toBe(true);
+    // The panel warns with the failure message instead of the def rows…
+    const alert = wrapper.find('.ant-alert-warning');
+    expect(alert.exists()).toBe(true);
+    expect(alert.text()).toContain('defs boom');
+    const table = wrapper.find('[data-testid="asset-custom-properties-table"]');
+    expect(table.exists()).toBe(true);
+    expect(table.text()).not.toContain('Region');
+    // …and with no defs the edit button stays disabled even with edit access.
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('renders a dash for every value when the term has no extension', async () => {
+    stubWithOps(
+      [
+        { operation: 'ViewBasic', access: 'allow' },
+        { operation: 'ViewCustomFields', access: 'allow' },
+        { operation: 'EditCustomFields', access: 'allow' },
+      ],
+      null,
+      { noExtension: true },
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    const table = wrapper.find('[data-testid="asset-custom-properties-table"]');
+    expect(table.exists()).toBe(true);
+    expect(table.text()).toContain('Region');
+    expect(table.text()).toContain('—');
+    expect(table.text()).not.toContain('EU');
+    // The defs loaded, so editing stays available.
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('renders nothing in the panel while the permission is still resolving (no table/placeholder flash)', async () => {
+    const ops = [
+      { operation: 'ViewBasic', access: 'allow' },
+      { operation: 'ViewCustomFields', access: 'allow' },
+      { operation: 'EditCustomFields', access: 'allow' },
+    ];
+    const { resolvePerms } = stubWithOps(ops, null, { deferPermissions: true });
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    // The term has loaded but the permission fetch is still pending…
+    expect(wrapper.text()).toContain('Revenue');
+    expect(
+      vi.mocked(fetch).mock.calls.some(([callInput]) => String(callInput).includes('/v1/permissions/glossaryTerm/name/')),
+    ).toBe(true);
+    // …so the panel renders neither the table nor the placeholder,
+    // and the edit button stays disabled while the flags are unresolved.
+    expect(wrapper.find('[data-testid="asset-custom-properties-table"]').exists()).toBe(false);
+    expect(wrapper.find('.custom-properties__no-access').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Region');
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(true);
+    // Once the permission resolves, the table appears — the empty render was transient, not a broken mount.
+    resolvePerms?.(ops);
+    await flushPromises();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    const table = wrapper.find('[data-testid="asset-custom-properties-table"]');
+    expect(table.exists()).toBe(true);
+    expect(table.text()).toContain('Region');
+    expect(table.text()).toContain('EU');
+    expect((wrapper.find('[data-testid="edit-term-custom-properties"]').element as HTMLButtonElement).disabled).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('keeps the real panels when entries resolve for the dead-mount slots', async () => {
+    stubWithOps(
+      [{ operation: 'ViewBasic', access: 'allow' }],
+      termDoc([
+        {
+          id: 'glossary_terms',
+          name: 'glossary_terms',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+        {
+          id: 'assets',
+          name: 'assets',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+        {
+          id: 'activity_feed',
+          name: 'activity_feed',
+          layout: [{ i: 'KnowledgePanel.Description', x: 0, y: 0, w: 6, h: 1 }],
+        },
+      ]),
+    );
+    localStorage.setItem('sm.persona.v1', 'p1');
+    const wrapper = await mountTermCp();
+    // No widget cell renders from any of the three former dead mounts.
+    expect(wrapper.findAll('[data-testid^="widget-"]')).toHaveLength(0);
+    expect(wrapper.find('[data-testid="term-children-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="term-assets-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

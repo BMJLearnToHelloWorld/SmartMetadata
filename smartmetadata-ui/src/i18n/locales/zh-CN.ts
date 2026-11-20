@@ -1446,7 +1446,6 @@ const zhCN = {
       tagAssets: '此控制台尚未接入标签资产列表。',
       dataObservability: '此控制台尚未接入数据观测。',
       relationsGraph: '此控制台尚未接入术语关系图谱。',
-      termCustomProperties: '该术语数据中尚未包含自定义属性值。',
     },
     name: '名称',
     noCustomProperties: 'No custom properties defined',
