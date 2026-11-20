@@ -30,10 +30,10 @@
     >
       <!-- Pin CreatePlaceholder with permission === false falls back to
            PermissionPlaceholder: Access Denied plus the no-access
-           sentence naming Create Query. A failed Create-permission
-           read fails closed into this state, as the ViewQueries
-           denial above does. -->
-      <div v-if="!canCreate" data-testid="permission-error-placeholder">
+           sentence naming Create Query. Only an explicit denial lands
+           here; an unknown permission (failed read, canCreate null)
+           renders the create placeholder below, as pin does. -->
+      <div v-if="canCreate === false" data-testid="permission-error-placeholder">
         <h3>{{ t('query.accessDenied') }}</h3>
         <Empty :description="t('query.noAccessPlaceholder', { entity: t('query.createQuery') })" />
       </div>
@@ -211,7 +211,15 @@ const panelLoading = ref(false);
 const pageError = ref(false);
 const searchError = ref(false);
 const denied = ref(false);
-const canCreate = ref(false);
+// Tri-state Create permission: true = allowed, false = explicitly denied,
+// null = unknown (the resource-permission read failed). Pin
+// CreatePlaceholder renders the denied placeholder ONLY when
+// permission === false; an unknown permission still renders the create
+// placeholder with the Add action, so a failed read must not fail closed
+// into the denied state. (The ViewQueries `denied` flag above is
+// different: pin shows its PermissionPlaceholder whenever the view
+// permission is falsy, so that side stays fail-closed.)
+const canCreate = ref<boolean | null>(null);
 
 const queries = ref<DataQuery[]>([]);
 const total = ref(0);
@@ -630,7 +638,7 @@ onMounted(async () => {
     pageLoading.value = false;
     return;
   }
-  canCreate.value = resourceOps?.Create === true;
+  canCreate.value = resourceOps ? resourceOps.Create === true : null;
   if (!getDerivedPermissionFlags(tableOps).can('ViewQueries')) {
     denied.value = true;
     pageLoading.value = false;

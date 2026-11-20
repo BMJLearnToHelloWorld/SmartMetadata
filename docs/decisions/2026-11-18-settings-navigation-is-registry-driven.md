@@ -143,9 +143,10 @@ about them is decided here, and no implementation for them has landed:
 
 ## Deferred
 
-- Type unification: `SettingsPermissionRule`'s `view` resource uses the
+- N-1b, type unification: `SettingsPermissionRule`'s `view` resource uses the
   narrow hand-written `SettingsPermissionResource` union
   (`settings/registry.ts`), while `PermissionRule` uses the wide
   `ResourceEntityName` (`settings/permissionRules.ts`). Unifying the two
   would widen the rule set the registry can express, so the unification
-  needs a design ruling; it is deferred here, not decided.
+  needs a design ruling; it is deferred here, not decided. Ruling (Bai,
+  F-2 option (b)): keep the narrow union; the unification stays deferred.

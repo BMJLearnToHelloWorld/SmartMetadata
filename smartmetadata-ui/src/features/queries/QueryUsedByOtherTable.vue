@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { searchAssets } from '@/api/search';
+import { escapeESReservedCharacters, searchAssets } from '@/api/search';
 import { assetLocation } from '@/catalog/entityRoutes';
 import { QUERY_FILTER_PAGE_SIZE, QUERY_USED_BY_TABLE_VIEW_CAP } from '@/catalog/queryFilter';
 import type { EntityRef } from '@/types/api';
@@ -123,8 +123,11 @@ async function onSearchTables(searchText: string): Promise<void> {
     // Pin DataAssetAsyncSelectList loads candidates with an empty search
     // on open, which the pin search hook sends as the bare wildcard `*`;
     // wrapping the empty text (`**`) would be sent verbatim and fail
-    // server-side. Non-empty text keeps the `*text*` wildcard wrap.
-    const query = searchText ? `*${searchText}*` : '*';
+    // server-side. Non-empty text keeps the `*text*` wildcard wrap, with
+    // ES reserved characters escaped as the pin hook does
+    // (`useAsyncDataAssetOptions.ts:60-63`, N-01): unescaped reserved
+    // characters break the picker search server-side.
+    const query = searchText ? `*${escapeESReservedCharacters(searchText)}*` : '*';
     const page = await searchAssets(query, 0, QUERY_FILTER_PAGE_SIZE, { index: 'table' });
     registerRefs(
       page.hits.map((hit) => ({

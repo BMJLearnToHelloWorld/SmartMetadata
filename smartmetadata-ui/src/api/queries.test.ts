@@ -214,6 +214,25 @@ describe('queries API', () => {
     ]);
   });
 
+  it('drops labelType values outside the five-value union (shared TAG_LABEL_TYPES)', () => {
+    // Parity with entities.mapTags: both mappers read the same exported
+    // const, so a value the union rejects is dropped on either path.
+    const mapped = mapQuery({
+      id: 'q1',
+      query: 'select 1',
+      tags: [
+        { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: 'Bogus' },
+        { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: 'generated' },
+        { tagFQN: 'PII.Phone', name: 'Phone', source: 'Classification', labelType: 'Propagated' },
+      ],
+    });
+    expect(mapped?.tags).toEqual([
+      { tagFQN: 'PII.Sensitive', name: 'Sensitive', source: 'Classification', labelType: undefined, state: undefined },
+      { tagFQN: 'PII.Email', name: 'Email', source: 'Classification', labelType: undefined, state: undefined },
+      { tagFQN: 'PII.Phone', name: 'Phone', source: 'Classification', labelType: 'Propagated', state: undefined },
+    ]);
+  });
+
   it('posts a CreateQuery payload (A16)', async () => {
     const bodies: unknown[] = [];
     vi.stubGlobal(

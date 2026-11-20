@@ -37,7 +37,13 @@ const selectedTables = ref<string[]>([]);
 const tableOptions = ref<SearchHit[]>([]);
 const saving = ref(false);
 const errorMessage = ref('');
-const canCreate = ref(false);
+// Tri-state Create permission: true = allowed, false = explicitly denied,
+// null = unknown (the permission read failed). Pin AddQueryPage only
+// disables Save without Create permission and never shows a denied
+// placeholder of its own; the denied SmState below renders ONLY on an
+// explicit denial, so a failed read leaves the form usable-looking with
+// Save disabled instead of a false denial.
+const canCreate = ref<boolean | null>(null);
 const permissionChecked = ref(false);
 const userId = ref<string | undefined>(undefined);
 
@@ -52,7 +58,9 @@ async function loadPermissions(): Promise<void> {
     canCreate.value = toOperationPermissions(permissions).Create === true;
     userId.value = user?.id;
   } catch {
-    canCreate.value = false;
+    // Unknown, not denied: leave canCreate null so no denied SmState
+    // renders (see the tri-state note above); Save stays disabled.
+    canCreate.value = null;
   } finally {
     permissionChecked.value = true;
   }
@@ -113,7 +121,7 @@ onMounted(() => {
       </Button>
     </div>
     <SmState
-      v-if="permissionChecked && !canCreate"
+      v-if="permissionChecked && canCreate === false"
       state="error"
       test-id="add-query-no-permission"
       :error-text="t('query.createDenied')"
