@@ -13,6 +13,7 @@ import {
   bulkUpdateColumnsAsync,
   bulkUpdateColumnsPreview,
   getColumnGrid,
+  searchTableColumnsByFQN,
   updateDataModelColumn,
   updateTableColumn,
 } from './columns';
@@ -228,5 +229,48 @@ describe('columns API', () => {
         { tagFQN: 'PII.Email', source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
       ]),
     ).rejects.toThrow();
+  });
+
+  it('searches table columns by tag FQNs on the server-side search endpoint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            { name: 'email', dataType: 'VARCHAR', fullyQualifiedName: 'svc.db.schema.orders.email' },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await searchTableColumnsByFQN('svc.db.schema.orders', {
+      tags: 'PII.Email,PII.SSN',
+      glossaryTerms: 'Glossary.Contact',
+      limit: 1000,
+      offset: 0,
+    });
+    const url = new URL(lastFetch().url);
+    expect(`${url.pathname}${url.search}`).toContain('/api/v1/tables/name/svc.db.schema.orders/columns/search');
+    expect(url.searchParams.get('tags')).toBe('PII.Email,PII.SSN');
+    expect(url.searchParams.get('glossaryTerms')).toBe('Glossary.Contact');
+    expect(url.searchParams.get('fields')).toBe('tags,customMetrics,extension');
+    expect(url.searchParams.get('sortBy')).toBe('ordinalPosition');
+    expect(url.searchParams.get('sortOrder')).toBe('asc');
+    expect(url.searchParams.get('include')).toBe('all');
+    expect(url.searchParams.get('limit')).toBe('1000');
+    expect(url.searchParams.get('offset')).toBe('0');
+    expect(page.total).toBe(1);
+    expect(page.columns).toHaveLength(1);
+  });
+
+  it('omits empty tag groups from the column search query', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ data: [], paging: { total: 0 } })));
+    const page = await searchTableColumnsByFQN('svc.db.schema.orders', { tags: 'PII.Email' });
+    const url = new URL(lastFetch().url);
+    expect(url.searchParams.get('tags')).toBe('PII.Email');
+    expect(url.searchParams.has('glossaryTerms')).toBe(false);
+    expect(url.searchParams.has('q')).toBe(false);
+    expect(page.total).toBe(0);
+    expect(page.columns).toEqual([]);
   });
 });

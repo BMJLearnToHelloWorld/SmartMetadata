@@ -85,5 +85,12 @@ withDefaults(
     <template v-if="$slots.bodyCell" #bodyCell="slotProps">
       <slot name="bodyCell" v-bind="slotProps" />
     </template>
+    <!-- Same rule for the custom filter dropdown: a column with
+         `customFilterDropdown: true` renders this slot as its filter
+         menu (D-F2-2 schema tag columns; the ingestion list is the
+         precedent for the slot's props). -->
+    <template v-if="$slots.customFilterDropdown" #customFilterDropdown="slotProps">
+      <slot name="customFilterDropdown" v-bind="slotProps" />
+    </template>
   </Table>
 </template>

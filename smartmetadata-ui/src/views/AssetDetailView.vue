@@ -15,8 +15,16 @@ import { apiEndpointLocation, listApiEndpoints, type ApiEndpointRef } from '@/ap
 import { listCatalogPipelineStatuses } from '@/api/catalogPipelines';
 import { createConversation, listConversations } from '@/api/conversations';
 import { listCustomProperties } from '@/api/customProperties';
-import { fetchAssetDetail, followAsset, patchAsset, unfollowAsset, updateSchemaRowTags } from '@/api/entities';
-import { updateDataModelColumn, updateTableColumn } from '@/api/columns';
+import { fetchAssetDetail, followAsset, mapColumns, patchAsset, unfollowAsset, updateSchemaRowTags } from '@/api/entities';
+import { searchTableColumnsByFQN, updateDataModelColumn, updateTableColumn } from '@/api/columns';
+import {
+  collectSchemaTagOptions,
+  EMPTY_SCHEMA_TAG_FILTER,
+  filterSchemaRowsByTags,
+  hasSchemaTagFilter,
+  type SchemaTagFilterSelection,
+} from '@/utils/schemaTagFilter';
+import type { FilterValue } from 'ant-design-vue/es/table/interface';
 import { getDerivedPermissionFlags } from '@/api/permissions';
 import type { OperationPermissions } from '@/api/permissions';
 import { getQueryCount } from '@/api/queries';
@@ -108,6 +116,16 @@ const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
 /** D-F2 schema-cell edit flags (per-surface derived permissions) plus the
     deleted read-only gate; fail-closed (all false) until loaded. */
 const schemaTagAccess = ref({ canEditTags: false, canEditGlossaryTerms: false, readOnly: false });
+/**
+ * D-F2-2 column-tag filter selection (Tags / Glossary Terms columns).
+ * Table resolves it server-side, the other four surfaces locally — the
+ * selection itself is shared, the resolution is not.
+ */
+const schemaTagFilter = ref<SchemaTagFilterSelection>({ ...EMPTY_SCHEMA_TAG_FILTER });
+/** D-F2-2 Table面服务端过滤的当前页：仅过滤态下有值；清空过滤即丢弃，回到详情行。 */
+const serverFilteredRows = ref<SchemaRow[] | null>(null);
+/** Guards overlapping server-filter fetches; a reload bumps it so a stale response never lands. */
+const serverFilterSeq = ref(0);
 /** D-4 description + custom-properties derivation source: the entity's
     permission operations from the store (cache-shared with the
     usageSummary and schema branches below). */
@@ -518,10 +536,128 @@ const schemaColumns = computed(() => {
     // D-F2 read side: Tags and Glossary Terms share the row's single tags
     // list (official SchemaTable's shared `TAGS` dataIndex, split by
     // TagSource at render time); widths are per surface, not unified.
-    { title: t('asset.fields.tags'), dataIndex: 'tags', key: 'tags', width: widths.tags },
-    { title: t('asset.tabs.glossaryTerms'), dataIndex: 'tags', key: 'glossaryTerms', width: widths.glossaryTerms },
+    // D-F2-2: both columns are filterable — `filters` are the options
+    // collected from the detail rows, `filteredValue` is the controlled
+    // selection (null reads as unfiltered), and `customFilterDropdown`
+    // renders the shared ColumnFilter through SmTable's slot.
+    {
+      title: t('asset.fields.tags'),
+      dataIndex: 'tags',
+      key: 'tags',
+      width: widths.tags,
+      filters: schemaTagFilterOptions.value.classification,
+      filteredValue: schemaTagFilter.value.tags.length ? schemaTagFilter.value.tags : null,
+      customFilterDropdown: true,
+    },
+    {
+      title: t('asset.tabs.glossaryTerms'),
+      dataIndex: 'tags',
+      key: 'glossaryTerms',
+      width: widths.glossaryTerms,
+      filters: schemaTagFilterOptions.value.glossary,
+      filteredValue: schemaTagFilter.value.glossaryTerms.length ? schemaTagFilter.value.glossaryTerms : null,
+      customFilterDropdown: true,
+    },
   ];
 });
+
+/**
+ * D-F2-2 filter options (official `getAllTags`): collected from the
+ * detail rows — the full, unfiltered set — so the dropdowns keep
+ * offering every tag present even while a filter is active (the
+ * server-filtered page is a subset of these rows).
+ */
+const schemaTagFilterOptions = computed(() =>
+  asset.value
+    ? collectSchemaTagOptions(asset.value.schemaRows)
+    : { classification: [], glossary: [] },
+);
+
+/**
+ * D-F2-2 displayed schema rows. `undefined` means "no override": the
+ * piece renders the detail rows. Table resolves an active filter
+ * server-side (the fetched page, or the detail rows while the fetch is
+ * still in flight, so the table never flashes empty); the other four
+ * surfaces prune the detail rows locally (official `useTreeTagFilter`).
+ */
+const visibleSchemaRows = computed<SchemaRow[] | undefined>(() => {
+  if (!asset.value || !hasSchemaTagFilter(schemaTagFilter.value)) {
+    return undefined;
+  }
+  if (props.entityType === 'table') {
+    return serverFilteredRows.value ?? asset.value.schemaRows;
+  }
+  return filterSchemaRowsByTags(asset.value.schemaRows, schemaTagFilter.value);
+});
+
+function toFilterStrings(value: FilterValue | null | undefined): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+/**
+ * D-F2-2 server-side column filter (official
+ * `searchTableColumnsByFQN`): the `tags` / `glossaryTerms` groups are
+ * sent as separate comma-joined FQN strings — the server ORs within
+ * each group and ANDs across them. One page at the server maximum
+ * (limit 1000, offset 0): the product renders the schema table without
+ * pagination, so a >1000-column table shows only the first 1000
+ * matches in source order (BENCHMARK.md §4.4-2). A failed fetch fails
+ * closed: the filter is cleared and the detail rows stay, with a toast,
+ * instead of blanking the table or leaving a selection the rows do not
+ * satisfy.
+ */
+async function fetchServerFilteredRows(selection: SchemaTagFilterSelection): Promise<void> {
+  const seq = ++serverFilterSeq.value;
+  try {
+    const page = await searchTableColumnsByFQN(decodedFqn.value, {
+      tags: selection.tags.length ? selection.tags.join(',') : undefined,
+      glossaryTerms: selection.glossaryTerms.length ? selection.glossaryTerms.join(',') : undefined,
+      limit: 1000,
+      offset: 0,
+    });
+    if (seq !== serverFilterSeq.value) {
+      return;
+    }
+    serverFilteredRows.value = mapColumns(page.columns);
+  } catch {
+    if (seq !== serverFilterSeq.value) {
+      return;
+    }
+    serverFilteredRows.value = null;
+    schemaTagFilter.value = { ...EMPTY_SCHEMA_TAG_FILTER };
+    message.error(t('asset.loadFailed'));
+  }
+}
+
+async function onSchemaTableChange(
+  _pagination: unknown,
+  filters: Record<string, FilterValue | null>,
+  _sorter: unknown,
+  extra: { action: string },
+): Promise<void> {
+  // Action separation (pin IngestionPipelineList.component.tsx:265-289):
+  // a filter action only handles the filter — sorting must never clear
+  // the filter or vice versa.
+  if (extra.action !== 'filter') {
+    return;
+  }
+  const next: SchemaTagFilterSelection = {
+    tags: toFilterStrings(filters.tags),
+    glossaryTerms: toFilterStrings(filters.glossaryTerms),
+  };
+  schemaTagFilter.value = next;
+  if (!SCHEMA_COLUMN_ENTITY_TYPES.includes(props.entityType)) {
+    return;
+  }
+  if (!hasSchemaTagFilter(next)) {
+    serverFilteredRows.value = null;
+    return;
+  }
+  if (props.entityType !== 'table') {
+    return;
+  }
+  await fetchServerFilteredRows(next);
+}
 
 // Official SchemaTable's second guard: only STRUCT columns with loaded
 // nested columns get an expand icon.
@@ -591,6 +727,12 @@ async function load(): Promise<void> {
   errorMessage.value = '';
   asset.value = null;
   schemaTagAccess.value = { canEditTags: false, canEditGlossaryTerms: false, readOnly: false };
+  // D-F2-2: a reload drops the filter selection and any server-filtered
+  // page (and bumps the fetch guard so an in-flight response never
+  // lands on the new asset).
+  schemaTagFilter.value = { ...EMPTY_SCHEMA_TAG_FILTER };
+  serverFilteredRows.value = null;
+  serverFilterSeq.value += 1;
   resetSecondary();
   if (!isDetailWired(props.entityType)) {
     errorMessage.value = t('asset.unwired', { type: props.entityType });
@@ -940,6 +1082,13 @@ async function onSchemaTagChange(row: SchemaRow, source: TagSource, tagFqns: str
       return;
     }
     asset.value.schemaRows = updateSchemaRowTags(asset.value.schemaRows, row.key, writtenTags);
+    // D-F2-2: when a server-filtered page is on display, the same
+    // write-back applies to it (official `updateColumnDetails` updates
+    // the local paginated state in place; the row stays until the next
+    // fetch even if it no longer matches the filter).
+    if (serverFilteredRows.value) {
+      serverFilteredRows.value = updateSchemaRowTags(serverFilteredRows.value, row.key, writtenTags);
+    }
   } catch (error) {
     message.error(error instanceof Error ? error.message : t('asset.updateFailed'));
   }
@@ -1043,6 +1192,9 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   schemaTagOptions: catalog.value.tags,
   schemaTagAccess: schemaTagAccess.value,
   onSchemaTagChange,
+  schemaTagFilterOptions: schemaTagFilterOptions.value,
+  schemaRowsOverride: visibleSchemaRows.value,
+  onSchemaTableChange,
 }));
 
 watch(

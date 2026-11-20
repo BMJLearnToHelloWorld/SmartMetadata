@@ -111,7 +111,7 @@ export function mapTags(value: unknown): TagRef[] {
  * feeds the single-column PUT, and the index path feeds the PATCH group's
  * JSON Patch path for nested fields.
  */
-function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow[] {
+export function mapColumns(value: unknown, prefix = '', path: number[] = []): SchemaRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
