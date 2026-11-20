@@ -718,55 +718,64 @@ def _test_case_names(entries: Any) -> list[str]:
     return names
 
 
+def _table_fqn_from_entity_link(entity_link: str, *, case_fqn: str) -> str:
+    """Table FQN from a test case ``entityLink``.
+
+    Same parse as the runner's ``PulledTestCase.table_fqn``:
+    ``<#E::table::<fqn>>`` (a column case carries a ``::columns::<column>``
+    suffix); the first two ``::`` segments name the table. Anything else
+    is not a table case and cannot supply a connection, so it fails
+    loudly here instead of resolving to the wrong table.
+    """
+    link = entity_link.strip()
+    if link.startswith("<#E::"):
+        link = link[len("<#E::") :]
+    if link.endswith(">"):
+        link = link[:-1]
+    segments = link.split("::")
+    if len(segments) < 2 or segments[0] != "table":
+        raise TranslationError(
+            f"test case {case_fqn!r} has an unsupported entityLink "
+            f"{entity_link!r}"
+        )
+    return segments[1]
+
+
 def _test_suite_service_connection(
     pipeline: dict[str, Any],
     server_client: Any | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Derive the database connection for a testSuite pipeline (parse time).
 
-    Official ``build_source`` returns ``serviceConnection=None`` for
-    testSuite and the TestSuiteSource resolves the connection at run time
-    from the table named by
-    ``sourceConfig.config.entityFullyQualifiedName``. The product runner
-    consumes a static ``WorkflowConfig``, so the same resolution happens
-    here, at DAG-parse time: table entity -> its service reference ->
-    that service's live connection (so a rotated connection takes effect
-    on the next parse without a re-deploy, like the other types).
+    Official ``TestSuiteWorkflow`` skips build-time connection resolution
+    entirely (a suite may need several connections) and the official
+    ``TestSuiteSource`` resolves each table's connection at run time from
+    the suite's tests. The product runner consumes a static
+    ``WorkflowConfig`` with a single connection, so the same resolution
+    happens here, at DAG-parse time: a table suite resolves through its
+    ``entityFullyQualifiedName``; a logical suite (no FQN) resolves
+    through its test cases — each case's table, via its entityLink — and
+    all (selected) cases must share one service, since one static
+    connection cannot express official's per-table connections. A suite
+    with no cases, or cases on several services, fails loudly instead of
+    deploying a DAG that would run against the wrong database.
     """
     from smartmetadata_ingestion.client.rest import RestClient
     from smartmetadata_ingestion.config import ServerConfig
-    from smartmetadata_ingestion.errors import RestError
 
     config_block = (pipeline.get("sourceConfig") or {}).get("config") or {}
     entity_fqn = config_block.get("entityFullyQualifiedName")
-    if not isinstance(entity_fqn, str) or not entity_fqn.strip():
-        raise TranslationError(
-            "testSuite pipeline needs "
-            "sourceConfig.config.entityFullyQualifiedName: the database "
-            "connection is derived from that table's service"
-        )
     server_config = ServerConfig.model_validate(_server_config(pipeline))
     rest = server_client if server_client is not None else RestClient(server_config)
     try:
-        try:
-            table = rest.get_table_by_name(entity_fqn.strip())
-        except RestError as exc:
-            raise TranslationError(
-                f"cannot resolve the testSuite table "
-                f"{entity_fqn.strip()!r}: {exc}"
-            ) from exc
-        service_ref = (table or {}).get("service") or {}
-        service_name = service_ref.get("name")
-        if not service_name:
-            raise TranslationError(
-                f"table {entity_fqn.strip()!r} names no service to derive "
-                "the testSuite connection from"
+        if isinstance(entity_fqn, str) and entity_fqn.strip():
+            service_name = _test_suite_table_service_name(rest, entity_fqn.strip())
+        else:
+            service_name = _test_suite_logical_service_name(
+                rest, pipeline, config_block
             )
         derived = dict(pipeline)
-        derived["service"] = {
-            "name": service_name,
-            "type": service_ref.get("type") or "databaseService",
-        }
+        derived["service"] = {"name": service_name, "type": "databaseService"}
         return fetch_service_connection(derived, client=rest)
     finally:
         if server_client is None:
@@ -774,6 +783,111 @@ def _test_suite_service_connection(
                 rest.close()
             except Exception:
                 pass
+
+
+def _test_suite_table_service_name(rest: Any, entity_fqn: str) -> str:
+    """Service name of the table a table suite tests."""
+    from smartmetadata_ingestion.errors import RestError
+
+    try:
+        table = rest.get_table_by_name(entity_fqn)
+    except RestError as exc:
+        raise TranslationError(
+            f"cannot resolve the testSuite table {entity_fqn!r}: {exc}"
+        ) from exc
+    service_ref = (table or {}).get("service") or {}
+    service_name = service_ref.get("name")
+    if not service_name:
+        raise TranslationError(
+            f"table {entity_fqn!r} names no service to derive "
+            "the testSuite connection from"
+        )
+    return service_name
+
+
+def _test_suite_logical_service_name(
+    rest: Any,
+    pipeline: dict[str, Any],
+    config_block: dict[str, Any],
+) -> str:
+    """Service name of a logical suite, derived from its test cases.
+
+    Mirrors official ``TestSuiteSource._process_logical_suite``: the suite
+    is named by the pipeline's service reference, its cases are listed
+    (filtered by the configured ``testCases`` names, like official
+    ``_get_test_cases_from_test_suite``), and each case's table comes from
+    its entityLink. Every selected case must resolve to the same service:
+    the static WorkflowConfig carries one connection, so a suite spanning
+    several services cannot be expressed and fails loudly here.
+    """
+    from smartmetadata_ingestion.errors import RestError
+
+    suite_name = (pipeline.get("service") or {}).get("name")
+    if not isinstance(suite_name, str) or not suite_name.strip():
+        raise TranslationError(
+            "testSuite pipeline without entityFullyQualifiedName needs "
+            "service.name to name the logical suite"
+        )
+    suite_name = suite_name.strip()
+    try:
+        suite = rest.get_test_suite_by_name(suite_name)
+    except RestError as exc:
+        raise TranslationError(
+            f"cannot resolve the logical test suite {suite_name!r}: {exc}"
+        ) from exc
+    suite_id = (suite or {}).get("id")
+    if not isinstance(suite_id, str) or not suite_id:
+        raise TranslationError(
+            f"logical test suite {suite_name!r} was not found"
+        )
+    wanted = set(_test_case_names(config_block.get("testCases")))
+    try:
+        raw_cases = list(rest.list_test_cases(test_suite_id=suite_id))
+    except RestError as exc:
+        raise TranslationError(
+            f"cannot list test cases of logical test suite {suite_name!r}: {exc}"
+        ) from exc
+    table_fqns: list[str] = []
+    seen_tables: set[str] = set()
+    for case in raw_cases:
+        if not isinstance(case, dict):
+            continue
+        if wanted and case.get("name") not in wanted:
+            continue
+        entity_link = case.get("entityLink")
+        case_fqn = case.get("fullyQualifiedName") or case.get("name") or suite_name
+        if not isinstance(entity_link, str) or not entity_link:
+            raise TranslationError(
+                f"test case {case_fqn!r} of logical test suite {suite_name!r} "
+                "has no entityLink to derive its table from"
+            )
+        table_fqn = _table_fqn_from_entity_link(
+            entity_link, case_fqn=str(case_fqn)
+        )
+        if table_fqn not in seen_tables:
+            seen_tables.add(table_fqn)
+            table_fqns.append(table_fqn)
+    if not table_fqns:
+        raise TranslationError(
+            f"logical test suite {suite_name!r} has no test cases"
+            + (" matching the configured names" if wanted else "")
+            + "; no table to derive the testSuite connection from"
+        )
+    service_names: list[str] = []
+    seen_services: set[str] = set()
+    for table_fqn in table_fqns:
+        service_name = _test_suite_table_service_name(rest, table_fqn)
+        if service_name not in seen_services:
+            seen_services.add(service_name)
+            service_names.append(service_name)
+    if len(service_names) > 1:
+        raise TranslationError(
+            f"logical test suite {suite_name!r} spans several services "
+            f"({', '.join(service_names)}); the product WorkflowConfig "
+            "carries a single connection and cannot express official's "
+            "per-table connections"
+        )
+    return service_names[0]
 
 
 def translate_pipeline(
@@ -880,9 +994,10 @@ def translate_pipeline(
                 pipeline.get("name"),
             )
     if workflow_type == "TestSuite" and service_connection is None:
-        # Official build_source: testSuite passes sourceConfig through
-        # with serviceConnection=None; the connection is resolved from
-        # the suite's table (see _test_suite_service_connection).
+        # Official TestSuiteWorkflow skips build-time connection
+        # resolution; the connection is derived from the suite's table
+        # (table suite) or its tests (logical suite) — see
+        # _test_suite_service_connection.
         service_connection, service_type = _test_suite_service_connection(
             pipeline, server_client
         )

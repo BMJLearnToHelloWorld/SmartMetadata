@@ -12,7 +12,8 @@ Mirrors official ``build_test_suite_dag``: task id ``test_suite_task``
 and no raiseOnError — the official testSuite ``WorkflowConfig`` omits
 it, so a failing suite never fails the task (profiler precedent). The
 sourceConfig passes through and the database connection is derived
-from the suite's table at parse time (translation); the task runs the
+at parse time (translation): from the suite's table for a table suite,
+from the suite's tests for a logical suite. The task runs the
 product ``TestSuiteWorkflow``, which pulls and executes the cases.
 """
 
