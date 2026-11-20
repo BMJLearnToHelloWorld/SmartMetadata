@@ -12,9 +12,7 @@ import type { TranslateFn } from '@/utils/notifications/alertUtils';
 import {
   getAlertDetailsBreadcrumbs,
   getAlertFormBreadcrumbs,
-  getAlertListBreadcrumbs,
   getAnnouncementFormBreadcrumbs,
-  getAnnouncementsBreadcrumbs,
 } from './notificationBreadcrumbs';
 
 const t = ((key: string, params?: Record<string, unknown>) =>
@@ -25,8 +23,12 @@ describe('notification breadcrumbs', () => {
     const crumbs = getAlertDetailsBreadcrumbs('Notification', 'dq-alert', { displayName: 'DQ Alert' }, t);
     expect(crumbs).toEqual([
       { label: 'label.setting-plural', routeName: 'admin-settings' },
-      { label: 'label.notification-plural', routeName: 'settings-notifications' },
-      { label: 'label.alert-plural', routeName: 'settings-notification-alerts' },
+      {
+        label: 'label.notification-plural',
+        routeName: 'settings-category',
+        routeParams: { category: 'notifications' },
+      },
+      { label: 'label.alert-plural', routeName: 'observability-alerts' },
       { label: 'DQ Alert' },
     ]);
   });
@@ -42,6 +44,16 @@ describe('notification breadcrumbs', () => {
 
   it('ends the form trail with Create or Edit Alert per mode', () => {
     const create = getAlertFormBreadcrumbs('Notification', false, t);
+    expect(create).toEqual([
+      { label: 'label.setting-plural', routeName: 'admin-settings' },
+      {
+        label: 'label.notification-plural',
+        routeName: 'settings-category',
+        routeParams: { category: 'notifications' },
+      },
+      { label: 'label.alert-plural', routeName: 'observability-alerts' },
+      { label: 'label.create-entity:{"entity":"label.alert"}' },
+    ]);
     expect(create[create.length - 1]).toEqual({
       label: 'label.create-entity:{"entity":"label.alert"}',
     });
@@ -52,22 +64,9 @@ describe('notification breadcrumbs', () => {
     expect(edit[0]).toEqual({ label: 'label.observability' });
   });
 
-  it('ends the notification list trail with an unlinked Alerts crumb', () => {
-    expect(getAlertListBreadcrumbs(t)).toEqual([
-      { label: 'label.setting-plural', routeName: 'admin-settings' },
-      { label: 'label.notification-plural', routeName: 'settings-notifications' },
-      { label: 'label.alert-plural' },
-    ]);
-  });
-
-  it('builds the announcement list and form trails', () => {
-    expect(getAnnouncementsBreadcrumbs(t)).toEqual([
-      { label: 'label.setting-plural', routeName: 'admin-settings' },
-      { label: 'label.notification-plural', routeName: 'settings-notifications' },
-      { label: 'label.announcement-plural' },
-    ]);
+  it('builds the announcement form trail', () => {
     const form = getAnnouncementFormBreadcrumbs('Add Announcement', t);
-    expect(form[2]).toEqual({ label: 'label.announcement-plural', routeName: 'settings-announcements' });
+    expect(form[2]).toEqual({ label: 'label.announcement-plural', routeName: 'announcements' });
     expect(form[3]).toEqual({ label: 'Add Announcement' });
   });
 });

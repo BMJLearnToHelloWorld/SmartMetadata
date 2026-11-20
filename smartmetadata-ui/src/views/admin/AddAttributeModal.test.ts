@@ -34,6 +34,7 @@ const i18n = createI18n({
       label: {
         save: 'Save',
         'search-entity': 'Search {entity}',
+        'no-description': 'No description',
         'no-matching-result-plural': 'No matching results',
       },
       crud: { cancel: 'Cancel', loadFailed: 'Failed to load' },
@@ -42,16 +43,30 @@ const i18n = createI18n({
   },
 });
 
-function mountModal(type: 'role' | 'policy') {
+function mountModal(type: 'role' | 'policy', selectedKeys: string[] = []) {
   return mount(AddAttributeModal, {
     attachTo: document.body,
-    props: { open: false, type, title: `Add ${type}`, selectedKeys: [] },
+    props: { open: false, type, title: `Add ${type}`, selectedKeys },
     global: { plugins: [i18n] },
   });
 }
 
 function bodyRows(): NodeListOf<Element> {
   return document.body.querySelectorAll('[data-testid="policy-row"]');
+}
+
+function highlightTexts(): string[] {
+  return [...document.body.querySelectorAll('[data-highlight="true"]')].map(
+    (el) => el.textContent ?? '',
+  );
+}
+
+async function searchFor(term: string): Promise<void> {
+  const input = document.body.querySelector<HTMLInputElement>('[data-testid="search-input"]');
+  expect(input).not.toBeNull();
+  input!.value = term;
+  input!.dispatchEvent(new Event('input', { bubbles: true }));
+  await flushPromises();
 }
 
 describe('AddAttributeModal', () => {
@@ -112,6 +127,121 @@ describe('AddAttributeModal', () => {
     }
     expect(rejections).toEqual([]);
     expect(bodyRows().length).toBe(0);
+    wrapper.unmount();
+  });
+
+  it('fetches roles with pin fields and no default roles', async () => {
+    vi.mocked(listRoles).mockResolvedValue({ data: [] });
+    const wrapper = mountModal('role');
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    // Pin getRoles('', undefined, undefined, false, 100)
+    // (AddAttributeModal.tsx:78): empty fields, default=false.
+    expect(listRoles).toHaveBeenCalledWith(100, undefined, '', false);
+    wrapper.unmount();
+  });
+
+  it('fetches policies with pin fields', async () => {
+    vi.mocked(listPolicies).mockResolvedValue({ data: [] });
+    const wrapper = mountModal('policy');
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    // Pin getPolicies('', undefined, undefined, 100)
+    // (AddAttributeModal.tsx:74): empty fields.
+    expect(listPolicies).toHaveBeenCalledWith({ limit: 100, fields: '' });
+    wrapper.unmount();
+  });
+
+  it('highlights the search term in the name and description case-insensitively', async () => {
+    const role: AdminRole = {
+      id: 'r1',
+      name: 'DataSteward',
+      displayName: 'Data Steward',
+      description: 'Owns DATA governance',
+      policies: [],
+      users: [],
+      teams: [],
+    };
+    vi.mocked(listRoles).mockResolvedValue({ data: [role] });
+    const wrapper = mountModal('role');
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(bodyRows().length).toBe(1);
+    });
+    await searchFor('Data');
+    // Pin highlightSearchText is case-insensitive (EntitySearchUtils.tsx:
+    // 119-133): the name match 'Data' and the description match 'DATA'
+    // are both wrapped, even though the row filter itself is
+    // case-sensitive.
+    expect(highlightTexts()).toContain('Data');
+    expect(highlightTexts()).toContain('DATA');
+    wrapper.unmount();
+  });
+
+  it('shows the check icon only for selected rows and no checkbox', async () => {
+    const roles: AdminRole[] = [
+      { id: 'r1', name: 'RoleOne', policies: [], users: [], teams: [] },
+      { id: 'r2', name: 'RoleTwo', policies: [], users: [], teams: [] },
+    ];
+    vi.mocked(listRoles).mockResolvedValue({ data: roles });
+    const wrapper = mountModal('role', ['r1']);
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(bodyRows().length).toBe(2);
+    });
+    // Pin AddAttributeModal.tsx:193-200: a Check icon only when
+    // selected, no checkbox anywhere.
+    expect(document.body.querySelectorAll('[data-testid="selected-check-icon"]').length).toBe(1);
+    expect(document.body.querySelector('input[type="checkbox"]')).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('shows the no-description fallback for rows without a description', async () => {
+    const policy: AdminPolicy = {
+      id: 'p1',
+      name: 'DataOwnerPolicy',
+      owners: [],
+      teams: [],
+      roles: [],
+      rules: [],
+    };
+    vi.mocked(listPolicies).mockResolvedValue({ data: [policy] });
+    const wrapper = mountModal('policy');
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(bodyRows().length).toBe(1);
+    });
+    expect(document.body.textContent).toContain('No description');
+    wrapper.unmount();
+  });
+
+  it('wraps the empty placeholder in the pin surface wrapper', async () => {
+    const role: AdminRole = {
+      id: 'r1',
+      name: 'DataSteward',
+      policies: [],
+      users: [],
+      teams: [],
+    };
+    vi.mocked(listRoles).mockResolvedValue({ data: [role] });
+    const wrapper = mountModal('role');
+    await wrapper.setProps({ open: true });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(bodyRows().length).toBe(1);
+    });
+    await searchFor('zzz-no-match');
+    await vi.waitFor(() => {
+      expect(bodyRows().length).toBe(0);
+    });
+    // Pin AddAttributeModal.tsx:161: the placeholder sits in a
+    // relative, full-size, min-h-60, rounded, surface div.
+    const empty = document.body.querySelector('.add-attribute-modal__empty');
+    expect(empty).not.toBeNull();
+    expect(empty!.querySelector('[data-testid="search-error-placeholder"]')).not.toBeNull();
     wrapper.unmount();
   });
 

@@ -3860,17 +3860,6 @@ const zhCN = {
         loadFailed: '连接 Schema 加载失败。',
         noConfigAvailable: '没有可用的连接配置。',
       },
-      count: {
-        api: '集合',
-        dashboard: '仪表板',
-        database: '数据库',
-        drive: '目录',
-        messaging: '主题',
-        mlmodel: 'ML 模型',
-        pipeline: '管道',
-        search: '搜索索引',
-        storage: '容器',
-      },
       domain: {
         clearFilter: '清除域过滤',
         filteredBy: '按域过滤',

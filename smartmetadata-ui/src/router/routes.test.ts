@@ -178,14 +178,14 @@ describe('settings route-pattern manifest (§4.5)', () => {
     }
   });
 
-  it('registers each policy-rule action pattern exactly once (M1a)', () => {
+  it('registers each policy-rule action pattern exactly once (M1a, R-14(a))', () => {
     const paths = router.getRoutes().map((route) => route.path);
-    expect(paths.filter((path) => path === '/settings/access/policies/:id/add-rule')).toHaveLength(1);
+    expect(paths.filter((path) => path === '/settings/access/policies/:fqn/add-rule')).toHaveLength(1);
     expect(
-      paths.filter((path) => path === '/settings/access/policies/:id/edit-rule/:ruleName'),
+      paths.filter((path) => path === '/settings/access/policies/:fqn/edit-rule/:ruleName'),
     ).toHaveLength(1);
-    expect(paths).not.toContain('/settings/access/policies/:fqn/add-rule');
-    expect(paths).not.toContain('/settings/access/policies/:fqn/edit-rule/:ruleName');
+    expect(paths).not.toContain('/settings/access/policies/:id/add-rule');
+    expect(paths).not.toContain('/settings/access/policies/:id/edit-rule/:ruleName');
   });
 
   it('drops the :tab segment from the workflow detail pattern (D-5)', () => {
@@ -292,10 +292,10 @@ describe('settings route-pattern manifest (§4.5)', () => {
     // patterns and are handled as detail unknown-ids under the detail guard.
     const roleResolved = router.resolve('/settings/access/roles/add-role');
     expect(roleResolved.name).toBe('admin-role');
-    expect(roleResolved.params).toMatchObject({ id: 'add-role' });
+    expect(roleResolved.params).toMatchObject({ fqn: 'add-role' });
     const policyResolved = router.resolve('/settings/access/policies/add-policy');
     expect(policyResolved.name).toBe('admin-policy');
-    expect(policyResolved.params).toMatchObject({ id: 'add-policy' });
+    expect(policyResolved.params).toMatchObject({ fqn: 'add-policy' });
     expect(router.resolve('/create-user').name).toBe('create-user');
     expect(router.resolve('/create-user/bot').name).toBe('create-user-bot');
   });
@@ -528,11 +528,11 @@ describe('settings sections faces', () => {
     ['/create-user/bot', 'create-user-bot', {}],
     // 03 access faces: add routes + :fqn segments.
     ['/admin/roles/add', 'admin-role-add', {}],
-    ['/settings/access/roles/r1', 'admin-role', { id: 'r1' }],
+    ['/settings/access/roles/r1', 'admin-role', { fqn: 'r1' }],
     ['/admin/policies/add', 'admin-policy-add', {}],
-    ['/settings/access/policies/p1', 'admin-policy', { id: 'p1' }],
-    ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { id: 'p1' }],
-    ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { id: 'p1', ruleName: 'r1' }],
+    ['/settings/access/policies/p1', 'admin-policy', { fqn: 'p1' }],
+    ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { fqn: 'p1' }],
+    ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { fqn: 'p1', ruleName: 'r1' }],
     // 08 admin-app :fqn.
     ['/settings/apps/a1', 'admin-app', { id: 'a1' }],
     // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
@@ -568,6 +568,30 @@ describe('settings sections faces', () => {
     expect(resolved.name).toBe(name);
     if (params) {
       expect(resolved.params).toMatchObject(params);
+    }
+  });
+
+  it('resolves the four access detail routes by name with {fqn} (R-14(a))', () => {
+    // Pin detail routes are `:fqn` and every location in
+    // views/admin/accessPaths.ts navigates with {fqn}; before the
+    // rename the named resolution could not satisfy the required `:id`
+    // param and the path resolution delivered prop `id`, leaving the
+    // views' `fqn` prop undefined (PolicyDetailView "No policy found").
+    const cases: Array<[string, Record<string, string>, string]> = [
+      ['admin-role', { fqn: 'r1' }, '/settings/access/roles/r1'],
+      ['admin-policy', { fqn: 'p1' }, '/settings/access/policies/p1'],
+      ['admin-policy-rule-add', { fqn: 'p1' }, '/settings/access/policies/p1/add-rule'],
+      [
+        'admin-policy-rule-edit',
+        { fqn: 'p1', ruleName: 'rule1' },
+        '/settings/access/policies/p1/edit-rule/rule1',
+      ],
+    ];
+    for (const [name, params, path] of cases) {
+      const resolved = router.resolve({ name, params });
+      expect(resolved.name).toBe(name);
+      expect(resolved.params).toMatchObject(params);
+      expect(resolved.path).toBe(path);
     }
   });
 

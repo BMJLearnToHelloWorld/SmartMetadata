@@ -17,13 +17,22 @@ import { computed } from 'vue';
  * tags this renderer itself emits reach v-html. If a future surface
  * needs full GFM (tables, images, footnotes), extend this one component
  * rather than adding a second renderer elsewhere.
+ *
+ * `highlight` (pin `highlightSearchText`, `EntitySearchUtils.tsx:119-133`)
+ * wraps case-insensitive matches of the search text in
+ * `<span data-highlight="true" class="text-highlighter">`, applied to
+ * the escaped text before the inline transforms, so bold/italic/links
+ * still render around a match. A match inside a link URL would land in
+ * the href — accepted: descriptions rendered here are short prose,
+ * not link farms.
  */
 const props = withDefaults(
   defineProps<{
     markdown?: string;
     testId?: string;
+    highlight?: string;
   }>(),
-  { markdown: '', testId: 'sm-markdown' },
+  { markdown: '', testId: 'sm-markdown', highlight: '' },
 );
 
 function escapeHtml(value: string): string {
@@ -46,8 +55,19 @@ function safeHref(raw: string): string | null {
   return null;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function renderInline(escaped: string): string {
   let out = escaped;
+  if (props.highlight) {
+    const term = escapeRegExp(escapeHtml(props.highlight));
+    out = out.replace(
+      new RegExp(`(${term})`, 'gi'),
+      '<span data-highlight="true" class="text-highlighter">$1</span>',
+    );
+  }
   out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
   out = out.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
@@ -179,5 +199,8 @@ const html = computed(() => renderMarkdown(props.markdown ?? ''));
 }
 .sm-markdown :deep(code) {
   font-family: var(--sm-font-mono, monospace);
+}
+.sm-markdown :deep(.text-highlighter) {
+  background: var(--sm-color-warning-bg);
 }
 </style>

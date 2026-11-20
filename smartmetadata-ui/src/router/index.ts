@@ -301,7 +301,7 @@ export const router = createRouter({
         // reached via the settings-members-teams redirect below.
         { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
         { path: 'settings/access/roles', name: 'admin-roles', component: RolesListView, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
-        { path: 'settings/access/roles/:id', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        { path: 'settings/access/roles/:fqn', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
         // 03 §12: the add-role route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
         // equivalent is the explicit 'admin-only' declaration — the
@@ -401,18 +401,22 @@ export const router = createRouter({
         { path: 'settings/preferences/timeFormat', name: 'settings-preferences-time-format', component: TimeFormatSettingsView, meta: { guard: 'admin-only' } },
 
         { path: 'settings/access/policies', name: 'admin-policies', component: PoliciesListView, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
-        { path: 'settings/access/policies/:id', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        { path: 'settings/access/policies/:fqn', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
         // 03 §12: the add-policy route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
         // equivalent is the explicit 'admin-only' declaration — the
         // view carries no in-view Create gate.
         { path: 'admin/policies/add', name: 'admin-policy-add', component: AddPolicyView, meta: { guard: 'admin-only' } },
-        // M1a: the two policy-rule action routes are canonical this
-        // stage; :id/:fqn spell the same single-segment pattern and
-        // must never be registered twice.
-        { path: 'settings/access/policies/:id/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
+        // R-14(a): the two policy-rule action routes are canonical this
+        // stage; the segments are `:fqn` (pin SettingsRouter detail
+        // routes are `:fqn`), matching the `fqn` prop the rule views
+        // declare. `:id`/`:fqn` spell the same single-segment pattern
+        // and must never be registered twice. Old UUID deep links to
+        // these four routes break once (release-note item: B-9 (a1)
+        // full `:fqn` coverage for roles/policies).
+        { path: 'settings/access/policies/:fqn/add-rule', name: 'admin-policy-rule-add', component: AddPolicyRuleView, props: true, meta: { guard: { resource: 'POLICY', operation: 'EditAll' } } },
         {
-          path: 'settings/access/policies/:id/edit-rule/:ruleName',
+          path: 'settings/access/policies/:fqn/edit-rule/:ruleName',
           name: 'admin-policy-rule-edit',
           component: EditPolicyRuleView,
           props: true,
