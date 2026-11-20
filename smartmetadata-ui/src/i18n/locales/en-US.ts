@@ -6157,7 +6157,6 @@ const enUS = {
     removeEntity: 'Remove {entity}',
     rolePlural: 'Roles',
     saveChanges: 'Save changes',
-    secretSaveBlocked: "The client secret can't be saved in the current configuration. Clear the secret to save the other changes.",
     selectField: 'Select {field}',
     setUp: 'Set Up',
     settingsDeploymentValuesOverridden: 'The following settings have saved values that override the deployment configuration:',
