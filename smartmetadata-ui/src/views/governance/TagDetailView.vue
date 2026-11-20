@@ -12,6 +12,12 @@ import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { deleteTag, getTag, patchTag, updateTag } from '@/api/tags';
+import { domainsPatch, ownersPatch } from '@/governance/assetPatch';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetReviewerCell from '@/components/shared/widgets/WidgetReviewerCell.vue';
+import { usePermissionStore } from '@/stores/permissions';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
@@ -24,7 +30,7 @@ import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageDa
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { confirmDelete } from '@/features/crud/confirmDelete';
-import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import { entityLabel } from '@/features/crud/paging';
 import { toEntityLink } from '@/quality/entityLink';
 import { setFieldPatch } from '@/admin/jsonPatch';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
@@ -62,6 +68,19 @@ const tagPermissions = useEntityPermissions(
   { deleted: () => tag.value?.deleted === true || tag.value?.disabled === true },
 );
 const canEditDescription = computed(() => tagPermissions.canEditDescription.value);
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one. The composable
+ * exposes only the named flags it owns; the rest go through its generic
+ * `can(op)` escape hatch, which applies the same prioritization and
+ * deleted gating (disabled feeds the deleted gate here, see above).
+ */
+const permissionStore = usePermissionStore();
+const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const canEditOwners = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditOwners'));
+const canEditDomains = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditDomains'));
+const canEditReviewers = computed(() => permissionStore.isAdminUser || tagPermissions.can('EditReviewers'));
 watch(
   () => tagPermissions.error.value,
   (error) => {
@@ -290,6 +309,37 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch via
+ * patchTag. Each throws on failure so the cell keeps its editor open.
+ */
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  await patchTag(tag.value.id, ownersPatch(tag.value.owners, owners));
+  message.success(t('tags.updated'));
+  await load();
+}
+
+async function onDomainsChange(domainIds: string[]): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  await patchTag(tag.value.id, domainsPatch(tag.value.domains, domainIds));
+  message.success(t('tags.updated'));
+  await load();
+}
+
+async function onReviewersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!tag.value) {
+    return;
+  }
+  await patchTag(tag.value.id, ownersPatch(tag.value.reviewers, owners));
+  message.success(t('tags.updated'));
+  await load();
+}
+
 watch(
   () => props.id,
   () => {
@@ -299,6 +349,11 @@ watch(
 
 onMounted(() => {
   void load();
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
 });
 </script>
 
@@ -344,19 +399,28 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="tag.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="tag.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="tag.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
         </template>
       </GenericTab>
@@ -395,19 +459,28 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="tag.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="tag.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="tag.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
         </template>
       </GenericTab>
@@ -434,19 +507,28 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnersCell
+              :owners="tag.owners"
+              :options="catalog.owners"
+              :has-edit-access="canEditOwners"
+              :on-change="onOwnersChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainCell
+              :domains="tag.domains"
+              :options="catalog.domains"
+              :has-edit-access="canEditDomains"
+              :on-change="onDomainsChange"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetReviewerCell
+              :reviewers="tag.reviewers"
+              :options="catalog.owners"
+              :has-edit-access="canEditReviewers"
+              :on-change="onReviewersChange"
+            />
           </div>
         </template>
       </GenericTab>

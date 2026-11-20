@@ -452,9 +452,12 @@ describe('DomainDetailView widget grid (B-8)', () => {
   }
 
   function widgetTestIds(wrapper: Awaited<ReturnType<typeof mountDomain>>): string[] {
+    // Branch slots only: the shared cells carry their own `widget-*-cell`
+    // root testids, which are not branches.
     return wrapper
       .findAll('[data-testid^="widget-"]')
-      .map((node) => node.attributes('data-testid') as string);
+      .map((node) => node.attributes('data-testid') as string)
+      .filter((id) => !id.endsWith('-cell'));
   }
 
   afterEach(() => {
@@ -491,9 +494,9 @@ describe('DomainDetailView widget grid (B-8)', () => {
     expect(wrapper.find('[data-testid="widget-description"]').text()).toContain('Finance assets');
     expect(wrapper.find('[data-testid="widget-owners"]').text()).toContain('Alice');
     const tags = wrapper.find('[data-testid="widget-tags"]');
-    expect(tags.text()).toContain('PII.Sensitive');
-    expect(tags.text()).not.toContain('Business.term');
-    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier.Tier1');
+    expect(tags.text()).toContain('Sensitive');
+    expect(tags.text()).not.toContain('term');
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier1');
     // The default overview pane (which shows the domain type row) is replaced.
     expect(wrapper.text()).not.toContain('Source-aligned');
     wrapper.unmount();

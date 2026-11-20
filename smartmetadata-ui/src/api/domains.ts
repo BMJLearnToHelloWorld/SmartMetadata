@@ -7,17 +7,17 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { asBoolean, asNumber, asString, mapEntityRefs, parsePaged } from '@/api/json';
+import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
 import type { EntityRef } from '@/types/api';
 import type { CreateDomainRequest, Domain } from '@/types/governance';
 import { apiRequest } from './client';
 import { addBulkAssets, removeBulkAssets, type BulkAssetResult } from './bulkAssets';
-import { mapTags } from './entities';
+import { mapCertification, mapTags } from './entities';
 
 export type { BulkAssetResult };
 
-export const DOMAIN_FIELDS = 'tags,children,childrenCount,owners,experts,extension';
+export const DOMAIN_FIELDS = 'tags,children,childrenCount,owners,experts,extension,certification';
 
 export interface ListDomainsQuery {
   limit?: number;
@@ -44,6 +44,9 @@ function mapDomain(raw: Record<string, unknown>): Domain | null {
     owners: mapEntityRefs(raw.owners),
     experts: mapEntityRefs(raw.experts),
     tags: mapTags(raw.tags),
+    // D-2 batch 2: pin reads the certification field, not the
+    // `Certification.*` tag in `tags`.
+    certification: mapCertification(asRecord(raw.certification)),
     extension:
       raw.extension && typeof raw.extension === 'object'
         ? (raw.extension as Record<string, unknown>)

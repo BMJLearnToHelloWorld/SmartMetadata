@@ -7,7 +7,8 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-import { entityRefValue, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
+import { entityRefValue, removeFieldPatch, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
+import { getTagsWithoutCertification, getTagsWithoutTier } from '@/ingestion/tierTags';
 import type { TagLabelState, TagLabelType } from '@/types/api';
 import type { AssetTagOption, TagSource } from '@/types/governance';
 
@@ -45,18 +46,35 @@ export function toTagLabel(option: TagLabelInput): TagLabelValue {
   };
 }
 
+/** A stored tag label as a picker input, preserving labelType/state. */
+export function tagRefToInput(tag: {
+  tagFQN: string;
+  name: string;
+  source?: string;
+  labelType?: TagLabelType;
+  state?: TagLabelState;
+}): TagLabelInput {
+  return {
+    tagFQN: tag.tagFQN,
+    name: tag.name,
+    source: (tag.source as TagSource) || 'Classification',
+    labelType: tag.labelType,
+    state: tag.state,
+  };
+}
+
 export function descriptionPatch(current: unknown, description: string): JsonPatchOp[] {
   return setFieldPatch('/description', current, description);
 }
 
 export function ownersPatch(
   current: unknown,
-  owners: Array<{ id: string; type: string }>,
+  owners: Array<{ id?: string; type: string }>,
 ): JsonPatchOp[] {
   return setFieldPatch(
     '/owners',
     current,
-    owners.map((owner) => entityRefValue(owner.id, owner.type)),
+    owners.flatMap((owner) => (owner.id ? [entityRefValue(owner.id, owner.type)] : [])),
   );
 }
 
@@ -115,4 +133,97 @@ export function columnTagsPatch(
 /** Custom property values live on the entity `extension` object. */
 export function extensionPatch(current: unknown, extension: Record<string, unknown>): JsonPatchOp[] {
   return setFieldPatch('/extension', current, extension);
+}
+
+/**
+ * Whole-field write of an entity-reference list (`owners`, `domains`,
+ * `experts`, `reviewers`): refs carry only `{id, type}`, the same shape
+ * `ownersPatch` writes. D-2 batch 2 cell saves for the governance views
+ * (which have no field-specific patch helper) build their ops through
+ * this instead of the full-PUT update functions, whose Create*Request
+ * bodies do not carry these fields.
+ */
+export function entityRefsPatch(
+  path: string,
+  current: unknown,
+  refs: Array<{ id?: string; type: string }>,
+): JsonPatchOp[] {
+  // A ref without an id cannot be written; drop it instead of sending
+  // an id-less reference (the cells only emit ids taken from options,
+  // which always carry one, so nothing is dropped in practice).
+  return setFieldPatch(
+    path,
+    current,
+    refs.flatMap((ref) => (ref.id ? [entityRefValue(ref.id, ref.type)] : [])),
+  );
+}
+
+/**
+ * Whole-field write of an entity's `dataProducts` list (pin
+ * DataProductsWidget `onUpdate({...data, dataProducts: refs})`, as a
+ * JSON Patch op on the Asset path). Refs carry only `{id, type}` like
+ * `ownersPatch`.
+ */
+export function dataProductsPatch(
+  current: unknown,
+  products: Array<{ id?: string; type: string }>,
+): JsonPatchOp[] {
+  return entityRefsPatch('/dataProducts', current, products);
+}
+
+/**
+ * Certification field write (pin CertificationWidget
+ * `updateCertificationTag`: a new value is `{tagLabel}`, clearing sends
+ * no value). Setting uses a whole-field set; clearing uses `remove`
+ * (never `replace` with null) — the same empty-value rule as the
+ * Pipeline description `remove` (A7 §3.4).
+ */
+export function certificationPatch(
+  current: unknown,
+  tagFqn?: string,
+): JsonPatchOp[] {
+  if (!tagFqn) {
+    return current === undefined || current === null ? [] : [removeFieldPatch('/certification')];
+  }
+  return setFieldPatch('/certification', current, {
+    tagLabel: { tagFQN: tagFqn, source: 'Classification', labelType: 'Manual', state: 'Confirmed' },
+  });
+}
+
+/**
+ * Pin `updateTierTag` (utils/TagsPureUtils.ts), on the product's tag
+ * list: drop every existing `Tier.*` label, then append the new tier
+ * label — or append nothing when clearing. Retained labels pass through
+ * as the stored objects, untouched: rebuilding them through `toTagLabel`
+ * would drop their display fields and reset an Automated labelType or
+ * a Suggested state to Manual/Confirmed (same rule as `tierTagsPatch`
+ * in `ingestion/tierTags.ts`).
+ */
+export function withTierTag(
+  currentTags: readonly TagLabelInput[],
+  newTier?: TagLabelInput,
+): TagLabelInput[] {
+  const retained = getTagsWithoutTier(currentTags);
+  if (!newTier) {
+    return retained;
+  }
+  return [...retained, newTier];
+}
+
+/**
+ * Same shape as `withTierTag` for the `Certification.*` tag, used by
+ * the entities whose spec carries no `certification` field (Glossary,
+ * GlossaryTerm): the certification lives as a tag in `tags` there, so
+ * the cell edits it by replacing that tag instead of patching the
+ * field.
+ */
+export function withCertificationTag(
+  currentTags: readonly TagLabelInput[],
+  newCertification?: TagLabelInput,
+): TagLabelInput[] {
+  const retained = getTagsWithoutCertification(currentTags);
+  if (!newCertification) {
+    return retained;
+  }
+  return [...retained, newCertification];
 }

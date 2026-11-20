@@ -104,5 +104,23 @@ export function buildEditorPieceContext(
     apiEndpointsError: '',
     apiEndpointSchemaJson: () => '',
     onApiEndpointClick: () => {},
+    // D-2 batch 2 widget cells: the editor preview renders the pieces
+    // read-only, so the catalog is empty, every edit gate is off, and
+    // every save is a no-op (the fields are required by the context
+    // type because the live view always provides them).
+    catalogOwners: [],
+    catalogTags: [],
+    catalogDomains: [],
+    tagsAccess: false,
+    glossaryTermsAccess: false,
+    ownersAccess: false,
+    domainsAccess: false,
+    dataProductsAccess: false,
+    customPropsCanEdit: false,
+    onTagsChange: async () => {},
+    onOwnersChange: async () => {},
+    onDomainsChange: async () => {},
+    onDataProductsChange: async () => {},
+    onCustomPropertySave: async () => {},
   };
 }

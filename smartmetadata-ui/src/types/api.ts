@@ -321,6 +321,19 @@ export interface AssetDetail {
   votes?: EntityVotes;
   tags: TagRef[];
   domains: EntityRef[];
+  /**
+   * Data products the asset belongs to (spec `dataProducts`,
+   * entityReferenceList). Requested via DETAIL_ENDPOINTS and mapped by
+   * `fetchAssetDetail`; D-2 batch 2 added the mapping (A7 §5 called the
+   * field absent — the server carries it, the product never asked).
+   */
+  dataProducts?: EntityRef[];
+  /**
+   * Certification (spec `certification`, assetCertification
+   * `{tagLabel}`). Requested and mapped like `dataProducts`; pin reads
+   * the field, not the `Certification.*` tag in `tags`.
+   */
+  certification?: { tagLabel?: TagRef };
   schemaRows: SchemaRow[];
   schemaLabel: string;
   extension?: Record<string, unknown>;

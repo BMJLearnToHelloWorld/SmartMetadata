@@ -333,9 +333,12 @@ describe('DataProductDetailView widget grid (B-8)', () => {
   }
 
   function widgetTestIds(wrapper: ReturnType<typeof mountView>): string[] {
+    // Branch slots only: the shared cells carry their own `widget-*-cell`
+    // root testids, which are not branches.
     return wrapper
       .findAll('[data-testid^="widget-"]')
-      .map((node) => node.attributes('data-testid') as string);
+      .map((node) => node.attributes('data-testid') as string)
+      .filter((id) => !id.endsWith('-cell'));
   }
 
   afterEach(() => {
@@ -365,7 +368,7 @@ describe('DataProductDetailView widget grid (B-8)', () => {
     const wrapper = await mountProduct();
     expect(wrapper.find('[data-testid="widget-domain"]').text()).toContain('Marketing');
     expect(wrapper.find('[data-testid="widget-experts"]').text()).toContain('Bob');
-    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier.Tier1');
+    expect(wrapper.find('[data-testid="widget-tier"]').text()).toContain('Tier1');
     expect(wrapper.find('[data-testid="widget-domain-type"]').exists()).toBe(false);
     // The default overview pane (which shows the description row) is replaced.
     expect(wrapper.text()).not.toContain('Predicts customer churn');

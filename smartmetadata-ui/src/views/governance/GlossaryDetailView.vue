@@ -13,10 +13,17 @@ import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
 import PageHeader from '@/components/shared/PageHeader.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetCertificationTagCell from '@/components/shared/widgets/WidgetCertificationTagCell.vue';
+import WidgetDomainCell from '@/components/shared/widgets/WidgetDomainCell.vue';
+import WidgetOwnersCell from '@/components/shared/widgets/WidgetOwnersCell.vue';
+import WidgetReviewerCell from '@/components/shared/widgets/WidgetReviewerCell.vue';
+import WidgetTagsCell from '@/components/shared/widgets/WidgetTagsCell.vue';
+import WidgetTierCell from '@/components/shared/widgets/WidgetTierCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
+import { usePermissionStore } from '@/stores/permissions';
 import AssetActivityPanel from '@/features/crud/AssetActivityPanel.vue';
 import FormModal from '@/components/shared/FormModal.vue';
-import { createGlossary, deleteGlossary, getGlossary, listGlossaries, updateGlossary } from '@/api/glossaries';
+import { createGlossary, deleteGlossary, getGlossary, listGlossaries, patchGlossary, updateGlossary } from '@/api/glossaries';
 import { latestGovernanceVersionPath } from '@/api/governanceVersions';
 import { getGlossaryVersionPath } from '@/catalog/versionPaths';
 import { listEntityActivity } from '@/api/activity';
@@ -35,8 +42,15 @@ import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
-import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
+import {
+  domainsPatch,
+  entityRefsPatch,
+  ownersPatch,
+  tagsPatch,
+  type TagLabelInput,
+} from '@/governance/assetPatch';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
 import type { EntityRef, TagRef } from '@/types/api';
 import type { Glossary, GlossaryTerm } from '@/types/governance';
 
@@ -68,6 +82,29 @@ const glossaryPermissions = useEntityPermissions(
   { deleted: () => glossary.value?.deleted === true },
 );
 const canEditDescription = computed(() => glossaryPermissions.canEditDescription.value);
+const permissionStore = usePermissionStore();
+
+/**
+ * D-2 batch 2 widget-cell gates (P1 dual line): each action gate ORs
+ * `isAdminUser` with the derived flag — never only one. The composable
+ * exposes only the named flags it owns; the rest go through its generic
+ * `can(op)` escape hatch, which applies the same prioritization and
+ * deleted gating.
+ */
+const catalog = ref<GovernanceCatalog>({ owners: [], tags: [], domains: [] });
+const canEditTags = computed(() => permissionStore.isAdminUser || glossaryPermissions.can('EditTags'));
+const canEditGlossaryTerms = computed(
+  () => permissionStore.isAdminUser || glossaryPermissions.can('EditGlossaryTerms'),
+);
+const canEditOwners = computed(() => permissionStore.isAdminUser || glossaryPermissions.can('EditOwners'));
+const canEditDomains = computed(() => permissionStore.isAdminUser || glossaryPermissions.can('EditDomains'));
+const canEditTier = computed(() => permissionStore.isAdminUser || glossaryPermissions.can('EditTier'));
+const canEditReviewers = computed(
+  () => permissionStore.isAdminUser || glossaryPermissions.can('EditReviewers'),
+);
+const canEditCertification = computed(
+  () => permissionStore.isAdminUser || glossaryPermissions.can('EditCertification'),
+);
 watch(
   () => glossaryPermissions.error.value,
   (error) => {
@@ -314,21 +351,6 @@ function customizedEntryFor(tabKey: string) {
 function widgetLayoutFor(tabKey: string) {
   const entry = customizedEntryFor(tabKey);
   return entry ? resolveWidgetLayout('Glossary', entry.id, customizedPage.value) : [];
-}
-
-// Tag labels split the official way: glossary-sourced labels are the
-// glossary-terms widget, the rest are the tags widget.
-const glossaryTags = computed(() =>
-  (glossary.value?.tags ?? []).filter((tag) => tag.source !== 'Glossary'),
-);
-const glossaryGlossaryTerms = computed(() =>
-  (glossary.value?.tags ?? []).filter((tag) => tag.source === 'Glossary'),
-);
-const glossaryTierTag = computed(() => getTierTag(glossary.value?.tags ?? []));
-const glossaryCertificationTag = computed(() => getCertificationTag(glossary.value?.tags ?? []));
-
-function tagFqnList(tags: readonly TagRef[]): string {
-  return tags.map((tag) => tag.tagFQN).join(', ');
 }
 
 // The terms-table widget renders the current page flat: children are
@@ -698,6 +720,57 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await loadGlossaryList();
 }
 
+/**
+ * D-2 batch 2 widget-cell saves: each is one field's JSON Patch
+ * (governance saves go through PATCH, not the full PUT — the
+ * CreateGlossaryRequest body does not carry these fields, so a PUT
+ * would drop them). Each throws on failure so the cell keeps its
+ * editor open.
+ */
+async function reloadGlossary(): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await loadDetail(glossary.value.id);
+  await loadGlossaryList();
+}
+
+async function onTagsChange(tags: TagLabelInput[]): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await patchGlossary(glossary.value.id, tagsPatch(glossary.value.tags, tags));
+  message.success(t('governance.glossaries.updated'));
+  await reloadGlossary();
+}
+
+async function onOwnersChange(owners: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await patchGlossary(glossary.value.id, ownersPatch(glossary.value.owners, owners));
+  message.success(t('governance.glossaries.updated'));
+  await reloadGlossary();
+}
+
+async function onReviewersChange(reviewers: Array<{ id: string; type: 'user' | 'team' }>): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await patchGlossary(glossary.value.id, entityRefsPatch('/reviewers', glossary.value.reviewers, reviewers));
+  message.success(t('governance.glossaries.updated'));
+  await reloadGlossary();
+}
+
+async function onDomainsChange(domainIds: string[]): Promise<void> {
+  if (!glossary.value) {
+    return;
+  }
+  await patchGlossary(glossary.value.id, domainsPatch(glossary.value.domains, domainIds));
+  message.success(t('governance.glossaries.updated'));
+  await reloadGlossary();
+}
+
 async function onCreateGlossary(): Promise<void> {
   creatingGlossary.value = true;
   try {
@@ -793,6 +866,11 @@ watch([termSearch, statusFilter], () => {
 
 onMounted(() => {
   void ensureSelection();
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
 });
 </script>
 
@@ -966,31 +1044,68 @@ onMounted(() => {
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && glossary" data-testid="widget-domain">
                     <Typography.Text strong>{{ t('governance.glossaries.railDomain') }}</Typography.Text>
-                    <div>{{ joinRefNames(glossary.domains) || t('governance.glossaries.noDomains') }}</div>
+                    <WidgetDomainCell
+                      :domains="glossary.domains"
+                      :options="catalog.domains"
+                      :has-edit-access="canEditDomains"
+                      :on-change="onDomainsChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && glossary" data-testid="widget-owners">
                     <Typography.Text strong>{{ t('governance.glossaries.railOwners') }}</Typography.Text>
-                    <div>{{ joinRefNames(glossary.owners) || t('governance.glossaries.noOwners') }}</div>
+                    <WidgetOwnersCell
+                      :owners="glossary.owners"
+                      :options="catalog.owners"
+                      :has-edit-access="canEditOwners"
+                      :on-change="onOwnersChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && glossary" data-testid="widget-reviewer">
                     <Typography.Text strong>{{ t('governance.glossaries.railReviewers') }}</Typography.Text>
-                    <div>{{ joinRefNames(glossary.reviewers) || t('governance.glossaries.noReviewers') }}</div>
+                    <WidgetReviewerCell
+                      :reviewers="glossary.reviewers"
+                      :options="catalog.owners"
+                      :has-edit-access="canEditReviewers"
+                      :on-change="onReviewersChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.TAGS && glossary" data-testid="widget-tags">
                     <Typography.Text strong>{{ t('governance.glossaries.railTags') }}</Typography.Text>
-                    <div>{{ tagFqnList(glossaryTags) || t('governance.glossaries.noTags') }}</div>
+                    <WidgetTagsCell
+                      tag-type="Classification"
+                      :tags="glossary.tags ?? []"
+                      :options="catalog.tags"
+                      :has-edit-access="canEditTags"
+                      :on-tags-change="onTagsChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.GLOSSARY_TERMS && glossary" data-testid="widget-glossary-terms">
                     <Typography.Text strong>{{ t('asset.tabs.glossaryTerms') }}</Typography.Text>
-                    <div>{{ tagFqnList(glossaryGlossaryTerms) || t('governance.glossaries.noTags') }}</div>
+                    <WidgetTagsCell
+                      tag-type="Glossary"
+                      :tags="glossary.tags ?? []"
+                      :options="catalog.tags"
+                      :has-edit-access="canEditGlossaryTerms"
+                      :on-tags-change="onTagsChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.TIER && glossary" data-testid="widget-tier">
                     <Typography.Text strong>{{ t('label.tier') }}</Typography.Text>
-                    <div>{{ glossaryTierTag?.tagFQN || '—' }}</div>
+                    <WidgetTierCell
+                      :tags="glossary.tags ?? []"
+                      :options="catalog.tags"
+                      :has-edit-access="canEditTier"
+                      :on-tags-change="onTagsChange"
+                    />
                   </div>
                   <div v-else-if="contentKey === DetailWidgetKeys.CERTIFICATION && glossary" data-testid="widget-certification">
                     <Typography.Text strong>{{ t('label.certification') }}</Typography.Text>
-                    <div>{{ glossaryCertificationTag?.tagFQN || '—' }}</div>
+                    <WidgetCertificationTagCell
+                      :tags="glossary.tags ?? []"
+                      :options="catalog.tags"
+                      :has-edit-access="canEditCertification"
+                      :on-tags-change="onTagsChange"
+                    />
                   </div>
                 </template>
               </GenericTab>
