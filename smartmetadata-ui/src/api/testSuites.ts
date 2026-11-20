@@ -89,6 +89,20 @@ export async function getTestSuite(id: string): Promise<TestSuite> {
   return mapped;
 }
 
+/**
+ * Official getTestCaseExecutionSummary (rest/testAPI.ts): GET
+ * /v1/dataQuality/testSuites/executionSummary?testSuiteId= — the
+ * AssetHealth data-quality row's summary source. The server endpoint
+ * (TestSuiteResource.getTestsExecutionSummary) exists with no backend
+ * change; only this frontend function was missing.
+ */
+export async function getTestCaseExecutionSummary(testSuiteId?: string): Promise<TestSummary> {
+  const payload = await apiRequest<unknown>('/v1/dataQuality/testSuites/executionSummary', {
+    query: { testSuiteId },
+  });
+  return mapSummary(payload) ?? { total: 0 };
+}
+
 export async function createTestSuite(body: CreateTestSuiteRequest): Promise<TestSuite> {
   const raw = await apiRequest<Record<string, unknown>>('/v1/dataQuality/testSuites', {
     method: 'POST',

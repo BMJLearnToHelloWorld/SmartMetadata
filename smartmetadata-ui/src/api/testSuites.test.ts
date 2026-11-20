@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTestSuite, isTestSuiteSearchListAvailable, listTestSuites, listTestSuitesBySearch, updateTestSuite } from './testSuites';
+import { createTestSuite, getTestCaseExecutionSummary, isTestSuiteSearchListAvailable, listTestSuites, listTestSuitesBySearch, updateTestSuite } from './testSuites';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -100,5 +100,21 @@ describe('testSuites API', () => {
   it('treats suite search/list 404 as residual', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not found', { status: 404 })));
     await expect(isTestSuiteSearchListAvailable()).resolves.toBe(false);
+  });
+
+  it('reads the execution summary from GET /v1/dataQuality/testSuites/executionSummary', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ success: 8, failed: 2, aborted: 0, queued: 1, total: 11 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    const summary = await getTestCaseExecutionSummary('suite-1');
+    expect(summary).toEqual({ success: 8, failed: 2, aborted: 0, queued: 1, total: 11 });
+    expect(lastFetch().url).toContain('/api/v1/dataQuality/testSuites/executionSummary');
+    expect(lastFetch().url).toContain('testSuiteId=suite-1');
   });
 });

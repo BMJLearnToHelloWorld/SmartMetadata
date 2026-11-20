@@ -10,6 +10,7 @@ import { Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typograph
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetWorkflowHistoryCell from '@/components/shared/widgets/WidgetWorkflowHistoryCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -168,8 +169,7 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // custom-properties tab loads the defs and renders the table (B-15), but
 // no widget surface is built for it: the B-15 scope is fixed content
 // only, so the cell stays empty; EXPERTS — the GlossaryTerm spec carries no such field;
-// WORKFLOW_HISTORY — no workflow-history data source exists in this
-// view; KNOWLEDGE_ARTICLE — no knowledge-article data source exists in
+// KNOWLEDGE_ARTICLE — no knowledge-article data source exists in
 // the product. OWNERS never surfaces as a content key here: the
 // GlossaryTerm OWNER startsWith check resolves `KnowledgePanel.Owners`
 // to OWNER (see `detailWidgetDispatch.ts`), so the OWNER branch covers
@@ -483,6 +483,12 @@ onMounted(() => {
               <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.WORKFLOW_HISTORY && term" data-testid="widget-workflow-history">
+            <WidgetWorkflowHistoryCell
+              :glossary-term-fqn="term.fullyQualifiedName"
+              :entity-status="term.status"
+            />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
             <Descriptions bordered :column="1" size="small">
               <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
@@ -671,6 +677,12 @@ onMounted(() => {
             <Descriptions bordered :column="1" size="small">
               <Descriptions.Item :label="t('label.certification')">{{ termCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.WORKFLOW_HISTORY && term" data-testid="widget-workflow-history">
+            <WidgetWorkflowHistoryCell
+              :glossary-term-fqn="term.fullyQualifiedName"
+              :entity-status="term.status"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
             <Descriptions bordered :column="1" size="small">

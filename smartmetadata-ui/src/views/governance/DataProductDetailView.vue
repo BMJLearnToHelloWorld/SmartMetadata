@@ -10,6 +10,7 @@ import {Button, Descriptions, Form, Input, Select, message} from 'ant-design-vue
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
 import FormModal from '@/components/shared/FormModal.vue';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import { isDetailWired } from '@/catalog/entityRoutes';
@@ -127,10 +128,9 @@ const tabs = computed<EntityDetailTab[]>(() =>
 // absent on purpose, so their cells stay empty (same disclosure format
 // as AssetDetailView): DATA_PRODUCTS — the DataProduct spec
 // (`entity/domains/dataProduct.json`) carries no such field (the entity
-// IS a data product); KNOWLEDGE_ARTICLE — no
-// knowledge-article data source exists in the product. LEFT_PANEL is
-// structural, not a missing branch: GenericTab renders the panel's
-// children and never offers the panel itself to the slot.
+// IS a data product). LEFT_PANEL is structural, not a missing branch:
+// GenericTab renders the panel's children and never offers the panel
+// itself to the slot.
 function customizedEntryFor(tabKey: string) {
   const entry = findCustomizedTabEntry(customizedPage.value?.tabs, tabKey);
   if (!entry?.id || !isWidgetLayoutTab('DataProduct', entry.id)) {
@@ -473,6 +473,9 @@ onMounted(() => {
               <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :defs="customProperties"
@@ -553,6 +556,9 @@ onMounted(() => {
             <Descriptions bordered :column="1" size="small">
               <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
@@ -657,6 +663,9 @@ onMounted(() => {
               <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
           </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
+          </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel
               :defs="customProperties"
@@ -727,6 +736,9 @@ onMounted(() => {
             <Descriptions bordered :column="1" size="small">
               <Descriptions.Item :label="t('label.certification')">{{ productCertificationTag?.tagFQN || '—' }}</Descriptions.Item>
             </Descriptions>
+          </div>
+          <div v-else-if="contentKey === DetailWidgetKeys.KNOWLEDGE_ARTICLE && product?.id" data-testid="widget-knowledge-article">
+            <WidgetKnowledgePagesCell :entity-id="product.id" entity-type="dataProduct" />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.CUSTOM_PROPERTIES" data-testid="widget-custom-properties">
             <AssetCustomPropertiesPanel

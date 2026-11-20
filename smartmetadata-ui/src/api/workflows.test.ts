@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createWorkflow, getWorkflowInstanceStates, listWorkflowInstances, listWorkflows } from './workflows';
+import { createWorkflow, getWorkflowInstanceStates, listWorkflowInstances, listWorkflowInstancesForEntity, listWorkflows } from './workflows';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -189,5 +189,40 @@ describe('workflows API', () => {
       'entityLink=%3C%23E%3A%3AdatabaseService%3A%3Apg.warehouse%3E',
     );
     expect(page.data[0]?.status).toBe('RUNNING');
+  });
+
+  it('lists instances for one entity without a definition-name filter (pin getWorkflowInstancesForApplication)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          data: [
+            {
+              id: 'i1',
+              status: 'SUCCESS',
+              startedAt: 1700000000000,
+              timestamp: 1699999999000,
+              workflowDefinitionId: 'wd1',
+            },
+          ],
+          paging: { total: 1 },
+        }),
+      ),
+    );
+    const page = await listWorkflowInstancesForEntity({
+      entityLink: '<#E::glossaryTerm::Business.term>',
+      startTs: 1000,
+      endTs: 2000,
+      limit: 25,
+    });
+    const url = lastFetch().url;
+    expect(url).toContain('/api/v1/governance/workflowInstances');
+    expect(url).not.toContain('workflowDefinitionName=');
+    expect(url).toContain('entityLink=%3C%23E%3A%3AglossaryTerm%3A%3ABusiness.term%3E');
+    expect(url).toContain('startTs=1000');
+    expect(url).toContain('endTs=2000');
+    expect(url).toContain('limit=25');
+    expect(page.data[0]?.workflowDefinitionId).toBe('wd1');
+    expect(page.data[0]?.timestamp).toBe(1699999999000);
   });
 });

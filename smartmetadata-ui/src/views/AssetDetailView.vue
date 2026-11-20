@@ -397,13 +397,13 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
 // (residual R-4: data products, related metrics / metric hierarchy):
-// table constraints / partitioned keys / table aliases / asset
-// health (no product panes), data products (no field on the detail
-// payload), experts / tier / certification (no detail surfaces;
-// tier already renders in the shell header), knowledge articles,
-// related metrics / metric hierarchy (no metric surfaces). The
-// widget's `config` (e.g. the custom-properties propertyLayout) is
-// not consumed: the product panels take no layout input.
+// table constraints / partitioned keys / table aliases (no product
+// panes), data products (no field on the detail payload), experts /
+// tier / certification (no detail surfaces; tier already renders in
+// the shell header), related metrics / metric hierarchy (no metric
+// surfaces). The widget's `config` (e.g. the custom-properties
+// propertyLayout) is not consumed: the product panels take no layout
+// input.
 const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.TABLE_SCHEMA]: 'schemaTable',
   [DetailWidgetKeys.TOPIC_SCHEMA]: 'schemaTable',
@@ -427,6 +427,8 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.GLOSSARY_TERMS]: 'glossaryTerms',
   [DetailWidgetKeys.OWNERS]: 'owners',
   [DetailWidgetKeys.DOMAIN]: 'domains',
+  [DetailWidgetKeys.KNOWLEDGE_ARTICLE]: 'knowledgePages',
+  [DetailWidgetKeys.ASSET_HEALTH]: 'assetHealth',
 };
 
 function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {

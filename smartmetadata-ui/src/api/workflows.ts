@@ -243,6 +243,17 @@ export interface WorkflowInstance {
   status?: string;
   startedAt?: number;
   endedAt?: number;
+  /**
+   * Owning definition id (pin WorkflowInstance.workflowDefinitionId):
+   * the WorkflowHistory latest-run search keys definitions by it.
+   * Absent on old list payloads; never invented.
+   */
+  workflowDefinitionId?: string;
+  /**
+   * Instance creation timestamp (pin WorkflowInstance.timestamp):
+   * the latest-run search orders by `startedAt ?? timestamp`.
+   */
+  timestamp?: number;
   variables?: Record<string, unknown>;
 }
 
@@ -256,6 +267,8 @@ function mapWorkflowInstance(raw: Record<string, unknown>): WorkflowInstance | n
     status: asString(raw.status) || undefined,
     startedAt: typeof raw.startedAt === 'number' ? raw.startedAt : undefined,
     endedAt: typeof raw.endedAt === 'number' ? raw.endedAt : undefined,
+    workflowDefinitionId: asString(raw.workflowDefinitionId) || undefined,
+    timestamp: typeof raw.timestamp === 'number' ? raw.timestamp : undefined,
     variables: asRecord(raw.variables) ?? undefined,
   };
 }
@@ -274,6 +287,33 @@ export function listWorkflowInstances(
       startTs: query.startTs,
       endTs: query.endTs,
       entityLink: query.entityLink,
+    },
+  }).then((payload) => parsePaged(payload, mapWorkflowInstance));
+}
+
+/**
+ * Official getWorkflowInstancesForApplication (rest/workflowAPI.ts):
+ * the same list endpoint WITHOUT a workflowDefinitionName — every
+ * workflow that ran for one entity, in a time window. The WorkflowHistory
+ * latest-run search pages this list (limit 25, `offset` carries the
+ * `after` cursor) and filters by stage-setting definition itself, so a
+ * definition-name filter here would hide the run it is looking for.
+ * `startTs`/`endTs` are required by the server (WorkflowInstanceResource).
+ */
+export function listWorkflowInstancesForEntity(
+  query: Pick<ListWorkflowsQuery, 'entityLink' | 'limit' | 'offset' | 'startTs' | 'endTs'> & {
+    entityLink: string;
+    startTs: number;
+    endTs: number;
+  },
+): Promise<Paged<WorkflowInstance>> {
+  return apiRequest<unknown>('/v1/governance/workflowInstances', {
+    query: {
+      entityLink: query.entityLink,
+      limit: query.limit,
+      offset: query.offset,
+      startTs: query.startTs,
+      endTs: query.endTs,
     },
   }).then((payload) => parsePaged(payload, mapWorkflowInstance));
 }

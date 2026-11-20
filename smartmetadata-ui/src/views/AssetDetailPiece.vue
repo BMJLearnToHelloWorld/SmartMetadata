@@ -15,6 +15,8 @@ import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
 import FrequentlyJoinedColumns from '@/features/queries/FrequentlyJoinedColumns.vue';
 import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vue';
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
+import WidgetAssetHealthCell from '@/components/shared/widgets/WidgetAssetHealthCell.vue';
+import WidgetKnowledgePagesCell from '@/components/shared/widgets/WidgetKnowledgePagesCell.vue';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
 import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
@@ -61,7 +63,9 @@ export type AssetDetailPieceId =
   | 'glossaryTerms'
   | 'owners'
   | 'domains'
-  | 'frequentlyJoined';
+  | 'frequentlyJoined'
+  | 'knowledgePages'
+  | 'assetHealth';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -438,6 +442,28 @@ const showMetricExpression = computed(
   </template>
   <template v-else-if="piece === 'frequentlyJoined'">
     <FrequentlyJoinedTables :joins="context.asset.joins" />
+  </template>
+  <template v-else-if="piece === 'knowledgePages' && context.asset.id">
+    <WidgetKnowledgePagesCell
+      :entity-id="context.asset.id"
+      :entity-type="context.entityType"
+    />
+  </template>
+  <template
+    v-else-if="
+      piece === 'assetHealth' &&
+      context.entityType === 'table' &&
+      context.asset.id &&
+      context.asset.service?.fullyQualifiedName
+    "
+  >
+    <WidgetAssetHealthCell
+      :table-id="context.asset.id"
+      :table-fqn="context.asset.fullyQualifiedName"
+      :service-fqn="context.asset.service.fullyQualifiedName"
+      :service-id="context.asset.service.id"
+      :test-suite-id="context.asset.testSuite?.id"
+    />
   </template>
 </template>
 

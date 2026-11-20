@@ -464,6 +464,47 @@ describe('fetchAssetDetail usage and joins fields', () => {
     expect(fields.split(',')).toContain('usageSummary');
     expect(fields.split(',').filter((field) => field === 'joins')).toHaveLength(1);
   });
+
+  it('requests testSuite for tables and maps it plus metric relatedMetrics', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return new Response(
+          JSON.stringify({
+            id: 'tbl-1',
+            name: 'orders',
+            fullyQualifiedName: 'svc.db.schema.orders',
+            testSuite: { id: 'suite-1', name: 'orders-suite', fullyQualifiedName: 'svc.db.schema.orders', type: 'testSuite' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const asset = await fetchAssetDetail('table', 'svc.db.schema.orders');
+    expect(new URL(urls[0] as string).searchParams.get('fields')?.split(',')).toContain('testSuite');
+    expect(asset.testSuite?.id).toBe('suite-1');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        urls.push(String(input));
+        return new Response(
+          JSON.stringify({
+            id: 'm1',
+            name: 'mau',
+            fullyQualifiedName: 'kpi.mau',
+            relatedMetrics: [{ id: 'm2', name: 'dau', fullyQualifiedName: 'kpi.dau', type: 'metric' }],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const metric = await fetchAssetDetail('metric', 'kpi.mau');
+    expect(new URL(urls[1] as string).searchParams.get('fields')?.split(',')).toContain('relatedMetrics');
+    expect(metric.relatedMetrics?.map((ref) => ref.id)).toEqual(['m2']);
+  });
 });
 
 describe('D-F2 schema rows', () => {

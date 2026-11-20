@@ -40,7 +40,7 @@ export const USAGE_SUMMARY_ENTITY_TYPES: readonly string[] = ['table', 'dashboar
 const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> = {
   table: {
     collection: 'tables',
-    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins',
+    fields: 'owners,tags,columns,domains,extension,service,database,databaseSchema,tableType,followers,votes,joins,testSuite',
   },
   topic: { collection: 'topics', fields: 'owners,tags,domains,extension,service,messageSchema,partitions,followers,votes' },
   dashboard: {
@@ -73,7 +73,7 @@ const DETAIL_ENDPOINTS: Record<string, { collection: string; fields: string }> =
   },
   metric: {
     collection: 'metrics',
-    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes',
+    fields: 'owners,tags,domains,extension,metricExpression,metricType,unitOfMeasurement,granularity,followers,votes,relatedMetrics',
   },
   dashboardDataModel: {
     collection: 'dashboard/datamodels',

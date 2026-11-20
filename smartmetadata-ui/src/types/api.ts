@@ -333,6 +333,17 @@ export interface AssetDetail {
    */
   usageSummary?: UsageDetails;
   joins?: TableJoins;
+  /**
+   * Owning test suite (spec `table.json#/testSuite`): the AssetHealth
+   * data-quality / observability rows read their summary and incidents
+   * through this suite id. Requested via the table field set.
+   */
+  testSuite?: EntityRef;
+  /**
+   * Related metrics (spec `metric.json#/relatedMetrics`): the
+   * RelatedMetrics widget's rows. Requested via the metric field set.
+   */
+  relatedMetrics?: EntityRef[];
   /** Soft-delete flag; the table_queries tab skips its fetch for deleted tables (pin isTableDeleted). */
   deleted?: boolean;
 }
