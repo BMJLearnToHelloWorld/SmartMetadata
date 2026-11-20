@@ -43,10 +43,10 @@ const MESSAGES = {
 
 const DUMMY = { template: '<div />' };
 
-async function mountCatalog(isAdmin = true) {
+async function mountCatalog() {
   const pinia = createPinia();
   setActivePinia(pinia);
-  useAuthStore().user = { name: 'admin', isAdmin } as LoginUser;
+  useAuthStore().user = { name: 'admin', isAdmin: true } as LoginUser;
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -61,7 +61,6 @@ async function mountCatalog(isAdmin = true) {
     global: {
       plugins: [Antd, pinia, router, createI18n({ legacy: false, locale: 'en', messages: MESSAGES })],
       stubs: {
-        PermissionPlaceholder: { template: '<div data-testid="permission-error-placeholder" />' },
         PageHeader: { template: '<div class="page-header-stub" />' },
         SmBreadcrumb: { template: '<div class="breadcrumb-stub" />' },
         NextPrevious: { template: '<div class="pagination-stub" />' },
@@ -142,10 +141,7 @@ describe('MarketplaceAppCatalogView', () => {
     wrapper.unmount();
   });
 
-  it('shows the forbidden view for non-admins without fetching', async () => {
-    const { wrapper } = await mountCatalog(false);
-    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
-    expect(mockedList).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
+  // No non-admin case here: the admin gate lives on the route (meta
+  // guard 'admin-only'), so a non-admin never mounts this view —
+  // the denial is locked in routes.test.ts (guard declaration table).
 });

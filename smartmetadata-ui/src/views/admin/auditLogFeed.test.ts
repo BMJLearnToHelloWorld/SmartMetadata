@@ -151,7 +151,7 @@ describe('auditLogFeed change details', () => {
         {
           key: 'added-owner-0-alice',
           text: 'Alice',
-          to: { name: 'admin-user', params: { id: 'alice' } },
+          to: { name: 'admin-user', params: { fqn: 'alice' } },
           avatar: { name: 'alice', displayName: 'Alice' },
         },
       ],
@@ -321,12 +321,12 @@ describe('auditLogFeed display info and links', () => {
     const info = getAuditLogDisplayInfo(log, 'System');
     expect(getAuditLogEntityLink(log, info)).toEqual({
       kind: 'link',
-      to: { name: 'admin-user', params: { id: 'bob' } },
+      to: { name: 'admin-user', params: { fqn: 'bob' } },
       label: 'Bob',
     });
     expect(getUserEntityLink({ userName: 'admin' }, undefined)).toEqual({
       kind: 'link',
-      to: { name: 'admin-user', params: { id: 'admin' } },
+      to: { name: 'admin-user', params: { fqn: 'admin' } },
       label: 'admin',
     });
     expect(getUserEntityLink({}, undefined)).toBe(null);
@@ -346,7 +346,7 @@ describe('auditLogFeed display info and links', () => {
     const linked = getAuditLogDisplayInfo({ userName: 'alice' }, 'System');
     expect(getAuditLogHeaderUserLink({ userName: 'alice' }, linked)).toEqual({
       kind: 'link',
-      to: { name: 'admin-user', params: { id: 'alice' } },
+      to: { name: 'admin-user', params: { fqn: 'alice' } },
       label: 'alice',
     });
     const system = getAuditLogDisplayInfo({}, 'System');

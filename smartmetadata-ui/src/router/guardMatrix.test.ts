@@ -199,7 +199,8 @@ describe('guard matrix: three identities × final state (C-4 matrix 2)', () => {
       await loginAsAdmin();
       await router.push('/admin/users/admins');
       expect(router.currentRoute.value.name).toBe('admin-user');
-      expect(router.currentRoute.value.params).toMatchObject({ id: 'admins' });
+      // B-9 (a1): the user detail segment is `:fqn`.
+      expect(router.currentRoute.value.params).toMatchObject({ fqn: 'admins' });
     });
 
     it('applies the staged entry rule to the M1c literal URL for non-admins', async () => {

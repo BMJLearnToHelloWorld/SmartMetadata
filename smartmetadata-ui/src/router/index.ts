@@ -293,10 +293,12 @@ export const router = createRouter({
         // P2 B5: official Admins tab surface (UserListPageV1 isAdminPage);
         // no standalone Admins page exists officially, only the tab.
         { path: 'settings/members/admins', name: 'admin-admins', component: UsersListView, meta: { guard: { resource: 'USER', operation: 'view' } } },
-        // M1b staged: the old user detail keeps its original URL until
-        // the partition batch atomically migrates it (DESIGN §4.5);
-        // the entry declaration is the pre-migration entry rule.
-        { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
+        // M1b staged (DESIGN §4.5): the partition batch migrated the
+        // old user detail onto its FQN segment (B-9 (a1)); the entry
+        // declaration is unchanged. The canonical top-level face is
+        // users/:fqn (user-detail); this admin path keeps its URL
+        // shape with the FQN value.
+        { path: 'admin/users/:fqn', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
         // 'admin-teams' is deleted (sections batch): the teams list is
         // reached via the settings-members-teams redirect below.
         { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
@@ -769,12 +771,15 @@ export const router = createRouter({
         // the AP-D3 hard cut moved the data marketplace overview onto
         // its official /data-marketplace path, so the catalog takes
         // /marketplace itself — the parent of the detail route below —
-        // and the detail page's browse button points here.
+        // and the detail page's browse button points here. The three
+        // app routes are admin-only at the router (bare
+        // AdminProtectedRoute officially): meta guard 'admin-only',
+        // so the views carry no inline admin gate (DEL-22 HOLD lifted).
         {
           path: 'marketplace',
           name: 'marketplace-app-catalog',
           component: MarketplaceAppCatalogView,
-          meta: { titleKey: 'label.market-place' },
+          meta: { titleKey: 'label.market-place', guard: 'admin-only' },
         },
         // P2 R-4: marketplace app detail (official
         // /marketplace/apps/:fqn). The install route below keeps its own
@@ -784,7 +789,7 @@ export const router = createRouter({
           name: 'marketplace-app-detail',
           component: MarketplaceAppDetailView,
           props: true,
-          meta: { titleKey: 'apps.detail.title' },
+          meta: { titleKey: 'apps.detail.title', guard: 'admin-only' },
         },
         // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
         // IntakeForms + TaskFormSettings (official settings governance
@@ -796,7 +801,7 @@ export const router = createRouter({
           name: 'marketplace-app-install',
           component: AppInstallView,
           props: true,
-          meta: { titleKey: 'apps.install.title' },
+          meta: { titleKey: 'apps.install.title', guard: 'admin-only' },
         },
         {
           path: 'settings/governance/intake-forms',

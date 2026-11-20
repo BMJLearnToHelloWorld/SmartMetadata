@@ -5,9 +5,9 @@
 <!--
   Vue port of pin pages/MarketPlacePage/MarketPlacePage.tsx.
   Loading renders a bare spinner; an empty or failed fetch renders no
-  empty/error UI at all (pin behavior). The inline admin gate is kept
-  under the DEL-22 HOLD (see the batch report): the meta guard does
-  not exist yet, so removing the check would open a no-guard window.
+  empty/error UI at all (pin behavior). The admin gate lives on the
+  route (meta guard 'admin-only', the bare AdminProtectedRoute
+  equivalent); the view carries no inline gate (DEL-22 HOLD lifted).
   Pin's PageHeader `title` prop feeds only the learning icon's title
   attribute, so there is no visible eyebrow to port.
 -->
@@ -23,15 +23,12 @@ import PageHeader from '@/components/shared/PageHeader.vue';
 import SmBreadcrumb, { type SmBreadcrumbItem } from '@/components/shared/SmBreadcrumb.vue';
 import { useCursorPagedList } from '@/composables/useCursorPagedList';
 import { useAuthStore } from '@/stores/auth';
-import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import ApplicationCard from './ApplicationCard.vue';
 import { getEntityName, isCacheWarmupApplication } from './appUtils';
 
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
-
-const isAdmin = computed(() => authStore.user?.isAdmin === true);
 
 const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
   { label: t('label.application-plural'), routeName: 'admin-apps' },
@@ -41,13 +38,6 @@ const breadcrumbItems = computed<SmBreadcrumbItem[]>(() => [
 const { items, paging, isLoading, page, pageSize, showPagination, onPageChange, onPageSizeChange } =
   useCursorPagedList<MarketplaceApp>(
     async ({ after, before, limit }) => {
-      // Pin never mounts this page for non-admins (AdminProtectedRoute);
-      // the inline gate renders PermissionPlaceholder instead, so skip the
-      // request entirely rather than surfacing a 403 toast behind it.
-      // The resetKey below restarts the list once the user loads.
-      if (!isAdmin.value) {
-        return { data: [], paging: { total: 0 } };
-      }
       const page = await getMarketPlaceApplicationList({ after, before, limit });
       return {
         data: page.data,
@@ -56,7 +46,6 @@ const { items, paging, isLoading, page, pageSize, showPagination, onPageChange, 
     },
     {
       persistence: { storage: window.localStorage, userName: () => authStore.user?.name },
-      resetKey: () => isAdmin.value,
     },
   );
 
@@ -76,63 +65,60 @@ function viewAppDetails(app: MarketplaceApp): void {
 
 <template>
   <div data-testid="marketplace-app-catalog">
-    <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
+    <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
+      <Spin size="large" />
+    </div>
     <template v-else>
-      <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
-        <Spin size="large" />
-      </div>
-      <template v-else>
-        <SmBreadcrumb :items="breadcrumbItems" />
-        <div style="display: flex; justify-content: center">
-          <div style="max-width: 75%; flex: 0 0 75%">
-            <div style="display: flex; align-items: center; justify-content: space-between">
-              <PageHeader
-                :header="t('label.extend-open-meta-data')"
-                :sub-header="t('message.application-to-improve-data')"
-                learning-page-id="automations"
-              />
-              <img :src="headingIconUrl" alt="" />
-            </div>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: center; margin-top: 20px">
-          <div style="max-width: 83.33333333333334%; flex: 0 0 83.33333333333334%">
-            <Row :gutter="[20, 20]">
-              <Col
-                v-for="item in items"
-                :key="item.fullyQualifiedName"
-                :xs="24"
-                :sm="24"
-                :md="12"
-                :lg="8"
-              >
-                <ApplicationCard
-                  :app-name="item.fullyQualifiedName ?? ''"
-                  :description="item.description ?? ''"
-                  :disabled="item.enabled === false"
-                  :disabled-reason="disabledReasonFor(item)"
-                  :link-title="t('label.read-type', { type: t('label.more') })"
-                  :title="getEntityName(item)"
-                  :on-click="() => viewAppDetails(item)"
-                />
-              </Col>
-            </Row>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: center">
-          <div style="max-width: 75%; flex: 0 0 75%">
-            <NextPrevious
-              v-if="showPagination"
-              :paging="paging"
-              :paging-handler="({ currentPage }) => onPageChange(currentPage)"
-              :page-size="pageSize"
-              :current-page="page"
-              :is-loading="isLoading"
-              :on-show-size-change="onPageSizeChange"
+      <SmBreadcrumb :items="breadcrumbItems" />
+      <div style="display: flex; justify-content: center">
+        <div style="max-width: 75%; flex: 0 0 75%">
+          <div style="display: flex; align-items: center; justify-content: space-between">
+            <PageHeader
+              :header="t('label.extend-open-meta-data')"
+              :sub-header="t('message.application-to-improve-data')"
+              learning-page-id="automations"
             />
+            <img :src="headingIconUrl" alt="" />
           </div>
         </div>
-      </template>
+      </div>
+      <div style="display: flex; justify-content: center; margin-top: 20px">
+        <div style="max-width: 83.33333333333334%; flex: 0 0 83.33333333333334%">
+          <Row :gutter="[20, 20]">
+            <Col
+              v-for="item in items"
+              :key="item.fullyQualifiedName"
+              :xs="24"
+              :sm="24"
+              :md="12"
+              :lg="8"
+            >
+              <ApplicationCard
+                :app-name="item.fullyQualifiedName ?? ''"
+                :description="item.description ?? ''"
+                :disabled="item.enabled === false"
+                :disabled-reason="disabledReasonFor(item)"
+                :link-title="t('label.read-type', { type: t('label.more') })"
+                :title="getEntityName(item)"
+                :on-click="() => viewAppDetails(item)"
+              />
+            </Col>
+          </Row>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: center">
+        <div style="max-width: 75%; flex: 0 0 75%">
+          <NextPrevious
+            v-if="showPagination"
+            :paging="paging"
+            :paging-handler="({ currentPage }) => onPageChange(currentPage)"
+            :page-size="pageSize"
+            :current-page="page"
+            :is-loading="isLoading"
+            :on-show-size-change="onPageSizeChange"
+          />
+        </div>
+      </div>
     </template>
   </div>
 </template>

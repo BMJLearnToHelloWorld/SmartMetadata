@@ -89,13 +89,12 @@ const MARKETPLACE_APP = {
 
 async function mountInstall(
   appOverrides: Record<string, unknown> = {},
-  asAdmin = true,
   schemaError = false,
   definitionError = false,
 ) {
   const pinia = createPinia();
   setActivePinia(pinia);
-  useAuthStore().user = { name: asAdmin ? 'admin' : 'bob', isAdmin: asAdmin } as LoginUser;
+  useAuthStore().user = { name: 'admin', isAdmin: true } as LoginUser;
   if (definitionError) {
     mockedByFqn.mockRejectedValue(new Error('gone'));
   } else {
@@ -121,7 +120,6 @@ async function mountInstall(
     global: {
       plugins: [Antd, pinia, router, createI18n({ legacy: false, locale: 'en', messages: MESSAGES })],
       stubs: {
-        PermissionPlaceholder: { template: '<div data-testid="permission-error-placeholder">Access Denied</div>' },
         NoDataPlaceholder: {
           props: { title: String, testId: String },
           template: '<div class="no-data-stub" :data-testid="testId" :data-title="title" />',
@@ -246,7 +244,7 @@ describe('AppInstallView', () => {
   });
 
   it('renders the missing-entity placeholder when the definition fetch fails', async () => {
-    const { wrapper } = await mountInstall({}, true, false, true);
+    const { wrapper } = await mountInstall({}, false, true);
     const placeholder = wrapper.find('.no-data-stub');
     expect(placeholder.attributes('data-testid')).toBe('no-data-placeholder');
     expect(placeholder.attributes('data-title')).toBe(
@@ -256,20 +254,15 @@ describe('AppInstallView', () => {
   });
 
   it('renders the stepper with empty content when only the schema fails', async () => {
-    const { wrapper } = await mountInstall({}, true, true);
+    const { wrapper } = await mountInstall({}, true);
     expect(wrapper.find('.stepper-stub').exists()).toBe(true);
     expect(wrapper.find('.verify-stub').exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it('shows the forbidden view for non-admins without fetching', async () => {
-    const { wrapper } = await mountInstall({}, false);
-    expect(wrapper.find('[data-testid="app-install-verify"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="permission-error-placeholder"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain('Access Denied');
-    expect(mockedByFqn).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
+  // No non-admin case here: the admin gate lives on the route (meta
+  // guard 'admin-only'), so a non-admin never mounts this view —
+  // the denial is locked in routes.test.ts (guard declaration table).
 
   it('titles the document with the install-entity label once the app loads (pin pageTitle)', async () => {
     const { wrapper } = await mountInstall();
@@ -278,7 +271,7 @@ describe('AppInstallView', () => {
   });
 
   it('falls back to the applications plural title when the definition fetch fails', async () => {
-    const { wrapper } = await mountInstall({}, true, false, true);
+    const { wrapper } = await mountInstall({}, false, true);
     expect(document.title).toBe('Applications');
     wrapper.unmount();
   });

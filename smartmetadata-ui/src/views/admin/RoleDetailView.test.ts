@@ -181,7 +181,7 @@ async function mountRole(
       { path: '/admin/roles/:fqn', name: 'admin-role', component: RoleDetailView, props: true },
       { path: '/admin/policies/:fqn', name: 'admin-policy', component: { template: '<div>policy</div>' } },
       { path: '/admin/teams/:id', name: 'admin-team', component: { template: '<div>team</div>' } },
-      { path: '/admin/users/:id', name: 'admin-user', component: { template: '<div>user</div>' } },
+      { path: '/admin/users/:fqn', name: 'admin-user', component: { template: '<div>user</div>' } },
       { path: '/admin/settings', name: 'admin-settings', component: { template: '<div>hub</div>' } },
     ],
   });
