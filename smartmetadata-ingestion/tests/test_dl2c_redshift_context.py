@@ -21,6 +21,7 @@ after a stop-and-report, never here.
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 from datetime import datetime, timezone
@@ -771,3 +772,84 @@ def test_lineage_probe_runs_once_per_run_despite_two_day_batches() -> None:
     assert len(probe_statements) == 1
     assert len(privilege_statements) == 1
     assert len(history) == 2
+
+
+# --- Lineage file mode --------------------------------------------------------
+# Same guard as RedshiftUsageSource (#257): with a CSV query log there
+# is no live instance to preflight, so prepare() must return before
+# building any connect factory. Without the guard, prepare() fails at
+# the psycopg2 import inside redshift_connect (or at the live preflight
+# when the driver is present), and file-mode lineage can never run.
+
+
+def test_lineage_prepare_file_mode_skips_preflight(tmp_path: Path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    log_file.write_text(
+        "query_text,user_name,start_time,end_time,duration,cost\n"
+        "SELECT * FROM orders,alice,2026-11-16 00:00:00,,1200,\n",
+        encoding="utf-8",
+    )
+
+    def _never_connect():
+        raise AssertionError("prepare() must not connect in file mode")
+
+    source = RedshiftLineageSource(
+        _lineage_config(query_log_file_path=str(log_file)),
+        query_log_connect=_never_connect,
+    )
+    source.prepare()
+    assert source._redshift_instance_type is None
+
+    cursor = _FakeCursor(
+        [_row(query_id=7, database="db", schema="public", query_text=SQL_3PART)],
+        privilege_row=(True, True, True, True),
+    )
+    source = _lineage_source(cursor, query_log_file_path=str(log_file))
+    source.prepare()
+    assert source._redshift_instance_type is None
+    assert cursor.statements == []
+
+
+def test_lineage_file_mode_produce_yields_csv_edge(tmp_path: Path) -> None:
+    log_file = tmp_path / "query_log.csv"
+    with log_file.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "query_text",
+                "database_name",
+                "schema_name",
+                "user_name",
+                "start_time",
+                "end_time",
+                "duration",
+                "cost",
+                "query_type",
+                "aborted",
+                "query_id",
+            ]
+        )
+        writer.writerow(
+            [
+                SQL_3PART,
+                "db",
+                "public",
+                "alice",
+                "2026-11-16 00:00:00",
+                "2026-11-16 00:00:01",
+                1200,
+                "",
+                "INSERT",
+                "false",
+                7,
+            ]
+        )
+    cursor = _FakeCursor([], privilege_row=(True, True, True, True))
+    source = _lineage_source(cursor, query_log_file_path=str(log_file))
+    source.prepare()
+    records = _prepared_lineage_records(source)
+    edges = [r for r in records if isinstance(r, LineageRecord)]
+    assert len(edges) == 1
+    assert edges[0].from_entity.fqn == "svc.db.public.orders"
+    assert edges[0].to_entity.fqn == "svc.db.public.target"
+    assert cursor.statements == []
