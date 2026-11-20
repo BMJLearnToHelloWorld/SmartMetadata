@@ -9,10 +9,11 @@
   component. Steps are dynamically filtered (NoSchedule drops step 3,
   !allowConfiguration drops step 2) — never a fixed three steps. Any
   load failure (definition or schema) toasts the single
-  `server.no-application-schema-found` message. The inline admin gate
-  is kept under the DEL-22 HOLD (see the batch report). The schedule
-  field receives pin's `defaultSchedule` prop (`defaultValue`, the
-  per-app cron default — weekly Sunday for
+  `server.no-application-schema-found` message. The admin gate lives
+  on the route (meta guard 'admin-only', the bare AdminProtectedRoute
+  equivalent); the view carries no inline gate (DEL-22 HOLD lifted).
+  The schedule field receives pin's `defaultSchedule` prop (`defaultValue`,
+  the per-app cron default — weekly Sunday for
   DataInsightsReportApplication); the seeded model value still comes
   from `getDefaultScheduleValue`, which ignores the app default when
   limit period options are defined (pin `CronExpressionUtils.ts:157-177`,
@@ -33,10 +34,8 @@ import {
 import ScheduleIntervalField from '@/components/ingestion/ScheduleIntervalField.vue';
 import NoDataPlaceholder from '@/components/shared/NoDataPlaceholder.vue';
 import { getCronDefaultValue, getDefaultScheduleValue } from '@/ingestion/schedule';
-import { useAuthStore } from '@/stores/auth';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import type { EntityRef } from '@/types/api';
-import PermissionPlaceholder from '@/components/shared/PermissionPlaceholder.vue';
 import AppInstallStepper from './AppInstallStepper.vue';
 import AppInstallVerifyCard from './AppInstallVerifyCard.vue';
 import ApplicationConfiguration from './ApplicationConfiguration.vue';
@@ -49,11 +48,9 @@ const props = defineProps<{ fqn?: string }>();
 const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
-const authStore = useAuthStore();
 const shellConfig = useShellConfigStore();
 
 const fqn = computed(() => props.fqn ?? String(route.params.fqn ?? ''));
-const isAdmin = computed(() => authStore.user?.isAdmin === true);
 const appData = ref<MarketplaceApp | undefined>();
 const isLoading = ref(true);
 const isSavingLoading = ref(false);
@@ -223,103 +220,88 @@ const missingErrorTitle = computed(
 );
 
 onMounted(() => {
-  if (isAdmin.value) {
-    void fetchAppDetails();
-  } else {
-    isLoading.value = false;
-  }
-});
-
-watch(isAdmin, (admin) => {
-  if (admin) {
-    void fetchAppDetails();
-  }
+  void fetchAppDetails();
 });
 
 watch(
   () => fqn.value,
   () => {
-    if (isAdmin.value) {
-      void fetchAppDetails();
-    }
+    void fetchAppDetails();
   },
 );
 </script>
 
 <template>
   <div data-testid="app-install">
-    <PermissionPlaceholder v-if="!isAdmin" :permission-value="t('crud.view')" />
-    <template v-else>
-      <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
-        <Spin size="large" />
-      </div>
-      <div
-        v-else-if="!appData"
-        style="position: relative; min-height: 240px"
-      >
-        <NoDataPlaceholder test-id="no-data-placeholder" :title="missingErrorTitle" />
-      </div>
-      <div v-else>
-        <AppInstallStepper :steps="stepperList" :active-step="activeServiceStep" />
-        <div v-if="appData && jsonSchema" style="margin-top: 16px">
-          <AppInstallVerifyCard
-            v-if="activeServiceStep === 1"
-            :app-data="appData"
-            :next-button-label="
-              appData.allowConfiguration ? t('label.configure') : t('label.schedule')
-            "
-            :on-save="
-              () => {
-                if (appData?.allowConfiguration) {
-                  activeServiceStep = 2;
-                } else {
-                  openScheduleStep();
-                }
+    <div v-if="isLoading" style="display: flex; justify-content: center; padding: 48px 0">
+      <Spin size="large" />
+    </div>
+    <div
+      v-else-if="!appData"
+      style="position: relative; min-height: 240px"
+    >
+      <NoDataPlaceholder test-id="no-data-placeholder" :title="missingErrorTitle" />
+    </div>
+    <div v-else>
+      <AppInstallStepper :steps="stepperList" :active-step="activeServiceStep" />
+      <div v-if="appData && jsonSchema" style="margin-top: 16px">
+        <AppInstallVerifyCard
+          v-if="activeServiceStep === 1"
+          :app-data="appData"
+          :next-button-label="
+            appData.allowConfiguration ? t('label.configure') : t('label.schedule')
+          "
+          :on-save="
+            () => {
+              if (appData?.allowConfiguration) {
+                activeServiceStep = 2;
+              } else {
+                openScheduleStep();
               }
-            "
-            :on-cancel="onCancel"
+            }
+          "
+          :on-cancel="onCancel"
+        />
+        <ApplicationConfiguration
+          v-else-if="activeServiceStep === 2"
+          :app-data="appData"
+          :is-loading="false"
+          :json-schema="jsonSchema"
+          :on-cancel="() => (activeServiceStep = 1)"
+          :on-config-save="onSaveConfiguration"
+        />
+        <div
+          v-else-if="activeServiceStep === 3"
+          style="margin: 0 auto; width: 60%; padding: 16px"
+        >
+          <h5 style="margin: 0 0 16px">{{ t('label.schedule') }}</h5>
+          <ScheduleIntervalField
+            :model-value="scheduleValue"
+            :default-schedule="defaultValue"
+            :include-period-options="initialOptions"
+            test-id-prefix="app-install-schedule"
+            @update:model-value="(value) => (scheduleValue = value)"
+            @validity-change="(valid) => (isScheduleValid = valid)"
           />
-          <ApplicationConfiguration
-            v-else-if="activeServiceStep === 2"
-            :app-data="appData"
-            :is-loading="false"
-            :json-schema="jsonSchema"
-            :on-cancel="() => (activeServiceStep = 1)"
-            :on-config-save="onSaveConfiguration"
-          />
-          <div
-            v-else-if="activeServiceStep === 3"
-            style="margin: 0 auto; width: 60%; padding: 16px"
-          >
-            <h5 style="margin: 0 0 16px">{{ t('label.schedule') }}</h5>
-            <ScheduleIntervalField
-              :model-value="scheduleValue"
-              :default-schedule="defaultValue"
-              :include-period-options="initialOptions"
-              test-id-prefix="app-install-schedule"
-              @update:model-value="(value) => (scheduleValue = value)"
-              @validity-change="(valid) => (isScheduleValid = valid)"
-            />
-            <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px">
-              <Button
-                data-testid="back-button"
-                @click="activeServiceStep = appData.allowConfiguration ? 2 : 1"
-              >
-                {{ t('label.back') }}
-              </Button>
-              <Button
-                type="primary"
-                data-testid="deploy-button"
-                :disabled="!isScheduleValid"
-                :loading="isSavingLoading"
-                @click="onSubmit"
-              >
-                {{ t('label.create') }}
-              </Button>
-            </div>
+          <div style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px">
+            <Button
+              data-testid="back-button"
+              @click="activeServiceStep = appData.allowConfiguration ? 2 : 1"
+            >
+              {{ t('label.back') }}
+            </Button>
+            <Button
+              type="primary"
+              data-testid="deploy-button"
+              :disabled="!isScheduleValid"
+              :loading="isSavingLoading"
+              @click="onSubmit"
+            >
+              {{ t('label.create') }}
+            </Button>
           </div>
         </div>
       </div>
-    </template>
+    </div>
   </div>
 </template>

@@ -8,6 +8,12 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { describe, expect, it } from 'vitest';
+import {
+  addRuleLocation,
+  editRuleLocation,
+  policyDetailLocation,
+  roleDetailLocation,
+} from '@/views/admin/accessPaths';
 import { membersTabGuard, resolveGuard } from './guards';
 import { router } from './index';
 import type { GuardDeclaration } from './guards';
@@ -188,6 +194,42 @@ describe('settings route-pattern manifest (§4.5)', () => {
     expect(paths).not.toContain('/settings/access/policies/:id/edit-rule/:ruleName');
   });
 
+  it('registers the policy and role detail segments as :fqn (C-P6j)', () => {
+    const paths = router.getRoutes().map((route) => route.path);
+    expect(paths.filter((path) => path === '/settings/access/policies/:fqn')).toHaveLength(1);
+    expect(paths.filter((path) => path === '/settings/access/roles/:fqn')).toHaveLength(1);
+    expect(paths).not.toContain('/settings/access/policies/:id');
+    expect(paths).not.toContain('/settings/access/roles/:id');
+  });
+
+  it('resolves the accessPaths locations against the real router (C-P6j)', () => {
+    // Regression: accessPaths builds { fqn } params while the router
+    // table declared :id, so resolving a policy/role link threw
+    // "Missing required param id" and props:true never injected the
+    // views' fqn prop. The view tests never caught it — they mount
+    // against local test routers that were already :fqn.
+    const policy = router.resolve(policyDetailLocation('Data Consumer'));
+    expect(policy.name).toBe('admin-policy');
+    expect(policy.params).toMatchObject({ fqn: 'Data Consumer' });
+    const role = router.resolve(roleDetailLocation('DataConsumer'));
+    expect(role.name).toBe('admin-role');
+    expect(role.params).toMatchObject({ fqn: 'DataConsumer' });
+    const addRule = router.resolve(addRuleLocation('Data Consumer'));
+    expect(addRule.name).toBe('admin-policy-rule-add');
+    expect(addRule.params).toMatchObject({ fqn: 'Data Consumer' });
+    const editRule = router.resolve(editRuleLocation('Data Consumer', 'RuleA'));
+    expect(editRule.name).toBe('admin-policy-rule-edit');
+    expect(editRule.params).toMatchObject({ fqn: 'Data Consumer', ruleName: 'RuleA' });
+    // And the resolved URL segments feed the views' fqn prop.
+    expect(router.resolve('/settings/access/policies/Data%20Consumer').params).toMatchObject({
+      fqn: 'Data Consumer',
+    });
+    expect(router.resolve('/settings/access/policies/Data%20Consumer/edit-rule/RuleA').params).toMatchObject({
+      fqn: 'Data Consumer',
+      ruleName: 'RuleA',
+    });
+  });
+
   it('drops the :tab segment from the workflow detail pattern (D-5)', () => {
     const record = router.getRoutes().find((route) => route.name === 'workflow-detail');
     expect(record?.path).toBe('/settings/governance/workflow-definitions/:fqn');
@@ -197,8 +239,9 @@ describe('settings route-pattern manifest (§4.5)', () => {
   });
 
   it('resolves staged-retained records at their original URLs', () => {
+    // B-9 (a1): the user detail segment is `:fqn` (the value is the username).
     expect(router.resolve('/admin/users/u1').name).toBe('admin-user');
-    expect(router.resolve('/admin/users/u1').params).toMatchObject({ id: 'u1' });
+    expect(router.resolve('/admin/users/u1').params).toMatchObject({ fqn: 'u1' });
     expect(router.resolve('/admin/bots/b1').name).toBe('admin-bot');
     expect(router.resolve('/connections').name).toBe('connections');
     expect(router.resolve('/ingestion/services').name).toBe('not-found');
@@ -279,7 +322,7 @@ describe('settings route-pattern manifest (§4.5)', () => {
     // falls into the catch-all.
     const resolved = router.resolve('/admin/users/admins');
     expect(resolved.name).toBe('admin-user');
-    expect(resolved.params).toMatchObject({ id: 'admins' });
+    expect(resolved.params).toMatchObject({ fqn: 'admins' });
     const botResolved = router.resolve('/admin/bots/bots');
     expect(botResolved.name).toBe('admin-bot');
     expect(botResolved.params).toMatchObject({ id: 'bots' });
@@ -438,6 +481,22 @@ describe('guard declaration table (§10.2)', () => {
     expect(declarationOf('admin-user')).toEqual({ resource: 'USER', operation: 'entry' });
   });
 
+  it('declares the three marketplace app routes admin-only (AP-D3 meta gate)', () => {
+    // Officially each is wrapped in a bare AdminProtectedRoute; the
+    // product equivalent is the 'admin-only' meta guard, and the views
+    // carry no inline gate (DEL-22 HOLD lifted).
+    for (const name of [
+      'marketplace-app-catalog',
+      'marketplace-app-detail',
+      'marketplace-app-install',
+    ]) {
+      expect(declarationOf(name)).toBe('admin-only');
+    }
+    // The data marketplace overview stays unguarded, like the official
+    // DataMarketplacePage route.
+    expect(declarationOf('marketplace-overview')).toBeUndefined();
+  });
+
   it('leaves the staged unit, the service family, inbox and column-bulk-ops undeclared', () => {
     for (const name of [
       'ingestion-service',
@@ -534,7 +593,7 @@ describe('settings sections faces', () => {
     ['/settings/access/policies/p1/add-rule', 'admin-policy-rule-add', { fqn: 'p1' }],
     ['/settings/access/policies/p1/edit-rule/r1', 'admin-policy-rule-edit', { fqn: 'p1', ruleName: 'r1' }],
     // 08 admin-app :fqn.
-    ['/settings/apps/a1', 'admin-app', { id: 'a1' }],
+    ['/settings/apps/a1', 'admin-app', { fqn: 'a1' }],
     // 06 workflow detail without :tab (shell B-5); legacy shapes redirect.
     ['/settings/governance/workflow-definitions/w1', 'workflow-detail', { fqn: 'w1' }],
     // Same canonical record, distinct fqn so the case title stays unique.

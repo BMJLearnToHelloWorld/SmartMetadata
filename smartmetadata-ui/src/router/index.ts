@@ -293,14 +293,22 @@ export const router = createRouter({
         // P2 B5: official Admins tab surface (UserListPageV1 isAdminPage);
         // no standalone Admins page exists officially, only the tab.
         { path: 'settings/members/admins', name: 'admin-admins', component: UsersListView, meta: { guard: { resource: 'USER', operation: 'view' } } },
-        // M1b staged: the old user detail keeps its original URL until
-        // the partition batch atomically migrates it (DESIGN §4.5);
-        // the entry declaration is the pre-migration entry rule.
-        { path: 'admin/users/:id', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
+        // M1b staged (DESIGN §4.5): the partition batch migrated the
+        // old user detail onto its FQN segment (B-9 (a1)); the entry
+        // declaration is unchanged. The canonical top-level face is
+        // users/:fqn (user-detail); this admin path keeps its URL
+        // shape with the FQN value.
+        { path: 'admin/users/:fqn', name: 'admin-user', component: UserDetailView, props: true, meta: { guard: { resource: 'USER', operation: 'entry' } } },
         // 'admin-teams' is deleted (sections batch): the teams list is
         // reached via the settings-members-teams redirect below.
         { path: 'settings/members/teams/:id', name: 'admin-team', component: TeamDetailView, props: true, meta: { guard: { resource: 'TEAM', operation: 'view' } } },
         { path: 'settings/access/roles', name: 'admin-roles', component: RolesListView, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
+        // C-P6j: the detail segment is `:fqn`, not `:id` — the pin
+        // detail path is SETTINGS_WITH_TAB_FQN (constants.ts:184) and
+        // every navigation site passes { fqn } (accessPaths
+        // roleDetailLocation; PersonaUsersTab). With `:id`, resolving
+        // those locations threw "Missing required param id" and
+        // `props: true` never injected the views' `fqn` prop.
         { path: 'settings/access/roles/:fqn', name: 'admin-role', component: RoleDetailView, props: true, meta: { guard: { resource: 'ROLE', operation: 'view' } } },
         // 03 §12: the add-role route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
@@ -401,12 +409,26 @@ export const router = createRouter({
         { path: 'settings/preferences/timeFormat', name: 'settings-preferences-time-format', component: TimeFormatSettingsView, meta: { guard: 'admin-only' } },
 
         { path: 'settings/access/policies', name: 'admin-policies', component: PoliciesListView, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
+        // C-P6j: the detail/rule segments are `:fqn`, not `:id` — the
+        // pin paths are SETTINGS_WITH_TAB_FQN / ADD_POLICY_RULE /
+        // EDIT_POLICY_RULE (constants.ts:184,286-287). accessPaths and
+        // the three views already speak `fqn`; the `:id` table broke
+        // every one of them (list crash on resolve, detail/edit
+        // fetching by an empty fqn). The D-11 transition claimed in
+        // accessPaths is only complete with this landing.
         { path: 'settings/access/policies/:fqn', name: 'admin-policy', component: PolicyDetailView, props: true, meta: { guard: { resource: 'POLICY', operation: 'view' } } },
         // 03 §12: the add-policy route (sections batch). Unmapped under
         // the old table, i.e. admin-only by default; the new-system
         // equivalent is the explicit 'admin-only' declaration — the
         // view carries no in-view Create gate.
         { path: 'admin/policies/add', name: 'admin-policy-add', component: AddPolicyView, meta: { guard: 'admin-only' } },
+        // M1a: the two policy-rule action routes are canonical this
+        // stage; each pattern is registered exactly once, on the `:fqn`
+        // segment the pin uses (see the C-P6j note on the detail
+        // route above). The old `:id` spelling is deleted, not kept
+        // as an alias: `:id` and `:fqn` are different params to
+        // vue-router (props injection + resolve requirements), so
+        // keeping both would re-admit the mismatch.
         // R-14(a): the two policy-rule action routes are canonical this
         // stage; the segments are `:fqn` (pin SettingsRouter detail
         // routes are `:fqn`), matching the `fqn` prop the rule views
@@ -423,7 +445,7 @@ export const router = createRouter({
           meta: { guard: { resource: 'POLICY', operation: 'EditAll' } },
         },
         { path: 'settings/apps', name: 'admin-apps', component: AppsListView, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
-        { path: 'settings/apps/:id', name: 'admin-app', component: AppDetailView, props: true, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
+        { path: 'settings/apps/:fqn', name: 'admin-app', component: AppDetailView, props: true, meta: { guard: { resource: 'APPLICATION', operation: 'view' } } },
         // P2 B5: Persona list + detail (official settings PERSONA
         // routes). The nested customize record is deleted (C-4 §5.3);
         // the top-level customize-page route keeps admin-only.
@@ -773,12 +795,15 @@ export const router = createRouter({
         // the AP-D3 hard cut moved the data marketplace overview onto
         // its official /data-marketplace path, so the catalog takes
         // /marketplace itself — the parent of the detail route below —
-        // and the detail page's browse button points here.
+        // and the detail page's browse button points here. The three
+        // app routes are admin-only at the router (bare
+        // AdminProtectedRoute officially): meta guard 'admin-only',
+        // so the views carry no inline admin gate (DEL-22 HOLD lifted).
         {
           path: 'marketplace',
           name: 'marketplace-app-catalog',
           component: MarketplaceAppCatalogView,
-          meta: { titleKey: 'label.market-place' },
+          meta: { titleKey: 'label.market-place', guard: 'admin-only' },
         },
         // P2 R-4: marketplace app detail (official
         // /marketplace/apps/:fqn). The install route below keeps its own
@@ -788,7 +813,7 @@ export const router = createRouter({
           name: 'marketplace-app-detail',
           component: MarketplaceAppDetailView,
           props: true,
-          meta: { titleKey: 'apps.detail.title' },
+          meta: { titleKey: 'apps.detail.title', guard: 'admin-only' },
         },
         // P2 B4: AppInstall (official /marketplace/apps/:fqn/install),
         // IntakeForms + TaskFormSettings (official settings governance
@@ -800,7 +825,7 @@ export const router = createRouter({
           name: 'marketplace-app-install',
           component: AppInstallView,
           props: true,
-          meta: { titleKey: 'apps.install.title' },
+          meta: { titleKey: 'apps.install.title', guard: 'admin-only' },
         },
         {
           path: 'settings/governance/intake-forms',
