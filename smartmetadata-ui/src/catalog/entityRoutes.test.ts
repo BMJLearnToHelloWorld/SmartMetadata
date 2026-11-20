@@ -12,6 +12,7 @@ import {
   assetLocation,
   encodeFqnForApi,
   lineageLocation,
+  openSearchHit,
   parentTableLocation,
   resolveDetailEndpoint,
   resolvePatchPath,
@@ -152,5 +153,24 @@ describe('entityRoutes', () => {
     expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('topic');
     expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('chart');
     expect(USAGE_SUMMARY_ENTITY_TYPES).not.toContain('database');
+  });
+
+  it('opens column hits on the parent table, wired hits on their detail, and nothing unwired', () => {
+    const pushed: unknown[] = [];
+    const push = (to: unknown) => {
+      pushed.push(to);
+    };
+    expect(
+      openSearchHit(push, { entityType: 'tableColumn', fullyQualifiedName: 'svc.db.t.c', tableFqn: 'svc.db.t' }),
+    ).toBe(true);
+    expect(pushed).toEqual([{ name: 'asset', params: { entityType: 'table', fqn: 'svc.db.t' } }]);
+    expect(
+      openSearchHit(push, { entityType: 'table', fullyQualifiedName: 'svc.db.schema.orders' }),
+    ).toBe(true);
+    expect(pushed).toHaveLength(2);
+    expect(
+      openSearchHit(push, { entityType: 'unknownThing', fullyQualifiedName: 'x.y' }),
+    ).toBe(false);
+    expect(pushed).toHaveLength(2);
   });
 });

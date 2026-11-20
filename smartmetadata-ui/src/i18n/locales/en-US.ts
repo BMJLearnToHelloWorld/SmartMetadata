@@ -2210,6 +2210,15 @@ const enUS = {
       pendingApprovalNote: 'Assets pending approval are held as change requests and are not published yet.',
       unknownAsset: 'Unknown asset',
     },
+    /** Tag assets tab (B-15 Lane A, pin AssetsTabs on TagPage). */
+    tagAssets: {
+      /** Noun for the link-assets empty description (pin getEntityTypeString(TAG)). */
+      tagNoun: 'tag',
+      removeConfirm: 'Remove asset {name} from this tag?',
+      removeSuccess: 'Asset removed from this tag.',
+      removeFailed: 'Failed to remove the asset from this tag.',
+      selectedCount: '{count} selected',
+    },
   },
   profilerSettings: {
     title: 'Settings',

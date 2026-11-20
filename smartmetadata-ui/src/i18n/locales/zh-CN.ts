@@ -2190,6 +2190,15 @@ const zhCN = {
       pendingApprovalNote: '待审批的资产以变更请求形式暂存，尚未发布。',
       unknownAsset: '未知资产',
     },
+    /** 标签资产页签（B-15 Lane A，pin TagPage 的 AssetsTabs）。 */
+    tagAssets: {
+      /** 关联资产空态描述中的名词（pin getEntityTypeString(TAG)）。 */
+      tagNoun: '标签',
+      removeConfirm: '将资产 {name} 从此标签中移除？',
+      removeSuccess: '已从此标签中移除资产。',
+      removeFailed: '从此标签中移除资产失败。',
+      selectedCount: '已选 {count} 项',
+    },
   },
   profilerSettings: {
     title: '设置',

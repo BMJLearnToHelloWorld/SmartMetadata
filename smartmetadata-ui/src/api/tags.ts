@@ -9,8 +9,10 @@
  */
 import { asBoolean, asNumber, asRecord, asString, mapEntityRefs, parsePaged } from '@/api/json';
 import type { Paged } from '@/types/admin';
+import type { EntityRef } from '@/types/api';
 import type { ClassificationTag, CreateTagRequest, EntityStyle } from '@/types/governance';
 import type { JsonPatchOp } from '@/admin/jsonPatch';
+import { getEncodedFqn } from '@/utils/fqnPaths';
 import { apiRequest } from './client';
 
 export const TAG_FIELDS = 'owners,reviewers,domains,children,usageCount';
@@ -101,6 +103,57 @@ export async function getTag(id: string): Promise<ClassificationTag> {
   const raw = await apiRequest<Record<string, unknown>>(`/v1/tags/${encodeURIComponent(id)}`, {
     query: { fields: TAG_FIELDS },
   });
+  const mapped = mapTag(raw);
+  if (!mapped) {
+    throw new Error('Tag response was missing id and name');
+  }
+  return mapped;
+}
+
+/**
+ * Official getTagByFqn (rest/tagAPI.ts): GET /tags/name/{fqn}. The
+ * AssetsTabs remove path resolves its active entity by FQN, so the
+ * tag id for the add/remove calls comes from here, never from a
+ * guessed id.
+ */
+export async function getTagByFqn(fqn: string): Promise<ClassificationTag> {
+  const raw = await apiRequest<Record<string, unknown>>(`/v1/tags/name/${getEncodedFqn(fqn)}`, {
+    query: { fields: TAG_FIELDS },
+  });
+  const mapped = mapTag(raw);
+  if (!mapped) {
+    throw new Error('Tag response was missing id and name');
+  }
+  return mapped;
+}
+
+/**
+ * Official addAssetsToTags (rest/tagAPI.ts): PUT
+ * /tags/{tagId}/assets/add with AddTagToAssetsRequest
+ * {assets: EntityReference[], dryRun}. The server answers with the
+ * async CSV export job response; callers only need success/failure,
+ * so the payload is returned unmapped.
+ */
+export function addAssetsToTags(tagId: string, assets: EntityRef[], dryRun = false): Promise<unknown> {
+  return apiRequest<unknown>(`/v1/tags/${encodeURIComponent(tagId)}/assets/add`, {
+    method: 'PUT',
+    json: { assets, dryRun },
+  });
+}
+
+/**
+ * Official removeAssetsFromTags (rest/tagAPI.ts): PUT
+ * /tags/{tagId}/assets/remove with {assets, dryRun: false}, answering
+ * with the updated Tag.
+ */
+export async function removeAssetsFromTags(tagId: string, assets: EntityRef[]): Promise<ClassificationTag> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/v1/tags/${encodeURIComponent(tagId)}/assets/remove`,
+    {
+      method: 'PUT',
+      json: { assets, dryRun: false },
+    },
+  );
   const mapped = mapTag(raw);
   if (!mapped) {
     throw new Error('Tag response was missing id and name');
