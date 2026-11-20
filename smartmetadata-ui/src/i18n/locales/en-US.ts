@@ -132,6 +132,10 @@ const enUS = {
     conversation: 'Conversation',
     copied: 'Copied',
     copy: 'Copy',
+    'count-term': '{count} term',
+    'count-term-plural': '{count} terms',
+    'count-of-total-loaded': '{count} of {total} loaded',
+    'view-more-count': 'View {countValue} more',
     create: 'Create',
     'create-entity': 'Create {entity}',
     critical: 'Critical',
@@ -633,6 +637,8 @@ const enUS = {
     'alerts-filter-description': 'Specify the change events to narrow the scope of your alerts.',
     'alerts-source-description': 'Specify the source that will activate the alert.',
     'alerts-trigger-description': "Select important trigger events like 'Schema Change' or 'Test Failure' to generate an alert.",
+    'assets-add-disabled-term-status': 'This term is {status}. Assets can be added once it is approved.',
+    'assets-add-restricted-term-status': 'This term is {status}. Assets can only be added to approved terms.',
     'allow-impersonation-help': 'Allows this bot to act on behalf of users via the X-Impersonate-User header. Policies control who can be impersonated; by default, admin users and other bots are excluded. This can only be enabled when the bot is created.',
     'announcement-invalid-start-time': 'Announcement start time must be earlier than the end time.',
     'app-already-installed': 'Application already installed',
@@ -2220,6 +2226,24 @@ const enUS = {
       bulkSummary: '{passed} succeeded, {failed} failed, {pending} pending approval.',
       pendingApprovalNote: 'Assets pending approval are held as change requests and are not published yet.',
       unknownAsset: 'Unknown asset',
+    },
+    /** Tag assets tab (B-15 Lane A, pin AssetsTabs on TagPage). */
+    tagAssets: {
+      /** Noun for the link-assets empty description (pin getEntityTypeString(TAG)). */
+      tagNoun: 'tag',
+      removeConfirm: 'Remove asset {name} from this tag?',
+      removeSuccess: 'Asset removed from this tag.',
+      removeFailed: 'Failed to remove the asset from this tag.',
+      selectedCount: '{count} selected',
+    },
+    /** GlossaryTerm assets tab (B-15 G-1, pin AssetsTabs on GlossaryTermUtils buildAssetsTab). */
+    glossaryTermAssets: {
+      /** Noun for the link-assets empty description (pin getEntityTypeString(GLOSSARY)). */
+      termNoun: 'glossary term',
+      removeConfirm: 'Remove asset {name} from this glossary term?',
+      removeSuccess: 'Asset removed from this glossary term.',
+      removeFailed: 'Failed to remove the asset from this glossary term.',
+      selectedCount: '{count} selected',
     },
   },
   profilerSettings: {
@@ -4346,8 +4370,7 @@ const enUS = {
     missingGlossary: 'This term has no glossary FQN; PUT /v1/glossaryTerms requires glossary',
     updated: 'Term updated',
     relatedEntities: 'Related entities',
-    relatedLead: 'Assets tagged with this glossary term.',
-    noAssets: 'No tagged assets returned.',
+    noChildTerms: 'No child terms yet',
     relatedTerms: 'Related terms',
     reviewers: 'Reviewers',
     synonyms: 'Synonyms',

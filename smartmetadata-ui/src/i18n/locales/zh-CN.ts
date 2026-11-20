@@ -132,6 +132,10 @@ const zhCN = {
     conversation: '对话',
     copied: '已复制',
     copy: '复制',
+    'count-term': '{count} 个术语',
+    'count-term-plural': '{count} 个术语',
+    'count-of-total-loaded': '已加载 {count}/{total}',
+    'view-more-count': '查看更多（{countValue} 个）',
     create: '新建',
     'create-entity': '新建{entity}',
     critical: '严重',
@@ -630,6 +634,8 @@ const zhCN = {
     'alerts-filter-description': '指定具体的变更事件, 以缩小提醒范围',
     'alerts-source-description': '指定激活警报的来源',
     'alerts-trigger-description': '选择重要的触发事件, 如 “模式更改 ”或 “测试失败”, 以生成警报',
+    'assets-add-disabled-term-status': '此术语为 {status}。批准后即可添加资产。',
+    'assets-add-restricted-term-status': '此术语为 {status}。资产只能添加到已批准的术语。',
     'allow-impersonation-help': '允许此机器人通过 X-Impersonate-User 标头代表用户行事。策略控制可被模拟的对象；默认情况下，管理员用户和其他机器人除外。此项只能在创建机器人时启用。',
     'announcement-invalid-start-time': '公告开始时间必须早于结束时间',
     'app-already-installed': '已安装应用',
@@ -2200,6 +2206,24 @@ const zhCN = {
       bulkSummary: '成功 {passed} 个，失败 {failed} 个，待审批 {pending} 个。',
       pendingApprovalNote: '待审批的资产以变更请求形式暂存，尚未发布。',
       unknownAsset: '未知资产',
+    },
+    /** 标签资产页签（B-15 Lane A，pin TagPage 的 AssetsTabs）。 */
+    tagAssets: {
+      /** 关联资产空态描述中的名词（pin getEntityTypeString(TAG)）。 */
+      tagNoun: '标签',
+      removeConfirm: '将资产 {name} 从此标签中移除？',
+      removeSuccess: '已从此标签中移除资产。',
+      removeFailed: '从此标签中移除资产失败。',
+      selectedCount: '已选 {count} 项',
+    },
+    /** 术语资产页签（B-15 G-1，pin GlossaryTermUtils buildAssetsTab 的 AssetsTabs）。 */
+    glossaryTermAssets: {
+      /** 关联资产空态描述中的名词（pin getEntityTypeString(GLOSSARY)）。 */
+      termNoun: '术语',
+      removeConfirm: '将资产 {name} 从此术语中移除？',
+      removeSuccess: '已从此术语中移除资产。',
+      removeFailed: '从此术语中移除资产失败。',
+      selectedCount: '已选 {count} 项',
     },
   },
   profilerSettings: {
@@ -4303,8 +4327,7 @@ const zhCN = {
     missingGlossary: '此术语没有术语库 FQN；PUT /v1/glossaryTerms 需要 glossary',
     updated: '术语已更新',
     relatedEntities: '关联实体',
-    relatedLead: '已打上此术语标签的资产。',
-    noAssets: '没有返回已打标资产。',
+    noChildTerms: '暂无子术语',
     relatedTerms: '相关术语',
     reviewers: '审核人',
     synonyms: '同义词',

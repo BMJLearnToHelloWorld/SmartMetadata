@@ -44,10 +44,23 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/glossaryTerms/term1/assets')) {
+        if (url.includes('/v1/search/query')) {
           return jsonResponse({
-            data: [{ id: 'a1', name: 'orders', type: 'table', fullyQualifiedName: 'svc.db.orders' }],
-            paging: { total: 1 },
+            hits: {
+              total: { value: 1 },
+              hits: [
+                {
+                  _index: 'table_search_index',
+                  _source: {
+                    id: 'a1',
+                    name: 'orders',
+                    fullyQualifiedName: 'svc.db.orders',
+                    entityType: 'table',
+                  },
+                },
+              ],
+            },
+            aggregations: {},
           });
         }
         if (url.includes('/api/v1/glossaryTerms/term1')) {
@@ -82,6 +95,24 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
           });
         }
         if (url.includes('/api/v1/glossaryTerms')) {
+          // B-15 G-2: first-level children come from the directChildrenOf
+          // page now (the embedded `children` refs on the term payload
+          // are no longer rendered); the siblings fetch stays empty.
+          if (url.includes('directChildrenOf=')) {
+            return jsonResponse({
+              data: [
+                {
+                  id: 'c1',
+                  name: 'arr',
+                  displayName: 'ARR',
+                  fullyQualifiedName: 'Business.revenue.arr',
+                  entityStatus: 'Approved',
+                  childrenCount: 0,
+                },
+              ],
+              paging: { total: 1 },
+            });
+          }
           return jsonResponse({ data: [], paging: { total: 0 } });
         }
         if (url.includes('/api/v1/activity/entity/glossaryTerm/')) {
@@ -131,6 +162,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     await flushPromises();
     await flushPromises();
     await flushPromises();
+    await flushPromises();
     await wrapper.vm.$nextTick();
     return { wrapper, router };
   }
@@ -157,7 +189,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     expect(tabLabels(wrapper)).toEqual([
       'Overview',
       'Glossary Terms',
-      'Assets',
+      'Assets1',
       'Activity feed',
       'Relations Graph',
       'Custom Properties',
@@ -165,7 +197,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     ]);
     expect(wrapper.find('[data-testid="term-status"]').text()).toContain('Approved');
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
-    expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
+    expect(wrapper.find('[data-testid="term-assets-tab"]').text()).toContain('orders');
     expect(wrapper.find('[data-testid="term-versions"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="edit-term"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="delete-term"]').exists()).toBe(true);
@@ -203,7 +235,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     localStorage.setItem('sm.persona.v1', 'p1');
     const { wrapper } = await mountTerm();
     // F-2: replacement semantics — only the customized tabs render.
-    expect(tabLabels(wrapper)).toEqual(['Linked', 'Overview']);
+    expect(tabLabels(wrapper)).toEqual(['Linked1', 'Overview']);
     wrapper.unmount();
   });
 
@@ -342,7 +374,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     // listed custom-properties tab renders its panel (B-15). The
     // unlisted tabs — overview included — are removed (F-2), so no
     // residual renders and the overview description is gone.
-    expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
+    expect(wrapper.find('[data-testid="term-assets-tab"]').text()).toContain('orders');
     expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(0);
     expect(wrapper.text()).not.toContain('Money in');
     expect(widgetTestIds(wrapper)).toEqual([]);
@@ -374,7 +406,7 @@ describe('GlossaryTermDetailView tabs + widget grid (B-7)', () => {
     // fixed content now (B-15) and custom properties renders its
     // table (B-15), so only data observability still renders a residual.
     expect(wrapper.find('[data-testid="term-children-table"]').text()).toContain('ARR');
-    expect(wrapper.find('[data-testid="term-assets-table"]').text()).toContain('orders');
+    expect(wrapper.find('[data-testid="term-assets-tab"]').text()).toContain('orders');
     expect(wrapper.findAll('[data-testid="asset-tab-residual"]')).toHaveLength(1);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
@@ -393,8 +425,8 @@ describe('GlossaryTermDetailView description gate (D-4)', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('/api/v1/glossaryTerms/term1/assets')) {
-          return jsonResponse({ data: [], paging: { total: 0 } });
+        if (url.includes('/v1/search/query')) {
+          return jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} });
         }
         if (url.includes('/api/v1/glossaryTerms/term1')) {
           return jsonResponse({
@@ -508,8 +540,8 @@ describe('GlossaryTermDetailView custom properties (B-15)', () => {
             fullyQualifiedName: 'Business.revenue',
           });
         }
-        if (url.includes('/api/v1/glossaryTerms/term1/assets')) {
-          return jsonResponse({ data: [], paging: { total: 0 } });
+        if (url.includes('/v1/search/query')) {
+          return jsonResponse({ hits: { total: { value: 0 }, hits: [] }, aggregations: {} });
         }
         if (url.includes('/api/v1/glossaryTerms/term1')) {
           return jsonResponse({
@@ -589,6 +621,7 @@ describe('GlossaryTermDetailView custom properties (B-15)', () => {
       attachTo: document.body,
       global: { plugins: [pinia, router, Antd, createTestI18n()] },
     });
+    await flushPromises();
     await flushPromises();
     await flushPromises();
     await flushPromises();
@@ -835,7 +868,7 @@ describe('GlossaryTermDetailView custom properties (B-15)', () => {
     // No widget cell renders from any of the three former dead mounts.
     expect(wrapper.findAll('[data-testid^="widget-"]')).toHaveLength(0);
     expect(wrapper.find('[data-testid="term-children-table"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="term-assets-table"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="term-assets-tab"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="asset-activity-table"]').exists()).toBe(true);
     wrapper.unmount();
   });

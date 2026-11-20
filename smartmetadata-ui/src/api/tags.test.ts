@@ -9,7 +9,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { persistSession } from '@/auth/token';
-import { createTag, listTags, listTierTags, updateTag } from './tags';
+import {
+  addAssetsToTags,
+  createTag,
+  getTagByFqn,
+  listTags,
+  listTierTags,
+  removeAssetsFromTags,
+  updateTag,
+} from './tags';
 
 function lastFetch(): { url: string; init?: RequestInit } {
   const mock = vi.mocked(fetch);
@@ -173,5 +181,69 @@ describe('tags API', () => {
     expect(page.data[0]?.domains).toEqual([{ id: 'd1', name: 'marketing', type: 'domain' }]);
     expect(lastFetch().url).toContain('reviewers');
     expect(lastFetch().url).toContain('domains');
+  });
+
+  it('gets a tag by FQN through /v1/tags/name/{fqn}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ id: 'tg1', name: 'Sensitive', fullyQualifiedName: 'PII.Sensitive' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const tag = await getTagByFqn('PII.Sensitive');
+    expect(tag.id).toBe('tg1');
+    expect(lastFetch().url).toContain('/api/v1/tags/name/PII.Sensitive');
+    expect(lastFetch().url).toContain('usageCount');
+  });
+
+  it('adds assets through PUT /v1/tags/{id}/assets/add with dryRun', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          assets: [{ id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' }],
+          dryRun: false,
+        });
+        return new Response(JSON.stringify({ jobId: 'job-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
+    await addAssetsToTags('tg1', [
+      { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(lastFetch().url).toContain('/api/v1/tags/tg1/assets/add');
+  });
+
+  it('removes assets through PUT /v1/tags/{id}/assets/remove with dryRun false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          assets: [{ id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' }],
+          dryRun: false,
+        });
+        return new Response(
+          JSON.stringify({
+            jobId: 'job-2',
+            message: 'Bulk Remove tags to Asset operation initiated successfully.',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }),
+    );
+    const job = await removeAssetsFromTags('tg1', [
+      { id: 't1', type: 'table', name: 'orders', fullyQualifiedName: 'svc.db.orders' },
+    ]);
+    // The server answers 200 with a BulkAssetsOperationResponse
+    // {jobId, message} (job accepted, edit async) — never a Tag.
+    expect(job.jobId).toBe('job-2');
+    expect(lastFetch().init?.method).toBe('PUT');
+    expect(lastFetch().url).toContain('/api/v1/tags/tg1/assets/remove');
   });
 });
