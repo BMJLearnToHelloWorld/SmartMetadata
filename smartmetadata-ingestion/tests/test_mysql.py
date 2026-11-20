@@ -24,7 +24,7 @@ from smartmetadata_ingestion.connectors.mysql import (
     ViewRow,
     _pymysql_connect,
 )
-from smartmetadata_ingestion.connectors.mysql_common import mysql_connect
+from smartmetadata_ingestion.connectors.mysql_common import mysql_connect, system_schemas
 from smartmetadata_ingestion.errors import WorkflowError
 from smartmetadata_ingestion.records import (
     DatabaseRecord,
@@ -235,6 +235,17 @@ def test_mysql_include_schemas_can_select_a_system_schema() -> None:
         reader=_system_schema_reader(),
     )
     assert _produced_schema_names(source) == ["sys"]
+
+
+def test_mysql_system_schemas_matches_pin() -> None:
+    # B-2 收尾：采集路径的硬排除已由 #239 删除，但探查路径仍持有一份
+    # 系统库集合（pin connection.py:131 亦有，4 名、无 innodb）。产品原先
+    # 多 1 名 "innodb"（MySQL 并无此系统库）；收敛为 pin 的 4 名，集合
+    # 本身保留——automations/mysql_checks.py:151（_resolve_schema）在
+    # 未配 databaseSchema 时靠它自动选库探查，与 pin _resolve_schema 同构。
+    assert system_schemas() == frozenset(
+        {"information_schema", "mysql", "performance_schema", "sys"}
+    )
 
 
 def test_mysql_database_schema_can_target_a_system_schema() -> None:

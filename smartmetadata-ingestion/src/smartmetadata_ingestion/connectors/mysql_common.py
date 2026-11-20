@@ -30,7 +30,7 @@ from smartmetadata_ingestion.data_quality.sampling import StaticSampleConfig
 from smartmetadata_ingestion.errors import WorkflowError
 
 DEFAULT_SCHEME = "mysql+pymysql"
-_SYSTEM_SCHEMAS = frozenset({"information_schema", "mysql", "performance_schema", "sys", "innodb"})
+_SYSTEM_SCHEMAS = frozenset({"information_schema", "mysql", "performance_schema", "sys"})
 
 
 @dataclass(frozen=True, slots=True)
