@@ -196,8 +196,8 @@ describe('EditServiceConnectionView', () => {
       history: createMemoryHistory(),
       routes: [
         {
-          path: '/ingestion/services',
-          name: 'ingestion-services',
+          path: '/connections',
+          name: 'connections',
           component: { template: '<div>list</div>' },
         },
         {
@@ -477,7 +477,7 @@ describe('EditServiceConnectionView', () => {
 
   it('goes back in history from step 1, to the list or the detail page', async () => {
     const fromList = await mountAt('/ingestion/services/database/s1/connection', [
-      '/ingestion/services',
+      '/connections',
     ]);
     await waitForForm(fromList.wrapper);
     await fromList.wrapper.find('[data-testid="edit-connection-back"]').trigger('click');
@@ -489,7 +489,7 @@ describe('EditServiceConnectionView', () => {
     discard!.click();
     await flushPromises();
     await fromList.wrapper.vm.$nextTick();
-    expect(fromList.router.currentRoute.value.name).toBe('ingestion-services');
+    expect(fromList.router.currentRoute.value.name).toBe('connections');
     fromList.wrapper.unmount();
     document.body.innerHTML = '';
 

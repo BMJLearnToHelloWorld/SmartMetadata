@@ -160,10 +160,9 @@ const serviceTypeLabel = computed(() => t(SERVICE_TYPE_LABEL_KEY_BY_KIND[kind.va
 
 const breadcrumbs = computed<EntityBreadcrumb[]>(() => [
   // DESIGN §6.7 row 3: the parent chain points at the Services
-  // overview (the services category page), not the staged aggregate
-  // list. The hard-delete navigation below keeps the staged
-  // aggregate list (`ingestion-services`) as its target, per the
-  // coordinator decision; it is a separate, unlisted call site.
+  // overview (the services category page), not the Connections list.
+  // The hard-delete navigation below lands on the Connections list
+  // (B-7(c): the staged aggregate list is retired).
   {
     label: t('ingestion.services.title'),
     to: { name: 'settings-category', params: { category: 'services' } },
@@ -1206,7 +1205,7 @@ async function onDeleteConfirm(deleteType: DeleteType): Promise<void> {
     // Deleted badge + restore affordance appear. Delete Q2 stays open
     // as a live check against the pin classic page.
     if (hardDelete) {
-      await router.push({ name: 'ingestion-services' });
+      await router.push({ name: 'connections' });
     } else {
       await load();
     }

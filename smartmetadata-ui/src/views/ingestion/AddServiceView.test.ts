@@ -132,8 +132,8 @@ async function mountWizard(
         props: true,
       },
       {
-        path: '/ingestion/services',
-        name: 'ingestion-services',
+        path: '/connections',
+        name: 'connections',
         component: { template: '<div>list</div>' },
       },
       { path: '/other', name: 'other', component: { template: '<div>other</div>' } },

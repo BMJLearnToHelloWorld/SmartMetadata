@@ -143,7 +143,7 @@ const breadcrumbItems = computed(() => {
     wizardCategory.value === 'all'
       ? t('settings.services.wizard.allServices')
       : t(wizardCategory.value.titleKey);
-  return [{ label: categoryLabel, routeName: 'ingestion-services' }, { label: addNewService }];
+  return [{ label: categoryLabel, routeName: 'connections' }, { label: addNewService }];
 });
 
 const headerText = computed(() =>

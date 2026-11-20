@@ -156,7 +156,7 @@ const breadcrumbs = computed(() => {
     return [{ label: startCase(form.pipelineType) }, { label: heading.value }];
   }
   const items: { label: string; routeName?: string; routeParams?: Record<string, string> }[] = [
-    { label: categoryLabel.value, routeName: 'ingestion-services' },
+    { label: categoryLabel.value, routeName: 'connections' },
   ];
   if (service.value) {
     items.push({

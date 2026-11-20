@@ -44,8 +44,9 @@ import PipelinesListView from '@/views/ingestion/PipelinesListView.vue';
  * — replaces to the not-found route, D-18/D-10), and the inner
  * Services/Pipelines tabs are driven by `?tab=`. There is no `all`/kind
  * tab set, no show-deleted switch, no health filter, and `?health=` is
- * not consumed: the aggregate list (ServicesListView) stays staged and
- * untouched. The breadcrumb follows the pin `capitalize(tab)` rule,
+ * not consumed: the aggregate surface lives on the Connections page
+ * (`/connections`, B-7(c)), not here. The breadcrumb follows the pin
+ * `capitalize(tab)` rule,
  * with the Data Observability label for that tab.
  *
  * The Pipelines tab embeds PipelinesListView as a controlled

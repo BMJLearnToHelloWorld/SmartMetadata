@@ -22,6 +22,7 @@ import {
   sectionLanding,
   selectedNavKey,
 } from './nav';
+import { navIcon } from './navIcons';
 
 function sectionItems(key: string): string[] {
   const section = NAV_ENTRIES.find((entry) => entry.kind === 'section' && entry.key === key);
@@ -144,6 +145,8 @@ describe('nav IA', () => {
     expect(NAV_ENTRIES.map((entry) => entry.key)).toEqual([
       'home',
       'search',
+      // B-7(c): Connections sits after Explore, before Lineage (pin navOrder 20).
+      'connections',
       'lineage-home',
       'observability',
       'insights',
@@ -153,6 +156,17 @@ describe('nav IA', () => {
     ]);
     expect(NAV_FOOTER_ENTRIES.map((entry) => entry.key)).toEqual(['admin-settings', 'logout']);
     expect(NAV_FOOTER_ENTRIES[1]).toMatchObject({ kind: 'action', action: 'logout' });
+  });
+
+  it('resolves an icon for every top-level nav leaf', () => {
+    // B-7(c) review Minor 1: a top-level leaf without an icon renders bare.
+    // Section children are out of this guard: at least one predates it
+    // without an icon (sparql-playground), which is not this lane's scope.
+    for (const entry of NAV_ENTRIES) {
+      if (entry.kind === 'item') {
+        expect(navIcon(entry.key), entry.key).toBeTruthy();
+      }
+    }
   });
 
   it('nests Observability, Marketplace, Govern, and Context Center children', () => {
@@ -195,6 +209,7 @@ describe('nav IA', () => {
     expect(keys).not.toContain('admin-users');
     expect(keys).toContain('admin-settings');
     expect(keys).toContain('marketplace-overview');
+    expect(keys).toContain('connections');
     expect(keys).toContain('ontology-explorer');
     expect(keys).not.toContain('logout');
   });
@@ -213,7 +228,7 @@ describe('nav IA', () => {
     expect(selectedNavKey('admin-settings-custom-property-type')).toBe('admin-settings');
     expect(selectedNavKey('governance-domain')).toBe('governance-domains');
     expect(selectedNavKey('governance-data-product')).toBe('governance-data-products');
-    expect(selectedNavKey('ingestion-services')).toBe('admin-settings');
+    expect(selectedNavKey('connections')).toBe('connections');
     expect(selectedNavKey('ingestion-service')).toBe('admin-settings');
     // Deleted route name (DESIGN §6.7 row 2): the aggregate pipelines
     // list has no route anymore, so the name is unattributed — no

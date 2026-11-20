@@ -19,7 +19,7 @@ export interface TourStep {
 export const TOUR_STEPS: TourStep[] = [
   { key: 'myData', routeName: 'home', stepKey: 'topics-to-catch-up-on' },
   { key: 'explore', routeName: 'search', stepKey: 'explore-search' },
-  { key: 'services', routeName: 'ingestion-services', stepKey: 'services' },
+  { key: 'services', routeName: 'connections', stepKey: 'services' },
   { key: 'glossary', routeName: 'governance-glossaries', stepKey: 'glossary' },
   { key: 'ontology', routeName: 'ontology-explorer', stepKey: 'ontology-studio' },
   { key: 'dataQuality', routeName: 'quality-test-cases', stepKey: 'data-quality-data-health' },

@@ -249,8 +249,8 @@ async function mountView(fixture: VersionFixture, version = '0.2') {
     history: createMemoryHistory(),
     routes: [
       {
-        path: '/ingestion/services',
-        name: 'ingestion-services',
+        path: '/connections',
+        name: 'connections',
         component: { template: '<div>list</div>' },
       },
       {

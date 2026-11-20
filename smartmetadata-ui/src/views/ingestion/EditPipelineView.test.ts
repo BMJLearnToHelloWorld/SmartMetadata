@@ -156,9 +156,9 @@ describe('EditPipelineView', () => {
           props: true,
         },
         {
-          path: '/ingestion/services',
-          name: 'ingestion-services',
-          component: { template: '<div>services</div>' },
+          path: '/connections',
+          name: 'connections',
+          component: { template: '<div>connections</div>' },
         },
         {
           path: '/ingestion/services/:kind/:id',
@@ -361,7 +361,7 @@ describe('EditPipelineView', () => {
     expect(breadcrumb.text()).toContain('Edit Metadata Agent');
     const links = breadcrumb.findAll('a');
     expect(links).toHaveLength(2);
-    expect(links[0]!.attributes('href')).toBe('/ingestion/services');
+    expect(links[0]!.attributes('href')).toBe('/connections');
     expect(links[1]!.attributes('href')).toBe('/ingestion/services/database/s1');
   });
 

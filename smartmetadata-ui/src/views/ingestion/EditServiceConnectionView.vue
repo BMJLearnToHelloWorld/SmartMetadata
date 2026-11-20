@@ -103,7 +103,7 @@ const breadcrumbItems = computed(() => {
   return [
     {
       label: category ? t(category.labelKey) : (kind ?? props.kind),
-      routeName: 'ingestion-services',
+      routeName: 'connections',
     },
     {
       label: service.value.displayName || service.value.name,

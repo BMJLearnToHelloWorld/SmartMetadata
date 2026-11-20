@@ -15,7 +15,7 @@ import TourOverlay from './TourOverlay.vue';
 const ROUTE_NAMES = [
   'home',
   'search',
-  'ingestion-services',
+  'connections',
   'governance-glossaries',
   'ontology-explorer',
   'quality-test-cases',

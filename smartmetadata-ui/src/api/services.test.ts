@@ -51,4 +51,26 @@ describe('getServicesOverview', () => {
     const url = String(vi.mocked(fetch).mock.calls[0][0]);
     expect(url).not.toContain('health=');
   });
+
+  it('parses serviceTypeCounts nested per entity type, not flat', async () => {
+    // The server schema (servicesOverview.json) types serviceTypeCounts
+    // as Map<String, Map<String, Integer>>; a flat parse reduces every
+    // nested tally to 0 (B-7(c)).
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        data: [],
+        paging: { total: 0 },
+        serviceTypeCounts: { databaseService: { Snowflake: 3 }, pipelineService: { Airflow: 1 } },
+        healthCounts: { databaseService: { success: 2, failed: 1 } },
+        counts: { databaseService: 3 },
+      }),
+    );
+    const overview = await getServicesOverview({ includeHealth: true });
+    expect(overview.serviceTypeCounts).toEqual({
+      databaseService: { Snowflake: 3 },
+      pipelineService: { Airflow: 1 },
+    });
+    expect(overview.healthCounts).toEqual({ databaseService: { success: 2, failed: 1 } });
+    expect(overview.counts).toEqual({ databaseService: 3 });
+  });
 });

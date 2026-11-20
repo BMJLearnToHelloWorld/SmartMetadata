@@ -41,7 +41,7 @@ export const ROUTE_DOMAIN_GROUPS: RouteDomainGroup[] = [
   { key: 'context-center', prefixes: ['/context-center'] },
   { key: 'quality', prefixes: ['/quality'] },
   { key: 'observability', prefixes: ['/observability'] },
-  { key: 'ingestion', prefixes: ['/ingestion'] },
+  { key: 'ingestion', prefixes: ['/ingestion', '/connections'] },
   { key: 'collaboration', prefixes: ['/activity', '/tasks'] },
 ];
 

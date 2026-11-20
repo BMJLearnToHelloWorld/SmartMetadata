@@ -41,7 +41,10 @@ export interface ServiceSummary {
 
 export interface ServicesOverview {
   counts?: Record<string, number>;
-  serviceTypeCounts?: Record<string, number>;
+  /** Per connector type, nested under each service entity type, e.g.
+   * `{"databaseService": {"Snowflake": 3}}` (servicesOverview.json) —
+   * NOT flat: the previous flat parse reduced every nested tally to 0. */
+  serviceTypeCounts?: Record<string, Record<string, number>>;
   healthCounts?: Record<string, Record<string, number>>;
   total: number;
   data: ServiceSummary[];
@@ -168,7 +171,7 @@ export async function getServicesOverview(params: ServicesOverviewParams = {}): 
   };
   return {
     counts: asCountMap(root?.counts),
-    serviceTypeCounts: asCountMap(root?.serviceTypeCounts),
+    serviceTypeCounts: asHealthMap(root?.serviceTypeCounts),
     healthCounts: asHealthMap(root?.healthCounts),
     total: page.total ?? page.data.length,
     data: page.data,

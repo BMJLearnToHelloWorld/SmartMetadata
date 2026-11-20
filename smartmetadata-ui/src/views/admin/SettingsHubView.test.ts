@@ -69,7 +69,7 @@ function testRouter(): Router {
         name: 'governance-classifications',
         component: stub('tags'),
       },
-      { path: '/ingestion/services', name: 'ingestion-services', component: stub('svc') },
+      { path: '/connections', name: 'connections', component: stub('svc') },
       { path: '/admin/roles', name: 'admin-roles', component: stub('roles') },
       { path: '/admin/policies', name: 'admin-policies', component: stub('policies') },
       {

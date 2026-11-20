@@ -104,7 +104,7 @@ const breadcrumbItems = computed(() => {
   return [
     {
       label: category ? t(category.labelKey) : kind,
-      routeName: 'ingestion-services',
+      routeName: 'connections',
     },
     {
       label: getEntityName(snapshot.value),
