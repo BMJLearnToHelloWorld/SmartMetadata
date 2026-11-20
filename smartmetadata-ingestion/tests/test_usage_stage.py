@@ -426,15 +426,20 @@ def test_resolver_uses_row_context_for_two_part_names() -> None:
     )
 
 
-def test_resolver_uses_connection_defaults_for_bare_names() -> None:
+def test_resolver_no_longer_uses_connection_schema_default_for_bare_names() -> None:
+    """D-L2c E (full delete): a bare name no longer binds through
+    the connection schema default — it misses. The database default
+    is untouched: a 2-part name still binds through it."""
     client = _StubTableClient(
         {"warehouse.shop.public.orders": {"fullyQualifiedName": "warehouse.shop.public.orders"}}
     )
     resolver = RestTableBindingResolver(  # type: ignore[arg-type]
         client, "warehouse", default_database="shop", default_schema="public"
     )
+    assert resolver.resolve(_ident("orders"), context=_ctx()) is None
+    assert resolver.binding_counts["missing_schema"] == 1
     assert (
-        resolver.resolve(_ident("orders"), context=_ctx())
+        resolver.resolve(_ident("public", "orders"), context=_ctx())
         == "warehouse.shop.public.orders"
     )
 

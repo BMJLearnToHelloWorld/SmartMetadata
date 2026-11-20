@@ -667,7 +667,11 @@ class QueryLineageProcessor:
             return 0
         names = [
             name
-            for name in udf_names_from_extraction(parser.structured_extraction, columns)
+            for name in udf_names_from_extraction(
+                parser.structured_extraction,
+                columns,
+                on_builtin_filtered=self._resolver.note_builtin_filtered,
+            )
             if name not in seen_udfs
         ]
         if not names:

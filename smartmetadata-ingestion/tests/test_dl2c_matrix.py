@@ -137,9 +137,11 @@ def test_mysql_swapped_row_binds_all_three_name_shapes() -> None:
 
 
 def test_mysql_null_current_schema_row_falls_back_to_defaults() -> None:
-    # A NULL CURRENT_SCHEMA row carries neither segment; the shared
-    # defaults supply both, and a fully qualified name still binds
-    # on its own segments.
+    # A NULL CURRENT_SCHEMA row carries neither segment. After
+    # D-L2c E the schema default is deleted, so a bare name misses
+    # (the database default alone cannot complete it); a 2-part
+    # name still binds through the database default, and a fully
+    # qualified name still binds on its own segments.
     record = TableQueryRecord(
         query="SELECT * FROM orders",
         service_name=SERVICE,
@@ -155,8 +157,12 @@ def test_mysql_null_current_schema_row_falls_back_to_defaults() -> None:
     assert defaults == ("warehouse", "sales")
     client = _FakeClient({TARGET: _table(TARGET), DECOY: _table(DECOY)})
     usage, lineage = _resolvers(client, defaults)
-    assert usage.resolve(_ident("orders"), context=context) == TARGET
-    assert lineage.resolve_table(_ident("orders"), context=context) == TARGET
+    assert usage.resolve(_ident("orders"), context=context) is None
+    assert lineage.resolve_table(_ident("orders"), context=context) is None
+    assert usage.binding_counts["missing_schema"] == 1
+    assert (
+        usage.resolve(_ident("sales", "orders"), context=context) == TARGET
+    )
     assert (
         usage.resolve(_ident("warehouse", "sales", "orders"), context=context)
         == TARGET

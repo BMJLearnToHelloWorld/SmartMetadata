@@ -243,6 +243,8 @@ class LineageBindingResolver:
         self._procedure_listings = _LockedCache(MAX_CACHED_PROCEDURE_LISTINGS)
         self._warned_procedures: set[StructuredIdentifier] = set()
         self._procedure_throttle_warned = False
+        self._warned_cross_ambiguous: set[str] = set()
+        self._cross_ambiguous_throttle_warned = False
         self._unresolved_tables = 0
         self._unresolved_procedures = 0
         self._unresolved_udfs = 0
@@ -282,6 +284,19 @@ class LineageBindingResolver:
         with self._lock:
             self._fidelity_skips[branch] = self._fidelity_skips.get(branch, 0) + count
 
+    def note_builtin_filtered(
+        self, identifier: StructuredIdentifier, count: int = 1
+    ) -> None:
+        """Count a built-in function call filtered out of UDF
+        candidates (D-L2c H). The selection layer dropped the name
+        before any catalog lookup, so no UDF miss is recorded for it;
+        the identifier is carried for the callback protocol only —
+        the count needs no attribution. This changes the
+        ``unresolved_udf_count`` baseline: ``COUNT(*)`` no longer
+        counts as a UDF miss."""
+        with self._lock:
+            self._counts["builtin_function_filtered"] += count
+
     @property
     def unresolved_table_count(self) -> int:
         """Parsed table names that bound to no catalog table after
@@ -318,11 +333,15 @@ class LineageBindingResolver:
         Own service first (the usage chain), then each named
         cross-database service when enabled. A 404 moves to the next
         candidate; any other REST error propagates. Cross-service
-        resolution stays exactly as before — explicit names,
-        exact-only, first hit in config order, source-service
-        context reused — and that limitation is retained
-        deliberately (design §3.6/Q8): no ambiguity judgment and no
-        per-service context are added here."""
+        resolution stays explicit names, exact-only, source-service
+        context reused — and that limitation is retained deliberately
+        (design §3.6/Q8): no per-service context is added here. But
+        the first hit no longer wins: every named service is probed,
+        the hits are collected, and only a unique hit binds (D-L2c
+        D, collect-then-judge). Config order now decides probe order
+        and the order competing FQNs are listed in the ambiguity
+        warning, not the binding outcome.
+        """
         with self._lock:
             folded = fold_identifier(name, self._engine_key)
             resolved = self._tables.resolve(
@@ -333,27 +352,51 @@ class LineageBindingResolver:
             if resolved is not None:
                 return resolved
             if self._cross_enabled:
+                # The effective default schema is read once, before
+                # the loop, from the composed usage resolver: the
+                # D-L2c E gate (schema-fallback suppression) applies
+                # to cross-service candidates exactly as it does to
+                # own-service ones, so the two paths can never
+                # disagree about which default a name was built from.
+                effective_schema = self._tables.effective_default_schema
+                hits: list[
+                    tuple[str, str, tuple[CandidateSource, CandidateSource]]
+                ] = []
                 for service in self._cross_services:
                     if service == self._service_name:
                         continue
-                    for fqn in candidate_fqns(
+                    candidate = build_candidate(
                         service,
                         folded,
                         context,
                         default_database=self._default_database,
-                        default_schema=self._default_schema,
-                    ):
-                        if self._table_lookup(fqn) is not None:
-                            self._count_default_bound(
-                                build_candidate(
-                                    service,
-                                    folded,
-                                    context,
-                                    default_database=self._default_database,
-                                    default_schema=self._default_schema,
-                                ).sources
-                            )
-                            return fqn
+                        default_schema=effective_schema,
+                    )
+                    if candidate.fqn is None:
+                        continue
+                    if self._table_lookup(candidate.fqn) is not None:
+                        hits.append((service, candidate.fqn, candidate.sources))
+                if len(hits) == 1:
+                    self._count_default_bound(hits[0][2])
+                    self._counts["cross_service_bound"] += 1
+                    return hits[0][1]
+                if len(hits) >= 2:
+                    self._warn_cross_service_ambiguous(
+                        folded, [fqn for _, fqn, _ in hits]
+                    )
+                    # The count is incremented after the warning so
+                    # the throttle message ("skipped so far") counts
+                    # only the skips before this one, not this one.
+                    self._counts["cross_service_ambiguous"] += 1
+                    # Do not call warn_unresolved here: the
+                    # own-service quiet probe left a pending skip
+                    # classification, and spending it would count
+                    # this one skip twice (once under the probe's
+                    # key, once as ambiguous). The ambiguity count
+                    # above is the skip's only count.
+                    self._tables.discard_pending_skip()
+                    self._unresolved_tables += 1
+                    return None
                 # The own-service probe ran quiet; only now, with every
                 # resolver exhausted, does the name earn its warning.
                 # Inside the guard: with cross-service probing off the
@@ -363,6 +406,32 @@ class LineageBindingResolver:
                 self._tables.warn_unresolved(folded, context=context)
             self._unresolved_tables += 1
             return None
+
+    def _warn_cross_service_ambiguous(
+        self, name: StructuredIdentifier, fqns: list[str]
+    ) -> None:
+        """Warn (throttled) that a parsed name matched exactly in
+        more than one named service, so none was bound. The first
+        hundred distinct names are logged with their competing FQNs,
+        in config order; beyond that only the count speaks."""
+        key = name.display()
+        if key in self._warned_cross_ambiguous:
+            return
+        if len(self._warned_cross_ambiguous) < MAX_WARNED_UNRESOLVED_PROCEDURES:
+            self._warned_cross_ambiguous.add(key)
+            logger.warning(
+                "Ambiguous cross-service table %r: %d exact matches (%s); skipping",
+                key,
+                len(fqns),
+                ", ".join(fqns),
+            )
+        elif not self._cross_ambiguous_throttle_warned:
+            self._cross_ambiguous_throttle_warned = True
+            logger.warning(
+                "Further ambiguous cross-service table names will be counted, "
+                "not logged (%d skipped so far)",
+                self._counts["cross_service_ambiguous"],
+            )
 
     def table_exists(self, fqn: str) -> bool:
         """Whether a table FQN exists in the catalog (404 = absent)."""
@@ -444,7 +513,7 @@ class LineageBindingResolver:
                 folded,
                 context,
                 default_database=self._default_database,
-                default_schema=self._default_schema,
+                default_schema=self._tables.effective_default_schema,
             )
             if candidate.fqn is None:
                 self._counts[missing_count_key(candidate.sources)] += 1

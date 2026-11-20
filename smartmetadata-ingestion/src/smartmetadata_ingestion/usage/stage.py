@@ -123,6 +123,9 @@ BINDING_COUNT_KEYS: tuple[str, ...] = (
     "read_failure",
     "default_bound_database",
     "default_bound_schema",
+    "builtin_function_filtered",
+    "cross_service_ambiguous",
+    "cross_service_bound",
 )
 
 
@@ -443,6 +446,29 @@ class RestTableBindingResolver:
         ) = None
 
     @property
+    def effective_default_schema(self) -> str | None:
+        """The default schema candidate construction may actually use.
+
+        D-L2c E (full delete): always ``None``. The connection's
+        ``databaseSchema`` is a scan range, not a binding default —
+        using it as one mis-binds a bare name into the scan-range
+        schema when the session actually used another schema. The
+        raw value is still accepted and stored by the constructor
+        (workflows and ``resolve_connection_defaults`` are
+        untouched), but no candidate is ever built from it: a bare
+        name with no row schema is a miss (``missing_schema`` /
+        ``missing_both``), never a default-bound hit. The database
+        default is unaffected — only the schema half is deleted."""
+        return None
+
+    def discard_pending_skip(self) -> None:
+        """Drop the pending quiet-probe skip classification without
+        counting or warning: the caller already counted the outcome
+        under its own key (D-L2c D: cross-service ambiguity), and
+        spending the pending entry would count one skip twice."""
+        self._pending_skip = None
+
+    @property
     def skipped_count(self) -> int:
         """Parsed names skipped as unresolvable so far this run — the
         binding-skip count the workflow folds into processor-step
@@ -493,7 +519,7 @@ class RestTableBindingResolver:
             folded,
             context,
             default_database=self._default_database,
-            default_schema=self._default_schema,
+            default_schema=self.effective_default_schema,
         )
         if candidate.fqn is None:
             self._pending_skip = (
@@ -539,7 +565,7 @@ class RestTableBindingResolver:
             name,
             context,
             default_database=self._default_database,
-            default_schema=self._default_schema,
+            default_schema=self.effective_default_schema,
         )
         return [candidate.fqn] if candidate.fqn is not None else []
 
@@ -688,7 +714,7 @@ class RestTableBindingResolver:
             folded,
             context,
             default_database=self._default_database,
-            default_schema=self._default_schema,
+            default_schema=self.effective_default_schema,
         )
         if candidate.fqn is None:
             if len(folded) > 3:
@@ -775,6 +801,13 @@ class UsageStage:
         self._service_name = service_name
         self._binding_resolver = binding_resolver
         self._user_resolver = user_resolver
+        # D-L2c C row-cardinality dedupe: one execution (query id)
+        # must count once per table and once for cost, however many
+        # context rows it fanned out to. Instance-level, whole-run
+        # state — one execution's rows can straddle batch boundaries.
+        # Id-less records bypass dedupe, as they always have.
+        self._seen_query_cost_ids: set[str] = set()
+        self._seen_table_usage: set[tuple[str, str]] = set()
 
     @property
     def binding_skips(self) -> int:
@@ -833,6 +866,11 @@ class UsageStage:
         text = stored_query_text(parsed)
         query_hash = stored_query_hash(text)
         for parsed_name, fqn in resolved.items():
+            if parsed.query_id is not None:
+                usage_key = (parsed.query_id, fqn)
+                if usage_key in self._seen_table_usage:
+                    continue
+                self._seen_table_usage.add(usage_key)
             key = (fqn, parsed.date)
             accumulator = usage.get(key)
             if accumulator is None:
@@ -924,7 +962,14 @@ class UsageStage:
         """Aggregate EVERY execution, cost-bearing or not: the
         reference stage aggregates per parsed record regardless of
         binding or cost presence, so a cost-less execution counts
-        with zero cost and its duration still sums."""
+        with zero cost and its duration still sums. One execution
+        still counts once, however many context rows it fanned out
+        to (D-L2c C): a repeated query id skips the whole add, so
+        ``count`` cannot multiply either."""
+        if parsed.query_id is not None:
+            if parsed.query_id in self._seen_query_cost_ids:
+                return
+            self._seen_query_cost_ids.add(parsed.query_id)
         text = stored_query_text(parsed)
         key = (stored_query_hash(text), parsed.date)
         aggregate = costs.get(key)

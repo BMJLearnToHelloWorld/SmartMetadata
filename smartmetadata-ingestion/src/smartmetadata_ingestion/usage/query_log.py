@@ -554,8 +554,7 @@ class QueryLogSource:
         self, label: str, factory: ConnectFactory, statement: str
     ) -> Iterable[TableQueryRecord]:
         rows = fetch_rows(factory, statement)
-        if len(rows) >= self._config.result_limit:
-            self._warn_truncated_once(label)
+        records: list[TableQueryRecord] = []
         for row in rows:
             try:
                 record = self._record_from_row(row, from_csv=False)
@@ -566,7 +565,32 @@ class QueryLogSource:
                 continue
             if record is None:
                 continue
-            yield record
+            records.append(record)
+        # One execution fans out to one row per scanned (database,
+        # schema): the same execution under the same context must not
+        # be produced twice (D-L2c C). Different contexts stay
+        # separate records — each may bind to a different table.
+        # Rows without a query id (CSV-shaped) bypass dedupe.
+        seen_contexts: set[tuple[str, str | None, str | None]] = set()
+        deduped: list[TableQueryRecord] = []
+        for record in records:
+            if record.query_id is None:
+                deduped.append(record)
+                continue
+            key = (record.query_id, record.database_name, record.database_schema)
+            if key in seen_contexts:
+                continue
+            seen_contexts.add(key)
+            deduped.append(record)
+        # The truncation signal counts executions, not rows: the
+        # LIMIT now sits inside the history CTE, so a fanned-out
+        # execution legitimately fills many rows. With no query id
+        # anywhere, fall back to the row count.
+        distinct_ids = {record.query_id for record in deduped if record.query_id is not None}
+        truncated_count = len(distinct_ids) if distinct_ids else len(rows)
+        if truncated_count >= self._config.result_limit:
+            self._warn_truncated_once(label)
+        yield from deduped
 
     def _warn_truncated_once(self, label: str) -> None:
         if self._truncation_warned:
@@ -624,6 +648,7 @@ class QueryLogSource:
             schema_source=schema_source,
             duration=_as_number(row.get("duration")),
             cost=_as_number(row.get("cost")),
+            query_id=_as_text(row.get("query_id")),
         )
 
     def _context_sources(
