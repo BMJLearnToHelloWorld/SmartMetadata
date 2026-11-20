@@ -12,10 +12,12 @@
   `components/common/ErrorBoundary/ErrorBoundary.tsx` +
   `ErrorFallback.tsx` at pin a3012259ca, per 07 §3 + R-PEND1).
 
-  Mounted in App.vue inside ConfigProvider, wrapping <router-view/>
-  only (LimitBanner/CsvJobsTray stay outside — deliberate framework
-  adaptation: the Vue boundary replaces the AppShell subtree, not the
-  whole app chrome).
+  Mounted in App.vue inside ConfigProvider, wrapping the whole app —
+  LimitBanner, <router-view/>, and CsvJobsTray — matching official
+  AppRoot, whose ErrorBoundary wraps the entire <App/> subtree
+  (B-14 §5). The local SilentErrorBoundary around CsvJobsTray stays
+  inside as the first line of defence: it catches tray errors first
+  and degrades to empty, the top-level boundary is the backstop.
 
   Recovery is Home navigation FIRST, then error-state clear + subtree
   remount via an incremented :key. There is no fullPath auto-reset and
