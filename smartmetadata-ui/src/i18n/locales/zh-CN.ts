@@ -844,7 +844,6 @@ const zhCN = {
   nav: {
     home: '主页',
     explore: '数据探索',
-    connections: '连接',
     lineage: '血缘关系',
     insights: '数据洞察',
     observability: '数据监控',

@@ -145,8 +145,6 @@ describe('nav IA', () => {
     expect(NAV_ENTRIES.map((entry) => entry.key)).toEqual([
       'home',
       'search',
-      // B-7(c): Connections sits after Explore, before Lineage (pin navOrder 20).
-      'connections',
       'lineage-home',
       'observability',
       'insights',
@@ -209,7 +207,10 @@ describe('nav IA', () => {
     expect(keys).not.toContain('admin-users');
     expect(keys).toContain('admin-settings');
     expect(keys).toContain('marketplace-overview');
-    expect(keys).toContain('connections');
+    // The /connections route exists, but it is not a nav entry: the
+    // classic sidebar has no Connections item (pin SIDEBAR_LIST); the
+    // navOrder 20 evidence was AI app-mode, not the classic sidebar.
+    expect(keys).not.toContain('connections');
     expect(keys).toContain('ontology-explorer');
     expect(keys).not.toContain('logout');
   });

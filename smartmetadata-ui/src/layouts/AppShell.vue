@@ -17,6 +17,7 @@ import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery
 import { setAppLocale } from '@/i18n';
 import { isSupportedLocale } from '@/i18n/localePreference';
 import {
+  NAV_FOOTER_ENTRIES,
   breadcrumbOriginUrl,
   defaultOpenNavKeys,
   isNavActionKey,
@@ -416,6 +417,26 @@ async function onLogout(): Promise<void> {
             </Menu.SubMenu>
           </template>
         </Menu>
+        <Menu
+          class="shell__nav-footer"
+          theme="light"
+          mode="inline"
+          :inline-collapsed="collapsed"
+          :selected-keys="selectedKeys"
+          @click="onMenuClick"
+        >
+          <Menu.Divider />
+          <Menu.Item
+            v-for="entry in NAV_FOOTER_ENTRIES"
+            :key="entry.key"
+            :data-testid="entry.testId"
+          >
+            <template #icon>
+              <component :is="navIcon(entry.key)" />
+            </template>
+            {{ t(entry.titleKey) }}
+          </Menu.Item>
+        </Menu>
         <p v-if="!collapsed" class="shell__legal">{{ t('chrome.copyright') }}</p>
       </div>
     </Layout.Sider>
@@ -583,6 +604,13 @@ async function onLogout(): Promise<void> {
 }
 .shell__nav-main::-webkit-scrollbar {
   display: none;
+}
+.shell__nav-footer {
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.shell__nav-footer :deep(.ant-menu-divider) {
+  margin: 8px 16px;
 }
 .shell__sider :deep(.ant-layout-sider-trigger) {
   height: 40px;

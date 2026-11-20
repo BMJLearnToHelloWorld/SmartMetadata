@@ -41,17 +41,13 @@ export type NavEntry = NavLeaf | NavSection | NavAction;
 
 /**
  * Left-nav information architecture aligned with the IQVIA/OM reference
- * sidebar: Home, Explore, Connections, Lineage, Observability, Insights, Data Marketplace,
+ * sidebar: Home, Explore, Lineage, Observability, Insights, Data Marketplace,
  * Govern, Context Center, then Settings/Logout in the footer. Extra catalog
  * pages (ingestion, collaboration, members) stay reachable from Settings.
  */
 export const NAV_ENTRIES: NavEntry[] = [
   { kind: 'item', key: 'home', titleKey: 'nav.home' },
   { kind: 'item', key: 'search', titleKey: 'nav.explore' },
-  // B-7(c): Connections is a top-level entry (pin navOrder 20, after
-  // Explore, before Observability); the retired aggregate list was
-  // never a nav entry.
-  { kind: 'item', key: 'connections', titleKey: 'nav.connections' },
   { kind: 'item', key: 'lineage-home', titleKey: 'nav.lineage' },
   {
     kind: 'section',
