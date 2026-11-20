@@ -239,25 +239,6 @@ export const SSO_ADVANCED_PROPERTIES: readonly string[] = [
   'maxAge',
 ];
 
-/**
- * Lodash `startCase` semantics, which the pin rules depend on: words are
- * split on camel-case boundaries, letter/digit boundaries and every
- * non-alphanumeric separator (including `.`), each word keeps its remaining
- * characters and gains an upper-cased first letter. The product's ingestion
- * `startCase` differs (no `.` splitting, no digit boundaries), so SSO carries
- * its own. Used for array-field labels, the RolesSelectField label, and the
- * `transformErrors` field-name derivation — never hand-write its outputs.
- */
-const SSO_WORD_PATTERN =
-  /[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+/g;
-
-export function ssoStartCase(value: string): string {
-  const words = value.match(SSO_WORD_PATTERN) ?? [];
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
 /** URL validity for array URL fields (pin `SSOUtils.ts:isValidUrl`, verbatim). */
 const SSO_URL_REGEX = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
 

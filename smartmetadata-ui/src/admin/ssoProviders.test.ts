@@ -17,7 +17,6 @@ import {
   splitSsoCsv,
   SSO_PROVIDER_FIELD_MAPPINGS,
   SSO_PROVIDER_OPTIONS,
-  ssoStartCase,
 } from './ssoProviders';
 
 describe('getSsoProviderDisplayName', () => {
@@ -115,35 +114,6 @@ describe('SSO_PROVIDER_FIELD_MAPPINGS', () => {
       'samlConfiguration',
     ]);
     expect(SSO_PROVIDER_FIELD_MAPPINGS['custom-oidc']).toBeUndefined();
-  });
-});
-
-describe('ssoStartCase', () => {
-  it.each([
-    ['publicKeyUrls', 'Public Key Urls'],
-    ['additionalTrustedRedirectUris', 'Additional Trusted Redirect Uris'],
-    ['jwtPrincipalClaims', 'Jwt Principal Claims'],
-    ['jwtPrincipalClaimsMapping', 'Jwt Principal Claims Mapping'],
-    ['adminPrincipals', 'Admin Principals'],
-    ['adminEmails', 'Admin Emails'],
-    ['allowedEmailDomains', 'Allowed Email Domains'],
-    ['botPrincipals', 'Bot Principals'],
-    ['testPrincipals', 'Test Principals'],
-    ['allowedEmailRegistrationDomains', 'Allowed Email Registration Domains'],
-    ['allowedDomains', 'Allowed Domains'],
-    ['acceptableHostNames', 'Acceptable Host Names'],
-    ['samlDisplayNameAttributes', 'Saml Display Name Attributes'],
-    ['scope', 'Scope'],
-    ['authReassignRoles', 'Auth Reassign Roles'],
-    ['providerName', 'Provider Name'],
-    ['provider', 'Provider'],
-    ['.authenticationConfiguration.sessionExpiry', 'Authentication Configuration Session Expiry'],
-    ['.authenticationConfiguration.maxActiveSessionsPerUser', 'Authentication Configuration Max Active Sessions Per User'],
-    ['.authenticationConfiguration.oidcConfiguration.tokenValidity', 'Authentication Configuration Oidc Configuration Token Validity'],
-    ['.authenticationConfiguration.samlConfiguration.security.tokenValidity', 'Authentication Configuration Saml Configuration Security Token Validity'],
-    ['', ''],
-  ])('renders %s as %s', (value, expected) => {
-    expect(ssoStartCase(value)).toBe(expected);
   });
 });
 

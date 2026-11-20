@@ -10,11 +10,8 @@ You may obtain a copy of the License at
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {
-  isSsoValidUrl,
-  splitSsoCsv,
-  ssoStartCase,
-} from '@/admin/ssoProviders';
+import { isSsoValidUrl, splitSsoCsv } from '@/admin/ssoProviders';
+import { startCase } from '@/utils/text';
 
 const props = withDefaults(
   defineProps<{
@@ -188,7 +185,7 @@ const unselectedOptions = computed(() =>
       <select
         v-if="options.length > 0"
         :id="fieldId"
-        :aria-label="ssoStartCase(name)"
+        :aria-label="startCase(name)"
         :disabled="disabled"
         @change="handleOptionSelect"
       >
@@ -205,7 +202,7 @@ const unselectedOptions = computed(() =>
         v-else
         :id="fieldId"
         v-model="inputText"
-        :aria-label="ssoStartCase(name)"
+        :aria-label="startCase(name)"
         :disabled="disabled"
         :placeholder="placeholder"
         type="text"

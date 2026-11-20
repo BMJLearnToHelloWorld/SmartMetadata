@@ -9,8 +9,8 @@
  */
 
 /**
- * Shared text helpers: the single home of `startCase` and
- * `getFormDisplayLabel`.
+ * Shared text helpers: the single home of `startCase`,
+ * `getFormDisplayLabel` and `capitalize`.
  *
  * The pin renders these labels with lodash `startCase` (lodash 4.18.1,
  * `openmetadata-ui/.../package.json:157`); the product carries no lodash
@@ -425,6 +425,17 @@ function upperFirst(word: string): string {
   }
   const trailing = strSymbols ? strSymbols.slice(1).join('') : word.slice(1);
   return first.toUpperCase() + trailing;
+}
+
+/**
+ * Lodash `capitalize` (4.18.1, `capitalize.js`, MIT): lower-case the whole
+ * string, then `upperFirst` it — the first grapheme cluster is upper-cased
+ * as a whole (see `upperFirst`), the rest lower-cased. Pin uses it after
+ * `startCase` for workflow edge labels (`StraightEdge.tsx:85-87`) and for
+ * services tabs (`ServicesPage.tsx:109`).
+ */
+export function capitalize(value: string): string {
+  return upperFirst(value.toLowerCase());
 }
 
 /**
