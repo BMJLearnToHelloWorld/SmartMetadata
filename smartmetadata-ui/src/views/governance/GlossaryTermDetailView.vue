@@ -6,20 +6,33 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Button, Descriptions, Empty, Form, Input, Select, Space, Tag, Typography, message } from 'ant-design-vue';
+import { Button, Descriptions, Empty, Form, Input, Select, Tag, Typography, message } from 'ant-design-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import SmRichTextEditor from '@/components/shared/SmRichTextEditor.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
 import { useEntityPermissions } from '@/composables/useEntityPermissions';
 import FormModal from '@/components/shared/FormModal.vue';
 import { isDetailWired } from '@/catalog/entityRoutes';
-import { getSafeHttpUrl } from '@/catalog/safeHttpUrl';
 import { DetailWidgetKeys } from '@/catalog/detailWidgetDispatch';
 import GenericTab from '@/components/customize/GenericTab.vue';
 import { resolveWidgetLayout } from '@/composables/customizeWidgetLayout';
 import { findCustomizedTabEntry, getDetailsTabWithNewLabel, useCustomPages } from '@/composables/useCustomPages';
 import { isWidgetLayoutTab } from '@/views/admin/persona/editors/customizePageData';
 import { deleteGlossaryTerm, getGlossaryTerm, listGlossaryTermAssets, listGlossaryTerms, patchGlossaryTerm, updateGlossaryTerm } from '@/api/glossaryTerms';
+import { listRelationshipTypes, type RelationshipType } from '@/api/relationshipTypes';
+import { usePermissionStore } from '@/stores/permissions';
+import { loadGovernanceCatalog, type GovernanceCatalog } from '@/governance/catalogOptions';
+import {
+  referencesPatch,
+  relatedTermsPatch,
+  synonymsPatch,
+  termOwnersPatch,
+} from '@/governance/assetPatch';
+import type { TermRelationInput } from '@/governance/glossaryTermWidgets';
+import WidgetSynonymsCell from '@/components/shared/widgets/WidgetSynonymsCell.vue';
+import WidgetRelatedTermsCell from '@/components/shared/widgets/WidgetRelatedTermsCell.vue';
+import WidgetReferencesCell from '@/components/shared/widgets/WidgetReferencesCell.vue';
+import WidgetOwnerCell from '@/components/shared/widgets/WidgetOwnerCell.vue';
 import { listCustomProperties } from '@/api/customProperties';
 import { listEntityActivity } from '@/api/activity';
 import { listConversations } from '@/api/conversations';
@@ -38,15 +51,18 @@ import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab } from '@/features/crud/types';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { EntityRef, TagRef } from '@/types/api';
-import type { GlossaryTerm } from '@/types/governance';
+import type { GlossaryTerm, TermReference } from '@/types/governance';
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
 const { t } = useI18n();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const errorMessage = ref('');
 const term = ref<GlossaryTerm | null>(null);
 const siblings = ref<GlossaryTerm[]>([]);
+const catalog = ref<GovernanceCatalog | null>(null);
+const relationTypes = ref<RelationshipType[]>([]);
 const assets = ref<EntityRef[]>([]);
 const activeTab = ref('overview');
 const activity = ref<ActivityEvent[]>([]);
@@ -72,6 +88,26 @@ const termPermissions = useEntityPermissions(
   { deleted: () => term.value?.deleted === true },
 );
 const canEditDescription = computed(() => termPermissions.canEditDescription.value);
+/**
+ * D-2 batch 5a widget gates (P1 both lines, `isAdminUser ||` on top of
+ * the derived flag; the flags are deleted-gated by the
+ * `useEntityPermissions` deleted callback above, and fail closed while
+ * the permission fetch resolves). The Owner gate is pin's documented
+ * exception (A8 §2.3): the raw `EditOwners || EditAll` read, no
+ * derivation, no deleted gate.
+ */
+const canEditAllTerm = computed(
+  () => permissionStore.isAdminUser || termPermissions.canEditAll.value,
+);
+const canEditGlossaryTermsTerm = computed(
+  () => permissionStore.isAdminUser || termPermissions.can('EditGlossaryTerms'),
+);
+const canEditOwnerTerm = computed(
+  () =>
+    permissionStore.isAdminUser ||
+    termPermissions.permissions.value.EditOwners === true ||
+    termPermissions.permissions.value.EditAll === true,
+);
 /**
  * Custom-properties read gate (official GlossaryTermsV1:
  * viewCustomPropertiesPermission is the derived canViewCustomFields
@@ -351,6 +387,61 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 5a widget saves: one JSON Patch op per field (pin
+ * `onUpdate({...term, <field>})` shape; the product's full-PUT request
+ * type carries none of these fields, so the patch path applies per
+ * B2 §0.1). Each throws on failure so the cell keeps its editor open.
+ */
+async function onSynonymsSave(synonyms: string[]): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  await patchGlossaryTerm(term.value.id, synonymsPatch(term.value.synonyms, synonyms));
+  message.success(t('terms.updated'));
+  await load();
+}
+
+async function onRelatedTermsSave(relations: TermRelationInput[]): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  await patchGlossaryTerm(term.value.id, relatedTermsPatch(term.value.relatedTerms, relations));
+  message.success(t('terms.updated'));
+  await load();
+}
+
+async function onReferencesSave(references: TermReference[]): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  await patchGlossaryTerm(term.value.id, referencesPatch(term.value.references, references));
+  message.success(t('terms.updated'));
+  await load();
+}
+
+async function onOwnerSave(owners: Array<{ id: string; type: string }>): Promise<void> {
+  if (!term.value) {
+    return;
+  }
+  await patchGlossaryTerm(term.value.id, termOwnersPatch(term.value.owners, owners));
+  message.success(t('terms.updated'));
+  await load();
+}
+
+/** Sibling terms (excluding this term) for the related-terms picker. */
+const siblingTermOptions = computed<EntityRef[]>(() =>
+  siblings.value
+    .filter((candidate) => candidate.id !== term.value?.id)
+    .map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      displayName: candidate.displayName,
+      type: 'glossaryTerm',
+      fullyQualifiedName: candidate.fullyQualifiedName || candidate.name,
+    })),
+);
+
 async function onDeleteTerm(): Promise<void> {
   if (!term.value) {
     return;
@@ -402,6 +493,20 @@ watch(
 
 onMounted(() => {
   void load();
+  // D-2 batch 5a: owner picker options and relationship types for the
+  // widget cells. Failures leave the cells with empty options (the
+  // owner picker then offers nothing; the relation-type picker falls
+  // back to `relatedTo` inside the cell) instead of failing the page.
+  void loadGovernanceCatalog()
+    .then((loaded) => {
+      catalog.value = loaded;
+    })
+    .catch(() => undefined);
+  void listRelationshipTypes({ limit: 1000 })
+    .then((page) => {
+      relationTypes.value = page.data;
+    })
+    .catch(() => undefined);
 });
 </script>
 
@@ -454,14 +559,22 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetRelatedTermsCell
+              :relations="term.relatedTerms"
+              :relation-types="relationTypes"
+              :term-options="siblingTermOptions"
+              :has-edit-access="canEditGlossaryTermsTerm"
+              :on-save="onRelatedTermsSave"
+              :on-term-click="openTerm"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnerCell
+              :owners="term.owners"
+              :owner-options="catalog?.owners ?? []"
+              :has-edit-access="canEditOwnerTerm"
+              :on-save="onOwnerSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -484,27 +597,18 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetSynonymsCell
+              :synonyms="term.synonyms"
+              :has-edit-access="canEditAllTerm"
+              :on-save="onSynonymsSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
+            <WidgetReferencesCell
+              :references="term.references"
+              :has-edit-access="canEditAllTerm"
+              :on-save="onReferencesSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
             <Descriptions bordered :column="1" size="small">
@@ -643,14 +747,22 @@ onMounted(() => {
             />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.RELATED_TERMS && term" data-testid="widget-related-terms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.relatedTerms')">{{ joinRefNames(term.relatedTerms) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetRelatedTermsCell
+              :relations="term.relatedTerms"
+              :relation-types="relationTypes"
+              :term-options="siblingTermOptions"
+              :has-edit-access="canEditGlossaryTermsTerm"
+              :on-save="onRelatedTermsSave"
+              :on-term-click="openTerm"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.OWNER && term" data-testid="widget-owner">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(term.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetOwnerCell
+              :owners="term.owners"
+              :owner-options="catalog?.owners ?? []"
+              :has-edit-access="canEditOwnerTerm"
+              :on-save="onOwnerSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && term" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -673,27 +785,18 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.SYNONYMS && term" data-testid="widget-synonyms">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.synonyms')">{{ term.synonyms.join(', ') || '—' }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetSynonymsCell
+              :synonyms="term.synonyms"
+              :has-edit-access="canEditAllTerm"
+              :on-save="onSynonymsSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REFERENCES && term" data-testid="widget-references">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('terms.references')">
-                <Space v-if="term.references.length" wrap>
-                  <template v-for="(reference, index) in term.references" :key="index">
-                    <a
-                      v-if="getSafeHttpUrl(reference.endpoint)"
-                      :href="getSafeHttpUrl(reference.endpoint)"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >{{ reference.name || reference.endpoint }}</a>
-                    <span v-else>{{ reference.name || reference.endpoint }}</span>
-                  </template>
-                </Space>
-                <template v-else>—</template>
-              </Descriptions.Item>
-            </Descriptions>
+            <WidgetReferencesCell
+              :references="term.references"
+              :has-edit-access="canEditAllTerm"
+              :on-save="onReferencesSave"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && term" data-testid="widget-reviewer">
             <Descriptions bordered :column="1" size="small">

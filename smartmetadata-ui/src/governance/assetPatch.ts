@@ -8,8 +8,11 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 import { entityRefValue, setFieldPatch, type JsonPatchOp } from '@/admin/jsonPatch';
+import type { TableConstraint } from '@/types/api';
 import type { TagLabelState, TagLabelType } from '@/types/api';
 import type { AssetTagOption, TagSource } from '@/types/governance';
+import type { TermReference } from '@/types/governance';
+import type { TermRelationInput } from '@/governance/glossaryTermWidgets';
 
 export interface TagLabelValue {
   tagFQN: string;
@@ -115,4 +118,47 @@ export function columnTagsPatch(
 /** Custom property values live on the entity `extension` object. */
 export function extensionPatch(current: unknown, extension: Record<string, unknown>): JsonPatchOp[] {
   return setFieldPatch('/extension', current, extension);
+}
+
+/**
+ * D-2 batch 5a cell saves: whole-field writes for the glossary-term
+ * and table widgets. Each is a thin `setFieldPatch` wrapper so the
+ * call sites read as the field they write (pin `onUpdate({...data,
+ * <field>: next})` shape, sent as one JSON Patch op per B2 §0.1).
+ */
+export function synonymsPatch(current: unknown, synonyms: string[]): JsonPatchOp[] {
+  return setFieldPatch('/synonyms', current, synonyms);
+}
+
+export function referencesPatch(current: unknown, references: TermReference[]): JsonPatchOp[] {
+  return setFieldPatch('/references', current, references);
+}
+
+export function relatedTermsPatch(
+  current: unknown,
+  relations: TermRelationInput[],
+): JsonPatchOp[] {
+  return setFieldPatch('/relatedTerms', current, relations);
+}
+
+export function termOwnersPatch(
+  current: unknown,
+  owners: Array<{ id: string; type: string }>,
+): JsonPatchOp[] {
+  return setFieldPatch(
+    '/owners',
+    current,
+    owners.map((owner) => entityRefValue(owner.id, owner.type)),
+  );
+}
+
+export function domainTypePatch(current: unknown, domainType: string): JsonPatchOp[] {
+  return setFieldPatch('/domainType', current, domainType);
+}
+
+export function tableConstraintsPatch(
+  current: unknown,
+  constraints: TableConstraint[],
+): JsonPatchOp[] {
+  return setFieldPatch('/tableConstraints', current, constraints);
 }

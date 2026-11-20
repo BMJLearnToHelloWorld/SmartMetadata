@@ -9,6 +9,9 @@ import { Alert, Descriptions, Empty, Space, Tag, Typography, type TableProps } f
 import { StarOutlined } from '@ant-design/icons-vue';
 import SmTable from '@/components/shared/SmTable.vue';
 import EntityDescriptionCell from '@/components/shared/EntityDescriptionCell.vue';
+import WidgetPartitionedKeysCell from '@/components/shared/widgets/WidgetPartitionedKeysCell.vue';
+import WidgetTableAliasesCell from '@/components/shared/widgets/WidgetTableAliasesCell.vue';
+import WidgetTableConstraintsCell from '@/components/shared/widgets/WidgetTableConstraintsCell.vue';
 import PipelineTaskGraph from '@/components/pipeline/PipelineTaskGraph.vue';
 import AssetCustomPropertiesPanel from '@/features/crud/AssetCustomPropertiesPanel.vue';
 import AssetRelatedPanel from '@/features/crud/AssetRelatedPanel.vue';
@@ -17,9 +20,10 @@ import FrequentlyJoinedTables from '@/features/queries/FrequentlyJoinedTables.vu
 import SchemaTagCell from '@/views/SchemaTagCell.vue';
 import type { ApiEndpointRef } from '@/api/apiCollections';
 import type { PipelineTaskGraphModel } from '@/pipeline/taskGraph';
-import type { AssetDetail, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, SchemaRow, TableConstraint, TagRef } from '@/types/api';
 import type { CustomPropertyDef } from '@/types/collaboration';
 import type { AssetTagOption, TagSource } from '@/types/governance';
+import { flattenColumnNames } from '@/governance/tableWidgets';
 
 /**
  * One shared piece of asset-detail content, rendered by both the
@@ -61,7 +65,10 @@ export type AssetDetailPieceId =
   | 'glossaryTerms'
   | 'owners'
   | 'domains'
-  | 'frequentlyJoined';
+  | 'frequentlyJoined'
+  | 'partitionedKeys'
+  | 'tableConstraints'
+  | 'tableAliases';
 
 export interface AssetDetailPieceContext {
   asset: AssetDetail;
@@ -110,6 +117,16 @@ export interface AssetDetailPieceContext {
   descriptionExpanded: boolean;
   onDescriptionUpdate: (description: string) => Promise<unknown> | unknown;
   customPropsCanView: boolean | null;
+  /**
+   * D-2 batch 5a table-constraints cell: `tableConstraintsAccess` is
+   * the P1 `isAdminUser || canEditAll` gate (deleted-gated); the modal
+   * saves through `onTableConstraintsUpdate`, which throws on failure
+   * so the modal stays open; `onReferredTableClick` navigates a
+   * foreign-key referred column to its parent table.
+   */
+  tableConstraintsAccess: boolean;
+  onTableConstraintsUpdate: (values: TableConstraint[]) => Promise<unknown>;
+  onReferredTableClick: (fqn: string) => void;
 }
 
 const props = withDefaults(
@@ -145,6 +162,9 @@ const showMetricExpression = computed(
         props.context.asset.storedProcedureCode?.language,
     ),
 );
+
+/** Table column names (top-level + nested) for the constraints modal. */
+const tableColumnNames = computed(() => flattenColumnNames(props.context.asset.schemaRows));
 </script>
 
 <template>
@@ -438,6 +458,30 @@ const showMetricExpression = computed(
   </template>
   <template v-else-if="piece === 'frequentlyJoined'">
     <FrequentlyJoinedTables :joins="context.asset.joins" />
+  </template>
+  <template v-else-if="piece === 'partitionedKeys'">
+    <div data-testid="asset-widget-partitioned-keys">
+      <Typography.Text type="secondary">{{ t('asset.partitionedKeys') }}</Typography.Text>
+      <WidgetPartitionedKeysCell :columns="context.asset.tablePartition?.columns" />
+    </div>
+  </template>
+  <template v-else-if="piece === 'tableConstraints'">
+    <div data-testid="asset-widget-table-constraints">
+      <Typography.Text type="secondary">{{ t('asset.tableConstraints') }}</Typography.Text>
+      <WidgetTableConstraintsCell
+        :constraints="context.asset.tableConstraints"
+        :column-names="tableColumnNames"
+        :has-edit-access="context.tableConstraintsAccess"
+        :on-save="context.onTableConstraintsUpdate"
+        :on-referred-table-click="context.onReferredTableClick"
+      />
+    </div>
+  </template>
+  <template v-else-if="piece === 'tableAliases'">
+    <div data-testid="asset-widget-table-aliases">
+      <Typography.Text type="secondary">{{ t('asset.tableAliases') }}</Typography.Text>
+      <WidgetTableAliasesCell :aliases="context.asset.aliases" />
+    </div>
   </template>
 </template>
 

@@ -43,7 +43,8 @@ import BulkAssetResultPanel from '@/features/crud/BulkAssetResultPanel.vue';
 import CustomPropertiesEditModal from '@/features/crud/CustomPropertiesEditModal.vue';
 import EntityDetailShell from '@/features/crud/EntityDetailShell.vue';
 import { entityLabel, joinRefNames } from '@/features/crud/paging';
-import { extensionPatch } from '@/governance/assetPatch';
+import { extensionPatch, domainTypePatch } from '@/governance/assetPatch';
+import WidgetDomainTypeCell from '@/components/shared/widgets/WidgetDomainTypeCell.vue';
 import { getCertificationTag, getTierTag } from '@/ingestion/tierTags';
 import { toEntityLink } from '@/quality/entityLink';
 import type { EntityBreadcrumb, EntityDetailTab, EntityListColumn } from '@/features/crud/types';
@@ -186,6 +187,14 @@ const canEditAssets = computed(
 );
 const canEditDescription = computed(() => domainFlags.value.canEditDescription);
 const canEditCustomFields = computed(() => domainFlags.value.canEditCustomFields);
+/**
+ * D-2 batch 5a DomainType gate (pin `canEditAll`, `EditAll`): P1 both
+ * lines, `isAdminUser || canEditAll`. The `domainFlags` derivation
+ * already passes the domain's `deleted` flag (A8 frozen rule).
+ */
+const canEditDomainType = computed(
+  () => permissionStore.isAdminUser || domainFlags.value.canEditAll,
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : ops.value ? domainFlags.value.canViewCustomFields : false,
@@ -431,6 +440,20 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await load();
 }
 
+/**
+ * D-2 batch 5a DomainType cell save: one JSON Patch op on the type
+ * (pin `onUpdate({...domain, domainType})` shape). Throws on failure
+ * so the cell keeps its editor open.
+ */
+async function onDomainTypeUpdate(domainType: string): Promise<void> {
+  if (!domain.value) {
+    return;
+  }
+  await patchDomain(domain.value.id, domainTypePatch(domain.value.domainType, domainType));
+  message.success(t('governance.domains.updated'));
+  await load();
+}
+
 async function onOpenVersions(): Promise<void> {
   // B-9 #2: the version route still addresses the domain by id, so the
   // version entry needs the loaded entity's id; with no domain loaded
@@ -527,9 +550,11 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -606,9 +631,11 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -737,9 +764,11 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -823,9 +852,11 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">
@@ -891,9 +922,11 @@ onMounted(() => {
             </Descriptions>
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN_TYPE && domain" data-testid="widget-domain-type">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('governance.domains.type')">{{ domain.domainType }}</Descriptions.Item>
-            </Descriptions>
+            <WidgetDomainTypeCell
+              :domain-type="domain.domainType"
+              :has-edit-access="canEditDomainType"
+              :on-save="onDomainTypeUpdate"
+            />
           </div>
           <div v-else-if="contentKey === DetailWidgetKeys.TAGS && domain" data-testid="widget-tags">
             <Descriptions bordered :column="1" size="small">

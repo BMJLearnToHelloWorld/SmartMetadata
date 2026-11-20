@@ -1411,7 +1411,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
           name: 'schema',
           layout: [
             { i: 'KnowledgePanel.NotARealWidget', x: 0, y: 0, w: 4, h: 1 },
-            { i: DetailWidgetKeys.TABLE_CONSTRAINTS, x: 4, y: 0, w: 4, h: 1 },
+            { i: DetailWidgetKeys.DATA_PRODUCTS, x: 4, y: 0, w: 4, h: 1 },
           ],
         },
       ]),
@@ -1424,7 +1424,7 @@ describe('AssetDetailView widget layer (B-8)', () => {
     const unknown = cellFor(wrapper, 'KnowledgePanel.NotARealWidget');
     expect(unknown.exists()).toBe(true);
     expect(unknown.text()).toBe('');
-    const unmapped = cellFor(wrapper, DetailWidgetKeys.TABLE_CONSTRAINTS);
+    const unmapped = cellFor(wrapper, DetailWidgetKeys.DATA_PRODUCTS);
     expect(unmapped.exists()).toBe(true);
     expect(unmapped.text()).toBe('');
     expect(wrapper.find('[data-testid="asset-schema-table"]').exists()).toBe(false);

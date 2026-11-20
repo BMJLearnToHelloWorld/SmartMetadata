@@ -104,5 +104,11 @@ export function buildEditorPieceContext(
     apiEndpointsError: '',
     apiEndpointSchemaJson: () => '',
     onApiEndpointClick: () => {},
+    // D-2 batch 5a: the table-constraints piece contract — the editor
+    // preview has no constraints and no save, so the gate is closed
+    // and both callbacks are no-ops.
+    tableConstraintsAccess: false,
+    onTableConstraintsUpdate: async () => {},
+    onReferredTableClick: () => {},
   };
 }

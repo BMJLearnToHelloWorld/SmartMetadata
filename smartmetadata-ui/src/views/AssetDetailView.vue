@@ -69,12 +69,12 @@ import {
   parseOwnerKey,
   type GovernanceCatalog,
 } from '@/governance/catalogOptions';
-import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
+import { descriptionPatch, domainsPatch, extensionPatch, ownersPatch, tableConstraintsPatch, tagsPatch, columnTagsPatch, toTagLabel, type TagLabelInput } from '@/governance/assetPatch';
 import { isPipelineTaskGraphEmpty, mapPipelineTaskGraph } from '@/pipeline/taskGraph';
 import { toEntityLink } from '@/quality/entityLink';
 import { useAuthStore } from '@/stores/auth';
 import { usePermissionStore } from '@/stores/permissions';
-import type { AssetDetail, CatalogPipelineStatus, SchemaRow, TagRef } from '@/types/api';
+import type { AssetDetail, CatalogPipelineStatus, SchemaRow, TableConstraint, TagRef } from '@/types/api';
 import type { TagSource } from '@/types/governance';
 import type { ActivityEvent, Conversation, CustomPropertyDef } from '@/types/collaboration';
 import type { TableProfile, TableSampleData, TestCase, TopicSampleData } from '@/types/quality';
@@ -124,6 +124,15 @@ const assetFlags = computed(() =>
 );
 const canEditDescription = computed(() => assetFlags.value.canEditDescription);
 const canEditCustomFields = computed(() => assetFlags.value.canEditCustomFields);
+/**
+ * D-2 batch 5a table-constraints gate (pin `canEditAll`, deleted-gated):
+ * P1 both lines, `isAdminUser || canEditAll`. The permission store's
+ * admin line is the same one DomainDetailView uses for its asset
+ * writes; the auth store's user is the same principal.
+ */
+const canEditTableConstraints = computed(
+  () => permissionStore.isAdminUser || assetFlags.value.canEditAll,
+);
 /** Custom-properties read gate: null while the permission fetch is still resolving. */
 const customPropsCanView = computed<boolean | null>(() =>
   loading.value ? null : assetOps.value ? assetFlags.value.canViewCustomFields : false,
@@ -171,6 +180,28 @@ async function onDescriptionUpdate(description: string): Promise<void> {
   await patchAsset(props.entityType, asset.value.id, descriptionPatch(asset.value.description, description));
   message.success(t('asset.updated'));
   await load();
+}
+
+/**
+ * D-2 batch 5a table-constraints cell save: one JSON Patch op on the
+ * whole constraints array (pin `onUpdate({...data, tableConstraints:
+ * values})` shape). Throws on failure so the modal stays open.
+ */
+async function onTableConstraintsUpdate(values: TableConstraint[]): Promise<void> {
+  if (!asset.value?.id) {
+    return;
+  }
+  await patchAsset(
+    props.entityType,
+    asset.value.id,
+    tableConstraintsPatch(asset.value.tableConstraints, values),
+  );
+  message.success(t('asset.updated'));
+  await load();
+}
+
+function onReferredTableClick(fqn: string): void {
+  void router.push({ name: 'asset', params: { entityType: 'table', fqn } });
 }
 const tests = ref<TestCase[]>([]);
 const testsError = ref('');
@@ -397,8 +428,7 @@ function widgetLayoutFor(slotKey: string): WidgetConfig[] | null {
 // `detailWidgetDispatch.ts` for the file:line table). Keys with no
 // product pane are absent on purpose, so their cells stay empty
 // (residual R-4: data products, related metrics / metric hierarchy):
-// table constraints / partitioned keys / table aliases / asset
-// health (no product panes), data products (no field on the detail
+// asset health (no product panes), data products (no field on the detail
 // payload), experts / tier / certification (no detail surfaces;
 // tier already renders in the shell header), knowledge articles,
 // related metrics / metric hierarchy (no metric surfaces). The
@@ -427,6 +457,9 @@ const WIDGET_CONTENT_PIECES: Record<string, AssetDetailPieceId> = {
   [DetailWidgetKeys.GLOSSARY_TERMS]: 'glossaryTerms',
   [DetailWidgetKeys.OWNERS]: 'owners',
   [DetailWidgetKeys.DOMAIN]: 'domains',
+  [DetailWidgetKeys.PARTITIONED_KEYS]: 'partitionedKeys',
+  [DetailWidgetKeys.TABLE_CONSTRAINTS]: 'tableConstraints',
+  [DetailWidgetKeys.TABLE_ALIASES]: 'tableAliases',
 };
 
 function pieceForContentKey(contentKey: string | null): AssetDetailPieceId | null {
@@ -1040,6 +1073,9 @@ const pieceContext = computed<AssetDetailPieceContext>(() => ({
   descriptionExpanded: descriptionExpanded.value,
   onDescriptionUpdate,
   customPropsCanView: customPropsCanView.value,
+  tableConstraintsAccess: canEditTableConstraints.value,
+  onTableConstraintsUpdate,
+  onReferredTableClick,
   schemaTagOptions: catalog.value.tags,
   schemaTagAccess: schemaTagAccess.value,
   onSchemaTagChange,
@@ -1270,6 +1306,24 @@ onMounted(() => {
               :on-description-update="onDescriptionUpdate"
             />
             <AssetDetailPiece piece="schemaTable" :context="pieceContext" with-joins />
+            <!-- D-2 batch 5a: pin Table right column, y=7/8/9 — only
+                 mounted when the table carries data (empty removes the
+                 widget officially, via filterWidgets). -->
+            <AssetDetailPiece
+              v-if="entityType === 'table' && (asset.tablePartition?.columns?.length ?? 0) > 0"
+              piece="partitionedKeys"
+              :context="pieceContext"
+            />
+            <AssetDetailPiece
+              v-if="entityType === 'table' && (asset.tableConstraints?.length ?? 0) > 0"
+              piece="tableConstraints"
+              :context="pieceContext"
+            />
+            <AssetDetailPiece
+              v-if="entityType === 'table' && (asset.aliases?.length ?? 0) > 0"
+              piece="tableAliases"
+              :context="pieceContext"
+            />
           </template>
       </template>
       <template v-if="asset" #features>

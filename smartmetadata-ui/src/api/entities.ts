@@ -11,6 +11,7 @@ import type { JsonPatchOp } from '@/admin/jsonPatch';
 import { resolveDetailEndpoint, resolveFollowersPath, resolvePatchPath, resolveVersionsPath } from '@/catalog/entityRoutes';
 import { mapTableJoins } from '@/catalog/tableJoins';
 import { mapUsageSummary } from '@/catalog/usagePercentile';
+import { mapTableAliases, mapTableConstraints, mapTablePartition } from '@/governance/tableWidgets';
 import type { AssetDetail, EntityRef, EntityVotes, MlHyperParameter, SchemaRow, TagRef } from '@/types/api';
 import { mapCatalogPipelineStatus, mapPipelineTask } from './catalogPipelines';
 import { apiRequest } from './client';
@@ -285,6 +286,8 @@ export async function fetchAssetDetail(
   const schema = schemaRowsFor(entityType, body);
   const code =
     mapStoredProcedureCode(body.storedProcedureCode) ?? mapStoredProcedureCode(body.metricExpression);
+  const tableConstraints = mapTableConstraints(body.tableConstraints);
+  const aliases = mapTableAliases(body.aliases);
   const relatedChildren = relatedRefsFor(entityType, body);
   const tasks = Array.isArray(body.tasks)
     ? body.tasks.flatMap((item) => {
@@ -348,6 +351,9 @@ export async function fetchAssetDetail(
     extension: asRecord(body.extension) || undefined,
     usageSummary: mapUsageSummary(body.usageSummary),
     joins: mapTableJoins(body.joins),
+    tablePartition: mapTablePartition(body.tablePartition),
+    tableConstraints: tableConstraints.length ? tableConstraints : undefined,
+    aliases: aliases.length ? aliases : undefined,
     deleted: typeof body.deleted === 'boolean' ? body.deleted : undefined,
   };
 }

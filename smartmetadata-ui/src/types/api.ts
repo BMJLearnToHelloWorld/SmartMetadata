@@ -208,6 +208,29 @@ export interface SearchPage {
   facets: SearchFacet[];
 }
 
+export interface TablePartitionColumn {
+  columnName: string;
+  interval?: string;
+  intervalType?: string;
+}
+
+export interface TablePartition {
+  columns: TablePartitionColumn[];
+}
+
+/**
+ * One table constraint (spec `entity/data/table.json#/definitions/tableConstraint`).
+ * `constraintType` is one of PRIMARY_KEY / FOREIGN_KEY / UNIQUE /
+ * DIST_KEY / CLUSTER_KEY / SORT_KEY; anything else is dropped at map
+ * time because pin never renders it.
+ */
+export interface TableConstraint {
+  constraintType: string;
+  columns?: string[];
+  referredColumns?: string[];
+  relationshipType?: string;
+}
+
 export interface SchemaRow {
   /** Dotted path (parent.child), unique across nested rows: Ant Table needs
       a row key that cannot collide between same-named children of different
@@ -333,6 +356,15 @@ export interface AssetDetail {
    */
   usageSummary?: UsageDetails;
   joins?: TableJoins;
+  /**
+   * Table widgets (D-2 batch 5a): partition columns, constraints, and
+   * aliases, requested via the table field set and mapped in
+   * `api/entities.ts`. All three are table-only; absent when the server
+   * returned nothing for them.
+   */
+  tablePartition?: TablePartition;
+  tableConstraints?: TableConstraint[];
+  aliases?: string[];
   /** Soft-delete flag; the table_queries tab skips its fetch for deleted tables (pin isTableDeleted). */
   deleted?: boolean;
 }
