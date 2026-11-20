@@ -414,35 +414,7 @@ onMounted(() => {
       <Empty v-else data-testid="asset-tab-residual" :description="t('asset.tabResidual.tagAssets')" />
     </template>
     <template #activity_feed>
-      <GenericTab v-if="customizedEntryFor('activity_feed')" :layout="widgetLayoutFor('activity_feed')" page-type="Tag">
-        <template #widget="{ contentKey }">
-          <div v-if="contentKey === DetailWidgetKeys.DESCRIPTION && tag" data-testid="widget-description">
-            <EntityDescriptionCell
-              :description="tag.description"
-              :entity-name="tag.displayName || tag.name"
-              :has-edit-access="canEditDescription"
-              :on-description-update="onDescriptionUpdate"
-            />
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.OWNERS && tag" data-testid="widget-owners">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('crud.owners')">{{ joinRefNames(tag.owners) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.DOMAIN && tag" data-testid="widget-domain">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('asset.fields.domains')">{{ joinRefNames(tag.domains) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-          <div v-else-if="contentKey === DetailWidgetKeys.REVIEWER && tag" data-testid="widget-reviewer">
-            <Descriptions bordered :column="1" size="small">
-              <Descriptions.Item :label="t('tags.reviewers')">{{ joinRefNames(tag.reviewers) || '—' }}</Descriptions.Item>
-            </Descriptions>
-          </div>
-        </template>
-      </GenericTab>
       <AssetActivityPanel
-        v-else
         :activity="activity"
         :conversations="conversations"
         :collaboration-error="collaborationError"

@@ -77,6 +77,8 @@ export interface GlossaryTerm {
       nothing while its children page is still unloaded. */
   childrenCount?: number;
   usageCount?: number;
+  /** Custom-property values (spec `glossaryTerm.json#/extension`, entityExtension). */
+  extension?: Record<string, unknown>;
   /** Mappings to external vocabularies (spec entity/data/glossaryTerm.json). */
   conceptMappings?: EntityRef[];
   /** Present when the catalog returns entityStatus; never invent one. */

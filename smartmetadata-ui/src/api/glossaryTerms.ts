@@ -20,7 +20,7 @@ import { apiRequest } from './client';
 import { mapTags } from './entities';
 
 export const GLOSSARY_TERM_FIELDS =
-  'children,relatedTerms,reviewers,owners,tags,usageCount,domains,childrenCount,entityStatus';
+  'children,relatedTerms,reviewers,owners,tags,usageCount,domains,childrenCount,entityStatus,extension';
 
 export interface ListGlossaryTermsQuery {
   glossary?: string;
@@ -155,6 +155,7 @@ function mapTerm(raw: Record<string, unknown>): GlossaryTerm | null {
     children: children.length ? children : undefined,
     childrenCount: asNumber(raw.childrenCount) || undefined,
     usageCount: asNumber(raw.usageCount),
+    extension: asRecord(raw.extension) ?? undefined,
     status: asString(raw.entityStatus) || asString(raw.status) || undefined,
   };
 }
@@ -246,6 +247,18 @@ export async function updateGlossaryTerm(body: CreateGlossaryTermRequest): Promi
     throw new Error('Update glossary term succeeded but the response had no term');
   }
   return mapped;
+}
+
+/**
+ * JSON-patch write for the term extension (custom properties), same call
+ * shape as patchDomain (application/json-patch+json).
+ */
+export function patchGlossaryTerm(id: string, patch: unknown[]): Promise<unknown> {
+  return apiRequest(`/v1/glossaryTerms/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    json: patch,
+    contentType: 'application/json-patch+json',
+  });
 }
 
 export function listGlossaryTermAssets(
