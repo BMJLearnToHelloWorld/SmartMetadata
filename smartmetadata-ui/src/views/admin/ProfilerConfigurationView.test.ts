@@ -45,6 +45,14 @@ async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router:
     messages: {
       'en-US': {
         settings: {
+          registry: {
+            preferences: {
+              profilerConfiguration: {
+                title: 'Profiler Configuration',
+                description: 'Profiler lead',
+              },
+            },
+          },
           profiler: {
             title: 'Profiler configuration',
             lead: 'Lead',
@@ -77,12 +85,6 @@ async function mountView(): Promise<{ wrapper: ReturnType<typeof mount>; router:
   const wrapper = mount(ProfilerConfigurationView, {
     global: {
       plugins: [router, i18n],
-      stubs: {
-        PreferencePageShell: {
-          template: '<div data-testid="profiler-configuration"><slot /></div>',
-          props: ['title', 'lead', 'testId', 'errorMessage', 'loading'],
-        },
-      },
     },
   });
   await flushPromises();
@@ -102,6 +104,16 @@ beforeEach(() => {
 });
 
 describe('ProfilerConfigurationView sample data config', () => {
+  it('renders the registry title and lead in the PageHeader', async () => {
+    const { wrapper } = await mountView();
+    expect(wrapper.find('[data-testid="profiler-configuration-heading"]').text()).toBe(
+      'Profiler Configuration',
+    );
+    expect(wrapper.find('[data-testid="profiler-configuration-sub"]').text()).toBe(
+      'Profiler lead',
+    );
+  });
+
   it('preserves server sampleDataConfig on save instead of dropping it', async () => {
     const { wrapper } = await mountView();
     await wrapper.get('[data-testid="profiler-config-form"]').trigger('submit');

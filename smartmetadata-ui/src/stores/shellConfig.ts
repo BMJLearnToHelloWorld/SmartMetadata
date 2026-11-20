@@ -34,10 +34,12 @@ import { computed, ref } from 'vue';
  * and the iSmart defaults apply), and GET /v1/limits/config for the
  * limit configuration that LimitWrapper gates creation entries on
  * (LimitsResource @Path /v1/limits).
- * Residual: the official version-mismatch alert is not wired — this
- * console has no client version constant to compare the server version
- * against. A failed limit fetch leaves `limit` null, which LimitWrapper
- * treats as fail-open (ungated), never as a startup failure.
+ * Residual: the official version-mismatch alert compares the freshly
+ * fetched server version against the one seen at startup
+ * (`checkVersionMismatch`, wired to window focus in AppShell, mirroring
+ * pin NavBar's focus listener); there is no client version constant to
+ * compare against. A failed limit fetch leaves `limit` null, which
+ * LimitWrapper treats as fail-open (ungated), never as a startup failure.
  */
 export const VERSION_CACHE_KEY = 'sm.version.v1';
 export const VERSION_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -51,6 +53,14 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
   const serverVersionLoadedAt = ref<number | null>(null);
   const versionLoading = ref(false);
   const versionError = ref('');
+  /**
+   * Pin NavBar `:320-340` / `:546-566` version-mismatch alert: set when
+   * a re-fetch (after the 1-hour cache expired) returns a different
+   * server version than the one already on screen. AppShell renders the
+   * refresh alert while this is true; nothing clears it — the refresh
+   * reloads the page.
+   */
+  const versionMismatch = ref(false);
   const lineageSettings = ref<LineageSettings | null>(null);
   const lineageLoading = ref(false);
   const lineageError = ref('');
@@ -130,6 +140,31 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
       versionError.value = error instanceof Error ? error.message : 'Failed to load version';
     } finally {
       versionLoading.value = false;
+    }
+  }
+
+  /**
+   * Pin NavBar `:320-340` (focus re-check): within an hour of the last
+   * fetch the check is skipped; once expired, re-fetch and compare the
+   * `-SNAPSHOT`-stripped version against the one already on screen.
+   * A difference sets `versionMismatch` (AppShell renders the refresh
+   * alert). The comparison only runs when a version was already seen,
+   * so a first load never trips the alert; a failed re-fetch leaves the
+   * stored timestamp untouched, so the next check retries.
+   */
+  async function checkVersionMismatch(): Promise<void> {
+    if (versionLoading.value) {
+      return;
+    }
+    const lastFetchAt = serverVersionLoadedAt.value;
+    if (lastFetchAt && Date.now() - lastFetchAt < VERSION_CACHE_TTL_MS) {
+      return;
+    }
+    const previous = displayVersion.value;
+    await loadVersion(true);
+    const next = displayVersion.value;
+    if (previous && next && previous !== next) {
+      versionMismatch.value = true;
     }
   }
 
@@ -218,6 +253,7 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     displayVersion,
     versionLoading,
     versionError,
+    versionMismatch,
     lineageSettings,
     lineageLoading,
     lineageError,
@@ -230,6 +266,7 @@ export const useShellConfigStore = defineStore('shellConfig', () => {
     limitError,
     hydrateVersionCache,
     loadVersion,
+    checkVersionMismatch,
     loadLineageSettings,
     setLineageSettings,
     loadUiThemePreference,

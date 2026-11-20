@@ -59,7 +59,6 @@ const SsoSettingsView = () => import('@/views/admin/SsoSettingsView.vue');
 const SettingsHubView = () => import('@/views/admin/SettingsHubView.vue');
 const SettingsCategoryView = () => import('@/views/admin/SettingsCategoryView.vue');
 const SettingsServicesView = () => import('@/views/admin/SettingsServicesView.vue');
-const SystemSettingsView = () => import('@/views/admin/SystemSettingsView.vue');
 const AppearanceSettingsView = () => import('@/views/admin/AppearanceSettingsView.vue');
 const AppModeConfigView = () => import('@/views/admin/AppModeConfigView.vue');
 const DataQualityDimensionsView = () => import('@/views/admin/DataQualityDimensionsView.vue');
@@ -353,9 +352,6 @@ export const router = createRouter({
         // content is permission-filtered by the view itself, like
         // the category page above (§10.2).
         { path: 'settings/services/:tab', name: 'settings-services', component: SettingsServicesView, meta: { guard: 'none' } },
-        // D-8 HOLD: System keeps its original URL; only the explicit
-        // admin-only meta is added. Deletion awaits the D-8 ruling.
-        { path: 'admin/settings/system', name: 'admin-settings-system', component: SystemSettingsView, meta: { guard: 'admin-only' } },
         { path: 'settings/access/audit-logs', name: 'admin-settings-audit-logs', component: AuditLogsView, meta: { guard: { resource: 'AUDIT_LOG', operation: 'AuditLogs' } } },
         // P2 B R-5: official Settings/Users/AdminPermissionDebugger
         // (Access category): user search + evaluate + user permissions.

@@ -5,12 +5,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import PersonaSwitcher from '@/layouts/PersonaSwitcher.vue';
 import SmIcon from '@/components/shared/SmIcon.vue';
 import { getInboxCounts } from '@/api/inbox';
 import TourOverlay from '@/components/shared/TourOverlay.vue';
-import { Badge, Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
+import { Alert, Badge, Button, Dropdown, Input, Layout, Menu, message } from 'ant-design-vue';
 import monogramUrl from '@/assets/iqvia-monogram.svg';
 import logoUrl from '@/assets/iqvia-logo.svg';
 import { searchRouteFromLocation, searchRouteQuery } from '@/catalog/searchQuery';
@@ -34,6 +34,11 @@ import { useAuthStore } from '@/stores/auth';
 import { principalKeyFor, useGuardDecisionStore } from '@/stores/guardDecision';
 import { useShellConfigStore } from '@/stores/shellConfig';
 import { resolveBrandImageSrc } from '@/theme/customTheme';
+import {
+  formatReleaseDate,
+  getSimplifiedVersion,
+  getVersionReleaseTimestamp,
+} from '@/utils/version';
 
 const route = useRoute();
 const router = useRouter();
@@ -163,6 +168,51 @@ function onGlobalKeyDown(event: KeyboardEvent): void {
 const inboxOpenTasks = ref(0);
 const inboxPending = ref(0);
 
+/**
+ * Help menu, pin `HELP_ITEMS` (`constants/Navbar.constants.ts:41-77`)
+ * via `getHelpDropdownItems(version)` (`utils/NavbarUtils.tsx:89-93`):
+ * Tour (internal `tour` route), Docs (external docs site — the product
+ * `/docs` route is the swagger page, never the user-docs target), API
+ * (internal `/docs` swagger), Slack (external), Version (external
+ * release-updates page with `{{currentVersion}}` replaced by the full
+ * server version). The version label and release date follow pin
+ * `utils/Version/Version.ts:26-49` through `@/utils/version`: the
+ * 12-digit build segment is dropped from the label, and only a version
+ * carrying one shows a release date. With no version loaded the Version
+ * item still renders, labelled just "Version" with no release date
+ * (pin's `getHelpDropdownItems(version?)` accepts undefined).
+ */
+const simplifiedVersion = computed(() => getSimplifiedVersion(shellConfig.displayVersion));
+const versionReleaseTimestamp = computed(() =>
+  getVersionReleaseTimestamp(shellConfig.displayVersion),
+);
+const versionReleaseDate = computed(() =>
+  versionReleaseTimestamp.value !== undefined
+    ? formatReleaseDate(versionReleaseTimestamp.value, locale.value)
+    : undefined,
+);
+const versionLabel = computed(() =>
+  simplifiedVersion.value
+    ? `${t('label.version')} ${simplifiedVersion.value}`
+    : t('label.version'),
+);
+const versionHref = computed(
+  () => `https://open-metadata.org/product-updates#${shellConfig.displayVersion ?? ''}`,
+);
+
+function refreshPage(): void {
+  // Pin NavBar `:546-566` refresh action: `navigate(0)`.
+  router.go(0);
+}
+
+/**
+ * Pin NavBar `:313-350`: the version re-check runs when the document
+ * regains focus; the store skips it within an hour of the last fetch.
+ */
+function onWindowFocus(): void {
+  void shellConfig.checkVersionMismatch();
+}
+
 async function loadInboxCounts(): Promise<void> {
   const counts = await getInboxCounts();
   inboxOpenTasks.value = counts.openTaskCount;
@@ -180,6 +230,7 @@ function goInbox(): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeyDown);
+  window.addEventListener('focus', onWindowFocus);
   if (auth.isAuthenticated) {
     void auth.refreshUser().catch(() => undefined);
   }
@@ -195,6 +246,7 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeyDown);
+  window.removeEventListener('focus', onWindowFocus);
 });
 
 watch(
@@ -410,6 +462,44 @@ async function onLogout(): Promise<void> {
             :trigger="['click']"
             :get-popup-container="popupParent"
           >
+            <button type="button" data-testid="help-menu-trigger" class="shell__help-button" :aria-label="t('label.need-help')">
+              <SmIcon icon-key="help" class="shell__help" />
+            </button>
+            <template #overlay>
+              <Menu data-testid="help-menu" :selectable="false">
+                <Menu.Item key="tour" data-testid="help-menu-tour">
+                  <RouterLink :to="{ name: 'tour' }">{{ t('label.tour') }}</RouterLink>
+                </Menu.Item>
+                <Menu.Item key="doc" data-testid="help-menu-docs">
+                  <a href="https://docs.open-metadata.org/" target="_blank" rel="noreferrer">{{
+                    t('label.doc-plural')
+                  }}</a>
+                </Menu.Item>
+                <Menu.Item key="api" data-testid="help-menu-api">
+                  <RouterLink :to="{ name: 'docs' }">{{ t('label.api-uppercase') }}</RouterLink>
+                </Menu.Item>
+                <Menu.Item key="slack" data-testid="help-menu-slack">
+                  <a href="https://slack.open-metadata.org" target="_blank" rel="noreferrer">{{
+                    t('label.slack-support')
+                  }}</a>
+                </Menu.Item>
+                <Menu.Item key="version" data-testid="help-menu-version">
+                  <a :href="versionHref" target="_blank" rel="noreferrer">
+                    <span class="shell__help-version">
+                      <span>{{ versionLabel }}</span>
+                      <span v-if="versionReleaseDate" class="shell__help-version-date">
+                        {{ t('label.released') }} {{ versionReleaseDate }}
+                      </span>
+                    </span>
+                  </a>
+                </Menu.Item>
+              </Menu>
+            </template>
+          </Dropdown>
+          <Dropdown
+            :trigger="['click']"
+            :get-popup-container="popupParent"
+          >
             <button type="button" data-testid="user-menu-trigger" class="shell__user" :aria-label="t('chrome.userMenu')">
               <span class="shell__avatar">{{ avatarLetter }}</span>
               <span class="shell__user-copy">
@@ -431,6 +521,21 @@ async function onLogout(): Promise<void> {
         </div>
       </Layout.Header>
       <Layout.Content class="shell__content" :class="{ 'shell__content--flush': flushContent }">
+        <Alert
+          v-if="shellConfig.versionMismatch"
+          class="shell__version-alert"
+          data-testid="version-mismatch-alert"
+          type="info"
+          show-icon
+          :message="t('message.new-version-available')"
+          :description="t('message.refresh-page-recommended')"
+        >
+          <template #action>
+            <Button type="link" size="small" data-testid="version-mismatch-refresh" @click="refreshPage">
+              {{ t('label.refresh') }}
+            </Button>
+          </template>
+        </Alert>
         <router-view v-slot="{ Component }">
           <PermissionPlaceholder v-if="guardDenied" :permission-value="t('crud.view')" />
           <component :is="Component" v-else />
@@ -775,6 +880,38 @@ async function onLogout(): Promise<void> {
   border: 0;
   background: transparent;
   cursor: pointer;
+}
+.shell__help-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.shell__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--sm-text-secondary);
+  font-size: 18px;
+}
+.shell__help-button:hover .shell__help {
+  color: var(--sm-color-primary);
+  background: var(--sm-bg-base);
+  border-radius: 10px;
+}
+.shell__help-version {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.shell__help-version-date {
+  color: var(--sm-text-tertiary);
+  font-size: 12px;
+}
+.shell__version-alert {
+  margin-bottom: 16px;
 }
 .shell__user {
   display: inline-flex;

@@ -62,12 +62,13 @@ describe('admin guard fresh-load race (N1)', () => {
     );
   }
 
-  it('admits an admin directly loading the staged System route on fresh load', async () => {
+  it('admits an admin directly loading the staged Persona route on fresh load', async () => {
     stubProfile(true);
-    await router.push('/admin/settings/system');
-    expect(router.currentRoute.value.fullPath).toBe('/admin/settings/system');
+    await router.push('/settings/persona');
+    expect(router.currentRoute.value.fullPath).toBe('/settings/persona');
+    expect(router.currentRoute.value.name).toBe('admin-settings-persona');
     expect(useAuthStore().user?.isAdmin).toBe(true);
-    expect(useGuardDecisionStore().isDeniedFor('/admin/settings/system', 'ada')).toBe(false);
+    expect(useGuardDecisionStore().isDeniedFor('/settings/persona', 'ada')).toBe(false);
   });
 
   it('denies a non-admin in place, with the URL unchanged, on fresh load', async () => {
@@ -89,7 +90,10 @@ describe('admin guard fresh-load race (N1)', () => {
   it('redirects to login when there is no session at all', async () => {
     localStorage.clear();
     setActivePinia(createPinia());
-    await router.push('/admin/settings/system');
+    // Move off any previous test's route first: pushing the same path
+    // twice in a row is a no-op, so the guard would never re-run.
+    await router.push('/');
+    await router.push('/settings/access/roles');
     expect(router.currentRoute.value.name).toBe('login');
   });
 });

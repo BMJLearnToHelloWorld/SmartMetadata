@@ -262,9 +262,6 @@ describe('i18n catalogs', () => {
     expect(enUS.collaboration.tasks.lead).not.toMatch(apiTutorial);
     expect(enUS.collaboration.task.resolveLead).not.toMatch(apiTutorial);
     expect(enUS.collaboration.announcements.lead).not.toMatch(apiTutorial);
-    expect(enUS.settings.system.lead).not.toMatch(apiTutorial);
-    expect(enUS.settings.system.loginLead).not.toMatch(apiTutorial);
-    expect(enUS.settings.system.emailLead).not.toMatch(apiTutorial);
     expect(enUS.admin.users.rolesLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.pipelines.detailLead).not.toMatch(apiTutorial);
     expect(enUS.ingestion.services.connectionJsonHelp).toMatch(/JSON/i);
@@ -273,7 +270,6 @@ describe('i18n catalogs', () => {
     expect(enUS.observability.alerts.lead).not.toMatch(apiTutorial);
     expect(zhCN.asset.activityLead).not.toMatch(apiTutorial);
     expect(zhCN.collaboration.activity.lead).not.toMatch(apiTutorial);
-    expect(zhCN.settings.system.lead).not.toMatch(apiTutorial);
   });
 
   it('keeps leftover API placeholders literal after vue-i18n compile', () => {

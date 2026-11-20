@@ -19,6 +19,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Switch,
   TreeSelect,
   Typography,
@@ -27,7 +28,7 @@ import {
 import { getSetting, updateSetting } from '@/api/system';
 import { startCase } from '@/utils/text';
 import SmBreadcrumb from '@/components/shared/SmBreadcrumb.vue';
-import PreferencePageShell from '@/features/settings/PreferencePageShell.vue';
+import PageHeader from '@/components/shared/PageHeader.vue';
 import { buildSettingsBreadcrumbCatalog, getSettingPageBreadcrumbs, toSmBreadcrumbItems } from '@/settings/breadcrumbs';
 import { resolveSettingsLocation } from '@/settings/locationResolver';
 import {
@@ -227,13 +228,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <SmBreadcrumb :items="breadcrumbItems" />
-  <PreferencePageShell
-    test-id="profiler-configuration"
-    :title="header"
-    :lead="subHeader"
-    :loading="loading"
-  >
+  <div data-testid="profiler-configuration">
+    <SmBreadcrumb :items="breadcrumbItems" />
+    <PageHeader
+      :header="header"
+      :sub-header="subHeader"
+      test-id="profiler-configuration"
+    />
+    <Spin :spinning="loading">
     <form
       id="profiler-config"
       data-testid="profiler-config-form"
@@ -393,6 +395,6 @@ onMounted(() => {
         </Button>
       </div>
     </form>
-  </PreferencePageShell>
-
+    </Spin>
+  </div>
 </template>

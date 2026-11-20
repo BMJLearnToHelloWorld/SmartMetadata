@@ -63,7 +63,6 @@ function testRouter(): Router {
       { path: '/settings/persona', name: 'admin-settings-persona', component: stub('persona') },
       { path: '/settings/sso', name: 'admin-settings-sso', component: stub('sso') },
       { path: '/admin/users', name: 'admin-users', component: stub('users') },
-      { path: '/admin/settings/system', name: 'admin-settings-system', component: stub('system') },
       {
         path: '/governance/classifications',
         name: 'governance-classifications',
